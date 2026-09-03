@@ -14,24 +14,28 @@ import UIKit
 /// and the edit-menu items that make one by hand.
 ///
 /// A mark made here is `.manual`; only the coordinator makes `.voice` ones.
+/// Marks live in the open session (through `ReadAlongTextHosting`); the
+/// presenter reads them back through the same host every time rather than
+/// holding a copy.
 public final class AnnotationPresenter: NSObject, ReadAlongMenuProviding,
-                                        AnnotationPopoverDelegate {
+                                        AnnotationPopoverDelegate,
+                                        UIPopoverPresentationControllerDelegate {
 
     private let markStore: ReadAlongMarkStore
-    private let layer: AnnotationLayer
+    private weak var coordinator: ReadAlongCoordinator?
     private weak var host: ReadAlongTextHosting?
     private weak var presenter: UIViewController?
 
-    private var editing: ResolvedAnnotation?
+    private var editing: Annotation?
 
     public init(
         markStore: ReadAlongMarkStore,
-        layer: AnnotationLayer,
+        coordinator: ReadAlongCoordinator,
         host: ReadAlongTextHosting,
         presenter: UIViewController?
     ) {
         self.markStore = markStore
-        self.layer = layer
+        self.coordinator = coordinator
         self.host = host
         self.presenter = presenter
         super.init()
@@ -39,15 +43,23 @@ public final class AnnotationPresenter: NSObject, ReadAlongMenuProviding,
 
     // MARK: - Tapping
 
-    /// The mark under a point in text-container coordinates, or nil.
-    public func annotation(atContainerPoint point: CGPoint) -> ResolvedAnnotation? {
-        guard let host else { return nil }
-        for sentence in host.sentenceLayouts() {
+    /// The mark under a point in text-container coordinates, or nil. Uses the
+    /// coordinator's cached sentence geometry; nothing is re-laid out for a
+    /// tap.
+    public func annotation(atContainerPoint point: CGPoint) -> Annotation? {
+        guard let host, let coordinator else { return nil }
+        var offset: Int?
+        search: for sentence in coordinator.layouts {
             for word in sentence.words where word.rect.contains(point) {
-                if let hit = layer.annotation(at: word.textRange.location) { return hit }
+                offset = word.textRange.location
+                break search
             }
         }
-        return nil
+        guard let offset else { return nil }
+        return host.storedAnnotations.first { annotation in
+            guard let range = host.range(for: annotation.anchor) else { return false }
+            return NSLocationInRange(offset, range)
+        }
     }
 
     /// Opens the popover for the mark under `point`, anchored at `rect` in
@@ -61,17 +73,25 @@ public final class AnnotationPresenter: NSObject, ReadAlongMenuProviding,
         return true
     }
 
-    public func present(_ hit: ResolvedAnnotation, from rect: CGRect, in sourceView: UIView) {
+    public func present(_ annotation: Annotation, from rect: CGRect, in sourceView: UIView) {
         guard let presenter else { return }
-        editing = hit
-        let stored = (try? markStore.annotations())?.first { $0.id == hit.id }
-        let comment = stored?.noteID.flatMap { try? markStore.note($0) }?.text
-        let popover = AnnotationPopoverViewController(kind: hit.kind, commentText: comment)
+        editing = annotation
+        let comment = annotation.noteID.flatMap { try? markStore.note($0) }?.text
+        let popover = AnnotationPopoverViewController(kind: annotation.kind, commentText: comment)
         popover.delegate = self
         popover.popoverPresentationController?.sourceView = sourceView
         popover.popoverPresentationController?.sourceRect = rect
         popover.popoverPresentationController?.permittedArrowDirections = [.up, .down]
+        popover.popoverPresentationController?.delegate = self
         presenter.present(popover, animated: true)
+    }
+
+    /// A popover on a compact width would otherwise become a full-screen
+    /// modal with no way out; it stays a popover everywhere.
+    public func adaptivePresentationStyle(
+        for controller: UIPresentationController, traitCollection: UITraitCollection
+    ) -> UIModalPresentationStyle {
+        .none
     }
 
     // MARK: - Editing
@@ -85,22 +105,21 @@ public final class AnnotationPresenter: NSObject, ReadAlongMenuProviding,
             kind: kind,
             source: .manual,
             anchor: host.anchor(for: range))
-        try? markStore.append(annotation)
-        layer.add(ResolvedAnnotation(id: annotation.id, range: range, kind: kind))
+        host.addAnnotation(annotation)
         return annotation
     }
 
-    public func recolour(_ hit: ResolvedAnnotation, to kind: Annotation.Kind) {
-        guard var stored = (try? markStore.annotations())?.first(where: { $0.id == hit.id })
-        else { return }
-        stored.kind = kind
-        try? markStore.replace(stored)
-        layer.add(ResolvedAnnotation(id: hit.id, range: hit.range, kind: kind))
+    public func recolour(_ annotation: Annotation, to kind: Annotation.Kind) {
+        var changed = annotation
+        changed.kind = kind
+        host?.updateAnnotation(changed)
     }
 
-    public func delete(_ hit: ResolvedAnnotation) {
-        try? markStore.remove(hit.id)
-        layer.remove(hit.id)
+    /// Removes the mark, and the note a comment held. A comment with no note
+    /// left behind would show an empty popover for ever.
+    public func delete(_ annotation: Annotation) {
+        host?.removeAnnotation(annotation.id)
+        if let noteID = annotation.noteID { try? markStore.deleteNote(noteID) }
     }
 
     // MARK: - ReadAlongMenuProviding
@@ -130,15 +149,15 @@ public final class AnnotationPresenter: NSObject, ReadAlongMenuProviding,
     ) {
         guard let editing else { return }
         recolour(editing, to: kind)
-        self.editing = ResolvedAnnotation(id: editing.id, range: editing.range, kind: kind)
+        var changed = editing
+        changed.kind = kind
+        self.editing = changed
     }
 
     public func annotationPopover(
         _ popover: AnnotationPopoverViewController, didEditComment text: String
     ) {
-        guard let editing,
-              let stored = (try? markStore.annotations())?.first(where: { $0.id == editing.id }),
-              let noteID = stored.noteID,
+        guard let editing, let noteID = editing.noteID,
               var note = try? markStore.note(noteID)
         else { return }
         note.text = text

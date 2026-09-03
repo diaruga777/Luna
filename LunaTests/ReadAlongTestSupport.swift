@@ -107,6 +107,11 @@ final class FakeReadAlongHost: ReadAlongTextHosting {
     var containerOrigin = CGPoint.zero
     private(set) var installedLayers: [ReadAlongRenderingLayer] = []
     private(set) var removeCallCount = 0
+    /// The marks the open session would hold, oldest first.
+    private(set) var annotations: [Annotation] = []
+    /// The window the scroll view reports, for a test that needs a non-zero
+    /// viewport origin; nil keeps the window-less default.
+    var window: UIWindow?
 
     init(sheet: SyntheticSheet, contentHeight: CGFloat = 4000) {
         self.sheet = sheet
@@ -127,6 +132,14 @@ final class FakeReadAlongHost: ReadAlongTextHosting {
         TextAnchorResolver.resolve(anchor, in: sheet.text)
     }
     var textLength: Int { sheet.text.length }
+
+    var storedAnnotations: [Annotation] { annotations }
+    func addAnnotation(_ annotation: Annotation) { annotations.append(annotation) }
+    func updateAnnotation(_ annotation: Annotation) {
+        guard let index = annotations.firstIndex(where: { $0.id == annotation.id }) else { return }
+        annotations[index] = annotation
+    }
+    func removeAnnotation(_ id: AnnotationID) { annotations.removeAll { $0.id == id } }
 }
 
 // MARK: - Sources
@@ -246,7 +259,6 @@ struct ReadAlongTestSession {
     let host: FakeReadAlongHost
     let tracker: FakeGazeTracker
     let transcriber: FakeSpeechTranscriber
-    let marks: InMemoryDocumentMarks
     let notes: InMemoryNotes
     let ticker: ManualTicker
     let clock: ManualClock
@@ -254,10 +266,8 @@ struct ReadAlongTestSession {
     let documentID: DocumentID
     let sheet: SyntheticSheet
 
-    /// The annotations the session has written, oldest first.
-    var storedAnnotations: [Annotation] {
-        (try? marks.marks(for: documentID))?.annotations ?? []
-    }
+    /// The annotations the session has written into the host, oldest first.
+    var storedAnnotations: [Annotation] { host.annotations }
 
     /// Feeds one frame and one tick at `time`, the way a live session does.
     ///
@@ -298,7 +308,9 @@ extension XCTestCase {
         topInset: CGFloat = 0,
         contentHeight: CGFloat = 4000,
         gazeEnabled: Bool = true,
-        voiceEnabled: Bool = true
+        voiceEnabled: Bool = true,
+        screenSize: CGSize = CGSize(width: 390, height: 700),
+        orientation: UIInterfaceOrientation = .portrait
     ) -> ReadAlongTestSession {
         GazeTrackingAvailability.supportOverride = true
         addTeardownBlock { GazeTrackingAvailability.supportOverride = nil }
@@ -316,7 +328,6 @@ extension XCTestCase {
         let host = FakeReadAlongHost(sheet: sheet, contentHeight: contentHeight)
         let tracker = FakeGazeTracker()
         let transcriber = FakeSpeechTranscriber()
-        let marks = InMemoryDocumentMarks()
         let notes = InMemoryNotes()
         let ticker = ManualTicker()
         let clock = ManualClock()
@@ -325,7 +336,6 @@ extension XCTestCase {
         let coordinator = ReadAlongCoordinator(
             documentID: documentID,
             host: host,
-            marks: marks,
             notes: notes,
             settings: settings,
             gazeTracker: tracker,
@@ -334,13 +344,14 @@ extension XCTestCase {
                 defaults: defaults, key: "luna.readalong.tests.calibration"),
             ticker: ticker,
             clock: clock,
-            screenSize: CGSize(width: 390, height: 700),
+            screenSize: screenSize,
             idiom: .phone)
+        coordinator.interfaceOrientation = orientation
         coordinator.start()
 
         return ReadAlongTestSession(
             coordinator: coordinator, host: host, tracker: tracker,
-            transcriber: transcriber, marks: marks, notes: notes, ticker: ticker,
+            transcriber: transcriber, notes: notes, ticker: ticker,
             clock: clock, settings: settings, documentID: documentID, sheet: sheet)
     }
 }

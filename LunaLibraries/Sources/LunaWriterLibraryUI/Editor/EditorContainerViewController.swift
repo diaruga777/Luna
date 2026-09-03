@@ -51,7 +51,12 @@ public final class EditorContainerViewController: UIViewController {
         if isMovingFromParent || navigationController?.topViewController !== self {
             navigationController?.setNavigationBarHidden(false, animated: animated)
         }
+        if isMovingFromParent, let editor {
+            environment.readAlongChrome?.tearDownReadAlong(for: editor)
+        }
     }
+
+
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -77,30 +82,34 @@ public final class EditorContainerViewController: UIViewController {
         view.addSubview(editor.view)
         editor.didMove(toParent: self)
 
+        editorTrailingConstraint = editor.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        NSLayoutConstraint.activate([
+            editor.view.topAnchor.constraint(equalTo: contentTop),
+            editor.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            editor.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            editorTrailingConstraint,
+        ])
+
+        // The read-along chip floats over the editor's top-trailing corner; it
+        // sizes itself, so only its position is pinned here.
         if let chrome = environment.readAlongChrome?.readAlongChrome(for: editor) {
             readAlongChromeView = chrome
             chrome.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(chrome)
             NSLayoutConstraint.activate([
-                chrome.topAnchor.constraint(equalTo: contentTop),
-                chrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                chrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                chrome.topAnchor.constraint(equalTo: contentTop, constant: 8),
+                chrome.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             ])
         }
-
-        editorTrailingConstraint = editor.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-        NSLayoutConstraint.activate([
-            editor.view.topAnchor.constraint(equalTo: readAlongChromeView?.bottomAnchor ?? contentTop),
-            editor.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            editor.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            editorTrailingConstraint,
-        ])
         updateNotesButton()
         layoutForCurrentWidth()
         environment.library.addObserver(self)
     }
 
-    deinit { environment.library.removeObserver(self) }
+    deinit {
+        environment.library.removeObserver(self)
+        if let editor { environment.readAlongChrome?.tearDownReadAlong(for: editor) }
+    }
 
     public override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()

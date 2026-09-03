@@ -5,6 +5,7 @@
 
 import CoreGraphics
 import Foundation
+import LunaDesignSystem
 import LunaWriterModels
 import UIKit
 
@@ -57,6 +58,14 @@ public final class ReadingLayer: NSObject, ReadAlongRenderingLayer {
     /// `readUpToWord + 1` words. A nil sentence clears both.
     public func update(sentence: SentenceLayout?, readUpToWord: Int) {
         let previous = union(bandRange, trailRange)
+        if let sentence {
+            let trail = Self.trail(in: sentence, readUpToWord: readUpToWord)
+            if sentence.index == bandSentence, sentence.textRange == bandRange, trail == trailRange {
+                return
+            }
+        } else if bandRange == nil, trailRange == nil {
+            return
+        }
         guard let sentence else {
             bandRange = nil
             trailRange = nil
@@ -108,12 +117,24 @@ public final class ReadingLayer: NSObject, ReadAlongRenderingLayer {
         mirrorHost = host
         host.layer.addSublayer(bandShape)
         host.layer.addSublayer(trailShape)
+        traitRegistration = MainActor.assumeIsolated {
+            host.registerForTraitChanges([LunaSkyTrait.self]) {
+                [weak self] (_: UIView, _: UITraitCollection) in
+                self?.refreshColours()
+            }
+        }
         refreshColours()
     }
+
+    private var traitRegistration: (any UITraitChangeRegistration)?
 
     public func detach() {
         bandShape.removeFromSuperlayer()
         trailShape.removeFromSuperlayer()
+        if let traitRegistration, let mirrorHost {
+            MainActor.assumeIsolated { mirrorHost.unregisterForTraitChanges(traitRegistration) }
+        }
+        traitRegistration = nil
         mirrorHost = nil
     }
 
@@ -124,7 +145,6 @@ public final class ReadingLayer: NSObject, ReadAlongRenderingLayer {
             hideMirror()
             return
         }
-        refreshColours()
         bandShape.path = Self.path(rects: sentence.lineRects, offset: offset, radius: 4)
         bandShape.isHidden = false
 

@@ -37,7 +37,7 @@ public final class GazeCalibrationViewController: UIViewController,
     public let style: GazeCalibrationStyle
     public private(set) var flow: GazeCalibrationFlow?
 
-    private let gazeTracker: GazeTracking
+    private let gazeTracker: GazeTracking?
     private let ticker: ReadAlongTicking
     private let clock: ReadAlongClock
     private let store: GazeCalibrationStore
@@ -57,17 +57,21 @@ public final class GazeCalibrationViewController: UIViewController,
 
     // MARK: - Life cycle
 
+    /// - Parameters:
+    ///   - gazeTracker: `nil` on a platform with no camera tracker; the run
+    ///     then goes straight to its failure panel.
+    ///   - screenSize: the display's portrait size, from the window scene.
     public init(
         style: GazeCalibrationStyle,
-        gazeTracker: GazeTracking? = nil,
+        gazeTracker: GazeTracking?,
         ticker: ReadAlongTicking = DisplayLinkTicker(),
         clock: ReadAlongClock = SystemReadAlongClock(),
         store: GazeCalibrationStore = GazeCalibrationStore(),
-        screenSize: CGSize = UIScreen.main.fixedCoordinateSpace.bounds.size,
-        idiom: UIUserInterfaceIdiom = UIDevice.current.userInterfaceIdiom
+        screenSize: CGSize,
+        idiom: UIUserInterfaceIdiom
     ) {
         self.style = style
-        self.gazeTracker = gazeTracker ?? ARFaceGazeTracker()
+        self.gazeTracker = gazeTracker
         self.ticker = ticker
         self.clock = clock
         self.store = store
@@ -81,7 +85,7 @@ public final class GazeCalibrationViewController: UIViewController,
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     deinit {
-        gazeTracker.stop()
+        gazeTracker?.stop()
         ticker.stop()
     }
 
@@ -100,17 +104,31 @@ public final class GazeCalibrationViewController: UIViewController,
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        gazeTracker.delegate = self
+        gazeTracker?.delegate = self
         ticker.target = self
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        gazeTracker.stop()
+        gazeTracker?.stop()
         ticker.stop()
     }
 
     public override var prefersStatusBarHidden: Bool { true }
+
+    /// A run is fitted against the orientation it started in; rotating
+    /// mid-run would move the targets under raw points that no longer match.
+    public override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        guard hasBegun else { return .all }
+        switch lockedOrientation {
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        case .portraitUpsideDown: return .portraitUpsideDown
+        default: return .portrait
+        }
+    }
+
+    private var lockedOrientation: UIInterfaceOrientation = .portrait
 
     public override var keyCommands: [UIKeyCommand]? {
         [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancel))]
@@ -219,13 +237,19 @@ public final class GazeCalibrationViewController: UIViewController,
 
     @objc private func cancel() {
         flow?.cancel()
-        gazeTracker.stop()
+        gazeTracker?.stop()
         ticker.stop()
         delegate?.gazeCalibrationDidCancel(self)
     }
 
     private func begin() {
+        guard let gazeTracker else {
+            render(stage: .failed)
+            return
+        }
         hasBegun = true
+        lockedOrientation = currentOrientation
+        setNeedsUpdateOfSupportedInterfaceOrientations()
         let bounds = view.bounds.inset(by: view.safeAreaInsets)
         let flow = GazeCalibrationFlow(
             style: style, bounds: bounds, pointsPerDegree: pointsPerDegree)
@@ -242,7 +266,7 @@ public final class GazeCalibrationViewController: UIViewController,
     }
 
     private func finish() {
-        gazeTracker.stop()
+        gazeTracker?.stop()
         ticker.stop()
         guard let flow, let calibration = flow.calibration else {
             delegate?.gazeCalibrationDidCancel(self)
@@ -278,7 +302,9 @@ public final class GazeCalibrationViewController: UIViewController,
                 portraitSize: portraitScreenSize,
                 orientation: currentOrientation)
         case .offScreen:
-            faceTracked = true
+            // An off-screen estimate has no target to pair with; feeding it as
+            // (0, 0) would pull the fit toward the origin.
+            faceTracked = false
         case .faceLost:
             faceTracked = false
         }
@@ -318,6 +344,8 @@ public final class GazeCalibrationViewController: UIViewController,
             hideDot()
             showVerdict()
         case .failed:
+            gazeTracker?.stop()
+            ticker.stop()
             hideDot()
             showFailure()
         }

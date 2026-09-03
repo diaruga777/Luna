@@ -189,9 +189,9 @@ final class ReadAlongCoordinatorTests: XCTestCase {
 
     // MARK: - Session shape
 
-    func testStartInstallsBothLayersAndStopRemovesThem() {
+    func testStartInstallsTheBandLayerAndStopRemovesIt() {
         let session = makeReadAlongSession()
-        XCTAssertEqual(session.host.installedLayers.count, 2)
+        XCTAssertEqual(session.host.installedLayers.count, 1)
         XCTAssertTrue(session.tracker.isRunning)
         XCTAssertTrue(session.transcriber.isRunning)
 
@@ -247,32 +247,135 @@ final class ReadAlongCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(session.storedAnnotations.isEmpty)
         XCTAssertTrue(session.notes.stored.isEmpty)
-        XCTAssertTrue(session.coordinator.annotationLayer.annotations.isEmpty)
     }
 
-    func testReloadingAnnotationsDropsAnAnchorWhoseTextIsGone() {
+    /// The mark goes into the host — the open session — and never into a
+    /// marks store of read-along's own, so the session's next save cannot
+    /// overwrite it.
+    func testAVoiceMarkIsWrittenThroughTheHostSession() {
         let session = makeReadAlongSession(gazeEnabled: false)
         session.transcriber.onset()
         session.transcriber.utterance("keep")
-        XCTAssertEqual(session.coordinator.annotationLayer.annotations.count, 1)
+        XCTAssertEqual(session.host.annotations.count, 1)
+        XCTAssertEqual(session.host.annotations.first?.source, .voice)
+        XCTAssertEqual(session.coordinator.annotations.count, 1)
+    }
 
-        var marks = try! session.marks.marks(for: session.documentID)
-        marks.annotations = [
-            Annotation(
-                documentID: session.documentID, kind: .cut,
-                anchor: TextAnchor(
-                    start: 0, end: 16, exact: "words this sheet never contained")),
-        ]
-        try! session.marks.replaceMarks(marks, for: session.documentID)
-        session.coordinator.reloadAnnotations()
+    // MARK: - Ticks without gaze
 
-        XCTAssertTrue(session.coordinator.annotationLayer.annotations.isEmpty)
+    /// A voice-only or paused session has no reading model to follow, so the
+    /// page must not scroll itself.
+    func testAVoiceOnlySessionNeverScrollsThePage() {
+        let session = makeReadAlongSession(sentenceCount: 40, gazeEnabled: false)
+        var time: TimeInterval = 0
+        for _ in 0..<300 {
+            session.clock.now = time
+            session.ticker.fire(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(session.host.scrollView.contentOffset.y, 0)
+        XCTAssertNil(session.coordinator.readingLayer.bandRange)
+    }
+
+    func testPausingFreezesTheBandAndTheScroll() {
+        let session = makeReadAlongSession(sentenceCount: 40, topInset: 600)
+        var time = session.look(at: session.sheet.centre(sentence: 0, word: 1), frames: 30, from: 0)
+        let offsetBefore = session.host.scrollView.contentOffset.y
+        let bandBefore = session.coordinator.readingLayer.bandRange
+
+        session.coordinator.togglePause()
+        for _ in 0..<120 {
+            session.clock.now = time
+            session.ticker.fire(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(session.host.scrollView.contentOffset.y, offsetBefore)
+        XCTAssertNil(session.coordinator.readingLayer.bandRange, "pausing clears the band")
+        _ = bandBefore
+    }
+
+    // MARK: - Suspend and resume
+
+    func testSuspendingStopsBothHalvesAndResumingRestoresTheUsersChoice() {
+        let session = makeReadAlongSession()
+        session.coordinator.suspend()
+        XCTAssertFalse(session.tracker.isRunning)
+        XCTAssertFalse(session.transcriber.isRunning)
+        XCTAssertTrue(session.coordinator.isRunning)
+        XCTAssertTrue(session.settings.gazeEnabled)
+
+        session.coordinator.resume()
+        XCTAssertTrue(session.tracker.isRunning)
+        XCTAssertTrue(session.transcriber.isRunning)
+    }
+
+    // MARK: - A stale onset
+
+    func testAnOnsetWithNoUtteranceBehindItExpires() {
+        let session = makeReadAlongSession(sentenceCount: 40, gazeEnabled: false)
+        session.host.scrollView.contentOffset.y = 0
+        session.clock.now = 0
+        session.transcriber.onset()
+
+        session.host.scrollView.contentOffset.y = 1200
+        session.clock.now = ReadAlongCoordinator.anchorLifetime + 1
+        session.transcriber.utterance("expand")
+
+        let expected = ReadAlongGeometry.sentence(
+            nearestViewportFraction: 0.45, in: session.sheet.sentences,
+            contentOffsetY: 1200, viewportHeight: 700, textContainerOriginY: 0)?.textRange
+        XCTAssertEqual(session.storedAnnotations.first?.anchor.range, expected,
+                       "the mark lands where the reader is now, not where the noise was")
+    }
+
+    // MARK: - Landscape
+
+    /// The gate judges the point in the ORIENTED screen; a portrait-sized
+    /// gate would call every landscape sample past x = 390 off-screen.
+    func testALandscapeSessionOpensTheGateForACentreScreenSample() {
+        let session = makeReadAlongSession(
+            screenSize: CGSize(width: 390, height: 844), orientation: .landscapeLeft)
+        // Oriented centre (422, 195) corresponds to a portrait-origin point;
+        // ask the projection for it rather than guessing.
+        let portrait = CGPoint(x: 195, y: 422)
+        var time: TimeInterval = 0
+        for _ in 0..<20 {
+            session.clock.now = time
+            session.tracker.emit(.point(portrait))
+            session.ticker.fire(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(session.coordinator.lastGateReason, .ok)
+    }
+
+    // MARK: - A closed host
+
+    func testACoordinatorWhoseHostIsGoneDoesNothingOnAFrame() {
+        var host: FakeReadAlongHost? = FakeReadAlongHost(sheet: SyntheticSheet(sentenceCount: 4))
+        let tracker = FakeGazeTracker()
+        let coordinator = ReadAlongCoordinator(
+            documentID: DocumentID(), host: host!, notes: InMemoryNotes(),
+            gazeTracker: tracker, transcriber: nil,
+            ticker: ManualTicker(), clock: ManualClock(),
+            screenSize: CGSize(width: 390, height: 700), idiom: .phone)
+        weak var weakHost = host
+        host = nil
+        XCTAssertNil(weakHost, "the coordinator holds its host weakly")
+        coordinator.start()
+        XCTAssertFalse(coordinator.isRunning)
+        tracker.emit(.point(CGPoint(x: 100, y: 100)))
+        XCTAssertNil(coordinator.lastGazePoint)
     }
 
     // MARK: - Trace
 
-    func testTheSessionTraceRecordsTheFramesTheModelSaw() {
+    /// The trace costs a buffer entry per frame, so it records only while
+    /// the diagnostics overlay — the one thing that can export it — is up.
+    func testTheSessionTraceRecordsTheFramesTheModelSawWhileDiagnosticsAreUp() {
         let session = makeReadAlongSession()
+        session.look(at: session.sheet.centre(sentence: 0, word: 1), frames: 30, from: 0)
+        XCTAssertTrue(session.coordinator.trace.samples.isEmpty)
+        session.coordinator.setDiagnosticsVisible(true)
         session.look(at: session.sheet.centre(sentence: 0, word: 1), frames: 120, from: 0)
 
         let samples = session.coordinator.trace.samples

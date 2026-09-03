@@ -1457,6 +1457,10 @@
 "WriterReadAlong_calibrationTouchUp_Luna" = "Touch up %@";
 "WriterReadAlong_calibrationVerdictBody_Luna" = "Luna is off by about %.1f degrees.";
 "WriterReadAlong_heard_Luna" = "heard: %@";
+"WriterReadAlong_permissionRefusedGazeTitle_Luna" = "Camera Access Needed";
+"WriterReadAlong_permissionRefusedGazeBody_Luna" = "Read-along follows where you are reading with the front camera. Allow camera access in Settings to turn it on.";
+"WriterReadAlong_permissionRefusedVoiceTitle_Luna" = "Microphone Access Needed";
+"WriterReadAlong_permissionRefusedVoiceBody_Luna" = "Spoken comments need the microphone and on-device speech recognition. Allow both in Settings to turn them on.";
 "WriterReadAlong_hudAccessibilityLabel_Luna" = "Read-along";
 "WriterReadAlong_kindComment_Luna" = "Comment";
 "WriterReadAlong_kindCut_Luna" = "Cut";

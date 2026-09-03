@@ -49,6 +49,16 @@ public protocol ReadAlongTextHosting: AnyObject {
     func anchor(for range: NSRange) -> TextAnchor
     func range(for anchor: TextAnchor) -> NSRange?
     var textLength: Int { get }
+
+    /// The sheet's marks as the OPEN SESSION holds them. Read-along never
+    /// writes the marks row itself: the session owns that row and replaces
+    /// it whole on every save, so a mark written behind its back is lost on
+    /// the next autosave.
+    var storedAnnotations: [Annotation] { get }
+    func addAnnotation(_ annotation: Annotation)
+    /// Replaces the stored mark with the same id.
+    func updateAnnotation(_ annotation: Annotation)
+    func removeAnnotation(_ id: AnnotationID)
 }
 
 /// Edit-menu items read-along contributes for a selection.

@@ -150,6 +150,79 @@ final class PluginFetchTests: XCTestCase {
         XCTAssertEqual(request?.maxBytes, WebFetchConstants.maxBytes)
     }
 
+    // MARK: - Strict native request shaping
+
+    private func shapingError(
+        _ object: [String: Any], file: StaticString = #filePath, line: UInt = #line
+    ) -> PluginFetchError? {
+        guard case .failure(let error) = PluginFetchRequestShaping.request(
+            from: object, pluginID: "test.plugin", scratchGeneration: "generation", files: nil)
+        else {
+            XCTFail("request unexpectedly shaped", file: file, line: line)
+            return nil
+        }
+        return error
+    }
+
+    func testShapingRejectsNonHTTPURLs() {
+        XCTAssertEqual(shapingError(["url": "ftp://example.com/a"])?.code, "bad-argument")
+        XCTAssertEqual(shapingError(["url": "example.com/a"])?.code, "bad-argument")
+        XCTAssertEqual(shapingError(["url": "https:///a"])?.code, "bad-argument")
+    }
+
+    func testShapingRejectsInvalidAndNonFiniteTimeoutsAndCapsLargeTimeouts() {
+        XCTAssertEqual(shapingError(["url": "https://example.com", "timeout": 0])?.code,
+                       "bad-argument")
+        XCTAssertEqual(shapingError(["url": "https://example.com", "timeout": -1])?.code,
+                       "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": "https://example.com", "timeout": NSNumber(value: Double.nan)
+        ])?.code, "bad-argument")
+        let result = PluginFetchRequestShaping.request(
+            from: ["url": "https://example.com", "timeout": 1000],
+            pluginID: "test.plugin", scratchGeneration: "generation", files: nil)
+        XCTAssertEqual(try? result.get().timeout, 120)
+    }
+
+    func testShapingRejectsMalformedStructuredBodies() {
+        let url = "https://example.com"
+        XCTAssertEqual(shapingError(["url": url, "body": 42])?.code, "bad-argument")
+        XCTAssertEqual(shapingError(["url": url, "body": [:]])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["base64": "not base64"]
+        ])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["json": Date()]
+        ])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["form": ["count": 1]]
+        ])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["multipart": [["name": "x", "text": "a", "base64": "Yg=="]]]
+        ])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["multipart": [["name": "x", "base64": "bad"]]]
+        ])?.code, "bad-argument")
+        XCTAssertEqual(shapingError([
+            "url": url, "body": ["multipart": [["text": "missing name"]]]
+        ])?.code, "bad-argument")
+    }
+
+    func testShapingEnforcesAggregateRequestBodyLimit() {
+        let oversizedText = String(repeating: "x", count: PluginFileLimits.maxBytes + 1)
+        XCTAssertEqual(shapingError([
+            "url": "https://example.com", "body": oversizedText
+        ])?.code, "too-large")
+
+        let parts: [[String: Any]] = [
+            ["name": "one", "text": String(repeating: "x", count: 4 * 1024 * 1024)],
+            ["name": "two", "text": String(repeating: "y", count: 4 * 1024 * 1024)]
+        ]
+        XCTAssertEqual(shapingError([
+            "url": "https://example.com", "body": ["multipart": parts]
+        ])?.code, "too-large")
+    }
+
     // MARK: - The response a plugin sees
 
     func testAResponseCarriesStatusFinalURLHeadersAndText() async throws {
@@ -287,6 +360,79 @@ final class PluginFetchTests: XCTestCase {
             WebFetchConstants.safariUserAgent)
     }
 
+    func testSharedCookiesPersistPerPluginAndEphemeralCookiesDoNotPersist() {
+        let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
+        PluginStubURLProtocol.respond(
+            to: "https://example.com/set", status: 200, body: "set",
+            headers: ["Set-Cookie": "luna=one; Path=/"])
+        PluginStubURLProtocol.respond(to: "https://example.com/check", status: 200, body: "ok")
+
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/set")!, cookies: .shared,
+            pluginID: "plugin.one"))
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/check")!, cookies: .shared,
+            pluginID: "plugin.one"))
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/check")!, cookies: .shared,
+            pluginID: "plugin.two"))
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/set")!, cookies: .ephemeral,
+            pluginID: "plugin.three"))
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/check")!, cookies: .ephemeral,
+            pluginID: "plugin.three"))
+
+        let requests = PluginStubURLProtocol.requests
+        let oneCheck = requests[1].value(forHTTPHeaderField: "Cookie")
+        let twoCheck = requests[2].value(forHTTPHeaderField: "Cookie")
+        let ephemeralCheck = requests[4].value(forHTTPHeaderField: "Cookie")
+        XCTAssertTrue(oneCheck?.contains("luna=one") == true)
+        XCTAssertNil(twoCheck)
+        XCTAssertNil(ephemeralCheck)
+    }
+
+    func testNoneCookiePolicyStripsSuppliedCookieHeader() {
+        let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
+        PluginStubURLProtocol.respond(to: "https://example.com/none", status: 200, body: "ok")
+        _ = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/none")!,
+            headers: ["Cookie": "secret=should-not-send"], cookies: .none))
+        XCTAssertNil(PluginStubURLProtocol.requests.first?.value(forHTTPHeaderField: "Cookie"))
+    }
+
+    func testRedirectTargetIsCheckedBeforeFollowingAndUsesStableErrorCode() {
+        enum Denied: Error { case blocked }
+        let service = PluginFetchService(
+            protocolClasses: [PluginStubURLProtocol.self],
+            networkCheck: { url, _ in
+                if url.host == "blocked.example" { throw Denied.blocked }
+            })
+        PluginStubURLProtocol.respond(
+            to: "https://example.com/redirect", status: 302, body: "",
+            headers: ["Location": "https://blocked.example/article"])
+        let outcome = fetch(service, request: PluginFetchRequest(
+            url: URL(string: "https://example.com/redirect")!, cookies: .none))
+        guard case .failure(let error) = outcome else {
+            return XCTFail("redirect unexpectedly followed")
+        }
+        XCTAssertEqual(error.code, "network-refused")
+        XCTAssertEqual(PluginStubURLProtocol.requests.count, 1)
+    }
+
+    private func fetch(
+        _ service: PluginFetchService, request: PluginFetchRequest
+    ) -> Result<PluginFetchResponse, PluginFetchError> {
+        let expectation = expectation(description: "the request completes")
+        var outcome: Result<PluginFetchResponse, PluginFetchError>!
+        service.fetch(request) {
+            outcome = $0
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 10)
+        return outcome
+    }
+
     func testTheServiceCutsABodyAtMaxBytesAndReportsItTruncated() {
         let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
         PluginStubURLProtocol.respond(
@@ -347,7 +493,7 @@ final class PluginFetchTests: XCTestCase {
 final class PluginStubURLProtocol: URLProtocol {
 
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var table: [String: (Int, Data)] = [:]
+    nonisolated(unsafe) private static var table: [String: (Int, Data, [String: String])] = [:]
     nonisolated(unsafe) private static var recorded: [URLRequest] = []
     nonisolated(unsafe) private static var recordedBodies: [Data] = []
 
@@ -369,9 +515,11 @@ final class PluginStubURLProtocol: URLProtocol {
         lock.unlock()
     }
 
-    static func respond(to urlString: String, status: Int, body: String) {
+    static func respond(
+        to urlString: String, status: Int, body: String, headers: [String: String] = [:]
+    ) {
         lock.lock()
-        table[urlString] = (status, Data(body.utf8))
+        table[urlString] = (status, Data(body.utf8), headers)
         lock.unlock()
     }
 
@@ -407,7 +555,8 @@ final class PluginStubURLProtocol: URLProtocol {
             return
         }
         let response = HTTPURLResponse(
-            url: url, statusCode: answer.0, httpVersion: "HTTP/1.1", headerFields: [:])!
+            url: url, statusCode: answer.0, httpVersion: "HTTP/1.1",
+            headerFields: answer.2)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: answer.1)
         client?.urlProtocolDidFinishLoading(self)

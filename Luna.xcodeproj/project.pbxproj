@@ -422,6 +422,7 @@
 		5C5700000000000000000038 /* LunaWriterLibraryUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000018 /* LunaWriterLibraryUI */; };
 		5C570000000000000000AA0C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 29F14A58F74AD046A0000536 /* Assets.xcassets */; };
 		5C570000000000000000AA0D /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
+		5C5700000000000000000042 /* LunaGaze in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000041 /* LunaGaze */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1132,6 +1133,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5C5700000000000000000042 /* LunaGaze in Frameworks */,
 				C1W0000000000000000000011 /* LunaWeekly in Frameworks */,
 				C086E1ECBF38A717F497A0F1 /* SwiftSoup in Frameworks */,
 				1B4BF2BBED4AEECB0291B083 /* LunaURLClassification in Frameworks */,
@@ -2529,6 +2531,7 @@
 			);
 			name = Luna;
 			packageProductDependencies = (
+				5C5700000000000000000041 /* LunaGaze */,
 				C1W0000000000000000000001 /* LunaWeekly */,
 				AA0300000000000000000002 /* SwiftSoup */,
 				C100000000000000000000011 /* LunaURLClassification */,
@@ -6208,6 +6211,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
+		};
+		5C5700000000000000000041 /* LunaGaze */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaGaze;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

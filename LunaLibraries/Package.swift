@@ -354,7 +354,11 @@ let package = Package(
         // LunaGaze: ARKit face-tracking gaze samples, screen projection, bias
         // calibration and the pure reading tracker. Shared by LunaReaderUI (RSVP
         // eye tracking, which re-exports it) and Luna Writer's read-along.
-        .target(name: "LunaGaze"),
+        // Depends on LunaWriterModels for SentenceLayout/WordLayout alone — the
+        // ARKit-facing half stays gated by `#if canImport(ARKit)` inside the
+        // module, so this dependency is the only reason a non-Apple-platform
+        // `swift build` of LunaGaze needs anything beyond Foundation.
+        .target(name: "LunaGaze", dependencies: ["LunaWriterModels"]),
         // Luna Writer tiers, bottom up. Foundation-only through LunaWriterVoice;
         // UIKit from LunaWriterEditor up. See claudedocs/plans/writer-app.md §2.
         .target(name: "LunaWriterModels"),
@@ -362,7 +366,7 @@ let package = Package(
         .target(name: "LunaWriterStorage", dependencies: ["LunaWriterModels", "LunaWriterText", "LunaModels"]),
         .target(name: "LunaWriterVoice", dependencies: ["LunaWriterModels"]),
         .target(name: "LunaWriterEditor", dependencies: [
-            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaGaze", "LunaDesignSystem", "LunaModels",
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaDesignSystem", "LunaModels",
         ]),
         .target(name: "LunaWriterReadAlong", dependencies: [
             "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaWriterEditor",

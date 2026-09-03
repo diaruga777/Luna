@@ -274,18 +274,18 @@ final class GazeAffineCalibrationTests: XCTestCase {
             viewSize: CGSize(width: 852, height: 393), pointsPerDegree: pointsPerDegree)
         landscape.nudge(toward: CGVector(dx: 0, dy: 70), gain: 1)
 
-        XCTAssertNil(store.calibration(for: .portrait))
-        store.save(portrait, for: .portrait)
-        store.save(landscape, for: .landscapeRight)
+        XCTAssertNil(store.calibration(for: GazeOrientation.portrait))
+        store.save(portrait, for: GazeOrientation.portrait)
+        store.save(landscape, for: GazeOrientation.landscapeRight)
 
-        XCTAssertEqual(store.calibration(for: .portrait)?.offset.dx, 100)
-        XCTAssertEqual(store.calibration(for: .landscapeRight)?.offset.dy, 70)
-        XCTAssertNil(store.calibration(for: .landscapeLeft))
+        XCTAssertEqual(store.calibration(for: GazeOrientation.portrait)?.offset.dx, 100)
+        XCTAssertEqual(store.calibration(for: GazeOrientation.landscapeRight)?.offset.dy, 70)
+        XCTAssertNil(store.calibration(for: GazeOrientation.landscapeLeft))
 
-        store.remove(for: .portrait)
-        XCTAssertNil(store.calibration(for: .portrait))
-        XCTAssertNotNil(store.calibration(for: .landscapeRight))
+        store.remove(for: GazeOrientation.portrait)
+        XCTAssertNil(store.calibration(for: GazeOrientation.portrait))
+        XCTAssertNotNil(store.calibration(for: GazeOrientation.landscapeRight))
         store.removeAll()
-        XCTAssertNil(store.calibration(for: .landscapeRight))
+        XCTAssertNil(store.calibration(for: GazeOrientation.landscapeRight))
     }
 }

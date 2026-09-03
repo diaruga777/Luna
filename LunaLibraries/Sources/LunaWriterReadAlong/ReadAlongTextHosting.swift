@@ -5,7 +5,6 @@
 
 import CoreGraphics
 import Foundation
-import LunaGaze
 import LunaWriterModels
 import UIKit
 

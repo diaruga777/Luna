@@ -86,7 +86,7 @@ final class GazeScreenProjectionTests: XCTestCase {
         let point = CGPoint(x: 100, y: 700)
         XCTAssertEqual(
             GazeScreenProjection.orientedScreenPoint(
-                fromPortraitPoint: point, portraitSize: screenSize, orientation: .portrait),
+                fromPortraitPoint: point, portraitSize: screenSize, orientation: GazeOrientation.portrait),
             point)
     }
 
@@ -96,16 +96,18 @@ final class GazeScreenProjectionTests: XCTestCase {
         // left, and its left edge along the screen's bottom.
         XCTAssertEqual(
             GazeScreenProjection.orientedScreenPoint(
-                fromPortraitPoint: topLeft, portraitSize: screenSize, orientation: .landscapeLeft),
+                fromPortraitPoint: topLeft, portraitSize: screenSize,
+                orientation: GazeOrientation.landscapeLeft),
             CGPoint(x: 0, y: screenSize.width))
         XCTAssertEqual(
             GazeScreenProjection.orientedScreenPoint(
-                fromPortraitPoint: topLeft, portraitSize: screenSize, orientation: .landscapeRight),
+                fromPortraitPoint: topLeft, portraitSize: screenSize,
+                orientation: GazeOrientation.landscapeRight),
             CGPoint(x: screenSize.height, y: 0))
         XCTAssertEqual(
             GazeScreenProjection.orientedScreenPoint(
                 fromPortraitPoint: topLeft, portraitSize: screenSize,
-                orientation: .portraitUpsideDown),
+                orientation: GazeOrientation.portraitUpsideDown),
             CGPoint(x: screenSize.width, y: screenSize.height))
     }
 

@@ -38,6 +38,14 @@ app: new file → new sheet in the mapped group, changed file → reload and
 re-anchor marks, deleted file → trash. An open `DocumentSession` with unsaved
 edits is left alone (`OpenSessionRegistry` answers `OpenDocumentQuerying`).
 
+Trashing a sheet moves its file into a hidden `.Trash/` folder under the
+library root (excluded from the scan); restoring moves it back through
+`LibraryFileLayout.path`, emptying the Trash unlinks, and deleting a group
+moves its subtree's files there first. A file that comes back after being
+missing restores its trashed row instead of being adopted as a new sheet.
+The watcher holds one dispatch source per directory and rescans on
+foreground. Paths are compared NFC-normalised.
+
 Anchors (`TextAnchor`) carry offsets plus the quoted text and 32 characters of
 context, so annotations and notes survive edits and external rewrites;
 `TextAnchorResolver` tries exact, nearby quote, unique quote, then fuzzy.
@@ -75,6 +83,24 @@ read; the finished utterance becomes a coloured annotation (needs work /
 expand / cut / keep) or a comment note anchored there. Calibration is a
 pursuit sweep with a head-turn stage, four validation points and a grade in
 degrees. Gaze needs a TrueDepth camera; voice needs an on-device speech model.
+
+## Hardening (2026-09)
+
+`claudedocs/plans/writer-hardening.md` records the full-app review, its six
+reports and what landed. Highlights a maintainer should know: the scene
+delegate flushes open sessions on background (the app-delegate hook is never
+called under the scene lifecycle); `LibraryRootViewController` shows three
+columns only when the width holds two side columns plus a ≥ 560 pt editor;
+sheets-list swipe actions come from the list configuration's providers and
+sheets have a context menu; Settings opens from the sidebar gear or ⌘,; every
+action sheet became a `UIMenu` so iPad never presents an unanchored popover;
+`MarkdownTextStorage` applies the model edit inside `replaceCharacters`;
+`DocumentSession.save()` is asynchronous with a revision guard and
+`saveNow()` for flushes; `SentenceLayout`/`WordLayout` and
+`AuthorshipSpanList` live in `LunaWriterModels`, and `LunaGaze`'s ARKit half
+is behind `#if canImport(ARKit)` so the editor tier no longer depends on
+ARKit. The read-along integration fixes (WP-E2) are still open — see the
+plan's §8.
 
 ## Testing
 

@@ -407,3 +407,46 @@ Landscape and the open-editor state were not captured: the simulators run
 headless and blitz taps do not register on a window-less simulator (see the
 `headless-sim-taps-and-foreign-installs` note). WP-B1 captures the after
 state on the same two devices.
+
+## 8. Status (2026-09-04)
+
+Landed on `main`, each as a merge of its work-package branch, in this order:
+WP-A1, WP-A2, WP-D, WP-B1, WP-E1, WP-B2, WP-C, WP-G part 1 (strings_sync now
+scans `LunaWriter/`, ternaries and intent summaries), WP-F part 1 (`LunaGaze`
+compiles without ARKit behind platform `#if canImport`, `SentenceLayout`/
+`WordLayout`/`AuthorshipSpanList` live in `LunaWriterModels`, the editor no
+longer imports `LunaGaze`, `AccessoryBarPolicy`/`KeyboardMetricsProviding`
+seams). Of the ten headline defects in §1, 1, 2, 6, 7, 8, 9 and 10 are fixed;
+3, 4 and 5 are WP-E2's and remain open.
+
+Verification: `scripts/run_tests.sh --fresh` after wave 1 ran 3376 tests with
+25 failures, none in a Writer suite. Thirteen are `XteinkPluginTests`
+(`generationClosed`), introduced by another session's plugin commits merged
+to `main` during this work (`133387aef` and siblings), and the rest are the
+five known pre-existing failures. After WP-F part 1 the suites it touches
+(gaze, RSVP eye tracking, editor geometry/focus/keyboard, read-along
+coordinator, document session) ran 180/0. The repo's default test derived
+data (`.build-dd-tests`) was stale for this tree; pass `LUNA_TEST_DD` to a
+fresh path.
+
+Still open, in priority order:
+
+1. **WP-E2 — read-along integration** (the whole package; its agent was cut
+   off by the API spend limit before committing). Headline defects 3, 4 and 5
+   live here: marks through the session, the per-sheet session leak, and
+   geometry that never refreshes. Wave-1 seams it needs are all on `main`
+   (`EditorLayoutObserving`, `DocumentSession.add/removeAnnotation`,
+   `GazeFrame`, oriented gate size, `voiceIsUnasked`).
+2. **WP-F part 2** — replace the `ARFaceGazeTracker()` / `UIScreen.main` /
+   `UIDevice.current` defaults in `ReadAlongCoordinator` and
+   `GazeCalibrationViewController` with the `GazeTrackerMaking` witness and
+   scene-provided sizes; then the "Designed for iPad" Mac build check.
+3. **WP-G part 2** — bring `claudedocs/writer.md` fully up to date once E2
+   lands (the shape table and the read-along section are still accurate; the
+   "Where a sheet lives" section now has the `.Trash/` folder noted).
+4. Deferred by their packages: storage "one transaction per scan" and atomic
+   `reanchorMarks` (need a transaction primitive on the repository
+   protocols); `GazeAffineCalibration` reference rect (P3); a regression
+   test for the scene-background flush (the app target is not linkable from
+   `LunaTests`); the `OpenSessionRegistry` dirty-snapshot poll timer could be
+   replaced by a session dirty-state callback.

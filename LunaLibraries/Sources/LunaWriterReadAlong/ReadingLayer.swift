@@ -5,7 +5,7 @@
 
 import CoreGraphics
 import Foundation
-import LunaGaze
+import LunaWriterModels
 import UIKit
 
 /// The band under the sentence being read, and the trail over the words

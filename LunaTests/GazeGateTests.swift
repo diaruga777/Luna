@@ -101,14 +101,14 @@ final class GazeGateTests: XCTestCase {
     /// legitimate centre-screen gaze as `.offScreen`.
     func testACentreScreenSampleInLandscapeOpensTheGateWhenGivenTheOrientedSize() {
         let orientedSize = GazeScreenProjection.orientedSize(
-            portraitSize: screenSize, orientation: .landscapeRight)
+            portraitSize: screenSize, orientation: GazeOrientation.landscapeRight)
         XCTAssertEqual(orientedSize, CGSize(width: screenSize.height, height: screenSize.width))
 
         // Near the portrait TOP: landscapeRight swaps this toward the far
         // side of the now-wide screen, still comfortably inside it.
         let portraitPoint = CGPoint(x: screenSize.width / 2, y: 50)
         let onScreenPoint = GazeScreenProjection.orientedScreenPoint(
-            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: .landscapeRight)
+            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: GazeOrientation.landscapeRight)
 
         var gate = GazeGate(screenSize: orientedSize, pointsPerDegree: pointsPerDegree)
         let reason = gate.update(
@@ -122,7 +122,7 @@ final class GazeGateTests: XCTestCase {
     func testTheSameSampleMisreadsAsOffScreenAgainstThePortraitSize() {
         let portraitPoint = CGPoint(x: screenSize.width / 2, y: 50)
         let onScreenPoint = GazeScreenProjection.orientedScreenPoint(
-            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: .landscapeRight)
+            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: GazeOrientation.landscapeRight)
 
         var gate = GazeGate(screenSize: screenSize, pointsPerDegree: pointsPerDegree)
         let reason = gate.update(

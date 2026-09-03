@@ -11,6 +11,7 @@
 import CoreGraphics
 import XCTest
 @testable import LunaGaze
+import LunaWriterModels
 
 final class ReadingTrackerTests: XCTestCase {
 

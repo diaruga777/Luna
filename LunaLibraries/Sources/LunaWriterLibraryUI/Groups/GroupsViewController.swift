@@ -54,6 +54,11 @@ public final class GroupsViewController: UICollectionViewController {
         dataSource.snapshot(for: .groups).isExpanded(.group(group))
     }
 
+    /// The name this screen currently has cached for `group` — reflects
+    /// whatever the last `reload()` (including one from a `LibraryChange`)
+    /// read back from the store.
+    func nameForTesting(_ group: GroupID) -> String? { groupsByID[group]?.name }
+
     public init(library: WriterLibraryStoring, notes: NoteStoring) {
         self.library = library
         self.notes = notes

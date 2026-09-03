@@ -23,6 +23,15 @@ public final class EditorContainerViewController: UIViewController {
 
     private let notesButton = UIButton(type: .system)
 
+    /// The header's current title — for tests, which cannot see `header`.
+    var headerTitleForTesting: String? { header.title }
+    /// Whether the notes panel is hosted as a side child right now.
+    var isNotesPanelChildForTesting: Bool { notesPanel?.parent === self }
+    /// Whether the notes panel is presented as a sheet right now.
+    var isNotesPanelPresentedForTesting: Bool {
+        notesPanel != nil && notesPanel?.parent !== self
+    }
+
     public init(environment: LibraryEnvironment, document: WriterDocument) {
         self.environment = environment
         self.document = document

@@ -1,6 +1,6 @@
 # Luna Writer — plan
 
-Status: APPROVED 2026-09-03 (answers to Q1–Q6 folded in; see §1). Standalone fifth-and-a-half Luna app.
+Status: LANDED 2026-09-03 — every work package merged; what shipped is described in `claudedocs/writer.md`. Full suite on a fresh simulator: 4594 tests, 22 skipped, 8 failures, all eight in the pre-existing set documented before this work (see `known-test-failures` memory). Standalone fifth-and-a-half Luna app.
 Nothing here talks to the other Luna apps or to any backend.
 
 Luna Writer is a Markdown writing app for iPhone and iPad. It borrows from

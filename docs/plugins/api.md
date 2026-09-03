@@ -63,6 +63,7 @@ Codes you will see, and where they come from:
 | `not-found` | `luna.files.read`, `luna.fetch` with a multipart `file` part | the scratch file behind that `FileHandle` is gone (its generation was reaped) |
 | `not-text` | `luna.files.read` without `"base64"` | the file is not UTF-8 text; read it with `"base64"` |
 | `too-large` | `luna.storage.set`, `luna.storage.collection(...).put`, `luna.files.write`, a multipart `file` part | the value is over the 256 KB per-key/per-row cap, or the file over 8 MB |
+| `quota-exceeded` | `luna.files.write`, `luna.fetch` with `as: "file"` | this plugin has filled its current 256-file / 32 MB scratch allowance |
 | `write-failed` | `luna.files.write`, `luna.fetch` with `as: "file"` | the scratch write failed |
 | `not-configured` | `luna.mail.send` | no email account is connected — the documented `send-failed` branch never fires for this, the most common failure |
 | `send-failed` | `luna.mail.send` | the mail transport itself failed |
@@ -286,6 +287,12 @@ into the share's own directory before that happens, so the share sheet still
 reads it. Reading a handle after its generation is reaped rejects
 `not-found`, and `read` without `"base64"` on bytes that are not UTF-8
 rejects `not-text`.
+
+Plugin-created scratch data is capped at 256 files and 32 MB per plugin. The
+check and write are serialized, so a rejected write leaves no partial file.
+Files Luna adopts from an existing save for an `export` hook are exempt: those
+host-owned inputs can legitimately be much larger and are still reaped with the
+same generation.
 
 ## `luna.crypto` (capability `crypto`)
 

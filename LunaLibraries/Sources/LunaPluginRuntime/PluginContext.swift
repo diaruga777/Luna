@@ -48,7 +48,8 @@ final class PluginContext {
         registry: PluginCapabilityRegistry,
         processKind: PluginProcessKind,
         scratchGeneration: @escaping () -> String,
-        log: @escaping (String) -> Void
+        log: @escaping (String) -> Void,
+        generationID: String = "legacy"
     ) {
         self.pluginID = manifest.id
         self.manifest = manifest
@@ -104,7 +105,8 @@ final class PluginContext {
         luna.setObject(register, forKeyedSubscript: "register" as NSString)
 
         let target = PluginBridgeTarget(
-            pluginID: manifest.id, manifest: manifest, scratchGeneration: scratchGeneration)
+            pluginID: manifest.id, manifest: manifest, scratchGeneration: scratchGeneration,
+            generationID: generationID)
         for name in manifest.capabilities.sorted(by: { $0.rawValue < $1.rawValue }) {
             let namespace = PluginCapabilityNamespace(
                 target: target, context: context, object: luna)

@@ -46,6 +46,7 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
         let scheduler = self.scheduler
         let diagnostics = self.diagnostics
         let files = self.files
+        let generationID = namespace.target.generationID
 
         let fetch: @convention(block) (JSValue?) -> JSValue? = { argument in
             let context = JSContext.current() ?? outerContext
@@ -56,7 +57,8 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
                 object = ["url": urlString]
             }
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             let request: PluginFetchRequest
             switch PluginFetchRequestDecoder.decode(
                 object, pluginID: pluginID, generation: scratchGeneration(), files: files)

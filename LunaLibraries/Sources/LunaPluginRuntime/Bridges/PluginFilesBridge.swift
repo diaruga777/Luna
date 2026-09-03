@@ -40,12 +40,14 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
         let workQueue = self.workQueue
         let pluginID = namespace.pluginID
         let scratchGeneration = namespace.target.scratchGeneration
+        let generationID = namespace.target.generationID
 
         let write: @convention(block) (String?, JSValue?, JSValue?) -> JSValue? = {
             name, value, mime in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             guard let name, !name.isEmpty,
                   let data = PluginBridgeValue.data(from: value?.toObject())
             else {
@@ -62,11 +64,17 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
             let generation = scratchGeneration()
             let mimeText = PluginBridgeValue.optionalString(mime)
             workQueue.async {
+                guard box.isOperationValid else {
+                    box.fail("the plugin generation is no longer active", code: "generation-closed")
+                    return
+                }
                 do {
                     let descriptor = try scratch.writeFile(
                         data, suggestedName: name, mime: mimeText, pluginID: pluginID,
                         generation: generation)
                     box.fulfill(Self.jsObject(descriptor))
+                } catch let error as PluginScratchError {
+                    box.fail(error.localizedDescription, code: error.code)
                 } catch {
                     box.fail(error.localizedDescription, code: "write-failed")
                 }
@@ -77,13 +85,18 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
         let read: @convention(block) (JSValue?, JSValue?) -> JSValue? = { handle, form in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             guard let descriptor = Self.descriptor(from: handle) else {
                 box.fail("luna.files.read needs a file handle", code: "bad-argument")
                 return promise
             }
             let wantsBase64 = PluginBridgeValue.optionalString(form) == "base64"
             workQueue.async {
+                guard box.isOperationValid else {
+                    box.fail("the plugin generation is no longer active", code: "generation-closed")
+                    return
+                }
                 guard let url = scratch.fileURL(for: descriptor),
                       let data = try? Data(contentsOf: url)
                 else {
@@ -111,7 +124,8 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
         let size: @convention(block) (JSValue?) -> JSValue? = { handle in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             guard let descriptor = Self.descriptor(from: handle) else {
                 box.fail("luna.files.size needs a file handle", code: "bad-argument")
                 return promise

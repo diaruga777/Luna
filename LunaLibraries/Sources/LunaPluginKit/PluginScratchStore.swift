@@ -21,6 +21,20 @@ public struct PluginFileDescriptor: Equatable, Codable, Sendable {
     }
 }
 
+/// Aggregate limits for bytes a plugin creates through `luna.files.write` or
+/// `luna.fetch({ as: "file" })`. Host-owned files adopted for an export are
+/// exempt: they already belong to a save and can legitimately be much larger
+/// than a plugin-created intermediate file.
+public struct PluginScratchQuotas: Equatable, Sendable {
+    public var maxFiles: Int
+    public var maxBytes: Int
+
+    public init(maxFiles: Int = 256, maxBytes: Int = 32 * 1024 * 1024) {
+        self.maxFiles = max(0, maxFiles)
+        self.maxBytes = max(0, maxBytes)
+    }
+}
+
 /// Writes bytes into a scratch directory. `luna.fetch` with `as: "file"` uses
 /// it, so the fetch service can hand back a file without knowing where the
 /// plugin tier keeps one.
@@ -55,6 +69,37 @@ public protocol PluginScratchGenerating: AnyObject {
     /// Drops every directory this plugin ever kept. A load calls it, so a
     /// killed process's leftovers go before the new context serves a handle.
     func reapAll(pluginID: String)
+
+    /// Generation-qualified variants used by a runtime that can have an old
+    /// context draining while a replacement context is already active. The
+    /// defaults preserve source compatibility for small test fakes.
+    func openScratchGeneration(pluginID: String, generationID: String) -> String
+    func closeScratchGeneration(pluginID: String, generationID: String)
+    func currentScratchGeneration(pluginID: String, generationID: String) -> String
+    func hasOpenScratchGeneration(pluginID: String, generationID: String) -> Bool
+    func reapAll(pluginID: String, generationID: String)
+}
+
+public extension PluginScratchGenerating {
+    func openScratchGeneration(pluginID: String, generationID: String) -> String {
+        openScratchGeneration(pluginID: pluginID)
+    }
+
+    func closeScratchGeneration(pluginID: String, generationID: String) {
+        closeScratchGeneration(pluginID: pluginID)
+    }
+
+    func currentScratchGeneration(pluginID: String, generationID: String) -> String {
+        currentScratchGeneration(pluginID: pluginID)
+    }
+
+    func hasOpenScratchGeneration(pluginID: String, generationID: String) -> Bool {
+        hasOpenScratchGeneration(pluginID: pluginID)
+    }
+
+    func reapAll(pluginID: String, generationID: String) {
+        reapAll(pluginID: pluginID)
+    }
 }
 
 /// The per-generation scratch directories under
@@ -74,57 +119,99 @@ public final class PluginScratchStore:
 
     private let rootURL: URL
     private let fileManager: FileManager
+    private let quotas: PluginScratchQuotas
     private let lock = NSLock()
-    /// Plugin id → the open generation and how many holders it has.
-    private var generations: [String: (id: String, holders: Int)] = [:]
-    /// Descriptor id → the file it names.
-    private var files: [String: URL] = [:]
+    /// (Plugin id, runtime generation) → the open scratch directory and how
+    /// many calls/operations hold it. The runtime generation is deliberately
+    /// part of this key: a callback from a retired context must never close
+    /// or write into its replacement's directory.
+    private var generations: [GenerationKey: (id: String, holders: Int)] = [:]
+    /// Descriptor id → the file it names and any quota charge. Adopted
+    /// host files remain addressable but carry no plugin-created charge.
+    private var files: [String: ScratchFile] = [:]
 
-    public init(rootURL: URL, fileManager: FileManager = .default) {
+    private struct ScratchFile {
+        let url: URL
+        let pluginID: String
+        let chargedBytes: Int
+    }
+
+    private struct GenerationKey: Hashable {
+        let pluginID: String
+        let runtimeID: String
+    }
+
+    public init(
+        rootURL: URL, fileManager: FileManager = .default,
+        quotas: PluginScratchQuotas = PluginScratchQuotas()
+    ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
+        self.quotas = quotas
     }
 
     // MARK: - Generations
 
     public func openScratchGeneration(pluginID: String) -> String {
+        openScratchGeneration(pluginID: pluginID, generationID: "legacy")
+    }
+
+    public func openScratchGeneration(pluginID: String, generationID: String) -> String {
         lock.lock()
         defer { lock.unlock() }
-        if let open = generations[pluginID] {
-            generations[pluginID] = (open.id, open.holders + 1)
+        let key = GenerationKey(pluginID: pluginID, runtimeID: generationID)
+        if let open = generations[key] {
+            generations[key] = (open.id, open.holders + 1)
             return open.id
         }
-        let id = UUID().uuidString
-        generations[pluginID] = (id, 1)
+        // Runtime generations are also directory names. This makes a stale
+        // callback unable to accidentally recreate a fresh directory under a
+        // replacement context. Legacy callers retain opaque UUID directories.
+        let id = generationID == "legacy" ? UUID().uuidString : generationID
+        generations[key] = (id, 1)
         return id
     }
 
     public func closeScratchGeneration(pluginID: String) {
+        closeScratchGeneration(pluginID: pluginID, generationID: "legacy")
+    }
+
+    public func closeScratchGeneration(pluginID: String, generationID: String) {
+        let key = GenerationKey(pluginID: pluginID, runtimeID: generationID)
         lock.lock()
-        guard let open = generations[pluginID] else {
+        guard let open = generations[key] else {
             lock.unlock()
             return
         }
         guard open.holders <= 1 else {
-            generations[pluginID] = (open.id, open.holders - 1)
+            generations[key] = (open.id, open.holders - 1)
             lock.unlock()
             return
         }
-        generations[pluginID] = nil
+        generations[key] = nil
         lock.unlock()
         reap(pluginID: pluginID, generation: open.id)
     }
 
     public func currentScratchGeneration(pluginID: String) -> String {
+        currentScratchGeneration(pluginID: pluginID, generationID: "legacy")
+    }
+
+    public func currentScratchGeneration(pluginID: String, generationID: String) -> String {
         lock.lock()
         defer { lock.unlock() }
-        return generations[pluginID]?.id ?? Self.idleGeneration
+        return generations[GenerationKey(pluginID: pluginID, runtimeID: generationID)]?.id
+            ?? Self.idleGeneration
     }
 
     public func hasOpenScratchGeneration(pluginID: String) -> Bool {
+        hasOpenScratchGeneration(pluginID: pluginID, generationID: "legacy")
+    }
+
+    public func hasOpenScratchGeneration(pluginID: String, generationID: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return generations[pluginID] != nil
+        return generations[GenerationKey(pluginID: pluginID, runtimeID: generationID)] != nil
     }
 
     // MARK: - Writing
@@ -139,15 +226,30 @@ public final class PluginScratchStore:
     public func writeFile(
         _ data: Data, suggestedName: String, mime: String?, pluginID: String, generation: String
     ) throws -> PluginFileDescriptor {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == Self.idleGeneration || generations.contains(where: {
+            $0.key.pluginID == pluginID && $0.value.id == generation
+        }) else {
+            throw PluginScratchError.generationClosed
+        }
+        let usage = files.values.reduce(into: (files: 0, bytes: 0)) { usage, entry in
+            guard entry.pluginID == pluginID, entry.chargedBytes > 0,
+                  fileManager.fileExists(atPath: entry.url.path)
+            else { return }
+            usage.files += 1
+            usage.bytes += entry.chargedBytes
+        }
+        guard usage.files < quotas.maxFiles,
+              data.count <= quotas.maxBytes - min(usage.bytes, quotas.maxBytes)
+        else { throw PluginScratchError.quotaExceeded }
         let directory = directoryURL(pluginID: pluginID, generation: generation)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let name = Self.safeName(suggestedName)
         let id = UUID().uuidString
         let url = directory.appendingPathComponent("\(id)-\(name)")
         try data.write(to: url, options: .atomic)
-        lock.lock()
-        files[id] = url
-        lock.unlock()
+        files[id] = ScratchFile(url: url, pluginID: pluginID, chargedBytes: data.count)
         return PluginFileDescriptor(id: id, name: name, size: data.count, mime: mime)
     }
 
@@ -162,6 +264,13 @@ public final class PluginScratchStore:
         at url: URL, suggestedName: String? = nil, mime: String? = nil,
         pluginID: String, generation: String
     ) throws -> PluginFileDescriptor {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == Self.idleGeneration || generations.contains(where: {
+            $0.key.pluginID == pluginID && $0.value.id == generation
+        }) else {
+            throw PluginScratchError.generationClosed
+        }
         let directory = directoryURL(pluginID: pluginID, generation: generation)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let name = Self.safeName(suggestedName ?? url.lastPathComponent)
@@ -174,9 +283,7 @@ public final class PluginScratchStore:
         }
         let size = (try? fileManager.attributesOfItem(atPath: destination.path)[.size] as? Int)
             .flatMap { $0 } ?? 0
-        lock.lock()
-        files[id] = destination
-        lock.unlock()
+        files[id] = ScratchFile(url: destination, pluginID: pluginID, chargedBytes: 0)
         return PluginFileDescriptor(id: id, name: name, size: size, mime: mime)
     }
 
@@ -185,10 +292,10 @@ public final class PluginScratchStore:
     public func fileURL(for descriptor: PluginFileDescriptor) -> URL? {
         lock.lock()
         defer { lock.unlock() }
-        guard let url = files[descriptor.id],
-              fileManager.fileExists(atPath: url.path)
+        guard let file = files[descriptor.id],
+              fileManager.fileExists(atPath: file.url.path)
         else { return nil }
-        return url
+        return file.url
     }
 
     // MARK: - Reaping
@@ -198,18 +305,37 @@ public final class PluginScratchStore:
         try? fileManager.removeItem(
             at: directoryURL(pluginID: pluginID, generation: generation))
         lock.lock()
-        files = files.filter { fileManager.fileExists(atPath: $0.value.path) }
+        files = files.filter { fileManager.fileExists(atPath: $0.value.url.path) }
         lock.unlock()
     }
 
     /// Drops every directory this plugin ever kept. Called when the plugin is
     /// deleted, and at load to clear what a killed process left.
     public func reapAll(pluginID: String) {
+        lock.lock()
+        let hasOpen = generations.keys.contains { $0.pluginID == pluginID }
+        lock.unlock()
+        guard !hasOpen else { return }
         try? fileManager.removeItem(
             at: rootURL.appendingPathComponent(pluginID, isDirectory: true))
         lock.lock()
-        generations[pluginID] = nil
-        files = files.filter { fileManager.fileExists(atPath: $0.value.path) }
+        files = files.filter { fileManager.fileExists(atPath: $0.value.url.path) }
+        lock.unlock()
+    }
+
+    public func reapAll(pluginID: String, generationID: String) {
+        let key = GenerationKey(pluginID: pluginID, runtimeID: generationID)
+        lock.lock()
+        let open = generations[key]
+        lock.unlock()
+        // Never remove a directory still owned by a call or operation. This
+        // is what makes an old context safe to drain during reload.
+        guard open == nil else { return }
+        try? fileManager.removeItem(
+            at: rootURL.appendingPathComponent(pluginID, isDirectory: true)
+                .appendingPathComponent(generationID, isDirectory: true))
+        lock.lock()
+        files = files.filter { fileManager.fileExists(atPath: $0.value.url.path) }
         lock.unlock()
     }
 
@@ -221,5 +347,24 @@ public final class PluginScratchStore:
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.hasPrefix(".") ? String(trimmed.dropFirst()) : trimmed
         return name.isEmpty ? "file" : String(name.prefix(120))
+    }
+}
+
+public enum PluginScratchError: Error, Equatable, LocalizedError {
+    case generationClosed
+    case quotaExceeded
+
+    public var code: String {
+        switch self {
+        case .generationClosed: return "generation-closed"
+        case .quotaExceeded: return "quota-exceeded"
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .generationClosed: return "the plugin scratch generation is closed"
+        case .quotaExceeded: return "the plugin scratch quota was exceeded"
+        }
     }
 }

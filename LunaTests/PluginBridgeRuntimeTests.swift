@@ -369,6 +369,32 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertNotNil(scratch.fileURL(for: neighbour), "one plugin's reap leaves another's")
     }
 
+    func testScratchQuotaRejectsAtomicallyAndResetsAfterReaping() throws {
+        let scratch = PluginScratchStore(
+            rootURL: runner.containerURL.appendingPathComponent("scratch-quota"),
+            quotas: PluginScratchQuotas(maxFiles: 2, maxBytes: 5))
+        let generation = scratch.openScratchGeneration(pluginID: "p")
+        _ = try scratch.writeFile(
+            Data("abc".utf8), suggestedName: "a.txt", mime: nil,
+            pluginID: "p", generation: generation)
+        XCTAssertThrowsError(try scratch.writeFile(
+            Data("def".utf8), suggestedName: "b.txt", mime: nil,
+            pluginID: "p", generation: generation)) {
+                XCTAssertEqual($0 as? PluginScratchError, .quotaExceeded)
+            }
+        XCTAssertEqual(
+            (try? FileManager.default.contentsOfDirectory(
+                at: scratch.directoryURL(pluginID: "p", generation: generation),
+                includingPropertiesForKeys: nil).count),
+            1, "a rejected write must not leave a partial file")
+
+        scratch.closeScratchGeneration(pluginID: "p")
+        let replacement = scratch.openScratchGeneration(pluginID: "p")
+        XCTAssertNoThrow(try scratch.writeFile(
+            Data("12345".utf8), suggestedName: "full.txt", mime: nil,
+            pluginID: "p", generation: replacement))
+    }
+
     // MARK: - secrets
 
     func testASecretRoundTripsThroughTheKeychain() async throws {

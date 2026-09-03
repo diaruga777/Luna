@@ -1,0 +1,331 @@
+# Plugin authoring recovery — review findings and implementation plan
+
+## Status
+
+IN PROGRESS (2026-09-03). This plan reviews the plugin-platform commits from
+`5003896e3` (Wave 0) through `f6936331a` and adds the missing nontechnical
+authoring loop:
+
+```
+failed or supplied URL
+    -> bounded, sanitized evidence of what Luna tried
+    -> self-contained prompt copied to any free LLM chat
+    -> pasted draft plugin
+    -> isolated validation against the captured case
+    -> install, or copy a deterministic correction prompt and iterate
+```
+
+No LLM-provider API is part of the baseline. The product must work with an
+ordinary free ChatGPT/Claude/Gemini-style text box and the system clipboard or
+share sheet.
+
+## 1. Review findings
+
+### P0 — fix before describing generated plugins as safe or supported
+
+1. **Plugin diagnostics are not attached to their save.**
+   `LunaPluginRuntime/PluginDiagnostics.swift` has one global `saveRecorder`
+   property and says the ingest stage binds it, but no code assigns it.
+   `luna.log`, `luna.fetch` and runtime failures execute on the JavaScript
+   queue/callback queues where `SaveDiagnostics.recorder` is absent. The failed
+   save export therefore omits the most relevant plugin evidence. Merely
+   assigning the global property would mix concurrent saves. Correlation must
+   be per invocation and must survive asynchronous bridge callbacks.
+
+2. **Import is neither executable-validation-first nor transactional.**
+   `PluginImporter.install` commits the new source, calls `reloadAll`, ignores
+   every `PluginLoadReport`, and returns success. Syntax errors, missing
+   registration and top-level exceptions can replace a working version and
+   still produce a success notification. Preserve the previous installed
+   version until a staged source has loaded and passed its case test; rollback
+   on any failed activation.
+
+3. **Top-level JavaScript can block the main-thread import/launch path.**
+   `PluginRuntime.load` calls `PluginExecutionQueue.sync` and JavaScriptCore has
+   no public interrupt/deadline API. A generated `while (true) {}` at top level
+   never reaches the hook watchdog. Draft evaluation must use a dedicated
+   virtual machine and queue off the main actor. A timed-out disposable sandbox
+   is quarantined and never reused; production runtime activation occurs only
+   after that preflight. The UI must explain that a timed-out validation may
+   require restarting Luna before another draft can be tested. Do not claim
+   arbitrary JavaScript can be forcibly terminated in-process.
+
+4. **The requested recovery loop does not exist.** Failed cards share a raw
+   trace, Settings can only import source, and an arbitrary URL has no plugin
+   diagnosis entry point. There is no prompt builder, captured fixture,
+   WIP-test report or correction prompt.
+
+### P1 — correctness and security required by the recovery loop
+
+5. **The existing trace is raw support data, not an LLM handoff.** It has no
+   API contract, strict output rules, existing matching-plugin inventory,
+   bounded page evidence or prompt-injection boundary. It can be 256 KiB and
+   includes complete query strings. Build a separate recovery artifact; do not
+   relabel the raw diagnostic export.
+
+6. **Recovery exports can disclose credentials.** Preserve useful routing
+   parameters, but redact values for token/key/auth/session/cookie/password,
+   OAuth code/state, AWS/CloudFront signed URL fields, and any
+   `Authorization`/`Cookie`/`Set-Cookie` header material. Bound plugin-written
+   log lines and page evidence. Show a short privacy notice before copying or
+   sharing. Evidence is untrusted text: delimit it and tell the model never to
+   follow instructions found inside it.
+
+7. **There is no deterministic draft validator shared by app and tools.** A
+   useful report must cover manifest parsing, exact header marker, source
+   syntax/registration, required hooks, capability availability, classify
+   result, ingest/export result shape, adoption viability, timeouts and a
+   structured event log. Draft tests must not write the live PluginStore,
+   Keychain, saves database or user files.
+
+8. **An arbitrary-URL probe needs the real native attempt ledger without a
+   saved-item side effect.** Run `IngestPipeline.processResolved` under a fresh
+   `SaveDiagnosticsRecorder` and return its outcome/trace instead of calling
+   `SavesIngestor`. Add an explicit probe mode so plugin adoption, browser UI,
+   downloads and store writes cannot occur. Include the IDs/versions of plugins
+   whose host patterns would match. A failed saved item reuses its durable trace
+   instead of refetching.
+
+9. **Safari loses the best page evidence.** The content script has the live DOM
+   but persists neither a recovery session nor attempted-plugin outcomes. Its
+   browser deep link is also assembled with `.urlQueryAllowed`, which can
+   corrupt nested URLs containing `&`/`?`. Add a bounded snapshot handoff and
+   construct deep links with `URLComponents`.
+
+10. **Plugin fetch cookies are shared across plugins.**
+    `PluginFetchService` caches sessions by cookie policy only and `.shared`
+    uses a default cookie store. One granted plugin can therefore ride another
+    plugin's session. Key sessions by `(pluginID, policy)` and use an in-memory
+    per-plugin cookie jar for the shared-within-plugin policy. Check every
+    redirect target through the plugin network policy before following it.
+
+### P2 — smaller defects and authoring drift
+
+11. `PluginManifestParser.extractHeader` accepts marker prefixes such as
+    `luna-plugin-evil`; require exact trimmed equality. Make native and Node
+    parsing agree.
+12. Deleting a plugin removes its files and KV rows but leaves Keychain
+    secrets. Add `PluginSecretsStore.removeAll(pluginID:)` and call it from the
+    catalog deletion path.
+13. `tools/plugin-sim/run.mjs` has no pass/fail validation command, structured
+    report, process-level timeout, export-hook path or realistic response
+    fixtures. The README openly permits hangs.
+14. Authoring documentation is stale: the skill says multipart cannot carry a
+    `FileHandle` although it now can; it omits `env.languages`; the simulator
+    README says `luna.browser` is absent although it installs an unavailable
+    stub; and README `_status` prose is malformed.
+15. The import action-sheet anchor may be nil/zero on iPad. Fall back to the
+    presenter's view and bounds.
+16. Safari page snapshots and `luna.page.html()` are unbounded. Apply the same
+    documented byte/character ceiling used by the recovery fixture and expose
+    a `truncated` signal.
+
+## 2. Product contract
+
+### 2.1 Entry points
+
+- A failed-save card and its long-press menu offer **Create Plugin…** whenever
+  the central Luna app has plugin authoring available. Existing **Share
+  Diagnostics…** remains available as support tooling.
+- Settings -> Plugins adds **Create for Website…** beside Add. It accepts an
+  `http`/`https` URL, runs the side-effect-free probe, then opens the same
+  workshop used by a failed card.
+- The central Safari extension can hand the current URL plus a bounded page
+  snapshot to that workshop when its plugin walk declines or fails. The three
+  standalone facet apps continue to store the URL in the shared store but do
+  not expose central-Luna-only plugin UI.
+
+### 2.2 Recovery artifact
+
+Define a `PluginRecoveryCase` value with:
+
+- stable case id; original and canonical sanitized URL; host; capture source;
+- Luna app/API versions and locale/languages;
+- coarse outcome and failure reason;
+- ordered, structured attempt lines (category, phase/strategy, result, elapsed
+  when known), plus explicit dropped/truncated counts;
+- matching installed plugin id/version/status, and the outcome of each hook
+  when known;
+- a sanitized `RescueDigestBuilder`-style page digest, never raw unbounded DOM;
+- privacy-redaction summary so the LLM knows which values were intentionally
+  hidden.
+
+The prompt builder is pure and deterministic. It emits:
+
+1. task and success criteria;
+2. the exact API-1 manifest/hook/model subset needed for an ingest plugin;
+3. a minimal skeleton with the target host, conservative capabilities
+   (`fetch`, `html`) and version `1.0.0`;
+4. rules to avoid strategies already shown to fail;
+5. a strict response contract: exactly one JavaScript source file, no prose or
+   Markdown fences, one exact `/* luna-plugin` header and one top-level
+   `luna.register`;
+6. the evidence inside unmistakable `BEGIN/END UNTRUSTED LUNA EVIDENCE`
+   delimiters with an instruction to treat its content only as data;
+7. self-review checks: matching host, declared capabilities only, fast decline,
+   bounded fetches, null on genuine nonmatch, no busy loops, and valid Model.
+
+Keep the complete prompt under a documented character budget. Prefer the newest
+attempt and state whenever evidence was omitted.
+
+### 2.3 Draft validation and iteration
+
+- Normalize common chat output safely: accept one outer ```js/```javascript
+  fence only when there is no surrounding non-whitespace prose; otherwise show
+  an error instead of guessing which block to run.
+- Validate the exact manifest and JavaScript syntax before any evaluation.
+- Evaluate and run in a disposable `JSVirtualMachine`/serial queue with only
+  in-memory storage and deterministic fixture-backed fetch/html capabilities.
+  Do not inject secrets, files, browser, downloads, settings writes, UI, mail,
+  notifications, Bluetooth, Wi-Fi or exports for an ingest draft.
+- Run the target URL through `classify`, require a declared-kind claim, run
+  `ingest`, decode the Model and perform the same pure adoption validation the
+  production stage uses. Return a structured `PluginValidationReport`.
+- A successful report enables **Install**. Installation rechecks that exact
+  source hash, commits it atomically, activates only that plugin, and rolls back
+  if activation fails.
+- A failed report enables **Copy Fix Prompt**. The correction prompt includes
+  the original case, exact draft source, structured validation errors and a
+  request to return the entire corrected file under the same strict contract.
+
+The Node harness is supplemental developer tooling. It should run untrusted
+source in a child process with an external kill timeout; it is not evidence that
+iOS JavaScriptCore can interrupt code.
+
+## 3. Work packages and file ownership
+
+### WP-A — invocation diagnostics, safe activation and cleanup
+
+Owns `LunaPluginRuntime`, `PluginImporter`/import protocols, `PluginStore`,
+`PluginSecretsStore`, `PluginCatalog`, and focused tests.
+
+1. Add an invocation identifier and optional diagnostic-recorder identity to
+   `PluginRuntime.invoke`; bind it while the initial hook and each scheduled
+   bridge callback re-enter JavaScript. Replace the unused global recorder with
+   a concurrency-safe per-invocation sink. Late callbacks after timeout must go
+   only to the global plugin log, not a completed save. Prove two overlapping
+   saves do not cross-write.
+2. Add source syntax checking and a disposable-runtime preflight contract.
+   Never execute draft code on `MainActor`. Quarantine a sandbox whose top
+   level times out. Keep production runtime/load behavior explicit about its
+   unavoidable non-interruptibility.
+3. Stage activation so `install` reports validation/load failure, restores the
+   previous version/state, and only notifies the UI after the new context is
+   loaded. Do not call `reloadAll` when one plugin changed.
+4. Require exact `luna-plugin` marker text.
+5. Delete all per-plugin Keychain secrets when an imported plugin is deleted.
+6. Add tests: correlated sync/async logs, overlap, late callback, syntax error,
+   top-level exception, missing register/hook, failed update rollback, exact
+   marker, and secret cleanup.
+
+### WP-B — recovery case, sanitization, prompt builder and native probe
+
+Owns new Foundation types in `LunaPluginKit`/`LunaPluginIngest`, the explicit
+probe parameter in `IngestPipeline`, and focused tests. It does not edit UIKit.
+
+1. Implement `PluginRecoveryCase`, bounded attempt/page evidence and stable
+   JSON/text serialization.
+2. Implement contextual redaction without destroying ordinary route/query
+   structure; test bearer tokens, cookies, signed URLs, percent encoding,
+   multiline injection and truncation.
+3. Implement deterministic initial and correction prompt builders with the
+   contract in section 2.2. Unit tests assert required sections, exact fences,
+   character budget and absence of secrets.
+4. Implement a side-effect-free native URL probe that binds a recorder, runs
+   the real classifier/fetch/bypass paths, reports matched plugins separately,
+   and cannot adopt plugin Models, present browser UI, persist saves or start
+   downloads.
+5. Reuse `RescueDigestBuilder`; do not invent a second HTML summarizer.
+
+### WP-C — process-bounded developer harness and doc parity
+
+Owns `tools/plugin-sim`, author docs/skill and its Node tests/fixtures.
+
+1. Add `validate` and `test` commands with JSON output and nonzero exit status.
+   A parent process launches the evaluator child and kills it at the deadline.
+2. Support classify/ingest and export test inputs. Fixture metadata can express
+   status, headers, final URL/redirect, body and transport error. Enforce native
+   source/body/storage limits where the harness claims parity.
+3. Use the exact header marker and share validation error codes/shapes with the
+   app contract where feasible.
+4. Correct multipart `file`, `env.languages`, `_status`, browser-stub and hang
+   documentation. Document the clipboard workshop and correction loop.
+
+### WP-D — workshop UI and failed-card/manual-URL integration
+
+Starts after WP-A and WP-B merge. Owns `LunaPluginUI`,
+`PluginsSettingsCategory`, `FailedSaveCardFactory`, `FailedSaveCardActions`,
+localized strings, staging screens and UI tests.
+
+1. Build one workshop screen/state machine: URL/evidence -> Copy/Share Prompt ->
+   paste draft -> Validate -> Install or Copy Fix Prompt. Preserve text and
+   report across backgrounding and failed validation.
+2. Wire failed saves to their stored trace and Settings to the native URL probe.
+   Copy uses `UIPasteboard`; share writes a real `.txt` file and uses an
+   iPad-safe popover anchor. Present the privacy notice before either action.
+3. Keep the raw diagnostic export as a separately named support action.
+4. Normalize a single code fence and show actionable line/field errors.
+5. Fix the import coordinator's fallback popover anchor.
+6. Add behavior tests for entry points, state transitions, copy/share, invalid
+   URLs, no-trace cases, validation failure, correction prompt and successful
+   transactional install. Add Stage variants for each meaningful state.
+
+### WP-E — Safari recovery handoff and bounded snapshots
+
+Starts after WP-B. Owns central `LunaSafari` plugin messages/resources, deep-link
+handling, recovery-session persistence and Safari tests.
+
+1. Cap the snapshot once and carry `{html/digest, truncated}` consistently to
+   `page` hooks and the recovery case.
+2. Persist a bounded recovery handoff containing current URL, page digest and
+   ordered plugin outcomes when the walk exhausts.
+3. Build every nested deep link with `URLComponents`; test URLs containing
+   `?`, `&`, `+`, fragments and Unicode.
+4. Open the central Luna workshop for the handoff. If the app is unavailable,
+   keep ordinary save behavior intact.
+
+### WP-F — cookie isolation and redirect policy
+
+May run beside WP-D/E after WP-A. Owns `PluginFetchService` and fetch tests/docs.
+
+1. Key sessions by plugin id and cookie policy. A plugin's default cookie jar
+   is reusable by that plugin for the process but invisible to other plugins.
+2. Recheck every redirect URL before following it. Preserve manual redirect
+   semantics and return a stable `network-refused` error for a denied target.
+3. Add tests proving no cross-plugin cookie flow and no redirect-policy bypass.
+
+## 4. Merge and verification order
+
+1. Commit this plan on the integration branch.
+2. Run WP-A, WP-B and WP-C in parallel in worktrees based on the plan commit.
+3. Merge A -> B -> C; resolve shared protocol/doc conflicts centrally.
+4. Run WP-D, WP-E and WP-F against the merged branch; merge F -> E -> D.
+5. Run `npm ci && npm run spec` plus the new simulator tests.
+6. Run targeted Xcode tests for every new class, then
+   `xcodebuild build-for-testing -scheme Luna -destination
+   'generic/platform=iOS Simulator'`.
+7. Run the full `LunaTests` suite on an iOS 26.2 simulator. The expected result
+   before this work is 904 tests, 2 intentional skips, 0 failures; document any
+   intentional count change.
+8. Update `claudedocs/plugins.md`, `claudedocs/save-diagnostics.md`,
+   `docs/plugins/README.md`, `docs/plugins/api.md`, the author skill and
+   `tools/plugin-sim/luna-plugin.d.ts` so every shipped contract agrees.
+9. Mark this status COMPLETE only after all packages are merged and verified,
+   then merge the integration branch into `main` and delete every task worktree
+   and branch.
+
+## 5. Definition of done
+
+- A nontechnical user can start with either a failed save or an arbitrary URL,
+  copy one prompt into a free LLM chat, paste its reply back, and reach a clear
+  pass/fail result without reading developer docs.
+- Failure evidence says what Luna and matching plugins already tried, is
+  bounded, is invocation-correct under concurrency, and does not contain known
+  credential material.
+- A draft cannot replace a working plugin until validation and explicit consent
+  succeed. A failed activation restores the prior version.
+- A bad or nonterminating draft does not block the main actor or production
+  plugin runtime. The unavoidable JavaScriptCore limitation is stated honestly.
+- A failed draft yields a correction prompt sufficient for a blind copy/paste
+  iteration; no paid API or in-app LLM account is required.
+- App, Safari and Node contracts agree, and the full test suite is green.

@@ -31,6 +31,24 @@ public final class WriterSettingsViewController: NavHeaderTableController {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
+    /// The screen was unreachable — nothing constructed it (organiser #33).
+    /// Presents a form sheet on a wide container (an iPad-sized secondary
+    /// column counts as compact for this purpose, so this reads the actual
+    /// presenter, not the device), pushes onto an existing nav stack on a
+    /// compact one, and falls back to a full sheet with neither.
+    public static func present(from presenter: UIViewController, environment: LibraryEnvironment) {
+        let controller = WriterSettingsViewController(environment: environment)
+        if LunaLayout.isWide(containerWidth: presenter.view.bounds.width) {
+            let nav = UINavigationController(rootViewController: controller)
+            nav.modalPresentationStyle = .formSheet
+            presenter.present(nav, animated: true)
+        } else if let navigationController = presenter.navigationController {
+            navigationController.pushViewController(controller, animated: true)
+        } else {
+            presenter.present(UINavigationController(rootViewController: controller), animated: true)
+        }
+    }
+
     public override func viewDidLoad() {
         headerTitle = L10n.string("Common_settings")
         super.viewDidLoad()
@@ -38,6 +56,14 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         readAlongRows = Self.readAlongRows(for: environment.readAlongSettings)
         NotificationCenter.default.addObserver(
             self, selector: #selector(settingsDidChange), name: WriterSettings.didChange, object: nil)
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Recount on every appearance rather than on every settings change —
+        // a snapshot can be added or restored elsewhere while this screen is
+        // off screen (organiser #35).
+        cachedSnapshotCount = nil
     }
 
     @objc private func settingsDidChange() { tableView.reloadData() }
@@ -97,14 +123,9 @@ public final class WriterSettingsViewController: NavHeaderTableController {
 
     public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        // Font / line width / focus mode select through their own `UIMenu`
+        // button (organiser #12); the row itself does nothing on tap.
         switch visibleSections[indexPath.section] {
-        case .editor:
-            switch EditorRow.allCases[indexPath.row] {
-            case .font: presentFontMenu()
-            case .lineWidth: presentLineWidthMenu()
-            case .focusMode: presentFocusModeMenu()
-            default: break
-            }
         case .readAlong:
             if readAlongRows[indexPath.row] == .calibrate {
                 environment.readAlongSettings?.presentCalibration(from: self)
@@ -118,10 +139,11 @@ public final class WriterSettingsViewController: NavHeaderTableController {
     private func editorCell(for row: EditorRow) -> UITableViewCell {
         switch row {
         case .font:
-            return valueCell(
+            return menuCell(
                 title: L10n.string("WriterLibrary_settings_fontRow"),
                 value: environment.settings.fontIdentifier?.capitalized
-                    ?? L10n.string("Settings_readerFont_system"))
+                    ?? L10n.string("Settings_readerFont_system"),
+                menu: fontMenu())
         case .fontSize:
             return stepperCell(
                 title: L10n.string("WriterLibrary_settings_fontSizeRow"),
@@ -130,13 +152,15 @@ public final class WriterSettingsViewController: NavHeaderTableController {
                 self?.environment.settings.fontSize = newValue
             }
         case .lineWidth:
-            return valueCell(
+            return menuCell(
                 title: L10n.string("WriterLibrary_settings_lineWidthRow"),
-                value: lineWidthDisplayName(environment.settings.lineWidth))
+                value: lineWidthDisplayName(environment.settings.lineWidth),
+                menu: lineWidthMenu())
         case .focusMode:
-            return valueCell(
+            return menuCell(
                 title: L10n.string("WriterLibrary_settings_focusModeRow"),
-                value: focusModeDisplayName(environment.settings.focusMode))
+                value: focusModeDisplayName(environment.settings.focusMode),
+                menu: focusModeMenu())
         case .syntaxColouring:
             return switchCell(
                 title: L10n.string("WriterLibrary_settings_syntaxColouringRow"),
@@ -171,40 +195,42 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         }
     }
 
-    private func presentFontMenu() {
-        let alert = UIAlertController(title: L10n.string("WriterLibrary_settings_fontRow"), message: nil, preferredStyle: .actionSheet)
-        for font in ReaderFont.allCases {
-            alert.addAction(UIAlertAction(title: font.displayName, style: .default) { [weak self] _ in
+    // A `UIMenu` on the row's own button, never an action sheet — an action
+    // sheet with no popover anchor crashes on iPad (organiser #12).
+    private func fontMenu() -> UIMenu {
+        UIMenu(children: ReaderFont.allCases.map { font in
+            UIAction(
+                title: font.displayName,
+                state: font.rawValue == environment.settings.fontIdentifier ? .on : .off
+            ) { [weak self] _ in
                 self?.environment.settings.fontIdentifier = font.rawValue
                 self?.tableView.reloadData()
-            })
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        present(alert, animated: true)
+            }
+        })
     }
 
-    private func presentLineWidthMenu() {
-        let alert = UIAlertController(title: L10n.string("WriterLibrary_settings_lineWidthRow"), message: nil, preferredStyle: .actionSheet)
-        for value in EditorLineWidth.allCases {
-            alert.addAction(UIAlertAction(title: lineWidthDisplayName(value), style: .default) { [weak self] _ in
+    private func lineWidthMenu() -> UIMenu {
+        UIMenu(children: EditorLineWidth.allCases.map { value in
+            UIAction(
+                title: lineWidthDisplayName(value),
+                state: value == environment.settings.lineWidth ? .on : .off
+            ) { [weak self] _ in
                 self?.environment.settings.lineWidth = value
                 self?.tableView.reloadData()
-            })
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        present(alert, animated: true)
+            }
+        })
     }
 
-    private func presentFocusModeMenu() {
-        let alert = UIAlertController(title: L10n.string("WriterLibrary_settings_focusModeRow"), message: nil, preferredStyle: .actionSheet)
-        for value in FocusMode.allCases {
-            alert.addAction(UIAlertAction(title: focusModeDisplayName(value), style: .default) { [weak self] _ in
+    private func focusModeMenu() -> UIMenu {
+        UIMenu(children: FocusMode.allCases.map { value in
+            UIAction(
+                title: focusModeDisplayName(value),
+                state: value == environment.settings.focusMode ? .on : .off
+            ) { [weak self] _ in
                 self?.environment.settings.focusMode = value
                 self?.tableView.reloadData()
-            })
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        present(alert, animated: true)
+            }
+        })
     }
 
     // MARK: - Read-along section
@@ -246,20 +272,53 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         }
     }
 
-    /// Every kept snapshot across every non-trashed sheet.
+    /// Every kept snapshot across every non-trashed sheet. Cached for the
+    /// screen's appearance: `settingsDidChange` reloads the whole table on
+    /// any editor/read-along toggle, and re-querying every sheet's snapshots
+    /// on each of those was wasted work for a row nothing on this screen
+    /// changes (organiser #35).
+    private var cachedSnapshotCount: Int?
+
     private func totalSnapshotCount() -> Int {
+        if let cachedSnapshotCount { return cachedSnapshotCount }
         let documents = (try? environment.library.documents(matching: FilterPredicate(), scope: nil)) ?? []
-        return documents.reduce(0) { total, document in
+        let count = documents.reduce(0) { total, document in
             total + ((try? environment.snapshots.snapshots(for: document.id).count) ?? 0)
         }
+        cachedSnapshotCount = count
+        return count
     }
 
     // MARK: - Appearance / About
 
+    /// The same System / Light / Dark chooser the other Luna apps show in
+    /// Settings → Appearance, reached here because that screen lives in the
+    /// app target and this module cannot import it (organiser #34).
     private func appearanceCell() -> UITableViewCell {
-        valueCell(
-            title: L10n.string("Settings_appearance_title"),
-            value: AppearanceSettings.interfaceStyle.displayName)
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        cell.backgroundColor = LunaColors.secondaryBackground
+        let control = UISegmentedControl(
+            items: AppearanceSettings.InterfaceStyle.allCases.map(\.displayName))
+        control.selectedSegmentIndex =
+            AppearanceSettings.InterfaceStyle.allCases.firstIndex(of: AppearanceSettings.interfaceStyle) ?? 0
+        control.addTarget(self, action: #selector(interfaceStyleChanged(_:)), for: .valueChanged)
+        control.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(control)
+        NSLayoutConstraint.activate([
+            control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            control.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            control.topAnchor.constraint(greaterThanOrEqualTo: cell.contentView.topAnchor, constant: 8),
+            control.bottomAnchor.constraint(lessThanOrEqualTo: cell.contentView.bottomAnchor, constant: -8),
+        ])
+        return cell
+    }
+
+    @objc private func interfaceStyleChanged(_ control: UISegmentedControl) {
+        let styles = AppearanceSettings.InterfaceStyle.allCases
+        AppearanceSettings.interfaceStyle = styles[max(0, min(control.selectedSegmentIndex, styles.count - 1))]
+        if let window = view.window { AppearanceSettings.apply(to: window) }
     }
 
     private func aboutCell() -> UITableViewCell {
@@ -275,6 +334,29 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         cell.detailTextLabel?.text = value
         cell.detailTextLabel?.textColor = LunaColors.secondaryText
         cell.backgroundColor = LunaColors.secondaryBackground
+        return cell
+    }
+
+    /// A row whose value is set from a `UIMenu` on its own trailing button —
+    /// never a presented action sheet, which needs a popover anchor UIKit
+    /// does not supply here and crashes on iPad (organiser #12).
+    private func menuCell(title: String, value: String, menu: UIMenu) -> UITableViewCell {
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
+        cell.textLabel?.text = title
+        cell.backgroundColor = LunaColors.secondaryBackground
+        cell.selectionStyle = .none
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = value
+        configuration.image = UIImage(systemName: "chevron.up.chevron.down")
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 4
+        configuration.baseForegroundColor = LunaColors.secondaryText
+        configuration.contentInsets = .zero
+        let button = UIButton(configuration: configuration)
+        button.menu = menu
+        button.showsMenuAsPrimaryAction = true
+        button.sizeToFit()
+        cell.accessoryView = button
         return cell
     }
 

@@ -14,6 +14,10 @@ public protocol SentenceEmbedding: AnyObject {
 /// is missing for the language, and the index then runs on FTS alone.
 public final class NLSentenceEmbedding: SentenceEmbedding {
     private let embedding: NLEmbedding
+    /// `NLEmbedding.vector(for:)`'s thread safety is undocumented, and this
+    /// tier calls it from the database queue, the editor's mention lookup and
+    /// the router — all different threads. One queue serialises every call.
+    private let queue = DispatchQueue(label: "com.hsanabria.luna.writerSentenceEmbedding")
     public let modelVersion: String
     public var dimensions: Int { embedding.dimension }
 
@@ -25,8 +29,11 @@ public final class NLSentenceEmbedding: SentenceEmbedding {
 
     public func vector(for text: String) -> [Float]? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let values = embedding.vector(for: trimmed) else { return nil }
-        let floats = values.map(Float.init)
-        return floats.allSatisfy(\.isFinite) ? floats : nil
+        guard !trimmed.isEmpty else { return nil }
+        return queue.sync {
+            guard let values = embedding.vector(for: trimmed) else { return nil }
+            let floats = values.map(Float.init)
+            return floats.allSatisfy(\.isFinite) ? floats : nil
+        }
     }
 }

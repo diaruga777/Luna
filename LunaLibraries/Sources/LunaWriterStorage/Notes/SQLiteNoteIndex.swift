@@ -25,12 +25,20 @@ public struct NoteQuery: Equatable, Sendable {
 }
 
 public protocol NoteIndexing: AnyObject {
+    /// Throws `NoteIndexMissingRowError` if `note.id` has no row in `notes`
+    /// yet — an embedding written against a phantom id could never be read
+    /// back by anything joining through the real row.
     func index(_ note: WriterNote) throws
     func remove(_ id: NoteID) throws
     func search(_ query: NoteQuery) throws -> [NoteHit]
     /// Pen's continuous matcher: what the text under the caret is about.
     func related(to windowText: String, in document: DocumentID, limit: Int) throws -> [NoteHit]
     func rebuild() throws
+}
+
+/// `index(_:)` was asked to index a note whose row `notes` does not have.
+public struct NoteIndexMissingRowError: Error, Equatable {
+    public let id: NoteID
 }
 
 /// `notes_fts` (external content over `notes`, kept in step by triggers) plus
@@ -60,22 +68,12 @@ public final class SQLiteNoteIndex: NoteIndexing {
 
     // MARK: - Maintenance
 
+    /// `notes_fts`'s own triggers keep it exact whenever `notes.text`
+    /// changes, so indexing only ever has embeddings left to write.
     public func index(_ note: WriterNote) throws {
         let vector = embedding?.vector(for: note.text)
         try database.transaction { db in
-            try Self.refreshFTS(for: note.id, in: db)
-            guard let vector, let embedding = self.embedding else { return }
-            try db.run(
-                "INSERT INTO note_embeddings (note_id, model_version, dims, vector)"
-                + " VALUES (?, ?, ?, ?) ON CONFLICT(note_id) DO UPDATE SET"
-                + " model_version = excluded.model_version, dims = excluded.dims,"
-                + " vector = excluded.vector"
-            ) { statement in
-                try statement.bind(1, note.id.rawValue.uuidString)
-                try statement.bind(2, embedding.modelVersion)
-                try statement.bind(3, vector.count)
-                try statement.bind(4, blob: VectorBlob.encode(vector))
-            }
+            try Self.applyEmbedding(vector, for: note.id, embedding: self.embedding, in: db)
         }
     }
 
@@ -93,6 +91,10 @@ public final class SQLiteNoteIndex: NoteIndexing {
         }
     }
 
+    /// Repairs a drifted index from `notes` itself. The embedding half is
+    /// skipped — never destroyed — when this index has no embedding model:
+    /// a build without on-device embeddings must not erase vectors a later
+    /// build with the model could still use.
     public func rebuild() throws {
         var notes: [(NoteID, String)] = []
         try database.perform { db in
@@ -103,27 +105,37 @@ public final class SQLiteNoteIndex: NoteIndexing {
         }
         try database.transaction { db in
             try db.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+            guard let embedding else { return }
             try db.execute("DELETE FROM note_embeddings")
-        }
-        guard embedding != nil else { return }
-        for (id, text) in notes {
-            try index(WriterNote(id: id, text: text))
+            for (id, text) in notes {
+                try Self.applyEmbedding(embedding.vector(for: text), for: id, embedding: embedding, in: db)
+            }
         }
     }
 
-    /// The insert trigger already indexed the note; re-indexing removes that
-    /// row first so a re-index cannot leave two copies behind.
-    private static func refreshFTS(for id: NoteID, in db: WriterDatabase) throws {
-        try db.run(
-            "INSERT INTO notes_fts(notes_fts, rowid, text)"
-            + " SELECT 'delete', rowid, text FROM notes WHERE id = ?"
-        ) { statement in
+    /// Writes (or clears) one note's embedding row. Throws when `id` has no
+    /// row in `notes`: `note_embeddings.note_id` references it, so a write
+    /// against a missing row would only surface as an opaque foreign-key
+    /// failure instead of naming the note.
+    private static func applyEmbedding(
+        _ vector: [Float]?, for id: NoteID, embedding: SentenceEmbedding?, in db: WriterDatabase
+    ) throws {
+        guard try db.scalarInt("SELECT 1 FROM notes WHERE id = ?", { statement in
             try statement.bind(1, id.rawValue.uuidString)
+        }) != nil else {
+            throw NoteIndexMissingRowError(id: id)
         }
+        guard let vector, let embedding else { return }
         try db.run(
-            "INSERT INTO notes_fts(rowid, text) SELECT rowid, text FROM notes WHERE id = ?"
+            "INSERT INTO note_embeddings (note_id, model_version, dims, vector)"
+            + " VALUES (?, ?, ?, ?) ON CONFLICT(note_id) DO UPDATE SET"
+            + " model_version = excluded.model_version, dims = excluded.dims,"
+            + " vector = excluded.vector"
         ) { statement in
             try statement.bind(1, id.rawValue.uuidString)
+            try statement.bind(2, embedding.modelVersion)
+            try statement.bind(3, vector.count)
+            try statement.bind(4, blob: VectorBlob.encode(vector))
         }
     }
 
@@ -137,23 +149,29 @@ public final class SQLiteNoteIndex: NoteIndexing {
             ? embedding?.vector(for: query.text) : nil
 
         var sql = """
-            SELECT n.id, snippet(notes_fts, 0, '', '', '…', 12), bm25(notes_fts), e.vector, e.dims
+            SELECT n.id, snippet(notes_fts, 0, '', '', '…', 12), bm25(notes_fts) AS rank,
+                e.vector, e.dims
             FROM notes_fts
             JOIN notes n ON n.rowid = notes_fts.rowid
             LEFT JOIN note_embeddings e ON e.note_id = n.id
             WHERE notes_fts MATCH ?
             """
+        var scopeDocumentID: String?
         if case .document(let id) = query.scope {
-            sql += " AND n.id IN (SELECT note_id FROM note_documents WHERE document_id = '"
-                + id.rawValue.uuidString + "')"
+            sql += " AND n.id IN (SELECT note_id FROM note_documents WHERE document_id = ?)"
+            scopeDocumentID = id.rawValue.uuidString
         }
-        sql += " ORDER BY bm25(notes_fts) ASC LIMIT ?"
+        sql += " ORDER BY rank ASC LIMIT ?"
 
         var hits: [(hit: NoteHit, rank: Int)] = []
         try database.perform { db in
             try db.query(sql, { statement in
-                try statement.bind(1, match)
-                try statement.bind(2, max(1, query.limit * Self.candidateMultiplier))
+                var index: Int32 = 1
+                try statement.bind(index, match); index += 1
+                if let scopeDocumentID {
+                    try statement.bind(index, scopeDocumentID); index += 1
+                }
+                try statement.bind(index, max(1, query.limit * Self.candidateMultiplier))
             }, row: { row in
                 guard let uuid = row.uuid(0) else { return }
                 let bm25 = row.double(2) ?? 0

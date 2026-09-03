@@ -15,6 +15,7 @@ import LunaWriterVoice
     private static var storage: WriterStorageStack?
     private static let openSessions = OpenSessionRegistry()
     private static var editorMaker: WriterEditorMaker?
+    private static var readAlong: WriterReadAlongChrome?
     private static weak var root: LibraryRootViewController?
     /// A sheet asked for before the window existed (a deep link or an intent
     /// that launched the app); shown by the first root.
@@ -54,11 +55,13 @@ import LunaWriterVoice
         let maker = WriterEditorMaker(
             storage: stack, registry: openSessions, aiAssistant: makeAIAssistant())
         editorMaker = maker
+        let readAlong = WriterReadAlongChrome(storage: stack)
+        self.readAlong = readAlong
         let environment = LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
             settings: stack.settings, editorMaker: maker,
-            readAlongChrome: nil, readAlongSettings: nil, noteRelevance: nil,
+            readAlongChrome: readAlong, readAlongSettings: readAlong, noteRelevance: nil,
             libraryRootPath: stack.libraryRoot.path)
         let root = LibraryRootViewController(environment: environment)
         self.root = root

@@ -1254,3 +1254,10 @@
 "PluginCapability_storage_Luna" = "Save its own settings and data.";
 "PluginCapability_ui_Luna" = "Show prompts, menus and the share sheet.";
 "PluginCapability_wifi_Luna" = "Join a Wi-Fi network it names.";
+
+// Luna Writer — storage (claudedocs/plans/writer-app.md)
+"WriterStorage_inboxGroupName_Luna" = "Inbox";
+"WriterStorage_trashGroupName_Luna" = "Trash";
+"WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
+"WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a sheet. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the sheet. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a sheet aloud and Luna marks what you say about it.\n\nYour sheets are plain .md files in Files, under Luna Writer › Library.";

@@ -18,15 +18,32 @@ public final class SyntaxColourLayer: RenderingAttributeLayer, POSTaggingObservi
 
     private let service: POSTaggingService
     private let storage: MarkdownTextStorage
-    /// Tags by the paragraph's start offset.
-    private var tags: [Int: [POSSpan]] = [:]
+
+    /// Tags by the paragraph's own text, offset-relative to its own start.
+    /// Content survives an earlier paragraph's edit shifting this one's
+    /// offset, so an untouched paragraph is never retagged just because
+    /// something before it changed.
+    private var tags: [String: [POSSpan]] = [:]
+    /// Content currently awaiting an answer, so a paragraph is asked for at
+    /// most once no matter how many render passes see it before that answer
+    /// lands.
+    private var requestedBodies: Set<String> = []
+    /// The exact range a request was issued for, kept to find the content it
+    /// was about when the answer comes back — `NSRange` values are plain
+    /// numbers, so this stays correct even if the document has shifted in
+    /// the meantime.
+    private var pendingRequests: [NSRange: String] = [:]
 
     public weak var invalidator: LayerInvalidating?
 
     public var isEnabled: Bool = true {
         didSet {
             guard isEnabled != oldValue else { return }
-            if !isEnabled { service.cancelAll() }
+            if isEnabled {
+                invalidateTags(in: nil)
+            } else {
+                service.cancelAll()
+            }
             invalidator?.invalidate(nil)
         }
     }
@@ -44,21 +61,35 @@ public final class SyntaxColourLayer: RenderingAttributeLayer, POSTaggingObservi
         service.observer = self
     }
 
-    /// Forgets what was tagged, after the text under it changed.
+    /// A rescan touched `range`: ask for the tags of every paragraph it
+    /// covers that isn't already known or already asked for. `nil` forgets
+    /// everything and re-asks for the whole document, which is what a
+    /// settings toggle needs after tagging was off for a while.
     public func invalidateTags(in range: NSRange?) {
-        guard let range else {
+        let text = storage.nsText
+        let target: NSRange
+        if let range {
+            target = NSRange(location: range.location, length: min(range.length, text.length - range.location))
+        } else {
             tags.removeAll()
+            requestedBodies.removeAll()
+            pendingRequests.removeAll()
             service.cancelAll()
-            return
+            target = NSRange(location: 0, length: text.length)
         }
-        // A rescan moves every paragraph after it, so the ones past the range
-        // are as stale as the ones inside it.
-        for start in tags.keys where start >= range.location {
-            tags.removeValue(forKey: start)
-            service.cancelParagraph(at: start)
+        guard target.length > 0, isEnabled else { return }
+        var location = target.location
+        let end = NSMaxRange(target)
+        while location < end {
+            let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
+            defer { location = max(NSMaxRange(paragraph), location + 1) }
+            guard paragraph.length > 0 else { continue }
+            requestIfNeeded(paragraph, of: text)
         }
     }
 
+    /// Pure read: contributes whatever is already known and asks for
+    /// nothing, so a render pass never triggers a tagging job by itself.
     public func contributions(in range: NSRange, text: NSString) -> [RangedAttributes] {
         guard isEnabled, range.length > 0 else { return [] }
         var out: [RangedAttributes] = []
@@ -67,26 +98,48 @@ public final class SyntaxColourLayer: RenderingAttributeLayer, POSTaggingObservi
             let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
             defer { location = max(NSMaxRange(paragraph), location + 1) }
             guard paragraph.length > 0 else { continue }
-            if let spans = tags[paragraph.location] {
-                for span in spans {
-                    guard let colour = EditorTheme.syntaxColour(for: span.pos) else { continue }
-                    out.append(RangedAttributes(range: span.range, attributes: [.foregroundColor: colour]))
-                }
-            } else {
-                service.requestTags(forParagraphIn: paragraph, of: text, revision: storage.revision)
+            guard let spans = tags[text.substring(with: paragraph)] else { continue }
+            for span in absolute(spans, at: paragraph.location) {
+                guard let colour = EditorTheme.syntaxColour(for: span.pos) else { continue }
+                out.append(RangedAttributes(range: span.range, attributes: [.foregroundColor: colour]))
             }
         }
         return out
     }
 
+    private func requestIfNeeded(_ paragraph: NSRange, of text: NSString) {
+        let body = text.substring(with: paragraph)
+        guard tags[body] == nil, !requestedBodies.contains(body) else { return }
+        if let cached = service.cachedTags(forParagraphIn: paragraph, of: text) {
+            tags[body] = relative(cached, from: paragraph.location)
+            return
+        }
+        requestedBodies.insert(body)
+        pendingRequests[paragraph] = body
+        service.requestTags(forParagraphIn: paragraph, of: text, revision: storage.revision)
+    }
+
     // MARK: - POSTaggingObserving
 
+    /// Correlates the answer by the exact request it answers, not by the
+    /// document's revision: continuous typing bumps that on every keystroke
+    /// anywhere in the document, which would drop a perfectly good answer
+    /// about a paragraph nobody touched.
     public func posTagging(
         _ service: POSTaggingService, didTag spans: [POSSpan], forParagraphIn range: NSRange, revision: Int
     ) {
-        guard revision == storage.revision else { return }
-        tags[range.location] = spans
+        guard let body = pendingRequests.removeValue(forKey: range) else { return }
+        requestedBodies.remove(body)
+        tags[body] = relative(spans, from: range.location)
         guard !spans.isEmpty else { return }
         invalidator?.invalidate(range)
+    }
+
+    private func relative(_ spans: [POSSpan], from location: Int) -> [POSSpan] {
+        spans.map { POSSpan(range: NSRange(location: $0.range.location - location, length: $0.range.length), pos: $0.pos) }
+    }
+
+    private func absolute(_ spans: [POSSpan], at location: Int) -> [POSSpan] {
+        spans.map { POSSpan(range: NSRange(location: $0.range.location + location, length: $0.range.length), pos: $0.pos) }
     }
 }

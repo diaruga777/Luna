@@ -164,6 +164,10 @@ public final class EditorViewController: UIViewController {
         session.storage.addObserver(self)
         session.authorship.observer = self
         streamer.delegate = self
+        // The storage's own initial scan ran before this observer existed
+        // (the session is built well before the view controller), so the
+        // syntax layer never saw a rescan for the document it opens on.
+        syntaxLayer.invalidateTags(in: NSRange(location: 0, length: session.storage.length))
 
         mention.textView = textView
         mention.delegate = self

@@ -1,6 +1,6 @@
 # Luna Writer — plan
 
-Status: DRAFT for review, 2026-09-03. Standalone fifth-and-a-half Luna app.
+Status: APPROVED 2026-09-03 (answers to Q1–Q6 folded in; see §1). Standalone fifth-and-a-half Luna app.
 Nothing here talks to the other Luna apps or to any backend.
 
 Luna Writer is a Markdown writing app for iPhone and iPad. It borrows from
@@ -57,15 +57,15 @@ fixation filter, the anchor-at-onset rule and the classifier port directly.
 
 ## 1. Decisions taken, and open questions
 
-Defaults below are what the work packages build unless you answer otherwise.
+Answered 2026-09-03. Q1 Luna Writer, Q2 Luna night/predawn, Q3 files + SQLite, Q4 Pen routing, Q5 peek only, Q6 paste + FoundationModels. The rows keep the chosen answer.
 
 | # | Question | Default | Why it matters |
 | --- | --- | --- | --- |
 | Q1 | App name | **Luna Writer**, target `LunaWriter`, bundle `com.hsanabria.luna.writer`, scheme `lunawriter://` | Folder, module prefix, strings suffix `_Writer` |
 | Q2 | Look | Luna night/predawn chrome (LunaDesignSystem, pinned dark), editor palette = ink on the Luna sky, iA-blue caret and accent | The alternative (iA paper: light + dark following the system) means NOT pinning `userInterfaceStyle` and a separate palette |
 | Q3 | Where document text lives | **Plain `.md` files** under `Documents/Library/<Group>/…/<Title>.md`, visible in Files, reconciled on external edits; metadata, notes, annotations, authorship in `writer.sqlite` | SQLite-only is simpler (no file layout, no watcher) but invisible to Files and to other editors |
-| Q4 | Notes added by the App Intent with no document | **Auto-route** to the best-matching document (embedding + FTS over title/snippet/keywords, threshold), else Inbox | "Always Inbox" removes `NoteRouter` |
-| Q5 | What picking a note in the "@" overlay does | Return **inserts the note's text** at the marker (authorship `.note`), tap **peeks** it in a card, last row **creates a new note** from the query (Pen) | Alternative: insert a link chip that opens the note |
+| Q4 | Notes added by the App Intent with no document | **Pen's deterministic router**: an explicit "new document: …" prefix creates a sheet with that title; else the note attaches to EVERY candidate sheet whose fused score ≥ 0.45; else a NEW sheet titled from the note's first six words (title-cased) is created in the Inbox and the note attached. Captures over 500 chars split into ≤ 10 sub-notes first. | A note may therefore belong to several sheets (`note_documents` join) |
+| Q5 | What picking a note in the "@" overlay does | **Peek only, never insert.** Return or tap opens the note in a peek card over the text; the last row (or Return with no match) **creates a new note** from the query (Pen). Nothing from a note is ever copied into the sheet by the overlay. | Removes the `.note` authorship source and the insert action |
 | Q6 | How AI text enters | Authorship tracks **paste** (`.pasted`) and a **"Paste as AI text"** edit-menu item; iOS 26 devices also get on-device **"Continue writing" / "Rewrite selection"** (FoundationModels) producing `.ai` spans | Dropping FoundationModels removes `AIWritingAssistant` |
 | Q7 | Voice comment → note | A spoken non-command utterance becomes a **note anchored to the range** plus a `.comment` annotation | Keeps one note model for typed, "@", intent and voice |
 | Q8 | Preview | **No live preview**; export to Markdown / HTML / PDF / plain text | A preview pane adds an HTML renderer view |
@@ -175,7 +175,7 @@ public struct TextAnchor: Codable, Equatable, Sendable {
 
 public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
     public enum Source: String, Codable { case typed, mention, intent, voice }
-    public var id: NoteID; public var documentID: DocumentID?   // nil = unattached, lives in Inbox
+    public var id: NoteID; public var documentIDs: [DocumentID]   // empty = unattached, lives in Inbox; several = routed to several sheets (Pen)
     public var text: String; public var source: Source
     public var anchor: TextAnchor?                             // where in the document it was made
     public var createdAt: Date; public var updatedAt: Date
@@ -191,7 +191,7 @@ public struct Annotation: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct AuthorshipSpan: Codable, Equatable, Sendable {
-    public enum Source: Codable, Equatable { case author, pasted, ai(model: String), note(NoteID) }
+    public enum Source: Codable, Equatable { case author, pasted, ai(model: String) }
     public var range: TextRange          // UTF-16 [start, end)
     public var source: Source; public var createdAt: Date
 }
@@ -279,14 +279,16 @@ documents(id TEXT PK, group_id TEXT NOT NULL REFERENCES groups, title, snippet, 
           created_at, updated_at, trashed_at)                       -- trash = group kind 'trash' + trashed_at
 document_keywords(document_id REFERENCES documents ON DELETE CASCADE, keyword, PRIMARY KEY(document_id, keyword))
 documents_fts  fts5(title, body, content='', tokenize='unicode61 remove_diacritics 2')   -- body indexed on save
-notes(id TEXT PK, document_id TEXT REFERENCES documents ON DELETE SET NULL, text, source,
+notes(id TEXT PK, text, source, anchor_document_id TEXT REFERENCES documents ON DELETE SET NULL,
       anchor_start INT, anchor_end INT, anchor_exact, anchor_prefix, anchor_suffix, created_at, updated_at)
+note_documents(note_id REFERENCES notes ON DELETE CASCADE, document_id REFERENCES documents ON DELETE CASCADE,
+      attachment /* routed | created | manual | mention | voice */, PRIMARY KEY(note_id, document_id))
 notes_fts      fts5(text, content='notes', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2')  + sync triggers
 note_embeddings(note_id TEXT PK REFERENCES notes ON DELETE CASCADE, model_version, dims INT, vector BLOB)
 document_embeddings(document_id TEXT PK REFERENCES documents ON DELETE CASCADE, model_version, dims INT, vector BLOB)
 annotations(id TEXT PK, document_id REFERENCES documents ON DELETE CASCADE, kind, source, note_id REFERENCES notes ON DELETE CASCADE,
             anchor_start INT, anchor_end INT, anchor_exact, anchor_prefix, anchor_suffix, created_at)
-authorship_spans(document_id REFERENCES documents ON DELETE CASCADE, start INT, end INT, source, model, note_id, created_at)
+authorship_spans(document_id REFERENCES documents ON DELETE CASCADE, start INT, end INT, source, model, created_at)
 filters(id TEXT PK, scope_group_id REFERENCES groups ON DELETE CASCADE, name, sort_index INT, search_text, favorites_only INT, modified_within REAL)
 filter_keywords(filter_id REFERENCES filters ON DELETE CASCADE, keyword)
 document_snapshots(document_id REFERENCES documents ON DELETE CASCADE, created_at, text)   -- last 20 per doc, on session close
@@ -315,7 +317,7 @@ public protocol NoteStoring: AnyObject {
     func notes(for document: DocumentID) throws -> [WriterNote]; func unattachedNotes() throws -> [WriterNote]
     func note(_ id: NoteID) throws -> WriterNote?
     func insert(_ note: WriterNote) throws; func update(_ note: WriterNote) throws; func delete(_ id: NoteID) throws
-    func attach(_ id: NoteID, to document: DocumentID?) throws
+    func attach(_ id: NoteID, to document: DocumentID, attachment: NoteAttachment) throws; func detach(_ id: NoteID, from document: DocumentID) throws
 }
 public protocol DocumentMarksStoring: AnyObject {      // per-document range-bearing data, replaced as a set
     func marks(for document: DocumentID) throws -> DocumentMarks     // annotations + authorship spans
@@ -376,9 +378,21 @@ query has ≥ 3 tokens fuses a cosine over `note_embeddings`
 the best score per note (Pen's two-context trick). Vectors are `Float32` BLOBs;
 cosine runs in Swift over ≤ a few thousand notes (fine; no ANN).
 
-`NoteRouter` (Q4): `route(_ text: String) throws -> DocumentID?` — fuses cosine
-against `document_embeddings` (title + snippet + keywords, refreshed on save with a
-10 s debounce) with `documents_fts`; accepts ≥ 0.35 else `nil` (Inbox).
+`NoteRouter` (Q4, Pen's `deterministicFallback` made local):
+`route(_ text: String) throws -> [NotePlacement]` where
+`NotePlacement { documentID, title, created: Bool }`. Order: (1)
+`ExplicitNewDocumentPhrase.match(text)` ("new document:", "new doc:", "new idea:",
+"fresh concept:", "start a new document", "create a new document") → create a sheet
+in the Inbox with the remainder as title; (2) `retrieveCandidates(text, limit: 5)` —
+fused cosine over `document_embeddings` (title + snippet + keywords, refreshed on
+save with a 10 s debounce; a NEW sheet is indexed at once so the next intent can
+see it) with `documents_fts` bm25 — attach to every candidate with score ≥ 0.45;
+(3) else create a sheet titled `TitleFromWords.make(text, count: 6)` (title-cased)
+and attach. `NoteCaptureSplitter.split(text)` runs first for captures over 500
+chars: paragraphs become sub-notes (fragments < 80 chars fold into the previous),
+over-long paragraphs are sentence-packed, hard cap 4 000 chars per note, ≤ 10
+sub-notes, nothing dropped; each sub-note is routed on its own. There is no LLM
+leg; a FoundationModels routing leg is a later option behind the same protocol.
 
 ### 5.5 Settings and services
 - `WriterSettings` (UserDefaults, standard suite): `focusMode: off|sentence|paragraph`,
@@ -439,7 +453,7 @@ Two attribute channels, deliberately split:
   Layers, in precedence order (later wins on the same key):
   1. `MarkupLayer` — markup ranges grey; code spans monospaced colour.
   2. `SyntaxColourLayer` — POS colours from `POSTaggingService` (async; applies when results arrive).
-  3. `AuthorshipLayer` — pasted / AI / note tints when `showAuthorship`.
+  3. `AuthorshipLayer` — pasted / AI tints when `showAuthorship`.
   4. `FocusLayer` — everything outside the focus range → `dimmed` (overrides 2–3).
   5. `AnnotationLayer` — underline style+colour per kind, comment wash (additive keys).
   6. `ReadingLayer` — installed by ReadAlong: active-sentence band background, read trail.
@@ -476,13 +490,15 @@ Two attribute channels, deliberately split:
   the query exceeds 6 words, or contains a newline. Query → `NoteIndexing.search`
   (`scope: .document` first, `.all` merged below, `prefixMatchesLastToken: true`,
   limit 6) on a 120 ms debounce off-main; results → `MentionOverlayView`.
-  Actions (Q5): `.insertText(NoteID)` (Return / trailing button) replaces
-  `@query` with the note text and records `.note(id)` authorship;
-  `.peek(NoteID)` (tap) opens `NotePeekCardView` over the text (Insert / Close);
-  `.createNote(query)` (last row, or Return with no results) → `NoteStoring.insert`
-  (`source: .mention`, anchor at the marker), removes `@query`, plays
-  `NoteFlyInAnimator` toward the notes button (Pen's fly-in). Dismiss (Esc, tap
-  outside, space-space, arrow away) leaves the typed text as plain text.
+  Actions (Q5, peek only): `.peek(NoteID)` (Return on the highlighted row, or
+  tap) opens `NotePeekCardView` over the text area — the note text, its sheet
+  name, Edit, Close — and leaves `@query` in place until Close, which removes it
+  and restores the caret; `.createNote(query)` (last row, or Return with no
+  results) → `NoteStoring.insert` (`source: .mention`, attached to this sheet,
+  anchor at the marker), removes `@query`, plays `NoteFlyInAnimator` toward the
+  notes button (Pen's fly-in). The overlay never inserts note text into the
+  sheet. Dismiss (Esc, tap outside, space-space, arrow away) leaves the typed
+  text as plain text.
   Hardware keys: ↑/↓/Return/Esc via `UIKeyCommand`.
 - **`MentionOverlayView`** — Liquid-Glass panel (`GlassStyle.focusPanel()`),
   anchored to the marker's caret rect, flips above when the keyboard would cover
@@ -721,7 +737,7 @@ Behaviour only, no constant echoes.
 | `WriterTitleDeriverTests` | heading, first line, untitled |
 | `WriterDatabaseTests` | migrations, cascade deletes, trash/restore/empty, move/reorder, filters |
 | `WriterNoteIndexTests` | prefix query hits, OR recall, hybrid ordering with a fake embedding, related-window best-of-two |
-| `NoteRouterTests` | routes above threshold, Inbox below |
+| `NoteRouterTests` | explicit phrase → new sheet; ≥ 0.45 attaches to all candidates; else new sheet titled from six words; splitter table (paragraphs, folding, sentence packing, ≤ 10, nothing dropped) |
 | `LibraryFileLayoutTests` | paths, collisions, rename plans; reconciler on add/change/delete in a temp dir |
 | `AuthorshipSpanListTests` | typing inside/at edges of foreign spans, deletes, paste, mark-as-own |
 | `MentionControllerTests` | arm rules, query tracking, cancel rules, insert/create/peek outcomes on a real `WriterTextView` |

@@ -15,6 +15,16 @@ public protocol EditorViewControllerDelegate: AnyObject {
     func editorDidUpdateDocument(_ editor: EditorViewController, document: WriterDocument)
 }
 
+/// Told when the text re-wraps or the page scrolls, so anything drawing
+/// alongside the text (read-along's band and HUD) can follow it. Rotation,
+/// a Split View resize, a font-size change and a hardware-keyboard toggle
+/// all re-wrap without a storage edit, which is why this is a separate
+/// witness from `MarkdownTextStorageObserving`.
+public protocol EditorLayoutObserving: AnyObject {
+    func editorDidRelayout(_ editor: EditorViewController)
+    func editorDidScroll(_ editor: EditorViewController)
+}
+
 /// The sheet, on screen.
 ///
 /// It assembles the text stack for one `DocumentSession`: the storage and its
@@ -26,6 +36,7 @@ public final class EditorViewController: UIViewController {
     // MARK: - Public
 
     public weak var delegate: EditorViewControllerDelegate?
+    public weak var layoutObserver: EditorLayoutObserving?
 
     public let session: DocumentSession
     public let environment: EditorEnvironment
@@ -83,6 +94,8 @@ public final class EditorViewController: UIViewController {
 
     private var statisticsTimer: Timer?
     private var pendingEdit: (range: NSRange, replacementLength: Int)?
+    private var lastLayoutWidth: CGFloat = -1
+    private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
 
     // MARK: - Lifecycle
 
@@ -98,6 +111,48 @@ public final class EditorViewController: UIViewController {
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         session.applicationDidEnterBackground()
+    }
+
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        relayoutIfNeeded()
+    }
+
+    public override func viewWillTransition(
+        to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        super.viewWillTransition(to: size, with: coordinator)
+        let anchor = firstVisibleCharacterPosition()
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            self?.relayoutIfNeeded()
+        }, completion: { [weak self] _ in
+            guard let self, let anchor else { return }
+            self.textView.scrollRangeToVisible(NSRange(location: anchor, length: 0))
+        })
+    }
+
+    /// Re-wrap without a storage edit — rotation, a Split View resize, a
+    /// font-size change, the keyboard changing the visible height — is
+    /// invisible to `MarkdownTextStorageObserving`, so this is the one place
+    /// that watches the text view's own geometry directly.
+    private func relayoutIfNeeded() {
+        let width = textView.bounds.width
+        let inset = textView.textContainerInset
+        guard width != lastLayoutWidth || inset != lastLayoutInset else { return }
+        lastLayoutWidth = width
+        lastLayoutInset = inset
+        geometry.invalidate(nil)
+        layoutObserver?.editorDidRelayout(self)
+    }
+
+    /// A stable point in the text under the middle of what's on screen right
+    /// now, so a rotation can put the same words back where they were.
+    private func firstVisibleCharacterPosition() -> Int? {
+        let point = CGPoint(
+            x: textView.bounds.midX,
+            y: textView.contentOffset.y + textView.textContainerInset.top + 1)
+        guard let position = textView.closestPosition(to: point) else { return nil }
+        return textView.offset(from: textView.beginningOfDocument, to: position)
     }
 
     deinit {
@@ -397,6 +452,13 @@ extension EditorViewController: UITextViewDelegate {
         focus.editingEnded()
         mention.dismiss()
         try? session.save()
+    }
+
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if !overlay.isHidden {
+            placeOverlay()
+        }
+        layoutObserver?.editorDidScroll(self)
     }
 
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {

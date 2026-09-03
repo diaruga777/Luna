@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "run": "node run.mjs",
-    "spec": "node spec.mjs"
+    "spec": "node spec.mjs",
+    "test": "node test.mjs"
   },
   "dependencies": {
     "linkedom": "0.18.13",

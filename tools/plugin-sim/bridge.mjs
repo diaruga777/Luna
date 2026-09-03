@@ -11,7 +11,7 @@
 // (an in-memory map — `fetch`'s multipart `file` parts and `as: "file"`
 // resolve through it same as the app), `fetch` and `downloads` (fed from
 // `config.downloads`, since there is no real download engine or saves
-// database here). `browser` is declared but always rejects
+// database here). `browser` is declared when requested but always rejects
 // `unavailable-here` — there is no page to run a challenge detector against
 // outside a real WebKit process. Absent entirely, same as an undeclared
 // capability everywhere else: `secrets`, `page`, `ui`, `mail`,
@@ -187,13 +187,21 @@ export function resolveLocalized(table, languages) {
 // ------------------------------------------------------------ luna.storage
 
 export function makeStorage() {
+  const MAX_VALUE_BYTES = 256 * 1024;
+  const checked = (value) => {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined || Buffer.byteLength(encoded, "utf8") > MAX_VALUE_BYTES) {
+      throw new LunaError("too-large", `storage values may be at most ${MAX_VALUE_BYTES} bytes`);
+    }
+    return value;
+  };
   const kv = new Map();
   const collections = new Map();
   function collection(name) {
     if (!collections.has(name)) collections.set(name, new Map());
     const docs = collections.get(name);
     return {
-      async put(id, doc, index) { docs.set(id, { doc, k1: index?.k1, k2: index?.k2 }); },
+      async put(id, doc, index) { docs.set(id, { doc: checked(doc), k1: index?.k1, k2: index?.k2 }); },
       async get(id) { return docs.get(id)?.doc; },
       async delete(id) { docs.delete(id); },
       async find(where = {}, opts = {}) {
@@ -214,7 +222,7 @@ export function makeStorage() {
   }
   return {
     async get(key) { return kv.get(key); },
-    async set(key, value) { kv.set(key, value); },
+    async set(key, value) { kv.set(key, checked(value)); },
     async delete(key) { kv.delete(key); },
     async keys(prefix) {
       const all = Array.from(kv.keys()).sort();
@@ -229,11 +237,13 @@ export function makeStorage() {
 /// `luna.files` over an in-memory map. A handle is a descriptor, as it is in
 /// the app, so multipart `{ file }` and `as: "file"` behave the same here.
 export function makeFiles() {
+  const MAX_FILE_BYTES = 8 * 1024 * 1024;
   const files = new Map();
   function write(name, data, mime) {
     const bytes = typeof data === "string"
       ? Buffer.from(data, "utf8")
       : Buffer.from(data.base64, "base64");
+    if (bytes.length > MAX_FILE_BYTES) throw new LunaError("too-large", "a file may be at most 8 MB");
     const id = crypto.randomUUID();
     const safe = String(name).replace(/[/\\]/g, "_").replace(/\.\./g, "_") || "file";
     files.set(id, { id, name: safe, size: bytes.length, mime: mime ?? null, bytes });
@@ -318,9 +328,9 @@ function fetchFactory(fetchImpl, files) {
     const req = typeof request === "string" ? { url: request } : request || {};
     const headers = { ...(req.headers || {}) };
     if (req.userAgent && !headers["User-Agent"]) headers["User-Agent"] = req.userAgent;
-    if (req.cookies && !["shared", "ephemeral", "none"].includes(req.cookies)) {
+    if (req.cookies && !["shared", "ephemeral", "none", "browser"].includes(req.cookies)) {
       throw new LunaError(
-        "bad-argument", 'cookies must be "shared", "ephemeral" or "none"');
+        "bad-argument", 'cookies must be "shared", "ephemeral", "none" or "browser"');
     }
     let body;
     if (typeof req.body === "string") body = req.body;
@@ -337,14 +347,30 @@ function fetchFactory(fetchImpl, files) {
       headers["Content-Type"] = headers["Content-Type"]
         || `multipart/form-data; boundary=${boundary}`;
     }
-    const response = await fetchImpl(req.url, {
-      method: req.method || "GET", headers, body,
-      redirect: req.redirect === "manual" ? "manual" : "follow",
-    });
+    const timeout = Number.isFinite(req.timeout) ? Math.max(1, req.timeout) : 30_000;
+    let timeoutID;
+    try {
+      const response = await Promise.race([
+        fetchImpl(req.url, {
+          method: req.method || "GET", headers, body,
+          redirect: req.redirect === "manual" ? "manual" : "follow",
+        }),
+        new Promise((_, reject) => {
+          timeoutID = setTimeout(() => reject(new LunaError("timeout", "fetch timed out")), timeout);
+        }),
+      ]);
+      return await makeFetchResult(response, req, files);
+    } finally {
+      clearTimeout(timeoutID);
+    }
+  };
+}
+
+async function makeFetchResult(response, req, files) {
     const responseHeaders = {};
     response.headers.forEach((value, key) => { responseHeaders[key] = value; });
     const buffer = Buffer.from(await response.arrayBuffer());
-    const cap = req.maxBytes ?? 10 * 1024 * 1024;
+    const cap = Math.min(Math.max(0, req.maxBytes ?? 10 * 1024 * 1024), 10 * 1024 * 1024);
     const truncated = buffer.length > cap;
     const capped = truncated ? buffer.subarray(0, cap) : buffer;
     const result = {
@@ -362,8 +388,7 @@ function fetchFactory(fetchImpl, files) {
       result.file = files.api.put(
         name, { base64: capped.toString("base64") }, responseHeaders["content-type"]);
     } else result.text = capped.toString("utf8");
-    return result;
-  };
+  return result;
 }
 
 // -------------------------------------------------------------- luna.settings

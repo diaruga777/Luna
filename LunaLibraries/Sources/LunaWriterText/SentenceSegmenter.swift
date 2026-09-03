@@ -1,0 +1,96 @@
+import Foundation
+import NaturalLanguage
+
+/// Splits a paragraph into sentences. `NLTokenizer` does the work; the
+/// abbreviation guard puts back the sentences it breaks at "Mr." or at an
+/// initial, which read-along would otherwise treat as two bands.
+public final class SentenceSegmenter {
+    private var cache: LRUCache<String, [NSRange]>
+
+    public init(cacheLimit: Int = 128) {
+        cache = LRUCache(limit: cacheLimit)
+    }
+
+    /// Sentence ranges inside `paragraph`, in document offsets and in order.
+    public func sentences(in paragraph: NSRange, of text: NSString) -> [NSRange] {
+        guard paragraph.length > 0, NSMaxRange(paragraph) <= text.length else { return [] }
+        let body = text.substring(with: paragraph)
+        let relative: [NSRange]
+        if let cached = cache.value(for: body) {
+            relative = cached
+        } else {
+            relative = SentenceSegmenter.segment(body)
+            cache.insert(relative, for: body)
+        }
+        guard paragraph.location != 0 else { return relative }
+        return relative.map { NSRange(location: $0.location + paragraph.location, length: $0.length) }
+    }
+
+    /// The sentence that holds `offset`. An offset in the whitespace between
+    /// two sentences belongs to the sentence before it.
+    public func sentenceRange(containing offset: Int, in paragraph: NSRange, of text: NSString) -> NSRange? {
+        let all = sentences(in: paragraph, of: text)
+        guard !all.isEmpty else { return nil }
+        var best: NSRange?
+        for sentence in all {
+            if offset < sentence.location { break }
+            best = sentence
+            if offset < NSMaxRange(sentence) { return sentence }
+        }
+        return best
+    }
+
+    public func clearCache() {
+        cache.removeAll()
+    }
+
+    // MARK: - Segmentation
+
+    private static func segment(_ body: String) -> [NSRange] {
+        var pieces: [NSRange] = []
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = body
+        tokenizer.enumerateTokens(in: body.startIndex..<body.endIndex) { range, _ in
+            let nsRange = NSRange(range, in: body)
+            if nsRange.length > 0 { pieces.append(nsRange) }
+            return true
+        }
+        guard !pieces.isEmpty else { return [] }
+
+        let text = body as NSString
+        var merged: [NSRange] = []
+        var index = 0
+        while index < pieces.count {
+            var current = pieces[index]
+            while index + 1 < pieces.count, endsWithAbbreviation(text.substring(with: current)) {
+                let next = pieces[index + 1]
+                current = NSRange(location: current.location, length: NSMaxRange(next) - current.location)
+                index += 1
+            }
+            merged.append(current)
+            index += 1
+        }
+        return merged
+    }
+
+    /// True when a full stop closes a known short form or an initial, so the
+    /// sentence has not really ended.
+    static func endsWithAbbreviation(_ sentence: String) -> Bool {
+        let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasSuffix(".") else { return false }
+        guard let last = trimmed.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).last else { return false }
+        let token = last.trimmingCharacters(in: CharacterSet(charactersIn: "([\"'“‘"))
+        if abbreviations.contains(token.lowercased()) { return true }
+        // An initial: one letter and a stop, as in "J. R. R. Tolkien".
+        let letters = token.dropLast()
+        return letters.count == 1 && letters.allSatisfy { $0.isLetter && $0.isUppercase }
+    }
+
+    static let abbreviations: Set<String> = [
+        "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.", "rev.", "hon.", "gen.", "col.",
+        "sgt.", "lt.", "capt.", "gov.", "sen.", "rep.", "vs.", "etc.", "e.g.", "i.e.", "cf.", "al.",
+        "fig.", "figs.", "no.", "nos.", "vol.", "pp.", "ch.", "sec.", "dept.", "est.", "approx.",
+        "inc.", "ltd.", "co.", "corp.", "univ.", "ave.", "rd.", "blvd.", "mt.", "ft.", "min.", "max.",
+        "jan.", "feb.", "mar.", "apr.", "jun.", "jul.", "aug.", "sept.", "sep.", "oct.", "nov.", "dec.",
+    ]
+}

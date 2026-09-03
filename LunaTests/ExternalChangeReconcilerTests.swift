@@ -234,6 +234,131 @@ final class ExternalChangeReconcilerTests: XCTestCase {
         XCTAssertNil(try stack.library.document(document.id)?.trashedAt)
     }
 
+    // MARK: - Trash and delete leave no orphaned files
+
+    func testTrashingASheetThenScanningDoesNotResurrectIt() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: nil)
+        try stack.textStore.saveText("# Draft\n\nFirst pass.", for: &document)
+
+        try stack.library.trash(document.id)
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertEqual(try stack.library.documents(matching: FilterPredicate(), scope: nil).count, 0)
+        XCTAssertNotNil(try stack.library.document(document.id)?.trashedAt)
+    }
+
+    func testEmptyingTheTrashThenScanningDoesNotResurrectAnything() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: nil)
+        try stack.textStore.saveText("# Draft\n\nFirst pass.", for: &document)
+        try stack.library.trash(document.id)
+
+        try stack.library.emptyTrash()
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertNil(try stack.library.document(document.id))
+    }
+
+    func testDeletingAGroupThenScanningDoesNotResurrectItsSheets() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "Travel", icon: "folder", parent: nil)
+        var document = try stack.library.createDocument(in: group.id, title: nil)
+        try stack.textStore.saveText("# Deep\n\nSome text.", for: &document)
+
+        try stack.library.delete(group.id)
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertNil(try stack.library.groups().first { $0.name == "Travel" })
+        XCTAssertNotNil(try stack.library.document(document.id)?.trashedAt)
+    }
+
+    // MARK: - Identity survives a disappearance or a rename
+
+    func testAFileThatDisappearsThenReturnsIsRestoredRatherThanReadopted() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: nil)
+        try stack.textStore.saveText("# Draft\n\nFirst pass.", for: &document)
+        let path = document.fileRelativePath
+
+        try FileManager.default.removeItem(at: stack.libraryRoot.appendingPathComponent(path))
+        let gone = try stack.reconciler.reconcile(scan(stack))
+        XCTAssertEqual(gone.trashed, [document.id])
+
+        try writeWriterFile(
+            "# Draft\n\nFirst pass.", at: path, in: stack, modified: Date().addingTimeInterval(120))
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertEqual(outcome.changed, [document.id])
+        XCTAssertNil(try stack.library.document(document.id)?.trashedAt)
+        XCTAssertEqual(
+            try stack.library.documents(matching: FilterPredicate(), scope: nil).count, 1)
+    }
+
+    func testRenamingAGroupFolderExternallyKeepsTheSheetsIdentityAndMarks() throws {
+        let stack = try makeWriterStack()
+        let original = "# Deep\n\nWritten while it was still Japan.\n"
+        try writeWriterFile(original, at: "Travel/Japan/Deep.md", in: stack)
+        let first = try stack.reconciler.reconcile(scan(stack))
+        let documentID = try XCTUnwrap(first.added.first)
+        let quoted = "still Japan"
+        let start = (original as NSString).range(of: quoted).location
+        try stack.library.replaceMarks(
+            DocumentMarks(annotations: [Annotation(
+                documentID: documentID, kind: .keep, source: .voice,
+                anchor: TextAnchor(
+                    start: start, end: start + quoted.utf16.count, exact: quoted,
+                    prefix: "was ", suffix: ".\n"))]),
+            for: documentID)
+
+        try FileManager.default.removeItem(
+            at: stack.libraryRoot.appendingPathComponent("Travel/Japan/Deep.md"))
+        try writeWriterFile(
+            original, at: "Trips/Japan/Deep.md", in: stack, modified: Date().addingTimeInterval(120))
+
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertEqual(outcome.trashed, [])
+        XCTAssertEqual(outcome.changed, [documentID])
+        let document = try XCTUnwrap(try stack.library.document(documentID))
+        XCTAssertEqual(document.fileRelativePath, "Trips/Japan/Deep.md")
+        XCTAssertNil(document.trashedAt)
+        let groups = try stack.library.groups()
+        let trips = try XCTUnwrap(groups.first { $0.name == "Trips" })
+        let japanUnderTrips = groups.first { $0.name == "Japan" && $0.parentID == trips.id }
+        XCTAssertEqual(document.groupID, japanUnderTrips?.id)
+        XCTAssertEqual(try stack.library.marks(for: documentID).annotations.count, 1)
+    }
+
+    func testANFDPathOnDiskMatchesTheNFCPathTheRowStores() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: nil)
+        try stack.textStore.saveText("# Café\n\nFirst pass.", for: &document)
+        XCTAssertEqual(document.fileRelativePath, "Inbox/Café.md")
+
+        // A byte-for-byte different name on disk (decomposed, where the row
+        // stores the composed form) — as APFS, which does not normalise
+        // filenames, would actually hand back a name written elsewhere.
+        try FileManager.default.removeItem(
+            at: stack.libraryRoot.appendingPathComponent(document.fileRelativePath))
+        let decomposedPath = document.fileRelativePath.decomposedStringWithCanonicalMapping
+        try writeWriterFile(
+            "# Café\n\nSecond pass, longer now.", at: decomposedPath, in: stack,
+            modified: Date().addingTimeInterval(120))
+
+        let outcome = try stack.reconciler.reconcile(scan(stack))
+
+        XCTAssertEqual(outcome.added, [])
+        XCTAssertEqual(outcome.changed, [document.id])
+        XCTAssertEqual(
+            try stack.library.document(document.id)?.snippet, "Second pass, longer now.")
+    }
+
     private func scan(_ stack: WriterStorageStack) -> [ExternalFileSnapshot] {
         LibraryFolderWatcher.scan(stack.libraryRoot)
     }

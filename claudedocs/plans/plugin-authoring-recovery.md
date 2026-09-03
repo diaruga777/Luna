@@ -119,6 +119,39 @@ share sheet.
 16. Safari page snapshots and `luna.page.html()` are unbounded. Apply the same
     documented byte/character ceiling used by the recovery fixture and expose
     a `truncated` signal.
+17. `PluginDatabase` and `SavesDatabase` label SQLite flag `0x0040_0000` as
+    `COMPLETEUNTILFIRSTUSERAUTHENTICATION`, but Apple's header defines that
+    value as file-protection NONE; the intended constant is `0x0030_0000`.
+    Use the SDK constant where importable or correct the value and pin it.
+18. Runtime reload is not generation-safe. Old calls can settle after a new
+    context with the same plugin id is active; call/promise/timeout/scratch
+    bookkeeping keyed only by plugin id can then close or disable the new
+    generation. Give each loaded context a generation token and refuse/safely
+    drain reload while its predecessor is active.
+19. Async bridge work can outlive the hook scratch lease. A timed-out hook
+    closes/reaps its generation while a fetch/file callback may still write
+    into it. Network/file operations need their own leases or cancellation and
+    a generation-validity check before writing.
+20. `PluginDownloadsBridge` creates promise boxes without its plugin id. Its
+    callbacks touch every plugin call and its promises are not discarded with
+    the abandoned owner. Require nonoptional plugin identity for every bridge
+    promise/callback.
+21. Fetch request decoding silently turns malformed body objects, bad base64
+    and bad JSON into an empty body; it accepts non-http schemes, unbounded
+    aggregate bodies, and non-finite/nonpositive timeouts. Reject these as
+    `bad-argument`, enforce byte limits, and keep Safari/Node parity.
+22. Per-value storage limits do not cap aggregate KV/collection/scratch use, so
+    a plugin can exhaust the shared App Group disk. Add per-plugin byte/count
+    quotas and an explicit `quota-exceeded` error.
+23. Plugin storage/database creation, PRAGMAs, schema and state writes swallow
+    errors or fall back to temporary storage. Production composition must fail
+    closed without the App Group and surface `storage-unavailable` or
+    `write-failed`; tests may inject explicit temporary roots.
+24. `PluginContext` shallow-freezes only `luna`/`bytes` and asks mutable
+    context-global `Object.keys`/`JSON.stringify` to inspect/serialize host
+    values. Plugin code can monkey-patch those before load checks or result
+    decoding. Capture trusted built-ins before source evaluation, use
+    null-prototype host objects where possible, and freeze installed namespaces.
 
 ## 2. Product contract
 
@@ -294,12 +327,49 @@ May run beside WP-D/E after WP-A. Owns `PluginFetchService` and fetch tests/docs
    semantics and return a stable `network-refused` error for a denied target.
 3. Add tests proving no cross-plugin cookie flow and no redirect-policy bypass.
 
+Also make request shaping strict: only `http`/`https`, finite positive bounded
+timeouts, valid JSON/base64/multipart shapes and an aggregate body limit. Keep
+native, Safari and Node error codes aligned.
+
+### WP-G — database protection, quotas and fail-closed persistence
+
+Starts after WP-A. Owns plugin database/KV/scratch persistence and the matching
+`SavesDatabase` flag correction.
+
+1. Correct the SQLite file-protection flag to the SDK's
+   `COMPLETEUNTILFIRSTUSERAUTHENTICATION` value and add a regression pin.
+2. Make production initialization and state writes report failures instead of
+   silently using temporary storage or interpreting errors as missing values.
+3. Add transactional per-plugin aggregate quotas for KV keys/bytes, collection
+   rows/bytes and scratch bytes/files. Return `quota-exceeded` consistently and
+   document the numbers.
+4. Test read-only/unavailable roots, schema/PRAGMA failure and fill-to-quota
+   boundaries without allocating unbounded test data.
+
+### WP-H — runtime generations, async leases and host hardening
+
+Starts after the diagnostic-correlation core of WP-A. Owns remaining runtime
+lifecycle and `PluginContext` hardening.
+
+1. Key in-flight calls, promises, timeout strikes and scratch ownership by a
+   loaded-context generation, not only plugin id. Define reload behavior while
+   calls are live and test old completions arriving after replacement.
+2. Give asynchronous fetch/file/download bridge work a cancellable operation
+   lease. A hook ending does not reap its scratch while a valid operation owns
+   it; an abandoned generation cannot recreate files later.
+3. Pass a nonoptional plugin/generation identity through every bridge promise,
+   including `luna.downloads`; remove the touch-every-plugin fallback.
+4. Capture trusted serialization/introspection functions before evaluating
+   source and deep-freeze host namespaces. Add prototype/serializer tampering
+   tests.
+
 ## 4. Merge and verification order
 
 1. Commit this plan on the integration branch.
 2. Run WP-A, WP-B and WP-C in parallel in worktrees based on the plan commit.
 3. Merge A -> B -> C; resolve shared protocol/doc conflicts centrally.
-4. Run WP-D, WP-E and WP-F against the merged branch; merge F -> E -> D.
+4. Run WP-D, WP-E, WP-F, WP-G and WP-H against the merged branch in
+   file-disjoint waves; merge persistence/runtime foundations before UI.
 5. Run `npm ci && npm run spec` plus the new simulator tests.
 6. Run targeted Xcode tests for every new class, then
    `xcodebuild build-for-testing -scheme Luna -destination

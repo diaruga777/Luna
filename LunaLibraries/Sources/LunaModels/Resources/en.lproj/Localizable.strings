@@ -1263,6 +1263,17 @@
 "WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a sheet. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the sheet. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a sheet aloud and Luna marks what you say about it.\n\nYour sheets are plain .md files in Files, under Luna Writer › Library.";
 
 // Luna Writer — editor (claudedocs/plans/writer-app.md)
+"WriterEditor_accessory_bold_Luna" = "Bold";
+"WriterEditor_accessory_code_Luna" = "Code";
+"WriterEditor_accessory_focus_Luna" = "Focus";
+"WriterEditor_accessory_heading_Luna" = "Heading";
+"WriterEditor_accessory_italic_Luna" = "Italic";
+"WriterEditor_accessory_link_Luna" = "Link";
+"WriterEditor_accessory_list_Luna" = "List";
+"WriterEditor_accessory_mention_Luna" = "Look up a note";
+"WriterEditor_accessory_quote_Luna" = "Quote";
+"WriterEditor_accessory_statistics_Luna" = "Statistics";
+"WriterEditor_accessory_task_Luna" = "Task";
 "WriterEditor_mentionNewNote_Luna" = "New note";
 "WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
 "WriterEditor_mentionNoteFromAnotherSheet_Luna" = "In %@";
@@ -1272,3 +1283,14 @@
 "WriterEditor_peekClose_Luna" = "Close";
 "WriterEditor_peekEdit_Luna" = "Edit";
 "WriterEditor_peekNoSheet_Luna" = "Not in a sheet";
+"WriterEditor_statisticsCharacters_Luna" = "Characters";
+"WriterEditor_statisticsCharactersNoSpaces_Luna" = "Characters without spaces";
+"WriterEditor_statisticsGoal_Luna" = "Goal";
+"WriterEditor_statisticsGoalProgress_Luna" = "%lld of %lld";
+"WriterEditor_statisticsMinutes_Luna" = "%lld min";
+"WriterEditor_statisticsParagraphs_Luna" = "Paragraphs";
+"WriterEditor_statisticsReadingTime_Luna" = "Reading time";
+"WriterEditor_statisticsSentences_Luna" = "Sentences";
+"WriterEditor_statisticsSummary_Luna" = "%lld words · %@";
+"WriterEditor_statisticsTitle_Luna" = "Statistics";
+"WriterEditor_statisticsWords_Luna" = "Words";

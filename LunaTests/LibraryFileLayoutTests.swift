@@ -80,6 +80,19 @@ final class LibraryFileLayoutTests: XCTestCase {
         XCTAssertNil(moves.first { $0.documentID == settled.id })
     }
 
+    func testTwoTitlesDifferingOnlyByUnicodeNormalisationCollideOntoOneFile() {
+        let group = WriterGroup(name: "Essays")
+        // "café" precomposed (é as U+00E9) versus decomposed (e + combining
+        // acute, U+0065 U+0301) — the same word, two different byte forms.
+        let precomposed = WriterDocument(groupID: group.id, title: "Café")
+        let decomposedTaken = "Essays/Cafe\u{0301}.md"
+
+        XCTAssertEqual(
+            LibraryFileLayout.path(for: precomposed, groups: [group], taken: [decomposedTaken]),
+            "Essays/Café 2.md",
+            "a decomposed name already on disk still counts as taken")
+    }
+
     func testAFolderPathFindsTheGroupItBelongsTo() {
         let book = WriterGroup(name: "Book")
         let chapter = WriterGroup(parentID: book.id, name: "Chapter")
@@ -157,6 +170,71 @@ final class LibraryFileLayoutTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: stack.libraryRoot.appendingPathComponent(document.fileRelativePath).path))
+    }
+
+    func testASaveWhoseOldFileCannotBeRemovedStillKeepsTheNewFileAndRow() throws {
+        let root = try makeWriterTemporaryDirectory()
+        let database = try WriterDatabase(fileURL: root.appendingPathComponent("writer.sqlite"))
+        let library = try SQLiteWriterLibrary(database: database)
+        let libraryRoot = root.appendingPathComponent("Library", isDirectory: true)
+        let throwingManager = ThrowingRemoveFileManager()
+        let store = FileDocumentTextStore(
+            rootDirectory: libraryRoot, library: library, fileManager: throwingManager)
+
+        var document = try library.createDocument(in: library.inboxGroupID, title: nil)
+        try store.saveText("# First name\n\nBody.", for: &document)
+        let firstPath = document.fileRelativePath
+        throwingManager.pathsThatFailToRemove = [libraryRoot.appendingPathComponent(firstPath).path]
+
+        try store.saveText("# Second name\n\nBody.", for: &document)
+
+        XCTAssertEqual(document.fileRelativePath, "Inbox/Second name.md")
+        XCTAssertEqual(
+            try String(
+                contentsOf: libraryRoot.appendingPathComponent(document.fileRelativePath),
+                encoding: .utf8),
+            "# Second name\n\nBody.")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: libraryRoot.appendingPathComponent(firstPath).path),
+            "the stale file is left behind rather than the save failing")
+    }
+
+    func testALatin1FileIsDecodedRatherThanReadAsEmpty() throws {
+        let stack = try makeWriterStack()
+        let text = "# Notes\n\nA Latin-1 file, not UTF-8."
+        let url = stack.libraryRoot.appendingPathComponent("Inbox/Notes.md")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try text.data(using: .isoLatin1)!.write(to: url)
+
+        let outcome = try stack.reconciler.reconcile(LibraryFolderWatcher.scan(stack.libraryRoot))
+
+        let document = try XCTUnwrap(
+            try stack.library.document(try XCTUnwrap(outcome.added.first)))
+        XCTAssertTrue(document.snippet.contains("Latin-1 file, not UTF-8."))
+    }
+
+    func testAZeroByteFileAdoptsAsAGenuinelyEmptySheet() throws {
+        let stack = try makeWriterStack()
+        let url = stack.libraryRoot.appendingPathComponent("Inbox/Blank.md")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: url)
+
+        let outcome = try stack.reconciler.reconcile(LibraryFolderWatcher.scan(stack.libraryRoot))
+
+        XCTAssertEqual(outcome.added.count, 1)
+    }
+
+    func testALookupByPathFindsTheSheetRegardlessOfTrashState() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: nil)
+        try stack.textStore.saveText("# On rivers\n\nThey run downhill.", for: &document)
+
+        let found = try stack.library.document(atPath: document.fileRelativePath)
+
+        XCTAssertEqual(found?.id, document.id)
+        XCTAssertNil(try stack.library.document(atPath: "Inbox/Nothing here.md"))
     }
 
     // MARK: - Scanning

@@ -135,7 +135,7 @@ luna.fetch(req: string | {url, method?, headers?, userAgent?, body?, cookies?, r
   maxBytes?, timeout?, as?}) → Promise<{ok,status,url,redirected,headers,text?,base64?,file?,truncated,bytes}>
   // userAgent names: "safari" "googlebot" "googlebot-mobile" "bingbot" "facebookbot", or a literal string.
   // body: string | {base64} | {form} | {json} | {multipart: [{name,filename?,mime?,text?,base64?,file?}]}
-  // cookies: "shared"(default) | "ephemeral" | "none" | "browser" (needs a prior luna.browser.open).
+  // cookies: "shared"(default) | "ephemeral" | "none".
 
 luna.html.parse(html, baseURL?) → HTMLDocument   // querySelector(All), textContent, innerHTML/outerHTML,
   //   children, parentElement, tagName, getAttribute/hasAttribute/attributes, matches, closest,

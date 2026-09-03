@@ -47,8 +47,9 @@ realistic failures, use the same basename with `.response.json`, for example:
 {"status":403,"headers":{"content-type":"text/html"},"body":"blocked"}
 ```
 
-The descriptor may also set `ok`, `url`, `redirected`, or `error` (a transport
-failure). Record a page once, then iterate on the plugin offline.
+The descriptor may also set `url`, `redirected`, or `error` (a transport
+failure). `ok` is always derived from the HTTP status (200–299), matching
+`Response.ok`. Record a page once, then iterate on the plugin offline.
 
 ## `luna.html` parity
 

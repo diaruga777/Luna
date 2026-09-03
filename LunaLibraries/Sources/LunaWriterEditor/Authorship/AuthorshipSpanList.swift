@@ -219,6 +219,7 @@ public struct AuthorshipSpanList: Equatable {
             }
             // Overlap: the later span wins the shared characters.
             if span.range.end <= last.range.end, span.source == last.source { continue }
+            let precedingEnd = last.range.end
             last.range.end = span.range.start
             if last.range.length > 0 { out[out.count - 1] = last } else { out.removeLast() }
             if let previous = out.last, previous.range.end == span.range.start, previous.source == span.source {
@@ -227,6 +228,14 @@ public struct AuthorshipSpanList: Equatable {
                 out[out.count - 1] = merged
             } else {
                 out.append(span)
+            }
+            // `span` can sit entirely inside the one it overlapped — the
+            // stretch after it, in the earlier span's source, must not
+            // vanish just because `span` won the characters in the middle.
+            if precedingEnd > span.range.end {
+                out.append(AuthorshipSpan(
+                    range: TextRange(start: span.range.end, end: precedingEnd),
+                    source: last.source, createdAt: last.createdAt))
             }
         }
         return out

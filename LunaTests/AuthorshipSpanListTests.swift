@@ -179,6 +179,22 @@ final class AuthorshipSpanListTests: XCTestCase {
         ])
     }
 
+    /// Malformed persisted marks can hand normalised(_:) two overlapping
+    /// spans where the later, different-source one sits entirely INSIDE the
+    /// earlier one. The stretch of the earlier span after the overlap must
+    /// survive as its own span, not vanish along with the middle it lost.
+    func testLoadingOverlappingSpansEmitsTheTrailingRemainder() {
+        let list = AuthorshipSpanList(spans: [
+            pasted(0, 20),
+            AuthorshipSpan(range: NSRange(location: 5, length: 5), source: .author),
+        ])
+        assertSpans(list, [
+            (NSRange(location: 0, length: 5), .pasted),
+            (NSRange(location: 5, length: 5), .author),
+            (NSRange(location: 10, length: 10), .pasted),
+        ])
+    }
+
     func testATypedRunOverManySpansStaysCheapToRead() {
         var list = AuthorshipSpanList(spans: (0..<200).map { pasted($0 * 10, 5) })
         list.apply(edit: NSRange(location: 1000, length: 0), replacementLength: 1, typedBy: .author)

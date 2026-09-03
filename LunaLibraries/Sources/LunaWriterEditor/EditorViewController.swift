@@ -76,6 +76,7 @@ public final class EditorViewController: UIViewController {
     private let keyboard = KeyboardFrameObserver()
     private let accessoryBar = EditorAccessoryBar()
     private let relatedStrip = RelatedNoteStripView()
+    private lazy var accessoryContainer = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
     private let statisticsBar = StatisticsBarView()
     private let overlay = MentionOverlayView()
     private var peekCard: NotePeekCardView?
@@ -93,6 +94,7 @@ public final class EditorViewController: UIViewController {
     private lazy var streamer = StreamingTextInserter(textView: textView)
 
     private var statisticsTimer: Timer?
+    private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
     private var pendingEdit: (range: NSRange, replacementLength: Int)?
     private var lastLayoutWidth: CGFloat = -1
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
@@ -197,14 +199,30 @@ public final class EditorViewController: UIViewController {
             statisticsBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
 
-        let accessory = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
-        accessory.axis = .vertical
-        accessory.spacing = 0
-        accessory.frame = CGRect(
-            x: 0, y: 0, width: view.bounds.width,
-            height: RelatedNoteStripView.height + EditorAccessoryBar.height)
-        accessory.autoresizingMask = .flexibleWidth
-        textView.inputAccessoryView = accessory
+        accessoryContainer.axis = .vertical
+        accessoryContainer.spacing = 0
+        updateAccessoryContainer()
+    }
+
+    /// Recomputes the accessory's height from which of its two children are
+    /// actually visible, and drops it entirely when neither is — the note
+    /// strip only shows when a match exists, and the Markdown bar hides
+    /// itself with a hardware keyboard attached; a fixed 80 pt used to sit
+    /// above the keyboard regardless.
+    private func updateAccessoryContainer() {
+        let height = (relatedStrip.isHidden ? 0 : RelatedNoteStripView.height)
+            + (accessoryBar.isHidden ? 0 : EditorAccessoryBar.height)
+        guard height > 0 else {
+            guard textView.inputAccessoryView != nil else { return }
+            textView.inputAccessoryView = nil
+            textView.reloadInputViews()
+            return
+        }
+        accessoryContainer.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
+        accessoryContainer.autoresizingMask = .flexibleWidth
+        guard textView.inputAccessoryView !== accessoryContainer else { return }
+        textView.inputAccessoryView = accessoryContainer
+        textView.reloadInputViews()
     }
 
     private func wire() {
@@ -305,14 +323,29 @@ public final class EditorViewController: UIViewController {
 
     private func scheduleStatistics() {
         statisticsTimer?.invalidate()
-        statisticsTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+        // .common: a scroll or another tracking-mode interaction must not
+        // delay the count past the next keystroke's own 0.3s window.
+        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
             self?.updateStatistics()
         }
+        RunLoop.current.add(timer, forMode: .common)
+        statisticsTimer = timer
     }
 
+    /// Copies and walks the whole document, so it runs off main with a
+    /// revision guard: a slower count about text the writer already moved
+    /// past must never overwrite a newer, correct one.
     private func updateStatistics() {
-        let stats = TextStatistics.measure(session.storage.nsText)
-        statisticsBar.update(stats: stats, goal: session.document.goal)
+        let text = session.storage.string
+        let revision = session.storage.revision
+        let goal = session.document.goal
+        statisticsQueue.async { [weak self] in
+            let stats = TextStatistics.measure(text)
+            DispatchQueue.main.async {
+                guard let self, self.session.storage.revision == revision else { return }
+                self.statisticsBar.update(stats: stats, goal: goal)
+            }
+        }
     }
 
     // MARK: - Typewriter
@@ -400,6 +433,8 @@ public final class EditorViewController: UIViewController {
                 input: "\r", modifierFlags: [.command, .alternate], action: #selector(continueWritingKeyCommand)),
             UIKeyCommand(
                 input: "r", modifierFlags: [.command, .alternate], action: #selector(rewriteSelectionKeyCommand)),
+            UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(indentKeyCommand)),
+            UIKeyCommand(input: "\t", modifierFlags: [.shift], action: #selector(outdentKeyCommand)),
         ]
     }
 
@@ -415,6 +450,14 @@ public final class EditorViewController: UIViewController {
         default:
             return super.canPerformAction(action, withSender: sender)
         }
+    }
+
+    @objc private func indentKeyCommand() {
+        apply(MarkdownEditingCommands.indent(textView.selectedRange, in: session.storage.nsText))
+    }
+
+    @objc private func outdentKeyCommand() {
+        apply(MarkdownEditingCommands.outdent(textView.selectedRange, in: session.storage.nsText))
     }
 
     @objc private func continueWritingKeyCommand() { continueWriting() }
@@ -475,6 +518,13 @@ extension EditorViewController: UITextViewDelegate {
         // for the NEXT accepted change's textViewDidChange to pick up.
         pendingEdit = nil
         guard mention.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
+        // A bare Return in a list item or a blockquote continues it (or, on
+        // an empty item, ends the list) instead of just breaking the line.
+        if range.length == 0, text == "\n",
+           let edits = MarkdownEditingCommands.continueList(onReturnAt: range.location, in: session.storage.nsText) {
+            apply(edits)
+            return false
+        }
         pendingEdit = (range, (text as NSString).length)
         return true
     }
@@ -710,6 +760,7 @@ extension EditorViewController: RelatedNotesObserving {
         _ ranker: RelatedNotesRanker, didRank hits: [NoteHit], topMatch: NoteHit?
     ) {
         relatedStrip.show(noteID: topMatch?.noteID, snippet: topMatch?.snippet ?? "")
+        updateAccessoryContainer()
     }
 }
 
@@ -765,6 +816,10 @@ extension EditorViewController: EditorAccessoryBarDelegate {
         case .statistics:
             statisticsBarViewDidSelect(statisticsBar)
         }
+    }
+
+    public func editorAccessoryBarVisibilityDidChange(_ bar: EditorAccessoryBar) {
+        updateAccessoryContainer()
     }
 }
 

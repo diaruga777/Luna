@@ -6,6 +6,10 @@ Luna Writer is a standalone Markdown writing app (`LunaWriter` target, bundle
 server. The design and the decisions behind it are in
 `claudedocs/plans/writer-app.md`; this page says what shipped and where.
 
+**Wording.** The code, the tables and this page say *sheet*; every
+user-visible string says *document* ("All Documents", "New Document", the
+intents' "Document" parameter). Keep new strings on the user's word.
+
 ## Shape
 
 | Tier | Module | Holds |
@@ -106,6 +110,23 @@ text changes and user scrolls through the editor's `EditorLayoutObserving`.
 The tracker and display geometry are handed in by `WriterWiring`, so the
 read-along module names neither ARKit nor `UIScreen.main`, and the app
 compiles for the Mac's "Designed for iPad" variant.
+
+### Compact width (2026-09-04)
+
+On an iPhone the split view is collapsed, so the sheets column's view is
+not loaded until it is pushed. `SheetsViewController.reload()` returns
+until `viewDidLoad`, which applies the selection it kept; the first
+sidebar tap used to trap on the nil data source. Because the sidebar is
+the only column with a `+` there, its menu and each group's context menu
+lead with **New Document**, routed through
+`GroupsSelectionDelegate.groupsViewController(_:requestsNewDocumentIn:)`
+to `SheetsViewController.createSheet(in:)`. Read-along's tap recogniser
+on the text view takes a touch only when a mark is under it
+(`UIGestureRecognizerDelegate` on the wiring's `Session`); before that it
+competed with the text view's own tap and the keyboard never came up.
+The HUD menu's calibration items are "Calibrate gaze (25s)" and
+"Recalibrate gaze (8s)" — the old "Quick touch-up" read as text
+correction.
 
 ## Testing
 

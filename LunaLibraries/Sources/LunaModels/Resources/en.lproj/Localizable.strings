@@ -1370,3 +1370,36 @@
 "WriterIntents_documentEntity_titleProperty_title_Luna" = "Title";
 "WriterIntents_documentEntity_modifiedProperty_title_Luna" = "Modified";
 "WriterIntents_documentEntity_typeName_Luna" = "Sheet";
+
+// Luna Writer — editor (claudedocs/plans/writer-app.md)
+"WriterEditor_accessory_bold_Luna" = "Bold";
+"WriterEditor_accessory_code_Luna" = "Code";
+"WriterEditor_accessory_focus_Luna" = "Focus";
+"WriterEditor_accessory_heading_Luna" = "Heading";
+"WriterEditor_accessory_italic_Luna" = "Italic";
+"WriterEditor_accessory_link_Luna" = "Link";
+"WriterEditor_accessory_list_Luna" = "List";
+"WriterEditor_accessory_mention_Luna" = "Look up a note";
+"WriterEditor_accessory_quote_Luna" = "Quote";
+"WriterEditor_accessory_statistics_Luna" = "Statistics";
+"WriterEditor_accessory_task_Luna" = "Task";
+"WriterEditor_mentionNewNote_Luna" = "New note";
+"WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
+"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another sheet";
+"WriterEditor_menuAddNote_Luna" = "Add note here";
+"WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
+"WriterEditor_menuPasteAsAI_Luna" = "Paste as AI text";
+"WriterEditor_peekClose_Luna" = "Close";
+"WriterEditor_peekEdit_Luna" = "Edit";
+"WriterEditor_peekNoSheet_Luna" = "Not in a sheet";
+"WriterEditor_statisticsCharacters_Luna" = "Characters";
+"WriterEditor_statisticsCharactersNoSpaces_Luna" = "Characters without spaces";
+"WriterEditor_statisticsGoal_Luna" = "Goal";
+"WriterEditor_statisticsGoalProgress_Luna" = "%lld of %lld";
+"WriterEditor_statisticsMinutes_Luna" = "%lld min";
+"WriterEditor_statisticsParagraphs_Luna" = "Paragraphs";
+"WriterEditor_statisticsReadingTime_Luna" = "Reading time";
+"WriterEditor_statisticsSentences_Luna" = "Sentences";
+"WriterEditor_statisticsSummary_Luna" = "%lld words · %@";
+"WriterEditor_statisticsTitle_Luna" = "Statistics";
+"WriterEditor_statisticsWords_Luna" = "Words";

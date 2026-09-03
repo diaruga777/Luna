@@ -1261,3 +1261,8 @@
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
 "WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a sheet. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the sheet. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a sheet aloud and Luna marks what you say about it.\n\nYour sheets are plain .md files in Files, under Luna Writer › Library.";
+
+// Luna Writer — editor (claudedocs/plans/writer-app.md)
+"WriterEditor_menuAddNote_Luna" = "Add note here";
+"WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
+"WriterEditor_menuPasteAsAI_Luna" = "Paste as AI text";

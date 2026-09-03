@@ -437,6 +437,14 @@ The full-suite run was made from `/tmp` because iOS Simulator test processes
 cannot read source fixtures from the macOS-protected Desktop folder. This is a
 test-location constraint, not an app behavior change.
 
+After that verification, `main` advanced again with Writer portability commit
+`bde0a3881`. The required final sync currently prevents a fresh build because
+`LunaGaze/ReadingTracker.swift` cannot resolve the newly moved
+`SentenceLayout` type and the target reports a missing `LunaWriterModels`
+dependency. That blocker is present in the synced `main` work itself and does
+not touch the plugin platform; the last post-plugin/pre-Writer-sync focused
+result remains the 97/97 tests above.
+
 ## 6. Definition of done
 
 - A nontechnical user can start with either a failed save or an arbitrary URL,

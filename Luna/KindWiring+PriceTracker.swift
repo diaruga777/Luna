@@ -116,6 +116,9 @@ enum KindWiring {
     /// anything.
     static func drainPendingPluginModels(returningToSource: Bool) {}
 
+    /// Central Luna only; Price Tracker's Safari extension never creates this handoff.
+    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.

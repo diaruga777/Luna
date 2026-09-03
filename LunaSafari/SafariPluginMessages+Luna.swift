@@ -19,6 +19,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import LunaBundledPlugins
 import LunaModels
 import LunaPluginKit
@@ -103,6 +104,8 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
             complete(context, with: pluginBrowserDeferred(message: message))
         case "plugins.queueModel":
             complete(context, with: pluginQueueModel(message: message))
+        case "plugins.recoveryHandoff":
+            complete(context, with: pluginRecoveryHandoff(message: message))
         default:
             return false
         }
@@ -176,6 +179,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         let list: [[String: Any]] = plugins.map { plugin in
             [
                 "id": plugin.id,
+                "version": plugin.manifest.version.description,
                 "hosts": plugin.manifest.hosts,
                 "any": plugin.manifest.matchesAnyHost,
                 "priority": plugin.manifest.priority,
@@ -459,6 +463,72 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
             urlString: urlString, modelJSON: modelJSON, pluginID: id, createdAt: Date(),
             returnToSourceUntil: Date().addingTimeInterval(Self.returnHandoffLifetime)))
         return ["deepLink": "\(hostScheme)://pluginmodel?ret=safari"]
+    }
+
+    /// Stores the bounded evidence from a page whose plugin walk exhausted all
+    /// matching plugins. The content script still owns the walk; this adapter
+    /// only turns its ordered outcome records into the shared recovery-case
+    /// contract and returns a short central-Luna route. No URL/evidence is put
+    /// in the deep-link query, where nested `?`, `&`, `+`, fragments, and
+    /// Unicode would be fragile.
+    private func pluginRecoveryHandoff(message: [String: Any]?) -> [String: Any] {
+        guard let urlString = message?["url"] as? String,
+              let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+        else { return Self.badArgument("recovery handoff needs an http(s) url") }
+
+        let page = message?["page"] as? [String: Any]
+        let digest = (page?["digest"] as? String) ?? (page?["html"] as? String)
+        let wasTruncated = page?["truncated"] as? Bool ?? false
+        let rawOutcomes = message?["outcomes"] as? [[String: Any]] ?? []
+        let attempts = rawOutcomes.prefix(PluginRecoveryCase.maxAttempts).map { outcome in
+            PluginRecoveryAttempt(
+                phase: outcome["phase"] as? String ?? "classify",
+                strategy: outcome["pluginID"] as? String,
+                result: outcome["result"] as? String ?? "observed",
+                message: outcome["message"] as? String)
+        }
+        let matches = recoveryPlugins(from: message?["plugins"] as? [[String: Any]], outcomes: rawOutcomes)
+        var redactions = ["Safari page evidence is untrusted data"]
+        if wasTruncated { redactions.append("Safari page snapshot truncated") }
+        if digest == nil { redactions.append("page evidence unavailable") }
+        let recoveryCase = PluginRecoveryCase(
+            originalURL: urlString, canonicalURL: urlString, source: .manual,
+            appVersion: AppConfig.appVersion, locale: Locale.current.identifier,
+            languages: Locale.preferredLanguages, outcome: "failed",
+            failureReason: "Safari plugin walk exhausted",
+            attempts: attempts, attemptsDropped: max(0, rawOutcomes.count - attempts.count),
+            matchingPlugins: matches,
+            matchingPluginsDropped: max(0, (message?["plugins"] as? [[String: Any]] ?? []).count - matches.count),
+            pageDigest: digest, redactions: redactions, evidenceTruncated: wasTruncated)
+
+        guard PluginRecoveryHandoffStore.shared.record(recoveryCase, validationURL: url),
+              let link = LunaDeepLink.pluginRecoveryLink(caseID: recoveryCase.caseID)
+        else { return ["ok": false, "error": "storage-unavailable"] }
+        return ["ok": true, "deepLink": link.absoluteString, "case": recoveryCase.caseID.uuidString]
+    }
+
+    private func recoveryPlugins(
+        from rawPlugins: [[String: Any]]?, outcomes: [[String: Any]]
+    ) -> [PluginRecoveryPlugin] {
+        var values: [PluginRecoveryPlugin] = []
+        var seen = Set<String>()
+        for raw in rawPlugins ?? [] {
+            guard let id = raw["id"] as? String, seen.insert(id).inserted else { continue }
+            values.append(PluginRecoveryPlugin(
+                id: id, version: raw["version"] as? String,
+                status: raw["status"] as? String ?? "enabled",
+                hooks: raw["hooks"] as? [String] ?? [], outcome: nil))
+        }
+        // Older content scripts did not send a separate plugin inventory. Keep
+        // their outcomes useful by deriving the same ordered inventory here.
+        for raw in outcomes {
+            guard let id = raw["pluginID"] as? String, seen.insert(id).inserted else { continue }
+            values.append(PluginRecoveryPlugin(
+                id: id, version: raw["version"] as? String, status: "enabled",
+                hooks: [], outcome: raw["result"] as? String))
+        }
+        return values
     }
 
     // MARK: - JSON <-> native value

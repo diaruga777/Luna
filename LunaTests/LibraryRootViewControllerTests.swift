@@ -1,0 +1,126 @@
+//
+//  LibraryRootViewControllerTests.swift
+//  LunaTests
+//
+
+import UIKit
+import XCTest
+@testable import LunaWriterLibraryUI
+import LunaWriterModels
+import LunaWriterStorage
+
+final class LibraryRootViewControllerTests: XCTestCase {
+
+    // MARK: - Display mode (organiser #7)
+
+    func testTripleColumnOnlyWhenTheEditorWouldStillGetItsMinimumWidth() {
+        XCTAssertEqual(LibraryRootViewController.displayMode(forContainerWidth: 390), .automatic)
+        XCTAssertEqual(LibraryRootViewController.displayMode(forContainerWidth: 744), .oneBesideSecondary)
+        XCTAssertEqual(LibraryRootViewController.displayMode(forContainerWidth: 1024), .oneBesideSecondary)
+        XCTAssertEqual(
+            LibraryRootViewController.displayMode(forContainerWidth: LibraryRootViewController.tripleColumnMinWidth),
+            .twoBesideSecondary)
+        XCTAssertEqual(LibraryRootViewController.displayMode(forContainerWidth: 1366), .twoBesideSecondary)
+    }
+
+    @MainActor
+    func testTheLiveSplitViewFollowsTheSameThresholdsAfterLayout() throws {
+        let stack = try makeWriterStack()
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack))
+
+        layoutWriterScreen(root, width: 390, height: 844)
+        XCTAssertEqual(root.preferredDisplayMode, .automatic)
+
+        layoutWriterScreen(root, width: 1366, height: 1024)
+        XCTAssertEqual(root.preferredDisplayMode, .twoBesideSecondary)
+    }
+
+    // MARK: - Keyboard commands (organiser #11)
+
+    @MainActor
+    func testRootOffersKeyCommandsForEveryOrganiserAction() throws {
+        let stack = try makeWriterStack()
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack))
+        layoutWriterScreen(root)
+
+        let commands = try XCTUnwrap(root.keyCommands)
+        let inputs = Set(commands.map { "\($0.modifierFlags.rawValue)-\($0.input ?? "")" })
+        XCTAssertEqual(commands.count, 11)
+        XCTAssertTrue(inputs.contains("\(UIKeyModifierFlags.command.rawValue)-n"), "new sheet")
+        XCTAssertTrue(
+            inputs.contains("\(UIKeyModifierFlags([.command, .shift]).rawValue)-n"), "new group")
+        XCTAssertTrue(inputs.contains("\(UIKeyModifierFlags.command.rawValue)-,"), "settings")
+    }
+
+    // MARK: - Selection and re-selection (organiser #10)
+
+    @MainActor
+    func testReselectingTheOpenSheetDoesNotRebuildTheEditor() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack, editorMaker: editorMaker))
+        layoutWriterScreen(root)
+
+        root.show(document: document)
+        XCTAssertEqual(editorMaker.madeEditors.count, 1)
+        XCTAssertTrue(root.hasOpenDocumentForTesting)
+        XCTAssertEqual(root.currentDocumentIDForTesting, document.id)
+
+        root.show(document: document)
+        XCTAssertEqual(editorMaker.madeEditors.count, 1, "the same sheet re-selected builds no second editor")
+    }
+
+    @MainActor
+    func testSwitchingToADifferentSheetFlushesTheOutgoingEditorFirst() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let first = try stack.library.createDocument(in: group.id, title: "First")
+        let second = try stack.library.createDocument(in: group.id, title: "Second")
+        let editorMaker = FakeDocumentEditorMaker()
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack, editorMaker: editorMaker))
+        layoutWriterScreen(root)
+
+        root.show(document: first)
+        XCTAssertEqual(editorMaker.madeEditors.first?.flushCount, 0)
+
+        root.show(document: second)
+        XCTAssertEqual(editorMaker.madeEditors.count, 2)
+        XCTAssertEqual(editorMaker.madeEditors.first?.flushCount, 1, "the outgoing editor is flushed before it is replaced")
+        XCTAssertEqual(root.currentDocumentIDForTesting, second.id)
+    }
+
+    // MARK: - Document closed (organiser #9)
+
+    @MainActor
+    func testTrashingTheOpenSheetClosesTheEditorColumn() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack))
+        layoutWriterScreen(root)
+
+        root.show(document: document)
+        XCTAssertTrue(root.hasOpenDocumentForTesting)
+
+        try stack.library.trash(document.id)
+        pollUntil { !root.hasOpenDocumentForTesting }
+        XCTAssertFalse(root.hasOpenDocumentForTesting)
+        XCTAssertNil(root.currentDocumentIDForTesting)
+    }
+
+    @MainActor
+    func testDocumentDidCloseIgnoresAnIDThatIsNotTheOpenOne() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack))
+        layoutWriterScreen(root)
+
+        root.show(document: document)
+        root.documentDidClose(DocumentID())
+        XCTAssertTrue(root.hasOpenDocumentForTesting)
+        XCTAssertEqual(root.currentDocumentIDForTesting, document.id)
+    }
+}

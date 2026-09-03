@@ -5,22 +5,47 @@ import NaturalLanguage
 /// abbreviation guard puts back the sentences it breaks at "Mr." or at an
 /// initial, which read-along would otherwise treat as two bands.
 public final class SentenceSegmenter {
-    private var cache: LRUCache<String, [NSRange]>
+    /// A paragraph identified by position and the document revision it was
+    /// read at, so a hit needs no text at all — only the caller's own
+    /// bookkeeping, which it already keeps for its own change tracking.
+    private struct RevisionKey: Hashable {
+        var location: Int
+        var length: Int
+        var revision: Int
+    }
+
+    private var textCache: LRUCache<String, [NSRange]>
+    private var revisionCache: LRUCache<RevisionKey, [NSRange]>
 
     public init(cacheLimit: Int = 128) {
-        cache = LRUCache(limit: cacheLimit)
+        textCache = LRUCache(limit: cacheLimit)
+        revisionCache = LRUCache(limit: cacheLimit)
     }
 
     /// Sentence ranges inside `paragraph`, in document offsets and in order.
-    public func sentences(in paragraph: NSRange, of text: NSString) -> [NSRange] {
+    ///
+    /// `revision` identifies the text's current edit count. Passing it lets
+    /// a cache hit skip bridging `text` to a `String` entirely; omitting it
+    /// falls back to keying on the paragraph's own text, unchanged.
+    public func sentences(in paragraph: NSRange, of text: NSString, revision: Int? = nil) -> [NSRange] {
         guard paragraph.length > 0, NSMaxRange(paragraph) <= text.length else { return [] }
-        let body = text.substring(with: paragraph)
         let relative: [NSRange]
-        if let cached = cache.value(for: body) {
-            relative = cached
+        if let revision {
+            let key = RevisionKey(location: paragraph.location, length: paragraph.length, revision: revision)
+            if let cached = revisionCache.value(for: key) {
+                relative = cached
+            } else {
+                relative = SentenceSegmenter.segment(text.substring(with: paragraph))
+                revisionCache.insert(relative, for: key)
+            }
         } else {
-            relative = SentenceSegmenter.segment(body)
-            cache.insert(relative, for: body)
+            let body = text.substring(with: paragraph)
+            if let cached = textCache.value(for: body) {
+                relative = cached
+            } else {
+                relative = SentenceSegmenter.segment(body)
+                textCache.insert(relative, for: body)
+            }
         }
         guard paragraph.location != 0 else { return relative }
         return relative.map { NSRange(location: $0.location + paragraph.location, length: $0.length) }
@@ -28,8 +53,8 @@ public final class SentenceSegmenter {
 
     /// The sentence that holds `offset`. An offset in the whitespace between
     /// two sentences belongs to the sentence before it.
-    public func sentenceRange(containing offset: Int, in paragraph: NSRange, of text: NSString) -> NSRange? {
-        let all = sentences(in: paragraph, of: text)
+    public func sentenceRange(containing offset: Int, in paragraph: NSRange, of text: NSString, revision: Int? = nil) -> NSRange? {
+        let all = sentences(in: paragraph, of: text, revision: revision)
         guard !all.isEmpty else { return nil }
         var best: NSRange?
         for sentence in all {
@@ -41,12 +66,18 @@ public final class SentenceSegmenter {
     }
 
     public func clearCache() {
-        cache.removeAll()
+        textCache.removeAll()
+        revisionCache.removeAll()
     }
 
     // MARK: - Segmentation
 
+    /// Counts calls into the real tokenizer, so a test can show a cache hit
+    /// skipped it rather than only checking the answer matches.
+    static var tokenizeCallCountForTesting = 0
+
     private static func segment(_ body: String) -> [NSRange] {
+        tokenizeCallCountForTesting += 1
         var pieces: [NSRange] = []
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = body
@@ -62,9 +93,14 @@ public final class SentenceSegmenter {
         var index = 0
         while index < pieces.count {
             var current = pieces[index]
-            while index + 1 < pieces.count, endsWithAbbreviation(text.substring(with: current)) {
+            // Whether the sentence-so-far ends in an abbreviation depends
+            // only on its last piece, so only that piece is re-read here —
+            // never the whole, ever-growing merged run.
+            var tail = text.substring(with: current)
+            while index + 1 < pieces.count, endsWithAbbreviation(tail) {
                 let next = pieces[index + 1]
                 current = NSRange(location: current.location, length: NSMaxRange(next) - current.location)
+                tail = text.substring(with: next)
                 index += 1
             }
             merged.append(current)

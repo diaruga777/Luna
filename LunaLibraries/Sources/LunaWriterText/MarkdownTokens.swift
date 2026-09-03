@@ -85,14 +85,26 @@ public struct InlineToken: Equatable, Sendable {
 /// and the same incoming state scan the same, which is what lets a rescan
 /// stop early.
 public struct ScanState: Equatable, Sendable {
-    /// The exact delimiter run that opened the fence, for example "```".
-    public var inFence: String?
+    /// The character and run length that opened the fence, for example
+    /// backtick, 3. Only a run of the same character at least this wide, at
+    /// the same or lesser indent, closes it.
+    public struct FenceMarker: Equatable, Sendable {
+        public var marker: unichar
+        public var width: Int
+
+        public init(marker: unichar, width: Int) {
+            self.marker = marker
+            self.width = width
+        }
+    }
+
+    public var inFence: FenceMarker?
     /// The info string of the open fence.
     public var fenceLanguage: String?
     /// True once a table delimiter row has been seen.
     public var inTable: Bool
 
-    public init(inFence: String? = nil, fenceLanguage: String? = nil, inTable: Bool = false) {
+    public init(inFence: FenceMarker? = nil, fenceLanguage: String? = nil, inTable: Bool = false) {
         self.inFence = inFence
         self.fenceLanguage = fenceLanguage
         self.inTable = inTable

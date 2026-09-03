@@ -18,6 +18,9 @@ public struct POSSpan: Equatable, Sendable {
 
 /// Tags one paragraph. `POSTaggingService` holds one of these; a test holds
 /// a stand-in with fixed answers.
+///
+/// `POSTaggingService` calls `tags(ofParagraph:)` from its own work queue, so
+/// a conforming type must be safe to call from a thread other than main.
 public protocol ParagraphTagging: AnyObject {
     /// Tags a standalone paragraph. The ranges start at zero.
     func tags(ofParagraph body: String) -> [POSSpan]
@@ -29,24 +32,20 @@ public protocol ParagraphTagging: AnyObject {
 public final class PartOfSpeechTagger: ParagraphTagging {
     private let tagger = NLTagger(tagSchemes: [.lexicalClass])
     private let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace, .omitOther, .joinNames]
+    /// Set once this instance's document proves unsupported, so every later
+    /// paragraph skips language recognition rather than repeating the answer.
+    private var documentUnsupported = false
 
     public init() {}
-
-    public func tags(in paragraph: NSRange, of text: NSString) -> [POSSpan] {
-        guard paragraph.length > 0, NSMaxRange(paragraph) <= text.length else { return [] }
-        return tags(ofParagraph: text.substring(with: paragraph)).map {
-            POSSpan(range: NSRange(location: $0.range.location + paragraph.location, length: $0.range.length), pos: $0.pos)
-        }
-    }
-
-    public func tags(in paragraph: NSRange, of text: String) -> [POSSpan] {
-        tags(in: paragraph, of: text as NSString)
-    }
 
     /// Tags a standalone paragraph. The ranges start at zero, which is what
     /// the tagging service caches.
     public func tags(ofParagraph body: String) -> [POSSpan] {
-        guard !body.isEmpty, PartOfSpeechTagger.supportsTagging(body) else { return [] }
+        guard !body.isEmpty, !documentUnsupported else { return [] }
+        guard PartOfSpeechTagger.supportsTagging(body) else {
+            documentUnsupported = true
+            return []
+        }
         tagger.string = body
         var out: [POSSpan] = []
         tagger.enumerateTags(in: body.startIndex..<body.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, range in
@@ -65,7 +64,27 @@ public final class PartOfSpeechTagger: ParagraphTagging {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(body)
         guard let language = recognizer.dominantLanguage else { return false }
-        return NLTagger.availableTagSchemes(for: .word, language: language).contains(.lexicalClass)
+        return cachedSchemeAvailability(for: language)
+    }
+
+    /// Scheme availability by language, process-wide: the recognizer still
+    /// runs on every call (the text differs), but the scheme lookup for a
+    /// language already seen is a dictionary read.
+    private static let availabilityLock = NSLock()
+    private static var availabilityCache: [NLLanguage: Bool] = [:]
+
+    private static func cachedSchemeAvailability(for language: NLLanguage) -> Bool {
+        availabilityLock.lock()
+        if let cached = availabilityCache[language] {
+            availabilityLock.unlock()
+            return cached
+        }
+        availabilityLock.unlock()
+        let supported = NLTagger.availableTagSchemes(for: .word, language: language).contains(.lexicalClass)
+        availabilityLock.lock()
+        availabilityCache[language] = supported
+        availabilityLock.unlock()
+        return supported
     }
 
     static func map(_ tag: NLTag) -> POSClass {

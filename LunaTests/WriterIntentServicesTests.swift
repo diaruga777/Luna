@@ -39,7 +39,7 @@ final class WriterIntentServicesTests: XCTestCase {
     func testWithNoRouterANoteWaitsUnattachedInTheInbox() throws {
         let stack = try makeWriterStack()
         let services = WriterIntentServices(
-            library: stack.library, notes: stack.library, noteIndex: stack.noteIndex,
+            library: stack.library, notes: stack.library,
             textStore: stack.textStore, router: nil)
 
         let result = try services.addNote(text: "a stray thought", to: nil)

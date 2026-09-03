@@ -18,6 +18,21 @@ final class WriterEditingCommandsTests: XCTestCase {
         return text as String
     }
 
+    // MARK: - Applying
+
+    func testApplyReturnsTheFinalRangeWhenMultipleEditsChangeLength() {
+        // Both edits insert, so an earlier (lower-location) edit shifts the
+        // span the later (higher-location) edit already landed at.
+        let text = NSMutableString(string: "abcXdefY")
+        let edits = [
+            TextEdit(range: NSRange(location: 7, length: 1), replacement: "LATER"),
+            TextEdit(range: NSRange(location: 3, length: 1), replacement: "EARLIER"),
+        ]
+        let range = MarkdownEditingCommands.apply(edits, to: text)
+        XCTAssertEqual(text as String, "abcEARLIERdefLATER")
+        XCTAssertEqual(text.substring(with: range), "EARLIERdefLATER")
+    }
+
     // MARK: - Wrapping
 
     func testWrappingASelectionAddsTheMarkerOnBothSides() {
@@ -39,6 +54,19 @@ final class WriterEditingCommandsTests: XCTestCase {
         XCTAssertEqual(applying("ab") {
             MarkdownEditingCommands.toggleWrap(NSRange(location: 1, length: 0), marker: "*", in: $0)
         }, "a**b")
+    }
+
+    func testWrappingAtTheVeryStartAndEndOfTheDocument() {
+        XCTAssertEqual(applying("word") {
+            MarkdownEditingCommands.toggleWrap(NSRange(location: 0, length: 4), marker: "*", in: $0)
+        }, "*word*")
+        XCTAssertEqual(applying("*word*") {
+            MarkdownEditingCommands.toggleWrap(NSRange(location: 1, length: 4), marker: "*", in: $0)
+        }, "word")
+        // A selection that touches an edge can't have markup outside it.
+        XCTAssertEqual(applying("word") {
+            MarkdownEditingCommands.toggleWrap(NSRange(location: 0, length: 0), marker: "*", in: $0)
+        }, "**word")
     }
 
     // MARK: - Headings

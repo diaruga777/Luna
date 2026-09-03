@@ -34,6 +34,19 @@ final class StubOpenDocuments: OpenDocumentQuerying {
     func hasUnsavedEdits(_ id: DocumentID) -> Bool { unsaved.contains(id) }
 }
 
+/// Fails to remove specific paths, so a test can drive the "old file could
+/// not be cleaned up" leg of a move without needing a real I/O failure.
+final class ThrowingRemoveFileManager: FileManager {
+    var pathsThatFailToRemove: Set<String> = []
+
+    override func removeItem(at url: URL) throws {
+        if pathsThatFailToRemove.contains(url.path) {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try super.removeItem(at: url)
+    }
+}
+
 /// Records the changes a repository posts.
 final class RecordingLibraryObserver: LibraryChangeObserving {
     var changes: [LibraryChange] = []

@@ -88,6 +88,32 @@ final class GazeCalibrationFlowTests: XCTestCase {
         XCTAssertNotNil(flow.verdict)
     }
 
+    /// `begin(at:)` is handed the caller's real clock, which on device is
+    /// system uptime — never anywhere near zero. Pins the fix for the bug
+    /// where the collector's own `startTime` stayed fixed at construction
+    /// (0), so `path.sample(at: frame.time - 0 - lag)` always landed past
+    /// `duration` and every buffer stayed empty.
+    func testCalibrationSucceedsWhenTheClockStartsFarFromZero() {
+        let flow = GazeCalibrationFlow(
+            style: .quick, bounds: bounds, pointsPerDegree: pointsPerDegree)
+        let offset: TimeInterval = 100_000
+        flow.begin(at: offset)
+        XCTAssertEqual(flow.stage, .pursuit)
+
+        var time = offset
+        while flow.stage != .verdict, flow.stage != .failed, time < offset + 30 {
+            if let dot = flow.dotPosition {
+                flow.ingest(frame(raw: rawEstimate(for: dot), at: time))
+            }
+            time += 1.0 / 60
+            flow.tick(at: time)
+        }
+        XCTAssertEqual(flow.stage, .verdict, "a large clock offset must not starve the collector")
+        XCTAssertNotNil(flow.calibration)
+        XCTAssertGreaterThan(
+            flow.acceptedFrameCount, 40, "the collector must actually pair frames against the path")
+    }
+
     func testAQuickTouchUpSkipsTheHeadTurnStage() {
         let flow = GazeCalibrationFlow(
             style: .quick, bounds: bounds, pointsPerDegree: pointsPerDegree)

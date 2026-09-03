@@ -25,4 +25,19 @@ final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
             WriterWiring.open(context.url)
         }
     }
+
+    // UIKit never calls `UIApplicationDelegate.applicationDidEnterBackground`
+    // for a scene-based app — only these scene-level hooks fire, so the
+    // autosave flush belongs here, not on the app delegate.
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        WriterWiring.applicationDidEnterBackground()
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        WriterWiring.applicationDidEnterBackground()
+    }
+
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        WriterWiring.sceneWillEnterForeground()
+    }
 }

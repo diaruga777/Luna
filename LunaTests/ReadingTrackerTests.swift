@@ -129,6 +129,42 @@ final class ReadingTrackerTests: XCTestCase {
         }
     }
 
+    /// Scoring is windowed to ±6 sentences around the tracker's current one
+    /// (plus a generous vertical band pre-filter), rather than scanning the
+    /// whole document every frame. Within the window the arithmetic is
+    /// unchanged — the window only excludes candidates, it never touches the
+    /// likelihood or the prior for a sentence it keeps — so a switch to a
+    /// sentence sitting exactly on the window's edge must succeed exactly as
+    /// it would from a full scan, in both directions.
+    func testWindowedScoringFindsASwitchAtTheEdgeOfTheWindowInEitherDirection() {
+        let sentences = SimPage.spaced(count: 14, words: 10)
+        let tracker = ReadingTracker(pointsPerDegree: pointsPerDegree)
+        tracker.setLayout(sentences)
+
+        tracker.resetTo(sentence: 3)
+        let forwardTarget = centre(of: sentences[9], word: 5) // delta = +6
+        var time: TimeInterval = 0
+        while time < 2.0 {
+            tracker.ingest(gaze: forwardTarget, gate: .ok, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(
+            tracker.state.activeSentence, 9,
+            "a sentence exactly six ahead must still win the switch")
+
+        tracker.resetTo(sentence: 10)
+        let backwardTarget = centre(of: sentences[4], word: 5) // delta = -6
+        while time < 4.0 {
+            tracker.ingest(gaze: backwardTarget, gate: .ok, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(
+            tracker.state.activeSentence, 4,
+            "a sentence exactly six behind must still win the switch")
+    }
+
     // MARK: - Switching
 
     private func spacedTracker() -> (ReadingTracker, [SentenceLayout]) {
@@ -306,6 +342,38 @@ final class ReadingTrackerTests: XCTestCase {
         XCTAssertGreaterThan(tracker.state.residual, 40)
     }
 
+    /// A residual run up while gaze is present must decay, not freeze, once
+    /// gaze is lost — a frozen number would go on tripping the recalibration
+    /// nag for as long as the reader's face is out of frame, over a value
+    /// that no longer measures anything current.
+    func testResidualDecaysRatherThanFreezingWhileGazeIsLost() {
+        let sentences = SimPage.spaced(count: 3, words: 12)
+        let tracker = ReadingTracker(pointsPerDegree: pointsPerDegree)
+        tracker.setLayout(sentences)
+        let onText = centre(of: sentences[0], word: 3)
+        var time: TimeInterval = 0
+        while time < 1.0 {
+            tracker.ingest(gaze: onText, gate: .ok, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        let low = CGPoint(x: onText.x, y: onText.y + 120)
+        while time < 3.0 {
+            tracker.ingest(gaze: low, gate: .ok, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        let peak = tracker.state.residual
+        XCTAssertGreaterThan(peak, 40, "the setup must actually raise the residual first")
+
+        while time < 5.0 {
+            tracker.ingest(gaze: nil, gate: .away, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertLessThan(tracker.state.residual, peak / 2, "the residual must decay while gaze is lost")
+    }
+
     // MARK: - Layout questions
 
     func testLineRangeIsEveryWordSharingAVisualLine() {
@@ -327,6 +395,30 @@ final class ReadingTrackerTests: XCTestCase {
         let middle = tracker.lineRange(aroundWord: first.upperBound, in: 0)
         XCTAssertEqual(middle.lowerBound, first.upperBound)
         XCTAssertEqual(tracker.lineRange(aroundWord: 0, in: 99), 0..<0)
+    }
+
+    /// A re-wrap keeps the sentence index but must forget the sweep inside
+    /// it — the old word offset belongs to geometry that no longer exists.
+    func testSetLayoutResetsTheSweepButKeepsTheSentenceIndex() {
+        let sentences = SimPage.make(wordCounts: [20, 20])
+        let tracker = ReadingTracker(pointsPerDegree: pointsPerDegree)
+        tracker.setLayout(sentences)
+
+        // Auto-mode sweep with no gaze at all still advances `progress`.
+        var time: TimeInterval = 0
+        while time < 2.0 {
+            tracker.ingest(gaze: nil, gate: .ok, at: time)
+            tracker.tick(at: time)
+            time += 1.0 / 60
+        }
+        XCTAssertGreaterThan(tracker.state.cursorWord ?? 0, 0, "the sweep must have moved")
+        XCTAssertEqual(tracker.state.activeSentence, 0)
+
+        // A re-wrap that keeps the same sentence count re-lays the same page.
+        tracker.setLayout(sentences)
+        XCTAssertEqual(tracker.state.activeSentence, 0, "the sentence index survives")
+        XCTAssertEqual(tracker.state.cursorWord, 0, "the sweep inside it does not")
+        XCTAssertEqual(tracker.state.readUpToWord, -1)
     }
 
     func testResetToPutsTheReaderAtTheStartOfASentence() {

@@ -14,6 +14,14 @@ public protocol GazeTrackingDelegate: AnyObject {
     /// Called on the main queue for every usable camera frame. Points are in
     /// `UIScreen.fixedCoordinateSpace` (portrait-origin) coordinates.
     func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample)
+    /// Called alongside `gazeTracker(_:didProduce:)`, with the same frame's
+    /// blink state added. Optional: the Reader's RSVP tracking has no use for
+    /// blink and implements only the method above.
+    func gazeTracker(_ tracker: GazeTracking, didProduce frame: GazeFrame)
+}
+
+extension GazeTrackingDelegate {
+    public func gazeTracker(_ tracker: GazeTracking, didProduce frame: GazeFrame) {}
 }
 
 /// A source of gaze estimates. The RSVP reader talks to this rather than to
@@ -89,6 +97,12 @@ public enum GazeTrackingPermission {
 
 /// Drives a bare `ARSession` with `ARFaceTrackingConfiguration` — no renderer,
 /// no view — and publishes one `GazeSample` per frame.
+///
+/// ARKit calls every `ARSessionDelegate` method on the main queue when
+/// `session.delegateQueue` is left nil (Apple's documented default, which
+/// this class never overrides), and `start()`/`stop()` are always called from
+/// the same main-thread coordinators that receive those callbacks — so
+/// `isRunning` has one writer at a time despite having no lock of its own.
 public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate {
 
     public weak var delegate: GazeTrackingDelegate?
@@ -101,13 +115,17 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
     }()
 
     private let pointsPerMetre: CGFloat
-    private var screenSize: CGSize {
-        UIScreen.main.fixedCoordinateSpace.bounds.size
-    }
+    private let screenSizeProvider: () -> CGSize
+    /// Captured once in `start()`, not read per frame: `UIScreen.main` is
+    /// deprecated and, under Stage Manager, does not name any one screen.
+    private var screenSize: CGSize = .zero
 
-    public override init() {
-        self.pointsPerMetre = GazeScreenProjection.pointsPerMetre(
-            idiom: UIDevice.current.userInterfaceIdiom)
+    public init(
+        idiom: UIUserInterfaceIdiom = UIDevice.current.userInterfaceIdiom,
+        screenSize: @autoclosure @escaping () -> CGSize = UIScreen.main.fixedCoordinateSpace.bounds.size
+    ) {
+        self.pointsPerMetre = GazeScreenProjection.pointsPerMetre(idiom: idiom)
+        self.screenSizeProvider = screenSize
         super.init()
     }
 
@@ -115,6 +133,7 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
         guard !isRunning, GazeTrackingAvailability.isSupported,
               ARFaceTrackingConfiguration.isSupported
         else { return }
+        screenSize = screenSizeProvider()
         let configuration = ARFaceTrackingConfiguration()
         configuration.isLightEstimationEnabled = false
         // One face is all that can be reading the screen; tracking more would
@@ -137,19 +156,36 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
         guard let face = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first,
               face.isTracked
         else {
-            emit(.faceLost)
+            emit(.faceLost, blinkLeft: 0, blinkRight: 0, isFaceTracked: false)
             return
         }
-        emit(sample(for: face, camera: frame.camera))
+        let blink = GazeGate.blink(from: face.blendShapes)
+        emit(
+            sample(for: face, camera: frame.camera),
+            blinkLeft: blink.left, blinkRight: blink.right, isFaceTracked: true)
     }
 
     public func session(_ session: ARSession, didFailWithError error: Error) {
-        emit(.faceLost)
+        emit(.faceLost, blinkLeft: 0, blinkRight: 0, isFaceTracked: false)
         isRunning = false
     }
 
     public func sessionWasInterrupted(_ session: ARSession) {
-        emit(.faceLost)
+        emit(.faceLost, blinkLeft: 0, blinkRight: 0, isFaceTracked: false)
+    }
+
+    /// The interruption that ended (a phone call, Control Center, another
+    /// app taking the camera) leaves the session paused rather than tracking
+    /// — resume the same configuration, or stay stopped if that itself fails.
+    public func sessionInterruptionEnded(_ session: ARSession) {
+        guard isRunning, ARFaceTrackingConfiguration.isSupported else {
+            isRunning = false
+            return
+        }
+        let configuration = ARFaceTrackingConfiguration()
+        configuration.isLightEstimationEnabled = false
+        configuration.maximumNumberOfTrackedFaces = 1
+        session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
 
     /// Projects one face anchor's gaze onto the display.
@@ -180,14 +216,21 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
         return .point(point)
     }
 
-    private func emit(_ sample: GazeSample) {
+    private func emit(
+        _ sample: GazeSample, blinkLeft: Double, blinkRight: Double, isFaceTracked: Bool
+    ) {
         guard let delegate else { return }
+        let frame = GazeFrame(
+            sample: sample, blinkLeft: blinkLeft, blinkRight: blinkRight,
+            isFaceTracked: isFaceTracked)
         if Thread.isMainThread {
             delegate.gazeTracker(self, didProduce: sample)
+            delegate.gazeTracker(self, didProduce: frame)
         } else {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 delegate.gazeTracker(self, didProduce: sample)
+                delegate.gazeTracker(self, didProduce: frame)
             }
         }
     }

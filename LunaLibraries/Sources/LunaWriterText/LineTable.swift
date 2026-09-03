@@ -48,17 +48,17 @@ public struct LineTable: Equatable {
         if firstLine > 0, starts[firstLine] == edit.location, text.character(at: edit.location - 1) == 0x0D {
             firstLine -= 1
         }
-        var lastLine = max(firstLine, lineIndex(at: edit.location + edit.length))
+        let lastLine = max(firstLine, lineIndex(at: edit.location + edit.length))
 
         let oldRegionEnd = lastLine + 1 < starts.count ? starts[lastLine + 1] : length
         let regionStart = starts[firstLine]
-        var regionEnd = oldRegionEnd + delta
+        // `oldRegionEnd` is always a line start in the OLD text, and every unit
+        // from the edit's end to `oldRegionEnd` is untouched. The character
+        // right before `oldRegionEnd` is therefore unchanged by the edit, and
+        // so is whatever it is (or isn't) paired with, so `oldRegionEnd + delta`
+        // is already a line start in the NEW text: it needs no search forward.
+        let regionEnd = oldRegionEnd + delta
         let newLength = length + delta
-        while !LineTable.isLineBoundary(regionEnd, in: text, length: newLength) { regionEnd += 1 }
-        if regionEnd > oldRegionEnd + delta {
-            let oldEnd = regionEnd - delta
-            lastLine = max(lastLine, lineIndex(at: max(0, oldEnd - 1)))
-        }
 
         // A delete that takes every line from `firstLine` to the end leaves no
         // line to start at `regionStart`: the whole run goes.
@@ -78,12 +78,16 @@ public struct LineTable: Equatable {
     }
 
     /// True when `offset` starts a line: the text end, the text start, or the
-    /// position just after a terminator.
+    /// position just after a terminator. Matches `NSString.lineRange(for:)`,
+    /// which also breaks after NEL (U+0085) — but, measured directly, not
+    /// after form feed or vertical tab, despite both being in
+    /// `NSCharacterSet.newlines`; `lineRange(for:)` uses its own narrower
+    /// notion of a line terminator.
     private static func isLineBoundary(_ offset: Int, in text: NSString, length: Int) -> Bool {
         if offset >= length { return true }
         if offset <= 0 { return true }
         let previous = text.character(at: offset - 1)
-        if previous == 0x0A || previous == 0x2028 || previous == 0x2029 { return true }
+        if previous == 0x0A || previous == 0x0085 || previous == 0x2028 || previous == 0x2029 { return true }
         if previous == 0x0D { return text.character(at: offset) != 0x0A }
         return false
     }
@@ -102,7 +106,7 @@ public struct LineTable: Equatable {
             var k = 0
             while k < count {
                 let unit = buffer[k]
-                if unit == 0x0A || unit == 0x2028 || unit == 0x2029 {
+                if unit == 0x0A || unit == 0x0085 || unit == 0x2028 || unit == 0x2029 {
                     let start = base + k + 1
                     if start < end { out.append(start) }
                     k += 1
@@ -120,7 +124,10 @@ public struct LineTable: Equatable {
                     k += 1
                 }
             }
-            base += count
+            // A CR/LF pair split across the chunk boundary advances `k` one
+            // past `count`: the LF was already read from the live text and
+            // its start already appended, so the next chunk must not re-read it.
+            base += k > count ? k : count
         }
     }
 }

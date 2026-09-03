@@ -45,6 +45,42 @@ final class WriterTextAnchorResolverTests: XCTestCase {
         XCTAssertEqual(TextAnchorResolver.resolve(made, in: long), whole)
     }
 
+    /// The stored quote is capped, but the suffix must pick up exactly where
+    /// the capped quote ends, not where the untruncated selection did —
+    /// otherwise `prefix + exact + suffix` is never contiguous in the real
+    /// document and the context search can never match.
+    func testALongMidDocumentSelectionWithRealContextSurvivesAnEditAbove() {
+        let longQuote = String(repeating: "word ", count: 120).trimmingCharacters(in: .whitespaces)
+        XCTAssertGreaterThan((longQuote as NSString).length, TextAnchor.exactLimit)
+        let original = "Before this. " + longQuote + " After this." as NSString
+        let range = original.range(of: longQuote)
+        let made = TextAnchorResolver.make(range: range, in: original)
+        XCTAssertLessThan((made.exact as NSString).length, range.length)
+
+        let shifted = ("A new paragraph above.\n\n" + (original as String)) as NSString
+        let resolvedRange = TextAnchorResolver.resolve(made, in: shifted)
+        XCTAssertEqual(resolvedRange.map { shifted.substring(with: $0) }, longQuote)
+    }
+
+    /// The emoji sits astride the prefix window's own start (17 filler units,
+    /// a 2-unit emoji, 31 more filler units, `contextLimit` = 32 back from the
+    /// selection — the window's naive start lands on the emoji's low
+    /// surrogate). Snapping must drop the whole emoji rather than a half.
+    func testContextNeverSplitsASurrogatePairAtTheWindowEdge() {
+        let emoji = "🙂"
+        let afterEmoji = String(repeating: "x", count: 31)
+        let document = (String(repeating: "x", count: 17) + emoji + afterEmoji + "TARGET"
+            + String(repeating: "y", count: 40)) as NSString
+        let range = document.range(of: "TARGET")
+        XCTAssertEqual(range.location - TextAnchor.contextLimit, 18,
+                        "the prefix window must start mid-surrogate-pair for this test to mean anything")
+
+        let made = TextAnchorResolver.make(range: range, in: document)
+        XCTAssertFalse(made.prefix.contains("\u{FFFD}"), "a snapped prefix must never carry half of a surrogate pair")
+        XCTAssertEqual(made.prefix, afterEmoji, "the split emoji is dropped whole, not sliced")
+        XCTAssertEqual(TextAnchorResolver.resolve(made, in: document), range)
+    }
+
     // MARK: - Resolving
 
     func testUnchangedTextResolvesToTheSavedOffsets() {

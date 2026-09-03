@@ -17,24 +17,22 @@ public final class WriterIntentServices {
 
     private let library: WriterLibraryStoring
     private let notes: NoteStoring
-    private let noteIndex: NoteIndexing
     private let textStore: DocumentTextStoring
     private let router: NoteRouting?
 
     public init(
-        library: WriterLibraryStoring, notes: NoteStoring, noteIndex: NoteIndexing,
+        library: WriterLibraryStoring, notes: NoteStoring,
         textStore: DocumentTextStoring, router: NoteRouting?
     ) {
         self.library = library
         self.notes = notes
-        self.noteIndex = noteIndex
         self.textStore = textStore
         self.router = router
     }
 
     /// Files a capture. Named a sheet, it goes there whole. Named nothing, it
     /// is split and each piece is routed on its own; with no router it waits
-    /// unattached in the Inbox.
+    /// unattached in the Inbox. `notes.insert` indexes each note itself.
     @discardableResult
     public func addNote(text: String, to document: DocumentID?) throws -> NoteAddResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -43,31 +41,28 @@ public final class WriterIntentServices {
         if let document, let target = try library.document(document) {
             let note = WriterNote(documentIDs: [target.id], text: trimmed, source: .intent)
             try notes.insert(note)
-            try notes.attach(note.id, to: target.id, attachment: .manual)
-            try noteIndex.index(note)
             return .document(target)
         }
 
         guard let router else {
             let note = WriterNote(text: trimmed, source: .intent)
             try notes.insert(note)
-            try noteIndex.index(note)
             return .inbox
         }
 
         var first: WriterDocument?
         for piece in NoteCaptureSplitter.split(trimmed) {
             let placements = try router.route(piece)
-            let note = WriterNote(
-                documentIDs: placements.map(\.documentID), text: piece, source: .intent)
+            // Attached below with each placement's real reason, so the note
+            // is inserted unattached rather than a second time with `.manual`.
+            let note = WriterNote(text: piece, source: .intent)
             try notes.insert(note)
             for placement in placements {
                 try notes.attach(
-                    note.id, to: placement.documentID,
+                    note.id, to: placement.document.id,
                     attachment: placement.created ? .created : .routed)
-                if first == nil { first = try library.document(placement.documentID) }
+                if first == nil { first = placement.document }
             }
-            try noteIndex.index(note)
         }
         guard let first else { return .inbox }
         return .document(first)
@@ -95,9 +90,8 @@ public final class WriterIntentServices {
     /// Title search for the intent's entity query. Matches on the title alone,
     /// because a shortcut names a sheet rather than searching its text.
     public func documents(matchingTitle title: String) throws -> [WriterDocument] {
-        let needle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let needle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return try recentDocuments(limit: 10) }
-        return try library.documents(matching: FilterPredicate(), scope: nil)
-            .filter { $0.title.lowercased().contains(needle) }
+        return try library.documents(matchingTitle: needle, limit: 20)
     }
 }

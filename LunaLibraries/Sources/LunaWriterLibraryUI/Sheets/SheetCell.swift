@@ -18,9 +18,25 @@ public final class SheetCell: UICollectionViewListCell {
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
+        formatter.unitsStyle = .full
         return formatter
     }()
+
+    /// Below this, `RelativeDateTimeFormatter` reads as "in 0 seconds" for a
+    /// sheet that just autosaved — there is no unit small enough to word it
+    /// naturally, so this floor reads it as "Just now" instead.
+    private static let justNowThreshold: TimeInterval = 60
+
+    private static func relativeDateText(for date: Date) -> String {
+        guard abs(date.timeIntervalSinceNow) >= justNowThreshold else {
+            return L10n.string("WriterLibrary_sheets_justNow")
+        }
+        return relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// How many keyword chips a row shows before folding the rest into a
+    /// "+N" chip — unbounded, they run past the cell's trailing edge (organiser #22).
+    private static let maxVisibleChips = 3
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -84,7 +100,7 @@ public final class SheetCell: UICollectionViewListCell {
         favoriteGlyph.isHidden = !document.isFavorite
         snippetLabel.text = document.snippet
         snippetLabel.isHidden = document.snippet.isEmpty
-        dateLabel.text = Self.relativeFormatter.localizedString(for: document.updatedAt, relativeTo: Date())
+        dateLabel.text = Self.relativeDateText(for: document.updatedAt)
 
         if let goal = document.goal {
             goalBar.isHidden = false
@@ -97,10 +113,20 @@ public final class SheetCell: UICollectionViewListCell {
             chipsStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
-        for keyword in document.keywords {
+        let visible = document.keywords.prefix(Self.maxVisibleChips)
+        for keyword in visible {
             chipsStack.addArrangedSubview(Self.chip(for: keyword))
         }
+        let overflow = document.keywords.count - visible.count
+        if overflow > 0 {
+            chipsStack.addArrangedSubview(Self.chip(for: "+\(overflow)"))
+        }
     }
+
+    /// Words per minute a reader gets through, for the `.readingMinutes` goal
+    /// unit. Matches the estimate `StatisticsSheet` and the editor's own
+    /// reading-time display use.
+    private static let wordsPerReadingMinute = 250
 
     /// How far a sheet is toward its goal, `0...1`. `.atMost` reverses the
     /// sense: a sheet under the ceiling reads as fully on track.
@@ -110,7 +136,8 @@ public final class SheetCell: UICollectionViewListCell {
         switch goal.unit {
         case .words: count = document.wordCount
         case .characters: count = document.characterCount
-        case .sentences, .readingMinutes: count = document.wordCount
+        case .sentences: count = document.sentenceCount
+        case .readingMinutes: count = document.wordCount / wordsPerReadingMinute
         }
         switch goal.mode {
         case .atLeast, .about:

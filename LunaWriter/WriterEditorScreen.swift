@@ -11,6 +11,15 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     let session: DocumentSession
     weak var editingDelegate: DocumentEditingDelegate?
 
+    /// Surfaces the editor's layout witness, so a wiring root that only
+    /// holds this `DocumentEditing` value's own concrete type (read-along's,
+    /// in `WriterReadAlongWiring`) can reach it without importing
+    /// `LunaWriterEditor` at the container's tier.
+    weak var layoutObserver: EditorLayoutObserving? {
+        get { editor.layoutObserver }
+        set { editor.layoutObserver = newValue }
+    }
+
     init(session: DocumentSession, environment: EditorEnvironment) {
         self.session = session
         self.editor = EditorViewController(session: session, environment: environment)
@@ -20,6 +29,12 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    /// The one place the session's I/O actually ends — this screen leaving
+    /// scope is what "the sheet is closing" means.
+    deinit {
+        editor.close()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -34,7 +49,9 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func focus(on anchor: TextAnchor) { editor.focus(on: anchor) }
 
-    func flushPendingSave() { try? session.save() }
+    func flushPendingSave() { session.saveNow() }
+
+    func replaceText(_ text: String) { session.replaceWholeText(text) }
 
     func editorRequestsNotesPanel(_ editor: EditorViewController) {
         editingDelegate?.editorRequestsNotesPanel(self)

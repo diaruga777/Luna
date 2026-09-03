@@ -31,14 +31,26 @@ public enum MarkdownEditingCommands {
 
     /// Applies edits in the order they are given. Returns the range the new
     /// text occupies, so the caller can place the caret.
+    ///
+    /// Edits run from the end of the text backwards (the caller's contract),
+    /// so each one's own position is never disturbed by an earlier one in
+    /// the list. But an edit that changes length shifts everything AFTER it
+    /// — including the span every edit before it in the list already landed
+    /// at — so that shift accumulates across the whole list to keep the
+    /// returned upper bound in the final text's coordinates.
     @discardableResult
     public static func apply(_ edits: [TextEdit], to text: NSMutableString) -> NSRange {
         var lowest = Int.max
         var highest = 0
         for edit in edits {
-            text.replaceCharacters(in: edit.range, with: edit.replacement)
             let length = (edit.replacement as NSString).length
+            let delta = length - edit.range.length
+            text.replaceCharacters(in: edit.range, with: edit.replacement)
             lowest = min(lowest, edit.range.location)
+            // This edit sits before every edit already folded into `highest`,
+            // so its delta shifts all of them forward before this edit's own
+            // end is folded in too.
+            highest += delta
             highest = max(highest, edit.range.location + length)
         }
         guard lowest != Int.max else { return NSRange(location: 0, length: 0) }
@@ -99,10 +111,13 @@ public enum MarkdownEditingCommands {
 
     /// Turns every line the range touches into a list of `kind`, or takes the
     /// markers off when they are already that kind.
-    public static func toggleList(_ kind: MarkdownListKind, in range: NSRange, of text: NSString) -> [TextEdit] {
+    public static func toggleList(
+        _ kind: MarkdownListKind, in range: NSRange, of text: NSString, model: MarkdownDocumentModel? = nil
+    ) -> [TextEdit] {
+        let model = model ?? MarkdownDocumentModel(text: text)
         let lines = self.lines(touching: range, in: text)
         guard !lines.isEmpty else { return [] }
-        let markers = lines.map { marker(ofLine: $0, in: text) }
+        let markers = lines.map { listDetail(atLineIndex: model.lineIndex(at: $0.location), in: model, text: text) }
         let contentful = zip(lines, markers).filter { !isBlank($0.0, in: text) }
         guard !contentful.isEmpty else { return [] }
         let alreadyThatKind = contentful.allSatisfy { $0.1?.kind == kind }
@@ -131,11 +146,12 @@ public enum MarkdownEditingCommands {
 
     /// Ticks or unticks the task box on the line at `offset`, and gives a
     /// line that has none a fresh unticked box.
-    public static func toggleTask(at offset: Int, in text: NSString) -> [TextEdit] {
+    public static func toggleTask(at offset: Int, in text: NSString, model: MarkdownDocumentModel? = nil) -> [TextEdit] {
+        let model = model ?? MarkdownDocumentModel(text: text)
         let line = lineRange(at: offset, in: text)
         guard !isBlank(line, in: text) else { return [] }
         let start = firstNonSpace(in: line, of: text)
-        guard let existing = marker(ofLine: line, in: text) else {
+        guard let existing = listDetail(atLineIndex: model.lineIndex(at: offset), in: model, text: text) else {
             return [TextEdit(range: NSRange(location: start, length: 0), replacement: bulletMarker + "[ ] ")]
         }
         guard let box = existing.taskBox else {
@@ -147,14 +163,19 @@ public enum MarkdownEditingCommands {
 
     /// What Return should do on the line at `offset`. nil means the caller
     /// inserts a plain line break.
-    public static func continueList(onReturnAt offset: Int, in text: NSString) -> [TextEdit]? {
+    public static func continueList(onReturnAt offset: Int, in text: NSString, model: MarkdownDocumentModel? = nil) -> [TextEdit]? {
+        let model = model ?? MarkdownDocumentModel(text: text)
         let line = lineRange(at: offset, in: text)
         let start = firstNonSpace(in: line, of: text)
-        if let existing = marker(ofLine: line, in: text) {
+        if let existing = listDetail(atLineIndex: model.lineIndex(at: offset), in: model, text: text) {
             let contentEnd = trimmedEnd(of: line, in: text)
             if existing.contentStart >= contentEnd {
                 // An empty item ends the list rather than making another.
-                return [TextEdit(range: NSRange(location: start, length: existing.contentStart - start), replacement: "")]
+                // The scan's own content start can sit short of the line's
+                // terminator (trailing whitespace the marker never claimed),
+                // so the removal clears the whole line, not just the marker.
+                let removalEnd = max(existing.contentStart, terminatorFreeEnd(of: line, in: text))
+                return [TextEdit(range: NSRange(location: start, length: removalEnd - start), replacement: "")]
             }
             var next = text.substring(with: NSRange(location: line.location, length: start - line.location))
             switch existing.kind {
@@ -208,50 +229,28 @@ public enum MarkdownEditingCommands {
         var taskBox: NSRange?
     }
 
-    static func marker(ofLine line: NSRange, in text: NSString) -> LineMarker? {
-        var index = firstNonSpace(in: line, of: text)
-        let end = NSMaxRange(line)
-        guard index < end else { return nil }
-        let first = text.character(at: index)
-        var kind: MarkdownListKind
+    /// Reads the list-item detail of one line from the model's own scan,
+    /// rather than deciding independently what counts as a marker: a line
+    /// inside a fence or a blockquote, which the scanner already knows is
+    /// not a list item, must never disagree with what this tier acts on.
+    static func listDetail(atLineIndex index: Int, in model: MarkdownDocumentModel, text: NSString) -> LineMarker? {
+        guard case .listItem(let ordered, _, let task) = model.blockKind(at: index) else { return nil }
+        let block = model.lineScan(at: index).block
+        guard let marker = block.markupRanges.first else { return nil }
+
         var number = 0
-        var markerLength = 0
-
-        if first == 0x2D || first == 0x2B || first == 0x2A {
-            let next = index + 1
-            guard next < end, isSpaceOrTab(text.character(at: next)) else { return nil }
-            kind = .bullet
-            index = next
-        } else if isDigit(first) {
-            var digits = index
-            while digits < end, isDigit(text.character(at: digits)) { digits += 1 }
-            guard digits < end, text.character(at: digits) == 0x2E || text.character(at: digits) == 0x29 else { return nil }
-            guard digits + 1 < end, isSpaceOrTab(text.character(at: digits + 1)) else { return nil }
-            number = Int(text.substring(with: NSRange(location: index, length: digits - index))) ?? 0
-            kind = .ordered
-            index = digits + 1
-        } else {
-            return nil
+        if ordered {
+            let digits = text.substring(with: marker).prefix { $0.isNumber }
+            number = Int(digits) ?? 0
         }
-
-        let markerStart = firstNonSpace(in: line, of: text)
-        while index < end, isSpaceOrTab(text.character(at: index)) { index += 1 }
-        markerLength = index - markerStart
-
-        var task: TaskState?
         var taskBox: NSRange?
-        if kind == .bullet, index + 2 < end, text.character(at: index) == 0x5B, text.character(at: index + 2) == 0x5D {
-            let box = text.character(at: index + 1)
-            let closes = index + 3 >= end || isSpaceOrTab(text.character(at: index + 3)) || text.character(at: index + 3) == 0x0A
-            if closes, box == 0x20 || box == 0x78 || box == 0x58 {
-                task = box == 0x20 ? .unchecked : .checked
-                taskBox = NSRange(location: index, length: 3)
-                kind = .task
-                index += 3
-                while index < end, isSpaceOrTab(text.character(at: index)) { index += 1 }
-            }
+        if task != nil, block.markupRanges.count > 1 {
+            taskBox = NSRange(location: block.markupRanges[1].location, length: 3)
         }
-        return LineMarker(kind: kind, contentStart: index, markerLength: markerLength, number: number, task: task, taskBox: taskBox)
+        let kind: MarkdownListKind = task != nil ? .task : (ordered ? .ordered : .bullet)
+        return LineMarker(
+            kind: kind, contentStart: block.contentRange.location, markerLength: marker.length,
+            number: number, task: task, taskBox: taskBox)
     }
 
     private static func blockquotePrefix(ofLine line: NSRange, in text: NSString) -> (end: Int, depth: Int)? {
@@ -298,6 +297,21 @@ public enum MarkdownEditingCommands {
         return end
     }
 
+    /// The line's own end, its terminator excluded but trailing whitespace
+    /// kept — everything a full-line removal should take with it.
+    private static func terminatorFreeEnd(of line: NSRange, in text: NSString) -> Int {
+        var end = NSMaxRange(line)
+        while end > line.location, isLineTerminator(text.character(at: end - 1)) { end -= 1 }
+        return end
+    }
+
+    /// The terminators `NSString.lineRange(for:)` itself breaks on — not the
+    /// broader `NSCharacterSet.newlines`, which also contains form feed and
+    /// vertical tab even though `lineRange(for:)` does not stop there.
+    private static func isLineTerminator(_ unit: unichar) -> Bool {
+        unit == 0x0A || unit == 0x0D || unit == 0x0085 || unit == 0x2028 || unit == 0x2029
+    }
+
     private static func isBlank(_ line: NSRange, in text: NSString) -> Bool {
         firstNonSpace(in: line, of: text) >= trimmedEnd(of: line, in: text)
     }
@@ -307,6 +321,4 @@ public enum MarkdownEditingCommands {
     }
 
     private static func isSpaceOrTab(_ unit: unichar) -> Bool { unit == 0x20 || unit == 0x09 }
-
-    private static func isDigit(_ unit: unichar) -> Bool { unit >= 0x30 && unit <= 0x39 }
 }

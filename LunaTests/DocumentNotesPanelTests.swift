@@ -25,7 +25,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(newer.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
         XCTAssertEqual(panel.rows.map(\.id), [newer.id, older.id])
@@ -48,7 +48,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         relevance.scores[document.id] = [low.id: 0.1, high.id: 0.9]
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         panel.relevance = relevance
         layoutWriterScreen(panel)
 
@@ -68,7 +68,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(note.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         let editor = FakeDocumentEditor(document: document)
         panel.editor = editor
         layoutWriterScreen(panel)
@@ -84,7 +84,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
         let note = try XCTUnwrap(panel.composeNote("A fresh thought"))
@@ -103,7 +103,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(note.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
         XCTAssertTrue(panel.deleteNote(note.id))
 
@@ -127,9 +127,34 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.textStore.saveText("Completely different content now.", for: &document)
 
         let panel = DocumentNotesPanelViewController(
-            notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
         XCTAssertTrue(panel.orphanedNoteIDs.contains(note.id))
+    }
+
+    /// organiser #31: a note added via "@", voice, or an intent while the
+    /// panel is open was invisible until the panel was reopened.
+    @MainActor
+    func testANoteAddedElsewhereWhileThePanelIsOpenAppearsWithoutReopening() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+
+        let panel = DocumentNotesPanelViewController(
+            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex,
+            textStore: stack.textStore, document: document)
+        layoutWriterScreen(panel)
+        XCTAssertTrue(panel.rows.isEmpty)
+
+        let note = WriterNote(documentIDs: [document.id], text: "Added elsewhere")
+        try stack.library.insert(note)
+        try stack.library.attach(note.id, to: document.id, attachment: .manual)
+
+        // `LibraryChangeBroadcaster` posts on the main queue after the write
+        // commits, so the panel's observer callback lands one run-loop turn
+        // later.
+        pollUntil { panel.rows.contains { $0.id == note.id } }
+        XCTAssertTrue(panel.rows.contains { $0.id == note.id })
     }
 }

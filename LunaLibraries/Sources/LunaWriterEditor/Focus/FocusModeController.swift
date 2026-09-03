@@ -36,12 +36,14 @@ public final class FocusModeController: FocusRangeProviding, FocusIdleTimerDeleg
 
     public var typewriterScrolling: Bool
 
-    /// While the keyboard is up the writer is writing, so the dim stands even
-    /// after the idle timeout.
-    public var isKeyboardVisible: Bool = false {
+    /// While the text view is first responder the writer is writing, so the
+    /// dim stands even after the idle timeout. Driven by first-responder
+    /// state alone — a hardware keyboard means no on-screen keyboard ever
+    /// appears, but the sheet is still being composed.
+    public var isComposing: Bool = false {
         didSet {
-            guard isKeyboardVisible != oldValue else { return }
-            if isKeyboardVisible { idleTimer.touch() }
+            guard isComposing != oldValue else { return }
+            if isComposing { idleTimer.touch() }
             publish()
         }
     }
@@ -74,14 +76,17 @@ public final class FocusModeController: FocusRangeProviding, FocusIdleTimerDeleg
     /// The writer left the sheet. Nothing is dimmed until the caret returns.
     public func editingEnded() {
         idleTimer.stop()
-        isKeyboardVisible = false
+        isComposing = false
         publish()
     }
 
     /// The range the mode wants lit around a selection, whatever the timer says.
     public func focusRange(for selection: NSRange, in text: NSString) -> NSRange? {
         guard text.length > 0 else { return nil }
-        let caret = min(max(0, selection.location), text.length - 1)
+        // A caret at the very end of the document — right after a Return —
+        // sits in a new, empty final paragraph. Clamping to `length - 1`
+        // would read that as the LAST CHARACTER of the paragraph before it.
+        let caret = min(max(0, selection.location), text.length)
         let paragraph = text.paragraphRange(for: NSRange(location: caret, length: 0))
         switch mode {
         case .off:
@@ -96,7 +101,7 @@ public final class FocusModeController: FocusRangeProviding, FocusIdleTimerDeleg
 
     private func publish() {
         let wanted = mode == .off ? nil : candidate
-        let allowed = isKeyboardVisible || !idleTimer.isIdle
+        let allowed = isComposing || !idleTimer.isIdle
         let next = allowed ? wanted : nil
         guard next != focusRange else { return }
         focusRange = next

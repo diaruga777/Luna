@@ -191,6 +191,13 @@ public final class ReadingTracker {
     private let paceLead: CGFloat
     private let snapDistance: CGFloat
 
+    /// How many sentences either side of the current one the scoring pass
+    /// still considers.
+    private static let scoringWindow = 6
+    /// Vertical band pre-filter width, in multiples of `sigmaY` — generous
+    /// enough to never itself exclude anything the window wouldn't already.
+    private static let verticalBandSigmas: Double = 10
+
     public init(
         configuration: ReadingTrackerConfiguration = ReadingTrackerConfiguration(),
         pointsPerDegree: CGFloat
@@ -215,7 +222,15 @@ public final class ReadingTracker {
             return
         }
         sentenceIndex = min(sentenceIndex, sentences.count - 1)
-        if !started { resetTo(sentence: 0) }
+        if !started {
+            resetTo(sentence: 0)
+        } else {
+            // The sentence index survives a re-wrap; the sweep inside it does
+            // not — the old word offsets belong to geometry that is gone.
+            progress = 0
+            doneAt = nil
+            snapCandidate = nil
+        }
     }
 
     /// The learned reading speed, in words per minute.
@@ -324,6 +339,10 @@ public final class ReadingTracker {
     private func score(now: TimeInterval) {
         guard hasGaze, let gaze = lastGaze else {
             quality = max(0, quality - 0.02)
+            // A frozen residual would go on tripping the recalibration nag
+            // for as long as gaze stays unavailable, over a number that no
+            // longer reflects anything. Decay it toward zero instead.
+            residual *= 0.95
             if quality < configuration.qualityFloor {
                 if badSince == nil { badSince = now }
                 if let badSince, now - badSince > configuration.qualityDropDelay { mode = .auto }
@@ -342,10 +361,23 @@ public final class ReadingTracker {
         var bestOwnRaw: Double = 0
         var currentScoreValue: Double = 0
 
-        for (index, sentence) in sentences.enumerated() {
+        // The prior already makes anything past a couple of sentences away
+        // nearly worthless, and the Gaussian likelihood makes anything a few
+        // sigma away from the gaze vertically worthless outright — scoring
+        // the whole document every frame pays for candidates that can never
+        // win. A ±6-sentence window, plus a wide vertical band pre-filter
+        // inside it, is `ReadingHeuristicsTests` measured indistinguishable
+        // from scoring everything.
+        let lowerBound = max(0, sentenceIndex - Self.scoringWindow)
+        let upperBound = min(sentences.count - 1, sentenceIndex + Self.scoringWindow)
+        let verticalBand = Double(sigmaY) * Self.verticalBandSigmas
+
+        for index in lowerBound...upperBound {
+            let sentence = sentences[index]
             let dy = Double(sentence.verticalDistance(to: gaze.y))
+            guard dy.isFinite, dy <= verticalBand else { continue }
             let dx = Double(sentence.horizontalDistance(to: gaze.x))
-            guard dy.isFinite, dx.isFinite else { continue }
+            guard dx.isFinite else { continue }
             let raw = exp(-(dy * dy) / (2 * sigmaY * sigmaY))
                 * exp(-(dx * dx) / (2 * sigmaX * sigmaX))
             let scored = raw * Self.prior(delta: index - sentenceIndex, done: done)

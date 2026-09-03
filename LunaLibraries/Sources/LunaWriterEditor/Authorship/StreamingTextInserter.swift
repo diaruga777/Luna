@@ -52,12 +52,18 @@ public final class StreamingTextInserter {
         self.source = source
         start = location
         inserted = 0
+        textView?.selectedRange = NSRange(location: location, length: 0)
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.step()
         }
         step()
     }
 
+    /// Inserts at the text view's OWN current caret, read fresh every step —
+    /// not `start + inserted`, recomputed by hand. That arithmetic goes
+    /// stale the moment anything else edits the document between two
+    /// chunks; the caret itself is always exactly where the last thing
+    /// typed — this chunk, or someone else's edit — left it.
     private func step() {
         guard let textView else {
             finish()
@@ -70,7 +76,7 @@ public final class StreamingTextInserter {
         let take = min(chunk, remaining.count)
         let piece = String(remaining.prefix(take))
         remaining.removeFirst(take)
-        let at = NSRange(location: start + inserted, length: 0)
+        let at = textView.selectedRange
         textView.replaceText(in: at, with: piece)
         inserted += (piece as NSString).length
     }

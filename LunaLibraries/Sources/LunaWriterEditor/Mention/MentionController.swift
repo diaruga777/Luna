@@ -69,6 +69,12 @@ public final class MentionController {
         didSet {
             guard state != oldValue else { return }
             delegate?.mentionController(self, didChange: state)
+            // The one place a transition to idle is reported: `end()` used
+            // to also call this explicitly, which meant every dismissal
+            // told the delegate twice.
+            if state == .idle {
+                delegate?.mentionControllerDidEnd(self)
+            }
         }
     }
 
@@ -252,14 +258,39 @@ public final class MentionController {
 
     /// Closes a peek: the "@" and the query go, and the caret returns to
     /// where the "@" was.
+    ///
+    /// `refresh(_:)` ignores every edit while a peek is up, so the span it
+    /// cached could be stale by the time it closes — an edit elsewhere in
+    /// the document may have moved or erased the "@". The span is checked
+    /// fresh here before anything is removed.
     public func closePeek() {
         guard isPeeking else { return }
         isPeeking = false
+        guard let textView, recomputedSpanAfterPeek(textView) else {
+            end()
+            return
+        }
         removeQueryText()
         end()
     }
 
-    /// Makes a note out of what was typed, anchored where the "@" was.
+    /// Re-reads the query from the live text. Returns false when the "@" no
+    /// longer marks a live query, in which case nothing should be removed.
+    private func recomputedSpanAfterPeek(_ textView: UITextView) -> Bool {
+        guard let marker = state.marker else { return false }
+        let text = textView.text as NSString
+        guard marker < text.length, text.character(at: marker) == unichar(64) else { return false }
+        let selection = textView.selectedRange
+        guard selection.length == 0, selection.location > marker, selection.location <= text.length else {
+            return false
+        }
+        let queryRange = NSRange(location: marker + 1, length: selection.location - marker - 1)
+        state = .querying(marker: marker, query: text.substring(with: queryRange))
+        return true
+    }
+
+    /// Makes a note out of what was typed, anchored where the "@" was. The
+    /// store write runs on `searchQueue`, off the keystroke's own thread.
     public func createNoteFromQuery() {
         let text = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let marker = state.marker, !text.isEmpty else {
@@ -271,14 +302,34 @@ public final class MentionController {
         }
         let note = WriterNote(
             documentIDs: [documentID], text: text, source: .mention, anchor: anchor)
-        do {
-            try noteStore.insert(note)
-            try noteStore.attach(note.id, to: documentID, attachment: .mention)
-            try? noteIndex.index(note)
-        } catch {
-            end()
+        let noteStore = self.noteStore
+        let noteIndex = self.noteIndex
+        let documentID = self.documentID
+        searchQueue.async { [weak self] in
+            var succeeded = true
+            do {
+                try noteStore.insert(note)
+                try noteStore.attach(note.id, to: documentID, attachment: .mention)
+                try? noteIndex.index(note)
+            } catch {
+                succeeded = false
+            }
+            DispatchQueue.main.async {
+                self?.finishCreatingNote(note, forMarker: marker, succeeded: succeeded)
+            }
+        }
+    }
+
+    /// `marker` pins this to the query the write was about. If the writer
+    /// moved on before the write finished — a different mention, or none —
+    /// the note is still saved, but there is no query text left to remove
+    /// and no marker left to fly the note in from.
+    private func finishCreatingNote(_ note: WriterNote, forMarker marker: Int, succeeded: Bool) {
+        guard succeeded else {
+            if state.marker == marker { end() }
             return
         }
+        guard state.marker == marker else { return }
         let rect = markerRect()
         removeQueryText()
         delegate?.mentionController(self, didCreate: note, from: rect)
@@ -297,9 +348,7 @@ public final class MentionController {
         searchTimer = nil
         results = []
         highlightedIndex = 0
-        guard state != .idle else { return }
         state = .idle
-        delegate?.mentionControllerDidEnd(self)
     }
 
     // MARK: - Editing the sheet

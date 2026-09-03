@@ -15,8 +15,10 @@ public enum TextAnchorResolver {
     static let searchWindow = 2000
     /// The share of the quote that may differ and still count as a match.
     static let fuzzyTolerance = 0.1
-    /// Longer quotes match on their head, to keep the match affordable.
-    static let fuzzyPatternLimit = 256
+    /// Longer quotes match on their head, to keep the match affordable: the
+    /// stored quote itself stays capped at `TextAnchor.exactLimit`, but the
+    /// edit-distance search only ever compares this many of its units.
+    static let fuzzyPatternLimit = 96
     static let candidateLimit = 16
 
     // MARK: - Making
@@ -24,10 +26,14 @@ public enum TextAnchorResolver {
     public static func make(range: NSRange, in text: NSString) -> TextAnchor {
         let clamped = clamp(range, to: text.length)
         let exact = cappedText(of: clamped, in: text)
-        let prefixStart = max(0, clamped.location - TextAnchor.contextLimit)
+        // The suffix picks up where the (possibly capped) quote actually
+        // ends, not where the selection did, so `prefix + exact + suffix`
+        // reads as one contiguous run of the document.
+        let exactEnd = clamped.location + (exact as NSString).length
+        let prefixStart = snappedForward(max(0, clamped.location - TextAnchor.contextLimit), in: text)
         let prefix = text.substring(with: NSRange(location: prefixStart, length: clamped.location - prefixStart))
-        let suffixEnd = min(text.length, NSMaxRange(clamped) + TextAnchor.contextLimit)
-        let suffix = text.substring(with: NSRange(location: NSMaxRange(clamped), length: suffixEnd - NSMaxRange(clamped)))
+        let suffixEnd = snappedBackward(min(text.length, exactEnd + TextAnchor.contextLimit), in: text)
+        let suffix = text.substring(with: NSRange(location: exactEnd, length: suffixEnd - exactEnd))
         return TextAnchor(
             start: clamped.location,
             end: NSMaxRange(clamped),
@@ -103,7 +109,9 @@ public enum TextAnchorResolver {
         var out: [Int] = []
         var search = window
         while search.length > 0, out.count < limit {
-            let found = text.range(of: needle, options: [], range: search)
+            // `.literal` keeps the match the same UTF-16 length as `needle`,
+            // which the caller always assumes when it offsets past the hit.
+            let found = text.range(of: needle, options: [.literal], range: search)
             guard found.location != NSNotFound else { break }
             out.append(found.location)
             let next = found.location + 1
@@ -143,6 +151,9 @@ public enum TextAnchorResolver {
                                                limit: NSMaxRange(window), maxDistance: tolerance) else { continue }
             if best == nil || match.distance < best!.distance {
                 best = (NSRange(location: candidate, length: match.length), match.distance)
+                // A near-exact hit is as good as this search gets; the DP pass
+                // over the rest of the candidates would only confirm it.
+                if match.distance <= 1 { break }
             }
         }
         guard let winner = best else { return nil }
@@ -202,5 +213,21 @@ public enum TextAnchorResolver {
         let composed = text.rangeOfComposedCharacterSequence(at: end - 1)
         if NSMaxRange(composed) > end { end = composed.location }
         return text.substring(with: NSRange(location: range.location, length: end - range.location))
+    }
+
+    /// Moves `location` past a composed-character sequence it splits, so a
+    /// context substring never begins with half of a surrogate pair.
+    private static func snappedForward(_ location: Int, in text: NSString) -> Int {
+        guard location > 0, location < text.length else { return location }
+        let sequence = text.rangeOfComposedCharacterSequence(at: location)
+        return sequence.location < location ? NSMaxRange(sequence) : location
+    }
+
+    /// Moves `location` back off a composed-character sequence it splits, so
+    /// a context substring never ends with half of a surrogate pair.
+    private static func snappedBackward(_ location: Int, in text: NSString) -> Int {
+        guard location > 0, location < text.length else { return location }
+        let sequence = text.rangeOfComposedCharacterSequence(at: location)
+        return sequence.location < location ? sequence.location : location
     }
 }

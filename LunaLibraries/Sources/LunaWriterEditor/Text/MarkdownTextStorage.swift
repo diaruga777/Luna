@@ -49,8 +49,12 @@ public final class MarkdownTextStorage: NSTextStorage {
         }
     }
 
-    private var pendingEdit: (range: NSRange, replacementLength: Int)?
+    /// Seeds the next rescan. `MarkdownDocumentModel` already unions every
+    /// edit applied since the last rescan into its own pending-lines range, so
+    /// this only needs to name one location the edit touched.
+    private var pendingRescanSeed: NSRange?
     private var lastRescan: NSRange?
+    private var cachedString: String?
 
     public init(text: String = "", styler: LayoutAttributeStyler = LayoutAttributeStyler()) {
         backing = NSMutableAttributedString(string: text)
@@ -70,7 +74,14 @@ public final class MarkdownTextStorage: NSTextStorage {
 
     // MARK: - NSTextStorage
 
-    public override var string: String { backing.string }
+    public override var length: Int { backing.length }
+
+    public override var string: String {
+        if let cachedString { return cachedString }
+        let value = backing.string
+        cachedString = value
+        return value
+    }
 
     public override func attributes(
         at location: Int, effectiveRange range: NSRangePointer?
@@ -81,17 +92,13 @@ public final class MarkdownTextStorage: NSTextStorage {
     public override func replaceCharacters(in range: NSRange, with str: String) {
         let replacementLength = (str as NSString).length
         beginEditing()
+        // The model's contract: mutate the shared text, then tell it what
+        // changed. `apply` unions this edit into whatever is still pending
+        // from an earlier edit in the same editing group, so nothing here
+        // needs to reconstruct that union itself.
         backing.replaceCharacters(in: range, with: str)
-        if var pending = pendingEdit {
-            // Two edits inside one editing group: widen to cover both.
-            let start = min(pending.range.location, range.location)
-            let end = max(NSMaxRange(pending.range), NSMaxRange(range))
-            pending.range = NSRange(location: start, length: end - start)
-            pending.replacementLength += replacementLength - range.length
-            pendingEdit = pending
-        } else {
-            pendingEdit = (range, replacementLength)
-        }
+        model.apply(edit: range, replacementLength: replacementLength)
+        pendingRescanSeed = NSRange(location: range.location, length: replacementLength)
         edited(.editedCharacters, range: range, changeInLength: replacementLength - range.length)
         endEditing()
     }
@@ -104,15 +111,19 @@ public final class MarkdownTextStorage: NSTextStorage {
     }
 
     public override func processEditing() {
-        if let pending = pendingEdit {
-            pendingEdit = nil
+        cachedString = nil
+        if let seed = pendingRescanSeed {
+            pendingRescanSeed = nil
             revision &+= 1
-            model.apply(edit: pending.range, replacementLength: pending.replacementLength)
-            let rescanned = model.rescan(
-                afterEditIn: NSRange(location: pending.range.location, length: pending.replacementLength))
+            let rescanned = model.rescan(afterEditIn: seed)
             styler.apply(model, to: backing, in: rescanned)
             lastRescan = rescanned
-            if rescanned.length > 0 {
+            // The characters already edited() this group covered their own
+            // attributes; only tell the layout manager about the extra reach
+            // of the rescan (a fence toggling colour on lines far below it).
+            let covered = editedRange
+            if rescanned.length > 0,
+               rescanned.location < covered.location || NSMaxRange(rescanned) > NSMaxRange(covered) {
                 edited(.editedAttributes, range: rescanned, changeInLength: 0)
             }
         }

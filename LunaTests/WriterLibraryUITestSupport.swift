@@ -16,6 +16,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     private(set) var document: WriterDocument
     private(set) var focusedAnchors: [TextAnchor] = []
     private(set) var flushCount = 0
+    private(set) var replacedTexts: [String] = []
 
     init(document: WriterDocument) {
         self.document = document
@@ -27,6 +28,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
 
     func focus(on anchor: TextAnchor) { focusedAnchors.append(anchor) }
     func flushPendingSave() { flushCount += 1 }
+    func replaceText(_ text: String) { replacedTexts.append(text) }
 
     /// Simulates the real editor reporting a save back to its container.
     func simulateUpdate(_ document: WriterDocument) {
@@ -93,6 +95,33 @@ extension XCTestCase {
         viewController.loadViewIfNeeded()
         viewController.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
         viewController.view.layoutIfNeeded()
+    }
+
+    /// Hosts `viewController` in a REAL (offscreen) window rather than the
+    /// window-less frame `layoutWriterScreen` uses — a window-less view
+    /// controller can queue a `present(_:animated:)` that never resolves
+    /// `presentedViewController`, so a test asserting on a presented alert
+    /// needs this instead. Keep the returned window alive for the rest of
+    /// the test; a deallocated window tears the presentation down early.
+    @discardableResult
+    @MainActor
+    func hostWriterScreen(
+        _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
+    ) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        window.rootViewController = viewController
+        window.makeKeyAndVisible()
+        viewController.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        return window
+    }
+
+    @discardableResult
+    @MainActor
+    func hostWriterScreenInWindow(
+        _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
+    ) -> UIWindow {
+        hostWriterScreen(viewController, width: width, height: height)
     }
 
     /// Pumps the run loop until `condition` is true or `timeout` elapses —

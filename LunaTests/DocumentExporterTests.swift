@@ -50,4 +50,35 @@ final class DocumentExporterTests: XCTestCase {
         let lines = plain.components(separatedBy: "\n")
         XCTAssertEqual(lines, ["First paragraph.", "", "Second paragraph."])
     }
+
+    /// organiser #37: the raw title was used as a path component, so a title
+    /// carrying "/" or ":" failed the write silently.
+    func testSanitizedFilenameReplacesPathAndControlCharacters() {
+        XCTAssertEqual(DocumentExporter.sanitizedFilename(from: "Notes: Q3/Q4 Plan"), "Notes- Q3-Q4 Plan")
+    }
+
+    func testSanitizedFilenameFallsBackToUntitledWithNothingUsable() {
+        XCTAssertEqual(DocumentExporter.sanitizedFilename(from: ""), "Untitled")
+        XCTAssertEqual(DocumentExporter.sanitizedFilename(from: "   "), "Untitled")
+    }
+
+    /// A single path separator becomes a dash rather than vanishing, so the
+    /// result is still a recognisable stand-in for the title rather than
+    /// silently falling all the way back to "Untitled".
+    func testSanitizedFilenameReplacesALoneSeparatorWithADash() {
+        XCTAssertEqual(DocumentExporter.sanitizedFilename(from: "/"), "-")
+    }
+
+    func testSanitizedFilenameLeavesAnOrdinaryTitleAlone() {
+        XCTAssertEqual(DocumentExporter.sanitizedFilename(from: "My Sheet"), "My Sheet")
+    }
+
+    /// organiser #38: a printed page (including the PDF export, which prints
+    /// through `UIMarkupTextPrintFormatter`) should use paper colours, not
+    /// the night background the screen shows.
+    func testHTMLCarriesAPrintMediaQueryWithPaperColours() {
+        let html = DocumentExporter.html(from: markdown, title: "My Sheet")
+        XCTAssertTrue(html.contains("@media print"))
+        XCTAssertTrue(html.contains("#ffffff"))
+    }
 }

@@ -11,6 +11,20 @@ public protocol DocumentEditing: AnyObject {
     var document: WriterDocument { get }
     func focus(on anchor: TextAnchor)
     func flushPendingSave()
+    /// Replaces the whole visible text, e.g. a snapshot restore. The editor's
+    /// live buffer takes the new text so its next autosave cannot overwrite it
+    /// with what was on screen before the replace.
+    func replaceText(_ text: String)
+    /// Presents the editor's own statistics surface (`StatisticsSheet`) over
+    /// `presenter`, returning `true` when it did. Returning `false` — the
+    /// default — tells the caller no such surface is reachable, so it falls
+    /// back to its own summary rather than showing two different ones.
+    func presentStatistics(from presenter: UIViewController) -> Bool
+}
+
+extension DocumentEditing {
+    public func replaceText(_ text: String) {}
+    public func presentStatistics(from presenter: UIViewController) -> Bool { false }
 }
 
 /// What an editor reports back to its container.
@@ -69,6 +83,15 @@ public protocol GroupsSelectionDelegate: AnyObject {
 /// hosts it.
 public protocol SheetsSelectionDelegate: AnyObject {
     func sheetsViewController(_ controller: SheetsViewController, didSelect document: WriterDocument)
+}
+
+/// What the root does when an open document stops being showable — trashed
+/// through any path (the editor's own menu, a sheets-list swipe, or an
+/// external reconciler run) or removed outright. The root resets its
+/// secondary column to the empty placeholder rather than leaving a trashed
+/// sheet's editor on screen.
+public protocol LibraryNavigationHandling: AnyObject {
+    func documentDidClose(_ id: DocumentID)
 }
 
 /// Every witness the organiser needs, bundled so a root view controller takes

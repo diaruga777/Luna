@@ -30,6 +30,20 @@ public struct DocumentSnapshot: Equatable, Sendable {
     }
 }
 
+/// A snapshot's metadata without its text, for a list that fetches the text
+/// of one snapshot only once it is chosen.
+public struct DocumentSnapshotSummary: Equatable, Sendable {
+    public let documentID: DocumentID
+    public let createdAt: Date
+    public let characterCount: Int
+
+    public init(documentID: DocumentID, createdAt: Date, characterCount: Int) {
+        self.documentID = documentID
+        self.createdAt = createdAt
+        self.characterCount = characterCount
+    }
+}
+
 /// What changed, so a list reloads the part it shows rather than everything.
 public enum LibraryChange: Equatable, Sendable {
     case groups
@@ -40,6 +54,14 @@ public enum LibraryChange: Equatable, Sendable {
 
 public protocol LibraryChangeObserving: AnyObject {
     func libraryDidChange(_ change: LibraryChange)
+}
+
+/// Thrown by `WriterLibraryStoring.update(_:)` when the row's stored revision
+/// has moved past what the caller last read: someone else's newer save would
+/// otherwise be overwritten by this write's stale copy of every column.
+public struct WriterLibraryConflictError: Error, Equatable {
+    public let id: DocumentID
+    public init(id: DocumentID) { self.id = id }
 }
 
 public protocol WriterLibraryStoring: AnyObject {
@@ -55,9 +77,22 @@ public protocol WriterLibraryStoring: AnyObject {
     func favorites() throws -> [WriterDocument]
     func recent(days: Int) throws -> [WriterDocument]
     func document(_ id: DocumentID) throws -> WriterDocument?
+    /// Looked up by file path rather than id, for the reconciler: a file that
+    /// disappeared and came back restores its row instead of a new one.
+    func document(atPath path: String) throws -> WriterDocument?
+    /// Title search, case-insensitive, newest match order undefined beyond
+    /// the title match itself — for the App Intents entity query.
+    func documents(matchingTitle title: String, limit: Int) throws -> [WriterDocument]
     func createDocument(in group: GroupID, title: String?) throws -> WriterDocument
-    /// Metadata only. Text goes through `DocumentTextStoring`.
+    /// Metadata only. Text goes through `DocumentTextStoring`. Throws
+    /// `WriterLibraryConflictError` if `document.revision` is behind the
+    /// stored row's.
     func update(_ document: WriterDocument) throws
+    /// Narrow writes: each touches only its own column(s), so two of these
+    /// (or one of these and a `saveText`) never clobber one another's fields.
+    func setFavorite(_ isFavorite: Bool, for id: DocumentID) throws
+    func setGoal(_ goal: WritingGoal?, for id: DocumentID) throws
+    func setKeywords(_ keywords: [String], for id: DocumentID) throws
     func moveDocument(_ id: DocumentID, to group: GroupID, at index: Int) throws
     func trash(_ id: DocumentID) throws
     func restore(_ id: DocumentID) throws
@@ -95,6 +130,10 @@ public protocol DocumentSnapshotStoring: AnyObject {
     /// Keeps the newest `DocumentSnapshotLimit.perDocument` copies and drops the rest.
     func recordSnapshot(_ text: String, for document: DocumentID) throws
     func snapshots(for document: DocumentID) throws -> [DocumentSnapshot]
+    /// The count alone, without reading any snapshot's text.
+    func snapshotCount(for document: DocumentID) throws -> Int
+    /// Metadata for every snapshot, without reading any of their text.
+    func snapshotSummaries(for document: DocumentID) throws -> [DocumentSnapshotSummary]
 }
 
 public enum DocumentSnapshotLimit {

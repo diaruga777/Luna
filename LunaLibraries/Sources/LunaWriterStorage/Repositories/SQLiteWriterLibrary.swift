@@ -18,10 +18,32 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
     public let inboxGroupID = GroupID(UUID(uuidString: "11B00000-0000-4000-8000-000000000001")!)
     public let trashGroupID = GroupID(UUID(uuidString: "77A50000-0000-4000-8000-000000000002")!)
 
+    /// Moves a sheet's file when trashing, restoring or deleting its group.
+    /// Installed by the stack that also owns the text store; nil (a
+    /// background process with no folder) leaves file paths untouched.
+    public weak var fileRelocator: DocumentFileRelocating?
+    /// Kept the search index in step with metadata writes this library makes
+    /// itself (`update`, `setKeywords`, `insert`/`update` for notes), so a
+    /// caller editing a title or a keyword cannot forget to re-index it.
+    let documentIndex: DocumentIndexing?
+    let noteIndex: NoteIndexing?
+    /// Read to recover a sheet's body when a metadata-only write (a keyword
+    /// edit, a favourite toggle) needs to refresh the document index: the FTS
+    /// table is contentless, so a document row's index entry can only be
+    /// rewritten whole, and this library does not itself hold the body text.
+    /// Weak, and wired after both exist: the text store takes this library as
+    /// a dependency, so the reference back would otherwise be a cycle.
+    public weak var textStore: DocumentTextStoring?
+
     let changes = LibraryChangeBroadcaster()
 
-    public init(database: WriterDatabase) throws {
+    public init(
+        database: WriterDatabase, documentIndex: DocumentIndexing? = nil,
+        noteIndex: NoteIndexing? = nil
+    ) throws {
         self.database = database
+        self.documentIndex = documentIndex
+        self.noteIndex = noteIndex
         try createSystemGroups()
     }
 
@@ -116,6 +138,16 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
     public func delete(_ id: GroupID) throws {
         guard id != inboxGroupID, id != trashGroupID else { return }
         let subtree = try groupSubtree(of: id)
+        var affected: [WriterDocument] = []
+        for group in subtree { affected.append(contentsOf: try documents(in: group, sort: .manual)) }
+        // Moved into `.Trash` before the rows change, while each document's
+        // own `fileRelativePath` still names where its file actually is.
+        var relocated: [DocumentID: String] = [:]
+        for document in affected {
+            if let newPath = fileRelocator?.relocateToTrash(document.fileRelativePath) {
+                relocated[document.id] = newPath
+            }
+        }
         try database.transaction { db in
             // The documents move to the Inbox and gain a trashed_at, so the
             // group's ON DELETE CASCADE cannot take them with it.
@@ -127,6 +159,12 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
                     try statement.bind(2, date: Date())
                     try statement.bind(3, date: Date())
                     try statement.bind(4, group.rawValue.uuidString)
+                }
+            }
+            for (documentID, newPath) in relocated {
+                try db.run("UPDATE documents SET file_path = ? WHERE id = ?") { statement in
+                    try statement.bind(1, newPath)
+                    try statement.bind(2, documentID.rawValue.uuidString)
                 }
             }
             try db.run("DELETE FROM groups WHERE id = ?") { statement in
@@ -204,6 +242,26 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
                 try statement.bind(2, id)
             }
         }
+    }
+
+    // MARK: - Fan-in
+
+    /// Runs a `... WHERE <col> IN (SELECT value FROM json_each(?))` query
+    /// binding `ids` as one JSON array, and folds each row into a per-id
+    /// list. The one place `loadDocuments` (keywords) and `loadNotes`
+    /// (attachments) turn a flat row set into a dictionary keyed by the id
+    /// each row belongs to.
+    static func fanIn<ID: Hashable, Value>(
+        _ sql: String, ids: [String], in db: WriterDatabase,
+        row: (WriterStatement) -> (ID, Value)?
+    ) throws -> [ID: [Value]] {
+        guard !ids.isEmpty else { return [:] }
+        var result: [ID: [Value]] = [:]
+        try db.query(sql, { statement in try statement.bind(1, jsonArray: ids) }) { statementRow in
+            guard let (id, value) = row(statementRow) else { return }
+            result[id, default: []].append(value)
+        }
+        return result
     }
 
     private static func group(from row: WriterStatement) -> WriterGroup? {

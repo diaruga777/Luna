@@ -7,6 +7,7 @@ import Foundation
 import XCTest
 @testable import LunaWriterStorage
 import LunaWriterModels
+import SQLite3
 
 final class WriterDatabaseTests: XCTestCase {
 
@@ -377,5 +378,210 @@ final class WriterDatabaseTests: XCTestCase {
         DispatchQueue.main.async { settled.fulfill() }
         wait(for: [settled], timeout: 2)
         XCTAssertEqual(observer.changes.count, 1)
+    }
+
+    // MARK: - Schema migration
+
+    func testMigratingFromSchemaVersionOneAddsTheVersionTwoChangesWithoutLosingRows() throws {
+        let root = try makeWriterTemporaryDirectory()
+        let url = root.appendingPathComponent("writer.sqlite")
+        let documentID = "AAAAAAAA-0000-4000-8000-000000000001"
+
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &handle), SQLITE_OK)
+        let raw = try XCTUnwrap(handle)
+        executeRaw(
+            """
+            CREATE TABLE groups (id TEXT PRIMARY KEY, parent_id TEXT, name TEXT NOT NULL,
+                icon TEXT NOT NULL DEFAULT 'folder', sort_index INTEGER NOT NULL DEFAULT 0,
+                kind TEXT NOT NULL DEFAULT 'user', created_at REAL NOT NULL, updated_at REAL NOT NULL);
+            CREATE TABLE documents (id TEXT PRIMARY KEY, group_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '', snippet TEXT NOT NULL DEFAULT '',
+                sort_index INTEGER NOT NULL DEFAULT 0, favorite INTEGER NOT NULL DEFAULT 0,
+                goal_unit TEXT, goal_target INTEGER, goal_mode TEXT,
+                file_path TEXT NOT NULL DEFAULT '', word_count INTEGER NOT NULL DEFAULT 0,
+                char_count INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL, updated_at REAL NOT NULL, trashed_at REAL);
+            CREATE TABLE authorship_spans (document_id TEXT NOT NULL, start INTEGER NOT NULL,
+                end INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'author', model TEXT,
+                created_at REAL NOT NULL);
+            CREATE TABLE document_keywords (document_id TEXT NOT NULL, keyword TEXT NOT NULL,
+                PRIMARY KEY (document_id, keyword));
+            CREATE TABLE annotations (id TEXT PRIMARY KEY, document_id TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'comment', source TEXT NOT NULL DEFAULT 'manual',
+                note_id TEXT, anchor_start INTEGER NOT NULL DEFAULT 0,
+                anchor_end INTEGER NOT NULL DEFAULT 0, anchor_exact TEXT NOT NULL DEFAULT '',
+                anchor_prefix TEXT NOT NULL DEFAULT '', anchor_suffix TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL);
+            INSERT INTO groups (id, parent_id, name, icon, sort_index, kind, created_at, updated_at)
+                VALUES ('11B00000-0000-4000-8000-000000000001', NULL, 'Inbox', 'tray', 0, 'inbox', 0, 0);
+            INSERT INTO documents (id, group_id, title, file_path, created_at, updated_at)
+                VALUES ('\(documentID)', '11B00000-0000-4000-8000-000000000001', 'Kept', 'Kept.md', 0, 0);
+            INSERT INTO authorship_spans (document_id, start, end, source, created_at)
+                VALUES ('\(documentID)', 0, 4, 'author', 0);
+            PRAGMA user_version = 1;
+            """, in: raw)
+        sqlite3_close(raw)
+
+        let database = try WriterDatabase(fileURL: url)
+        XCTAssertEqual(database.userVersion, WriterDatabase.schemaVersion)
+        let library = try SQLiteWriterLibrary(database: database)
+
+        let document = try XCTUnwrap(try library.document(DocumentID(XCTUnwrap(UUID(uuidString: documentID)))))
+        XCTAssertEqual(document.title, "Kept")
+        XCTAssertEqual(document.sentenceCount, 0, "the new column defaults to 0 on an existing row")
+        let marks = try library.marks(for: document.id)
+        XCTAssertEqual(marks.authorship.map(\.range), [TextRange(start: 0, end: 4)])
+
+        try database.perform { db in
+            XCTAssertNotNil(try db.scalarInt(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'documents_file_path'"))
+            XCTAssertNotNil(try db.scalarInt(
+                "SELECT 1 FROM pragma_table_info('authorship_spans') WHERE name = 'end_offset'"))
+            XCTAssertNil(try db.scalarInt(
+                "SELECT 1 FROM pragma_table_info('authorship_spans') WHERE name = 'end'"))
+        }
+    }
+
+    private func executeRaw(_ sql: String, in db: OpaquePointer) {
+        var message: UnsafeMutablePointer<CChar>?
+        let status = sqlite3_exec(db, sql, nil, nil, &message)
+        let detail = message.map { String(cString: $0) } ?? ""
+        sqlite3_free(message)
+        XCTAssertEqual(status, SQLITE_OK, "\(sql) — \(detail)")
+    }
+
+    // MARK: - Statement cache
+
+    func testTheStatementCacheStaysBoundedAfterLoadingManyDistinctDocuments() throws {
+        let stack = try makeWriterStack()
+        var ids: [DocumentID] = []
+        for index in 0..<200 {
+            let document = try stack.library.createDocument(
+                in: stack.library.inboxGroupID, title: "Sheet \(index)")
+            ids.append(document.id)
+        }
+
+        // Each fetch used to interpolate that one document's id into the
+        // keyword-lookup SQL, minting a permanently cached statement per id.
+        for id in ids { _ = try stack.library.document(id) }
+
+        try stack.database.perform { db in
+            XCTAssertLessThan(db.statementCacheCountForTesting, 40)
+        }
+    }
+
+    // MARK: - Concurrency
+
+    func testPerformFromSeveralQueuesAtOnceSerialisesWithoutLosingWrites() throws {
+        let stack = try makeWriterStack()
+        let queues = (0..<8).map { DispatchQueue(label: "writer-database-test-\($0)") }
+        let group = DispatchGroup()
+        for (index, queue) in queues.enumerated() {
+            group.enter()
+            queue.async {
+                for sheet in 0..<10 {
+                    _ = try? stack.library.createDocument(
+                        in: stack.library.inboxGroupID, title: "Q\(index)-\(sheet)")
+                }
+                group.leave()
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+
+        let count = try stack.library.documents(
+            in: stack.library.inboxGroupID, sort: .manual
+        ).count
+        XCTAssertEqual(count, 80)
+    }
+
+    // MARK: - Search stays current
+
+    func testUpdatingADocumentReindexesItsTitleForSearch() throws {
+        let stack = try makeWriterStack(embedding: ScriptedEmbedding(fallback: [1, 0]))
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Plain")
+        try stack.textStore.saveText("nothing about it yet", for: &document)
+        XCTAssertEqual(try stack.library.searchDocuments("marigold", limit: 10).count, 0)
+
+        document.title = "Marigold notes"
+        try stack.library.update(document)
+
+        XCTAssertEqual(
+            try stack.library.searchDocuments("marigold", limit: 10).map(\.documentID), [document.id])
+        XCTAssertEqual(
+            try stack.library.searchDocuments("nothing", limit: 10).map(\.documentID), [document.id],
+            "the saved body survives a metadata-only update")
+    }
+
+    func testSettingKeywordsReindexesWithoutLosingTheSavedBody() throws {
+        let stack = try makeWriterStack(embedding: ScriptedEmbedding(fallback: [1, 0]))
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Plain")
+        try stack.textStore.saveText("a paragraph about ferries", for: &document)
+
+        try stack.library.setKeywords(["harbourfront"], for: document.id)
+
+        XCTAssertEqual(
+            try stack.library.searchDocuments("harbourfront", limit: 10).map(\.documentID), [document.id])
+        XCTAssertEqual(
+            try stack.library.searchDocuments("ferries", limit: 10).map(\.documentID), [document.id],
+            "the saved body, read back through the text store, survives a metadata-only reindex")
+    }
+
+    // MARK: - Revision conflicts
+
+    func testAStaleFullUpdateIsRejectedRatherThanClobberingANewerSave() throws {
+        let stack = try makeWriterStack()
+        let created = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        // One holder saves new text through the text store, which bumps the
+        // file path and the revision.
+        var saved = created
+        try stack.textStore.saveText("# Renamed\n\nBody.", for: &saved)
+
+        // A second holder still has the pre-save copy and only meant to flip
+        // one field via the old full-row `update`.
+        var stale = created
+        stale.isFavorite = true
+
+        XCTAssertThrowsError(try stack.library.update(stale)) { error in
+            XCTAssertEqual(error as? WriterLibraryConflictError, WriterLibraryConflictError(id: created.id))
+        }
+        XCTAssertEqual(try stack.library.document(created.id)?.fileRelativePath, saved.fileRelativePath)
+    }
+
+    func testSetFavoriteNeverConflictsWithAConcurrentSave() throws {
+        let stack = try makeWriterStack()
+        let created = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        var saved = created
+        try stack.textStore.saveText("# Renamed\n\nBody.", for: &saved)
+
+        try stack.library.setFavorite(true, for: created.id)
+
+        let after = try XCTUnwrap(try stack.library.document(created.id))
+        XCTAssertTrue(after.isFavorite)
+        XCTAssertEqual(after.fileRelativePath, saved.fileRelativePath)
+    }
+
+    // MARK: - Snapshots
+
+    func testSnapshotCountMatchesTheFullList() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Log")
+        for index in 1...5 { try stack.library.recordSnapshot("revision \(index)", for: document.id) }
+
+        XCTAssertEqual(try stack.library.snapshotCount(for: document.id), 5)
+        XCTAssertEqual(
+            try stack.library.snapshotSummaries(for: document.id).map(\.characterCount),
+            try stack.library.snapshots(for: document.id).map(\.text.count))
+    }
+
+    // MARK: - Lookup by path
+
+    func testDocumentAtPathFindsTheRowByItsFilePath() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Found")
+        try stack.textStore.saveText("body", for: &document)
+
+        XCTAssertEqual(try stack.library.document(atPath: document.fileRelativePath)?.id, document.id)
+        XCTAssertNil(try stack.library.document(atPath: "nothing/here.md"))
     }
 }

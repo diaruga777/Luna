@@ -31,6 +31,25 @@ final class WriterHTMLRendererTests: XCTestCase {
         assertContains(html("one  \ntwo\n"), "<br>")
     }
 
+    func testAHardBreakEmitsExactlyOneBreakTag() {
+        let out = html("one\ntwo  \nthree\n")
+        assertContains(out, "<p>one\ntwo<br>\nthree</p>")
+        XCTAssertEqual(out.components(separatedBy: "<br>").count - 1, 1)
+    }
+
+    func testAPipeInAPlainParagraphIsNotATable() {
+        let out = html("Cost: $5 | $10 today\n")
+        XCTAssertFalse(out.contains("<table>"))
+        assertContains(out, "<p>Cost: $5 | $10 today</p>")
+    }
+
+    func testAHeaderRowWithNoDelimiterRowIsNotATable() {
+        let out = html("| a | b |\nplain text\n")
+        XCTAssertFalse(out.contains("<table>"))
+        assertContains(out, "<p>| a | b |</p>")
+        assertContains(out, "<p>plain text</p>")
+    }
+
     func testNestedListsCloseInTheRightOrder() {
         let out = html("- one\n- two\n  - deep\n- three\n")
         assertContains(out, "<li>two<ul>\n<li>deep</li>\n</ul>\n</li>")
@@ -56,6 +75,11 @@ final class WriterHTMLRendererTests: XCTestCase {
         assertContains(out, "<pre><code class=\"language-swift\">")
         assertContains(out, "let a = 1 &lt; 2 &amp;&amp; &quot;x&quot;")
         XCTAssertFalse(out.contains("<em>"))
+    }
+
+    func testFencedCodeKeepsItsLeadingIndentation() {
+        let out = html("```swift\nfunc f() {\n    let a = 1\n}\n```\n")
+        assertContains(out, "func f() {\n    let a = 1\n}")
     }
 
     func testMarkdownInsideAFenceIsNotRendered() {
@@ -97,6 +121,14 @@ final class WriterHTMLRendererTests: XCTestCase {
         assertContains(html("![alt text](pic.png)\n"), "<img src=\"pic.png\" alt=\"alt text\">")
         assertContains(html("<https://a.example>\n"), "<a href=\"https://a.example\">https://a.example</a>")
         assertContains(html("www.a.example here\n"), "<a href=\"https://www.a.example\">www.a.example</a>")
+    }
+
+    func testUnsafeSchemesAreRefusedOnLinksAndImages() {
+        assertContains(html("[click](javascript:alert(1))\n"), "<a href=\"#\">click</a>")
+        assertContains(html("![a](javascript:alert(1))\n"), "<img src=\"#\" alt=\"a\">")
+        assertContains(html("[mail](mailto:a@example.com)\n"), "<a href=\"mailto:a@example.com\">")
+        assertContains(html("[call](tel:+15551234)\n"), "<a href=\"tel:+15551234\">")
+        assertContains(html("![no phone](tel:+15551234)\n"), "<img src=\"#\" alt=\"no phone\">")
     }
 
     func testRelativeImagePathsResolveAgainstTheGivenBase() {

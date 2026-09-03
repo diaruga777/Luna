@@ -37,6 +37,24 @@ private final class StubAnnotations: AnnotationRangeProviding {
     }
 }
 
+private final class FakeViewport: RenderingViewportProviding {
+    var hasViewport: Bool
+    var renderingViewportRange: NSRange
+    init(hasViewport: Bool, range: NSRange) {
+        self.hasViewport = hasViewport
+        self.renderingViewportRange = range
+    }
+}
+
+/// Records every range the composer asked to paint, instead of actually
+/// drawing it, so a test can tell whether a pass ran at all.
+private final class RecordingLayoutManager: NSTextLayoutManager {
+    var paintedRanges: [NSTextRange] = []
+    override func setRenderingAttributes(_ renderingAttributes: [NSAttributedString.Key: Any], for textRange: NSTextRange) {
+        paintedRanges.append(textRange)
+    }
+}
+
 final class RenderingAttributeComposerTests: XCTestCase {
 
     private let text = "The quick brown fox jumps over the lazy dog."
@@ -78,11 +96,12 @@ final class RenderingAttributeComposerTests: XCTestCase {
         composer.addLayer(FocusLayer(provider: focus))
 
         XCTAssertEqual(colour(composer, at: 2), EditorTheme.dimmed.resolvedColor(with: traits))
-        // Inside the focus range nothing dims, so the syntax colour stands.
+        // Inside the focus range nothing dims, so the syntax colour stands,
+        // whichever order the two layers were added in.
         let inside = FixedLayer(
             identifier: "inside", range: NSRange(location: 10, length: 5),
             attributes: [.foregroundColor: EditorTheme.syntaxVerb])
-        composer.addLayer(inside, before: .focus)
+        composer.addLayer(inside)
         XCTAssertEqual(colour(composer, at: 11), EditorTheme.syntaxVerb.resolvedColor(with: traits))
     }
 
@@ -159,5 +178,80 @@ final class RenderingAttributeComposerTests: XCTestCase {
             identifier: .authorship, range: NSRange(location: 0, length: 5),
             attributes: [.foregroundColor: EditorTheme.authorshipPasted]))
         XCTAssertEqual(colour(composer, at: 2), EditorTheme.authorshipPasted.resolvedColor(with: traits))
+    }
+
+    // MARK: - applyNow, with a real layout manager
+
+    private func makeLayoutManager(storage: NSTextStorage) -> RecordingLayoutManager {
+        let layoutManager = RecordingLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 300, height: CGFloat.greatestFiniteMagnitude))
+        layoutManager.textContainer = container
+        let contentStorage = NSTextContentStorage()
+        contentStorage.addTextLayoutManager(layoutManager)
+        contentStorage.textStorage = storage
+        return layoutManager
+    }
+
+    func testApplyNowNeverPaintsTheWholeDocumentAsAStandInWhileTheViewportIsUnknown() {
+        let storage = MarkdownTextStorage(text: text)
+        let layoutManager = makeLayoutManager(storage: storage)
+        let composer = RenderingAttributeComposer(layoutManager: layoutManager, storage: storage)
+        let viewport = FakeViewport(hasViewport: false, range: NSRange(location: 0, length: 9))
+        composer.viewportProvider = viewport
+        composer.addLayer(FixedLayer(
+            identifier: .syntax, range: NSRange(location: 0, length: 5),
+            attributes: [.foregroundColor: EditorTheme.syntaxNoun]))
+
+        composer.applyNow()
+        XCTAssertTrue(layoutManager.paintedRanges.isEmpty)
+    }
+
+    func testApplyNowPaintsTheDeferredRequestOnceTheViewportResolves() {
+        let storage = MarkdownTextStorage(text: text)
+        let layoutManager = makeLayoutManager(storage: storage)
+        let composer = RenderingAttributeComposer(layoutManager: layoutManager, storage: storage)
+        let viewport = FakeViewport(hasViewport: false, range: NSRange(location: 0, length: 9))
+        composer.viewportProvider = viewport
+        composer.addLayer(FixedLayer(
+            identifier: .syntax, range: NSRange(location: 0, length: 5),
+            attributes: [.foregroundColor: EditorTheme.syntaxNoun]))
+        composer.applyNow()
+        XCTAssertTrue(layoutManager.paintedRanges.isEmpty)
+
+        viewport.hasViewport = true
+        composer.applyNow()
+        XCTAssertFalse(layoutManager.paintedRanges.isEmpty, "the request stayed pending, so it paints once a viewport exists")
+    }
+
+    func testApplyNowWithASpecificPendingRangePaintsEvenWithNoViewportYet() {
+        let storage = MarkdownTextStorage(text: text)
+        let layoutManager = makeLayoutManager(storage: storage)
+        let composer = RenderingAttributeComposer(layoutManager: layoutManager, storage: storage)
+        composer.viewportProvider = FakeViewport(hasViewport: false, range: NSRange(location: 0, length: 9))
+        composer.addLayer(FixedLayer(
+            identifier: .syntax, range: NSRange(location: 4, length: 5),
+            attributes: [.foregroundColor: EditorTheme.syntaxNoun]))
+
+        // A layer asked for a specific range, distinct from "the viewport" —
+        // that request must not wait on a viewport that may never resolve.
+        composer.invalidate(NSRange(location: 4, length: 5))
+        composer.applyNow()
+        XCTAssertFalse(layoutManager.paintedRanges.isEmpty)
+    }
+
+    func testApplyNowWithARealTextViewSmokeTest() {
+        let storage = MarkdownTextStorage(text: text)
+        let textView = WriterTextView(metrics: EditorMetrics(), textStorage: storage)
+        textView.frame = CGRect(x: 0, y: 0, width: 320, height: 600)
+        textView.layoutIfNeeded()
+        let composer = RenderingAttributeComposer(layoutManager: textView.textLayoutManager, storage: storage)
+        composer.viewportProvider = FakeViewport(
+            hasViewport: true, range: NSRange(location: 0, length: (text as NSString).length))
+        composer.addLayer(FixedLayer(
+            identifier: .syntax, range: NSRange(location: 0, length: 5),
+            attributes: [.foregroundColor: EditorTheme.syntaxNoun]))
+
+        composer.applyNow()
+        // No crash against a real NSTextLayoutManager is the assertion.
     }
 }

@@ -7,7 +7,10 @@ public enum TextStatistics {
 
     public struct Stats: Equatable, Sendable {
         public var words: Int
-        /// Characters the reader sees, spaces included.
+        /// Characters the reader sees, spaces included. Counted in grapheme
+        /// clusters (Swift's `Character`) — the unit `WriterDocument
+        /// .characterCount` stores — not the UTF-16 units a `TextAnchor`
+        /// offset counts in.
         public var characters: Int
         public var charactersWithoutSpaces: Int
         public var sentences: Int

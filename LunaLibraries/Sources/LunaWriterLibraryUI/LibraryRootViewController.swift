@@ -2,32 +2,55 @@ import UIKit
 import LunaDesignSystem
 import LunaModels
 import LunaWriterModels
+import LunaWriterStorage
 
 /// The Ulysses organiser's root: groups in the primary column, that group's
 /// sheets in the supplementary column, and the open sheet's editor in the
-/// secondary column. `preferredDisplayMode` follows `LunaLayout.isWide`
-/// rather than the size class UIKit would otherwise pick.
+/// secondary column. `preferredDisplayMode` follows the real column budget
+/// (`Self.displayMode(forContainerWidth:)`) rather than the size class UIKit
+/// would otherwise pick.
 public final class LibraryRootViewController: UISplitViewController {
 
     private let environment: LibraryEnvironment
     private let groupsViewController: GroupsViewController
     private let sheetsViewController: SheetsViewController
 
+    /// The primary and supplementary columns' preferred width, and the
+    /// narrowest an expanded editor column is allowed to end up. Below
+    /// `tripleColumnMinWidth` two side columns plus this editor budget no
+    /// longer fit, so the third column is dropped instead of starving it —
+    /// an iPad in portrait shows two columns, not three (organiser #7).
+    static let primaryColumnWidth: CGFloat = 320
+    static let supplementaryColumnWidth: CGFloat = 320
+    static let minimumEditorWidth: CGFloat = 560
+    static let tripleColumnMinWidth: CGFloat =
+        primaryColumnWidth + supplementaryColumnWidth + minimumEditorWidth
+
     public init(environment: LibraryEnvironment) {
         self.environment = environment
         self.groupsViewController = GroupsViewController(
             library: environment.library, notes: environment.notes)
         self.sheetsViewController = SheetsViewController(
-            library: environment.library, notes: environment.notes)
+            library: environment.library, notes: environment.notes, textStore: environment.textStore)
         super.init(style: .tripleColumn)
         delegate = self
         groupsViewController.selectionDelegate = self
         sheetsViewController.selectionDelegate = self
+        environment.library.addObserver(self)
     }
+
+    deinit { environment.library.removeObserver(self) }
 
     /// Set once a sheet is open in the detail column. Until then a compact
     /// width collapses to the groups list, never to the empty placeholder.
     private var hasOpenDocument = false
+    /// The container currently hosted in the secondary column, so a
+    /// re-selection can no-op and an outgoing editor can be flushed before
+    /// it is replaced (organiser #10).
+    private weak var currentContainer: EditorContainerViewController?
+
+    var hasOpenDocumentForTesting: Bool { hasOpenDocument }
+    var currentDocumentIDForTesting: DocumentID? { currentContainer?.document.id }
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
@@ -38,6 +61,7 @@ public final class LibraryRootViewController: UISplitViewController {
         setViewController(UINavigationController(rootViewController: groupsViewController), for: .primary)
         setViewController(UINavigationController(rootViewController: sheetsViewController), for: .supplementary)
         setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
+        configureColumnWidths()
         updatePreferredDisplayMode()
     }
 
@@ -46,15 +70,33 @@ public final class LibraryRootViewController: UISplitViewController {
         updatePreferredDisplayMode()
     }
 
+    private func configureColumnWidths() {
+        preferredPrimaryColumnWidth = Self.primaryColumnWidth
+        minimumPrimaryColumnWidth = 280
+        maximumPrimaryColumnWidth = 400
+        preferredSupplementaryColumnWidth = Self.supplementaryColumnWidth
+        minimumSupplementaryColumnWidth = 280
+        maximumSupplementaryColumnWidth = 400
+    }
+
     /// Assigning `preferredDisplayMode` schedules another layout pass, so the
-    /// assignment happens only when the width crossed the threshold; writing
-    /// the same value from `viewDidLayoutSubviews` spins the main thread.
+    /// assignment happens only when the mode actually changed; writing the
+    /// same value from `viewDidLayoutSubviews` spins the main thread.
     private func updatePreferredDisplayMode() {
-        let wanted: UISplitViewController.DisplayMode = LunaLayout.isWide(containerWidth: view.bounds.width)
-            ? .twoBesideSecondary : .oneBesideSecondary
+        let wanted = Self.displayMode(forContainerWidth: view.bounds.width)
         if preferredDisplayMode != wanted {
             preferredDisplayMode = wanted
         }
+    }
+
+    /// Three columns only once the primary and supplementary columns can sit
+    /// beside an editor at least `minimumEditorWidth` wide; two columns down
+    /// to `LunaLayout.wideThreshold`; below that UIKit's own compact
+    /// collapsing takes over.
+    static func displayMode(forContainerWidth width: CGFloat) -> UISplitViewController.DisplayMode {
+        if width >= tripleColumnMinWidth { return .twoBesideSecondary }
+        if LunaLayout.isWide(containerWidth: width) { return .oneBesideSecondary }
+        return .automatic
     }
 
     private static func emptySecondaryPlaceholder() -> UIViewController {
@@ -72,6 +114,86 @@ public final class LibraryRootViewController: UISplitViewController {
         ])
         return placeholder
     }
+
+    // MARK: - Keyboard commands
+
+    public override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_newSheet"),
+                action: #selector(newSheetKeyCommand), input: "n", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_newGroup"),
+                action: #selector(newGroupKeyCommand), input: "n", modifierFlags: [.command, .shift]),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_focusSearch"),
+                action: #selector(focusSearchKeyCommand), input: "f", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_toggleNotes"),
+                action: #selector(toggleNotesKeyCommand), input: "n", modifierFlags: [.command, .alternate]),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_settings"),
+                action: #selector(openSettingsKeyCommand), input: ",", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_trash"),
+                action: #selector(trashOpenDocumentKeyCommand),
+                input: UIKeyCommand.inputDelete, modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_export"),
+                action: #selector(exportOpenDocumentKeyCommand), input: "e", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_openSelection"),
+                action: #selector(openSelectionKeyCommand), input: "\r", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_focusGroups"),
+                action: #selector(focusGroupsKeyCommand), input: "1", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_focusSheets"),
+                action: #selector(focusSheetsKeyCommand), input: "2", modifierFlags: .command),
+            UIKeyCommand(
+                title: L10n.string("WriterLibrary_command_focusEditor"),
+                action: #selector(focusEditorKeyCommand), input: "3", modifierFlags: .command),
+        ]
+    }
+
+    @objc private func newSheetKeyCommand() { sheetsViewController.createSheet() }
+    @objc private func newGroupKeyCommand() { groupsViewController.createGroup(parent: nil) }
+    @objc private func focusSearchKeyCommand() { sheetsViewController.focusSearch() }
+    @objc private func toggleNotesKeyCommand() { currentContainer?.toggleNotesPanel() }
+    @objc private func openSettingsKeyCommand() { presentSettings() }
+    /// ⌘E exports the open sheet as Markdown; the other formats are one
+    /// step further in the container's ⋯ menu.
+    @objc private func exportOpenDocumentKeyCommand() { currentContainer?.export(as: .markdown) }
+    @objc private func openSelectionKeyCommand() { sheetsViewController.openFirstOrSelectedSheet() }
+    @objc private func focusGroupsKeyCommand() { show(.primary) }
+    @objc private func focusSheetsKeyCommand() { show(.supplementary) }
+    @objc private func focusEditorKeyCommand() { show(.secondary) }
+
+    @objc private func trashOpenDocumentKeyCommand() {
+        guard let id = currentContainer?.document.id else { return }
+        _ = try? environment.library.trash(id)
+    }
+
+    private func presentSettings() {
+        WriterSettingsViewController.present(from: self, environment: environment)
+    }
+}
+
+/// The same command titles `LibraryRootViewController.keyCommands` uses,
+/// exposed so `WriterAppDelegate.buildMenu(with:)` (a different module, the
+/// app target) can read them for the Mac menu bar without importing
+/// `LunaModels` itself just for this.
+public enum WriterCommandTitles {
+    public static var newSheet: String { L10n.string("WriterLibrary_command_newSheet") }
+    public static var newGroup: String { L10n.string("WriterLibrary_command_newGroup") }
+    public static var focusSearch: String { L10n.string("WriterLibrary_command_focusSearch") }
+    public static var toggleNotes: String { L10n.string("WriterLibrary_command_toggleNotes") }
+    public static var settings: String { L10n.string("WriterLibrary_command_settings") }
+    public static var trash: String { L10n.string("WriterLibrary_command_trash") }
+    public static var export: String { L10n.string("WriterLibrary_command_export") }
+    public static var focusGroups: String { L10n.string("WriterLibrary_command_focusGroups") }
+    public static var focusSheets: String { L10n.string("WriterLibrary_command_focusSheets") }
+    public static var focusEditor: String { L10n.string("WriterLibrary_command_focusEditor") }
 }
 
 extension LibraryRootViewController: GroupsSelectionDelegate {
@@ -87,12 +209,43 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
     }
 
     /// Opens a sheet in the detail column. Deep links and intents arrive here
-    /// as well as the sheets list.
+    /// as well as the sheets list. Re-selecting the already-open sheet just
+    /// brings the column forward; switching to a different one flushes the
+    /// outgoing editor first so its last edit is not lost to a bare `deinit`.
     public func show(document: WriterDocument) {
+        if let currentContainer, currentContainer.document.id == document.id {
+            show(.secondary)
+            return
+        }
+        currentContainer?.editor.flushPendingSave()
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
+        currentContainer = editorContainer
         hasOpenDocument = true
         setViewController(editorContainer, for: .secondary)
         show(.secondary)
+    }
+}
+
+extension LibraryRootViewController: LibraryNavigationHandling {
+    public func documentDidClose(_ id: DocumentID) {
+        guard currentContainer?.document.id == id else { return }
+        currentContainer = nil
+        hasOpenDocument = false
+        setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
+    }
+}
+
+extension LibraryRootViewController: LibraryChangeObserving {
+    /// Trashing the open sheet — from its own menu, a sheets-list swipe, a
+    /// multi-select trash, or the folder reconciler — always lands here as a
+    /// `.document(id)` broadcast, so one observer closes it from every path
+    /// (organiser #9).
+    public func libraryDidChange(_ change: LibraryChange) {
+        guard case .document(let id) = change, currentContainer?.document.id == id else { return }
+        guard let document = try? environment.library.document(id), document.trashedAt == nil else {
+            documentDidClose(id)
+            return
+        }
     }
 }
 

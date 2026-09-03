@@ -6,35 +6,51 @@ import Speech
 /// same `AVAudioEngine` tap and `EnergyVAD`/`UtteranceSegmenter` pipeline as
 /// `SFSpeechTranscriber`, using the framework's own volatile/final result
 /// stream instead of a recognition-task callback.
+///
+/// Unlike `SFSpeechRecognitionTask`, `SpeechTranscriber.results` keeps
+/// yielding across many final segments on one analyzer — there is no
+/// per-session restart to drive here, only the tap/VAD/segmenter pipeline
+/// `SFSpeechTranscriber` also runs, guarded by the same kind of private queue.
 @available(iOS 26, *)
 public final class SpeechAnalyzerTranscriber: SpeechTranscribing {
 
     public weak var delegate: SpeechTranscribingDelegate?
 
     private let locale: Locale
+    private let module: SpeechTranscriber
+    private let engine: SpeechAudioEngine
     private let vad: EnergyVAD
     private let segmenter: UtteranceSegmenter
-    private let audioEngine = AVAudioEngine()
+    private let stateQueue = DispatchQueue(label: "com.hsanabria.luna.writer.voice.speechanalyzer")
+
+    private var isRunning = false
+    private var analyzer: SpeechAnalyzer?
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
     private var recognitionTask: Task<Void, Never>?
-    private var isRunning = false
+    private var clockReference = AudioClockReference()
+
+    private var localeAssetStatus: AssetInventory.Status?
+    private var localeAssetCheck: Task<Void, Never>?
 
     public init(
         locale: Locale = .current,
         vad: EnergyVAD = EnergyVAD(),
-        segmenter: UtteranceSegmenter = UtteranceSegmenter()
+        segmenter: UtteranceSegmenter = UtteranceSegmenter(),
+        engine: SpeechAudioEngine = SystemSpeechAudioEngine()
     ) {
         self.locale = locale
+        self.module = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
         self.vad = vad
         self.segmenter = segmenter
+        self.engine = engine
     }
 
-    public var isAvailable: Bool {
-        SpeechTranscriber.isAvailable
-    }
+    public var isAvailable: Bool { unavailabilityReason == nil }
 
     public var unavailabilityReason: SpeechUnavailability? {
-        SpeechTranscriber.isAvailable ? nil : .unsupported
+        guard SpeechTranscriber.isAvailable else { return .unsupported }
+        if let localeAssetStatus, localeAssetStatus != .installed { return .noOnDeviceModel }
+        return SpeechPermissionCheck.unavailability()
     }
 
     public func start() throws {
@@ -42,71 +58,145 @@ public final class SpeechAnalyzerTranscriber: SpeechTranscribing {
         guard SpeechTranscriber.isAvailable else {
             throw SpeechTranscribingError.unavailable(.unsupported)
         }
-        guard AVAudioApplication.shared.recordPermission == .granted else {
-            throw SpeechTranscribingError.unavailable(.microphoneDenied)
+        if let localeAssetStatus, localeAssetStatus != .installed {
+            throw SpeechTranscribingError.unavailable(.noOnDeviceModel)
+        }
+        if let reason = SpeechPermissionCheck.unavailability() {
+            throw SpeechTranscribingError.unavailable(reason)
         }
 
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
-        try session.setActive(true)
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement)
+        try audioSession.setActive(true)
 
-        segmenter.reset()
-        vad.reset()
+        stateQueue.sync {
+            segmenter.reset()
+            vad.reset()
+            clockReference.reset()
+        }
 
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analyzer = SpeechAnalyzer(modules: [module])
+        self.analyzer = analyzer
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         inputContinuation = continuation
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+        engine.installTap(bufferSize: 4096) { [weak self] buffer, time in
+            guard let self else { return }
             continuation.yield(AnalyzerInput(buffer: buffer))
-            self?.ingestVAD(buffer: buffer)
+            self.stateQueue.sync { self.ingestVAD(buffer: buffer, at: time) }
         }
-        audioEngine.prepare()
-        try audioEngine.start()
+        engine.prepare()
+        try engine.start()
         isRunning = true
 
-        recognitionTask = Task { [weak self, segmenter] in
+        let module = self.module
+        recognitionTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                try await analyzer.start(inputSequence: stream)
-                for try await result in transcriber.results {
-                    let text = String(result.text.characters)
-                    let finished = result.isFinal ? segmenter.receiveFinal(text) : segmenter.receivePartial(text)
-                    guard let finished else { continue }
-                    await self?.notifyUtterance(finished.text)
+                // The results loop subscribes BEFORE `analyzer.start` runs —
+                // starting first would consume input with nothing draining
+                // `module.results`, since `start` does not return until the
+                // stream ends.
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask { [weak self] in
+                        for try await result in module.results {
+                            let text = String(result.text.characters)
+                            self?.handleResult(text: text, isFinal: result.isFinal)
+                        }
+                    }
+                    group.addTask {
+                        try await analyzer.start(inputSequence: stream)
+                    }
+                    try await group.next()
+                    group.cancelAll()
                 }
             } catch {
-                // The stream ends on `stop()`; anything else just stops
-                // quietly — there is no synchronous caller left to throw to.
+                self.handleRecognitionFailure(error)
             }
         }
+        ensureLocaleAssetInstalled()
     }
 
     public func stop() {
         guard isRunning else { return }
         isRunning = false
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        engine.removeTap()
+        engine.stop()
         inputContinuation?.finish()
         inputContinuation = nil
         recognitionTask?.cancel()
         recognitionTask = nil
+        let analyzer = self.analyzer
+        self.analyzer = nil
+        Task { try? await analyzer?.finalizeAndFinishThroughEndOfInput() }
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
-    private func ingestVAD(buffer: AVAudioPCMBuffer) {
-        let now = Date()
-        for frame in EnergyVADBufferAdapter.frames(in: buffer, configuration: vad.configuration, startingAt: now) {
-            for event in vad.ingest(frame.samples, at: frame.time) where event == .onset {
-                Task { @MainActor [weak self] in self?.delegate?.speechDidDetectOnset() }
+    /// Runs on the results task, off main and off the tap thread — routed
+    /// through `stateQueue` like every other caller of `segmenter`.
+    private func handleResult(text: String, isFinal: Bool) {
+        let finished: Utterance? = stateQueue.sync {
+            isFinal ? segmenter.receiveFinal(text) : segmenter.receivePartial(text)
+        }
+        guard let finished else { return }
+        notifyUtterance(finished.text)
+    }
+
+    /// The results loop or `analyzer.start` threw. Surfaced here (rather than
+    /// swallowed) so a caller inspecting `lastError` can tell a real failure
+    /// from `stop()`'s own stream teardown; either way this session is done.
+    public private(set) var lastError: Error?
+
+    private func handleRecognitionFailure(_ error: Error) {
+        lastError = error
+        guard isRunning else { return }
+        stop()
+    }
+
+    private func ingestVAD(buffer: AVAudioPCMBuffer, at time: AVAudioTime) {
+        let bufferStart = clockReference.date(for: time)
+        var sawOnset = false
+        for frame in EnergyVADBufferAdapter.frames(in: buffer, configuration: vad.configuration, startingAt: bufferStart) {
+            for event in vad.ingest(decibels: frame.decibels, at: frame.time) where event == .onset {
+                sawOnset = true
             }
+        }
+        let closed = segmenter.tick()
+        if sawOnset { notifyOnset() }
+        if let closed { notifyUtterance(closed.text) }
+    }
+
+    /// Checks whether `locale`'s on-device asset is installed and, if it is
+    /// merely supported rather than installed, requests installation — so a
+    /// caller that retries after this resolves sees `.noOnDeviceModel` clear
+    /// on its own rather than needing its own asset-management code.
+    private func ensureLocaleAssetInstalled() {
+        guard localeAssetCheck == nil else { return }
+        let module = self.module
+        localeAssetCheck = Task { [weak self] in
+            let status = await AssetInventory.status(forModules: [module])
+            self?.localeAssetStatus = status
+            guard status == .supported else { return }
+            guard let request = try? await AssetInventory.assetInstallationRequest(supporting: [module])
+            else { return }
+            try? await request.downloadAndInstall()
+            self?.localeAssetStatus = await AssetInventory.status(forModules: [module])
         }
     }
 
-    @MainActor
+    private func notifyOnset() {
+        if Thread.isMainThread {
+            delegate?.speechDidDetectOnset()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.delegate?.speechDidDetectOnset() }
+        }
+    }
+
     private func notifyUtterance(_ text: String) {
-        delegate?.speechDidFinishUtterance(text)
+        if Thread.isMainThread {
+            delegate?.speechDidFinishUtterance(text)
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.delegate?.speechDidFinishUtterance(text) }
+        }
     }
 }

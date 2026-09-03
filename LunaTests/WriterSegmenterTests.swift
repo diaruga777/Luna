@@ -4,7 +4,7 @@
 //
 
 import XCTest
-import LunaWriterText
+@testable import LunaWriterText
 
 /// Pins the sentence and word units the writing surface counts, focuses and
 /// colours. The abbreviation guard is the part that is ours: `NLTokenizer`
@@ -74,6 +74,33 @@ final class WriterSegmenterTests: XCTestCase {
         XCTAssertNil(segmenter.sentenceRange(containing: 0, in: NSRange(location: 0, length: 0), of: text))
     }
 
+    func testASecondReadOfTheSameParagraphSkipsTheRealTokenizer() {
+        let source = "First one. Second one."
+        let text = source as NSString
+        let whole = NSRange(location: 0, length: text.length)
+        let fresh = SentenceSegmenter()
+        let before = SentenceSegmenter.tokenizeCallCountForTesting
+        _ = fresh.sentences(in: whole, of: text)
+        XCTAssertEqual(SentenceSegmenter.tokenizeCallCountForTesting, before + 1)
+        _ = fresh.sentences(in: whole, of: text)
+        XCTAssertEqual(SentenceSegmenter.tokenizeCallCountForTesting, before + 1, "a cache hit must not re-tokenize")
+    }
+
+    func testARevisionKeyedReadHitsWithoutBridgingTheParagraphToAString() {
+        let source = "First one. Second one."
+        let text = source as NSString
+        let whole = NSRange(location: 0, length: text.length)
+        let fresh = SentenceSegmenter()
+        let before = SentenceSegmenter.tokenizeCallCountForTesting
+        _ = fresh.sentences(in: whole, of: text, revision: 1)
+        XCTAssertEqual(SentenceSegmenter.tokenizeCallCountForTesting, before + 1)
+        _ = fresh.sentences(in: whole, of: text, revision: 1)
+        XCTAssertEqual(SentenceSegmenter.tokenizeCallCountForTesting, before + 1)
+        // A new revision at the same range is a real miss.
+        _ = fresh.sentences(in: whole, of: text, revision: 2)
+        XCTAssertEqual(SentenceSegmenter.tokenizeCallCountForTesting, before + 2)
+    }
+
     // MARK: - Words
 
     func testWordsSkipPunctuationAndKeepContractions() {
@@ -96,14 +123,14 @@ final class WriterSegmenterTests: XCTestCase {
 
     func testTaggerNamesWordClassesWhereTheLanguageModelExists() {
         let source = "The quick fox jumps over lazy dogs and she waits"
-        let text = source as NSString
-        let spans = PartOfSpeechTagger().tags(in: NSRange(location: 0, length: text.length), of: text)
+        let spans = PartOfSpeechTagger().tags(ofParagraph: source)
         guard PartOfSpeechTagger.supportsTagging(source) else {
             // No lexical classes here, so colouring stays off rather than
             // painting every word "other". The simulator is such a device.
             XCTAssertTrue(spans.isEmpty)
             return
         }
+        let text = source as NSString
         var byWord: [String: POSClass] = [:]
         for span in spans { byWord[text.substring(with: span.range)] = span.pos }
         XCTAssertEqual(byWord["The"], .determiner)
@@ -115,19 +142,18 @@ final class WriterSegmenterTests: XCTestCase {
         XCTAssertEqual(byWord["she"], .pronoun)
     }
 
-    func testTaggerReportsDocumentOffsetsWhereTheLanguageModelExists() {
-        let source = "skip this. The quick fox jumps"
-        let text = source as NSString
-        let paragraph = NSRange(location: 11, length: text.length - 11)
-        let spans = PartOfSpeechTagger().tags(in: paragraph, of: text)
+    func testTaggerRangesStartAtZeroForTheParagraphItWasGiven() {
+        let source = "The quick fox jumps"
+        let spans = PartOfSpeechTagger().tags(ofParagraph: source)
         guard PartOfSpeechTagger.supportsTagging(source) else {
             XCTAssertTrue(spans.isEmpty)
             return
         }
+        let text = source as NSString
         XCTAssertEqual(spans.first.map { text.substring(with: $0.range) }, "The")
         for span in spans {
-            XCTAssertGreaterThanOrEqual(span.range.location, paragraph.location)
-            XCTAssertLessThanOrEqual(NSMaxRange(span.range), NSMaxRange(paragraph))
+            XCTAssertGreaterThanOrEqual(span.range.location, 0)
+            XCTAssertLessThanOrEqual(NSMaxRange(span.range), text.length)
         }
     }
 

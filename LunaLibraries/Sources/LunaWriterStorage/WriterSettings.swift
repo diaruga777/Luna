@@ -100,6 +100,16 @@ public final class WriterSettings {
         } else {
             defaults.removeObject(forKey: key)
         }
-        center.post(name: WriterSettings.didChange, object: self)
+        // A setter reached from a background queue (calibration grading
+        // runs off-main) must not post there: an observer redrawing UI
+        // expects the notification on main.
+        if Thread.isMainThread {
+            center.post(name: WriterSettings.didChange, object: self)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.center.post(name: WriterSettings.didChange, object: self)
+            }
+        }
     }
 }

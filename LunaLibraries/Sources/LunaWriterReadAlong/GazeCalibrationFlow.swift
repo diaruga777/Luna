@@ -111,6 +111,11 @@ public final class GazeCalibrationFlow {
     public func begin(at time: TimeInterval) {
         guard stage == .intro else { return }
         startTime = time
+        // The collector was built at construction time, before the caller's
+        // real clock was known (`GazeCalibrationViewController.begin()` asks
+        // for one before the sweep starts) — without this, `startTime` in the
+        // collector stays whatever the default was, and no frame ever pairs.
+        collector.startTime = time
         collector.reset()
         enter(.pursuit, at: time)
     }

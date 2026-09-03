@@ -213,6 +213,33 @@ final class GazeAffineCalibrationTests: XCTestCase {
             samples: samples(count: 400, noise: 3), viewSize: .zero, options: options()))
     }
 
+    func testPointFromANonFiniteRawPassesThroughUnchanged() {
+        guard let fitted = GazeAffineCalibration.fit(
+            samples: samples(count: 400, noise: 6), viewSize: viewSize, options: options())
+        else { return XCTFail("no fit") }
+        let bad = CGPoint(x: CGFloat.nan, y: 40)
+        let result = fitted.point(from: bad)
+        XCTAssertTrue(result.x.isNaN)
+        XCTAssertEqual(result.y, 40)
+    }
+
+    func testFitDropsNonFiniteSamplesRatherThanFailingTheWholeFit() {
+        var withGarbage = samples(count: 400, noise: 6)
+        withGarbage[10] = CalibrationSample(raw: CGPoint(x: CGFloat.nan, y: CGFloat.nan), target: withGarbage[10].target)
+        withGarbage[20] = CalibrationSample(raw: withGarbage[20].raw, target: CGPoint(x: CGFloat.infinity, y: 0))
+
+        guard let fitted = GazeAffineCalibration.fit(
+            samples: withGarbage, viewSize: viewSize, options: options())
+        else { return XCTFail("a fit with two bad samples out of 400 should still succeed") }
+        XCTAssertEqual(fitted.sampleCount, 398, "the two non-finite samples are dropped up front")
+
+        let probe = CGPoint(x: 200, y: 430)
+        let raw = probe.applying(truth.inverted())
+        let recovered = fitted.point(from: raw)
+        XCTAssertEqual(recovered.x, probe.x, accuracy: 8)
+        XCTAssertEqual(recovered.y, probe.y, accuracy: 8)
+    }
+
     func testViewSizeDriftMeasuresRelativeChangeOnBothAxes() {
         let calibration = GazeAffineCalibration.identity(
             viewSize: viewSize, pointsPerDegree: pointsPerDegree)

@@ -217,8 +217,11 @@ public struct GazeAffineCalibration: Codable, Equatable {
 
     // MARK: - Applying
 
-    /// Corrects one raw estimate.
+    /// Corrects one raw estimate. A non-finite `raw` (a projection gone wrong
+    /// upstream) passes through unchanged rather than turning the whole
+    /// affine map into NaN.
     public func point(from raw: CGPoint) -> CGPoint {
+        guard raw.x.isFinite, raw.y.isFinite else { return raw }
         let mapped = raw.applying(transform)
         return CGPoint(x: mapped.x + offsetX, y: mapped.y + offsetY)
     }
@@ -249,11 +252,19 @@ public struct GazeAffineCalibration: Codable, Equatable {
 
     /// Fits one lag's worth of pairs.
     public static func fit(
-        samples: [CalibrationSample],
+        samples rawSamples: [CalibrationSample],
         viewSize: CGSize,
         lag: TimeInterval = 0,
         options: FitOptions = FitOptions()
     ) -> GazeAffineCalibration? {
+        // A blink or a saccade the collector's own filters missed can still
+        // leave a non-finite raw estimate in the buffer (an upstream
+        // projection that found no ray/plane intersection, say). One such
+        // sample would otherwise carry a NaN into the whole normal-equations
+        // solve, failing every axis rather than just the bad row.
+        let samples = rawSamples.filter {
+            $0.raw.x.isFinite && $0.raw.y.isFinite && $0.target.x.isFinite && $0.target.y.isFinite
+        }
         guard samples.count >= options.minimumSamples,
               viewSize.width > 0, viewSize.height > 0
         else { return nil }

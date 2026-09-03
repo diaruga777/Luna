@@ -46,6 +46,14 @@ import LunaWriterVoice
         openSessions.flushAll()
     }
 
+    /// A folder change made while suspended (an iCloud sync, another
+    /// process) is not seen until the watcher's next event; forcing a scan
+    /// on the way back to the foreground picks it up immediately instead of
+    /// waiting for the next unrelated write.
+    static func sceneWillEnterForeground() {
+        storage?.watcher.scanNow()
+    }
+
     static func makeRootViewController() -> UIViewController {
         guard let stack = try? storageStack() else {
             let placeholder = UIViewController()
@@ -81,15 +89,24 @@ import LunaWriterVoice
         return nil
     }
 
+    /// Parks the id only when there is no root yet to show it in (a deep
+    /// link or intent that raced app launch); a root that exists but cannot
+    /// find the document has nothing left to wait for, so it drops the
+    /// request instead of parking it forever.
     static func show(document id: DocumentID) {
-        guard let root, let stack = storage, let document = try? stack.library.document(id) else {
+        guard let root else {
             pendingDocument = id
             return
         }
+        guard let stack = storage, let document = try? stack.library.document(id) else { return }
         root.show(document: document)
     }
 
     static func open(_ url: URL) {
+        if url.isFileURL {
+            importFile(at: url)
+            return
+        }
         guard let route = WriterDeepLink(url: url) else { return }
         switch route {
         case .document(let id): show(document: id)
@@ -99,23 +116,18 @@ import LunaWriterVoice
             }
         }
     }
-}
 
-/// `lunawriter://document/<uuid>` and `lunawriter://new`.
-enum WriterDeepLink: Equatable {
-    case document(DocumentID)
-    case newSheet
-
-    init?(url: URL) {
-        guard url.scheme?.lowercased() == "lunawriter" else { return nil }
-        switch url.host?.lowercased() {
-        case "new": self = .newSheet
-        case "document":
-            let component = url.pathComponents.dropFirst().first ?? ""
-            guard let uuid = UUID(uuidString: component) else { return nil }
-            self = .document(DocumentID(uuid))
-        default: return nil
-        }
+    /// Files' "Open in Luna Writer", or a file dropped on the Dock icon on
+    /// Mac: the text is copied into a new Inbox sheet rather than opened in
+    /// place, since a sheet is a database row plus a file this tier owns —
+    /// not an arbitrary document Luna Writer edits where it sits.
+    private static func importFile(at url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        guard let document = try? storageStack().intents.createDocument(title: nil, text: text, in: nil)
+        else { return }
+        show(document: document.id)
     }
 }
 

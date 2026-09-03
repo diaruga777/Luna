@@ -48,6 +48,11 @@ public enum VoiceCommandClassifier {
         "please", "um", "uh", "just", "really", "kind", "sort",
     ]
 
+    /// Every command's lexicon, split into words once rather than on every
+    /// `classify(_:)` call.
+    private static let lexicons: [(command: Command, phrases: [[String]])] =
+        Command.allCases.map { ($0, $0.lexicon) }
+
     /// Lower-cases, drops apostrophes, and turns every other run of
     /// non-alphanumeric characters into a token boundary.
     public static func normalize(_ text: String) -> [String] {
@@ -105,8 +110,8 @@ public enum VoiceCommandClassifier {
         guard !tokens.isEmpty else { return nil }
         let content = tokens.filter { !stopWords.contains($0) }
 
-        for command in Command.allCases {
-            for phrase in command.lexicon {
+        for (command, phrases) in lexicons {
+            for phrase in phrases {
                 if phrase.count == 1 {
                     if tokens.count <= 4, containsPhrase(tokens, phrase) { return command.voiceCommand }
                     continue

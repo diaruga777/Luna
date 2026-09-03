@@ -20,9 +20,14 @@ public final class LibraryRootViewController: UISplitViewController {
         self.sheetsViewController = SheetsViewController(
             library: environment.library, notes: environment.notes)
         super.init(style: .tripleColumn)
+        delegate = self
         groupsViewController.selectionDelegate = self
         sheetsViewController.selectionDelegate = self
     }
+
+    /// Set once a sheet is open in the detail column. Until then a compact
+    /// width collapses to the groups list, never to the empty placeholder.
+    private var hasOpenDocument = false
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
@@ -79,7 +84,17 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
     /// as well as the sheets list.
     public func show(document: WriterDocument) {
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
+        hasOpenDocument = true
         setViewController(editorContainer, for: .secondary)
         show(.secondary)
+    }
+}
+
+extension LibraryRootViewController: UISplitViewControllerDelegate {
+    public func splitViewController(
+        _ svc: UISplitViewController,
+        topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column
+    ) -> UISplitViewController.Column {
+        hasOpenDocument ? .secondary : .primary
     }
 }

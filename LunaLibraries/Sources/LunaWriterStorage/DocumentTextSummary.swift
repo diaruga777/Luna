@@ -9,11 +9,12 @@ enum DocumentTextSummary {
 
     static func summarize(_ text: String) -> Summary {
         let string = text as NSString
-        let derived = TitleDeriver.derive(from: string)
+        let model = MarkdownDocumentModel(text: string)
+        let derived = TitleDeriver.derive(from: model)
         let statistics = TextStatistics.measure(string)
         return Summary(
             title: derived?.text ?? L10nWriterStorage.untitledDocumentTitle,
-            snippet: TitleDeriver.snippet(of: string, after: derived),
+            snippet: TitleDeriver.snippet(of: model, after: derived),
             words: statistics.words, characters: statistics.characters)
     }
 }

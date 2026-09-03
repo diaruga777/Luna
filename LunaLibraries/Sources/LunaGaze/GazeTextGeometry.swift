@@ -50,16 +50,17 @@ public struct SentenceLayout: Equatable {
     /// The sentence's words, in reading order.
     public var words: [WordLayout]
 
+    /// Union of the line boxes, computed once at construction — the reading
+    /// model's scoring pass reads this every frame for every candidate
+    /// sentence, and `lineRects` never changes after `init`.
+    public let bounds: CGRect
+
     public init(index: Int, textRange: NSRange, lineRects: [CGRect], words: [WordLayout]) {
         self.index = index
         self.textRange = textRange
         self.lineRects = lineRects
         self.words = words
-    }
-
-    /// Union of the line boxes. Empty when the sentence has no geometry.
-    public var bounds: CGRect {
-        lineRects.reduce(CGRect.null) { $0.union($1) }
+        self.bounds = lineRects.reduce(CGRect.null) { $0.union($1) }
     }
 
     /// Number of words the sweep has to cross.

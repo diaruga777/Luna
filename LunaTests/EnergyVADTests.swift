@@ -6,6 +6,7 @@
 //  an explicit clock — no audio session, no AVAudioEngine.
 //
 
+import AVFoundation
 import XCTest
 @testable import LunaWriterVoice
 
@@ -167,5 +168,83 @@ final class EnergyVADTests: XCTestCase {
             events += vad.ingest(silentFrame(), at: time)
         }
         XCTAssertTrue(events.isEmpty, "no .end should follow a reset run")
+    }
+
+    // MARK: - Decibels-only ingest
+
+    func testIngestingDecibelsDirectlyMatchesIngestingSamples() {
+        let bySamples = EnergyVAD(configuration: configuration)
+        let byDecibels = EnergyVAD(configuration: configuration)
+        var time = Date()
+        for _ in 0..<10 {
+            XCTAssertEqual(
+                bySamples.ingest(loudFrame(), at: time),
+                byDecibels.ingest(decibels: EnergyVAD.decibels(ofRMS: loudFrame()), at: time))
+            time = time.addingTimeInterval(configuration.frameDuration)
+        }
+    }
+
+    // MARK: - Buffer adapter (vDSP path)
+
+    private func pcmBuffer(samples: [Float], sampleRate: Double = 16000) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count))!
+        buffer.frameLength = buffer.frameCapacity
+        let channel = buffer.floatChannelData![0]
+        for (index, sample) in samples.enumerated() { channel[index] = sample }
+        return buffer
+    }
+
+    func testTheBufferAdapterReducesEachWindowToTheSameDecibelsAsTheArrayPath() {
+        let sampleRate = 16000.0
+        let frameDuration = 0.03
+        let samplesPerFrame = Int((frameDuration * sampleRate).rounded())
+        // Two 30ms windows back to back in ONE buffer: loud, then silent.
+        let combined = [Float](repeating: 0.4, count: samplesPerFrame)
+            + [Float](repeating: 0, count: samplesPerFrame)
+
+        let configuration = EnergyVADConfiguration(frameDuration: frameDuration)
+        let buffer = pcmBuffer(samples: combined, sampleRate: sampleRate)
+        let start = Date()
+        let frames = EnergyVADBufferAdapter.frames(
+            in: buffer, configuration: configuration, startingAt: start)
+
+        XCTAssertEqual(frames.count, 2)
+        let expectedLoud = EnergyVAD.decibels(ofRMS: [Float](repeating: 0.4, count: samplesPerFrame))
+        let expectedQuiet = EnergyVAD.decibels(ofRMS: [Float](repeating: 0, count: samplesPerFrame))
+        XCTAssertEqual(frames[0].decibels, expectedLoud, accuracy: 0.01)
+        XCTAssertEqual(frames[1].decibels, expectedQuiet)
+        XCTAssertEqual(frames[0].time, start)
+        XCTAssertEqual(
+            frames[1].time, start.addingTimeInterval(Double(samplesPerFrame) / sampleRate))
+    }
+
+    func testTheBufferAdapterFeedsAVADRunToTheSameOnsetEndPair() {
+        let sampleRate = 16000.0
+        let configuration = EnergyVADConfiguration(frameDuration: 0.03)
+        let samplesPerFrame = Int((configuration.frameDuration * sampleRate).rounded())
+        let vad = EnergyVAD(configuration: configuration)
+        var events: [VoiceActivityEvent] = []
+        var start = Date()
+
+        // ~300ms of loud buffers, then ~450ms of silence — the same shape
+        // `testBurstOfSpeechEmitsOnsetThenEnd` drives by hand.
+        for _ in 0..<10 {
+            let buffer = pcmBuffer(
+                samples: [Float](repeating: 0.5, count: samplesPerFrame), sampleRate: sampleRate)
+            for frame in EnergyVADBufferAdapter.frames(in: buffer, configuration: configuration, startingAt: start) {
+                events += vad.ingest(decibels: frame.decibels, at: frame.time)
+            }
+            start = start.addingTimeInterval(configuration.frameDuration)
+        }
+        for _ in 0..<15 {
+            let buffer = pcmBuffer(
+                samples: [Float](repeating: 0, count: samplesPerFrame), sampleRate: sampleRate)
+            for frame in EnergyVADBufferAdapter.frames(in: buffer, configuration: configuration, startingAt: start) {
+                events += vad.ingest(decibels: frame.decibels, at: frame.time)
+            }
+            start = start.addingTimeInterval(configuration.frameDuration)
+        }
+        XCTAssertEqual(events, [.onset, .end])
     }
 }

@@ -31,7 +31,12 @@ public struct GazeGate {
     public let faceLostDelay: TimeInterval
     /// How far outside the screen an estimate may land, in points.
     public let offScreenSlop: CGFloat
-    /// The screen the estimate is judged against.
+    /// The screen the estimate is judged against, in the SAME orientation as
+    /// the point passed to `update(...)` — a landscape session must set this
+    /// from `GazeScreenProjection.orientedSize(portraitSize:orientation:)`,
+    /// never the portrait-fixed size a tracker reports in. `update(...)`
+    /// compares `point` to this size axis-for-axis with no rotation of its
+    /// own, so a mismatch here silently reads every sample as `.offScreen`.
     public var screenSize: CGSize
 
     /// The current verdict.

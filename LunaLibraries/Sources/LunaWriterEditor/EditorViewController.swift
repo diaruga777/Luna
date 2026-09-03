@@ -347,13 +347,14 @@ public final class EditorViewController: UIViewController {
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
     }
 
+    /// Reads only `NoteHit` itself — no store read per row, per keystroke,
+    /// while the overlay is up.
     private func mentionRows() -> [MentionRow] {
         var rows = mention.results.map { hit -> MentionRow in
-            let note = try? environment.noteStore.note(hit.noteID)
-            let elsewhere = note.map { !$0.documentIDs.contains(session.document.id) } ?? false
+            let elsewhere = !hit.documentIDs.contains(session.document.id)
             return MentionRow(
                 noteID: hit.noteID,
-                title: hit.snippet.isEmpty ? (note?.text ?? "") : hit.snippet,
+                title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
                 detail: elsewhere ? L10n.string("WriterEditor_mentionNoteFromAnotherSheet") : nil,
                 symbolName: "note.text")
         }
@@ -371,22 +372,31 @@ public final class EditorViewController: UIViewController {
 
     public override var canBecomeFirstResponder: Bool { true }
 
+    /// A fixed set, registered once: UIKit resolves a key command through the
+    /// responder chain and asks `canPerformAction` before firing it, so the
+    /// mention commands' availability belongs there, not in a rebuilt array —
+    /// an unavailable command falls through to ordinary typing on its own.
     public override var keyCommands: [UIKeyCommand]? {
-        var commands = [
+        [
             UIKeyCommand(input: "b", modifierFlags: .command, action: #selector(toggleBold)),
             UIKeyCommand(input: "i", modifierFlags: .command, action: #selector(toggleItalic)),
             UIKeyCommand(input: "k", modifierFlags: .command, action: #selector(insertLink)),
             UIKeyCommand(input: "f", modifierFlags: [.command, .shift], action: #selector(cycleFocusMode)),
+            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(mentionUp)),
+            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(mentionDown)),
+            UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(mentionCommit)),
+            UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(mentionDismiss)),
         ]
-        if mention.state.isActive {
-            commands.append(contentsOf: [
-                UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(mentionUp)),
-                UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(mentionDown)),
-                UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(mentionCommit)),
-                UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(mentionDismiss)),
-            ])
+    }
+
+    public override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        switch action {
+        case #selector(mentionUp), #selector(mentionDown),
+             #selector(mentionCommit), #selector(mentionDismiss):
+            return mention.state.isActive
+        default:
+            return super.canPerformAction(action, withSender: sender)
         }
-        return commands
     }
 
     @objc private func mentionUp() { mention.moveHighlight(by: -1); updateOverlay() }
@@ -418,10 +428,18 @@ public final class EditorViewController: UIViewController {
 
     /// Runs a Markdown command's edits through the text view, so the undo
     /// manager and authorship see them as ordinary typing.
+    /// A multi-line Markdown command (toggling a list, a quote) is several
+    /// edits; grouped, one undo takes back the whole command instead of one
+    /// line at a time.
     private func apply(_ edits: [TextEdit]) {
+        guard !edits.isEmpty else { return }
+        let undoManager = textView.undoManager
+        let groups = edits.count > 1
+        if groups { undoManager?.beginUndoGrouping() }
         for edit in edits {
             textView.replaceText(in: edit.range, with: edit.replacement)
         }
+        if groups { undoManager?.endUndoGrouping() }
     }
 }
 
@@ -432,8 +450,12 @@ extension EditorViewController: UITextViewDelegate {
     public func textView(
         _ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String
     ) -> Bool {
+        // Cleared up front: a rejected change must never leave a stale edit
+        // for the NEXT accepted change's textViewDidChange to pick up.
+        pendingEdit = nil
+        guard mention.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
         pendingEdit = (range, (text as NSString).length)
-        return mention.textView(textView, shouldChangeTextIn: range, replacementText: text)
+        return true
     }
 
     public func textViewDidChange(_ textView: UITextView) {
@@ -450,6 +472,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
+        pendingEdit = nil
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
@@ -518,8 +541,8 @@ extension EditorViewController: MarkdownTextStorageObserving {
 
 extension EditorViewController: AuthorshipObserving {
 
-    public func authorshipTracker(_ tracker: AuthorshipTracker, didChange range: NSRange) {
-        composer.invalidate(range.length == Int.max ? nil : range)
+    public func authorshipTracker(_ tracker: AuthorshipTracker, didChange range: NSRange?) {
+        composer.invalidate(range)
     }
 }
 
@@ -551,7 +574,12 @@ extension EditorViewController: WriterTextViewActionDelegate {
         session.authorship.markAsOwn(range)
     }
 
+    /// Anchors an annotation to the selection right away, so the mark shows
+    /// under the right words the moment "Add note" is chosen; the panel is
+    /// where the writer gives it something to say.
     public func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange) {
+        let anchor = TextAnchorResolver.make(range: range, in: session.storage.nsText)
+        session.add(Annotation(documentID: session.document.id, kind: .comment, source: .manual, anchor: anchor))
         delegate?.editorRequestsNotesPanel(self)
     }
 }

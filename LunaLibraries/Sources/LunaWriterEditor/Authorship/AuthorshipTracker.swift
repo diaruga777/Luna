@@ -7,8 +7,9 @@ import UIKit
 import LunaWriterModels
 
 /// Told when the spans under a range changed, so the tint is repainted.
+/// `nil` means the whole document.
 public protocol AuthorshipObserving: AnyObject {
-    func authorshipTracker(_ tracker: AuthorshipTracker, didChange range: NSRange)
+    func authorshipTracker(_ tracker: AuthorshipTracker, didChange range: NSRange?)
 }
 
 /// Keeps the document's authorship spans in step with its text.
@@ -27,7 +28,7 @@ public final class AuthorshipTracker: AuthorshipSpanProviding {
     /// Replaces everything, as a document load does.
     public func reset(to spans: [AuthorshipSpan]) {
         list = AuthorshipSpanList(spans: spans)
-        observer?.authorshipTracker(self, didChange: NSRange(location: 0, length: Int.max))
+        observer?.authorshipTracker(self, didChange: nil)
     }
 
     /// One text change. `source` is nil when the caller records the inserted

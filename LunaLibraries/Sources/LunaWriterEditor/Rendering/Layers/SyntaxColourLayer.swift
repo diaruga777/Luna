@@ -31,6 +31,13 @@ public final class SyntaxColourLayer: RenderingAttributeLayer, POSTaggingObservi
         }
     }
 
+    /// True when this device can name a word's part of speech at all. Every
+    /// simulator answers false, and so does any language with no model, which
+    /// is what the settings toggle asks before it offers the switch.
+    public static func isSupported(sampleText: String) -> Bool {
+        PartOfSpeechTagger.supportsTagging(sampleText)
+    }
+
     public init(service: POSTaggingService, storage: MarkdownTextStorage) {
         self.service = service
         self.storage = storage
@@ -44,7 +51,9 @@ public final class SyntaxColourLayer: RenderingAttributeLayer, POSTaggingObservi
             service.cancelAll()
             return
         }
-        for start in tags.keys where NSLocationInRange(start, range) || start >= range.location && start < NSMaxRange(range) {
+        // A rescan moves every paragraph after it, so the ones past the range
+        // are as stale as the ones inside it.
+        for start in tags.keys where start >= range.location {
             tags.removeValue(forKey: start)
             service.cancelParagraph(at: start)
         }

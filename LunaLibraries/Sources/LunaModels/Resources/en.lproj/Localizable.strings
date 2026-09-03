@@ -1276,7 +1276,7 @@
 "WriterEditor_accessory_task_Luna" = "Task";
 "WriterEditor_mentionNewNote_Luna" = "New note";
 "WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
-"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "In %@";
+"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another sheet";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
 "WriterEditor_menuPasteAsAI_Luna" = "Paste as AI text";

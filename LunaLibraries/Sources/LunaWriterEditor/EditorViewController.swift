@@ -281,7 +281,7 @@ public final class EditorViewController: UIViewController {
             return MentionRow(
                 noteID: hit.noteID,
                 title: hit.snippet.isEmpty ? (note?.text ?? "") : hit.snippet,
-                detail: elsewhere ? L10n.string("WriterEditor_mentionNoteFromAnotherSheet", "…") : nil,
+                detail: elsewhere ? L10n.string("WriterEditor_mentionNoteFromAnotherSheet") : nil,
                 symbolName: "note.text")
         }
         let query = mention.state.query.trimmingCharacters(in: .whitespacesAndNewlines)

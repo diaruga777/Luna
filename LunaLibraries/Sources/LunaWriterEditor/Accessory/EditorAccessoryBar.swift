@@ -28,8 +28,22 @@ public enum EditorAccessoryAction: String, CaseIterable {
         }
     }
 
-    var accessibilityKey: String {
-        "WriterEditor_accessory_\(rawValue)"
+    /// The key is written out at each call: `strings_sync.py` finds a key by
+    /// the literal inside `L10n.string`, and a built one reads as unused.
+    var accessibilityName: String {
+        switch self {
+        case .heading: return L10n.string("WriterEditor_accessory_heading")
+        case .bold: return L10n.string("WriterEditor_accessory_bold")
+        case .italic: return L10n.string("WriterEditor_accessory_italic")
+        case .list: return L10n.string("WriterEditor_accessory_list")
+        case .task: return L10n.string("WriterEditor_accessory_task")
+        case .quote: return L10n.string("WriterEditor_accessory_quote")
+        case .link: return L10n.string("WriterEditor_accessory_link")
+        case .code: return L10n.string("WriterEditor_accessory_code")
+        case .mention: return L10n.string("WriterEditor_accessory_mention")
+        case .focus: return L10n.string("WriterEditor_accessory_focus")
+        case .statistics: return L10n.string("WriterEditor_accessory_statistics")
+        }
     }
 }
 
@@ -88,7 +102,7 @@ public final class EditorAccessoryBar: UIView {
             let button = UIButton(type: .system)
             button.configuration = GlassStyle.circularButtonConfiguration(symbol: action.symbolName, padding: 8)
             button.tintColor = LunaColors.primaryText
-            button.accessibilityLabel = L10n.string(action.accessibilityKey)
+            button.accessibilityLabel = action.accessibilityName
             button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
             button.tag = actions.firstIndex(of: action) ?? 0
             buttons[action] = button

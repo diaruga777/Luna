@@ -14,6 +14,8 @@ public final class LibraryRootViewController: UISplitViewController {
     private let environment: LibraryEnvironment
     private let groupsViewController: GroupsViewController
     private let sheetsViewController: SheetsViewController
+    private let primaryNavigation: UINavigationController
+    private let supplementaryNavigation: UINavigationController
 
     /// The primary and supplementary columns' preferred width, and the
     /// narrowest an expanded editor column is allowed to end up. Below
@@ -32,6 +34,8 @@ public final class LibraryRootViewController: UISplitViewController {
             library: environment.library, notes: environment.notes)
         self.sheetsViewController = SheetsViewController(
             library: environment.library, notes: environment.notes, textStore: environment.textStore)
+        self.primaryNavigation = UINavigationController(rootViewController: groupsViewController)
+        self.supplementaryNavigation = UINavigationController(rootViewController: sheetsViewController)
         super.init(style: .tripleColumn)
         delegate = self
         groupsViewController.selectionDelegate = self
@@ -41,9 +45,10 @@ public final class LibraryRootViewController: UISplitViewController {
 
     deinit { environment.library.removeObserver(self) }
 
-    /// Set once a sheet is open in the detail column. Until then a compact
-    /// width collapses to the groups list, never to the empty placeholder.
-    private var hasOpenDocument = false
+    /// Whether a sheet is open in the detail column (or on the collapsed
+    /// stack). Until then a compact width collapses to the groups list,
+    /// never to the empty placeholder.
+    private var hasOpenDocument: Bool { currentContainer != nil }
     /// The container currently hosted in the secondary column, so a
     /// re-selection can no-op and an outgoing editor can be flushed before
     /// it is replaced (organiser #10).
@@ -58,8 +63,8 @@ public final class LibraryRootViewController: UISplitViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        setViewController(UINavigationController(rootViewController: groupsViewController), for: .primary)
-        setViewController(UINavigationController(rootViewController: sheetsViewController), for: .supplementary)
+        setViewController(primaryNavigation, for: .primary)
+        setViewController(supplementaryNavigation, for: .supplementary)
         setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
         configureColumnWidths()
         updatePreferredDisplayMode()
@@ -199,11 +204,42 @@ public enum WriterCommandTitles {
 extension LibraryRootViewController: GroupsSelectionDelegate {
     public func groupsViewController(_ controller: GroupsViewController, didSelect selection: LibrarySelection) {
         sheetsViewController.select(selection)
-        show(.supplementary)
+        showSheetsList()
+    }
+
+    /// A collapsed split view pushes only its secondary column when asked;
+    /// `show(.supplementary)` does nothing there (measured on iOS 26, and
+    /// pinned by `LibraryRootViewControllerTests`), so on a compact width the
+    /// sheets list is pushed onto the primary stack by hand. Expanding hands
+    /// it back to its column (organiser #29).
+    private func showSheetsList() {
+        guard isCollapsed else {
+            show(.supplementary)
+            return
+        }
+        if primaryNavigation.viewControllers.contains(sheetsViewController) {
+            primaryNavigation.popToViewController(sheetsViewController, animated: true)
+            return
+        }
+        supplementaryNavigation.setViewControllers([], animated: false)
+        whenPrimaryStackSettles { [self] in
+            primaryNavigation.pushViewController(sheetsViewController, animated: true)
+        }
+    }
+
+    /// UIKit drops a stack change made while the primary stack is mid-
+    /// transition ("the navigation stack will not be updated"), so `work`
+    /// waits for the running transition to finish when there is one.
+    private func whenPrimaryStackSettles(_ work: @escaping () -> Void) {
+        guard let coordinator = primaryNavigation.transitionCoordinator else {
+            work()
+            return
+        }
+        coordinator.animate(alongsideTransition: nil) { _ in work() }
     }
 
     public func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?) {
-        sheetsViewController.createSheet(in: group)
+        sheetsViewController.createSheet(in: group ?? environment.library.inboxGroupID)
     }
 }
 
@@ -224,9 +260,22 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
         currentContainer?.editor.flushPendingSave()
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
         currentContainer = editorContainer
-        hasOpenDocument = true
-        setViewController(editorContainer, for: .secondary)
-        show(.secondary)
+        if isCollapsed {
+            // Same as `showSheetsList()`: the collapsed split view does not
+            // push a freshly set secondary column, so the editor replaces
+            // any editor already on the stack and goes on top by hand.
+            // Loaded now, so `editor` exists for the flush the next
+            // `show(document:)` performs even before the push lands.
+            editorContainer.loadViewIfNeeded()
+            whenPrimaryStackSettles { [self] in
+                var stack = primaryNavigation.viewControllers.filter { !($0 is EditorContainerViewController) }
+                stack.append(editorContainer)
+                primaryNavigation.setViewControllers(stack, animated: true)
+            }
+        } else {
+            setViewController(editorContainer, for: .secondary)
+            show(.secondary)
+        }
     }
 }
 
@@ -234,8 +283,15 @@ extension LibraryRootViewController: LibraryNavigationHandling {
     public func documentDidClose(_ id: DocumentID) {
         guard currentContainer?.document.id == id else { return }
         currentContainer = nil
-        hasOpenDocument = false
-        setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
+        whenPrimaryStackSettles { [self] in
+            let stack = primaryNavigation.viewControllers.filter { !($0 is EditorContainerViewController) }
+            if stack.count != primaryNavigation.viewControllers.count {
+                primaryNavigation.setViewControllers(stack, animated: true)
+            }
+        }
+        if !isCollapsed {
+            setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
+        }
     }
 }
 
@@ -259,5 +315,20 @@ extension LibraryRootViewController: UISplitViewControllerDelegate {
         topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column
     ) -> UISplitViewController.Column {
         hasOpenDocument ? .secondary : .primary
+    }
+
+    /// Puts every column back where it belongs after a collapse: UIKit
+    /// restores what it moved itself, and this restores the sheets list
+    /// `showSheetsList()` pushed by hand.
+    public func splitViewControllerDidExpand(_ svc: UISplitViewController) {
+        if primaryNavigation.viewControllers.contains(sheetsViewController) {
+            primaryNavigation.setViewControllers([groupsViewController], animated: false)
+        }
+        if supplementaryNavigation.viewControllers.isEmpty {
+            supplementaryNavigation.setViewControllers([sheetsViewController], animated: false)
+        }
+        if let currentContainer, currentContainer.parent !== self {
+            setViewController(currentContainer, for: .secondary)
+        }
     }
 }

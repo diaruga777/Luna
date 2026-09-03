@@ -108,7 +108,16 @@ extension XCTestCase {
     func hostWriterScreen(
         _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
     ) -> UIWindow {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        // Attached to the host's scene when there is one: a window with no
+        // scene is never drawn, so its navigation transitions never finish
+        // and UIKit drops every stack change made after the first.
+        let window: UIWindow
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        }
         window.rootViewController = viewController
         window.makeKeyAndVisible()
         viewController.view.layoutIfNeeded()

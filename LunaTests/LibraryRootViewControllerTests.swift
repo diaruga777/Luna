@@ -64,6 +64,11 @@ final class LibraryRootViewControllerTests: XCTestCase {
         let inGroup = try stack.library.createDocument(in: group.id, title: "In G")
         let editorMaker = FakeDocumentEditorMaker()
         let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack, editorMaker: editorMaker))
+        // An offscreen window never finishes a push animation, and UIKit
+        // drops a stack change made mid-transition; the app waits for the
+        // transition, the test just turns animation off.
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(true) }
         let window = hostWriterScreen(root, width: 390, height: 844)
         defer { window.isHidden = true }
         XCTAssertTrue(root.isCollapsed)
@@ -71,17 +76,24 @@ final class LibraryRootViewControllerTests: XCTestCase {
         let sidebar = try XCTUnwrap(
             (root.viewController(for: .primary) as? UINavigationController)?.viewControllers.first
                 as? GroupsViewController)
+        let primaryStack = try XCTUnwrap(root.viewController(for: .primary) as? UINavigationController)
+
         root.groupsViewController(sidebar, didSelect: .group(group.id))
+        pollUntil { primaryStack.topViewController is SheetsViewController }
         let sheets = try XCTUnwrap(
-            (root.viewController(for: .supplementary) as? UINavigationController)?.viewControllers.first
-                as? SheetsViewController)
+            primaryStack.topViewController as? SheetsViewController,
+            "the collapsed stack pushes the sheets list rather than leaving the sidebar on screen")
         layoutWriterScreen(sheets)
         XCTAssertEqual(sheets.visibleRowsForTesting, [.document(inGroup.id)])
 
         root.groupsViewController(sidebar, requestsNewDocumentIn: nil)
         XCTAssertEqual(editorMaker.madeEditors.count, 1)
         let opened = try XCTUnwrap(root.currentDocumentIDForTesting)
-        XCTAssertEqual(try stack.library.document(opened).groupID, stack.library.inboxGroupID)
+        XCTAssertEqual(try XCTUnwrap(stack.library.document(opened)).groupID, stack.library.inboxGroupID)
+        pollUntil { primaryStack.topViewController is EditorContainerViewController }
+        XCTAssertTrue(
+            primaryStack.topViewController is EditorContainerViewController,
+            "the new document's editor is pushed onto the collapsed stack")
     }
 
     // MARK: - Selection and re-selection (organiser #10)

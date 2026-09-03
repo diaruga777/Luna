@@ -129,6 +129,16 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         markDirty()
     }
 
+    /// Every stored mark, resolved or orphaned, as the next save writes it.
+    public var allStoredAnnotations: [Annotation] { Array(storedAnnotations.values) }
+
+    /// Replaces the stored mark with `annotation`'s id.
+    public func updateAnnotation(_ annotation: Annotation) {
+        guard storedAnnotations[annotation.id] != nil else { return }
+        removeAnnotation(annotation.id)
+        add(annotation)
+    }
+
     public func removeAnnotation(_ id: AnnotationID) {
         storedAnnotations[id] = nil
         annotations.removeAll { $0.id == id }

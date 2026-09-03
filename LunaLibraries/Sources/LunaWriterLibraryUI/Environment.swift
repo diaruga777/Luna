@@ -43,6 +43,13 @@ public protocol DocumentEditorMaking: AnyObject {
 /// gaze nor voice, so the container hosts nothing.
 public protocol ReadAlongChromeProviding: AnyObject {
     func readAlongChrome(for editor: UIViewController & DocumentEditing) -> UIView?
+    /// The sheet is closing: stop its camera, microphone and frame clock now
+    /// rather than whenever the editor happens to deallocate.
+    func tearDownReadAlong(for editor: UIViewController & DocumentEditing)
+}
+
+extension ReadAlongChromeProviding {
+    public func tearDownReadAlong(for editor: UIViewController & DocumentEditing) {}
 }
 
 /// What the Settings screen's Read-along section asks the read-along tier for.

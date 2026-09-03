@@ -49,7 +49,7 @@ public final class DisplayLinkTicker: NSObject, ReadAlongTicking {
 
     public func start() {
         guard !isRunning else { return }
-        let link = CADisplayLink(target: self, selector: #selector(fire(_:)))
+        let link = CADisplayLink(target: LinkProxy(ticker: self), selector: #selector(LinkProxy.fire(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
         isRunning = true
@@ -61,7 +61,16 @@ public final class DisplayLinkTicker: NSObject, ReadAlongTicking {
         isRunning = false
     }
 
-    @objc private func fire(_ link: CADisplayLink) {
+    fileprivate func fire(_ link: CADisplayLink) {
         target?.readAlongDidTick(at: link.timestamp)
+    }
+
+    /// `CADisplayLink` retains its target. Pointing it at this proxy instead
+    /// of the ticker lets a ticker nobody holds any more deallocate, and its
+    /// `deinit` then invalidates the link.
+    private final class LinkProxy: NSObject {
+        weak var ticker: DisplayLinkTicker?
+        init(ticker: DisplayLinkTicker) { self.ticker = ticker }
+        @objc func fire(_ link: CADisplayLink) { ticker?.fire(link) }
     }
 }

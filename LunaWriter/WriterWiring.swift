@@ -1,5 +1,6 @@
 import UIKit
 import LunaDesignSystem
+import LunaGaze
 import LunaWriterEditor
 import LunaWriterLibraryUI
 import LunaWriterModels
@@ -63,7 +64,7 @@ import LunaWriterVoice
         let maker = WriterEditorMaker(
             storage: stack, registry: openSessions, aiAssistant: makeAIAssistant())
         editorMaker = maker
-        let readAlong = WriterReadAlongChrome(storage: stack)
+        let readAlong = WriterReadAlongChrome(storage: stack, trackerMaker: Self.makeGazeTrackerMaker())
         self.readAlong = readAlong
         let environment = LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
@@ -78,6 +79,16 @@ import LunaWriterVoice
             show(document: pendingDocument)
         }
         return root
+    }
+
+    /// The camera tracker exists only where ARKit does; elsewhere read-along
+    /// runs voice-only.
+    private static func makeGazeTrackerMaker() -> GazeTrackerMaking? {
+        #if canImport(ARKit)
+        return ARFaceGazeTrackerMaker()
+        #else
+        return nil
+        #endif
     }
 
     /// On-device generation exists only on iOS 26 hardware that has the model.

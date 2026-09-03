@@ -35,6 +35,10 @@ public final class SystemPasteboard: PasteboardReading {
     }
 }
 
+extension WriterTextViewActionDelegate {
+    public func writerTextView(_ textView: WriterTextView, additionalMenuElementsFor range: NSRange) -> [UIMenuElement] { [] }
+}
+
 /// What the text view asks about the text under the selection.
 public protocol WriterTextViewDataSource: AnyObject {
     /// The document's current length, so the text view never has to read
@@ -47,6 +51,9 @@ public protocol WriterTextViewDataSource: AnyObject {
 
 /// What the text view reports after the writer used one of its own actions.
 public protocol WriterTextViewActionDelegate: AnyObject {
+    /// Items another tier adds to the edit menu for `range` — read-along's
+    /// "Annotate" submenu. The default adds nothing.
+    func writerTextView(_ textView: WriterTextView, additionalMenuElementsFor range: NSRange) -> [UIMenuElement]
     func writerTextView(_ textView: WriterTextView, didInsert text: String, as source: AuthorshipSpan.Source, in range: NSRange)
     func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange)
     func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange)
@@ -226,6 +233,7 @@ public final class WriterTextView: UITextView {
         elements.append(UICommand(
             title: L10n.string("WriterEditor_menuAddNote"),
             action: #selector(addNoteHere(_:))))
+        elements += actionDelegate?.writerTextView(self, additionalMenuElementsFor: range) ?? []
         return elements
     }
 

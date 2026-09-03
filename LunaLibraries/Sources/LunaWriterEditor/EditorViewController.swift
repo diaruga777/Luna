@@ -25,6 +25,12 @@ public protocol EditorLayoutObserving: AnyObject {
     func editorDidScroll(_ editor: EditorViewController)
 }
 
+/// Adds edit-menu items the editor does not know about (read-along's
+/// annotation kinds). Installed by the composition root per open sheet.
+public protocol EditorMenuAugmenting: AnyObject {
+    func editor(_ editor: EditorViewController, menuElementsFor selection: NSRange) -> [UIMenuElement]
+}
+
 /// The sheet, on screen.
 ///
 /// It assembles the text stack for one `DocumentSession`: the storage and its
@@ -37,6 +43,7 @@ public final class EditorViewController: UIViewController {
 
     public weak var delegate: EditorViewControllerDelegate?
     public weak var layoutObserver: EditorLayoutObserving?
+    public weak var menuAugmenter: EditorMenuAugmenting?
 
     public let session: DocumentSession
     public let environment: EditorEnvironment
@@ -609,6 +616,7 @@ extension EditorViewController: MarkdownTextStorageObserving {
     public func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange) {
         syntaxLayer.invalidateTags(in: range)
         composer.invalidate(range)
+        layoutObserver?.editorDidRelayout(self)
     }
 }
 
@@ -858,6 +866,10 @@ extension EditorViewController {
 
     public var writerTextViewAIAssistantIsAvailable: Bool {
         environment.aiAssistant?.isAvailable == true
+    }
+
+    public func writerTextView(_ textView: WriterTextView, additionalMenuElementsFor range: NSRange) -> [UIMenuElement] {
+        menuAugmenter?.editor(self, menuElementsFor: range) ?? []
     }
 
     public func writerTextViewContinueWriting(_ textView: WriterTextView) {

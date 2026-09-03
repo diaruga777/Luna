@@ -368,13 +368,17 @@ var LunaPluginHost = (function () {
         }
 
         if (declared.page) {
+            var pageHTMLLimit = 200000;
+            var currentPageHTML = function () {
+                var html = document.documentElement ? document.documentElement.outerHTML : "";
+                return { html: html.slice(0, pageHTMLLimit), truncated: html.length > pageHTMLLimit };
+            };
             luna.page = {
                 document: function () { return wrapDocument(document, location.href); },
                 url: function () { return location.href; },
                 title: function () { return document.title || ""; },
-                html: function () {
-                    return document.documentElement ? document.documentElement.outerHTML : "";
-                },
+                html: function () { return currentPageHTML().html; },
+                truncated: function () { return currentPageHTML().truncated; },
             };
         }
 

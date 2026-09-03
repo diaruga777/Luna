@@ -92,7 +92,8 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
     /// hand back a `save` route, never a `resolvedmedia`/`read` one meant for
     /// an existing item.
     func testBrowserDeferredAnswersASaveDeepLink() {
-        XCTAssertTrue(lunaVariantSource.contains("://save?url="))
+        XCTAssertTrue(lunaVariantSource.contains("LunaDeepLink.saveLink("))
+        XCTAssertFalse(lunaVariantSource.contains("addingPercentEncoding"))
     }
 
     /// `capability-not-declared` is the grant answer and nothing else: a

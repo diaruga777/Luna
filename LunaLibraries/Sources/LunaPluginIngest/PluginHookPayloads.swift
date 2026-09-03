@@ -15,17 +15,23 @@ import LunaPluginKit
 /// The page a caller already has, handed to both hooks so a plugin does not
 /// refetch what Safari or the share sheet already read.
 public struct PluginPageSnapshot: Encodable, Sendable {
+    public static let maxHTMLCharacters = 200_000
     public let url: String
     public let html: String?
     public let title: String?
     /// "safari" | "fetch" | "browser".
     public let source: String
+    public let truncated: Bool
 
-    public init(url: String, html: String?, title: String? = nil, source: String) {
+    public init(
+        url: String, html: String?, title: String? = nil, source: String,
+        truncated: Bool = false
+    ) {
         self.url = url
-        self.html = html
+        self.html = html.map { String($0.prefix(Self.maxHTMLCharacters)) }
         self.title = title
         self.source = source
+        self.truncated = truncated || (html?.count ?? 0) > Self.maxHTMLCharacters
     }
 }
 

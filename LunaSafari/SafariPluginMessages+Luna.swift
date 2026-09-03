@@ -424,8 +424,10 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let urlString = message?["url"] as? String, !urlString.isEmpty
         else { return Self.badArgument("luna.browser.open needs a url") }
-        let encoded = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
-        return ["openLuna": "\(hostScheme)://save?url=\(encoded)"]
+        guard let link = LunaDeepLink.saveLink(scheme: hostScheme, urlString: urlString) else {
+            return Self.badArgument("luna.browser.open could not build the app handoff")
+        }
+        return ["openLuna": link.absoluteString]
     }
 
     /// The page can neither write a save nor start a download: it hands the

@@ -241,6 +241,7 @@
     var PLUGIN_CATALOG_CACHE_KEY = "lunaPluginCatalogCache";
     var PLUGIN_CLASSIFY_TIMEOUT_MS = 8000;
     var PLUGIN_INGEST_TIMEOUT_MS = 20000;
+    var PLUGIN_PAGE_HTML_LIMIT = 200000;
 
     function withTimeout(promise, ms) {
         return new Promise(function (resolve, reject) {
@@ -409,11 +410,13 @@
     var pluginPageSnapshot = null;
     function pageSnapshotForPlugins() {
         if (!pluginPageSnapshot || pluginPageSnapshot.url !== location.href) {
+            var rawHTML = document.documentElement ? document.documentElement.outerHTML : "";
             pluginPageSnapshot = {
                 url: location.href,
-                html: document.documentElement ? document.documentElement.outerHTML : "",
+                html: rawHTML.slice(0, PLUGIN_PAGE_HTML_LIMIT),
                 title: document.title || "",
-                source: "safari"
+                source: "safari",
+                truncated: rawHTML.length > PLUGIN_PAGE_HTML_LIMIT
             };
         }
         return pluginPageSnapshot;

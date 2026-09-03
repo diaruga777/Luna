@@ -1274,21 +1274,21 @@
 "WriterStorage_trashGroupName_Luna" = "Trash";
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
-"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a sheet. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the sheet. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a sheet aloud and Luna marks what you say about it.\n\nYour sheets are plain .md files in Files, under Luna Writer › Library.";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a document aloud and Luna marks what you say about it.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
 "WriterLibrary_command_export_Luna" = "Export…";
 "WriterLibrary_command_focusEditor_Luna" = "Focus Editor";
 "WriterLibrary_command_focusGroups_Luna" = "Focus Sidebar";
 "WriterLibrary_command_focusSearch_Luna" = "Search";
-"WriterLibrary_command_focusSheets_Luna" = "Focus Sheets";
+"WriterLibrary_command_focusSheets_Luna" = "Focus Documents";
 "WriterLibrary_command_newGroup_Luna" = "New Group";
-"WriterLibrary_command_newSheet_Luna" = "New Sheet";
-"WriterLibrary_command_openSelection_Luna" = "Open Selected Sheet";
+"WriterLibrary_command_newSheet_Luna" = "New Document";
+"WriterLibrary_command_openSelection_Luna" = "Open Selected Document";
 "WriterLibrary_command_settings_Luna" = "Settings…";
 "WriterLibrary_command_toggleNotes_Luna" = "Toggle Notes Panel";
 "WriterLibrary_command_trash_Luna" = "Move to Trash";
-"WriterLibrary_editor_emptySelection_Luna" = "Select a sheet to start writing.";
+"WriterLibrary_editor_emptySelection_Luna" = "Select a document to start writing.";
 "WriterLibrary_editor_goalAction_Luna" = "Goal";
 "WriterLibrary_editor_keywordsAction_Luna" = "Keywords";
 "WriterLibrary_editor_moreMenuTitle_Luna" = "More";
@@ -1314,10 +1314,10 @@
 "WriterLibrary_groups_changeIconAction_Luna" = "Change Icon";
 "WriterLibrary_groups_changeIconTitle_Luna" = "Change Icon";
 "WriterLibrary_groups_deleteAction_Luna" = "Delete";
-"WriterLibrary_groups_deleteConfirmMessage_Luna" = "%lld sheets will move to the Trash.";
+"WriterLibrary_groups_deleteConfirmMessage_Luna" = "%lld documents will move to the Trash.";
 "WriterLibrary_groups_deleteConfirmTitle_Luna" = "Delete “%@”?";
 "WriterLibrary_groups_inboxRow_Luna" = "Inbox";
-"WriterLibrary_groups_libraryAll_Luna" = "All Sheets";
+"WriterLibrary_groups_libraryAll_Luna" = "All Documents";
 "WriterLibrary_groups_libraryFavorites_Luna" = "Favorites";
 "WriterLibrary_groups_libraryRecent_Luna" = "Last 7 Days";
 "WriterLibrary_groups_newFilterAction_Luna" = "New Filter";
@@ -1369,7 +1369,7 @@
 "WriterLibrary_sheets_keywordAction_Luna" = "Keyword";
 "WriterLibrary_sheets_moveAction_Luna" = "Move";
 "WriterLibrary_sheets_restoreAction_Luna" = "Restore";
-"WriterLibrary_sheets_searchPlaceholder_Luna" = "Search sheets";
+"WriterLibrary_sheets_searchPlaceholder_Luna" = "Search documents";
 "WriterLibrary_sheets_sortCreated_Luna" = "Date Created";
 "WriterLibrary_sheets_sortManual_Luna" = "Manual";
 "WriterLibrary_sheets_sortMenuTitle_Luna" = "Sort By";
@@ -1384,24 +1384,24 @@
 // Luna Writer — intents (claudedocs/plans/writer-app.md §9). Metadata keys are
 // literal, already-suffixed keys; the two dialog lines resolve through L10n.
 "WriterIntents_addNote_title_Luna" = "Add Note";
-"WriterIntents_addNote_description_Luna" = "Adds a note to Luna Writer. Name a sheet, or let Luna file it.";
+"WriterIntents_addNote_description_Luna" = "Adds a note to Luna Writer. Name a document, or let Luna file it.";
 "WriterIntents_addNote_textParameter_title_Luna" = "Note";
-"WriterIntents_addNote_documentParameter_title_Luna" = "Sheet";
+"WriterIntents_addNote_documentParameter_title_Luna" = "Document";
 "WriterIntents_addNote_summary_Luna" = "Add note";
 "WriterIntents_addNote_addedToSheet_Luna" = "Added to %@.";
 "WriterIntents_addNote_addedToInbox_Luna" = "Added to your Inbox.";
-"WriterIntents_createDocument_title_Luna" = "New Sheet";
-"WriterIntents_createDocument_description_Luna" = "Creates a sheet in Luna Writer and opens it.";
+"WriterIntents_createDocument_title_Luna" = "New Document";
+"WriterIntents_createDocument_description_Luna" = "Creates a document in Luna Writer and opens it.";
 "WriterIntents_createDocument_titleParameter_title_Luna" = "Title";
 "WriterIntents_createDocument_textParameter_title_Luna" = "Text";
-"WriterIntents_createDocument_summary_Luna" = "New sheet";
-"WriterIntents_openDocument_title_Luna" = "Open Sheet";
-"WriterIntents_openDocument_description_Luna" = "Opens a sheet in Luna Writer.";
-"WriterIntents_openDocument_documentParameter_title_Luna" = "Sheet";
+"WriterIntents_createDocument_summary_Luna" = "New document";
+"WriterIntents_openDocument_title_Luna" = "Open Document";
+"WriterIntents_openDocument_description_Luna" = "Opens a document in Luna Writer.";
+"WriterIntents_openDocument_documentParameter_title_Luna" = "Document";
 "WriterIntents_openDocument_summary_Luna" = "Open";
 "WriterIntents_documentEntity_titleProperty_title_Luna" = "Title";
 "WriterIntents_documentEntity_modifiedProperty_title_Luna" = "Modified";
-"WriterIntents_documentEntity_typeName_Luna" = "Sheet";
+"WriterIntents_documentEntity_typeName_Luna" = "Document";
 
 // Luna Writer — editor (claudedocs/plans/writer-app.md)
 "WriterEditor_accessory_bold_Luna" = "Bold";
@@ -1417,7 +1417,7 @@
 "WriterEditor_accessory_task_Luna" = "Task";
 "WriterEditor_mentionNewNote_Luna" = "New note";
 "WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
-"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another sheet";
+"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another document";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
 "WriterEditor_menuContinueWriting_Luna" = "Continue writing";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
@@ -1425,7 +1425,7 @@
 "WriterEditor_menuRewriteSelection_Luna" = "Rewrite selection";
 "WriterEditor_peekClose_Luna" = "Close";
 "WriterEditor_peekEdit_Luna" = "Edit";
-"WriterEditor_peekNoSheet_Luna" = "Not in a sheet";
+"WriterEditor_peekNoSheet_Luna" = "Not in a document";
 "WriterEditor_statisticsCharacters_Luna" = "Characters";
 "WriterEditor_statisticsCharactersNoSpaces_Luna" = "Characters without spaces";
 "WriterEditor_statisticsGoal_Luna" = "Goal";
@@ -1454,7 +1454,7 @@
 "WriterReadAlong_calibrationIntroQuick_Luna" = "Follow the dot with your eyes. About 8 seconds.";
 "WriterReadAlong_calibrationIntroRegion_Luna" = "Follow the dot around one corner of the screen. About 6 seconds.";
 "WriterReadAlong_calibrationIntroTitle_Luna" = "Calibrate your gaze";
-"WriterReadAlong_calibrationTouchUp_Luna" = "Touch up %@";
+"WriterReadAlong_calibrationTouchUp_Luna" = "Recalibrate %@";
 "WriterReadAlong_calibrationVerdictBody_Luna" = "Luna is off by about %.1f degrees.";
 "WriterReadAlong_heard_Luna" = "heard: %@";
 "WriterReadAlong_permissionRefusedGazeTitle_Luna" = "Camera Access Needed";
@@ -1468,12 +1468,12 @@
 "WriterReadAlong_kindKeep_Luna" = "Keep";
 "WriterReadAlong_kindNeedsWork_Luna" = "Needs work";
 "WriterReadAlong_menuAnnotate_Luna" = "Mark";
-"WriterReadAlong_menuCalibrate_Luna" = "Calibrate (25s)";
+"WriterReadAlong_menuCalibrate_Luna" = "Calibrate gaze (25s)";
 "WriterReadAlong_menuClearAnnotations_Luna" = "Clear annotations";
 "WriterReadAlong_menuDiagnostics_Luna" = "Diagnostics overlay";
 "WriterReadAlong_menuGaze_Luna" = "Read along with my eyes";
 "WriterReadAlong_menuPauseTracking_Luna" = "Pause tracking";
-"WriterReadAlong_menuQuickTouchUp_Luna" = "Quick touch-up (8s)";
+"WriterReadAlong_menuQuickTouchUp_Luna" = "Recalibrate gaze (8s)";
 "WriterReadAlong_menuResumeTracking_Luna" = "Resume tracking";
 "WriterReadAlong_menuVoice_Luna" = "Voice comments";
 "WriterReadAlong_quadrantBottomLeft_Luna" = "bottom left";

@@ -72,6 +72,12 @@ extension LibraryRootViewController: GroupsSelectionDelegate {
 
 extension LibraryRootViewController: SheetsSelectionDelegate {
     public func sheetsViewController(_ controller: SheetsViewController, didSelect document: WriterDocument) {
+        show(document: document)
+    }
+
+    /// Opens a sheet in the detail column. Deep links and intents arrive here
+    /// as well as the sheets list.
+    public func show(document: WriterDocument) {
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
         setViewController(editorContainer, for: .secondary)
         show(.secondary)

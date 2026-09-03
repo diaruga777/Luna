@@ -13,6 +13,8 @@ import LunaWriterVoice
 /// and never locate them (claudedocs/plans/writer-app.md §10).
 @MainActor enum WriterWiring {
     private static var storage: WriterStorageStack?
+    private static let openSessions = OpenSessionRegistry()
+    private static var editorMaker: WriterEditorMaker?
     private static weak var root: LibraryRootViewController?
     /// A sheet asked for before the window existed (a deep link or an intent
     /// that launched the app); shown by the first root.
@@ -29,6 +31,7 @@ import LunaWriterVoice
         if let storage { return storage }
         let stack = try WriterStorageStack.makeDefault()
         try stack.bootstrap()
+        stack.reconciler.openDocuments = openSessions
         stack.watcher.start()
         storage = stack
         return stack
@@ -38,16 +41,49 @@ import LunaWriterVoice
         try MainActor.assumeIsolatedIfNeeded { try storageStack().intents }
     }
 
-    static func applicationDidEnterBackground() {}
+    static func applicationDidEnterBackground() {
+        openSessions.flushAll()
+    }
 
     static func makeRootViewController() -> UIViewController {
-        let placeholder = UIViewController()
-        placeholder.view.backgroundColor = LunaColors.background
-        return placeholder
+        guard let stack = try? storageStack() else {
+            let placeholder = UIViewController()
+            placeholder.view.backgroundColor = LunaColors.background
+            return placeholder
+        }
+        let maker = WriterEditorMaker(
+            storage: stack, registry: openSessions, aiAssistant: makeAIAssistant())
+        editorMaker = maker
+        let environment = LibraryEnvironment(
+            library: stack.library, notes: stack.library, marks: stack.library,
+            textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
+            settings: stack.settings, editorMaker: maker,
+            readAlongChrome: nil, readAlongSettings: nil, noteRelevance: nil,
+            libraryRootPath: stack.libraryRoot.path)
+        let root = LibraryRootViewController(environment: environment)
+        self.root = root
+        if let pendingDocument {
+            self.pendingDocument = nil
+            show(document: pendingDocument)
+        }
+        return root
+    }
+
+    /// On-device generation exists only on iOS 26 hardware that has the model.
+    private static func makeAIAssistant() -> AIWritingAssisting? {
+        if #available(iOS 26, *) {
+            let assistant = FoundationModelsWritingAssistant()
+            return assistant.isAvailable ? assistant : nil
+        }
+        return nil
     }
 
     static func show(document id: DocumentID) {
-        pendingDocument = id
+        guard let root, let stack = storage, let document = try? stack.library.document(id) else {
+            pendingDocument = id
+            return
+        }
+        root.show(document: document)
     }
 
     static func open(_ url: URL) {
@@ -82,7 +118,7 @@ enum WriterDeepLink: Equatable {
 
 extension MainActor {
     /// Intents may arrive on any thread; the store is main-actor owned.
-    static func assumeIsolatedIfNeeded<T>(_ body: @MainActor () throws -> T) throws -> T {
+    static func assumeIsolatedIfNeeded<T>(_ body: @MainActor () throws -> T) rethrows -> T {
         if Thread.isMainThread {
             return try MainActor.assumeIsolated(body)
         }

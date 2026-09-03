@@ -279,9 +279,17 @@ final class MediaSaveFailureRecordingTests: XCTestCase {
 final class SaveDiagnosticsShareUITests: XCTestCase {
 
     private var touchedIDs: [UUID] = []
+    private var previousRecoveryPresenter: ((UUID, URL, UIViewController) -> Void)?
+
+    override func setUp() {
+        super.setUp()
+        previousRecoveryPresenter = FailedSavePluginRecovery.present
+        FailedSavePluginRecovery.present = nil
+    }
 
     override func tearDown() {
         for id in touchedIDs { SaveDiagnosticsStore.shared.delete(for: id) }
+        FailedSavePluginRecovery.present = previousRecoveryPresenter
         super.tearDown()
     }
 
@@ -309,6 +317,22 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
         XCTAssertEqual(titles.count, 2)
         XCTAssertEqual(titles.first, L10n.string("Common_shareLinkEllipsis"))
         XCTAssertEqual(titles.last, L10n.string("CardDeck_failedSave_shareDiagnostics"))
+    }
+
+    func testTheShareControlOffersPluginRecoveryWithoutARawTrace() {
+        let model = FailedSaveCardModel(
+            itemID: UUID(), url: URL(string: "https://example.com/broken"),
+            urlText: "example.com/broken")
+        let card = FailedSaveCardViewController(
+            model: model,
+            actions: FailedSaveCardActions(
+                rescue: {}, share: { _ in }, createPlugin: {}, delete: {}))
+
+        let titles = (card.shareMenu()?.children as? [UIAction])?.map(\.title) ?? []
+        XCTAssertEqual(titles, [
+            L10n.string("Common_shareLinkEllipsis"),
+            L10n.string("Plugins_recoveryCreatePlugin"),
+        ])
     }
 
     /// The deck's long-press menu tracks the same condition, so the card and

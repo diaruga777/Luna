@@ -13,6 +13,9 @@ import UIKit
 /// into a tested plugin. It deliberately has no LLM SDK or paid API dependency.
 public final class PluginRecoveryWorkshopViewController: UIViewController {
     private let recoveryCase: PluginRecoveryCase
+    /// Kept out of the shareable recovery case so signed/query credentials can
+    /// be used for local validation without being copied into an LLM prompt.
+    private let validationURL: URL?
     private let importer: PluginImporting
     private lazy var importCoordinator: PluginImportCoordinator = {
         let value = PluginImportCoordinator(importer: importer)
@@ -28,8 +31,12 @@ public final class PluginRecoveryWorkshopViewController: UIViewController {
     private var report: PluginValidationReport?
     private var validatedSource: String?
 
-    public init(recoveryCase: PluginRecoveryCase, importer: PluginImporting) {
+    public init(
+        recoveryCase: PluginRecoveryCase, validationURL: URL? = nil,
+        importer: PluginImporting
+    ) {
         self.recoveryCase = recoveryCase
+        self.validationURL = validationURL
         self.importer = importer
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("Plugins_recoveryTitle")
@@ -184,7 +191,8 @@ public final class PluginRecoveryWorkshopViewController: UIViewController {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await PluginDraftValidator.validate(
-                sourceText: normalized, recoveryCase: recoveryCase)
+                sourceText: normalized, recoveryCase: recoveryCase,
+                targetURL: validationURL)
             validateButton.isEnabled = true
             report = result
             if result.passed {

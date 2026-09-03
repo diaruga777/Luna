@@ -112,7 +112,8 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
                 guard let self, let importer = self.importer else { return }
                 self.navigationController?.pushViewController(
                     PluginRecoveryWorkshopViewController(
-                        recoveryCase: result.recoveryCase, importer: importer),
+                        recoveryCase: result.recoveryCase,
+                        validationURL: result.ingestResult.url, importer: importer),
                     animated: true)
             }
         }

@@ -140,7 +140,7 @@ enum KindWiring {
                 attemptsDropped: trace.dropped, matchingPlugins: plugins,
                 pageDigest: nil, redactions: ["live page snapshot unavailable"])
             let screen = PluginRecoveryWorkshopViewController(
-                recoveryCase: recoveryCase, importer: importer)
+                recoveryCase: recoveryCase, validationURL: url, importer: importer)
             if let navigation = presenter.navigationController {
                 navigation.pushViewController(screen, animated: true)
             } else {

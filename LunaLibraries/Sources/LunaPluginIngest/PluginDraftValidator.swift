@@ -15,7 +15,7 @@ public enum PluginDraftValidator {
     private static let allowedCapabilities: Set<PluginCapabilityName> = [.fetch, .html]
 
     public static func validate(
-        sourceText: String, recoveryCase: PluginRecoveryCase
+        sourceText: String, recoveryCase: PluginRecoveryCase, targetURL: URL? = nil
     ) async -> PluginValidationReport {
         let source: String
         do {
@@ -49,7 +49,7 @@ public enum PluginDraftValidator {
                 "The plugin does not match the recovery host \(recoveryCase.host).",
                 phase: "host")
         }
-        guard let targetURL = URL(string: recoveryCase.canonicalURL) else {
+        guard let targetURL = targetURL ?? URL(string: recoveryCase.canonicalURL) else {
             return failed("The recovery case has no valid target URL.", phase: "case")
         }
 

@@ -33,6 +33,21 @@ final class PluginDraftValidatorTests: XCTestCase {
         XCTAssertTrue(report.errors.joined().contains("declined"))
     }
 
+    func testValidatorCanUseAPrivateUnredactedURL() async {
+        let recoveryCase = PluginRecoveryCase(
+            originalURL: "https://example.com/story?token=secret", outcome: "failed")
+        XCTAssertFalse(recoveryCase.canonicalURL.contains("secret"))
+
+        let report = await PluginDraftValidator.validate(
+            sourceText: source(
+                classify: "url.includes('token=secret') ? { kind: 'article' } : false",
+                ingest: "{ kind: 'article', title: 'Recovered', html: '<p>Body</p>' }"),
+            recoveryCase: recoveryCase,
+            targetURL: URL(string: "https://example.com/story?token=secret"))
+
+        XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
+    }
+
     private func recoveryCase() -> PluginRecoveryCase {
         PluginRecoveryCase(
             originalURL: "https://example.com/story", outcome: "failed")
@@ -44,7 +59,7 @@ final class PluginDraftValidatorTests: XCTestCase {
         {"id":"user.test.recovery","name":"Recovery","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["example.com"]},"capabilities":[]}
         */
         luna.register({
-          classify() { return \(classify); },
+          classify({ url }) { return \(classify); },
           async ingest() { return \(ingest); }
         });
         """

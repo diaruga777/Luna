@@ -54,10 +54,13 @@ public final class WriterTextView: UITextView {
     public weak var actionDelegate: WriterTextViewActionDelegate?
     public weak var authorshipDataSource: WriterTextViewDataSource?
 
-    public var pasteboard: PasteboardReading = SystemPasteboard()
+    /// Reads the pasteboard and says what authorship the text earns.
+    public let pasteInterceptor = PasteInterceptor()
 
-    /// The model name recorded for text pasted as AI writing.
-    public static let pasteboardModelIdentifier = "pasteboard"
+    public var pasteboard: PasteboardReading {
+        get { pasteInterceptor.pasteboard }
+        set { pasteInterceptor.pasteboard = newValue }
+    }
 
     public var metrics: EditorMetrics {
         didSet {
@@ -146,16 +149,16 @@ public final class WriterTextView: UITextView {
     // MARK: - Paste
 
     public override func paste(_ sender: Any?) {
-        guard let string = pasteboard.pastedString else {
+        guard let pasted = pasteInterceptor.pasted() else {
             super.paste(sender)
             return
         }
-        insert(string, as: .pasted)
+        insert(pasted.text, as: pasted.source)
     }
 
     @objc public func pasteAsAIText(_ sender: Any?) {
-        guard let string = pasteboard.pastedString else { return }
-        insert(string, as: .ai(model: Self.pasteboardModelIdentifier))
+        guard let pasted = pasteInterceptor.pastedAsAIText() else { return }
+        insert(pasted.text, as: pasted.source)
     }
 
     @objc public func markSelectionAsOwn(_ sender: Any?) {
@@ -172,7 +175,7 @@ public final class WriterTextView: UITextView {
     /// offered only where the selection touches somebody else's words.
     public func writerMenuElements(for range: NSRange) -> [UIMenuElement] {
         var elements: [UIMenuElement] = []
-        if pasteboard.pastedString != nil {
+        if pasteInterceptor.hasText {
             elements.append(UICommand(
                 title: L10n.string("WriterEditor_menuPasteAsAI"),
                 action: #selector(pasteAsAIText(_:))))
@@ -200,7 +203,7 @@ public final class WriterTextView: UITextView {
     public override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
         case #selector(pasteAsAIText(_:)):
-            return isEditable && pasteboard.pastedString != nil
+            return isEditable && pasteInterceptor.hasText
         case #selector(markSelectionAsOwn(_:)):
             return authorshipDataSource?.writerTextView(self, selectionTouchesForeignAuthorship: selectedRange) == true
         case #selector(addNoteHere(_:)):

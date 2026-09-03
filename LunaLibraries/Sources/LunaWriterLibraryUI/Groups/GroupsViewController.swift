@@ -42,8 +42,17 @@ public final class GroupsViewController: UICollectionViewController {
     private var groupsByID: [GroupID: WriterGroup] = [:]
     private var childGroups: [GroupID?: [WriterGroup]] = [:]
     private var filtersByGroup: [GroupID: [WriterFilter]] = [:]
-    private var expandedGroups: Set<GroupID> = []
     private var unattachedNoteCount = 0
+
+    /// The rows on screen, flattened in display order — a collapsed group's
+    /// children are absent. Internal rather than private so tests can assert
+    /// on the applied snapshot directly.
+    var visibleRowsForTesting: [GroupsRow] { dataSource.snapshot().itemIdentifiers }
+
+    /// Whether `group`'s children are currently shown.
+    func isExpandedForTesting(_ group: GroupID) -> Bool {
+        dataSource.snapshot(for: .groups).isExpanded(.group(group))
+    }
 
     public init(library: WriterLibraryStoring, notes: NoteStoring) {
         self.library = library
@@ -176,11 +185,26 @@ public final class GroupsViewController: UICollectionViewController {
         for group in groups {
             let filterRows = (filtersByGroup[group.id] ?? []).map { GroupsRow.filter($0.id) }
             if !filterRows.isEmpty { snapshot.append(filterRows, to: .group(group.id)) }
-            if hasChildren(group.id) {
+            if hasChildren(group.id), !collapsedGroups.contains(group.id) {
                 snapshot.expand([.group(group.id)])
             }
             appendGroupTree(into: &snapshot, parent: group.id)
         }
+    }
+
+    /// Groups the user has explicitly collapsed. Absent means expanded — a
+    /// newly created group starts open.
+    private var collapsedGroups: Set<GroupID> = []
+
+    /// Flips a group's expanded/collapsed state. UIKit calls this from the
+    /// sidebar's own outline-disclosure control; tests call it directly.
+    public func toggleExpansion(of group: GroupID) {
+        if collapsedGroups.contains(group) {
+            collapsedGroups.remove(group)
+        } else {
+            collapsedGroups.insert(group)
+        }
+        applySnapshots()
     }
 
     // MARK: - Cell content
@@ -265,7 +289,7 @@ public final class GroupsViewController: UICollectionViewController {
             name: L10n.string("WriterLibrary_groups_newGroupDefaultName"),
             icon: "folder", parent: parent)
         else { return nil }
-        if let parent { expandedGroups.insert(parent) }
+        if let parent { collapsedGroups.remove(parent) }
         reload()
         return created
     }
@@ -438,7 +462,7 @@ extension GroupsViewController: UICollectionViewDragDelegate, UICollectionViewDr
     @discardableResult
     public func moveGroup(_ id: GroupID, toParent parent: GroupID?, index: Int) -> Bool {
         guard (try? library.moveGroup(id, to: parent, at: index)) != nil else { return false }
-        if let parent { expandedGroups.insert(parent) }
+        if let parent { collapsedGroups.remove(parent) }
         reload()
         return true
     }

@@ -32,6 +32,24 @@ public final class SheetsViewController: UICollectionViewController {
 
     private let searchController = UISearchController(searchResultsController: nil)
 
+    /// The rows on screen, flattened in display order. Internal rather than
+    /// private so tests can assert on the applied snapshot directly.
+    var visibleRowsForTesting: [SheetsRow] { dataSource.snapshot().itemIdentifiers }
+    var currentSortForTesting: DocumentSort {
+        get { currentSort }
+        set {
+            currentSort = newValue
+            reload()
+        }
+    }
+    var currentSearchQueryForTesting: String? {
+        get { searchQuery }
+        set {
+            searchQuery = newValue
+            reload()
+        }
+    }
+
     public init(library: WriterLibraryStoring, notes: NoteStoring) {
         self.library = library
         self.notes = notes

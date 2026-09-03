@@ -97,7 +97,10 @@ public final class EditorContainerViewController: UIViewController {
         ])
         updateNotesButton()
         layoutForCurrentWidth()
+        environment.library.addObserver(self)
     }
+
+    deinit { environment.library.removeObserver(self) }
 
     public override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
@@ -117,27 +120,34 @@ public final class EditorContainerViewController: UIViewController {
     // MARK: - Header controls
 
     private func trailingHeaderControls() -> [UIView] {
+        // `NavHeaderBar.imageButton` needs a real target action; `showsMenuAsPrimaryAction`
+        // below replaces it as the button's actual tap behaviour, so it never runs.
         let menuButton = NavHeaderBar.imageButton(
-            systemName: "ellipsis.circle", target: self, action: #selector(menuTapped),
+            systemName: "ellipsis.circle", target: self, action: #selector(unusedMenuButtonAction),
             accessibilityLabel: L10n.string("WriterLibrary_editor_moreMenuTitle"))
         menuButton.menu = ellipsisMenu()
         menuButton.showsMenuAsPrimaryAction = true
         return [notesButton, menuButton]
     }
 
+    @objc private func unusedMenuButtonAction() {}
+
     private func updateNotesButton() {
         let count = (try? environment.notes.notes(for: document.id).count) ?? 0
         notesButton.setTitle(count > 0 ? " \(count)" : nil, for: .normal)
     }
 
-    @objc private func menuTapped() {}
+    /// For tests, which cannot see the private trailing header button whose
+    /// menu this is.
+    var ellipsisMenuForTesting: UIMenu { ellipsisMenu() }
+
+    /// Identifies the export submenu so a test can find it among the ⋯
+    /// menu's other children without depending on its position.
+    static let exportMenuIdentifier = UIMenu.Identifier("com.hsanabria.luna.writer.exportMenu")
 
     private func ellipsisMenu() -> UIMenu {
         UIMenu(children: [
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_shareExportAction"),
-                image: UIImage(systemName: "square.and.arrow.up")
-            ) { [weak self] _ in self?.presentExportOptions() },
+            exportMenu(),
             UIAction(
                 title: L10n.string("WriterLibrary_editor_statisticsAction"),
                 image: UIImage(systemName: "chart.bar")
@@ -171,23 +181,25 @@ public final class EditorContainerViewController: UIViewController {
         ])
     }
 
+    /// The export formats as a `UIMenu` submenu — never an action sheet,
+    /// which crashes on iPad with no popover anchor (organiser #12).
+    private func exportMenu() -> UIMenu {
+        UIMenu(
+            title: L10n.string("WriterLibrary_export_chooseFormatTitle"),
+            image: UIImage(systemName: "square.and.arrow.up"),
+            identifier: Self.exportMenuIdentifier,
+            children: DocumentExportFormat.allCases.map { format in
+                UIAction(title: format.displayName) { [weak self] _ in self?.export(as: format) }
+            })
+    }
+
     // MARK: - Menu actions
 
-    public func presentExportOptions() {
+    public func export(as format: DocumentExportFormat) {
         editor.flushPendingSave()
         let text = (try? environment.textStore.loadText(document)) ?? ""
-        let alert = UIAlertController(
-            title: L10n.string("WriterLibrary_export_chooseFormatTitle"), message: nil,
-            preferredStyle: .actionSheet)
-        for format in DocumentExportFormat.allCases {
-            alert.addAction(UIAlertAction(title: format.displayName, style: .default) { [weak self] _ in
-                guard let self else { return }
-                DocumentExporter.exportAndPresent(
-                    document: self.document, text: text, format: format, from: self, anchor: .view(self.view))
-            })
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        present(alert, animated: true)
+        DocumentExporter.exportAndPresent(
+            document: document, text: text, format: format, from: self, anchor: .view(view))
     }
 
     public func statisticsMessage() -> String {
@@ -199,7 +211,11 @@ public final class EditorContainerViewController: UIViewController {
             stats.words, stats.characters, stats.sentences, stats.paragraphs)
     }
 
+    /// Presents the editor's own statistics surface when it exposes one, so
+    /// the app shows exactly one statistics presentation instead of this
+    /// alert duplicating `StatisticsSheet` (organiser #16).
     public func presentStatistics() {
+        guard !editor.presentStatistics(from: self) else { return }
         let alert = UIAlertController(
             title: L10n.string("WriterLibrary_editor_statisticsAction"), message: statisticsMessage(),
             preferredStyle: .alert)
@@ -244,6 +260,7 @@ public final class EditorContainerViewController: UIViewController {
         editor.flushPendingSave()
         let screen = SnapshotsViewController(
             snapshotStore: environment.snapshots, textStore: environment.textStore, document: document)
+        screen.editor = editor
         present(UINavigationController(rootViewController: screen), animated: true)
     }
 
@@ -266,7 +283,7 @@ public final class EditorContainerViewController: UIViewController {
 
     private func presentNotesPanel() {
         let panel = DocumentNotesPanelViewController(
-            notesStore: environment.notes, noteIndex: environment.noteIndex,
+            library: environment.library, notesStore: environment.notes, noteIndex: environment.noteIndex,
             textStore: environment.textStore, document: document)
         panel.editor = editor
         panel.relevance = environment.noteRelevance
@@ -300,8 +317,20 @@ public final class EditorContainerViewController: UIViewController {
             editorTrailingConstraint.constant = -Self.notesPanelWidth
             panel.didMove(toParent: self)
         } else {
-            present(UINavigationController(rootViewController: panel), animated: animated)
+            let nav = UINavigationController(rootViewController: panel)
+            nav.presentationController?.delegate = self
+            panel.navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: L10n.string("Common_done"), style: .done, target: self,
+                action: #selector(doneWithPresentedNotesPanel))
+            present(nav, animated: animated)
         }
+    }
+
+    /// Interactive dismissal (a swipe down on the sheet) never calls
+    /// `dismissNotesPanel`, so `notesPanel` was left stale and the next tap
+    /// tried to dismiss a controller that was already gone (organiser #13).
+    @objc private func doneWithPresentedNotesPanel() {
+        if let notesPanel { dismissNotesPanel(notesPanel) }
     }
 
     /// Re-hosts the open notes panel as a side child or a sheet when the
@@ -327,5 +356,34 @@ extension EditorContainerViewController: DocumentEditingDelegate {
 
     public func editorRequestsNotesPanel(_ editor: DocumentEditing) {
         if notesPanel == nil { presentNotesPanel() }
+    }
+}
+
+extension EditorContainerViewController: UIAdaptivePresentationControllerDelegate {
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        notesPanel = nil
+    }
+}
+
+extension EditorContainerViewController: LibraryChangeObserving {
+    public func libraryDidChange(_ change: LibraryChange) {
+        switch change {
+        case .notes(let id) where id == nil || id == document.id:
+            updateNotesButton()
+        case .document(let id) where id == document.id:
+            refreshFromStore()
+        default:
+            break
+        }
+    }
+
+    /// A favourite, keyword or goal change made elsewhere (the sheets list,
+    /// an intent) is not reported through `DocumentEditingDelegate`, which
+    /// only carries the editor's own saves — re-read the row (organiser #15).
+    private func refreshFromStore() {
+        guard let latest = try? environment.library.document(document.id) else { return }
+        document = latest
+        header.title = displayTitle(for: document)
+        header.setTrailingControls(trailingHeaderControls())
     }
 }

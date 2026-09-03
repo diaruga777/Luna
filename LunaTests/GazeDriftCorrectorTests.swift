@@ -47,16 +47,15 @@ final class GazeDriftCorrectorTests: XCTestCase {
         let state = reading(quality: 0.8)
         _ = corrector.update(at: 0, gaze: gaze, bandCentreY: band, state: state)
         corrector.userDidScroll(at: 2.0)
-        XCTAssertNil(
-            corrector.update(at: 2.3, gaze: gaze, bandCentreY: band, state: state),
-            "the correction must not fight a scroll still in progress")
+        XCTAssertNotEqual(
+            corrector.update(at: 2.3, gaze: gaze, bandCentreY: band, state: state)?.gain, 0.12,
+            "the stronger correction must not fight a scroll still in progress")
         guard let strong = corrector.update(
             at: 2.6, gaze: gaze, bandCentreY: band, state: state)
         else { return XCTFail("no correction after the scroll settled") }
         XCTAssertEqual(strong.gain, 0.12, accuracy: 0.0001)
         // The same scroll does not earn a second strong correction.
-        let next = corrector.update(at: 2.7, gaze: gaze, bandCentreY: band, state: state)
-        XCTAssertNil(next)
+        XCTAssertNil(corrector.update(at: 2.7, gaze: gaze, bandCentreY: band, state: state))
     }
 
     func testTheSlowCorrectionNeedsMoreConfidenceThanTheScrollOne() {

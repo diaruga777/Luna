@@ -173,10 +173,14 @@ capability, so it works in the app and the share/action extensions and never
 in Safari; a handle whose generation is gone rejects `not-found` and one over
 8 MB rejects `too-large`, both before the request leaves.
 
-There is no cookie policy for the page's own session: read `cookieHeader` off
-a `luna.browser.open` result and set the header yourself. Any `cookies` value
-other than the three rejects `bad-argument`. Every request is logged to your
-plugin's diagnostics category and to the save's own trace.
+The `shared` cookie jar persists for this plugin only; another plugin cannot
+observe or reuse it. `ephemeral` creates a fresh, non-persistent jar for each
+request, while `none` neither stores nor sends cookies (including a supplied
+`Cookie` header). There is no cookie policy for the page's own session: read
+`cookieHeader` off a `luna.browser.open` result and set the header yourself
+when using the default `shared` policy. Any `cookies` value other than the
+three rejects `bad-argument`. Every request is logged to your plugin's
+diagnostics category and to the save's own trace.
 
 ## `luna.html` (capability `html`)
 

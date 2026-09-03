@@ -45,9 +45,12 @@ STRINGS_PATH = os.path.join(
 SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault", "Writer")
 
 # Directories holding shipping code. Tests are deliberately absent: a test may
-# reference copy, but it never DEFINES any.
-SOURCE_ROOTS = [
+# reference copy, but it never DEFINES any. App/extension targets that have their
+# own Intents/ directories must also be listed in the _APP_INTENTS mapping below
+# so `strings_sync` scans their App Intents metadata.
+APP_TARGETS_AND_EXTENSIONS = [
     "Luna",
+    "LunaWriter",
     "LunaLibraries/Sources",
     "LunaReaderClip",
     "LunaDownloaderClip",
@@ -59,6 +62,8 @@ SOURCE_ROOTS = [
     "LunaVault",
     "LunaVaultShare",
 ]
+
+SOURCE_ROOTS = APP_TARGETS_AND_EXTENSIONS
 
 # Where a key most likely belongs, for a human fixing up a --check/--write
 # report. Purely descriptive now — nothing auto-groups by this anymore.
@@ -116,7 +121,13 @@ CALL_RE = re.compile(r"\bL10n\.(?:string|resource)\(")
 # only for shapes the AppIntents build plugin actually treats as metadata —
 # a plain `DisplayRepresentation(title: "\(x)")` VALUE at a normal call site
 # is runtime content, not build-time metadata, and must not match here.
-INTENT_SOURCES = ("Luna/Mail/Intents/", "LunaWriter/Intents/", "LiveActivityWidget.swift")
+# Map app/extension targets to their Intents directories (only those that have one).
+_APP_INTENTS = {
+    "Luna": "Luna/Mail/Intents/",
+    "LunaWriter": "LunaWriter/Intents/",
+}
+
+INTENT_SOURCES = tuple(list(_APP_INTENTS.values()) + ["LiveActivityWidget.swift"])
 
 INTENT_RES = [
     # static let title: LocalizedStringResource = "…"
@@ -133,6 +144,8 @@ INTENT_RES = [
     # runtime (e.g. `DisplayRepresentation(title: "\(article.title)")`), not
     # build-time metadata, even though it sits in an intent-source file.
     re.compile(r"(?<!DisplayRepresentation\()(?<=[(,\s])(?:title|description)\s*:\s*(?=\")"),
+    # Summary("Key_Luna \(\.$param)") — extracts the key before the first space
+    re.compile(r"\bSummary\(\s*"),
 ]
 
 # `OnboardingStrings.Definition`/`ChunkedDefinition` (LunaLibraries/…/Luna/Reader
@@ -269,6 +282,93 @@ def _literal_at(text: str, i: int):
     return parse_swift_literal(text, i)
 
 
+def _all_string_literals_in_call(text: str, start: int):
+    """Extract all string literals from the first argument to L10n call.
+
+    For L10n.string(first_arg, other_args...), collect literals only from first_arg.
+    This handles ternary: L10n.string(cond ? "key1" : "key2") yields both keys.
+    But ignores format args: L10n.string("key", "msg") yields only "key".
+    Yields (literal_string, interpolated) tuples.
+    """
+    i = start
+    paren_depth = 0
+    bracket_depth = 0
+    in_string = False
+    in_escape = False
+
+    while i < len(text):
+        ch = text[i]
+
+        # Handle escape sequences inside strings
+        if in_escape:
+            in_escape = False
+            i += 1
+            continue
+
+        # Handle string literals
+        if in_string:
+            if ch == "\\":
+                in_escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        # Not in a string; process structural chars
+        if ch == '"':
+            # Found a string literal start
+            parsed = _literal_at(text, i)
+            if parsed:
+                key, had_interp, end_idx = parsed
+                yield key, had_interp
+                i = end_idx
+            else:
+                i += 1
+
+        elif ch == "(":
+            paren_depth += 1
+            i += 1
+
+        elif ch == ")":
+            # End of the L10n call argument list
+            break
+
+        elif ch == "[":
+            bracket_depth += 1
+            i += 1
+
+        elif ch == "]":
+            bracket_depth -= 1
+            i += 1
+
+        elif ch == "," and paren_depth == 0 and bracket_depth == 0:
+            # Top-level comma: end of first argument
+            break
+
+        else:
+            i += 1
+
+
+def _extract_summary_key(literal: str):
+    """Extract key from Summary("Key_Luna \(...)")  pattern.
+
+    Returns (key, has_interpolation) where key is the part before the first space
+    if it matches the pattern, else (full_literal, interpolation_status) from literal.
+    """
+    # Check if this looks like "Key_Luna \(...)" pattern
+    if " " in literal:
+        first_part = literal.split(" ", 1)[0]
+        # Check if first part looks like a valid key (contains underscore and _Luna suffix)
+        if "_Luna" in first_part and not "\\" in first_part:
+            # The extracted key itself has no interpolation (it's before the space)
+            return first_part, False
+
+    # Fallback: return the full literal as-is
+    # Check if it contains interpolation
+    has_interp = "\\(" in literal
+    return literal, has_interp
+
+
 def scan_source(path: str, rel: str):
     """Yield (key, had_interpolation, line_number, is_intent_literal, chunk_prefix).
 
@@ -279,24 +379,44 @@ def scan_source(path: str, rel: str):
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
 
-    # (end-of-match index, is_intent_literal, is_chunked_prefix)
-    matchers = [(m.end(), False, False) for m in CALL_RE.finditer(text)]
-    matchers += [(m.end(), False, False) for m in DEFINITION_RE.finditer(text)]
-    matchers += [(m.end(), False, True) for m in CHUNKED_DEFINITION_RE.finditer(text)]
-    if any(marker in rel for marker in INTENT_SOURCES):
-        for regex in INTENT_RES:
-            matchers.extend((m.end(), True, False) for m in regex.finditer(text))
+    # Collect all matches: (end-of-match index, match_type, is_chunked_prefix)
+    # where match_type is: 'l10n' for L10n calls, 'definition', 'chunked', or 'intent'
+    matchers = [(m.end(), 'l10n', False) for m in CALL_RE.finditer(text)]
+    matchers += [(m.end(), 'definition', False) for m in DEFINITION_RE.finditer(text)]
+    matchers += [(m.end(), 'chunked', True) for m in CHUNKED_DEFINITION_RE.finditer(text)]
 
-    for end, is_intent, is_chunked in sorted(matchers, key=lambda m: m[0]):
-        parsed = _literal_at(text, end)
-        if parsed is None:
-            continue
-        key, had_interp, _ = parsed
-        chunk_prefix = key if is_chunked else None
-        if is_chunked:
-            key = key + "1"  # only the first chunk is ever required
+    if any(marker in rel for marker in INTENT_SOURCES):
+        for idx, regex in enumerate(INTENT_RES):
+            match_type = 'intent_summary' if regex.pattern.startswith(r'\bSummary') else 'intent'
+            matchers.extend((m.end(), match_type, False) for m in regex.finditer(text))
+
+    for end, match_type, is_chunked in sorted(matchers, key=lambda m: m[0]):
         line = text.count("\n", 0, end) + 1
-        yield key, had_interp, line, is_intent, chunk_prefix
+
+        if match_type == 'l10n':
+            # For L10n calls, extract ALL string literals (handles ternaries)
+            for key, had_interp in _all_string_literals_in_call(text, end):
+                yield key, had_interp, line, False, None
+
+        elif match_type == 'intent_summary':
+            # For Summary("Key_Luna \(...)")  extract just the key part
+            parsed = _literal_at(text, end)
+            if parsed:
+                literal, _, _ = parsed
+                key, had_interp = _extract_summary_key(literal)
+                yield key, had_interp, line, True, None
+
+        elif match_type in ('intent', 'definition', 'chunked'):
+            # Standard intent metadata and Definition patterns
+            parsed = _literal_at(text, end)
+            if parsed is None:
+                continue
+            key, had_interp, _ = parsed
+            chunk_prefix = key if is_chunked else None
+            if is_chunked:
+                key = key + "1"  # only the first chunk is ever required
+            is_intent = (match_type == 'intent')
+            yield key, had_interp, line, is_intent, chunk_prefix
 
 
 def scan_sources(repo: str):

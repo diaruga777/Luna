@@ -63,6 +63,7 @@ Codes you will see, and where they come from:
 | `not-found` | `luna.files.read`, `luna.fetch` with a multipart `file` part | the scratch file behind that `FileHandle` is gone (its generation was reaped) |
 | `not-text` | `luna.files.read` without `"base64"` | the file is not UTF-8 text; read it with `"base64"` |
 | `too-large` | `luna.storage.set`, `luna.storage.collection(...).put`, `luna.files.write`, a multipart `file` part | the value is over the 256 KB per-key/per-row cap, or the file over 8 MB |
+| `quota-exceeded` | `luna.files.write`, `luna.fetch` with `as: "file"` | this plugin has filled its current 256-file / 32 MB scratch allowance |
 | `write-failed` | `luna.files.write`, `luna.fetch` with `as: "file"` | the scratch write failed |
 | `not-configured` | `luna.mail.send` | no email account is connected — the documented `send-failed` branch never fires for this, the most common failure |
 | `send-failed` | `luna.mail.send` | the mail transport itself failed |
@@ -173,10 +174,14 @@ capability, so it works in the app and the share/action extensions and never
 in Safari; a handle whose generation is gone rejects `not-found` and one over
 8 MB rejects `too-large`, both before the request leaves.
 
-There is no cookie policy for the page's own session: read `cookieHeader` off
-a `luna.browser.open` result and set the header yourself. Any `cookies` value
-other than the three rejects `bad-argument`. Every request is logged to your
-plugin's diagnostics category and to the save's own trace.
+The `shared` cookie jar persists for this plugin only; another plugin cannot
+observe or reuse it. `ephemeral` creates a fresh, non-persistent jar for each
+request, while `none` neither stores nor sends cookies (including a supplied
+`Cookie` header). There is no cookie policy for the page's own session: read
+`cookieHeader` off a `luna.browser.open` result and set the header yourself
+when using the default `shared` policy. Any `cookies` value other than the
+three rejects `bad-argument`. Every request is logged to your plugin's
+diagnostics category and to the save's own trace.
 
 ## `luna.html` (capability `html`)
 
@@ -221,7 +226,8 @@ to special-case.
 luna.page.document(): HTMLDocument;   // the LIVE page, wrapped in the §html subset
 luna.page.url(): string;
 luna.page.title(): string;
-luna.page.html(): string;             // documentElement.outerHTML
+luna.page.html(): string;             // first 200,000 chars of documentElement.outerHTML
+luna.page.truncated(): boolean;       // true when html() omitted the document tail
 ```
 
 ## `luna.storage` (capability `storage`)
@@ -245,6 +251,13 @@ Scoped per plugin id automatically — two plugins may reuse the same key or
 collection name and never see each other's data. Backed by `saves.sqlite`'s
 `plugin_kv`/`plugin_collections` tables, visible from every process your
 plugin runs in (Safari relays through native messaging).
+
+Aggregate limits are also per plugin: 1,024 keys / 5 MiB of KV JSON and
+10,000 rows / 10 MiB of collection JSON. Each individual value or document
+remains capped at 256 KiB. An atomic write that would cross a limit rejects
+with `quota-exceeded`; unavailable App-Group storage and failed writes reject
+as `storage-unavailable` and `write-failed` instead of looking like a missing
+key or a successful delete.
 
 ## `luna.secrets` (capability `secrets`)
 
@@ -274,6 +287,12 @@ into the share's own directory before that happens, so the share sheet still
 reads it. Reading a handle after its generation is reaped rejects
 `not-found`, and `read` without `"base64"` on bytes that are not UTF-8
 rejects `not-text`.
+
+Plugin-created scratch data is capped at 256 files and 32 MB per plugin. The
+check and write are serialized, so a rejected write leaves no partial file.
+Files Luna adopts from an existing save for an `export` hook are exempt: those
+host-owned inputs can legitimately be much larger and are still reaped with the
+same generation.
 
 ## `luna.crypto` (capability `crypto`)
 

@@ -140,9 +140,18 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     public var idle: PluginIdleTouching?
 
     private let delegateQueue = OperationQueue()
-    /// One session per cookie policy, made on first use. A session is expensive
-    /// and a policy is one of three.
-    private var sessions: [PluginFetchRequest.CookiePolicy: URLSession] = [:]
+    /// Shared sessions are keyed by plugin as well as policy: cookie state must
+    /// never leak from one installed plugin into another.
+    private struct SessionKey: Hashable {
+        let pluginID: String
+        let policy: PluginFetchRequest.CookiePolicy
+    }
+
+    private var sessions: [SessionKey: URLSession] = [:]
+    /// HTTPCookieStorage's public initializer is not a usable private in-memory
+    /// jar on all Apple platforms. Keep the small process-lifetime jars here
+    /// and add their request headers explicitly.
+    private var cookieJars: [String: [HTTPCookie]] = [:]
     /// Keyed by the task OBJECT: `taskIdentifier` is unique within one session,
     /// and three sessions each hand out a task 1.
     private var transfers: [ObjectIdentifier: Transfer] = [:]
@@ -157,9 +166,22 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     /// would keep every replaced service, its sessions and its delegate queue
     /// alive for the life of the process.
     private let delegateProxy = PluginFetchSessionDelegate()
+    private let networkCheck: (URL, String) throws -> Void
+    private let allowedHosts: Set<String>?
+    /// Validation uses this to reject a draft even when its JavaScript catches
+    /// the denied request and otherwise returns a plausible model.
+    public var networkRefusalObserver: (@Sendable (URL) -> Void)?
 
-    public init(protocolClasses: [AnyClass] = []) {
+    public init(
+        protocolClasses: [AnyClass] = [],
+        allowedHosts: Set<String>? = nil,
+        networkCheck: @escaping (URL, String) throws -> Void = {
+            try LiveNetworkPolicy.check($0, context: $1)
+        }
+    ) {
         self.protocolClasses = protocolClasses
+        self.allowedHosts = allowedHosts.map { Set($0.map { $0.lowercased() }) }
+        self.networkCheck = networkCheck
         super.init()
         delegateQueue.maxConcurrentOperationCount = 1
         delegateProxy.service = self
@@ -174,7 +196,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         completion: @escaping (Result<PluginFetchResponse, PluginFetchError>) -> Void
     ) {
         do {
-            try LiveNetworkPolicy.check(request.url, context: "luna.fetch")
+            try checkNetwork(request.url, context: "luna.fetch")
         } catch {
             completion(.failure(PluginFetchError("\(error)", code: "network-refused")))
             return
@@ -193,6 +215,12 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         start(probe) { [weak self] outcome in
             guard let self else { return }
             let landing = (try? outcome.get()).flatMap { URL(string: $0.finalURL) } ?? request.url
+            do {
+                try checkNetwork(landing, context: "luna.fetch.redirect")
+            } catch {
+                completion(.failure(networkRefused(error)))
+                return
+            }
             let follow = PluginFetchRequest(
                 url: landing, method: request.method, headers: request.headers,
                 body: request.body, cookies: request.cookies, redirect: .follow,
@@ -212,43 +240,60 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: request.timeout)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
-        urlRequest.httpShouldHandleCookies = request.cookies == .shared
+        urlRequest.httpShouldHandleCookies = false
         for (name, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
+        if request.cookies == .none {
+            urlRequest.setValue(nil, forHTTPHeaderField: "Cookie")
         }
         if urlRequest.value(forHTTPHeaderField: "User-Agent") == nil {
             urlRequest.setValue(
                 WebFetchConstants.safariUserAgent, forHTTPHeaderField: "User-Agent")
         }
-        let session = self.session(for: request.cookies)
+        let (session, invalidatesAfterRequest) = self.session(for: request)
+        let stored = cookies(for: request, additional: [])
+        if request.cookies != .none,
+           urlRequest.value(forHTTPHeaderField: "Cookie") == nil,
+           !stored.isEmpty {
+            for (name, value) in HTTPCookie.requestHeaderFields(with: stored) {
+                urlRequest.setValue(value, forHTTPHeaderField: name)
+            }
+        }
         let task = session.dataTask(with: urlRequest)
         lock.lock()
-        transfers[ObjectIdentifier(task)] = Transfer(request: request, completion: completion)
+        transfers[ObjectIdentifier(task)] = Transfer(
+            request: request, completion: completion,
+            ephemeralSession: invalidatesAfterRequest ? session : nil)
         lock.unlock()
         task.resume()
     }
 
-    private func session(for policy: PluginFetchRequest.CookiePolicy) -> URLSession {
+    private func session(for request: PluginFetchRequest) -> (URLSession, Bool) {
+        if request.cookies == .ephemeral {
+            return (makeSession(policy: .ephemeral), true)
+        }
+        let key = SessionKey(pluginID: request.pluginID, policy: request.cookies)
         lock.lock()
         defer { lock.unlock() }
-        if let existing = sessions[policy] { return existing }
-        let configuration: URLSessionConfiguration
-        switch policy {
-        case .shared:
-            configuration = .default
-        case .ephemeral:
-            configuration = .ephemeral
-        case .none:
-            configuration = .ephemeral
-            configuration.httpShouldSetCookies = false
-            configuration.httpCookieAcceptPolicy = .never
-            configuration.httpCookieStorage = nil
+        if let existing = sessions[key] {
+            return (existing, false)
         }
+        let session = makeSession(policy: request.cookies)
+        sessions[key] = session
+        return (session, false)
+    }
+
+    private func makeSession(policy: PluginFetchRequest.CookiePolicy) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        // Cookie handling is explicit below so each plugin gets a genuinely
+        // private in-memory jar rather than the process-global shared store.
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
         configuration.protocolClasses = protocolClasses + (configuration.protocolClasses ?? [])
-        let session = URLSession(
+        return URLSession(
             configuration: configuration, delegate: delegateProxy, delegateQueue: delegateQueue)
-        sessions[policy] = session
-        return session
     }
 
     private func transfer(_ task: URLSessionTask) -> Transfer? {
@@ -267,6 +312,8 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     private final class Transfer {
         let request: PluginFetchRequest
         let completion: (Result<PluginFetchResponse, PluginFetchError>) -> Void
+        let ephemeralSession: URLSession?
+        var ephemeralCookies: [HTTPCookie] = []
         var body = Data()
         var response: HTTPURLResponse?
         var truncated = false
@@ -274,14 +321,79 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         /// Set when the delegate stopped a redirect, so the 3xx itself is what
         /// the plugin gets.
         var haltedRedirect: HTTPURLResponse?
+        /// Set when a redirect target fails the live-network check.
+        var redirectError: PluginFetchError?
 
         init(
             request: PluginFetchRequest,
-            completion: @escaping (Result<PluginFetchResponse, PluginFetchError>) -> Void
+            completion: @escaping (Result<PluginFetchResponse, PluginFetchError>) -> Void,
+            ephemeralSession: URLSession?
         ) {
             self.request = request
             self.completion = completion
+            self.ephemeralSession = ephemeralSession
         }
+    }
+
+    private func checkNetwork(_ url: URL, context: String) throws {
+        guard let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              let host = url.host?.lowercased() else {
+            throw PluginFetchError(
+                "the redirect target is not an HTTP URL", code: "network-refused")
+        }
+        if let allowedHosts, !allowedHosts.contains(host) {
+            networkRefusalObserver?(url)
+            throw PluginFetchError(
+                "draft validation does not permit requests to \(host)",
+                code: "network-refused")
+        }
+        try networkCheck(url, context)
+    }
+
+    private func networkRefused(_ error: Error) -> PluginFetchError {
+        PluginFetchError("network refused: \(error)", code: "network-refused")
+    }
+
+    private func cookies(
+        for request: PluginFetchRequest, additional: [HTTPCookie]
+    ) -> [HTTPCookie] {
+        let stored: [HTTPCookie]
+        lock.lock()
+        stored = request.cookies == .shared ? (cookieJars[request.pluginID] ?? []) : additional
+        lock.unlock()
+        return stored.filter { Self.cookie($0, matches: request.url) }
+    }
+
+    private func remember(_ incoming: [HTTPCookie], transfer: Transfer) {
+        guard !incoming.isEmpty else { return }
+        if transfer.request.cookies == .ephemeral {
+            transfer.ephemeralCookies = Self.merging(transfer.ephemeralCookies, incoming)
+            return
+        }
+        guard transfer.request.cookies == .shared else { return }
+        lock.lock()
+        cookieJars[transfer.request.pluginID] = Self.merging(
+            cookieJars[transfer.request.pluginID] ?? [], incoming)
+        lock.unlock()
+    }
+
+    private static func merging(_ old: [HTTPCookie], _ new: [HTTPCookie]) -> [HTTPCookie] {
+        var result = old.filter { cookie in
+            !new.contains { $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path }
+        }
+        result.append(contentsOf: new.filter { $0.expiresDate.map { $0 > Date() } ?? true })
+        return result
+    }
+
+    private static func cookie(_ cookie: HTTPCookie, matches url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard host == domain || host.hasSuffix("." + domain) else { return false }
+        guard url.path.hasPrefix(cookie.path), !cookie.isSecure || url.scheme == "https" else {
+            return false
+        }
+        return cookie.expiresDate.map { $0 > Date() } ?? true
     }
 }
 
@@ -298,8 +410,31 @@ extension PluginFetchService {
         }
         switch transfer.request.redirect {
         case .follow, .headThenGet:
+            do {
+                guard let target = request.url else {
+                    throw PluginFetchError(
+                        "the redirect target has no URL", code: "network-refused")
+                }
+                try checkNetwork(target, context: "luna.fetch.redirect")
+            } catch {
+                transfer.redirectError = networkRefused(error)
+                completionHandler(nil)
+                return
+            }
             transfer.redirected = true
-            completionHandler(request)
+            var next = request
+            if transfer.request.cookies != .none,
+               next.value(forHTTPHeaderField: "Cookie") == nil,
+               let target = next.url {
+                let follow = PluginFetchRequest(
+                    url: target, method: transfer.request.method,
+                    cookies: transfer.request.cookies, pluginID: transfer.request.pluginID)
+                let values = cookies(for: follow, additional: transfer.ephemeralCookies)
+                for (name, value) in HTTPCookie.requestHeaderFields(with: values) {
+                    next.setValue(value, forHTTPHeaderField: name)
+                }
+            }
+            completionHandler(next)
         case .manual:
             transfer.haltedRedirect = response
             completionHandler(nil)
@@ -310,7 +445,28 @@ extension PluginFetchService {
         _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
-        transfer(dataTask)?.response = response as? HTTPURLResponse
+        if let transfer = transfer(dataTask), let http = response as? HTTPURLResponse {
+            transfer.response = http
+            if transfer.request.cookies != .none, let url = http.url {
+                let fields = http.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+                    result[String(describing: entry.key)] = String(describing: entry.value)
+                }
+                remember(HTTPCookie.cookies(withResponseHeaderFields: fields, for: url),
+                         transfer: transfer)
+            }
+            if transfer.request.redirect != .manual,
+               (300..<400).contains(http.statusCode),
+               let location = http.value(forHTTPHeaderField: "Location"),
+               let target = URL(string: location, relativeTo: http.url)?.absoluteURL {
+                do {
+                    try checkNetwork(target, context: "luna.fetch.redirect")
+                } catch {
+                    transfer.redirectError = networkRefused(error)
+                    completionHandler(.cancel)
+                    return
+                }
+            }
+        }
         completionHandler(.allow)
     }
 
@@ -341,9 +497,14 @@ extension PluginFetchService {
         _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
     ) {
         guard let transfer = finishTransfer(task) else { return }
+        transfer.ephemeralSession?.finishTasksAndInvalidate()
         let response = transfer.haltedRedirect ?? transfer.response
             ?? task.response as? HTTPURLResponse
         // A cancel from the size cap is a success with a cut body, not a failure.
+        if let redirectError = transfer.redirectError {
+            transfer.completion(.failure(redirectError))
+            return
+        }
         if let error, !(transfer.truncated && (error as NSError).code == NSURLErrorCancelled) {
             transfer.completion(.failure(PluginFetchError(error.localizedDescription)))
             return
@@ -373,6 +534,12 @@ extension PluginFetchService {
                     mime: headers.first { $0.key.lowercased() == "content-type" }?.value,
                     pluginID: transfer.request.pluginID,
                     generation: transfer.request.invocationID)
+            } catch let error as PluginScratchError {
+                transfer.completion(.failure(PluginFetchError(
+                    "the response could not be written to a file: "
+                        + error.localizedDescription,
+                    code: error.code)))
+                return
             } catch {
                 transfer.completion(.failure(PluginFetchError(
                     "the response could not be written to a file: "

@@ -44,7 +44,8 @@ final class PluginJSFixtureRunner {
     init(
         processKind: PluginProcessKind = .app,
         fetcher: StubPluginFetcher = StubPluginFetcher(),
-        installBridges: Bool = true
+        installBridges: Bool = true,
+        diagnostics: PluginDiagnosticsRecording = DiscardedPluginDiagnostics()
     ) {
         self.fetcher = fetcher
         containerURL = fileManager.temporaryDirectory
@@ -59,12 +60,12 @@ final class PluginJSFixtureRunner {
             bundled: BundledPluginCatalog(bundle: nil, store: store),
             capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind),
-            diagnostics: DiscardedPluginDiagnostics(),
+            diagnostics: diagnostics,
             scratch: scratch)
         guard installBridges else { return }
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime, files: scratch,
-            diagnostics: DiscardedPluginDiagnostics()))
+            diagnostics: diagnostics))
         capabilities.register(PluginHTMLBridge())
         capabilities.register(PluginStorageBridge(store: kv, scheduler: runtime))
         capabilities.register(PluginCryptoBridge(scheduler: runtime))

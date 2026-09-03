@@ -264,7 +264,7 @@ let package = Package(
         // The classify + ingest walk that runs BEFORE the Swift classifier, the
         // Model decoding and adoption, and the browser deferral.
         .target(name: "LunaPluginIngest", dependencies: [
-            "LunaPluginRuntime", "LunaIngest", "LunaFetch",
+            "LunaPluginRuntime", "LunaIngest", "LunaFetch", "LunaURLRescue",
         ]),
         // The export stage, the export-input producers and plugin destinations.
         // App only: the mail transport and the share sheet do not exist in an

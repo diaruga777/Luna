@@ -109,7 +109,7 @@ public enum PluginManifestParser {
         let body = String(source[bodyStart..<closeRange.lowerBound])
         var bodyLines = body.components(separatedBy: "\n")
         guard let first = bodyLines.first,
-              first.trimmingCharacters(in: .whitespaces).hasPrefix("luna-plugin")
+              first.trimmingCharacters(in: .whitespacesAndNewlines) == "luna-plugin"
         else { return .failure(.noHeader) }
         bodyLines.removeFirst()
         // The JSON is everything after the marker line. A leading `{` on the

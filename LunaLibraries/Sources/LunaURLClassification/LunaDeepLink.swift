@@ -148,6 +148,37 @@ public enum LunaDeepLink {
     /// `PendingPluginModelStore` (App Group). Mirrored in `content.js`.
     public static let pluginModelHost = "pluginmodel"
 
+    /// The central Luna workshop's Safari recovery hand-off. The recovery case
+    /// itself lives in the App Group; this route carries only its stable id.
+    public static let pluginRecoveryHost = "pluginrecovery"
+
+    public static func pluginRecoveryLink(
+        scheme: String = lunaScheme, caseID: UUID? = nil
+    ) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = pluginRecoveryHost
+        if let caseID {
+            components.queryItems = [URLQueryItem(name: "case", value: caseID.uuidString)]
+        }
+        return components.url
+    }
+
+    /// True for a central-Luna recovery workshop hand-off. Unlike model/save
+    /// routes this must never target a facet app: only central Luna owns the
+    /// plugin authoring UI.
+    public static func isPluginRecoveryLink(_ url: URL) -> Bool {
+        pluginRecoveryCaseID(from: url) != nil
+    }
+
+    public static func pluginRecoveryCaseID(from url: URL) -> UUID? {
+        guard url.scheme == lunaScheme, url.host == pluginRecoveryHost,
+              let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "case" })?.value
+        else { return nil }
+        return UUID(uuidString: raw)
+    }
+
     /// True for `<any Luna scheme>://pluginmodel` — an app that runs no plugin
     /// platform simply drains nothing, so the broad scheme check is correct
     /// here too (only central Luna's queue is ever non-empty).

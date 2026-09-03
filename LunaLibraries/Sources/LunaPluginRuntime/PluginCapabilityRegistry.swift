@@ -11,6 +11,8 @@ import LunaPluginKit
 public struct PluginBridgeTarget {
     public let pluginID: String
     public let manifest: PluginManifest
+    /// Identity of the loaded context that owns this bridge.
+    public let generationID: String
     /// Names the scratch directory the plugin's files land in. One generation
     /// is open while anything of this plugin is in flight, so a nested call
     /// writes beside the call that started it rather than into a directory of
@@ -18,10 +20,12 @@ public struct PluginBridgeTarget {
     public let scratchGeneration: () -> String
 
     public init(
-        pluginID: String, manifest: PluginManifest, scratchGeneration: @escaping () -> String
+        pluginID: String, manifest: PluginManifest, scratchGeneration: @escaping () -> String,
+        generationID: String = "legacy"
     ) {
         self.pluginID = pluginID
         self.manifest = manifest
+        self.generationID = generationID
         self.scratchGeneration = scratchGeneration
     }
 }

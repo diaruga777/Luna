@@ -25,6 +25,9 @@ final class PluginContext {
     private(set) var registeredHooks: Set<PluginHook> = []
 
     private let context: JSContext
+    /// Captured before plugin source runs, so monkey-patching global JSON or
+    /// Object cannot change host-side inspection and serialization.
+    private let trustedBuiltins: JSValue
     private var hooks: JSValue?
     private var registerCount = 0
     /// True once `seal()` ran. A `luna.register` after that is a hook trying to
@@ -45,17 +48,38 @@ final class PluginContext {
         registry: PluginCapabilityRegistry,
         processKind: PluginProcessKind,
         scratchGeneration: @escaping () -> String,
-        log: @escaping (String) -> Void
+        log: @escaping (String) -> Void,
+        generationID: String = "legacy"
     ) {
         self.pluginID = manifest.id
         self.manifest = manifest
         context = JSContext(virtualMachine: virtualMachine)
+        context.evaluateScript(PluginBootstrapScript.source)
+        trustedBuiltins = context.evaluateScript(
+            """
+            (function () {
+              const parse = JSON.parse.bind(JSON);
+              const stringify = JSON.stringify.bind(JSON);
+              const keys = Object.keys.bind(Object);
+              const freeze = Object.freeze.bind(Object);
+              function deepFreeze(value, seen) {
+                if (!value || (typeof value !== "object" && typeof value !== "function")) return value;
+                seen = seen || [];
+                if (seen.indexOf(value) >= 0) return value;
+                seen.push(value);
+                try { keys(value).forEach(function (key) { deepFreeze(value[key], seen); }); } catch (_) {}
+                try { freeze(value); } catch (_) {}
+                return value;
+              }
+              return { parse: parse, stringify: stringify, keys: keys,
+                       freeze: freeze, deepFreeze: deepFreeze };
+            })()
+            """)!
         context.exceptionHandler = { [weak self] _, exception in
             self?.pendingException = (
                 exception?.toString() ?? "<no exception value>",
                 exception?.objectForKeyedSubscript("stack")?.toString())
         }
-        context.evaluateScript(PluginBootstrapScript.source)
         let luna = context.objectForKeyedSubscript("luna")!
 
         Self.installParseURL(on: luna, in: context)
@@ -81,7 +105,8 @@ final class PluginContext {
         luna.setObject(register, forKeyedSubscript: "register" as NSString)
 
         let target = PluginBridgeTarget(
-            pluginID: manifest.id, manifest: manifest, scratchGeneration: scratchGeneration)
+            pluginID: manifest.id, manifest: manifest, scratchGeneration: scratchGeneration,
+            generationID: generationID)
         for name in manifest.capabilities.sorted(by: { $0.rawValue < $1.rawValue }) {
             let namespace = PluginCapabilityNamespace(
                 target: target, context: context, object: luna)
@@ -94,6 +119,11 @@ final class PluginContext {
                 PluginUnavailableNamespace.install(name, into: namespace)
             }
         }
+        // Freeze the complete host grant before untrusted top-level code runs.
+        // Calling register does not mutate `luna`, so registration remains
+        // available while bridge replacement does not.
+        trustedBuiltins.objectForKeyedSubscript("deepFreeze")?
+            .call(withArguments: [luna])
         pendingException = nil
     }
 
@@ -111,7 +141,9 @@ final class PluginContext {
     /// bridge for one of its own and hand the swapped object to another plugin's
     /// value.
     func seal() {
-        context.evaluateScript("Object.freeze(luna); Object.freeze(luna.bytes);")
+        if let hooks {
+            trustedBuiltins.objectForKeyedSubscript("freeze")?.call(withArguments: [hooks])
+        }
         pendingException = nil
         isSealed = true
     }
@@ -122,7 +154,9 @@ final class PluginContext {
     /// bridge that installs under a second name — or under none — cannot pass
     /// for a correct grant.
     var grantedNamespaces: Set<PluginCapabilityName> {
-        let names = context.evaluateScript("Object.keys(luna)")?.toArray() as? [String] ?? []
+        let luna = context.objectForKeyedSubscript("luna")!
+        let names = trustedBuiltins.objectForKeyedSubscript("keys")?
+            .call(withArguments: [luna])?.toArray() as? [String] ?? []
         pendingException = nil
         return Set(names.compactMap(PluginCapabilityName.init(rawValue:)))
     }
@@ -130,7 +164,9 @@ final class PluginContext {
     /// Names on `luna` that are neither a capability nor an always-present
     /// member. A non-empty answer is a bridge writing where it should not.
     var strayNamespaces: Set<String> {
-        let names = context.evaluateScript("Object.keys(luna)")?.toArray() as? [String] ?? []
+        let luna = context.objectForKeyedSubscript("luna")!
+        let names = trustedBuiltins.objectForKeyedSubscript("keys")?
+            .call(withArguments: [luna])?.toArray() as? [String] ?? []
         pendingException = nil
         return Set(names)
             .subtracting(Self.ungatedNames)
@@ -263,9 +299,7 @@ final class PluginContext {
     /// `JSON.parse(text)` in the plugin's own context, so the hook's argument is
     /// a plain object the plugin owns rather than a bridged Swift value.
     private func parseJSON(_ text: String) -> JSValue? {
-        guard let json = context.objectForKeyedSubscript("JSON"),
-              let parse = json.objectForKeyedSubscript("parse")
-        else { return nil }
+        guard let parse = trustedBuiltins.objectForKeyedSubscript("parse") else { return nil }
         let value = parse.call(withArguments: [text])
         if pendingException != nil { pendingException = nil; return nil }
         return value
@@ -275,8 +309,7 @@ final class PluginContext {
     /// same answer as `null` for every hook Luna calls.
     private func stringify(_ value: JSValue) -> String {
         guard !value.isUndefined, !value.isNull,
-              let json = context.objectForKeyedSubscript("JSON"),
-              let stringify = json.objectForKeyedSubscript("stringify"),
+              let stringify = trustedBuiltins.objectForKeyedSubscript("stringify"),
               let text = stringify.call(withArguments: [value])?.toString(),
               text != "undefined"
         else { return "null" }

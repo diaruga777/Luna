@@ -46,16 +46,19 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
         let scheduler = self.scheduler
         let diagnostics = self.diagnostics
         let files = self.files
+        let generationID = namespace.target.generationID
 
         let fetch: @convention(block) (JSValue?) -> JSValue? = { argument in
             let context = JSContext.current() ?? outerContext
+            let invocation = scheduler.currentPluginInvocation
             var object = PluginBridgeValue.dictionary(argument)
             // `luna.fetch("https://…")` is the same call with one field.
             if object.isEmpty, argument?.isString == true, let urlString = argument?.toString() {
                 object = ["url": urlString]
             }
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             let request: PluginFetchRequest
             switch PluginFetchRequestDecoder.decode(
                 object, pluginID: pluginID, generation: scratchGeneration(), files: files)
@@ -72,7 +75,7 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
             diagnostics.record(
                 "fetch \(request.method) \(request.url.absoluteString) "
                     + "cookies=\(request.cookies.rawValue) redirect=\(request.redirect.rawValue)",
-                pluginID: pluginID)
+                pluginID: pluginID, invocation: invocation)
             fetcher.fetch(request) { outcome in
                 switch outcome {
                 case .success(let response):
@@ -80,11 +83,12 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
                         "fetch → \(response.status) \(response.body.count)B "
                             + "final=\(response.finalURL)"
                             + (response.truncated ? " (truncated)" : ""),
-                        pluginID: pluginID)
+                        pluginID: pluginID, invocation: invocation)
                     box.fulfill(PluginFetchResponseEncoder.jsObject(
                         response, form: request.responseForm))
                 case .failure(let error):
-                    diagnostics.record("fetch → \(error.message)", pluginID: pluginID)
+                    diagnostics.record(
+                        "fetch → \(error.message)", pluginID: pluginID, invocation: invocation)
                     box.fail(error.message, code: error.code)
                 }
             }

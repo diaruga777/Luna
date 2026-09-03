@@ -13,18 +13,69 @@ import JavaScriptCore
 /// anywhere else races both.
 public protocol PluginCallbackScheduling: AnyObject {
     func schedulePluginCallback(_ work: @escaping () -> Void)
+    /// Schedules a callback and restores the invocation that created it.
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?
+    )
+    /// Schedules a continuation with the context generation that created it.
+    /// A replacement plugin with the same id must never receive this callback.
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?,
+        generationID: String?
+    )
+    /// The invocation currently entering JavaScript on this scheduler's queue.
+    var currentPluginInvocation: PluginInvocationDiagnostics? { get }
+    var currentPluginID: String? { get }
+    var currentPluginGenerationID: String? { get }
     /// Records that the plugin is still doing useful work, so an idle-budgeted
     /// hook is not abandoned mid-fetch. A nil `pluginID` touches every plugin
     /// in flight, which is what a bridge that cannot name one must ask for.
     func notePluginActivity(pluginID: String?)
+    func notePluginActivity(pluginID: String?, generationID: String?)
     /// Hands over a promise no bridge has settled yet. The runtime releases its
     /// two `JSValue`s when the plugin's last call is abandoned, so an unsettled
     /// bridge cannot pin the plugin's `JSContext` for the life of the process.
     func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?)
+    func trackPendingPromise(
+        _ box: PluginPromiseBox, pluginID: String?, generationID: String?
+    )
+    /// Starts work that can outlive the synchronous hook body. The returned
+    /// lease keeps the context generation and its scratch directory alive until
+    /// completion or cancellation.
+    func beginPluginOperation(
+        pluginID: String, generationID: String
+    ) -> PluginOperationLease?
 }
 
 public extension PluginCallbackScheduling {
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?
+    ) {
+        schedulePluginCallback(work)
+    }
+
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?,
+        generationID: String?
+    ) {
+        schedulePluginCallback(work, invocation: invocation)
+    }
+
+    var currentPluginInvocation: PluginInvocationDiagnostics? { nil }
+    var currentPluginID: String? { nil }
+    var currentPluginGenerationID: String? { nil }
+
+    func notePluginActivity(pluginID: String?, generationID: String?) {
+        notePluginActivity(pluginID: pluginID)
+    }
+
     func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?) {}
+    func trackPendingPromise(
+        _ box: PluginPromiseBox, pluginID: String?, generationID: String?
+    ) {}
+    func beginPluginOperation(
+        pluginID: String, generationID: String
+    ) -> PluginOperationLease? { nil }
 }
 
 /// Runs a callback on the calling thread. A caller driving one context by hand
@@ -33,6 +84,39 @@ public final class ImmediatePluginCallbackScheduler: PluginCallbackScheduling {
     public init() {}
     public func schedulePluginCallback(_ work: @escaping () -> Void) { work() }
     public func notePluginActivity(pluginID: String?) {}
+}
+
+/// A cancellable hold on a runtime generation. Cancellation is idempotent and
+/// safe from an arbitrary worker queue; bridges use `isValid` immediately
+/// before writing a file or delivering a completion to prevent stale work from
+/// recreating an abandoned generation.
+public final class PluginOperationLease {
+    private let lock = NSLock()
+    private var valid = true
+    private let onRelease: () -> Void
+
+    public init(onRelease: @escaping () -> Void) {
+        self.onRelease = onRelease
+    }
+
+    public var isValid: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return valid
+    }
+
+    public func cancel() {
+        lock.lock()
+        guard valid else {
+            lock.unlock()
+            return
+        }
+        valid = false
+        lock.unlock()
+        onRelease()
+    }
+
+    deinit { cancel() }
 }
 
 /// The value conversions every bridge does at the JavaScript boundary.
@@ -130,11 +214,20 @@ public final class PluginPromiseBox {
     private var reject: JSValue?
     private let scheduler: PluginCallbackScheduling
     private let pluginID: String?
+    private let generationID: String?
+    private let operation: PluginOperationLease?
+    private let invocation: PluginInvocationDiagnostics?
     private let lock = NSLock()
 
-    private init(scheduler: PluginCallbackScheduling, pluginID: String?) {
+    private init(
+        scheduler: PluginCallbackScheduling, pluginID: String?, generationID: String?,
+        invocation: PluginInvocationDiagnostics?, operation: PluginOperationLease?
+    ) {
         self.scheduler = scheduler
         self.pluginID = pluginID
+        self.generationID = generationID
+        self.invocation = invocation
+        self.operation = operation
     }
 
     /// Makes a pending promise in `context` and the box that settles it.
@@ -143,18 +236,35 @@ public final class PluginPromiseBox {
     /// that plugin's in-flight calls, and an abandoned call releases the box's
     /// settle functions.
     public static func make(
-        in context: JSContext, scheduler: PluginCallbackScheduling, pluginID: String? = nil
+        in context: JSContext, scheduler: PluginCallbackScheduling, pluginID: String? = nil,
+        generationID: String? = nil
     ) -> (promise: JSValue, box: PluginPromiseBox) {
-        let box = PluginPromiseBox(scheduler: scheduler, pluginID: pluginID)
+        let resolvedPluginID = pluginID ?? scheduler.currentPluginID
+        let resolvedGenerationID = generationID ?? scheduler.currentPluginGenerationID
+        let box = PluginPromiseBox(
+            scheduler: scheduler, pluginID: resolvedPluginID,
+            generationID: resolvedGenerationID,
+            invocation: scheduler.currentPluginInvocation,
+            operation: resolvedPluginID.flatMap { id in
+                resolvedGenerationID.flatMap { generation in
+                    scheduler.beginPluginOperation(pluginID: id, generationID: generation)
+                }
+            })
         let promise = JSValue(newPromiseIn: context) { resolve, reject in
             box.resolve = resolve
             box.reject = reject
         }
-        scheduler.trackPendingPromise(box, pluginID: pluginID)
+        scheduler.trackPendingPromise(
+            box, pluginID: resolvedPluginID, generationID: resolvedGenerationID)
         return (promise ?? JSValue(undefinedIn: context), box)
     }
 
     public func fulfill(_ value: Any) { settle(value, rejecting: false) }
+
+    /// The worker side of a bridge must check this before performing a side
+    /// effect. It becomes false when the hook times out and its promise is
+    /// discarded, even if the worker callback arrives much later.
+    public var isOperationValid: Bool { operation?.isValid ?? true }
 
     /// Fulfils with JavaScript `undefined` rather than `null`. A key that holds
     /// nothing and a key holding a stored `null` must answer differently.
@@ -166,6 +276,7 @@ public final class PluginPromiseBox {
         resolve = nil
         reject = nil
         lock.unlock()
+        operation?.cancel()
     }
 
     /// The marker `fulfillUndefined` settles with, turned into the calling
@@ -180,8 +291,8 @@ public final class PluginPromiseBox {
     }
 
     private func settle(_ value: Any, rejecting: Bool) {
-        scheduler.notePluginActivity(pluginID: pluginID)
-        scheduler.schedulePluginCallback { [self] in
+        scheduler.notePluginActivity(pluginID: pluginID, generationID: generationID)
+        scheduler.schedulePluginCallback({ [self] in
             lock.lock()
             let function = rejecting ? reject : resolve
             let context = function?.context
@@ -199,7 +310,8 @@ public final class PluginPromiseBox {
             } else {
                 function.call(withArguments: [value])
             }
-        }
+            operation?.cancel()
+        }, invocation: invocation, generationID: generationID)
     }
 
     /// A `LunaError` built in the plugin's own context, so `instanceof` and

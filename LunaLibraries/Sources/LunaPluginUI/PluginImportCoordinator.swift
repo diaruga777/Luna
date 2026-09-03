@@ -25,6 +25,9 @@ public final class PluginImportCoordinator: NSObject {
 
     private weak var presenter: UIViewController?
     private var pendingOrigin: PluginImportOrigin?
+    /// Exposed for the import UI to disable duplicate submissions while the
+    /// candidate is being preflighted off the main actor.
+    public private(set) var isInstalling = false
 
     public init(importer: PluginImporting) {
         self.importer = importer
@@ -45,9 +48,20 @@ public final class PluginImportCoordinator: NSObject {
                 [weak self] _ in self?.presentPasteSheet()
             })
         sheet.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = sourceView
-        sheet.popoverPresentationController?.sourceRect = sourceView?.bounds ?? .zero
+        let anchor = sourceView ?? presenter.view
+        sheet.popoverPresentationController?.sourceView = anchor
+        sheet.popoverPresentationController?.sourceRect = anchor?.bounds ?? .zero
         presenter.present(sheet, animated: true)
+    }
+
+    /// Continues the normal preview/consent/transactional-install flow with a
+    /// source that another Luna screen has already collected and validated.
+    public func begin(
+        sourceText: String, origin: PluginImportOrigin = .paste,
+        from presenter: UIViewController
+    ) {
+        self.presenter = presenter
+        handle(sourceText: sourceText, origin: origin)
     }
 
     private func pickFile() {
@@ -105,11 +119,17 @@ public final class PluginImportCoordinator: NSObject {
     }
 
     private func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) {
-        do {
-            try importer.install(preview, origin: origin)
-            observer?.pluginImportDidFinish(self)
-        } catch {
-            report(error)
+        guard !isInstalling else { return }
+        isInstalling = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isInstalling = false }
+            do {
+                try await self.importer.installAsync(preview, origin: origin)
+                self.observer?.pluginImportDidFinish(self)
+            } catch {
+                self.report(error)
+            }
         }
     }
 

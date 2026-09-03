@@ -55,7 +55,8 @@ public enum PluginPlatformComposition {
         // One scratch store serves every plugin, keyed by (plugin, generation):
         // a generation is open while anything of that plugin is in flight, and
         // its directory is reaped when the last of those calls ends.
-        let scratch = PluginScratchStore(rootURL: store.scratchRootURL)
+        let scratch = PluginScratchStore(
+            rootURL: store.scratchRootURL, isAvailable: store.storageAvailable)
         let runtime = PluginRuntime(
             store: store, bundled: bundled, capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind), scratch: scratch)

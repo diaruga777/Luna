@@ -13,6 +13,24 @@ beyond the one coarse `SaveFailureReason` the outcome carried. There was also no
 correlation id anywhere, so two concurrent saves would have interleaved
 indistinguishably even if they had logged.
 
+## Diagnostics versus the plugin-recovery prompt
+
+**Share Diagnostics…** exports the bounded raw support trace described below.
+**Create Plugin…** instead transforms that durable trace into a structured
+`PluginRecoveryCase`: sensitive query/header material is redacted, matching
+plugin versions are listed, attempts are bounded and delimited as untrusted
+evidence, and exact API-1 authoring instructions are prepended. These are
+deliberately separate actions—the support export is optimized for a developer,
+while the recovery prompt is safe and self-contained enough to paste into a
+free LLM chat.
+
+Failed saves reuse their stored trace and do not refetch the site. The manual
+Settings entry point runs the real ingest attempt ledger in probe mode: it may
+perform bounded network reads, but it cannot adopt a plugin model, present
+browser UI, download media, or persist a save. Plugin-originated logs retain
+the invocation's recorder through asynchronous callbacks, and late callbacks
+cannot attach themselves to a later save.
+
 ## The three pieces
 
 | Piece | Lives in | Does |

@@ -37,6 +37,7 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         "plugins.collection.put", "plugins.collection.get", "plugins.collection.delete",
         "plugins.collection.find", "plugins.collection.count",
         "plugins.log", "plugins.settings.get", "plugins.browserDeferred", "plugins.queueModel",
+        "plugins.recoveryHandoff",
     ]
 
     /// The shared handler dispatches every `plugins.*` string by prefix, to
@@ -92,7 +93,8 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
     /// hand back a `save` route, never a `resolvedmedia`/`read` one meant for
     /// an existing item.
     func testBrowserDeferredAnswersASaveDeepLink() {
-        XCTAssertTrue(lunaVariantSource.contains("://save?url="))
+        XCTAssertTrue(lunaVariantSource.contains("LunaDeepLink.saveLink("))
+        XCTAssertFalse(lunaVariantSource.contains("addingPercentEncoding"))
     }
 
     /// `capability-not-declared` is the grant answer and nothing else: a
@@ -192,5 +194,22 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         XCTAssertTrue(lunaVariantSource.contains("static let handler: SafariPluginMessaging?"))
         XCTAssertTrue(noneVariantSource.contains("static let handler: SafariPluginMessaging?"))
         XCTAssertTrue(noneVariantSource.contains("= nil"))
+    }
+
+    func testRecoveryHandoffIsOnlyOpenedAfterAnExplicitPluginSaveAttempt() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("LunaSafari/Resources/content.js"),
+            encoding: .utf8)
+        let passiveWalk = try XCTUnwrap(source.range(of: "function runPluginWalkForPage()"))
+        let ingestTarget = try XCTUnwrap(source.range(of: "function pluginSaveTargetFor"))
+        let between = String(source[passiveWalk.lowerBound..<ingestTarget.lowerBound])
+
+        XCTAssertFalse(between.contains("persistPluginRecoveryHandoff("))
+        let explicitRecovery = String(source[ingestTarget.lowerBound...])
+        XCTAssertTrue(explicitRecovery.contains(
+            "persistPluginRecoveryHandoff(walk.matched, walk.outcomes)"))
+        XCTAssertTrue(explicitRecovery.contains("digestTruncated: snapshot.digestTruncated"))
+        XCTAssertFalse(explicitRecovery.contains("html: snapshot.html"))
     }
 }

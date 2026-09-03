@@ -123,6 +123,15 @@ enum FailedSaveCardFactory {
                 shareDiagnostics(for: item, from: host, sourceView: host.view)
             })
         }
+        if let url = item.url, let present = FailedSavePluginRecovery.present {
+            children.append(UIAction(
+                title: L10n.string("Plugins_recoveryCreatePlugin"),
+                image: UIImage(systemName: "wand.and.stars")
+            ) { [weak host] _ in
+                guard let host else { return }
+                present(item.id, url, host)
+            })
+        }
         children.append(delete)
         return UIMenu(children: children)
     }
@@ -196,7 +205,13 @@ enum FailedSaveCardFactory {
     private static func makeActions(
         for item: SavedItem, host: UIViewController, onChanged: @escaping () -> Void
     ) -> FailedSaveCardActions {
-        FailedSaveCardActions(
+        let createPlugin: (() -> Void)?
+        if let url = item.url, let present = FailedSavePluginRecovery.present {
+            createPlugin = { present(item.id, url, host) }
+        } else {
+            createPlugin = nil
+        }
+        return FailedSaveCardActions(
             rescue: {
                 // No hint: `RescueRequest.ContentHint.auto`, so the model decides
                 // whether this page is an article, a product, or media.
@@ -220,6 +235,7 @@ enum FailedSaveCardFactory {
                     shareDiagnostics(for: item, from: host, sourceView: sourceView)
                 }
                 : nil,
+            createPlugin: createPlugin,
             delete: {
                 SavesStore.shared.delete(item)
                 onChanged()

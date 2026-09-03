@@ -19,6 +19,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import LunaBundledPlugins
 import LunaModels
 import LunaPluginKit
@@ -103,6 +104,8 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
             complete(context, with: pluginBrowserDeferred(message: message))
         case "plugins.queueModel":
             complete(context, with: pluginQueueModel(message: message))
+        case "plugins.recoveryHandoff":
+            complete(context, with: pluginRecoveryHandoff(message: message))
         default:
             return false
         }
@@ -176,6 +179,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         let list: [[String: Any]] = plugins.map { plugin in
             [
                 "id": plugin.id,
+                "version": plugin.manifest.version.description,
                 "hosts": plugin.manifest.hosts,
                 "any": plugin.manifest.matchesAnyHost,
                 "priority": plugin.manifest.priority,
@@ -263,7 +267,10 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let key = message?["key"] as? String, !key.isEmpty
         else { return Self.badArgument("luna.storage.get needs a key") }
-        guard let json = PluginKVStore.shared.valueJSON(pluginID: id, key: key) else { return [:] }
+        let json: String?
+        do { json = try PluginKVStore.shared.valueJSONChecked(pluginID: id, key: key) }
+        catch { return Self.storageFailure(error) }
+        guard let json else { return [:] }
         return ["value": Self.nativeValue(fromJSON: json) as Any]
     }
 
@@ -284,13 +291,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let json = Self.jsonString(fromNativeValue: value) else {
             return Self.badArgument("luna.storage.set needs a JSON value")
         }
-        guard PluginKVStore.shared.setValueJSON(json, pluginID: id, key: key, now: Date()) else {
-            return [
-                "error": "too-large",
-                "message": "the value is larger than the "
-                    + "\(PluginKVStore.maxValueBytes / 1024) KB one key may hold",
-            ]
-        }
+        do { try PluginKVStore.shared.setValueJSONChecked(
+            json, pluginID: id, key: key, now: Date()) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -299,14 +302,17 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let key = message?["key"] as? String, !key.isEmpty
         else { return Self.badArgument("luna.storage.delete needs a key") }
-        _ = PluginKVStore.shared.setValueJSON(nil, pluginID: id, key: key, now: Date())
+        do { try PluginKVStore.shared.removeValueJSONChecked(pluginID: id, key: key) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
     private func pluginStorageKeys(message: [String: Any]?) -> [String: Any] {
         guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
         else { return Self.notDeclared }
-        return ["keys": PluginKVStore.shared.keys(pluginID: id, prefix: message?["prefix"] as? String)]
+        do { return ["keys": try PluginKVStore.shared.keysChecked(
+            pluginID: id, prefix: message?["prefix"] as? String)] }
+        catch { return Self.storageFailure(error) }
     }
 
     private func pluginCollectionPut(message: [String: Any]?) -> [String: Any] {
@@ -319,13 +325,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.badArgument("a collection document must be JSON") }
         let document = PluginCollectionDocument(
             id: docID, json: json, k1: message?["k1"] as? String, k2: message?["k2"] as? String)
-        guard PluginKVStore.shared.putDocument(document, collection: collection, pluginID: id)
-        else {
-            return [
-                "error": "too-large",
-                "message": "the document is larger than one row may hold",
-            ]
-        }
+        do { try PluginKVStore.shared.putDocumentChecked(
+            document, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -335,8 +337,11 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let collection = message?["collection"] as? String, !collection.isEmpty,
               let docID = message?["docId"] as? String, !docID.isEmpty
         else { return Self.badArgument("a collection get needs a collection and a document id") }
-        guard let document = PluginKVStore.shared.document(id: docID, collection: collection, pluginID: id)
-        else { return [:] }
+        let document: PluginCollectionDocument?
+        do { document = try PluginKVStore.shared.documentChecked(
+            id: docID, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
+        guard let document else { return [:] }
         return ["doc": Self.nativeValue(fromJSON: document.json) as Any]
     }
 
@@ -349,7 +354,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let collection = message?["collection"] as? String, !collection.isEmpty,
               let docID = message?["docId"] as? String, !docID.isEmpty
         else { return Self.badArgument("a collection delete needs a collection and a document id") }
-        _ = PluginKVStore.shared.removeDocument(id: docID, collection: collection, pluginID: id)
+        do { _ = try PluginKVStore.shared.removeDocumentChecked(
+            id: docID, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -358,10 +365,12 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let collection = message?["collection"] as? String, !collection.isEmpty
         else { return Self.badArgument("a collection find needs a collection") }
-        let documents = PluginKVStore.shared.find(
+        let documents: [PluginCollectionDocument]
+        do { documents = try PluginKVStore.shared.findChecked(
             collection: collection, pluginID: id,
             k1: message?["k1"] as? String, k2: message?["k2"] as? String,
-            limit: message?["limit"] as? Int, offset: (message?["offset"] as? Int) ?? 0)
+            limit: message?["limit"] as? Int, offset: (message?["offset"] as? Int) ?? 0) }
+        catch { return Self.storageFailure(error) }
         return ["items": documents.map { ["id": $0.id, "doc": Self.nativeValue(fromJSON: $0.json) as Any] }]
     }
 
@@ -370,11 +379,18 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let collection = message?["collection"] as? String, !collection.isEmpty
         else { return Self.badArgument("a collection count needs a collection") }
-        return [
-            "count": PluginKVStore.shared.count(
+        do { return [
+            "count": try PluginKVStore.shared.countChecked(
                 collection: collection, pluginID: id,
                 k1: message?["k1"] as? String, k2: message?["k2"] as? String),
-        ]
+        ] } catch { return Self.storageFailure(error) }
+    }
+
+    private static func storageFailure(_ error: Error) -> [String: Any] {
+        if let error = error as? PluginStorageError {
+            return ["error": error.code, "message": error.description]
+        }
+        return ["error": "storage-unavailable", "message": error.localizedDescription]
     }
 
     // MARK: - Log / settings / browser / queueModel
@@ -424,8 +440,10 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let urlString = message?["url"] as? String, !urlString.isEmpty
         else { return Self.badArgument("luna.browser.open needs a url") }
-        let encoded = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
-        return ["openLuna": "\(hostScheme)://save?url=\(encoded)"]
+        guard let link = LunaDeepLink.saveLink(scheme: hostScheme, urlString: urlString) else {
+            return Self.badArgument("luna.browser.open could not build the app handoff")
+        }
+        return ["openLuna": link.absoluteString]
     }
 
     /// The page can neither write a save nor start a download: it hands the
@@ -445,6 +463,73 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
             urlString: urlString, modelJSON: modelJSON, pluginID: id, createdAt: Date(),
             returnToSourceUntil: Date().addingTimeInterval(Self.returnHandoffLifetime)))
         return ["deepLink": "\(hostScheme)://pluginmodel?ret=safari"]
+    }
+
+    /// Stores the bounded evidence from a page whose plugin walk exhausted all
+    /// matching plugins. The content script still owns the walk; this adapter
+    /// only turns its ordered outcome records into the shared recovery-case
+    /// contract and returns a short central-Luna route. No URL/evidence is put
+    /// in the deep-link query, where nested `?`, `&`, `+`, fragments, and
+    /// Unicode would be fragile.
+    private func pluginRecoveryHandoff(message: [String: Any]?) -> [String: Any] {
+        guard let urlString = message?["url"] as? String,
+              let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+        else { return Self.badArgument("recovery handoff needs an http(s) url") }
+
+        let page = message?["page"] as? [String: Any]
+        let digest = (page?["digest"] as? String) ?? (page?["html"] as? String)
+        let wasTruncated = page?["digestTruncated"] as? Bool
+            ?? page?["truncated"] as? Bool ?? false
+        let rawOutcomes = message?["outcomes"] as? [[String: Any]] ?? []
+        let attempts = rawOutcomes.prefix(PluginRecoveryCase.maxAttempts).map { outcome in
+            PluginRecoveryAttempt(
+                phase: outcome["phase"] as? String ?? "classify",
+                strategy: outcome["pluginID"] as? String,
+                result: outcome["result"] as? String ?? "observed",
+                message: outcome["message"] as? String)
+        }
+        let matches = recoveryPlugins(from: message?["plugins"] as? [[String: Any]], outcomes: rawOutcomes)
+        var redactions = ["Safari page evidence is untrusted data"]
+        if wasTruncated { redactions.append("Safari page snapshot truncated") }
+        if digest == nil { redactions.append("page evidence unavailable") }
+        let recoveryCase = PluginRecoveryCase(
+            originalURL: urlString, canonicalURL: urlString, source: .manual,
+            appVersion: AppConfig.appVersion, locale: Locale.current.identifier,
+            languages: Locale.preferredLanguages, outcome: "failed",
+            failureReason: "Safari plugin walk exhausted",
+            attempts: attempts, attemptsDropped: max(0, rawOutcomes.count - attempts.count),
+            matchingPlugins: matches,
+            matchingPluginsDropped: max(0, (message?["plugins"] as? [[String: Any]] ?? []).count - matches.count),
+            pageDigest: digest, redactions: redactions, evidenceTruncated: wasTruncated)
+
+        guard PluginRecoveryHandoffStore.shared.record(recoveryCase, validationURL: url),
+              let link = LunaDeepLink.pluginRecoveryLink(caseID: recoveryCase.caseID)
+        else { return ["ok": false, "error": "storage-unavailable"] }
+        return ["ok": true, "deepLink": link.absoluteString, "case": recoveryCase.caseID.uuidString]
+    }
+
+    private func recoveryPlugins(
+        from rawPlugins: [[String: Any]]?, outcomes: [[String: Any]]
+    ) -> [PluginRecoveryPlugin] {
+        var values: [PluginRecoveryPlugin] = []
+        var seen = Set<String>()
+        for raw in rawPlugins ?? [] {
+            guard let id = raw["id"] as? String, seen.insert(id).inserted else { continue }
+            values.append(PluginRecoveryPlugin(
+                id: id, version: raw["version"] as? String,
+                status: raw["status"] as? String ?? "enabled",
+                hooks: raw["hooks"] as? [String] ?? [], outcome: nil))
+        }
+        // Older content scripts did not send a separate plugin inventory. Keep
+        // their outcomes useful by deriving the same ordered inventory here.
+        for raw in outcomes {
+            guard let id = raw["pluginID"] as? String, seen.insert(id).inserted else { continue }
+            values.append(PluginRecoveryPlugin(
+                id: id, version: raw["version"] as? String, status: "enabled",
+                hooks: [], outcome: raw["result"] as? String))
+        }
+        return values
     }
 
     // MARK: - JSON <-> native value

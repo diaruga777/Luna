@@ -78,6 +78,9 @@ public struct FailedSaveCardActions {
     /// and then the share control stays the plain button it always was rather
     /// than growing a one-item menu.
     public var shareDiagnostics: ((UIView) -> Void)?
+    /// Open the provider-neutral plugin workshop for this failure. Nil on the
+    /// standalone app surfaces and when the platform is unavailable.
+    public var createPlugin: (() -> Void)?
     /// Delete the item. Offered only in the terminal state, where it's the only
     /// thing left to do.
     public var delete: () -> Void
@@ -86,11 +89,13 @@ public struct FailedSaveCardActions {
         rescue: @escaping () -> Void,
         share: @escaping (UIView) -> Void,
         shareDiagnostics: ((UIView) -> Void)? = nil,
+        createPlugin: (() -> Void)? = nil,
         delete: @escaping () -> Void
     ) {
         self.rescue = rescue
         self.share = share
         self.shareDiagnostics = shareDiagnostics
+        self.createPlugin = createPlugin
         self.delete = delete
     }
 }
@@ -306,23 +311,30 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// and a menu would be pure ceremony. Internal so a test can assert which
     /// verbs the card is offering without driving UIKit's menu presentation.
     func shareMenu() -> UIMenu? {
-        guard let shareDiagnostics = actions.shareDiagnostics else { return nil }
-        return UIMenu(children: [
-            UIAction(
+        guard actions.shareDiagnostics != nil || actions.createPlugin != nil else { return nil }
+        var children: [UIMenuElement] = [UIAction(
                 title: L10n.string("Common_shareLinkEllipsis"),
                 image: UIImage(systemName: "link")
             ) { [weak self] _ in
                 guard let self else { return }
                 self.actions.share(self.shareButton)
-            },
-            UIAction(
+            }]
+        if let createPlugin = actions.createPlugin {
+            children.append(UIAction(
+                title: L10n.string("Plugins_recoveryCreatePlugin"),
+                image: UIImage(systemName: "wand.and.stars")
+            ) { _ in createPlugin() })
+        }
+        if let shareDiagnostics = actions.shareDiagnostics {
+            children.append(UIAction(
                 title: L10n.string("CardDeck_failedSave_shareDiagnostics"),
                 image: UIImage(systemName: "doc.text.magnifyingglass")
             ) { [weak self] _ in
                 guard let self else { return }
                 shareDiagnostics(self.shareButton)
-            },
-        ])
+            })
+        }
+        return UIMenu(children: children)
     }
 
     private func buildChin() {

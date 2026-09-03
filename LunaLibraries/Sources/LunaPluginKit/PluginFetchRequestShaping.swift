@@ -12,6 +12,9 @@ public enum PluginFileLimits {
     public static let maxBytes = 8 * 1024 * 1024
 }
 
+private let pluginMaxRequestBodyBytes = PluginFileLimits.maxBytes
+private let pluginMaxEncodedBodyBytes = ((pluginMaxRequestBodyBytes + 2) / 3) * 4
+
 /// Turns the request object a plugin wrote into a `PluginFetchRequest`
 /// (`claudedocs/plugins.md` §5.1).
 ///
@@ -33,7 +36,10 @@ public enum PluginFetchRequestShaping {
         files: (any PluginFileReading)?
     ) -> Result<PluginFetchRequest, PluginFetchError> {
         guard let urlString = string(object, "url"),
-              let url = URL(string: urlString), url.scheme != nil
+              let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              url.host != nil
         else {
             return .failure(PluginFetchError(
                 "luna.fetch needs a url: luna.fetch({ url: \"https://…\" })",
@@ -87,6 +93,29 @@ public enum PluginFetchRequestShaping {
         case .failure(let error): return .failure(error)
         case .success(let data): body = data
         }
+        let maxBytes: Int
+        if object["maxBytes"] == nil {
+            maxBytes = WebFetchConstants.maxBytes
+        } else {
+            guard let raw = object["maxBytes"] as? NSNumber,
+                  CFGetTypeID(raw) != CFBooleanGetTypeID() else {
+                return .failure(PluginFetchError(
+                    "maxBytes must be a positive finite number", code: "bad-argument"))
+            }
+            let value = raw.doubleValue
+            guard value.isFinite, value > 0 else {
+                return .failure(PluginFetchError(
+                    "maxBytes must be a positive finite number", code: "bad-argument"))
+            }
+            maxBytes = value >= Double(Int.max)
+                ? WebFetchConstants.maxBytes
+                : min(Int(value), WebFetchConstants.maxBytes)
+        }
+        guard let timeout = timeout(object) else {
+            return .failure(PluginFetchError(
+                "timeout must be a finite number greater than 0 (at most 120 seconds)",
+                code: "bad-argument"))
+        }
         return .success(PluginFetchRequest(
             url: url,
             method: string(object, "method") ?? "GET",
@@ -94,8 +123,8 @@ public enum PluginFetchRequestShaping {
             body: body,
             cookies: cookies,
             redirect: redirect,
-            maxBytes: int(object, "maxBytes") ?? WebFetchConstants.maxBytes,
-            timeout: double(object, "timeout") ?? 20,
+            maxBytes: maxBytes,
+            timeout: timeout,
             responseForm: responseForm,
             invocationID: scratchGeneration,
             pluginID: pluginID))
@@ -110,29 +139,82 @@ public enum PluginFetchRequestShaping {
         _ value: Any?, headers: inout [String: String], files: (any PluginFileReading)?
     ) -> Result<Data?, PluginFetchError> {
         guard let value else { return .success(nil) }
-        if let text = value as? String { return .success(Data(text.utf8)) }
-        guard let object = value as? [String: Any] else { return .success(nil) }
-        if let base64 = object["base64"] as? String {
-            return .success(Data(base64Encoded: base64))
+        if let text = value as? String { return checked(Data(text.utf8)) }
+        guard let object = value as? [String: Any], object.count == 1,
+              let key = object.keys.first else {
+            return .failure(PluginFetchError(
+                "body must be text, {base64}, {form}, {json} or {multipart}",
+                code: "bad-argument"))
         }
-        if let form = object["form"] as? [String: Any] {
+        if key == "base64" {
+            guard let base64 = object[key] as? String else {
+                return .failure(PluginFetchError(
+                    "body.base64 must be valid base64", code: "bad-argument"))
+            }
+            guard base64.utf8.count <= pluginMaxEncodedBodyBytes else {
+                return .failure(PluginFetchError(
+                    "the request body may be at most "
+                        + "\(pluginMaxRequestBodyBytes / (1024 * 1024)) MB",
+                    code: "too-large"))
+            }
+            guard let data = Data(base64Encoded: base64) else {
+                return .failure(PluginFetchError(
+                    "body.base64 must be valid base64", code: "bad-argument"))
+            }
+            return checked(data)
+        }
+        if key == "form" {
+            guard let form = object[key] as? [String: Any],
+                  form.values.allSatisfy({ $0 is String }) else {
+                return .failure(PluginFetchError(
+                    "body.form values must be strings", code: "bad-argument"))
+            }
             setIfAbsent(&headers, "Content-Type", "application/x-www-form-urlencoded")
-            return .success(Data(encodeForm(form).utf8))
+            return checked(Data(encodeForm(form).utf8))
         }
-        if let json = object["json"] {
+        if key == "json", let json = object[key] {
             setIfAbsent(&headers, "Content-Type", "application/json")
-            guard let data = try? JSONSerialization.data(
+            // JSONSerialization can raise an Objective-C exception for values
+            // such as Date. Validate the complete graph before encoding it.
+            guard isJSONValue(json), let data = try? JSONSerialization.data(
                 withJSONObject: json, options: [.fragmentsAllowed])
-            else { return .success(nil) }
-            return .success(data)
+            else {
+                return .failure(PluginFetchError(
+                    "body.json is not valid JSON", code: "bad-argument"))
+            }
+            return checked(data)
         }
-        if let parts = object["multipart"] as? [[String: Any]] {
+        if key == "multipart", let parts = object[key] as? [[String: Any]] {
             let boundary = "luna-\(UUID().uuidString)"
             setIfAbsent(&headers, "Content-Type", "multipart/form-data; boundary=\(boundary)")
             return encodeMultipart(parts, boundary: boundary, files: files)
                 .map { Optional($0) }
         }
-        return .success(nil)
+        return .failure(PluginFetchError(
+            "body has an unsupported shape", code: "bad-argument"))
+    }
+
+    private static func checked(_ data: Data) -> Result<Data?, PluginFetchError> {
+        guard data.count <= pluginMaxRequestBodyBytes else {
+            return .failure(PluginFetchError(
+                "the request body may be at most "
+                    + "\(pluginMaxRequestBodyBytes / (1024 * 1024)) MB",
+                code: "too-large"))
+        }
+        return .success(data)
+    }
+
+    private static func isJSONValue(_ value: Any) -> Bool {
+        switch value {
+        case is NSNull, is String, is NSNumber:
+            return true
+        case let values as [Any]:
+            return values.allSatisfy(isJSONValue)
+        case let values as [String: Any]:
+            return values.values.allSatisfy(isJSONValue)
+        default:
+            return false
+        }
     }
 
     private static func setIfAbsent(
@@ -163,11 +245,29 @@ public enum PluginFetchRequestShaping {
         _ parts: [[String: Any]], boundary: String, files: (any PluginFileReading)?
     ) -> Result<Data, PluginFetchError> {
         var body = Data()
+        guard !parts.isEmpty else {
+            return .failure(PluginFetchError(
+                "body.multipart needs at least one part", code: "bad-argument"))
+        }
         for part in parts {
-            guard let name = part["name"] as? String else { continue }
+            guard let name = part["name"] as? String, !name.isEmpty else {
+                return .failure(PluginFetchError(
+                    "each multipart part needs a name", code: "bad-argument"))
+            }
+            guard part["filename"] == nil || part["filename"] is String,
+                  part["mime"] == nil || part["mime"] is String else {
+                return .failure(PluginFetchError(
+                    "multipart filename and mime must be strings", code: "bad-argument"))
+            }
             var content: Data?
             var filename = part["filename"] as? String
             var mime = part["mime"] as? String
+            let contentKeys = ["file", "text", "base64"].filter { part[$0] != nil }
+            guard contentKeys.count == 1 else {
+                return .failure(PluginFetchError(
+                    "each multipart part needs exactly one file, text or base64 value",
+                    code: "bad-argument"))
+            }
             if let handle = part["file"] as? [String: Any] {
                 switch fileBytes(handle, files: files) {
                 case .failure(let error): return .failure(error)
@@ -179,7 +279,21 @@ public enum PluginFetchRequestShaping {
             } else if let text = part["text"] as? String {
                 content = Data(text.utf8)
             } else if let base64 = part["base64"] as? String {
-                content = Data(base64Encoded: base64)
+                guard base64.utf8.count <= pluginMaxEncodedBodyBytes else {
+                    return .failure(PluginFetchError(
+                        "the multipart request body may be at most "
+                            + "\(pluginMaxRequestBodyBytes / (1024 * 1024)) MB",
+                        code: "too-large"))
+                }
+                guard let decoded = Data(base64Encoded: base64) else {
+                    return .failure(PluginFetchError(
+                        "multipart base64 must be valid base64", code: "bad-argument"))
+                }
+                content = decoded
+            } else {
+                return .failure(PluginFetchError(
+                    "multipart file and text values must have the right shape",
+                    code: "bad-argument"))
             }
             var disposition = "form-data; name=\"\(headerParameter(name))\""
             if let filename {
@@ -193,8 +307,20 @@ public enum PluginFetchRequestShaping {
             body.append(Data("\r\n".utf8))
             if let content { body.append(content) }
             body.append(Data("\r\n".utf8))
+            guard body.count <= pluginMaxRequestBodyBytes else {
+                return .failure(PluginFetchError(
+                    "the multipart request body may be at most "
+                        + "\(pluginMaxRequestBodyBytes / (1024 * 1024)) MB",
+                    code: "too-large"))
+            }
         }
         body.append(Data("--\(boundary)--\r\n".utf8))
+        guard body.count <= pluginMaxRequestBodyBytes else {
+            return .failure(PluginFetchError(
+                "the multipart request body may be at most "
+                    + "\(pluginMaxRequestBodyBytes / (1024 * 1024)) MB",
+                code: "too-large"))
+        }
         return .success(body)
     }
 
@@ -263,8 +389,13 @@ public enum PluginFetchRequestShaping {
         (object[key] as? NSNumber)?.intValue
     }
 
-    private static func double(_ object: [String: Any], _ key: String) -> Double? {
-        (object[key] as? NSNumber)?.doubleValue
+    private static func timeout(_ object: [String: Any]) -> TimeInterval? {
+        guard let raw = object["timeout"] else { return 20 }
+        guard let number = raw as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let value = number.doubleValue
+        guard value.isFinite, value > 0 else { return nil }
+        return min(value, 120)
     }
 
     private static func stringDictionary(

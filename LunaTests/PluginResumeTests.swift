@@ -251,9 +251,11 @@ final class PluginResumeTests: XCTestCase {
 
     func testTheSaveLinkCarriesThePageAndOnlyThePage() {
         let link = LunaDeepLink.saveLink(
-            scheme: "luna", urlString: "https://gate.test/a?ref=1")
+            scheme: "luna",
+            urlString: "https://gate.test/über?a=1&next=https://x.test/?q=a+b#part")
         XCTAssertEqual(
-            link.flatMap(LunaDeepLink.saveURL(from:)), "https://gate.test/a?ref=1")
+            link.flatMap(LunaDeepLink.saveURL(from:)),
+            "https://gate.test/über?a=1&next=https://x.test/?q=a+b#part")
     }
 
     func testAnythingThatIsNotASaveLinkIsNotOne() {

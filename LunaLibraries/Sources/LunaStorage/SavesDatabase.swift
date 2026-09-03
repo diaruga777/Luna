@@ -95,7 +95,7 @@ final class SavesDatabase {
     /// `SQLITE_OPEN_FILEPROTECTION_COMPLETEUNTILFIRSTUSERAUTHENTICATION` from the
     /// platform's `sqlite3.h`, spelled out because the macro is not imported into
     /// Swift.
-    private static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0040_0000
+    static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0030_0000
 
     // MARK: - Configuration
 

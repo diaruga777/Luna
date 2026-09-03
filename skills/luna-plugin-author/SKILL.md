@@ -129,14 +129,13 @@ origin, range`.
 ```ts
 luna.parseURL(url, base?) → {href,protocol,host,hostname,port,pathname,search,hash,searchParams}
 luna.log(message, data?); luna.bytes.{fromBase64,toBase64,utf8Encode,utf8Decode};
-luna.env.{context,api,pluginId,version,locale}; class luna.LunaError { code; message }
+luna.env.{context,api,pluginId,version,locale,languages}; class luna.LunaError { code; message }
 
 luna.fetch(req: string | {url, method?, headers?, userAgent?, body?, cookies?, redirect?,
   maxBytes?, timeout?, as?}) → Promise<{ok,status,url,redirected,headers,text?,base64?,file?,truncated,bytes}>
   // userAgent names: "safari" "googlebot" "googlebot-mobile" "bingbot" "facebookbot", or a literal string.
-  // body: string | {base64} | {form} | {json} | {multipart: [{name,filename?,mime?,text?,base64?}]}
-  //   — NOTE: multipart has NO `file` field; read a FileHandle to base64 first.
-  // cookies: "shared"(default) | "ephemeral" | "none" | "browser" (needs a prior luna.browser.open).
+  // body: string | {base64} | {form} | {json} | {multipart: [{name,filename?,mime?,text?,base64?,file?}]}
+  // cookies: "shared"(default) | "ephemeral" | "none".
 
 luna.html.parse(html, baseURL?) → HTMLDocument   // querySelector(All), textContent, innerHTML/outerHTML,
   //   children, parentElement, tagName, getAttribute/hasAttribute/attributes, matches, closest,
@@ -175,7 +174,8 @@ process can't serve rejects every call with code `unavailable-here`.
    namespace throws if called from `classify`.
 3. **`ingest` returning `null` is a decline, not an error** — use it freely
    whenever the page turns out to have nothing for you.
-4. **Multipart bodies cannot carry a `FileHandle`.** Base64-encode it first.
+4. **Multipart `file` parts carry a `FileHandle` from `luna.files`.** Luna
+   enforces the 8 MB part limit; use base64 only when you actually need bytes.
 5. **A thrown error is NOT terminal by default.** Only `throw new
    luna.LunaError("hard", "…")` (for `export`) or an explicit `hard: true`
    result stops retries. Everything else is retried automatically for a
@@ -205,11 +205,14 @@ process can't serve rejects every call with code `unavailable-here`.
 - [ ] `export.input`/`export.kinds` is a pair Luna can actually build (see
       the table in `docs/plugins/README.md` §7) — an unsupported pair
       refuses IMPORT, not just at run time.
-- [ ] Ran `node tools/plugin-sim/run.mjs <file> <url> [--fixture dir]` and
-      the `classify`/`ingest` output looks right.
-- [ ] For an export plugin: verified `export` with a small standalone
-      `bridge.mjs` harness (see `docs/plugins/README.md` §9) since `run.mjs`
-      never calls `export`.
+- [ ] Ran `node tools/plugin-sim/run.mjs validate <file>` and fixed every
+      reported error.
+- [ ] Ran `node tools/plugin-sim/run.mjs test <file> <url> [--fixture dir]`
+      and the JSON `classify`/`ingest` result looks right. Use a
+      `.response.json` fixture to exercise 401/403/429, redirects, or a
+      transport error without sending real requests.
+- [ ] For an export plugin: ran the same command with `--hook export`, or
+      used the custom `bridge.mjs` harness described in `docs/plugins/README.md` §9.
 - [ ] Ran `node tools/plugin-sim/spec.mjs` if the plugin uses `luna.html`
       in any selector-heavy way.
 - [ ] No infinite loops; every `await` has a real timeout underneath it.

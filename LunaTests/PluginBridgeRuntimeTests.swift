@@ -369,6 +369,47 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertNotNil(scratch.fileURL(for: neighbour), "one plugin's reap leaves another's")
     }
 
+    func testScratchQuotaRejectsAtomicallyAndResetsAfterReaping() throws {
+        let scratch = PluginScratchStore(
+            rootURL: runner.containerURL.appendingPathComponent("scratch-quota"),
+            quotas: PluginScratchQuotas(maxFiles: 2, maxBytes: 5))
+        let generation = scratch.openScratchGeneration(pluginID: "p")
+        _ = try scratch.writeFile(
+            Data("abc".utf8), suggestedName: "a.txt", mime: nil,
+            pluginID: "p", generation: generation)
+        XCTAssertThrowsError(try scratch.writeFile(
+            Data("def".utf8), suggestedName: "b.txt", mime: nil,
+            pluginID: "p", generation: generation)) {
+                XCTAssertEqual($0 as? PluginScratchError, .quotaExceeded)
+            }
+        XCTAssertEqual(
+            (try? FileManager.default.contentsOfDirectory(
+                at: scratch.directoryURL(pluginID: "p", generation: generation),
+                includingPropertiesForKeys: nil).count),
+            1, "a rejected write must not leave a partial file")
+
+        scratch.closeScratchGeneration(pluginID: "p")
+        let replacement = scratch.openScratchGeneration(pluginID: "p")
+        XCTAssertNoThrow(try scratch.writeFile(
+            Data("12345".utf8), suggestedName: "full.txt", mime: nil,
+            pluginID: "p", generation: replacement))
+    }
+
+    func testUnavailableScratchNeverFallsBackToTemporaryWrites() throws {
+        let scratch = PluginScratchStore(
+            rootURL: runner.containerURL.appendingPathComponent("unavailable-scratch"),
+            isAvailable: false)
+
+        XCTAssertThrowsError(try scratch.writeFile(
+            Data("no".utf8), suggestedName: "no.txt", mime: nil,
+            pluginID: "p", generation: PluginScratchStore.idleGeneration)) {
+                XCTAssertEqual($0 as? PluginScratchError, .storageUnavailable)
+            }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            scratch.directoryURL(
+                pluginID: "p", generation: PluginScratchStore.idleGeneration).path))
+    }
+
     // MARK: - secrets
 
     func testASecretRoundTripsThroughTheKeychain() async throws {
@@ -417,5 +458,27 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertTrue(
             PluginSecretsStore.service(pluginID: "a.b").hasSuffix("a.b"),
             "the service names the plugin, so deleting one plugin's secrets is one prefix")
+    }
+
+    func testDeletingAnInstalledPluginRemovesAllOfItsSecrets() throws {
+        let pluginID = "app.luna.deleted.\(UUID().uuidString.lowercased().prefix(8))"
+        let secrets = PluginSecretsStore()
+        secrets.setSecret("token", pluginID: pluginID, key: "token")
+        try XCTSkipIf(
+            secrets.secret(pluginID: pluginID, key: "token") != "token",
+            "the test host cannot reach the keychain")
+        defer { secrets.removeAll(pluginID: pluginID) }
+
+        try runner.install(plugin(id: pluginID, body: "return null;"))
+        let catalog = PluginCatalog(
+            store: runner.store,
+            bundled: BundledPluginCatalog(bundle: nil, store: runner.store),
+            runtime: runner.runtime,
+            kv: runner.kv,
+            secrets: secrets)
+
+        try catalog.delete(pluginID: pluginID)
+
+        XCTAssertNil(secrets.secret(pluginID: pluginID, key: "token"))
     }
 }

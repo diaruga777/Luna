@@ -70,6 +70,11 @@ final class PluginManifestParserTests: XCTestCase {
         XCTAssertEqual(failure("/* just a comment\n{}\n*/\n"), .noHeader)
     }
 
+    func testMarkerMustBeExactRatherThanAPluginPrefix() {
+        let text = "/* luna-plugin-evil\n\(minimalHeader)\n*/\nluna.register({});"
+        XCTAssertEqual(failure(text), .noHeader)
+    }
+
     func testLeadingWhitespaceAndBlankLinesStillFindTheHeader() {
         let text = "\n\n   " + source(minimalHeader)
         XCTAssertEqual(manifest(text)?.id, "app.luna.test")

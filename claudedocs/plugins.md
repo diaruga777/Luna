@@ -26,7 +26,30 @@ once for the "why"; read this for the "what, exactly."
 The three sibling apps (Reader, Downloader, Price Tracker) and their
 extensions link none of the plugin modules and run no plugin code at all.
 
-### 1.2 Module map (`LunaLibraries/`)
+### 1.2 Generated-plugin recovery
+
+Central Luna supports a provider-neutral authoring loop that requires no API
+key or paid LLM account. A user can choose **Create Plugin…** on a failed-save
+card, or **Create for Website…** in Settings -> Plugins. Luna builds a bounded,
+credential-redacted prompt containing the URL, matching plugins and the ordered
+attempt trace. The user copies or shares that text into any chat app, pastes the
+returned JavaScript into Luna, and taps **Validate**.
+
+Validation parses the manifest, allows only the conservative `fetch` and `html`
+capabilities, activates the draft in a temporary plugin store, and runs its
+`classify` and `ingest` hooks against the target URL. It never writes the draft
+to the installed-plugin tree, saves database, Keychain or user files. A passing
+draft enters the ordinary preview, consent and transactional import path. A
+failure produces a deterministic **Copy Fix Prompt** for another blind
+copy/paste iteration. JavaScriptCore cannot forcibly terminate arbitrary
+top-level JavaScript; activation therefore preflights on a disposable off-main
+runtime and abandons a timed-out sandbox rather than reusing it.
+
+Raw **Share Diagnostics…** remains a separate support artifact. It is not the
+LLM prompt and may contain more operational context; the workshop always shows
+a privacy warning before copying or sharing its redacted prompt.
+
+### 1.3 Module map (`LunaLibraries/`)
 
 | Target | Depends on | Owns |
 | --- | --- | --- |
@@ -47,7 +70,7 @@ plugin-tier target:
 - `PluginModelResolution.swift` — `PluginModel.resolvingRelativeURLs(against:)`.
 - `PluginMediaSeams`, `PluginPriceSeam.swift`, `PluginExportSeam.swift`, `PluginResumeSeam.swift` — the four bottom-of-stack witness slots a higher tier that cannot be reached from a kind pack's app target still needs to fill (see §7 below).
 
-### 1.3 The composition rule
+### 1.4 The composition rule
 
 `PluginPlatformComposition.install()` (`LunaLibraries/Sources/LunaPluginIngest/PluginPlatformComposition.swift`)
 is the single root call for the ingest/runtime half of the platform. It is

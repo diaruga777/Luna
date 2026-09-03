@@ -19,6 +19,19 @@ import SQLite3
 /// reaches the file before any `SavesStore` still has somewhere to write. The
 /// statements match `SavesSchema` exactly; `PluginSchemaParityTests` compares
 /// the two against a real database.
+enum PluginDatabaseError: Error, Equatable, CustomStringConvertible {
+    case unavailable(String)
+    case sqlite(code: Int32, message: String, sql: String?)
+
+    var description: String {
+        switch self {
+        case .unavailable(let detail): return "storage unavailable: \(detail)"
+        case .sqlite(let code, let message, let sql):
+            return "sqlite(\(code)): \(message)\(sql.map { " — \($0)" } ?? "")"
+        }
+    }
+}
+
 final class PluginDatabase {
 
     static let tableStatements = [
@@ -66,23 +79,35 @@ final class PluginDatabase {
     private var handle: OpaquePointer?
     private let queue = DispatchQueue(label: "com.hsanabria.luna.pluginDatabase")
 
-    init?(fileURL: URL) {
-        try? FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    init(fileURL: URL) throws {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            throw PluginDatabaseError.unavailable(error.localizedDescription)
+        }
         var opened: OpaquePointer?
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
             | Self.openFileProtectionCompleteUntilFirstUserAuthentication
-        guard sqlite3_open_v2(fileURL.path, &opened, flags, nil) == SQLITE_OK, let opened else {
+        let status = sqlite3_open_v2(fileURL.path, &opened, flags, nil)
+        guard status == SQLITE_OK, let opened else {
+            let message = opened.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed"
             if let opened { sqlite3_close_v2(opened) }
-            return nil
+            throw PluginDatabaseError.sqlite(code: status, message: message, sql: nil)
         }
         handle = opened
-        queue.sync {
-            sqlite3_busy_timeout(opened, 5000)
-            exec("PRAGMA journal_mode = WAL")
-            exec("PRAGMA synchronous = NORMAL")
-            exec("PRAGMA foreign_keys = ON")
-            for statement in Self.tableStatements { exec(statement) }
+        do {
+            try queue.sync {
+                sqlite3_busy_timeout(opened, 5000)
+                try execChecked("PRAGMA journal_mode = WAL")
+                try execChecked("PRAGMA synchronous = NORMAL")
+                try execChecked("PRAGMA foreign_keys = ON")
+                for statement in Self.tableStatements { try execChecked(statement) }
+            }
+        } catch {
+            sqlite3_close_v2(opened)
+            handle = nil
+            throw error
         }
     }
 
@@ -93,42 +118,83 @@ final class PluginDatabase {
     /// `SQLITE_OPEN_FILEPROTECTION_COMPLETEUNTILFIRSTUSERAUTHENTICATION`, spelled
     /// out because the macro is not imported into Swift. It is what lets the
     /// extensions write while the device is locked.
-    private static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0040_0000
+    static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0030_0000
 
     // MARK: - Running statements
 
     /// Binds `parameters` in order and steps the statement to completion.
     @discardableResult
     func run(_ sql: String, _ parameters: [PluginSQLValue] = []) -> Bool {
-        queue.sync {
-            guard let statement = prepare(sql, parameters) else { return false }
-            defer { sqlite3_finalize(statement) }
-            let status = sqlite3_step(statement)
-            return status == SQLITE_DONE || status == SQLITE_ROW
+        (try? runChecked(sql, parameters)) ?? false
+    }
+
+    @discardableResult
+    func runChecked(_ sql: String, _ parameters: [PluginSQLValue] = []) throws -> Bool {
+        try queue.sync { try runLocked(sql, parameters) }
+    }
+
+    fileprivate func runLocked(_ sql: String, _ parameters: [PluginSQLValue]) throws -> Bool {
+        guard let statement = try prepareChecked(sql, parameters) else { return false }
+        defer { sqlite3_finalize(statement) }
+        let status = sqlite3_step(statement)
+        guard status == SQLITE_DONE || status == SQLITE_ROW else {
+            throw sqliteError(status, sql: sql)
+        }
+        return true
+    }
+
+    /// Executes several reads and writes under one SQLite transaction. Quota
+    /// checks use this boundary so two processes cannot each pass a check and
+    /// then exceed the same plugin's aggregate limit.
+    func transaction<T>(_ body: (PluginDatabaseTransaction) throws -> T) throws -> T {
+        try queue.sync {
+            try execChecked("BEGIN IMMEDIATE")
+            do {
+                let result = try body(PluginDatabaseTransaction(database: self))
+                try execChecked("COMMIT")
+                return result
+            } catch {
+                _ = try? execChecked("ROLLBACK")
+                throw error
+            }
         }
     }
 
-    /// Steps the statement and hands each row to `read`.
     func query<T>(
         _ sql: String, _ parameters: [PluginSQLValue] = [],
         read: (OpaquePointer) -> T
     ) -> [T] {
-        queue.sync {
-            guard let statement = prepare(sql, parameters) else { return [] }
-            defer { sqlite3_finalize(statement) }
-            var rows: [T] = []
-            while sqlite3_step(statement) == SQLITE_ROW {
-                rows.append(read(statement))
-            }
-            return rows
+        (try? queryChecked(sql, parameters, read: read)) ?? []
+    }
+
+    func queryChecked<T>(
+        _ sql: String, _ parameters: [PluginSQLValue] = [],
+        read: (OpaquePointer) -> T
+    ) throws -> [T] {
+        try queue.sync { try queryLocked(sql, parameters, read: read) }
+    }
+
+    fileprivate func queryLocked<T>(
+        _ sql: String, _ parameters: [PluginSQLValue] = [],
+        read: (OpaquePointer) -> T
+    ) throws -> [T] {
+        guard let statement = try prepareChecked(sql, parameters) else { return [] }
+        defer { sqlite3_finalize(statement) }
+        var rows: [T] = []
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_ROW { rows.append(read(statement)); continue }
+            if status == SQLITE_DONE { return rows }
+            throw sqliteError(status, sql: sql)
         }
     }
 
-    private func prepare(_ sql: String, _ parameters: [PluginSQLValue]) -> OpaquePointer? {
+    private func prepareChecked(_ sql: String, _ parameters: [PluginSQLValue]) throws -> OpaquePointer? {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK,
-              let statement
-        else { return nil }
+        let status = sqlite3_prepare_v2(handle, sql, -1, &statement, nil)
+        guard status == SQLITE_OK, let statement else {
+            throw sqliteError(status, sql: sql)
+        }
         for (offset, value) in parameters.enumerated() {
             let index = Int32(offset + 1)
             switch value {
@@ -150,13 +216,35 @@ final class PluginDatabase {
     private static let transient = unsafeBitCast(
         -1, to: sqlite3_destructor_type.self)
 
-    private func exec(_ sql: String) {
-        sqlite3_exec(handle, sql, nil, nil, nil)
+    private func execChecked(_ sql: String) throws {
+        let status = sqlite3_exec(handle, sql, nil, nil, nil)
+        guard status == SQLITE_OK else { throw sqliteError(status, sql: sql) }
+    }
+
+    private func sqliteError(_ status: Int32, sql: String?) -> PluginDatabaseError {
+        PluginDatabaseError.sqlite(
+            code: status, message: handle.map { String(cString: sqlite3_errmsg($0)) } ?? "sqlite error",
+            sql: sql)
     }
 
     /// The `saves.sqlite` every Luna process shares.
     static func sharedFileURL(fileManager: FileManager = .default) -> URL? {
         AppConfig.sharedContainerURL(fileManager)?.appendingPathComponent("saves.sqlite")
+    }
+}
+
+/// A transaction-scoped view used by stores that need an atomic read/check/write.
+final class PluginDatabaseTransaction {
+    fileprivate let database: PluginDatabase
+    fileprivate init(database: PluginDatabase) { self.database = database }
+
+    func query<T>(
+        _ sql: String, _ parameters: [PluginSQLValue] = [], read: (OpaquePointer) -> T
+    ) throws -> [T] { try database.queryLocked(sql, parameters, read: read) }
+
+    @discardableResult
+    func run(_ sql: String, _ parameters: [PluginSQLValue] = []) throws -> Bool {
+        try database.runLocked(sql, parameters)
     }
 }
 

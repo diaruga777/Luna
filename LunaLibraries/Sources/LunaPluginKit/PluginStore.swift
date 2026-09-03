@@ -14,6 +14,7 @@ public enum PluginStoreError: Error, Equatable {
     /// A bundled plugin can be switched off, never deleted.
     case bundledCannotBeDeleted(id: String)
     case fileSystem(detail: String)
+    case storageUnavailable
 
     public var message: String {
         switch self {
@@ -22,6 +23,8 @@ public enum PluginStoreError: Error, Equatable {
         case .bundledCannotBeDeleted(let id):
             return L10n.string("PluginImportError_bundledCannotBeDeleted", id)
         case .fileSystem(let detail): return L10n.string("PluginImportError_writeFailed", detail)
+        case .storageUnavailable:
+            return L10n.string("PluginImportError_writeFailed", "the App Group container is unavailable")
         }
     }
 }
@@ -99,11 +102,25 @@ public final class PluginStore {
 
     /// `<AppGroup>/Plugins/`, created on first use.
     public var rootURL: URL {
-        let root = overrideRootURL
-            ?? (AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory)
-                .appendingPathComponent("Plugins", isDirectory: true)
-        try? fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
+        resolvedRootURL ?? fileManager.temporaryDirectory
+            .appendingPathComponent(".luna-plugin-storage-unavailable", isDirectory: true)
+    }
+
+    /// Production never writes to a temporary directory when App Group
+    /// resolution fails. Explicit roots remain available for tests and staged
+    /// runs, where a temporary root is an intentional dependency injection.
+    public var storageAvailable: Bool {
+        guard let root = resolvedRootURL else { return false }
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            return true
+        } catch { return false }
+    }
+
+    private var resolvedRootURL: URL? {
+        if let overrideRootURL { return overrideRootURL }
+        return AppConfig.sharedContainerURL(fileManager)?.appendingPathComponent(
+            "Plugins", isDirectory: true)
     }
 
     public var userRootURL: URL { rootURL.appendingPathComponent("user", isDirectory: true) }
@@ -121,6 +138,7 @@ public final class PluginStore {
     }
 
     public func installedIDs() -> [String] {
+        guard storageAvailable else { return [] }
         let contents = (try? fileManager.contentsOfDirectory(
             at: userRootURL, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         return contents
@@ -131,6 +149,7 @@ public final class PluginStore {
 
     /// The versions of one imported plugin, oldest first.
     public func versions(of pluginID: String) -> [PluginVersion] {
+        guard storageAvailable else { return [] }
         let folder = userRootURL.appendingPathComponent(pluginID, isDirectory: true)
         let contents = (try? fileManager.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: nil)) ?? []
@@ -170,40 +189,79 @@ public final class PluginStore {
     public func install(
         source: String, manifest: PluginManifest, origin: PluginImportOrigin, now: Date = Date()
     ) throws -> InstalledPlugin {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         let destination = fileURL(id: manifest.id, version: manifest.version)
             .deletingLastPathComponent()
         let idFolder = destination.deletingLastPathComponent()
         let scratch = rootURL.appendingPathComponent(
             ".installing-\(UUID().uuidString)", isDirectory: true)
+        let backup = idFolder.appendingPathComponent(
+            ".backup-\(UUID().uuidString)", isDirectory: true)
+        let hadDestination = fileManager.fileExists(atPath: destination.path)
+        let oldStateURL = stateURL(manifest.id, isBundled: false)
+        let oldStateData = try? Data(contentsOf: oldStateURL)
         do {
             try fileManager.createDirectory(at: scratch, withIntermediateDirectories: true)
             try Data(source.utf8).write(
                 to: scratch.appendingPathComponent("plugin.js"), options: .atomic)
             try fileManager.createDirectory(at: idFolder, withIntermediateDirectories: true)
             let replaced = versions(of: manifest.id).filter { $0 != manifest.version }
-            try? fileManager.removeItem(at: destination)
+            if hadDestination { try fileManager.moveItem(at: destination, to: backup) }
             try fileManager.moveItem(at: scratch, to: destination)
+            var state = self.state(manifest.id)
+            state.isEnabled = true
+            state.installedAt = now
+            state.origin = origin
+            state.consentedCapabilities = manifest.capabilities
+            try writeChecked(state, id: manifest.id, isBundled: false)
+            if hadDestination { try fileManager.removeItem(at: backup) }
             for stale in replaced {
                 try? fileManager.removeItem(
                     at: idFolder.appendingPathComponent(stale.description, isDirectory: true))
             }
         } catch {
             try? fileManager.removeItem(at: scratch)
+            try? fileManager.removeItem(at: destination)
+            if hadDestination, fileManager.fileExists(atPath: backup.path) {
+                try? fileManager.moveItem(at: backup, to: destination)
+            }
+            if let oldStateData {
+                try? oldStateData.write(to: oldStateURL, options: .atomic)
+            } else {
+                try? fileManager.removeItem(at: oldStateURL)
+            }
             throw PluginStoreError.fileSystem(detail: error.localizedDescription)
         }
-        var state = self.state(manifest.id)
-        state.isEnabled = true
-        state.installedAt = now
-        state.origin = origin
-        state.consentedCapabilities = manifest.capabilities
-        write(state, id: manifest.id, isBundled: false)
+        let state = self.state(manifest.id)
         return InstalledPlugin(
             manifest: manifest, sourceURL: fileURL(id: manifest.id, version: manifest.version),
             state: state, isBundled: false)
     }
 
+    /// Restores a previously installed version after activation rejected an
+    /// update. This uses the same staged replacement path as a normal install,
+    /// then restores the exact prior state rather than resetting consent.
+    func restore(
+        _ previous: InstalledPlugin?, source: String?, pluginID: String
+    ) throws {
+        if let previous {
+            guard let source else {
+                throw PluginStoreError.fileSystem(detail: "the previous plugin source is gone")
+            }
+            _ = try install(
+                source: source, manifest: previous.manifest,
+                origin: previous.state.origin ?? .paste,
+                now: previous.state.installedAt ?? Date())
+            try writeChecked(previous.state, id: pluginID, isBundled: false)
+        } else if fileManager.fileExists(
+            atPath: userRootURL.appendingPathComponent(pluginID, isDirectory: true).path) {
+            try delete(pluginID: pluginID)
+        }
+    }
+
     /// Removes an imported plugin and everything it stored on disk.
     public func delete(pluginID: String) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         let folder = userRootURL.appendingPathComponent(pluginID, isDirectory: true)
         guard fileManager.fileExists(atPath: folder.path) else {
             throw PluginStoreError.notInstalled(id: pluginID)
@@ -220,6 +278,7 @@ public final class PluginStore {
     /// A bundled plugin's state lives in its own file, because the plugin has no
     /// folder in the container at all.
     public func state(_ pluginID: String, isBundled: Bool = false) -> PluginState {
+        guard storageAvailable else { return PluginState() }
         let url = stateURL(pluginID, isBundled: isBundled)
         guard let data = try? Data(contentsOf: url),
               let state = try? JSONDecoder().decode(PluginState.self, from: data)
@@ -228,9 +287,16 @@ public final class PluginStore {
     }
 
     public func setEnabled(_ enabled: Bool, pluginID: String, isBundled: Bool) {
+        try? setEnabledChecked(enabled, pluginID: pluginID, isBundled: isBundled)
+    }
+
+    public func setEnabledChecked(
+        _ enabled: Bool, pluginID: String, isBundled: Bool
+    ) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         var state = self.state(pluginID, isBundled: isBundled)
         state.isEnabled = enabled
-        write(state, id: pluginID, isBundled: isBundled)
+        try writeChecked(state, id: pluginID, isBundled: isBundled)
     }
 
     /// Records what the user agreed to, so an update that adds a capability can
@@ -238,19 +304,30 @@ public final class PluginStore {
     public func recordConsent(
         _ capabilities: [PluginCapabilityName], pluginID: String, isBundled: Bool
     ) {
+        try? recordConsentChecked(capabilities, pluginID: pluginID, isBundled: isBundled)
+    }
+
+    public func recordConsentChecked(
+        _ capabilities: [PluginCapabilityName], pluginID: String, isBundled: Bool
+    ) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         var state = self.state(pluginID, isBundled: isBundled)
         state.consentedCapabilities = capabilities
-        write(state, id: pluginID, isBundled: isBundled)
+        try writeChecked(state, id: pluginID, isBundled: isBundled)
     }
 
     public func write(_ state: PluginState, id: String, isBundled: Bool) {
+        try? writeChecked(state, id: id, isBundled: isBundled)
+    }
+
+    private func writeChecked(_ state: PluginState, id: String, isBundled: Bool) throws {
         let url = stateURL(id, isBundled: isBundled)
-        try? fileManager.createDirectory(
+        try fileManager.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(state) else { return }
-        try? data.write(to: url, options: .atomic)
+        let data = try encoder.encode(state)
+        try data.write(to: url, options: .atomic)
     }
 
     private func stateURL(_ pluginID: String, isBundled: Bool) -> URL {

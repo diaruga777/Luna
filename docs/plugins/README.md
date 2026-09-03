@@ -316,9 +316,9 @@ Settings → Plugins → *your plugin*, one field per entry:
 
 Each entry is `{ key, type, label, help?, placeholder?, options?, default?,
 required?, secret? }`. `key` is ASCII letters, digits and `_` only, and may
-never start with `_` — that prefix is reserved for keys Luna itself writes
-(`_status`, the dot a destination plugin's own share row shows). `type` is
-one of:
+never start with `_` — that prefix is reserved for keys Luna itself writes.
+`_status` is the special key whose value drives the dot a destination plugin's
+own share row shows. `type` is one of:
 
 | `type` | What the detail screen renders |
 | --- | --- |
@@ -520,11 +520,12 @@ full host+path with `/`/`?`/`&`/`=` turned into `_`), then iterate offline.
 Drop `--fixture` to hit the real network instead. Add `--hook classify` or
 `--hook ingest` to run just one hook.
 
-`run.mjs` only exercises `classify` and `ingest` — it never calls `export`,
-`onBluetooth`, `onAction`, or `onSettingsChanged`. To check an export
-plugin's logic before importing it into Luna, write a short standalone
-script against `tools/plugin-sim/bridge.mjs`'s `createBridge`, the way
-`export-webhook.js` was verified for this guide:
+`run.mjs`'s normal convenience form exercises `classify` and `ingest`; the
+`test` form also accepts `--hook export` and returns a JSON pass/fail report.
+It does not call `onBluetooth`, `onAction`, or `onSettingsChanged`. To check
+an export plugin with custom input before importing it into Luna, write a short
+standalone script against `tools/plugin-sim/bridge.mjs`'s `createBridge`, the
+way `export-webhook.js` was verified for this guide:
 
 ```js
 import { createBridge } from "./tools/plugin-sim/bridge.mjs";
@@ -562,7 +563,42 @@ Reference the typings from your editor for autocomplete and type-checking:
 /// <reference path="../../tools/plugin-sim/luna-plugin.d.ts" />
 ```
 
-## 10. Importing into Luna
+## 10. Creating a plugin from a failed website
+
+This path is designed for people who do not write code. In central Luna,
+choose **Create Plugin…** on a failed-save card, or open Settings → Plugins and
+choose **Create for Website…** for any `http`/`https` URL. Luna gathers the
+bounded attempt trace, removes known credentials, and creates a self-contained
+prompt. Copy or share that prompt into any free LLM chat; no provider account is
+connected to Luna and no API key is required.
+
+Paste the chat's complete JavaScript answer back into the workshop and tap
+**Validate**. Luna accepts a plain source file or one outer `js` code fence,
+then checks the manifest, host match, capabilities, registration, `classify`
+claim and `ingest` Model in a temporary store. A passing draft can proceed to
+the normal consent/import screen. For a failing draft, **Copy Fix Prompt**
+packages the exact source and structured failures for the next chat turn. Keep
+iterating until validation passes.
+
+The recovery prompt is credential-redacted, but page routes and diagnostics can
+still be private. Luna shows a privacy reminder before copying or sharing. The
+separate **Share Diagnostics…** action is raw developer support data and should
+not be confused with the recovery prompt.
+
+Draft validation permits `luna.fetch` only to the recovery website's host and
+fails a draft that attempts another host, even if its JavaScript catches the
+denial. This keeps pasted, not-yet-consented code from turning the private test
+URL or captured evidence into an outbound payload.
+
+Developers can run the same shape checks without the app using the bounded
+child-process harness:
+
+```sh
+node tools/plugin-sim/run.mjs validate ./my-plugin.js
+node tools/plugin-sim/run.mjs test ./my-plugin.js https://example.com/article --fixture ./fixtures
+```
+
+## 11. Importing into Luna
 
 Open Luna → Settings → Plugins → **Add** → either **Import from Files…**
 (pick a `.js` file) or **Paste source** (paste the whole file into a text
@@ -588,7 +624,7 @@ stop the stuck call itself. Write hooks that always terminate: bound your
 loops, and let `luna.fetch`'s own `timeout` option do the waiting for you
 rather than polling in a `while` loop with no exit.
 
-## 11. Budgets
+## 12. Budgets
 
 | Hook | Time given | What happens past that |
 | --- | --- | --- |
@@ -600,7 +636,7 @@ rather than polling in a `while` loop with no exit.
 
 Three timeouts in a row disable the plugin until the user re-enables it.
 
-## 12. What's different in Safari
+## 13. What's different in Safari
 
 Your plugin's `classify`/`ingest` also run inside the Safari extension's
 content script — the isolated JavaScript world Safari gives a web

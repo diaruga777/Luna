@@ -76,9 +76,11 @@ public final class PluginIngestStage: PluginIngestStaging {
         guard plugin.hooks.contains(.classify) else { return nil }
         let argument = PluginClassifyInput(
             url: url.absoluteString, page: page, context: processKind)
+        let recorder = SaveDiagnostics.recorder
         let result = await invoker.invoke(
             .classify, pluginID: plugin.id, argument: argument,
-            timeout: Self.classifyTimeout, decode: PluginClassifyVerdict.self)
+            timeout: Self.classifyTimeout, decode: PluginClassifyVerdict.self,
+            invocationID: UUID(), diagnosticRecorder: recorder)
 
         switch result {
         case let .failure(failure):
@@ -130,10 +132,12 @@ public final class PluginIngestStage: PluginIngestStaging {
         let argument = PluginIngestHookInput(
             url: input.url.absoluteString, claim: claim, page: page,
             reason: reason, context: processKind, saveID: saveID?.uuidString)
+        let recorder = SaveDiagnostics.recorder
         let result = await PluginIngestScope.run(saveID: saveID, pluginID: plugin.id) {
             await invoker.invoke(
                 .ingest, pluginID: plugin.id, argument: argument,
-                timeout: Self.ingestTimeout, decode: PluginIngestAnswer.self)
+                timeout: Self.ingestTimeout, decode: PluginIngestAnswer.self,
+                invocationID: UUID(), diagnosticRecorder: recorder)
         }
 
         switch result {

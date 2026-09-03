@@ -5,6 +5,7 @@
 
 import Foundation
 import JavaScriptCore
+import LunaModels
 import LunaPluginKit
 
 /// One plugin the runtime is holding.
@@ -85,6 +86,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// held up, large enough that an eight-second budget costs a few hundred
     /// wake-ups.
     static let pollInterval: TimeInterval = 0.01
+    /// Top-level plugin code is expected to be declarations and setup only.
+    /// This bound is used by the disposable activation preflight; production
+    /// JavaScriptCore still cannot interrupt a running context.
+    public static let activationPreflightTimeout: TimeInterval = 1
 
     private static let sharedVirtualMachine = JSVirtualMachine()!
     /// Every runtime on the process-wide virtual machine runs its JavaScript on
@@ -107,6 +112,9 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     private let scratch: (any PluginScratchGenerating)?
 
     private let lock = NSLock()
+    /// Only accessed on `executionQueue`; bridge closures capture this token
+    /// before leaving for their own work queue.
+    private var activeInvocation: PluginInvocationDiagnostics?
     /// Load order: host-matched before any-host, then priority descending, then
     /// id.
     private var ordered: [(plugin: LoadedPlugin, context: PluginContext)] = []
@@ -172,6 +180,39 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     }
 
     public func reloadAll() { loadAll() }
+
+    /// Validates and activates one imported plugin. The preflight evaluates the
+    /// candidate in a disposable VM with unavailable capabilities, so top-level
+    /// code cannot perform native side effects before the source is committed
+    /// to the live runtime. A timeout quarantines that disposable queue.
+    public func activate(pluginID: String) throws {
+        let installed = store.plugin(id: pluginID)
+        let candidate = installed ?? bundled.plugins().first { $0.id == pluginID }
+        guard let candidate else {
+            throw PluginActivationError(failure: .runtime("no plugin with that id is installed"))
+        }
+        guard candidate.state.isEnabled else {
+            throw PluginActivationError(failure: .runtime("the plugin is disabled"))
+        }
+        if let failure = preflight(candidate) {
+            throw PluginActivationError(failure: failure.invocationFailure)
+        }
+        let report = reload(pluginID: pluginID)
+        if let failure = report.failure {
+            throw PluginActivationError(failure: failure.invocationFailure)
+        }
+        guard report.isLoaded else {
+            throw PluginActivationError(failure: .runtime("the plugin did not load"))
+        }
+    }
+
+    /// Moves activation off an actor such as the main UI actor. The synchronous
+    /// form remains for launch-time callers that already own a worker thread.
+    public func activateAsync(pluginID: String) async throws {
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try activate(pluginID: pluginID)
+        }.value
+    }
 
     /// Rebuilds one plugin's context from what the store holds now.
     @discardableResult
@@ -240,7 +281,9 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                         ?? PluginScratchStore.idleGeneration
                 },
                 log: { [weak self, id = installed.id] line in
-                    self?.diagnostics.record(line, pluginID: id)
+                    guard let self else { return }
+                    self.diagnostics.record(
+                        line, pluginID: id, invocation: self.activeInvocation)
                 })
         }
         if let failure = executionQueue.sync({ context.evaluate(source: source) }) {
@@ -284,6 +327,60 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         return PluginLoadReport(
             pluginID: installed.id, isLoaded: true, failure: nil,
             unavailableCapabilities: unavailable)
+    }
+
+    /// Evaluates one candidate in a disposable queue/VM. The result holder is
+    /// locked because the queue may still be running when the caller's timeout
+    /// expires; that queue is deliberately abandoned and never reused.
+    private func preflight(_ installed: InstalledPlugin) -> PluginJSFailure? {
+        guard let source = installed.sourceText() else {
+            return PluginJSFailure(
+                pluginID: installed.id, hook: "<load>", reason: .notLoaded,
+                message: "the plugin file could not be read")
+        }
+        guard let vm = JSVirtualMachine() else {
+            return PluginJSFailure(
+                pluginID: installed.id, hook: "<load>", reason: .runtime,
+                message: "a disposable JavaScript VM could not be created")
+        }
+        let queue = PluginExecutionQueue(
+            label: "com.hsanabria.luna.pluginPreflight.\(UUID().uuidString)")
+        let finished = DispatchSemaphore(value: 0)
+        let resultLock = NSLock()
+        let processKind = processContext.kind
+        var result: PluginJSFailure?
+        // An empty registry installs unavailable stubs for declared native
+        // capabilities; evaluating a draft therefore cannot fetch, write
+        // storage, show UI, send mail or touch a device.
+        queue.enqueue {
+            let context = PluginContext(
+                manifest: installed.manifest, virtualMachine: vm,
+                registry: PluginCapabilityRegistry(), processKind: processKind,
+                scratchGeneration: { PluginScratchStore.idleGeneration }, log: { _ in })
+            var failure = context.evaluate(source: source)
+            if failure == nil { failure = context.registrationFailure }
+            if failure == nil {
+                let missing = installed.manifest.requiredHooks.subtracting(context.registeredHooks)
+                if !missing.isEmpty {
+                    failure = PluginJSFailure(
+                        pluginID: installed.id, hook: "register", reason: .missingHook,
+                        message: "the manifest needs these hooks, which the plugin did not register: "
+                            + missing.map(\.rawValue).sorted().joined(separator: ", "))
+                }
+            }
+            resultLock.lock()
+            result = failure
+            resultLock.unlock()
+            finished.signal()
+        }
+        guard finished.wait(timeout: .now() + Self.activationPreflightTimeout) == .success else {
+            return PluginJSFailure(
+                pluginID: installed.id, hook: "<load>", reason: .timeout,
+                message: "the plugin's top-level code did not finish its activation preflight")
+        }
+        resultLock.lock()
+        defer { resultLock.unlock() }
+        return result
     }
 
     private func fail(_ installed: InstalledPlugin, _ failure: PluginJSFailure) -> PluginLoadReport {
@@ -376,9 +473,26 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         _ hook: PluginHook, pluginID: String, argument: Encodable,
         timeout: TimeInterval, decode: T.Type
     ) async -> Result<T, PluginInvocationFailure> {
-        switch await settle(hook, pluginID: pluginID, argument: argument, timeout: timeout) {
+        await invoke(
+            hook, pluginID: pluginID, argument: argument, timeout: timeout, decode: decode,
+            invocationID: UUID(), diagnosticRecorder: nil)
+    }
+
+    /// Invokes one hook with an explicit correlation token and optional save
+    /// recorder. The token is copied into every bridge promise so callbacks
+    /// arriving after the hook has ended cannot write to a later save.
+    public func invoke<T: Decodable>(
+        _ hook: PluginHook, pluginID: String, argument: Encodable,
+        timeout: TimeInterval, decode: T.Type, invocationID: UUID,
+        diagnosticRecorder: SaveDiagnosticsRecorder?
+    ) async -> Result<T, PluginInvocationFailure> {
+        let invocation = PluginInvocationDiagnostics(id: invocationID, recorder: diagnosticRecorder)
+        defer { invocation.close() }
+        switch await settle(
+            hook, pluginID: pluginID, argument: argument, timeout: timeout, invocation: invocation
+        ) {
         case .failure(let failure):
-            report(failure)
+            report(failure, invocation: invocation)
             return .failure(failure.invocationFailure)
         case .success(let json):
             do {
@@ -392,7 +506,7 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                 let failure = PluginJSFailure(
                     pluginID: pluginID, hook: hook.rawValue, reason: .malformedResult,
                     message: "\(hook.rawValue) answered a shape Luna cannot read: \(error)")
-                report(failure)
+                report(failure, invocation: invocation)
                 return .failure(failure.invocationFailure)
             }
         }
@@ -401,7 +515,8 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Runs the hook and waits on its budget. `.ingest` is idle-budgeted: every
     /// bridge call resets the clock, so a slow page is not a timeout.
     func settle(
-        _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval
+        _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval,
+        invocation: PluginInvocationDiagnostics
     ) async -> Result<String, PluginJSFailure> {
         lock.lock()
         let entry = ordered.first { $0.plugin.id == pluginID }
@@ -437,7 +552,9 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
             // The budget's clock starts here, so a call that waited behind
             // another plugin is not charged for the wait.
             call.touch()
-            entry.context.call(hook, argumentJSON: argumentJSON) { call.settle($0) }
+            self.withInvocation(invocation) {
+                entry.context.call(hook, argumentJSON: argumentJSON) { call.settle($0) }
+            }
         }
 
         let isIdleBudget = hook == .ingest
@@ -514,14 +631,31 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         lock.unlock()
     }
 
-    private func report(_ failure: PluginJSFailure) {
-        diagnostics.record(failure.logLine, pluginID: failure.pluginID)
+    private func report(_ failure: PluginJSFailure, invocation: PluginInvocationDiagnostics? = nil) {
+        diagnostics.record(failure.logLine, pluginID: failure.pluginID, invocation: invocation)
     }
 
     // MARK: - PluginCallbackScheduling
 
     public func schedulePluginCallback(_ work: @escaping () -> Void) {
         executionQueue.enqueue(work)
+    }
+
+    public func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?
+    ) {
+        executionQueue.enqueue { [weak self] in
+            self?.withInvocation(invocation, work)
+        }
+    }
+
+    public var currentPluginInvocation: PluginInvocationDiagnostics? { activeInvocation }
+
+    private func withInvocation<T>(_ invocation: PluginInvocationDiagnostics?, _ work: () -> T) -> T {
+        let previous = activeInvocation
+        activeInvocation = invocation
+        defer { activeInvocation = previous }
+        return work()
     }
 
     /// Touches EVERY in-flight call of `pluginID`, because a bridge callback

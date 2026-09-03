@@ -47,6 +47,14 @@ public enum PluginInvocationFailure: Error, Equatable, Sendable {
     case runtime(String)
 }
 
+/// A plugin activation could not be made live. The store remains untouched by
+/// callers that stage an update until this error is resolved.
+public struct PluginActivationError: Error, Equatable, Sendable {
+    public let failure: PluginInvocationFailure
+
+    public init(failure: PluginInvocationFailure) { self.failure = failure }
+}
+
 /// Which native process is running plugin JS. Bridges use it to decide availability.
 public enum PluginProcessKind: String, Codable, Sendable {
     case app, share, action
@@ -129,8 +137,36 @@ public protocol PluginHookInvoking: AnyObject {
     /// where the bridge's activity resets the idle budget.
     func invoke<T: Decodable>(_ hook: PluginHook, pluginID: String, argument: Encodable,
                               timeout: TimeInterval, decode: T.Type) async -> Result<T, PluginInvocationFailure>
+    /// Correlated form used by save/pipeline callers. The default keeps older
+    /// witnesses source-compatible while the runtime records the metadata.
+    func invoke<T: Decodable>(
+        _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval,
+        decode: T.Type, invocationID: UUID, diagnosticRecorder: SaveDiagnosticsRecorder?
+    ) async -> Result<T, PluginInvocationFailure>
+    /// Activates one plugin after an import or settings change. Implementations
+    /// should validate the candidate and reload only this plugin.
+    func activate(pluginID: String) throws
+    /// Async activation for UI callers. Implementations must not block the
+    /// caller's actor while evaluating top-level JavaScript.
+    func activateAsync(pluginID: String) async throws
     /// Re-reads the store and reloads every plugin whose file or state changed.
     func reloadAll()
+}
+
+public extension PluginHookInvoking {
+    func activateAsync(pluginID: String) async throws { try activate(pluginID: pluginID) }
+
+    func invoke<T: Decodable>(
+        _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval,
+        decode: T.Type, invocationID: UUID, diagnosticRecorder: SaveDiagnosticsRecorder?
+    ) async -> Result<T, PluginInvocationFailure> {
+        await invoke(hook, pluginID: pluginID, argument: argument, timeout: timeout, decode: decode)
+    }
+
+    /// Legacy witnesses that cannot activate one plugin keep their old reload
+    /// behavior. The concrete runtime overrides this with transactional
+    /// preflight and a single-plugin reload.
+    func activate(pluginID: String) throws { reloadAll() }
 }
 
 // MARK: - Settings schema (§11.1)
@@ -242,6 +278,15 @@ public protocol PluginImporting: AnyObject {
     func preview(sourceText: String) throws -> PluginImportPreview
     /// Writes the file and state, records consent for `preview.capabilities`, reloads the runtime.
     func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws
+    /// Nonblocking counterpart for UI callers. The default preserves the
+    /// legacy synchronous importer witness until its caller adopts async work.
+    func installAsync(_ preview: PluginImportPreview, origin: PluginImportOrigin) async throws
+}
+
+public extension PluginImporting {
+    func installAsync(_ preview: PluginImportPreview, origin: PluginImportOrigin) async throws {
+        try install(preview, origin: origin)
+    }
 }
 
 // MARK: - Registry

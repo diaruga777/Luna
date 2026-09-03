@@ -25,6 +25,9 @@ public final class PluginImportCoordinator: NSObject {
 
     private weak var presenter: UIViewController?
     private var pendingOrigin: PluginImportOrigin?
+    /// Exposed for the import UI to disable duplicate submissions while the
+    /// candidate is being preflighted off the main actor.
+    public private(set) var isInstalling = false
 
     public init(importer: PluginImporting) {
         self.importer = importer
@@ -105,11 +108,17 @@ public final class PluginImportCoordinator: NSObject {
     }
 
     private func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) {
-        do {
-            try importer.install(preview, origin: origin)
-            observer?.pluginImportDidFinish(self)
-        } catch {
-            report(error)
+        guard !isInstalling else { return }
+        isInstalling = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isInstalling = false }
+            do {
+                try await self.importer.installAsync(preview, origin: origin)
+                self.observer?.pluginImportDidFinish(self)
+            } catch {
+                self.report(error)
+            }
         }
     }
 

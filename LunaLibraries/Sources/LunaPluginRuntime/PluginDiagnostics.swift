@@ -10,6 +10,55 @@ import LunaStorage
 /// Where a plugin's own lines go.
 public protocol PluginDiagnosticsRecording: AnyObject {
     func record(_ message: String, pluginID: String)
+
+    /// Records against one hook invocation when it is still active. A late
+    /// callback must be visible in the global log but must not be appended to a
+    /// save that has already completed.
+    func record(
+        _ message: String, pluginID: String, invocation: PluginInvocationDiagnostics?
+    )
+}
+
+public extension PluginDiagnosticsRecording {
+    func record(
+        _ message: String, pluginID: String, invocation: PluginInvocationDiagnostics?
+    ) {
+        record(message, pluginID: pluginID)
+    }
+}
+
+/// The per-hook diagnostic sink. The recorder is weak so an asynchronous
+/// callback cannot keep a completed save alive; `close()` makes the boundary
+/// explicit even when the save object itself is still retained by a caller.
+public final class PluginInvocationDiagnostics: @unchecked Sendable {
+    public let id: UUID
+    private weak var recorder: SaveDiagnosticsRecorder?
+    private let lock = NSLock()
+    private var isOpen = true
+
+    init(id: UUID, recorder: SaveDiagnosticsRecorder?) {
+        self.id = id
+        self.recorder = recorder
+    }
+
+    func record(_ message: String, category: String) {
+        lock.lock()
+        guard isOpen else {
+            lock.unlock()
+            return
+        }
+        let recorder = self.recorder
+        lock.unlock()
+        recorder?.record(message, category: category)
+    }
+
+    /// Stops late bridge callbacks from writing to the completed save trace.
+    public func close() {
+        lock.lock()
+        isOpen = false
+        recorder = nil
+        lock.unlock()
+    }
 }
 
 /// A plugin's line lands in two places: its own `DiagnosticLog` category, and —
@@ -17,30 +66,32 @@ public protocol PluginDiagnosticsRecording: AnyObject {
 /// classify and ingest steps appear in the failed-save export users already
 /// have.
 ///
-/// The save recorder is a PROPERTY rather than a task-local, because plugin JS
-/// runs on the runtime's own queue where the ingest task's locals are not
-/// visible. The ingest stage binds it around the hook calls of one save.
+/// Plugin JS runs on the runtime's own queue where the ingest task's locals are
+/// not visible, so a recorder is carried by an invocation token instead of a
+/// process-global mutable property.
 public final class PluginDiagnostics: PluginDiagnosticsRecording, @unchecked Sendable {
 
     public static let shared = PluginDiagnostics()
 
     private let log: DiagnosticLog
-    private let lock = NSLock()
-    private var recorder: SaveDiagnosticsRecorder?
-
     public init(log: DiagnosticLog = .shared) { self.log = log }
-
-    /// The trace of the save being made right now, or nil between saves.
-    public var saveRecorder: SaveDiagnosticsRecorder? {
-        get { lock.lock(); defer { lock.unlock() }; return recorder }
-        set { lock.lock(); recorder = newValue; lock.unlock() }
-    }
 
     public func record(_ message: String, pluginID: String) {
         let category = PluginDiagnostics.category(for: pluginID)
         log.record(message, category: category)
-        saveRecorder?.record(message, category: category)
         SaveDiagnostics.record(message, category: category)
+    }
+
+    public func record(
+        _ message: String, pluginID: String, invocation: PluginInvocationDiagnostics?
+    ) {
+        let category = PluginDiagnostics.category(for: pluginID)
+        log.record(message, category: category)
+        if let invocation {
+            invocation.record(message, category: category)
+        } else {
+            SaveDiagnostics.record(message, category: category)
+        }
     }
 
     /// The diagnostics category one plugin writes under.

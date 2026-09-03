@@ -102,6 +102,11 @@ public final class SheetCell: UICollectionViewListCell {
         }
     }
 
+    /// Words per minute a reader gets through, for the `.readingMinutes` goal
+    /// unit. Matches the estimate `StatisticsSheet` and the editor's own
+    /// reading-time display use.
+    private static let wordsPerReadingMinute = 250
+
     /// How far a sheet is toward its goal, `0...1`. `.atMost` reverses the
     /// sense: a sheet under the ceiling reads as fully on track.
     static func progress(for document: WriterDocument, goal: WritingGoal) -> Float {
@@ -110,7 +115,8 @@ public final class SheetCell: UICollectionViewListCell {
         switch goal.unit {
         case .words: count = document.wordCount
         case .characters: count = document.characterCount
-        case .sentences, .readingMinutes: count = document.wordCount
+        case .sentences: count = document.sentenceCount
+        case .readingMinutes: count = document.wordCount / wordsPerReadingMinute
         }
         switch goal.mode {
         case .atLeast, .about:

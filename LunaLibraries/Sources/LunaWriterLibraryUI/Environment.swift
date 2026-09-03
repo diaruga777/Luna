@@ -11,6 +11,20 @@ public protocol DocumentEditing: AnyObject {
     var document: WriterDocument { get }
     func focus(on anchor: TextAnchor)
     func flushPendingSave()
+    /// Replaces the whole visible text, e.g. a snapshot restore. The editor's
+    /// live buffer takes the new text so its next autosave cannot overwrite it
+    /// with what was on screen before the replace.
+    func replaceText(_ text: String)
+    /// Presents the editor's own statistics surface (`StatisticsSheet`) over
+    /// `presenter`, returning `true` when it did. Returning `false` — the
+    /// default — tells the caller no such surface is reachable, so it falls
+    /// back to its own summary rather than showing two different ones.
+    func presentStatistics(from presenter: UIViewController) -> Bool
+}
+
+extension DocumentEditing {
+    public func replaceText(_ text: String) {}
+    public func presentStatistics(from presenter: UIViewController) -> Bool { false }
 }
 
 /// What an editor reports back to its container.

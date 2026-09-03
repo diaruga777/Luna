@@ -18,6 +18,7 @@ public final class GoalEditorViewController: UIViewController {
     private let unitControl: UISegmentedControl
     private let modeControl: UISegmentedControl
     private let targetField = UITextField()
+    private let removeGoalButton = UIButton(type: .system)
 
     public init(library: WriterLibraryStoring, document: WriterDocument) {
         self.library = library
@@ -63,7 +64,15 @@ public final class GoalEditorViewController: UIViewController {
 
         goalBar.showsActivityPulse = false
 
-        let stack = UIStackView(arrangedSubviews: [goalBar, unitControl, modeControl, targetField])
+        var removeConfiguration = UIButton.Configuration.plain()
+        removeConfiguration.title = L10n.string("WriterLibrary_goal_removeAction")
+        removeConfiguration.baseForegroundColor = LunaColors.errorAccent
+        removeGoalButton.configuration = removeConfiguration
+        removeGoalButton.addTarget(self, action: #selector(removeGoalTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [
+            goalBar, unitControl, modeControl, targetField, removeGoalButton,
+        ])
         stack.axis = .vertical
         stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -75,6 +84,11 @@ public final class GoalEditorViewController: UIViewController {
             goalBar.heightAnchor.constraint(equalToConstant: 10),
         ])
         updateGoalBar()
+    }
+
+    @objc private func removeGoalTapped() {
+        _ = clearGoal()
+        dismiss(animated: true)
     }
 
     @objc private func cancelTapped() { dismiss(animated: true) }

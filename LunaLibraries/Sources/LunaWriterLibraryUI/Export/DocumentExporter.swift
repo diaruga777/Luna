@@ -31,7 +31,10 @@ public enum DocumentExportFormat: String, CaseIterable {
 /// hands the result to the system share sheet.
 public enum DocumentExporter {
 
-    /// The night/paper stylesheet the HTML and PDF exports share.
+    /// The night/paper stylesheet the HTML and PDF exports share. `@media
+    /// print` overrides it with paper colours, so a printed page — including
+    /// the PDF export, which prints through `UIMarkupTextPrintFormatter` — is
+    /// not the night background (organiser #38).
     private static let stylesheet = """
     body { background: #0b0b0f; color: #f2f2f4; font: -apple-system-body; \
     max-width: 40em; margin: 2em auto; padding: 0 1em; line-height: 1.5; }
@@ -39,6 +42,13 @@ public enum DocumentExporter {
     code, pre { background: #1c1c22; padding: 0.15em 0.35em; border-radius: 4px; }
     blockquote { border-left: 3px solid #4d4d57; margin-left: 0; padding-left: 1em; color: #c7c7cf; }
     a { color: #8ea2ff; }
+    @media print {
+        body { background: #ffffff; color: #111111; }
+        h1, h2, h3 { color: #000000; }
+        code, pre { background: #f0f0f0; }
+        blockquote { border-left-color: #999999; color: #333333; }
+        a { color: #1a4fd6; }
+    }
     """
 
     public static func data(for text: String, title: String, format: DocumentExportFormat) -> Data {
@@ -121,23 +131,48 @@ public enum DocumentExporter {
         }
     }
 
+    /// The characters a filesystem path component cannot carry, plus every
+    /// control character — a title carrying either fails the write silently
+    /// (organiser #37).
+    private static let filenameSanitizingCharacters = CharacterSet(charactersIn: "/:").union(.controlCharacters)
+
+    /// `title` with every path-breaking or control character replaced,
+    /// falling back to "Untitled" when nothing usable remains.
+    public static func sanitizedFilename(from title: String) -> String {
+        let sanitized = String(title.unicodeScalars.map { scalar in
+            filenameSanitizingCharacters.contains(scalar) ? "-" : Character(scalar)
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? L10n.string("Common_untitled") : sanitized
+    }
+
     /// Writes the export to a temp file (so the share sheet offers the real
-    /// filename and extension) and presents it.
+    /// filename and extension) and presents it. A write failure — a full
+    /// disk, an unwritable temp directory — surfaces an alert instead of
+    /// silently doing nothing.
     public static func exportAndPresent(
         document: WriterDocument, text: String, format: DocumentExportFormat,
         from presenter: UIViewController, anchor: LunaShareSheetAnchor?
     ) {
         let payload = data(for: text, title: document.title, format: format)
-        let name = (document.title.isEmpty ? L10n.string("Common_untitled") : document.title)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(name)
+            .appendingPathComponent(sanitizedFilename(from: document.title))
             .appendingPathExtension(format.fileExtension)
         do {
             try payload.write(to: url, options: .atomic)
         } catch {
+            presentExportFailureAlert(from: presenter)
             return
         }
         LunaShareSheet.present(items: [url], from: presenter, anchor: anchor)
+    }
+
+    private static func presentExportFailureAlert(from presenter: UIViewController) {
+        let alert = UIAlertController(
+            title: L10n.string("WriterLibrary_export_failedTitle"),
+            message: L10n.string("WriterLibrary_export_failedMessage"),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
+        presenter.present(alert, animated: true)
     }
 }
 

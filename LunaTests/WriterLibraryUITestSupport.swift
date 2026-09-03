@@ -16,6 +16,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     private(set) var document: WriterDocument
     private(set) var focusedAnchors: [TextAnchor] = []
     private(set) var flushCount = 0
+    private(set) var replacedTexts: [String] = []
 
     init(document: WriterDocument) {
         self.document = document
@@ -27,6 +28,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
 
     func focus(on anchor: TextAnchor) { focusedAnchors.append(anchor) }
     func flushPendingSave() { flushCount += 1 }
+    func replaceText(_ text: String) { replacedTexts.append(text) }
 
     /// Simulates the real editor reporting a save back to its container.
     func simulateUpdate(_ document: WriterDocument) {
@@ -112,6 +114,14 @@ extension XCTestCase {
         viewController.view.layoutIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         return window
+    }
+
+    @discardableResult
+    @MainActor
+    func hostWriterScreenInWindow(
+        _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
+    ) -> UIWindow {
+        hostWriterScreen(viewController, width: width, height: height)
     }
 
     /// Pumps the run loop until `condition` is true or `timeout` elapses —

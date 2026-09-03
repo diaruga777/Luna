@@ -11,6 +11,7 @@ import LunaWriterText
 /// there.
 public final class DocumentNotesPanelViewController: UIViewController {
 
+    private let library: WriterLibraryStoring
     private let notesStore: NoteStoring
     private let noteIndex: NoteIndexing
     private let textStore: DocumentTextStoring
@@ -29,9 +30,10 @@ public final class DocumentNotesPanelViewController: UIViewController {
     private(set) var orphanedNoteIDs: Set<NoteID> = []
 
     public init(
-        notesStore: NoteStoring, noteIndex: NoteIndexing, textStore: DocumentTextStoring,
-        document: WriterDocument
+        library: WriterLibraryStoring, notesStore: NoteStoring, noteIndex: NoteIndexing,
+        textStore: DocumentTextStoring, document: WriterDocument
     ) {
+        self.library = library
         self.notesStore = notesStore
         self.noteIndex = noteIndex
         self.textStore = textStore
@@ -49,7 +51,10 @@ public final class DocumentNotesPanelViewController: UIViewController {
         configureTableView()
         configureComposeBar()
         reload()
+        library.addObserver(self)
     }
+
+    deinit { library.removeObserver(self) }
 
     private func configureTableView() {
         tableView.dataSource = self
@@ -79,7 +84,10 @@ public final class DocumentNotesPanelViewController: UIViewController {
 
             composeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            composeBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            // The keyboard layout guide already sits at the safe area's
+            // bottom when the keyboard is hidden, and rises with it when
+            // shown — a safe-area pin left the field under the keyboard.
+            composeBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
 
             composeField.leadingAnchor.constraint(equalTo: composeBar.leadingAnchor, constant: 16),
             composeField.trailingAnchor.constraint(equalTo: composeBar.trailingAnchor, constant: -16),
@@ -184,5 +192,18 @@ extension DocumentNotesPanelViewController: UITextFieldDelegate {
         composeNote(textField.text ?? "")
         textField.text = ""
         return true
+    }
+}
+
+extension DocumentNotesPanelViewController: LibraryChangeObserving {
+    /// A note added elsewhere while the panel is open — via "@", voice, or an
+    /// intent — was invisible until the panel was reopened (organiser #31).
+    public func libraryDidChange(_ change: LibraryChange) {
+        switch change {
+        case .notes(let id) where id == nil || id == document.id:
+            reload()
+        default:
+            break
+        }
     }
 }

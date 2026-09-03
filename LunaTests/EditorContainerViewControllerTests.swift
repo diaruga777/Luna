@@ -120,4 +120,78 @@ final class EditorContainerViewControllerTests: XCTestCase {
 
         XCTAssertTrue(container.statisticsMessage().contains("4"))
     }
+
+    /// organiser #12: the export action sheet crashed on iPad with no
+    /// popover anchor. The formats now live as a `UIMenu` submenu of the ⋯
+    /// menu instead, so there is nothing to anchor.
+    @MainActor
+    func testEllipsisMenuHasAnExportSubmenuListingEveryFormat() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let environment = makeLibraryEnvironment(stack: stack)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+
+        let exportMenu = try XCTUnwrap(container.ellipsisMenuForTesting.children.first {
+            ($0 as? UIMenu)?.identifier == EditorContainerViewController.exportMenuIdentifier
+        } as? UIMenu)
+        XCTAssertEqual(exportMenu.children.count, DocumentExportFormat.allCases.count)
+    }
+
+    /// organiser #13: a swipe-down dismissal of the presented notes sheet
+    /// never called `dismissNotesPanel`, so the next tap tried to dismiss a
+    /// controller that was already gone.
+    @MainActor
+    func testInteractiveDismissalOfThePresentedNotesPanelClearsItsState() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let environment = makeLibraryEnvironment(stack: stack)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container, width: 390, height: 844)
+        container.toggleNotesPanel()
+        XCTAssertTrue(container.isNotesPanelPresentedForTesting)
+
+        let dismissed = UIPresentationController(
+            presentedViewController: UIViewController(), presenting: nil)
+        container.presentationControllerDidDismiss(dismissed)
+
+        XCTAssertFalse(container.isNotesPanelPresentedForTesting)
+        XCTAssertFalse(container.isNotesPanelChildForTesting)
+
+        // A second toggle opens a fresh panel rather than trying to dismiss
+        // the one that is already gone.
+        container.toggleNotesPanel()
+        XCTAssertTrue(container.isNotesPanelPresentedForTesting)
+    }
+
+    /// organiser #15: a favourite/goal/keyword change made elsewhere (the
+    /// sheets list, an intent) is not reported through `DocumentEditingDelegate`
+    /// — the container has to observe the library itself to pick it up.
+    @MainActor
+    func testHeaderFollowsADocumentChangePostedThroughTheLibrary() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Original")
+        let environment = makeLibraryEnvironment(stack: stack)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        XCTAssertEqual(container.headerTitleForTesting, "Original")
+
+        // Simulates a rename made elsewhere (e.g. the sheets list), which
+        // reaches the library directly rather than through this editor.
+        var renamed = document
+        renamed.title = "Renamed Elsewhere"
+        try stack.library.update(renamed)
+
+        // `LibraryChangeBroadcaster` posts on the main queue after the write
+        // commits, so the container's observer callback lands one run-loop
+        // turn later.
+        pollUntil { container.headerTitleForTesting == "Renamed Elsewhere" }
+        XCTAssertEqual(container.headerTitleForTesting, "Renamed Elsewhere")
+    }
 }

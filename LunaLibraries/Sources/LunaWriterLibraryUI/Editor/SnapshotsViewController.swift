@@ -14,6 +14,14 @@ public final class SnapshotsViewController: UITableViewController {
     private var document: WriterDocument
     private var snapshots: [DocumentSnapshot] = []
 
+    /// The open editor, when this sheet is open, so a restore lands in its
+    /// live buffer instead of only on disk. `nil` closes the editor first (or
+    /// there is none), so restore writes straight through `textStore`.
+    public weak var editor: (UIViewController & DocumentEditing)?
+
+    /// For tests, which cannot see `snapshots`.
+    var snapshotsForTesting: [DocumentSnapshot] { snapshots }
+
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -43,7 +51,8 @@ public final class SnapshotsViewController: UITableViewController {
     @objc private func doneTapped() { dismiss(animated: true) }
 
     public func reload() {
-        snapshots = ((try? snapshotStore.snapshots(for: document.id)) ?? []).sorted { $0.createdAt > $1.createdAt }
+        // `snapshots(for:)` already queries newest first.
+        snapshots = (try? snapshotStore.snapshots(for: document.id)) ?? []
         tableView.reloadData()
     }
 
@@ -88,13 +97,16 @@ public final class SnapshotsViewController: UITableViewController {
         present(alert, animated: true)
     }
 
-    /// Snapshots the current text, then writes the chosen snapshot's text
-    /// back through `DocumentTextStoring`.
+    /// Snapshots the current text, writes the chosen snapshot's text back
+    /// through `DocumentTextStoring`, then — when this sheet is open — hands
+    /// the restored text to the live editor so it does not keep showing the
+    /// pre-restore text and overwrite the restore on its next autosave.
     @discardableResult
     public func restore(_ snapshot: DocumentSnapshot) -> Bool {
         guard let currentText = try? textStore.loadText(document) else { return false }
         guard (try? snapshotStore.recordSnapshot(currentText, for: document.id)) != nil else { return false }
         guard (try? textStore.saveText(snapshot.text, for: &document)) != nil else { return false }
+        editor?.replaceText(snapshot.text)
         reload()
         return true
     }

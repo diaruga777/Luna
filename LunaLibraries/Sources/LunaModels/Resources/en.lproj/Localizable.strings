@@ -1300,10 +1300,11 @@
 "WriterLibrary_editor_keywordsAction_Luna" = "Keywords";
 "WriterLibrary_editor_moreMenuTitle_Luna" = "More";
 "WriterLibrary_editor_openAction_Luna" = "Open";
-"WriterLibrary_editor_shareExportAction_Luna" = "Share / Export";
 "WriterLibrary_editor_statisticsAction_Luna" = "Statistics";
 "WriterLibrary_editor_statisticsMessage_Luna" = "%lld words · %lld characters · %lld sentences · %lld paragraphs";
 "WriterLibrary_export_chooseFormatTitle_Luna" = "Export As";
+"WriterLibrary_export_failedMessage_Luna" = "The file could not be written.";
+"WriterLibrary_export_failedTitle_Luna" = "Couldn't Export";
 "WriterLibrary_export_formatHTML_Luna" = "HTML";
 "WriterLibrary_export_formatMarkdown_Luna" = "Markdown";
 "WriterLibrary_export_formatPDF_Luna" = "PDF";
@@ -1311,6 +1312,7 @@
 "WriterLibrary_goal_modeAbout_Luna" = "About";
 "WriterLibrary_goal_modeAtLeast_Luna" = "At Least";
 "WriterLibrary_goal_modeAtMost_Luna" = "At Most";
+"WriterLibrary_goal_removeAction_Luna" = "Remove Goal";
 "WriterLibrary_goal_title_Luna" = "Goal";
 "WriterLibrary_goal_unitCharacters_Luna" = "Characters";
 "WriterLibrary_goal_unitReadingMinutes_Luna" = "Reading Minutes";

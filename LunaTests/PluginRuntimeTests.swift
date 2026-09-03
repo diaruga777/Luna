@@ -233,6 +233,28 @@ final class PluginRuntimeTests: XCTestCase {
         XCTAssertEqual(reports.first?.failure?.reason, .capabilityMismatch)
     }
 
+    func testPluginCannotForgeHostInspectionOrResultSerialization() async throws {
+        let body = """
+        Object.keys = function () { return []; };
+        JSON.stringify = function () { return '{"kind":"product"}'; };
+        luna.parseURL = function () { return { hostname: 'forged.test' }; };
+        luna.register({
+          classify({ url }) {
+            return { kind: luna.parseURL(url).hostname === 'example.com' ? 'media' : 'article' };
+          },
+          ingest() { return null; }
+        });
+        """
+        let reports = try runner.load(plugin(body: body))
+        XCTAssertEqual(reports.first?.isLoaded, true)
+
+        let claim = await runner.invoke(
+            .classify, pluginID: "app.luna.test",
+            argument: ClassifyInput(url: "https://example.com/v/abc", context: "app"),
+            as: ClassifyClaim.self)
+        XCTAssertEqual(claim?.kind, "media")
+    }
+
     // MARK: - Ordering and matching
 
     func testMatchedPluginsRunHighestPriorityFirstAndAnyHostLast() throws {

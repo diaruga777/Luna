@@ -38,10 +38,12 @@ public final class PluginDownloadsBridge: PluginCapabilityInstalling {
         let store = self.store
         let scheduler = self.scheduler
         let workQueue = self.workQueue
+        let pluginID = namespace.pluginID
 
         let jobs: @convention(block) () -> JSValue? = {
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             workQueue.async {
                 let jobs = store.mediaDownloadJobs().map { Self.json(for: $0, store: store) }
                 box.fulfill(jobs)
@@ -51,7 +53,8 @@ public final class PluginDownloadsBridge: PluginCapabilityInstalling {
 
         let job: @convention(block) (String?) -> JSValue? = { saveId in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let saveId, let id = UUID(uuidString: saveId) else {
                 box.fail("luna.downloads.job needs a save id", code: "bad-argument")
                 return promise

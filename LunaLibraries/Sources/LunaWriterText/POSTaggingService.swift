@@ -18,7 +18,13 @@ public final class POSTaggingService {
     private let deliveryQueue: DispatchQueue
     private let lock = NSLock()
     private var cache: LRUCache<String, [POSSpan]>
-    private var inFlight: [Int: Job] = [:]
+    /// One job per paragraph BODY, not per screen position: a paragraph's
+    /// location moves when text above it changes, so keying on location
+    /// would orphan the running job instead of superseding it.
+    private var inFlight: [String: Job] = [:]
+    /// The body each location's most recent request asked to tag, so
+    /// `cancelParagraph(at:)` can still cancel by position.
+    private var locationBodies: [Int: String] = [:]
 
     public weak var observer: POSTaggingObserving?
 
@@ -59,10 +65,13 @@ public final class POSTaggingService {
             return
         }
 
-        let job = Job()
         lock.lock()
-        inFlight.removeValue(forKey: location)?.isCancelled = true
-        inFlight[location] = job
+        if let previousBody = locationBodies[location], previousBody != body {
+            inFlight.removeValue(forKey: previousBody)?.isCancelled = true
+        }
+        locationBodies[location] = body
+        let job = inFlight[body] ?? Job()
+        inFlight[body] = job
         lock.unlock()
 
         workQueue.async { [weak self] in
@@ -71,7 +80,7 @@ public final class POSTaggingService {
             self.lock.lock()
             self.cache.insert(spans, for: body)
             let cancelled = job.isCancelled
-            if self.inFlight[location] === job { self.inFlight[location] = nil }
+            if self.inFlight[body] === job { self.inFlight[body] = nil }
             self.lock.unlock()
             guard !cancelled else { return }
             self.deliver(self.shift(spans, by: location), range: range, revision: revision)
@@ -81,7 +90,9 @@ public final class POSTaggingService {
     /// Drops the job for the paragraph that starts at `location`.
     public func cancelParagraph(at location: Int) {
         lock.lock()
-        inFlight.removeValue(forKey: location)?.isCancelled = true
+        if let body = locationBodies.removeValue(forKey: location) {
+            inFlight.removeValue(forKey: body)?.isCancelled = true
+        }
         lock.unlock()
     }
 
@@ -89,6 +100,7 @@ public final class POSTaggingService {
         lock.lock()
         inFlight.values.forEach { $0.isCancelled = true }
         inFlight.removeAll()
+        locationBodies.removeAll()
         lock.unlock()
     }
 

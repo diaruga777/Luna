@@ -7,6 +7,11 @@ import Foundation
 /// the caller supplies the word an untitled sheet shows.
 public enum TitleDeriver {
 
+    /// How far into the document `derive` and `snippet` look. A title or its
+    /// snippet always sits near the top of what someone is writing, so this
+    /// bounds the cost on a very long sheet instead of scanning every line.
+    static let searchDepth = 200
+
     public struct DerivedTitle: Equatable, Sendable {
         /// The title with its Markdown taken out.
         public var text: String
@@ -22,17 +27,21 @@ public enum TitleDeriver {
     }
 
     /// The first heading, else the first line with words in it, else nil.
+    /// Looks only at the first `searchDepth` lines: a title lives near the
+    /// top of the sheet, so nothing past that is ever the answer.
     public static func derive(from model: MarkdownDocumentModel) -> DerivedTitle? {
         var firstLine: DerivedTitle?
-        for index in 0..<model.lineCount {
+        for index in 0..<min(model.lineCount, searchDepth) {
+            let kind = model.blockKind(at: index)
+            let isHeading: Bool
+            if case .heading = kind { isHeading = true }
+            else { isHeading = false }
+            guard isHeading || (firstLine == nil && carriesTitle(kind)) else { continue }
             let scan = model.lineScan(at: index)
             let plain = InlineMarkup.plainText(of: scan.block.contentRange, in: model.text, inlines: scan.inlines)
-            if case .heading = scan.block.kind, !plain.isEmpty {
-                return DerivedTitle(text: plain, lineRange: scan.block.lineRange, isHeading: true)
-            }
-            if firstLine == nil, !plain.isEmpty, carriesTitle(scan.block.kind) {
-                firstLine = DerivedTitle(text: plain, lineRange: scan.block.lineRange, isHeading: false)
-            }
+            guard !plain.isEmpty else { continue }
+            if isHeading { return DerivedTitle(text: plain, lineRange: scan.block.lineRange, isHeading: true) }
+            if firstLine == nil { firstLine = DerivedTitle(text: plain, lineRange: scan.block.lineRange, isHeading: false) }
         }
         return firstLine
     }
@@ -44,11 +53,14 @@ public enum TitleDeriver {
     /// The first characters of the body after the title, for a list row.
     public static func snippet(of model: MarkdownDocumentModel, after title: DerivedTitle?, limit: Int = 160) -> String {
         var out = ""
-        let titleLine = title?.lineRange.location
-        for index in 0..<model.lineCount {
+        // One past the title's own line, never a line at or above it.
+        let start = (title.map { model.lineIndex(at: $0.lineRange.location) } ?? -1) + 1
+        let end = min(model.lineCount, searchDepth)
+        guard start < end else { return "" }
+        for index in start..<end {
+            let kind = model.blockKind(at: index)
+            guard carriesSnippet(kind) else { continue }
             let scan = model.lineScan(at: index)
-            guard scan.block.lineRange.location != titleLine else { continue }
-            guard carriesSnippet(scan.block.kind) else { continue }
             let plain = InlineMarkup.plainText(of: scan.block.contentRange, in: model.text, inlines: scan.inlines)
             guard !plain.isEmpty else { continue }
             if !out.isEmpty { out += " " }
@@ -62,14 +74,19 @@ public enum TitleDeriver {
         snippet(of: MarkdownDocumentModel(text: text), after: title, limit: limit)
     }
 
-    /// Cuts at a word boundary and never mid-word.
+    /// Cuts at a word boundary and never mid-word: back to the nearest space
+    /// before `limit`, or forward to the nearest one after it when the run up
+    /// to `limit` is all one word.
     static func trim(_ text: String, to limit: Int) -> String {
         guard text.count > limit else { return text }
         let cut = text.index(text.startIndex, offsetBy: limit)
         if let space = text[..<cut].lastIndex(where: { $0 == " " }) {
             return String(text[..<space])
         }
-        return String(text[..<cut])
+        if let space = text[cut...].firstIndex(where: { $0 == " " }) {
+            return String(text[..<space])
+        }
+        return text
     }
 
     private static func carriesTitle(_ kind: BlockKind) -> Bool {

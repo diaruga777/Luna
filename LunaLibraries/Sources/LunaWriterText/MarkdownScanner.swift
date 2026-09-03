@@ -12,18 +12,6 @@ public enum MarkdownScanner {
 
     // MARK: - Entry points
 
-    /// Scans `line`, which sits at `range` in the document. The returned
-    /// ranges are absolute.
-    public static func scanLine(_ line: Substring, at range: NSRange, state: ScanState) -> LineScan {
-        let units = Array(line.utf16)
-        if units.isEmpty {
-            return blankScan(lineRange: range, state: state)
-        }
-        return units.withUnsafeBufferPointer { buffer in
-            scan(buffer, state: state).offsetting(by: range.location)
-        }
-    }
-
     /// Scans the line at `lineRange` of `text`. The returned ranges are
     /// absolute. `lineRange` includes the line terminator.
     public static func scanLine(in text: NSString, lineRange: NSRange, state: ScanState) -> LineScan {
@@ -88,9 +76,8 @@ public enum MarkdownScanner {
 
         // Inside a fence nothing else is Markdown; only a matching delimiter closes it.
         if let fence = state.inFence {
-            let marker = Array(fence.utf16)[0]
-            let run = runLength(b, of: marker, from: start, limit: end)
-            if column <= 3, run >= fence.utf16.count, start + run == end {
+            let run = runLength(b, of: fence.marker, from: start, limit: end)
+            if column <= 3, run >= fence.width, start + run == end {
                 after.inFence = nil
                 after.fenceLanguage = nil
                 after.inTable = false
@@ -100,10 +87,12 @@ public enum MarkdownScanner {
                                       contentRange: NSRange(location: end, length: 0)),
                     inlines: [], stateAfter: after)
             }
+            // A fenced line keeps its own indentation: only the leading
+            // whitespace the editor greys out for other blocks is markup here.
             return LineScan(
                 block: BlockToken(lineRange: lineRange, kind: .fencedCode(language: state.fenceLanguage),
                                   markupRanges: [],
-                                  contentRange: NSRange(location: start, length: max(0, content - start))),
+                                  contentRange: NSRange(location: 0, length: content)),
                 inlines: [], stateAfter: state)
         }
 
@@ -124,8 +113,7 @@ public enum MarkdownScanner {
             let infoStart = start + run
             let infoIsClean = first == U.tilde || !contains(b, U.backtick, from: infoStart, to: end)
             if run >= 3, infoIsClean {
-                let marker = String(utf16CodeUnits: Array(b[start..<(start + run)]), count: run)
-                after.inFence = marker
+                after.inFence = ScanState.FenceMarker(marker: first, width: run)
                 after.fenceLanguage = infoWord(b, from: infoStart, to: end)
                 return LineScan(
                     block: BlockToken(lineRange: lineRange, kind: .fenceDelimiter,
@@ -386,6 +374,7 @@ public enum MarkdownScanner {
                 }
 
             case U.bang where i + 1 < to && b[i + 1] == U.leftBracket:
+                // Alt text is literal: it never gets its own inline scan.
                 if let span = bracketSpan(b, openBracket: i + 1, to: to) {
                     out.append(InlineToken(range: NSRange(location: i, length: span.end - i),
                                            kind: .image(destination: span.destination),

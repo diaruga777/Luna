@@ -57,6 +57,20 @@ final class WriterTitleDeriverTests: XCTestCase {
         XCTAssertEqual(TitleDeriver.snippet(of: source, after: derived), "bold item")
     }
 
+    func testSnippetSkipsEveryLineUpToAndIncludingTheTitleNotJustTheTitleLine() {
+        let source = "intro before the title\n# Title\nbody line\n" as NSString
+        let derived = TitleDeriver.derive(from: source)
+        XCTAssertEqual(derived?.text, "Title")
+        XCTAssertEqual(TitleDeriver.snippet(of: source, after: derived), "body line")
+    }
+
+    func testSnippetNeverCutsMidWordEvenWithNoSpaceNearTheLimit() {
+        let word = String(repeating: "a", count: 200)
+        let source = ("# Title\n" + word + "\n") as NSString
+        let snippet = TitleDeriver.snippet(of: source, after: TitleDeriver.derive(from: source), limit: 20)
+        XCTAssertEqual(snippet, word)
+    }
+
     func testSnippetStopsAtTheLimitOnAWordBoundary() {
         let body = String(repeating: "alpha beta ", count: 40)
         let source = ("# Title\n" + body) as NSString

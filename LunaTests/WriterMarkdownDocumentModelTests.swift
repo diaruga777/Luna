@@ -148,6 +148,19 @@ final class WriterMarkdownDocumentModelTests: XCTestCase {
         XCTAssertEqual((source as NSString).substring(with: heading), "# Head\n")
     }
 
+    func testAnInconsistentEditDescriptorRebuildsInsteadOfCrashing() {
+        let storage = NSMutableString(string: "one\ntwo\nthree\n")
+        let model = MarkdownDocumentModel(sharedText: storage)
+        XCTAssertEqual(model.lineCount, 3)
+        // The caller mutates the text but describes an edit that does not
+        // match it — a coalesced or dropped notification.
+        storage.replaceCharacters(in: NSRange(location: 0, length: 3), with: "ONE")
+        model.apply(edit: NSRange(location: 0, length: 3), replacementLength: 999)
+        XCTAssertEqual(model.text, storage as NSString)
+        XCTAssertEqual(model.allLineScans(), fullScan(of: storage as NSString))
+        XCTAssertEqual(model.block(at: 0).kind, .paragraph)
+    }
+
     func testSharedTextModelFollowsAnEditMadeByItsOwner() {
         let storage = NSMutableString(string: "plain line\n")
         let model = MarkdownDocumentModel(sharedText: storage)

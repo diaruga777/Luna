@@ -9,6 +9,8 @@ public struct MarkdownHTMLRenderer {
         /// False emits the body fragment only.
         public var includeDocumentShell: Bool
         public var title: String?
+        /// Written into `<style>` verbatim. The caller's own CSS, never
+        /// Markdown-derived text, so it is trusted rather than escaped.
         public var stylesheet: String?
         /// Resolves a relative image path in the exported page.
         public var imageBaseURL: URL?
@@ -59,8 +61,15 @@ public struct MarkdownHTMLRenderer {
         struct TableState {
             var alignments: [String] = []
             var inHeader = true
+            /// True once a delimiter row (`| --- | --- |`) confirmed this is
+            /// really a table. A paragraph that merely contains a pipe never
+            /// gets one, and closes as plain paragraphs instead.
+            var sawDelimiter = false
             var headerCells: [[String]] = []
             var bodyRows: [[String]] = []
+            /// Each accumulated row's whole line, rendered inline, in the
+            /// order the rows arrived. Used only when `sawDelimiter` is false.
+            var rawRows: [String] = []
         }
 
         init(options: Options, text: NSString) {
@@ -103,7 +112,7 @@ public struct MarkdownHTMLRenderer {
                 closeTable()
                 let inner = HTML.inline(scan, in: scan.block.contentRange, text: text, options: options)
                 if paragraphOpen {
-                    out += hasHardBreak(scan) ? "<br>\n" : "\n"
+                    out += "\n"
                 } else {
                     closeList()
                     out += "<p>"
@@ -118,7 +127,7 @@ public struct MarkdownHTMLRenderer {
                 while quoteDepth < depth { out += "<blockquote>\n"; quoteDepth += 1 }
                 while quoteDepth > depth { out += "</blockquote>\n"; quoteDepth -= 1 }
                 let inner = HTML.inline(scan, in: scan.block.contentRange, text: text, options: options)
-                if paragraphOpen { out += hasHardBreak(scan) ? "<br>\n" : "\n" } else { out += "<p>"; paragraphOpen = true }
+                if paragraphOpen { out += "\n" } else { out += "<p>"; paragraphOpen = true }
                 out += inner
 
             case .listItem(let ordered, let indent, let task):
@@ -138,17 +147,20 @@ public struct MarkdownHTMLRenderer {
                 closeList()
                 if table == nil { table = TableState() }
                 let cells = HTML.cells(scan, text: text, options: options)
+                let rawRow = HTML.inline(scan, in: scan.block.contentRange, text: text, options: options)
                 if isHeader, table?.bodyRows.isEmpty == true, table?.headerCells.isEmpty == true {
                     table?.headerCells.append(cells)
                 } else {
                     table?.bodyRows.append(cells)
                 }
+                table?.rawRows.append(rawRow)
 
             case .tableDelimiter:
                 let row = text.substring(with: scan.block.markupRanges.first ?? scan.block.contentRange)
                 let columns = HTML.alignments(row)
                 table?.alignments = columns
                 table?.inHeader = false
+                table?.sawDelimiter = true
 
             case .footnoteDefinition(let label):
                 closeBlocks(keepList: false)
@@ -167,10 +179,6 @@ public struct MarkdownHTMLRenderer {
                 out += "</ol>\n</section>\n"
             }
             return out
-        }
-
-        private func hasHardBreak(_ scan: LineScan) -> Bool {
-            scan.inlines.contains { $0.kind == .hardBreak }
         }
 
         private mutating func openList(ordered: Bool, indent: Int) {
@@ -216,6 +224,10 @@ public struct MarkdownHTMLRenderer {
         private mutating func closeTable() {
             guard let state = table else { return }
             table = nil
+            guard state.sawDelimiter else {
+                for row in state.rawRows { out += "<p>\(row)</p>\n" }
+                return
+            }
             out += "<table>\n"
             if let header = state.headerCells.first {
                 out += "<thead>\n<tr>"
@@ -246,16 +258,16 @@ public struct MarkdownHTMLRenderer {
 /// The HTML text helpers. Kept apart so the block writer reads as structure.
 enum HTML {
     static func escape(_ text: String, unescapeMarkdown: Bool = true) -> String {
+        guard needsEscaping(text, unescapeMarkdown: unescapeMarkdown) else { return text }
         var out = ""
         out.reserveCapacity(text.count)
-        let characters = Array(text)
-        var index = 0
-        while index < characters.count {
-            let character = characters[index]
-            index += 1
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            index = text.index(after: index)
             // A backslash escape belongs to Markdown, not to the output.
-            if unescapeMarkdown, character == "\\", index < characters.count, characters[index].isASCII,
-               characters[index].isPunctuation || characters[index].isSymbol {
+            if unescapeMarkdown, character == "\\", index < text.endIndex, text[index].isASCII,
+               text[index].isPunctuation || text[index].isSymbol {
                 continue
             }
             switch character {
@@ -269,12 +281,60 @@ enum HTML {
         return out
     }
 
+    /// True when `escape` would change anything, so a plain run of text can
+    /// skip the walk entirely.
+    private static func needsEscaping(_ text: String, unescapeMarkdown: Bool) -> Bool {
+        for character in text {
+            switch character {
+            case "&", "<", ">", "\"": return true
+            case "\\" where unescapeMarkdown: return true
+            default: continue
+            }
+        }
+        return false
+    }
+
+    /// Schemes an exported `<a href>` may carry. Anything else, `javascript:`
+    /// included, renders as `#` instead of reaching the page.
+    private static let linkSchemes: Set<String> = ["http", "https", "mailto", "tel"]
+    /// Schemes an exported `<img src>` may carry, `file:` only when the
+    /// caller gave a base URL to resolve it under.
+    private static let imageSchemes: Set<String> = ["http", "https"]
+
+    /// A link destination, scheme-checked and resolved against `base` when
+    /// it names no scheme of its own.
     static func attribute(_ text: String, base: URL?) -> String {
+        sanitizedAttribute(text, base: base, allowedSchemes: linkSchemes, allowFile: false)
+    }
+
+    /// An image destination: the same as `attribute`, but `file:` is allowed
+    /// once `base` is given, since an exported page may bundle its images
+    /// beside itself.
+    static func imageAttribute(_ text: String, base: URL?) -> String {
+        sanitizedAttribute(text, base: base, allowedSchemes: imageSchemes, allowFile: base != nil)
+    }
+
+    private static func sanitizedAttribute(_ text: String, base: URL?, allowedSchemes: Set<String>, allowFile: Bool) -> String {
+        if let scheme = uriScheme(of: text), !(scheme == "file" && allowFile), !allowedSchemes.contains(scheme) {
+            return "#"
+        }
         var value = text
         if let base, URL(string: text)?.scheme == nil, let resolved = URL(string: text, relativeTo: base)?.absoluteString {
             value = resolved
         }
         return escape(value, unescapeMarkdown: false)
+    }
+
+    /// The scheme a URI reference names, by the same syntax RFC 3986 gives
+    /// it: a letter, then letters/digits/`+`/`-`/`.`, then `:`. A reference
+    /// with none of that before its first `:` — most relative paths — has no
+    /// scheme at all.
+    private static func uriScheme(of text: String) -> String? {
+        guard let colon = text.firstIndex(of: ":") else { return nil }
+        let candidate = text[text.startIndex..<colon]
+        guard let first = candidate.first, first.isASCII, first.isLetter else { return nil }
+        guard candidate.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "+" || $0 == "-" || $0 == ".") }) else { return nil }
+        return candidate.lowercased()
     }
 
     /// Renders the inline spans inside `range` as nested HTML.
@@ -286,21 +346,22 @@ enum HTML {
 
     static func cells(_ scan: LineScan, text: NSString, options: MarkdownHTMLRenderer.Options) -> [String] {
         let pipes = scan.block.markupRanges
-        var out: [String] = []
         let content = scan.block.contentRange
+        var out: [String] = []
         var start = content.location
         for pipe in pipes {
-            if pipe.location > start || out.isEmpty || pipe.location == start {
-                let cell = NSRange(location: start, length: max(0, pipe.location - start))
-                out.append(trimmedInline(scan, in: cell, text: text, options: options))
-            }
+            let cell = NSRange(location: start, length: max(0, pipe.location - start))
+            out.append(trimmedInline(scan, in: cell, text: text, options: options))
             start = pipe.location + pipe.length
         }
         let tail = NSRange(location: start, length: max(0, NSMaxRange(content) - start))
         out.append(trimmedInline(scan, in: tail, text: text, options: options))
-        // A row written with outer pipes opens and closes with an empty cell.
-        if out.first?.isEmpty == true { out.removeFirst() }
-        if out.last?.isEmpty == true { out.removeLast() }
+        // A leading or trailing pipe written at the content edge is table
+        // syntax, not an authored empty column, and opens/closes with no cell.
+        if pipes.first?.location == content.location, out.first?.isEmpty == true { out.removeFirst() }
+        if let lastPipe = pipes.last, NSMaxRange(lastPipe) == NSMaxRange(content), out.last?.isEmpty == true {
+            out.removeLast()
+        }
         return out
     }
 
@@ -373,7 +434,7 @@ enum HTML {
             return "<a href=\"\(attribute(destination, base: nil))\">\(children())</a>"
         case .image(let destination):
             let alt = escape(text.substring(with: token.contentRange))
-            return "<img src=\"\(attribute(destination, base: options.imageBaseURL))\" alt=\"\(alt)\">"
+            return "<img src=\"\(imageAttribute(destination, base: options.imageBaseURL))\" alt=\"\(alt)\">"
         case .autolink:
             let target = text.substring(with: token.contentRange)
             let href = target.contains("://") || target.hasPrefix("mailto:") ? target : "https://" + target

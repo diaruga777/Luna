@@ -35,7 +35,6 @@ public final class ReadAlongHUDView: UIView {
     private let button = UIButton(type: .system)
     private let trackingDot = CAShapeLayer()
     private let micDot = CAShapeLayer()
-    private let stack = UIStackView()
 
     private static let dotSize: CGFloat = 9
     private static let height: CGFloat = 34
@@ -67,9 +66,6 @@ public final class ReadAlongHUDView: UIView {
         button.showsMenuAsPrimaryAction = true
         button.accessibilityLabel = L10n.string("WriterReadAlong_hudAccessibilityLabel")
         addSubview(button)
-
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.isUserInteractionEnabled = false
 
         NSLayoutConstraint.activate([
             background.topAnchor.constraint(equalTo: topAnchor),

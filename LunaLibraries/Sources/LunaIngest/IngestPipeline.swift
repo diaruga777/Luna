@@ -47,6 +47,14 @@ public struct IngestInput {
     }
 }
 
+/// Controls whether the pipeline may enter the installed plugin stage. A
+/// named mode keeps recovery probes explicit and prevents a future caller from
+/// accidentally treating a boolean as permission to run plugin side effects.
+public enum IngestExecutionMode: Equatable, Sendable {
+    case normal
+    case nativeProbe
+}
+
 /// The single unified result every surface receives from `IngestPipeline.process`.
 /// It is exhaustive over every kind a save can become, so the compiler forces
 /// each `OutcomePresenter` to handle every case: no surface can forget a kind
@@ -194,13 +202,15 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
-        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText
+        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText,
+        mode: IngestExecutionMode = .normal
     ) async -> IngestResult {
         let limitedResult = await IdleTimeLimit.run(timeout) {
             await runUnbounded(
                 input, session: session, fetcher: fetcher,
                 productDetector: productDetector, articleProcessor: articleProcessor,
-                productProcessor: productProcessor, socialTextProcessor: socialTextProcessor)
+                productProcessor: productProcessor, socialTextProcessor: socialTextProcessor,
+                mode: mode)
         }
         if let result = limitedResult {
             return result
@@ -231,7 +241,8 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         articleProcessor: ArticleIngestProcessing?,
         productProcessor: ProductIngestProcessing?,
-        socialTextProcessor: SocialTextIngestProcessing?
+        socialTextProcessor: SocialTextIngestProcessing?,
+        mode: IngestExecutionMode
     ) async -> IngestResult {
         // (1) Unwrap once. Every surface gets the same offline-first,
         // tracking-stripped unwrap (Facebook deep links, Apple/Google News,
@@ -248,7 +259,7 @@ public enum IngestPipeline {
         // falls through to the classifier below, so the Swift path is the
         // floor under every plugin. Nil in the three sibling apps, which link
         // no plugin platform.
-        if let pluginStage = pluginStage {
+        if mode == .normal, let pluginStage = pluginStage {
             switch await pluginStage.run(
                 IngestInput(
                     url: url, source: input.source, documentType: input.documentType,

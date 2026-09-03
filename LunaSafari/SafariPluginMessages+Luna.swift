@@ -291,6 +291,12 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let json = Self.jsonString(fromNativeValue: value) else {
             return Self.badArgument("luna.storage.set needs a JSON value")
         }
+        // Reject an oversized native-message payload before opening SQLite.
+        // The store repeats this check so every caller observes the same cap.
+        guard json.utf8.count <= PluginKVStore.maxValueBytes else {
+            let error = PluginStorageError.valueTooLarge(limit: PluginKVStore.maxValueBytes)
+            return ["error": "too-large", "message": error.description]
+        }
         do { try PluginKVStore.shared.setValueJSONChecked(
             json, pluginID: id, key: key, now: Date()) }
         catch { return Self.storageFailure(error) }

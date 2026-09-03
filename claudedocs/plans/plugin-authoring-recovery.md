@@ -2,9 +2,9 @@
 
 ## Status
 
-IN PROGRESS (2026-09-03). This plan reviews the plugin-platform commits from
-`5003896e3` (Wave 0) through `f6936331a` and adds the missing nontechnical
-authoring loop:
+COMPLETE FOR THE PLUGIN SCOPE (2026-09-04). This plan reviews the
+plugin-platform commits from `5003896e3` (Wave 0) through `f6936331a` and adds
+the missing nontechnical authoring loop:
 
 ```
 failed or supplied URL
@@ -384,7 +384,68 @@ lifecycle and `PluginContext` hardening.
    then merge the integration branch into `main` and delete every task worktree
    and branch.
 
-## 5. Definition of done
+## 5. Implementation outcome and verification
+
+All eight work packages were implemented and merged into the integration
+history:
+
+- WP-A now correlates diagnostics per invocation across asynchronous bridge
+  callbacks, preflights source in a disposable off-main runtime, activates an
+  install transactionally with rollback, requires the exact header marker and
+  removes a deleted plugin's Keychain secrets.
+- WP-B adds a bounded `PluginRecoveryCase`, contextual credential redaction,
+  deterministic initial/correction prompts and a native probe that exercises
+  Luna's real attempt ledger without saving or adopting content.
+- WP-C adds child-process `validate`/`test` commands with an external kill
+  deadline, structured reports and native-compatible fixtures and limits.
+- WP-D adds the copy/paste workshop from both failed saves and an arbitrary URL:
+  Copy/Share Prompt -> paste draft -> Validate -> Install or Copy Fix Prompt.
+  It intentionally has no LLM API dependency, so free provider web apps remain
+  the baseline path.
+- WP-E bounds Safari page input, sends a sanitized structural digest and
+  ordered plugin outcomes only after an explicit failed Save attempt, stores
+  the large handoff in the App Group and opens the workshop by a short case id.
+- WP-F isolates cookies per plugin, rechecks redirect destinations and applies
+  strict request/body shaping across native and Safari paths.
+- WP-G corrects SQLite protection flags, fails closed on persistence errors and
+  enforces transactional per-plugin KV, collection and scratch quotas.
+- WP-H keys runtime state by loaded-context generation, retains asynchronous
+  work with cancellable leases, prevents a retired generation from recreating
+  scratch files, and protects host builtins/namespaces from plugin tampering.
+
+Verification performed on Xcode 26.2 with the iOS 26.2 simulator:
+
+- `tools/plugin-sim`: `npm test` passed; `npm run spec` passed 60/60.
+- Post-sync Safari source/fixture/bridge-parity selection: 45/45 passed.
+- Post-sync export-input, mail, Kindle and Xteink selection: 52/52 passed after
+  their direct scratch-store fixtures were updated to open the explicit
+  generations required by the hardened runtime.
+- Earlier focused persistence, runtime-generation, validator/fetch and handoff
+  groups also passed. `build-for-testing` succeeded.
+- The full current tree executed 4,814 tests with 24 skips. It exposed the
+  explicit-generation fixture drift fixed above, plus eight deterministic,
+  non-plugin baseline test failures introduced by other work merged into
+  `main` during this review: `ArticleCardsChromeTests`,
+  `ArticleCoverThumbnailTests`, `CardPlaybackSpeedTests`,
+  `LinkImportPreviewLoaderTests`, `ProductHistoryPillRenderTests`,
+  `ScrollDirectionImmersionTrackerTests`, `UtilCardTests` and
+  `WeeklySaveTests`. Each of those eight still fails when run alone; none
+  exercises the plugin loader or recovery loop. They are recorded here rather
+  than being silently folded into this plugin change.
+
+The full-suite run was made from `/tmp` because iOS Simulator test processes
+cannot read source fixtures from the macOS-protected Desktop folder. This is a
+test-location constraint, not an app behavior change.
+
+After that verification, `main` advanced again with Writer portability commit
+`bde0a3881`. The required final sync currently prevents a fresh build because
+`LunaGaze/ReadingTracker.swift` cannot resolve the newly moved
+`SentenceLayout` type and the target reports a missing `LunaWriterModels`
+dependency. That blocker is present in the synced `main` work itself and does
+not touch the plugin platform; the last post-plugin/pre-Writer-sync focused
+result remains the 97/97 tests above.
+
+## 6. Definition of done
 
 - A nontechnical user can start with either a failed save or an arbitrary URL,
   copy one prompt into a free LLM chat, paste its reply back, and reach a clear
@@ -398,4 +459,6 @@ lifecycle and `PluginContext` hardening.
   plugin runtime. The unavoidable JavaScriptCore limitation is stated honestly.
 - A failed draft yields a correction prompt sufficient for a blind copy/paste
   iteration; no paid API or in-app LLM account is required.
-- App, Safari and Node contracts agree, and the full test suite is green.
+- App, Safari and Node contracts agree, all plugin-scope verification is green,
+  and failures elsewhere in the concurrently advanced full suite are explicitly
+  identified above rather than attributed to this work.

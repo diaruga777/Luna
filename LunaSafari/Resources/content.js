@@ -433,8 +433,9 @@
     /// ingest stage builds one from what the pipeline fetched and names it
     /// `fetch`; here the browser already has the real thing, so a plugin need
     /// not declare `page` or refetch what is on screen. Built at most once per
-    /// URL — `outerHTML` on a heavy page is not free — and never sent
-    /// natively, so the native message ceiling does not apply.
+    /// URL — `outerHTML` on a heavy page is not free. The full snapshot stays
+    /// in this content process; only the smaller sanitized digest may be sent
+    /// natively for an explicit recovery handoff.
     var pluginPageSnapshot = null;
     function pageSnapshotForPlugins() {
         if (!pluginPageSnapshot || pluginPageSnapshot.url !== location.href) {
@@ -512,35 +513,6 @@
             logPluginSkip(meta.id, "load", error);
             return walkClassify(matched, index + 1, outcomes);
         });
-    }
-
-    var pluginRecoverySentForURL = null;
-    function persistPluginRecoveryHandoff(matched, outcomes) {
-        if (typeof browser === "undefined" || pluginRecoverySentForURL === location.href) {
-            return Promise.resolve(null);
-        }
-        pluginRecoverySentForURL = location.href;
-        var snapshot = pageSnapshotForPlugins();
-        var plugins = (matched || []).map(function (meta) {
-            return {
-                id: meta.id, version: meta.version || null, status: "enabled",
-                hooks: ["classify", "ingest"]
-            };
-        });
-        var page = {
-            url: snapshot.url, digest: snapshot.digest,
-            title: snapshot.title, source: snapshot.source,
-            truncated: snapshot.truncated,
-            digestTruncated: snapshot.digestTruncated
-        };
-        var sent = browser.runtime.sendMessage({
-            type: "plugins.recoveryHandoff", url: location.href,
-            page: page, plugins: plugins, outcomes: outcomes || []
-        });
-        return sent && sent.then
-            ? sent.then(function (response) { return response && response.deepLink || null; })
-                .catch(function () { return null; })
-            : Promise.resolve(null);
     }
 
     function runPluginWalkForPage() {
@@ -657,6 +629,38 @@
                 });
             }
         };
+    }
+
+    // This handoff deliberately lives beside the explicit save action that
+    // invokes it. Merely recognizing or walking a page must not persist a
+    // recovery case or open Luna.
+    var pluginRecoverySentForURL = null;
+    function persistPluginRecoveryHandoff(matched, outcomes) {
+        if (typeof browser === "undefined" || pluginRecoverySentForURL === location.href) {
+            return Promise.resolve(null);
+        }
+        pluginRecoverySentForURL = location.href;
+        var snapshot = pageSnapshotForPlugins();
+        var plugins = (matched || []).map(function (meta) {
+            return {
+                id: meta.id, version: meta.version || null, status: "enabled",
+                hooks: ["classify", "ingest"]
+            };
+        });
+        var page = {
+            url: snapshot.url, digest: snapshot.digest,
+            title: snapshot.title, source: snapshot.source,
+            truncated: snapshot.truncated,
+            digestTruncated: snapshot.digestTruncated
+        };
+        var sent = browser.runtime.sendMessage({
+            type: "plugins.recoveryHandoff", url: location.href,
+            page: page, plugins: plugins, outcomes: outcomes || []
+        });
+        return sent && sent.then
+            ? sent.then(function (response) { return response && response.deepLink || null; })
+                .catch(function () { return null; })
+            : Promise.resolve(null);
     }
 
     /// The video overlay target for a plugin's media claim: `ingest` runs

@@ -69,7 +69,11 @@ public enum PluginDraftValidator {
             store: store, bundled: BundledPluginCatalog(bundle: nil, store: store),
             capabilities: registry, processContext: PluginProcessContext(kind: .app),
             scratch: scratch)
-        let fetcher = PluginFetchService()
+        let allowedHosts = Set([targetURL.host, recoveryCase.host]
+            .compactMap { $0?.lowercased() })
+        let networkViolations = DraftNetworkViolations()
+        let fetcher = PluginFetchService(allowedHosts: allowedHosts)
+        fetcher.networkRefusalObserver = { networkViolations.record($0) }
         fetcher.idle = runtime
         fetcher.fileWriter = scratch
         registry.register(PluginFetchBridge(fetcher: fetcher, scheduler: runtime, files: scratch))
@@ -120,6 +124,11 @@ public enum PluginDraftValidator {
                 "ingest returned null for the target URL; it must produce a valid Model.",
                 phase: "ingest", attempts: attempts)
         case .success(.model(let model)):
+            if let host = networkViolations.firstHost {
+                return failed(
+                    "The draft tried to contact \(host). Validation permits only the recovery website.",
+                    phase: "network", attempts: attempts)
+            }
             guard manifest.produces.contains(model.kind) else {
                 return failed(
                     "ingest returned \(model.kind.rawValue), which is absent from produces.",
@@ -159,5 +168,21 @@ public enum PluginDraftValidator {
         case .exception(let message, _), .malformedResult(let message), .runtime(let message):
             return message
         }
+    }
+}
+
+private final class DraftNetworkViolations: @unchecked Sendable {
+    private let lock = NSLock()
+    private var host: String?
+
+    var firstHost: String? {
+        lock.lock(); defer { lock.unlock() }
+        return host
+    }
+
+    func record(_ url: URL) {
+        lock.lock()
+        if host == nil { host = url.host ?? url.absoluteString }
+        lock.unlock()
     }
 }

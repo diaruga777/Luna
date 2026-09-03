@@ -167,14 +167,20 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     /// alive for the life of the process.
     private let delegateProxy = PluginFetchSessionDelegate()
     private let networkCheck: (URL, String) throws -> Void
+    private let allowedHosts: Set<String>?
+    /// Validation uses this to reject a draft even when its JavaScript catches
+    /// the denied request and otherwise returns a plausible model.
+    public var networkRefusalObserver: (@Sendable (URL) -> Void)?
 
     public init(
         protocolClasses: [AnyClass] = [],
+        allowedHosts: Set<String>? = nil,
         networkCheck: @escaping (URL, String) throws -> Void = {
             try LiveNetworkPolicy.check($0, context: $1)
         }
     ) {
         self.protocolClasses = protocolClasses
+        self.allowedHosts = allowedHosts.map { Set($0.map { $0.lowercased() }) }
         self.networkCheck = networkCheck
         super.init()
         delegateQueue.maxConcurrentOperationCount = 1
@@ -331,9 +337,16 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
 
     private func checkNetwork(_ url: URL, context: String) throws {
         guard let scheme = url.scheme?.lowercased(),
-              (scheme == "http" || scheme == "https"), url.host != nil else {
+              (scheme == "http" || scheme == "https"),
+              let host = url.host?.lowercased() else {
             throw PluginFetchError(
                 "the redirect target is not an HTTP URL", code: "network-refused")
+        }
+        if let allowedHosts, !allowedHosts.contains(host) {
+            networkRefusalObserver?(url)
+            throw PluginFetchError(
+                "draft validation does not permit requests to \(host)",
+                code: "network-refused")
         }
         try networkCheck(url, context)
     }

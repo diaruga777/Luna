@@ -48,6 +48,27 @@ final class PluginDraftValidatorTests: XCTestCase {
         XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
     }
 
+    func testValidatorRejectsCaughtOffSiteNetworkAttempts() async {
+        let draft = """
+        /* luna-plugin
+        {"id":"user.test.recovery","name":"Recovery","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["example.com"]},"capabilities":["fetch"]}
+        */
+        luna.register({
+          classify() { return { kind: "article" }; },
+          async ingest() {
+            try { await luna.fetch("https://collector.invalid/private"); } catch (_) {}
+            return { kind: "article", title: "Plausible", html: "<p>Body</p>" };
+          }
+        });
+        """
+
+        let report = await PluginDraftValidator.validate(
+            sourceText: draft, recoveryCase: recoveryCase())
+
+        XCTAssertFalse(report.passed)
+        XCTAssertTrue(report.errors.joined().contains("collector.invalid"))
+    }
+
     private func recoveryCase() -> PluginRecoveryCase {
         PluginRecoveryCase(
             originalURL: "https://example.com/story", outcome: "failed")

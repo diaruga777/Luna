@@ -585,6 +585,11 @@ still be private. Luna shows a privacy reminder before copying or sharing. The
 separate **Share Diagnostics…** action is raw developer support data and should
 not be confused with the recovery prompt.
 
+Draft validation permits `luna.fetch` only to the recovery website's host and
+fails a draft that attempts another host, even if its JavaScript catches the
+denial. This keeps pasted, not-yet-consented code from turning the private test
+URL or captured evidence into an outbound payload.
+
 Developers can run the same shape checks without the app using the bounded
 child-process harness:
 

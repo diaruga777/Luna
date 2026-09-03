@@ -15,6 +15,7 @@ import CoreGraphics
 import Foundation
 import simd
 @testable import LunaGaze
+import LunaWriterModels
 
 /// Where the head is, in camera space (metres, user at negative z).
 struct SimHeadPose {

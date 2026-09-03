@@ -12,7 +12,7 @@ public protocol KeyboardFrameObserving: AnyObject {
 
 /// Follows the keyboard, so the "@" overlay can flip above it and the editor
 /// can keep the caret line clear of it.
-public final class KeyboardFrameObserver {
+public final class KeyboardFrameObserver: KeyboardMetricsProviding {
 
     public weak var observer: KeyboardFrameObserving?
 

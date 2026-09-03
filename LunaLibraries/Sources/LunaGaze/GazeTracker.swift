@@ -3,11 +3,16 @@
 //  LunaGaze
 //
 
-import ARKit
 import AVFoundation
 import CoreGraphics
 import Foundation
+
+#if canImport(ARKit)
+import ARKit
+#endif
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// The reader of a gaze source's samples.
 public protocol GazeTrackingDelegate: AnyObject {
@@ -48,12 +53,29 @@ public enum GazeTrackingAvailability {
     public static var isSupported: Bool {
         if let supportOverride { return supportOverride }
         guard !isAppExtension else { return false }
-        return ARFaceTrackingConfiguration.isSupported
+        return deviceSupportsFaceTracking
     }
 
     static var isAppExtension: Bool {
         Bundle.main.bundleURL.pathExtension == "appex"
     }
+
+    // Platform gate, not the per-target gate CLAUDE.md forbids: ARKit face
+    // tracking exists only where ARKit itself does.
+    #if canImport(ARKit)
+    static var deviceSupportsFaceTracking: Bool { ARFaceTrackingConfiguration.isSupported }
+    #else
+    static var deviceSupportsFaceTracking: Bool { false }
+    #endif
+}
+
+/// Builds a gaze tracker for the composition root to install.
+///
+/// `nil` means no tracker is available on this platform — no ARKit, no
+/// TrueDepth camera — so the caller falls back to whatever it offers without
+/// gaze (voice-only read-along, RSVP with the toggle hidden).
+public protocol GazeTrackerMaking: AnyObject {
+    func makeGazeTracker() -> GazeTracking?
 }
 
 /// Camera authorization, which is what "permission to track your eyes" means on
@@ -94,6 +116,10 @@ public enum GazeTrackingPermission {
         }
     }
 }
+
+// Platform gate, not the per-target gate CLAUDE.md forbids: the concrete
+// ARKit tracker exists only where ARKit does.
+#if canImport(ARKit) && canImport(UIKit)
 
 /// Drives a bare `ARSession` with `ARFaceTrackingConfiguration` — no renderer,
 /// no view — and publishes one `GazeSample` per frame.
@@ -240,3 +266,12 @@ private extension simd_float4 {
     /// The positional part of a homogeneous point.
     var xyz: SIMD3<Float> { SIMD3(x, y, z) }
 }
+
+/// The iOS composition root's `GazeTrackerMaking` witness: one real
+/// `ARFaceGazeTracker` per call, screen size and idiom taken from the device.
+public final class ARFaceGazeTrackerMaker: GazeTrackerMaking {
+    public init() {}
+    public func makeGazeTracker() -> GazeTracking? { ARFaceGazeTracker() }
+}
+
+#endif

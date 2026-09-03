@@ -5,6 +5,7 @@
 
 import CoreGraphics
 import Foundation
+import LunaWriterModels
 
 /// The thresholds the reading model runs on. Every distance is stated in
 /// degrees of visual angle and converted once, against the session's

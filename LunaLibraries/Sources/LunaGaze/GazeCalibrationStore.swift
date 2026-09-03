@@ -5,7 +5,6 @@
 
 import CoreGraphics
 import Foundation
-import UIKit
 
 /// Keeps one calibration per interface orientation.
 ///
@@ -23,21 +22,21 @@ public final class GazeCalibrationStore {
         self.key = key
     }
 
-    public func calibration(for orientation: UIInterfaceOrientation) -> GazeAffineCalibration? {
+    public func calibration(for orientation: GazeOrientation) -> GazeAffineCalibration? {
         guard let stored = defaults.dictionary(forKey: key) as? [String: Data],
               let data = stored[Self.slot(for: orientation)]
         else { return nil }
         return try? JSONDecoder().decode(GazeAffineCalibration.self, from: data)
     }
 
-    public func save(_ calibration: GazeAffineCalibration, for orientation: UIInterfaceOrientation) {
+    public func save(_ calibration: GazeAffineCalibration, for orientation: GazeOrientation) {
         guard let data = try? JSONEncoder().encode(calibration) else { return }
         var stored = (defaults.dictionary(forKey: key) as? [String: Data]) ?? [:]
         stored[Self.slot(for: orientation)] = data
         defaults.set(stored, forKey: key)
     }
 
-    public func remove(for orientation: UIInterfaceOrientation) {
+    public func remove(for orientation: GazeOrientation) {
         guard var stored = defaults.dictionary(forKey: key) as? [String: Data] else { return }
         stored[Self.slot(for: orientation)] = nil
         defaults.set(stored, forKey: key)
@@ -47,14 +46,13 @@ public final class GazeCalibrationStore {
         defaults.removeObject(forKey: key)
     }
 
-    /// One slot per orientation. `.unknown` maps to portrait, which is what a
-    /// window reports before it is on screen.
-    static func slot(for orientation: UIInterfaceOrientation) -> String {
+    /// One slot per orientation.
+    static func slot(for orientation: GazeOrientation) -> String {
         switch orientation {
         case .landscapeLeft: return "landscapeLeft"
         case .landscapeRight: return "landscapeRight"
         case .portraitUpsideDown: return "portraitUpsideDown"
-        default: return "portrait"
+        case .portrait: return "portrait"
         }
     }
 }

@@ -148,7 +148,7 @@ public final class ReadAlongCoordinator: NSObject, GazeTrackingDelegate,
         self.fixationDetector = FixationDetector(pointsPerDegree: perDegree)
         self.gate = GazeGate(screenSize: screenSize, pointsPerDegree: perDegree)
         self.driftCorrector = GazeDriftCorrector(pointsPerDegree: perDegree)
-        self.calibration = calibrationStore.calibration(for: .portrait)
+        self.calibration = calibrationStore.calibration(for: GazeOrientation.portrait)
             ?? GazeAffineCalibration.identity(viewSize: screenSize, pointsPerDegree: perDegree)
 
         let availability = ReadAlongAvailability.resolve(transcriber: transcriber)

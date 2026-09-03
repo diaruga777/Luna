@@ -61,6 +61,7 @@ public final class EditorViewController: UIViewController {
         focus = FocusModeController(
             mode: environment.settings.focusMode,
             typewriterScrolling: environment.settings.typewriterScrolling)
+        keyboard = environment.keyboardMetrics
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -73,7 +74,7 @@ public final class EditorViewController: UIViewController {
     private let mention: MentionController
     private let related: RelatedNotesRanker
     private let focus: FocusModeController
-    private let keyboard = KeyboardFrameObserver()
+    private let keyboard: KeyboardMetricsProviding
     private let accessoryBar = EditorAccessoryBar()
     private let relatedStrip = RelatedNoteStripView()
     private lazy var accessoryContainer = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
@@ -257,7 +258,10 @@ public final class EditorViewController: UIViewController {
         overlay.delegate = self
         related.observer = self
         focus.delegate = self
-        keyboard.observer = self
+        // Only the concrete `KeyboardFrameObserver` ever calls back — a Mac
+        // root's `NoKeyboardMetrics` never changes, so it needs no observer.
+        (keyboard as? KeyboardFrameObserver)?.observer = self
+        accessoryBar.policy = environment.accessoryBarPolicy
         accessoryBar.delegate = self
         accessoryBar.setFocusActive(focus.mode != .off)
         relatedStrip.delegate = self

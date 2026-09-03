@@ -64,6 +64,11 @@ public final class EditorAccessoryBar: UIView {
 
     public weak var delegate: EditorAccessoryBarDelegate?
 
+    /// The root's answer to "does this device already have another way to
+    /// every command here". Defaults to iOS's width-plus-hardware-keyboard
+    /// rule; the Mac root installs `MacAccessoryBarPolicy`.
+    public var policy: AccessoryBarPolicy = DefaultAccessoryBarPolicy()
+
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
     private var buttons: [EditorAccessoryAction: UIButton] = [:]
@@ -155,7 +160,10 @@ public final class EditorAccessoryBar: UIView {
     public static var hasHardwareKeyboard: Bool { GCKeyboard.coalesced != nil }
 
     public func updateHardwareKeyboardVisibility() {
-        let hide = Self.hasHardwareKeyboard && traitCollection.userInterfaceIdiom == .pad
+        let containerWidth = window?.bounds.width ?? bounds.width
+        let show = policy.shouldShowAccessoryBar(
+            hasHardwareKeyboard: Self.hasHardwareKeyboard, containerWidth: containerWidth)
+        let hide = !show
         guard hide != isHidden else { return }
         isHidden = hide
         delegate?.editorAccessoryBarVisibilityDidChange(self)

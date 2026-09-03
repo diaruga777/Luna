@@ -8,6 +8,7 @@ import Foundation
 import LunaDesignSystem
 import LunaGaze
 import LunaModels
+import LunaWriterModels
 import UIKit
 
 /// One frame of what read-along believes, for the diagnostics overlay.

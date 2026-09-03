@@ -16,19 +16,29 @@ public struct EditorEnvironment {
     public var settings: WriterSettings
     /// nil where no on-device model exists, which is most devices.
     public var aiAssistant: AIWritingAssisting?
+    /// Whether the accessory bar earns its space on this root. Defaults to
+    /// iOS's width-plus-hardware-keyboard rule.
+    public var accessoryBarPolicy: AccessoryBarPolicy
+    /// The keyboard geometry this root can offer. Defaults to a real
+    /// `KeyboardFrameObserver`; the Mac root installs `NoKeyboardMetrics`.
+    public var keyboardMetrics: KeyboardMetricsProviding
 
     public init(
         noteIndex: NoteIndexing,
         noteStore: NoteStoring,
         marksStore: DocumentMarksStoring,
         settings: WriterSettings,
-        aiAssistant: AIWritingAssisting? = nil
+        aiAssistant: AIWritingAssisting? = nil,
+        accessoryBarPolicy: AccessoryBarPolicy = DefaultAccessoryBarPolicy(),
+        keyboardMetrics: KeyboardMetricsProviding = KeyboardFrameObserver()
     ) {
         self.noteIndex = noteIndex
         self.noteStore = noteStore
         self.marksStore = marksStore
         self.settings = settings
         self.aiAssistant = aiAssistant
+        self.accessoryBarPolicy = accessoryBarPolicy
+        self.keyboardMetrics = keyboardMetrics
     }
 }
 

@@ -1,6 +1,6 @@
 //
 //  GazeTextGeometry.swift
-//  LunaGaze
+//  LunaWriterModels
 //
 
 import CoreGraphics

@@ -1284,10 +1284,22 @@
 "WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a sheet. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the sheet. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a sheet aloud and Luna marks what you say about it.\n\nYour sheets are plain .md files in Files, under Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
+"WriterLibrary_command_export_Luna" = "Export…";
+"WriterLibrary_command_focusEditor_Luna" = "Focus Editor";
+"WriterLibrary_command_focusGroups_Luna" = "Focus Sidebar";
+"WriterLibrary_command_focusSearch_Luna" = "Search";
+"WriterLibrary_command_focusSheets_Luna" = "Focus Sheets";
+"WriterLibrary_command_newGroup_Luna" = "New Group";
+"WriterLibrary_command_newSheet_Luna" = "New Sheet";
+"WriterLibrary_command_openSelection_Luna" = "Open Selected Sheet";
+"WriterLibrary_command_settings_Luna" = "Settings…";
+"WriterLibrary_command_toggleNotes_Luna" = "Toggle Notes Panel";
+"WriterLibrary_command_trash_Luna" = "Move to Trash";
 "WriterLibrary_editor_emptySelection_Luna" = "Select a sheet to start writing.";
 "WriterLibrary_editor_goalAction_Luna" = "Goal";
 "WriterLibrary_editor_keywordsAction_Luna" = "Keywords";
 "WriterLibrary_editor_moreMenuTitle_Luna" = "More";
+"WriterLibrary_editor_openAction_Luna" = "Open";
 "WriterLibrary_editor_shareExportAction_Luna" = "Share / Export";
 "WriterLibrary_editor_statisticsAction_Luna" = "Statistics";
 "WriterLibrary_editor_statisticsMessage_Luna" = "%lld words · %lld characters · %lld sentences · %lld paragraphs";
@@ -1307,6 +1319,8 @@
 "WriterLibrary_groups_changeIconAction_Luna" = "Change Icon";
 "WriterLibrary_groups_changeIconTitle_Luna" = "Change Icon";
 "WriterLibrary_groups_deleteAction_Luna" = "Delete";
+"WriterLibrary_groups_deleteConfirmMessage_Luna" = "%lld sheets will move to the Trash.";
+"WriterLibrary_groups_deleteConfirmTitle_Luna" = "Delete “%@”?";
 "WriterLibrary_groups_inboxRow_Luna" = "Inbox";
 "WriterLibrary_groups_libraryAll_Luna" = "All Sheets";
 "WriterLibrary_groups_libraryFavorites_Luna" = "Favorites";
@@ -1354,7 +1368,9 @@
 "WriterLibrary_settings_voiceRow_Luna" = "Voice";
 "WriterLibrary_sheets_attachToAction_Luna" = "Attach to…";
 "WriterLibrary_sheets_attachToTitle_Luna" = "Attach to…";
+"WriterLibrary_sheets_duplicateAction_Luna" = "Duplicate";
 "WriterLibrary_sheets_favoriteAction_Luna" = "Favorite";
+"WriterLibrary_sheets_justNow_Luna" = "Just now";
 "WriterLibrary_sheets_keywordAction_Luna" = "Keyword";
 "WriterLibrary_sheets_moveAction_Luna" = "Move";
 "WriterLibrary_sheets_restoreAction_Luna" = "Restore";

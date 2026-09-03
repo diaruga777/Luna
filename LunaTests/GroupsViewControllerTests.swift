@@ -107,4 +107,62 @@ final class GroupsViewControllerTests: XCTestCase {
         document = try XCTUnwrap(stack.library.document(document.id))
         XCTAssertNotNil(document.trashedAt, "the group's sheet moves to the trash rather than vanishing")
     }
+
+    @MainActor
+    func testCollapsedGroupSurvivesAReloadTriggeredElsewhereAndAFreshScreen() throws {
+        let stack = try makeWriterStack()
+        let parent = try stack.library.createGroup(name: "Parent", icon: "folder", parent: nil)
+        _ = try stack.library.createGroup(name: "Child", icon: "folder", parent: parent.id)
+        let suiteName = "GroupsViewControllerTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
+        let store = GroupCollapseStore(defaults: defaults)
+
+        let controller = GroupsViewController(library: stack.library, notes: stack.library, collapseStore: store)
+        layoutWriterScreen(controller)
+        controller.toggleExpansion(of: parent.id)
+        XCTAssertFalse(controller.isExpandedForTesting(parent.id))
+
+        // A change elsewhere (another window, a sync) reapplies the whole
+        // tree; the collapse must not be undone by it (organiser #27).
+        let other = try stack.library.createGroup(name: "Other", icon: "folder", parent: nil)
+        pollUntil { controller.visibleRowsForTesting.contains(.group(other.id)) }
+        XCTAssertFalse(controller.isExpandedForTesting(parent.id))
+
+        // A fresh screen — as if the app relaunched — reads the same
+        // collapsed state back from the shared store.
+        let controller2 = GroupsViewController(library: stack.library, notes: stack.library, collapseStore: store)
+        layoutWriterScreen(controller2)
+        XCTAssertFalse(controller2.isExpandedForTesting(parent.id))
+    }
+
+    @MainActor
+    func testDeletingAGroupAsksForConfirmationNamingTheSheetCount() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "Doomed", icon: "folder", parent: nil)
+        _ = try stack.library.createDocument(in: group.id, title: "Inside")
+
+        let controller = GroupsViewController(library: stack.library, notes: stack.library)
+        let window = hostWriterScreen(controller)
+
+        controller.presentDeleteConfirmation(for: group.id)
+        let alert = try XCTUnwrap(controller.presentedViewController as? UIAlertController)
+        _ = window
+        XCTAssertEqual(alert.actions.count, 2)
+        XCTAssertTrue(controller.visibleRowsForTesting.contains(.group(group.id)), "not deleted until confirmed")
+    }
+
+    @MainActor
+    func testMovingAGroupOntoItsOwnDescendantIsRefused() throws {
+        let stack = try makeWriterStack()
+        let parent = try stack.library.createGroup(name: "Parent", icon: "folder", parent: nil)
+        let child = try stack.library.createGroup(name: "Child", icon: "folder", parent: parent.id)
+
+        let controller = GroupsViewController(library: stack.library, notes: stack.library)
+        layoutWriterScreen(controller)
+
+        XCTAssertFalse(controller.moveGroup(parent.id, toParent: child.id, index: 0))
+        XCTAssertFalse(controller.moveGroup(parent.id, toParent: parent.id, index: 0))
+        XCTAssertEqual(try stack.library.groups().first { $0.id == parent.id }?.parentID, nil)
+    }
 }

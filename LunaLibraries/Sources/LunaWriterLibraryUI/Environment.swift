@@ -71,6 +71,15 @@ public protocol SheetsSelectionDelegate: AnyObject {
     func sheetsViewController(_ controller: SheetsViewController, didSelect document: WriterDocument)
 }
 
+/// What the root does when an open document stops being showable — trashed
+/// through any path (the editor's own menu, a sheets-list swipe, or an
+/// external reconciler run) or removed outright. The root resets its
+/// secondary column to the empty placeholder rather than leaving a trashed
+/// sheet's editor on screen.
+public protocol LibraryNavigationHandling: AnyObject {
+    func documentDidClose(_ id: DocumentID)
+}
+
 /// Every witness the organiser needs, bundled so a root view controller takes
 /// one argument instead of eight.
 public final class LibraryEnvironment {

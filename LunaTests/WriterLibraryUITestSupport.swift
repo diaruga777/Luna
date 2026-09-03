@@ -95,6 +95,25 @@ extension XCTestCase {
         viewController.view.layoutIfNeeded()
     }
 
+    /// Hosts `viewController` in a REAL (offscreen) window rather than the
+    /// window-less frame `layoutWriterScreen` uses — a window-less view
+    /// controller can queue a `present(_:animated:)` that never resolves
+    /// `presentedViewController`, so a test asserting on a presented alert
+    /// needs this instead. Keep the returned window alive for the rest of
+    /// the test; a deallocated window tears the presentation down early.
+    @discardableResult
+    @MainActor
+    func hostWriterScreen(
+        _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
+    ) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        window.rootViewController = viewController
+        window.makeKeyAndVisible()
+        viewController.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        return window
+    }
+
     /// Pumps the run loop until `condition` is true or `timeout` elapses —
     /// for state a diffable data source applies on a later run-loop turn.
     @MainActor

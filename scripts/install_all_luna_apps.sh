@@ -1,10 +1,10 @@
 #!/bin/sh
-# Build all five Luna apps and install every one of them on a device or
+# Build all six Luna apps and install every one of them on a device or
 # simulator in a single command.
 #
-# The "AllLunaApps" scheme already builds all five in one press, but Xcode's
+# The "AllLunaApps" scheme already builds all six in one press, but Xcode's
 # Run action only ever *installs* the scheme's runnable (Luna). Installing the
-# other three is what this script adds.
+# other five is what this script adds.
 #
 # Usage:
 #   scripts/install_all_luna_apps.sh                  # the booted simulator
@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 SCHEME="AllLunaApps"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA="${DERIVED_DATA:-.build-dd-install}"
-APPS="Luna LunaReader LunaDownloader LunaPriceTracker LunaVault"
+APPS="Luna LunaReader LunaDownloader LunaPriceTracker LunaVault LunaWriter"
 LAUNCH=1
 
 for arg in "$@"; do
@@ -168,7 +168,7 @@ for app in $APPS; do
     fi
 done
 
-echo "▸ Installed all 5 Luna apps on $KIND $UDID"
+echo "▸ Installed all 6 Luna apps on $KIND $UDID"
 
 if [ "$LAUNCH" = 1 ]; then
     # PRODUCT_BUNDLE_PREFIX lives in Config/Luna.xcconfig; read it rather than

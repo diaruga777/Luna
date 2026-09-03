@@ -4,7 +4,7 @@
 //
 
 import UIKit
-import LunaGaze
+import LunaWriterModels
 import LunaWriterText
 
 /// Where each sentence and each of its words sit on the page.

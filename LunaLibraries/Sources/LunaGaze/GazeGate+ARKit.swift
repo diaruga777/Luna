@@ -3,8 +3,12 @@
 //  LunaGaze
 //
 
-import ARKit
 import Foundation
+
+// Platform gate, not the per-target gate CLAUDE.md forbids: blend shapes are
+// an ARKit type and exist only where ARKit does.
+#if canImport(ARKit)
+import ARKit
 
 extension GazeGate {
 
@@ -21,3 +25,4 @@ extension GazeGate {
         )
     }
 }
+#endif

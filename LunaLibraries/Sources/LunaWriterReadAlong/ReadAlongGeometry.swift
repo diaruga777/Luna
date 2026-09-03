@@ -5,7 +5,7 @@
 
 import CoreGraphics
 import Foundation
-import LunaGaze
+import LunaWriterModels
 
 /// The two conversions between the spaces read-along works in, as arithmetic
 /// so a test can drive them with no window attached.

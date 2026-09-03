@@ -1,10 +1,9 @@
 //
 //  AuthorshipSpanList.swift
-//  LunaWriterEditor
+//  LunaWriterModels
 //
 
 import Foundation
-import LunaWriterModels
 
 /// Who wrote each stretch of the document, as a sorted list of spans that
 /// never overlap and never touch a neighbour of the same source.

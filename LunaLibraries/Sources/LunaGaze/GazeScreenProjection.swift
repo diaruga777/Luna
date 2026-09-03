@@ -5,13 +5,15 @@
 
 import CoreGraphics
 import simd
-import UIKit
 
 /// Turns a gaze ray expressed in ARKit's camera space into a point on the
 /// display, in `UIScreen.fixedCoordinateSpace` (portrait-origin) points.
 ///
-/// Kept free of ARKit so the geometry can be unit-tested on the simulator,
-/// where face tracking is never available.
+/// Kept free of ARKit and UIKit so the geometry can be unit-tested on the
+/// simulator, where face tracking is never available, and on macOS, where
+/// neither framework exists — `GazeUIKitBridging.swift` adds the
+/// `UIUserInterfaceIdiom`/`UIInterfaceOrientation` overloads iOS call sites
+/// already use.
 ///
 /// **Camera space.** ARKit's camera looks down −z with +y up, and
 /// `ARCamera.viewMatrix(for: .portrait)` orients that frame to the device held
@@ -26,19 +28,19 @@ import UIKit
 /// which is the only other physical constant this needs.
 public enum GazeScreenProjection {
 
-    /// UIKit points per inch, by idiom. A single constant per idiom, used
-    /// where no screen metrics are available yet (a default argument's
+    /// UIKit points per inch, by device class. A single constant per class,
+    /// used where no screen metrics are available yet (a default argument's
     /// evaluation point, mostly).
-    public static func pointsPerMetre(idiom: UIUserInterfaceIdiom) -> CGFloat {
-        pointsPerInch(idiom: idiom) / 0.0254
+    public static func pointsPerMetre(deviceClass: GazeDeviceClass) -> CGFloat {
+        pointsPerInch(deviceClass: deviceClass) / 0.0254
     }
 
-    static func pointsPerInch(idiom: UIUserInterfaceIdiom) -> CGFloat {
-        idiom == .pad ? 132 : 163
+    static func pointsPerInch(deviceClass: GazeDeviceClass) -> CGFloat {
+        deviceClass == .pad ? 132 : 163
     }
 
     /// UIKit points per inch, derived from the physical pixel density of the
-    /// known display families rather than one constant per idiom.
+    /// known display families rather than one constant per device class.
     ///
     /// `nativeScale` alone tells 2×/3× apart; within 2×, the iPad mini shares
     /// the iPhone's ~326ppi panel rather than the ~264ppi panel every larger
@@ -46,24 +48,24 @@ public enum GazeScreenProjection {
     /// 3×, the Plus-size iPhones run a ~401ppi panel rather than the
     /// Pro-class ~458ppi one, and again the point width is what tells them
     /// apart. A shape this function does not recognise falls back to the
-    /// idiom-only constant.
+    /// device-class-only constant.
     public static func pointsPerMetre(
-        idiom: UIUserInterfaceIdiom, nativeScale: CGFloat, portraitPointSize: CGSize
+        deviceClass: GazeDeviceClass, nativeScale: CGFloat, portraitPointSize: CGSize
     ) -> CGFloat {
-        pointsPerInch(idiom: idiom, nativeScale: nativeScale, portraitPointSize: portraitPointSize)
+        pointsPerInch(deviceClass: deviceClass, nativeScale: nativeScale, portraitPointSize: portraitPointSize)
             / 0.0254
     }
 
     static func pointsPerInch(
-        idiom: UIUserInterfaceIdiom, nativeScale: CGFloat, portraitPointSize: CGSize
+        deviceClass: GazeDeviceClass, nativeScale: CGFloat, portraitPointSize: CGSize
     ) -> CGFloat {
         let shortSide = min(portraitPointSize.width, portraitPointSize.height)
-        switch idiom {
+        switch deviceClass {
         case .pad:
-            guard nativeScale >= 1.9 else { return pointsPerInch(idiom: idiom) }
+            guard nativeScale >= 1.9 else { return pointsPerInch(deviceClass: deviceClass) }
             return shortSide > 0 && shortSide < 780 ? 163 : 132
         default:
-            guard nativeScale >= 2.9 else { return pointsPerInch(idiom: idiom) }
+            guard nativeScale >= 2.9 else { return pointsPerInch(deviceClass: deviceClass) }
             return shortSide >= 420 ? 134 : 153
         }
     }
@@ -128,9 +130,11 @@ public enum GazeScreenProjection {
     public static func orientedScreenPoint(
         fromPortraitPoint point: CGPoint,
         portraitSize: CGSize,
-        orientation: UIInterfaceOrientation
+        orientation: GazeOrientation
     ) -> CGPoint {
         switch orientation {
+        case .portrait:
+            return point
         case .portraitUpsideDown:
             return CGPoint(x: portraitSize.width - point.x, y: portraitSize.height - point.y)
         case .landscapeLeft:
@@ -139,8 +143,6 @@ public enum GazeScreenProjection {
             return CGPoint(x: point.y, y: portraitSize.width - point.x)
         case .landscapeRight:
             return CGPoint(x: portraitSize.height - point.y, y: point.x)
-        default:
-            return point
         }
     }
 
@@ -152,7 +154,7 @@ public enum GazeScreenProjection {
     /// point already rotated by `orientedScreenPoint`, and the two must agree
     /// on which axis is which.
     public static func orientedSize(
-        portraitSize: CGSize, orientation: UIInterfaceOrientation
+        portraitSize: CGSize, orientation: GazeOrientation
     ) -> CGSize {
         switch orientation {
         case .landscapeLeft, .landscapeRight:

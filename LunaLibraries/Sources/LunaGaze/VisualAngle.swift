@@ -5,7 +5,6 @@
 
 import CoreGraphics
 import Foundation
-import UIKit
 
 /// Converts between degrees of visual angle and screen points.
 ///
@@ -26,16 +25,16 @@ public enum VisualAngle {
         pointsPerMetre * distanceMetres * CGFloat(tan(Double(degrees) * .pi / 180))
     }
 
-    /// Points subtended by an angle on this idiom's display.
+    /// Points subtended by an angle on this device class's display.
     public static func points(
         degrees: CGFloat,
         distanceMetres: CGFloat = VisualAngle.typicalReadingDistanceMetres,
-        idiom: UIUserInterfaceIdiom
+        deviceClass: GazeDeviceClass
     ) -> CGFloat {
         points(
             degrees: degrees,
             distanceMetres: distanceMetres,
-            pointsPerMetre: GazeScreenProjection.pointsPerMetre(idiom: idiom))
+            pointsPerMetre: GazeScreenProjection.pointsPerMetre(deviceClass: deviceClass))
     }
 
     /// The one conversion factor a session needs: points per degree.
@@ -46,12 +45,13 @@ public enum VisualAngle {
         points(degrees: 1, distanceMetres: distanceMetres, pointsPerMetre: pointsPerMetre)
     }
 
-    /// The one conversion factor a session needs, for this idiom's display.
+    /// The one conversion factor a session needs, for this device class's
+    /// display.
     public static func pointsPerDegree(
         distanceMetres: CGFloat = VisualAngle.typicalReadingDistanceMetres,
-        idiom: UIUserInterfaceIdiom
+        deviceClass: GazeDeviceClass
     ) -> CGFloat {
-        points(degrees: 1, distanceMetres: distanceMetres, idiom: idiom)
+        points(degrees: 1, distanceMetres: distanceMetres, deviceClass: deviceClass)
     }
 
     /// Degrees subtended by a distance in points.

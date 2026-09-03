@@ -161,7 +161,9 @@ public final class LibraryRootViewController: UISplitViewController {
     @objc private func focusSearchKeyCommand() { sheetsViewController.focusSearch() }
     @objc private func toggleNotesKeyCommand() { currentContainer?.toggleNotesPanel() }
     @objc private func openSettingsKeyCommand() { presentSettings() }
-    @objc private func exportOpenDocumentKeyCommand() { currentContainer?.presentExportOptions() }
+    /// ⌘E exports the open sheet as Markdown; the other formats are one
+    /// step further in the container's ⋯ menu.
+    @objc private func exportOpenDocumentKeyCommand() { currentContainer?.export(as: .markdown) }
     @objc private func openSelectionKeyCommand() { sheetsViewController.openFirstOrSelectedSheet() }
     @objc private func focusGroupsKeyCommand() { show(.primary) }
     @objc private func focusSheetsKeyCommand() { show(.supplementary) }
@@ -172,10 +174,6 @@ public final class LibraryRootViewController: UISplitViewController {
         _ = try? environment.library.trash(id)
     }
 
-    /// `WriterSettingsViewController.present(from:environment:)` is B2's
-    /// entry point; a minimal version ships alongside it
-    /// (`Settings/WriterSettingsViewController+Presentation.swift`) so this
-    /// key command has somewhere to go before that package lands.
     private func presentSettings() {
         WriterSettingsViewController.present(from: self, environment: environment)
     }

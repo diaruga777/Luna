@@ -120,6 +120,7 @@ public final class PluginScratchStore:
     private let rootURL: URL
     private let fileManager: FileManager
     private let quotas: PluginScratchQuotas
+    private let isAvailable: Bool
     private let lock = NSLock()
     /// (Plugin id, runtime generation) → the open scratch directory and how
     /// many calls/operations hold it. The runtime generation is deliberately
@@ -143,11 +144,12 @@ public final class PluginScratchStore:
 
     public init(
         rootURL: URL, fileManager: FileManager = .default,
-        quotas: PluginScratchQuotas = PluginScratchQuotas()
+        quotas: PluginScratchQuotas = PluginScratchQuotas(), isAvailable: Bool = true
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.quotas = quotas
+        self.isAvailable = isAvailable
     }
 
     // MARK: - Generations
@@ -228,6 +230,7 @@ public final class PluginScratchStore:
     ) throws -> PluginFileDescriptor {
         lock.lock()
         defer { lock.unlock() }
+        guard isAvailable else { throw PluginScratchError.storageUnavailable }
         guard generation == Self.idleGeneration || generations.contains(where: {
             $0.key.pluginID == pluginID && $0.value.id == generation
         }) else {
@@ -266,6 +269,7 @@ public final class PluginScratchStore:
     ) throws -> PluginFileDescriptor {
         lock.lock()
         defer { lock.unlock() }
+        guard isAvailable else { throw PluginScratchError.storageUnavailable }
         guard generation == Self.idleGeneration || generations.contains(where: {
             $0.key.pluginID == pluginID && $0.value.id == generation
         }) else {
@@ -351,11 +355,13 @@ public final class PluginScratchStore:
 }
 
 public enum PluginScratchError: Error, Equatable, LocalizedError {
+    case storageUnavailable
     case generationClosed
     case quotaExceeded
 
     public var code: String {
         switch self {
+        case .storageUnavailable: return "storage-unavailable"
         case .generationClosed: return "generation-closed"
         case .quotaExceeded: return "quota-exceeded"
         }
@@ -363,6 +369,7 @@ public enum PluginScratchError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .storageUnavailable: return "the plugin scratch store is unavailable"
         case .generationClosed: return "the plugin scratch generation is closed"
         case .quotaExceeded: return "the plugin scratch quota was exceeded"
         }

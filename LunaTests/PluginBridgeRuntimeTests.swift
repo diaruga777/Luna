@@ -395,6 +395,21 @@ final class PluginBridgeRuntimeTests: XCTestCase {
             pluginID: "p", generation: replacement))
     }
 
+    func testUnavailableScratchNeverFallsBackToTemporaryWrites() throws {
+        let scratch = PluginScratchStore(
+            rootURL: runner.containerURL.appendingPathComponent("unavailable-scratch"),
+            isAvailable: false)
+
+        XCTAssertThrowsError(try scratch.writeFile(
+            Data("no".utf8), suggestedName: "no.txt", mime: nil,
+            pluginID: "p", generation: PluginScratchStore.idleGeneration)) {
+                XCTAssertEqual($0 as? PluginScratchError, .storageUnavailable)
+            }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            scratch.directoryURL(
+                pluginID: "p", generation: PluginScratchStore.idleGeneration).path))
+    }
+
     // MARK: - secrets
 
     func testASecretRoundTripsThroughTheKeychain() async throws {

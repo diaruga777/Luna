@@ -46,9 +46,15 @@ public final class LibraryRootViewController: UISplitViewController {
         updatePreferredDisplayMode()
     }
 
+    /// Assigning `preferredDisplayMode` schedules another layout pass, so the
+    /// assignment happens only when the width crossed the threshold; writing
+    /// the same value from `viewDidLayoutSubviews` spins the main thread.
     private func updatePreferredDisplayMode() {
-        preferredDisplayMode = LunaLayout.isWide(containerWidth: view.bounds.width)
+        let wanted: UISplitViewController.DisplayMode = LunaLayout.isWide(containerWidth: view.bounds.width)
             ? .twoBesideSecondary : .oneBesideSecondary
+        if preferredDisplayMode != wanted {
+            preferredDisplayMode = wanted
+        }
     }
 
     private static func emptySecondaryPlaceholder() -> UIViewController {

@@ -37,12 +37,16 @@ public final class GroupsViewController: UICollectionViewController {
 
     private let library: WriterLibraryStoring
     private let notes: NoteStoring
+    private let collapseStore: GroupCollapseStore
 
     private var dataSource: UICollectionViewDiffableDataSource<Section, GroupsRow>!
     private var groupsByID: [GroupID: WriterGroup] = [:]
     private var childGroups: [GroupID?: [WriterGroup]] = [:]
     private var filtersByGroup: [GroupID: [WriterFilter]] = [:]
     private var unattachedNoteCount = 0
+    /// The row shown highlighted — kept so a reload from a `LibraryChange`
+    /// does not lose the sidebar's selection (organiser #8).
+    private var selectedRow: GroupsRow = .libraryAll
 
     /// The rows on screen, flattened in display order — a collapsed group's
     /// children are absent. Internal rather than private so tests can assert
@@ -59,9 +63,14 @@ public final class GroupsViewController: UICollectionViewController {
     /// read back from the store.
     func nameForTesting(_ group: GroupID) -> String? { groupsByID[group]?.name }
 
-    public init(library: WriterLibraryStoring, notes: NoteStoring) {
+    public init(
+        library: WriterLibraryStoring, notes: NoteStoring,
+        collapseStore: GroupCollapseStore = GroupCollapseStore()
+    ) {
         self.library = library
         self.notes = notes
+        self.collapseStore = collapseStore
+        self.collapsedGroups = collapseStore.collapsedGroupIDs
         var configuration = UICollectionLayoutListConfiguration(appearance: .sidebar)
         configuration.headerMode = .supplementary
         let layout = UICollectionViewCompositionalLayout.list(using: configuration)
@@ -84,6 +93,14 @@ public final class GroupsViewController: UICollectionViewController {
     }
 
     deinit { library.removeObserver(self) }
+
+    /// Never clears the highlighted row on a wide layout, where the sidebar
+    /// stays on screen beside its content; behaves normally when collapsed,
+    /// where reappearing after a push is the usual "nothing is selected yet".
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
+    }
 
     // MARK: - Data
 
@@ -144,6 +161,19 @@ public final class GroupsViewController: UICollectionViewController {
             collectionView.dequeueConfiguredReusableSupplementary(
                 using: headerRegistration, for: indexPath)
         }
+        // The outline disclosure accessory mutates the section snapshot
+        // itself rather than calling `toggleExpansion(of:)`, so a tap there
+        // is invisible to `collapsedGroups` unless these handlers record it
+        // too — otherwise the next unrelated reload silently re-expands the
+        // group the user just collapsed (organiser #27).
+        dataSource.sectionSnapshotHandlers.willCollapseItem = { [weak self] row in
+            guard case .group(let id) = row else { return }
+            self?.setCollapsed(true, for: id)
+        }
+        dataSource.sectionSnapshotHandlers.willExpandItem = { [weak self] row in
+            guard case .group(let id) = row else { return }
+            self?.setCollapsed(false, for: id)
+        }
     }
 
     private func headerTitle(for section: Section) -> String {
@@ -174,7 +204,20 @@ public final class GroupsViewController: UICollectionViewController {
 
         var trash = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
         trash.append([.trashRow])
-        dataSource.apply(trash, to: .trash, animatingDifferences: false)
+        // `apply` always updates asynchronously even with no animation, so
+        // the reselect waits for this last section's completion rather than
+        // running in the same call stack against a collection view that has
+        // not caught up yet.
+        dataSource.apply(trash, to: .trash, animatingDifferences: false) { [weak self] in
+            self?.reselect()
+        }
+    }
+
+    /// Re-applies `selectedRow`'s highlight after a snapshot rebuild, which
+    /// otherwise drops it (organiser #8).
+    private func reselect() {
+        guard let indexPath = dataSource.indexPath(for: selectedRow) else { return }
+        collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
     }
 
     private func appendGroupTree(
@@ -198,17 +241,25 @@ public final class GroupsViewController: UICollectionViewController {
     }
 
     /// Groups the user has explicitly collapsed. Absent means expanded — a
-    /// newly created group starts open.
-    private var collapsedGroups: Set<GroupID> = []
+    /// newly created group starts open. Loaded from, and written back to,
+    /// `collapseStore` so it survives a relaunch.
+    private var collapsedGroups: Set<GroupID>
 
-    /// Flips a group's expanded/collapsed state. UIKit calls this from the
-    /// sidebar's own outline-disclosure control; tests call it directly.
-    public func toggleExpansion(of group: GroupID) {
-        if collapsedGroups.contains(group) {
-            collapsedGroups.remove(group)
-        } else {
+    private func setCollapsed(_ collapsed: Bool, for group: GroupID) {
+        if collapsed {
             collapsedGroups.insert(group)
+        } else {
+            collapsedGroups.remove(group)
         }
+        collapseStore.collapsedGroupIDs = collapsedGroups
+    }
+
+    /// Flips a group's expanded/collapsed state. Tests call this directly;
+    /// the sidebar's own outline-disclosure control instead mutates the
+    /// section snapshot, which `sectionSnapshotHandlers` reports back to
+    /// `setCollapsed(_:for:)` (organiser #27).
+    public func toggleExpansion(of group: GroupID) {
+        setCollapsed(!collapsedGroups.contains(group), for: group)
         applySnapshots()
     }
 
@@ -262,6 +313,7 @@ public final class GroupsViewController: UICollectionViewController {
 
     public override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let row = dataSource.itemIdentifier(for: indexPath) else { return }
+        selectedRow = row
         switch row {
         case .libraryAll: selectionDelegate?.groupsViewController(self, didSelect: .all)
         case .libraryRecent: selectionDelegate?.groupsViewController(self, didSelect: .recent)
@@ -294,7 +346,7 @@ public final class GroupsViewController: UICollectionViewController {
             name: L10n.string("WriterLibrary_groups_newGroupDefaultName"),
             icon: "folder", parent: parent)
         else { return nil }
-        if let parent { collapsedGroups.remove(parent) }
+        if let parent { setCollapsed(false, for: parent) }
         reload()
         return created
     }
@@ -344,8 +396,33 @@ public final class GroupsViewController: UICollectionViewController {
             UIAction(
                 title: L10n.string("WriterLibrary_groups_deleteAction"),
                 image: UIImage(systemName: "trash"), attributes: .destructive
-            ) { [weak self] _ in self?.deleteGroup(id) },
+            ) { [weak self] _ in self?.presentDeleteConfirmation(for: id) },
         ])
+    }
+
+    /// How many sheets `deleteGroup` would trash: this group's own, plus
+    /// every descendant's (organiser #26).
+    private func totalDocumentCount(in group: GroupID) -> Int {
+        var total = (try? library.documents(in: group, sort: .manual).count) ?? 0
+        for child in childGroups[group] ?? [] {
+            total += totalDocumentCount(in: child.id)
+        }
+        return total
+    }
+
+    public func presentDeleteConfirmation(for id: GroupID) {
+        guard let group = groupsByID[id] else { return }
+        let count = totalDocumentCount(in: id)
+        let alert = UIAlertController(
+            title: L10n.string("WriterLibrary_groups_deleteConfirmTitle", group.name),
+            message: count > 0
+                ? L10n.string("WriterLibrary_groups_deleteConfirmMessage", count) : nil,
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_delete"), style: .destructive) { [weak self] _ in
+            self?.deleteGroup(id)
+        })
+        present(alert, animated: true)
     }
 
     public func presentRename(for id: GroupID) {
@@ -423,27 +500,52 @@ extension GroupsViewController: UICollectionViewDragDelegate, UICollectionViewDr
         ])
     }
 
+    /// The group a drop onto `row` would land in — `nil` for a row that
+    /// cannot accept one (a fixed Library scope, or a filter).
+    private func targetGroup(for row: GroupsRow) -> GroupID? {
+        switch row {
+        case .group(let id): return id
+        case .inboxRow: return library.inboxGroupID
+        case .trashRow: return library.trashGroupID
+        case .libraryAll, .libraryRecent, .libraryFavorites, .filter: return nil
+        }
+    }
+
+    /// Whether `candidate` is `ancestor` itself, or nested under it.
+    /// Reparenting a group onto its own subtree would make it unreachable
+    /// (organiser #28).
+    private func isDescendant(_ candidate: GroupID, ofOrEqualTo ancestor: GroupID) -> Bool {
+        var current: GroupID? = candidate
+        while let id = current {
+            if id == ancestor { return true }
+            current = groupsByID[id]?.parentID
+        }
+        return false
+    }
+
     public func collectionView(
         _ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
         withDestinationIndexPath destinationIndexPath: IndexPath?
     ) -> UICollectionViewDropProposal {
-        UICollectionViewDropProposal(operation: .move, intent: .insertIntoDestinationIndexPath)
+        guard let destinationIndexPath, let row = dataSource.itemIdentifier(for: destinationIndexPath),
+              let targetGroup = targetGroup(for: row)
+        else { return UICollectionViewDropProposal(operation: .forbidden) }
+        let wouldNoOp = session.items.contains { item in
+            guard let groupID = item.localObject as? GroupID else { return false }
+            return groupID == targetGroup || isDescendant(targetGroup, ofOrEqualTo: groupID)
+        }
+        return wouldNoOp
+            ? UICollectionViewDropProposal(operation: .forbidden)
+            : UICollectionViewDropProposal(operation: .move, intent: .insertIntoDestinationIndexPath)
     }
 
     public func collectionView(
         _ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator
     ) {
         guard let destination = coordinator.destinationIndexPath,
-              let row = dataSource.itemIdentifier(for: destination)
+              let row = dataSource.itemIdentifier(for: destination),
+              let targetGroup = targetGroup(for: row)
         else { return }
-        let targetGroup: GroupID?
-        switch row {
-        case .group(let id): targetGroup = id
-        case .inboxRow: targetGroup = library.inboxGroupID
-        case .trashRow: targetGroup = library.trashGroupID
-        default: targetGroup = nil
-        }
-        guard let targetGroup else { return }
         for item in coordinator.items {
             if let documentID = item.dragItem.localObject as? DocumentID {
                 moveDocumentDropped(documentID, onto: targetGroup)
@@ -463,11 +565,13 @@ extension GroupsViewController: UICollectionViewDragDelegate, UICollectionViewDr
     }
 
     /// Called by the drag/drop machinery, and directly by tests, to move or
-    /// reparent a group.
+    /// reparent a group. No-ops rather than orphaning the tree when `parent`
+    /// is `id` itself or one of its own descendants (organiser #28).
     @discardableResult
     public func moveGroup(_ id: GroupID, toParent parent: GroupID?, index: Int) -> Bool {
+        if let parent, parent == id || isDescendant(parent, ofOrEqualTo: id) { return false }
         guard (try? library.moveGroup(id, to: parent, at: index)) != nil else { return false }
-        if let parent { collapsedGroups.remove(parent) }
+        if let parent { setCollapsed(false, for: parent) }
         reload()
         return true
     }

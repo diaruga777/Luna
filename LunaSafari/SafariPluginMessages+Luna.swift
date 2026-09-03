@@ -479,7 +479,8 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
 
         let page = message?["page"] as? [String: Any]
         let digest = (page?["digest"] as? String) ?? (page?["html"] as? String)
-        let wasTruncated = page?["truncated"] as? Bool ?? false
+        let wasTruncated = page?["digestTruncated"] as? Bool
+            ?? page?["truncated"] as? Bool ?? false
         let rawOutcomes = message?["outcomes"] as? [[String: Any]] ?? []
         let attempts = rawOutcomes.prefix(PluginRecoveryCase.maxAttempts).map { outcome in
             PluginRecoveryAttempt(

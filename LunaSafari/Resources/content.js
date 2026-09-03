@@ -244,6 +244,33 @@
     var PLUGIN_PAGE_HTML_LIMIT = 200000;
     var PLUGIN_RECOVERY_DIGEST_LIMIT = 12000;
 
+    // Keep the structure an author needs (metadata, selectors, a representative
+    // content root) without copying forms, executable scripts, or element
+    // values into a prompt. Native redaction runs again before sharing.
+    function pluginRecoveryDigest() {
+        var shell = document.createElement("div");
+        document.querySelectorAll(
+            "head title, head meta, head link[rel='canonical'], head script[type='application/ld+json']"
+        ).forEach(function (node) { shell.appendChild(node.cloneNode(true)); });
+        var source = document.querySelector("article, main, [role='main']") || document.body;
+        if (source) { shell.appendChild(source.cloneNode(true)); }
+        shell.querySelectorAll(
+            "script:not([type='application/ld+json']), style, noscript, iframe, input, textarea, select"
+        ).forEach(function (node) { node.remove(); });
+        shell.querySelectorAll("*").forEach(function (node) {
+            Array.prototype.slice.call(node.attributes || []).forEach(function (attribute) {
+                if (/^on/i.test(attribute.name) || /^(value|nonce|integrity|srcdoc)$/i.test(attribute.name)) {
+                    node.removeAttribute(attribute.name);
+                }
+            });
+        });
+        var evidence = shell.innerHTML;
+        return {
+            text: evidence.slice(0, PLUGIN_RECOVERY_DIGEST_LIMIT),
+            truncated: evidence.length > PLUGIN_RECOVERY_DIGEST_LIMIT
+        };
+    }
+
     function withTimeout(promise, ms) {
         return new Promise(function (resolve, reject) {
             var settled = false;
@@ -412,13 +439,14 @@
     function pageSnapshotForPlugins() {
         if (!pluginPageSnapshot || pluginPageSnapshot.url !== location.href) {
             var rawHTML = document.documentElement ? document.documentElement.outerHTML : "";
+            var recoveryDigest = pluginRecoveryDigest();
             pluginPageSnapshot = {
                 url: location.href,
                 html: rawHTML.slice(0, PLUGIN_PAGE_HTML_LIMIT),
-                // The handoff gets a smaller evidence digest, while hooks keep
-                // the full bounded snapshot. Both values are derived from this
-                // one read of outerHTML so they cannot disagree about truncation.
-                digest: rawHTML.slice(0, PLUGIN_RECOVERY_DIGEST_LIMIT),
+                // The handoff gets a smaller, non-executable structural digest;
+                // hooks retain the full separately bounded snapshot.
+                digest: recoveryDigest.text,
+                digestTruncated: recoveryDigest.truncated,
                 title: document.title || "",
                 source: "safari",
                 truncated: rawHTML.length > PLUGIN_PAGE_HTML_LIMIT
@@ -500,8 +528,10 @@
             };
         });
         var page = {
-            url: snapshot.url, html: snapshot.html, digest: snapshot.digest,
-            title: snapshot.title, source: snapshot.source, truncated: snapshot.truncated
+            url: snapshot.url, digest: snapshot.digest,
+            title: snapshot.title, source: snapshot.source,
+            truncated: snapshot.truncated,
+            digestTruncated: snapshot.digestTruncated
         };
         var sent = browser.runtime.sendMessage({
             type: "plugins.recoveryHandoff", url: location.href,

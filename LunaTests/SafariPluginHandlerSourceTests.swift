@@ -206,7 +206,10 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         let between = String(source[passiveWalk.lowerBound..<ingestTarget.lowerBound])
 
         XCTAssertFalse(between.contains("persistPluginRecoveryHandoff("))
-        XCTAssertTrue(String(source[ingestTarget.lowerBound...]).contains(
+        let explicitRecovery = String(source[ingestTarget.lowerBound...])
+        XCTAssertTrue(explicitRecovery.contains(
             "persistPluginRecoveryHandoff(walk.matched, walk.outcomes)"))
+        XCTAssertTrue(explicitRecovery.contains("digestTruncated: snapshot.digestTruncated"))
+        XCTAssertFalse(explicitRecovery.contains("html: snapshot.html"))
     }
 }

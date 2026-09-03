@@ -68,22 +68,28 @@ public final class PluginRecoveryHandoffStore: @unchecked Sendable {
     public func peek(now: Date = Date()) -> PluginRecoveryHandoff? {
         lock.lock()
         defer { lock.unlock() }
-        guard let defaults,
-              let data = defaults.data(forKey: Self.key),
-              let value = try? JSONDecoder().decode(PluginRecoveryHandoff.self, from: data),
-              abs(now.timeIntervalSince(value.recordedAt)) <= Self.lifetime
-        else { return nil }
-        return value
+        return readLocked(now: now)
     }
 
     /// Consumes the pending case exactly once.
     public func take(caseID: UUID, now: Date = Date()) -> PluginRecoveryHandoff? {
-        guard let value = peek(now: now) else {
-            clear()
+        lock.lock()
+        defer { lock.unlock() }
+        guard let value = readLocked(now: now),
+              value.recoveryCase.caseID == caseID else { return nil }
+        defaults?.removeObject(forKey: Self.key)
+        return value
+    }
+
+    /// Caller holds `lock`. Corrupt/expired data is removed here rather than
+    /// being reconsidered on every launch.
+    private func readLocked(now: Date) -> PluginRecoveryHandoff? {
+        guard let defaults, let data = defaults.data(forKey: Self.key) else { return nil }
+        guard let value = try? JSONDecoder().decode(PluginRecoveryHandoff.self, from: data),
+              abs(now.timeIntervalSince(value.recordedAt)) <= Self.lifetime else {
+            defaults.removeObject(forKey: Self.key)
             return nil
         }
-        guard value.recoveryCase.caseID == caseID else { return nil }
-        clear()
         return value
     }
 

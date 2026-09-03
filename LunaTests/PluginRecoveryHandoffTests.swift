@@ -32,4 +32,20 @@ final class PluginRecoveryHandoffTests: XCTestCase {
         XCTAssertNil(LunaDeepLink.pluginRecoveryCaseID(from:
             try XCTUnwrap(URL(string: "luna://pluginrecovery?case=not-a-uuid"))))
     }
+
+    func testExpiredHandoffIsRemoved() throws {
+        let suite = "plugin-recovery-expiry-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PluginRecoveryHandoffStore(defaults: defaults)
+        let recoveryCase = PluginRecoveryCase(
+            originalURL: "https://example.com/story", outcome: "failed")
+        let url = try XCTUnwrap(URL(string: "https://example.com/story"))
+        let recorded = Date(timeIntervalSince1970: 10)
+        XCTAssertTrue(store.record(recoveryCase, validationURL: url, at: recorded))
+
+        XCTAssertNil(store.peek(now: recorded.addingTimeInterval(
+            PluginRecoveryHandoffStore.lifetime + 1)))
+        XCTAssertNil(defaults.data(forKey: PluginRecoveryHandoffStore.key))
+    }
 }

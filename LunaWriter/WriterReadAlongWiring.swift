@@ -81,7 +81,9 @@ extension WriterEditorScreen: ReadAlongTextHosting {
     /// Everything one open sheet's read-along owns. The screen is held weakly
     /// and the coordinator holds it weakly too, so a closed sheet's session
     /// is torn down by `tearDownReadAlong` and, failing that, pruned.
-    private final class Session: NSObject, EditorLayoutObserving, EditorMenuAugmenting {
+    private final class Session: NSObject, EditorLayoutObserving, EditorMenuAugmenting,
+        UIGestureRecognizerDelegate
+    {
         let coordinator: ReadAlongCoordinator
         let hud: ReadAlongHUDView
         let presenter: AnnotationPresenter
@@ -96,6 +98,7 @@ extension WriterEditorScreen: ReadAlongTextHosting {
             self.tap = UITapGestureRecognizer()
             super.init()
             tap.cancelsTouchesInView = false
+            tap.delegate = self
             tap.addTarget(self, action: #selector(textTapped(_:)))
             screen.editor.textView.addGestureRecognizer(tap)
             screen.layoutObserver = self
@@ -141,12 +144,32 @@ extension WriterEditorScreen: ReadAlongTextHosting {
 
         // MARK: Tap on a mark
 
+        /// `point` in the text view, as a text-container point.
+        private func containerPoint(for point: CGPoint, in screen: WriterEditorScreen) -> CGPoint {
+            let origin = screen.textContainerOrigin()
+            return CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        }
+
+        /// A tap recogniser on a `UITextView` competes with the text view's
+        /// own tap, which is what places the caret and raises the keyboard.
+        /// This one takes a touch only when a mark is under it, and even then
+        /// lets the text view's recognisers run beside it.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let screen else { return false }
+            let point = containerPoint(for: touch.location(in: screen.editor.textView), in: screen)
+            return presenter.annotation(atContainerPoint: point) != nil
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
         @objc private func textTapped(_ recognizer: UITapGestureRecognizer) {
             guard let screen else { return }
-            let textView = screen.editor.textView
-            let point = recognizer.location(in: textView)
-            let origin = screen.textContainerOrigin()
-            let container = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+            let container = containerPoint(for: recognizer.location(in: screen.editor.textView), in: screen)
             let rect = CGRect(origin: recognizer.location(in: screen.editor.readAlongHost), size: .zero)
                 .insetBy(dx: -4, dy: -12)
             presenter.presentPopover(forContainerPoint: container, from: rect, in: screen.editor.readAlongHost)

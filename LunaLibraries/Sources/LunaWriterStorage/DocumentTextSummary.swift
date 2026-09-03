@@ -5,7 +5,13 @@ import LunaWriterText
 /// The listing fields a sheet derives from its text: title (first heading,
 /// else first line, else the localized "Untitled"), snippet and counts.
 enum DocumentTextSummary {
-    struct Summary { let title: String; let snippet: String; let words: Int; let characters: Int }
+    struct Summary {
+        let title: String
+        let snippet: String
+        let words: Int
+        let characters: Int
+        let sentences: Int
+    }
 
     static func summarize(_ text: String) -> Summary {
         let string = text as NSString
@@ -14,6 +20,7 @@ enum DocumentTextSummary {
         return Summary(
             title: derived?.text ?? L10nWriterStorage.untitledDocumentTitle,
             snippet: TitleDeriver.snippet(of: string, after: derived),
-            words: statistics.words, characters: statistics.characters)
+            words: statistics.words, characters: statistics.characters,
+            sentences: statistics.sentences)
     }
 }

@@ -31,6 +31,10 @@ final class WriterMarkdownScannerTests: XCTestCase {
         (markdown as NSString).substring(with: range)
     }
 
+    private func fence(_ marker: Character, width: Int) -> ScanState.FenceMarker {
+        ScanState.FenceMarker(marker: marker.utf16.first!, width: width)
+    }
+
     // MARK: - Blocks
 
     func testHeadingReportsLevelAndLeavesHashesAsMarkup() {
@@ -99,7 +103,7 @@ final class WriterMarkdownScannerTests: XCTestCase {
     func testFenceSwallowsMarkdownUntilItCloses() {
         let lines = scan("```swift\n# not a heading\n```\n# a heading\n")
         XCTAssertEqual(lines[0].block.kind, .fenceDelimiter)
-        XCTAssertEqual(lines[0].stateAfter.inFence, "```")
+        XCTAssertEqual(lines[0].stateAfter.inFence, fence("`", width: 3))
         XCTAssertEqual(lines[1].block.kind, .fencedCode(language: "swift"))
         XCTAssertEqual(lines[2].block.kind, .fenceDelimiter)
         XCTAssertNil(lines[2].stateAfter.inFence)
@@ -110,12 +114,18 @@ final class WriterMarkdownScannerTests: XCTestCase {
         let lines = scan("~~~\n```\nstill code\n")
         XCTAssertEqual(lines[1].block.kind, .fencedCode(language: nil))
         XCTAssertEqual(lines[2].block.kind, .fencedCode(language: nil))
-        XCTAssertEqual(lines[2].stateAfter.inFence, "~~~")
+        XCTAssertEqual(lines[2].stateAfter.inFence, fence("~", width: 3))
     }
 
     func testFencedCodeLineCarriesTheOpeningLanguage() {
         let lines = scan("```python\nprint(1)\n")
         XCTAssertEqual(lines[1].block.kind, .fencedCode(language: "python"))
+    }
+
+    func testFencedCodeLineKeepsItsLeadingIndentation() {
+        let source = "```\n    indented\n```\n"
+        let lines = scan(source)
+        XCTAssertEqual(text(source, lines[1].block.contentRange), "    indented")
     }
 
     func testDelimiterRowTurnsTheHeaderRowIntoATable() {
@@ -220,16 +230,5 @@ final class WriterMarkdownScannerTests: XCTestCase {
             expected += line.block.lineRange.length
         }
         XCTAssertEqual(expected, (source as NSString).length)
-    }
-
-    func testSubstringEntryPointPlacesRangesAtTheGivenOffset() {
-        let source = "intro\n# Heading\n"
-        let start = (source as NSString).range(of: "# Heading").location
-        let line = MarkdownScanner.scanLine(
-            "# Heading\n"[...],
-            at: NSRange(location: start, length: 10),
-            state: .initial)
-        XCTAssertEqual(line.block.kind, .heading(level: 1))
-        XCTAssertEqual(text(source, line.block.contentRange), "Heading")
     }
 }

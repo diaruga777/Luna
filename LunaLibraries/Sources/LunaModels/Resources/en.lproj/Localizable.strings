@@ -1348,3 +1348,25 @@
 "WriterLibrary_snapshots_restoreAction_Luna" = "Restore";
 "WriterLibrary_snapshots_restoreConfirmTitle_Luna" = "Restore this snapshot?";
 "WriterLibrary_snapshots_title_Luna" = "Snapshots";
+
+// Luna Writer — intents (claudedocs/plans/writer-app.md §9). Metadata keys are
+// literal, already-suffixed keys; the two dialog lines resolve through L10n.
+"WriterIntents_addNote_title_Luna" = "Add Note";
+"WriterIntents_addNote_description_Luna" = "Adds a note to Luna Writer. Name a sheet, or let Luna file it.";
+"WriterIntents_addNote_textParameter_title_Luna" = "Note";
+"WriterIntents_addNote_documentParameter_title_Luna" = "Sheet";
+"WriterIntents_addNote_summary_Luna" = "Add note";
+"WriterIntents_addNote_addedToSheet_Luna" = "Added to %@.";
+"WriterIntents_addNote_addedToInbox_Luna" = "Added to your Inbox.";
+"WriterIntents_createDocument_title_Luna" = "New Sheet";
+"WriterIntents_createDocument_description_Luna" = "Creates a sheet in Luna Writer and opens it.";
+"WriterIntents_createDocument_titleParameter_title_Luna" = "Title";
+"WriterIntents_createDocument_textParameter_title_Luna" = "Text";
+"WriterIntents_createDocument_summary_Luna" = "New sheet";
+"WriterIntents_openDocument_title_Luna" = "Open Sheet";
+"WriterIntents_openDocument_description_Luna" = "Opens a sheet in Luna Writer.";
+"WriterIntents_openDocument_documentParameter_title_Luna" = "Sheet";
+"WriterIntents_openDocument_summary_Luna" = "Open";
+"WriterIntents_documentEntity_titleProperty_title_Luna" = "Title";
+"WriterIntents_documentEntity_modifiedProperty_title_Luna" = "Modified";
+"WriterIntents_documentEntity_typeName_Luna" = "Sheet";

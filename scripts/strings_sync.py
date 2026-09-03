@@ -116,7 +116,7 @@ CALL_RE = re.compile(r"\bL10n\.(?:string|resource)\(")
 # only for shapes the AppIntents build plugin actually treats as metadata —
 # a plain `DisplayRepresentation(title: "\(x)")` VALUE at a normal call site
 # is runtime content, not build-time metadata, and must not match here.
-INTENT_SOURCES = ("Luna/Mail/Intents/", "LiveActivityWidget.swift")
+INTENT_SOURCES = ("Luna/Mail/Intents/", "LunaWriter/Intents/", "LiveActivityWidget.swift")
 
 INTENT_RES = [
     # static let title: LocalizedStringResource = "…"

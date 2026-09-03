@@ -82,6 +82,12 @@ public final class WriterIntentServices {
         return document
     }
 
+    /// One sheet by id, for entity lookup. Trashed sheets stay findable so a
+    /// shortcut that named one still resolves.
+    public func document(_ id: DocumentID) throws -> WriterDocument? {
+        try library.document(id)
+    }
+
     public func recentDocuments(limit: Int) throws -> [WriterDocument] {
         Array(try library.recent(days: Self.recentWindowDays).prefix(max(0, limit)))
     }

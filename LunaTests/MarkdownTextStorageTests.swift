@@ -100,4 +100,61 @@ final class MarkdownTextStorageTests: XCTestCase {
         storage.replaceCharacters(in: NSRange(location: 2, length: 0), with: "c")
         XCTAssertEqual(storage.revision, start + 2)
     }
+
+    // MARK: - Two edits, one editing group
+
+    /// Two edits that touch neither the same, nor adjacent, text — inside one
+    /// `beginEditing`/`endEditing` pair — must each rescan against the text
+    /// as it stood right after ITS OWN splice, not a range that describes
+    /// neither edit. The model's own pending-lines union (not a second,
+    /// hand-rolled one in the storage) is what keeps this correct.
+    func testTwoDisjointEditsInOneEditingGroupRescanBothCorrectly() throws {
+        let base = "plain\nsecond line of plain body text that stretches out long enough to be edited near its very end here\n"
+        let storage = MarkdownTextStorage(text: base)
+        let ns = NSString(string: base)
+        let secondLineStart = ns.range(of: "second").location
+        let tailWord = ns.range(of: "here")
+
+        storage.beginEditing()
+        // Edit 1: turn the first line into a heading.
+        storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "# ")
+        // Edit 2, same group: replace a word near the end of the second line.
+        // Its range is against the text as edit 1 already left it, exactly as
+        // UIKit itself would supply it.
+        storage.replaceCharacters(
+            in: NSRange(location: tailWord.location + 2, length: tailWord.length), with: "THERE")
+        storage.endEditing()
+
+        XCTAssertTrue(storage.string.hasPrefix("# plain"))
+        XCTAssertTrue(storage.string.contains("THERE"))
+        XCTAssertFalse(storage.string.contains("here\n"))
+        XCTAssertEqual(storage.length, (storage.string as NSString).length)
+
+        let heading = try XCTUnwrap(font(storage, at: 2))
+        XCTAssertTrue(heading.fontDescriptor.symbolicTraits.contains(.traitBold))
+
+        // The second line's own font survived edit 1's shift correctly: it
+        // reads as plain body, not a stale or out-of-range scan.
+        let secondLineFont = try XCTUnwrap(font(storage, at: secondLineStart + 2))
+        XCTAssertFalse(secondLineFont.fontDescriptor.symbolicTraits.contains(.traitBold))
+    }
+
+    /// Two edits in one group report their rescan as a single pass to
+    /// observers, not once per `replaceCharacters` call.
+    func testTwoEditsInOneGroupNotifyTheObserverOnce() throws {
+        final class Recorder: MarkdownTextStorageObserving {
+            var count = 0
+            func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange) { count += 1 }
+        }
+        let storage = MarkdownTextStorage(text: "alpha bravo\ncharlie delta\n")
+        let recorder = Recorder()
+        storage.addObserver(recorder)
+
+        storage.beginEditing()
+        storage.replaceCharacters(in: NSRange(location: 0, length: 5), with: "ALPHA")
+        storage.replaceCharacters(in: NSRange(location: 12, length: 7), with: "CHARLIE")
+        storage.endEditing()
+
+        XCTAssertEqual(recorder.count, 1)
+    }
 }

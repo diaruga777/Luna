@@ -217,7 +217,9 @@ public final class EditorViewController: UIViewController {
         syntaxLayer.isEnabled = settings.syntaxColouring
         authorshipLayer.isEnabled = settings.showAuthorship
         accessoryBar.setFocusActive(focus.mode != .off)
-        composer.invalidate(nil)
+        // The styler assignment above already restyles and repaints through
+        // MarkdownTextStorageObserving when it actually changed; a second,
+        // unconditional repaint here was pure duplication.
     }
 
     // MARK: - Statistics

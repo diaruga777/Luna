@@ -359,10 +359,10 @@ let package = Package(
         // UIKit from LunaWriterEditor up. See claudedocs/plans/writer-app.md §2.
         .target(name: "LunaWriterModels"),
         .target(name: "LunaWriterText", dependencies: ["LunaWriterModels"]),
-        .target(name: "LunaWriterStorage", dependencies: ["LunaWriterModels", "LunaWriterText"]),
+        .target(name: "LunaWriterStorage", dependencies: ["LunaWriterModels", "LunaWriterText", "LunaModels"]),
         .target(name: "LunaWriterVoice", dependencies: ["LunaWriterModels"]),
         .target(name: "LunaWriterEditor", dependencies: [
-            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaDesignSystem", "LunaModels",
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaGaze", "LunaDesignSystem", "LunaModels",
         ]),
         .target(name: "LunaWriterReadAlong", dependencies: [
             "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaWriterEditor",

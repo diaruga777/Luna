@@ -11,6 +11,7 @@ import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaGaze
 @testable import LunaReaderUI
 
 private final class ReliabilityGazeTracker: GazeTracking {

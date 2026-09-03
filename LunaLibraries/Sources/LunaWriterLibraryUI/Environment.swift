@@ -11,6 +11,13 @@ public protocol DocumentEditing: AnyObject {
     var document: WriterDocument { get }
     func focus(on anchor: TextAnchor)
     func flushPendingSave()
+    /// Replaces the whole sheet's text, as a snapshot restore does. The
+    /// default does nothing, for a fake with no text of its own to replace.
+    func replaceText(_ text: String)
+}
+
+extension DocumentEditing {
+    public func replaceText(_ text: String) {}
 }
 
 /// What an editor reports back to its container.

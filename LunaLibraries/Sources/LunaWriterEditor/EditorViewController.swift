@@ -111,11 +111,6 @@ public final class EditorViewController: UIViewController {
         composer.invalidate(nil)
     }
 
-    public override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        session.applicationDidEnterBackground()
-    }
-
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         relayoutIfNeeded()
@@ -159,6 +154,16 @@ public final class EditorViewController: UIViewController {
     }
 
     deinit {
+        statisticsTimer?.invalidate()
+        aiTask?.cancel()
+    }
+
+    /// Ends the session: cancels anything in flight and saves, snapshotting
+    /// a sheet that changed. The host (`WriterEditorScreen`) calls this when
+    /// the sheet is actually closing — `viewDidDisappear`/`deinit` no longer
+    /// do this I/O themselves, since a view controller can disappear for
+    /// reasons that have nothing to do with the sheet closing.
+    public func close() {
         statisticsTimer?.invalidate()
         aiTask?.cancel()
         session.close()
@@ -222,6 +227,7 @@ public final class EditorViewController: UIViewController {
 
         session.storage.addObserver(self)
         session.authorship.observer = self
+        session.delegate = self
         streamer.delegate = self
         // The storage's own initial scan ran before this observer existed
         // (the session is built well before the view controller), so the
@@ -558,6 +564,30 @@ extension EditorViewController: AuthorshipObserving {
 
     public func authorshipTracker(_ tracker: AuthorshipTracker, didChange range: NSRange?) {
         composer.invalidate(range)
+    }
+}
+
+// MARK: - DocumentSessionDelegate
+
+extension EditorViewController: DocumentSessionDelegate {
+
+    public func documentSessionDidSave(_ session: DocumentSession) {
+        delegate?.editorDidUpdateDocument(self, document: session.document)
+    }
+
+    public func documentSession(_ session: DocumentSession, didReanchorWithOrphans orphans: [Annotation]) {
+        // The resolved-annotations set this composer paints from changed.
+        composer.invalidate(nil)
+    }
+
+    /// The text was replaced out from under this text view — an external
+    /// file change, or a snapshot restore. The undo stack refers to gone
+    /// text and a mention query, if one was open, is about to point at
+    /// something that no longer exists.
+    public func documentSessionDidReceiveExternalChange(_ session: DocumentSession) {
+        textView.undoManager?.removeAllActions()
+        mention.dismiss()
+        delegate?.editorDidUpdateDocument(self, document: session.document)
     }
 }
 

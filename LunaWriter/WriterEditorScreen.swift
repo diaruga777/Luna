@@ -30,6 +30,12 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    /// The one place the session's I/O actually ends — this screen leaving
+    /// scope is what "the sheet is closing" means.
+    deinit {
+        editor.close()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         addChild(editor)
@@ -43,7 +49,9 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func focus(on anchor: TextAnchor) { editor.focus(on: anchor) }
 
-    func flushPendingSave() { try? session.save() }
+    func flushPendingSave() { session.saveNow() }
+
+    func replaceText(_ text: String) { session.replaceWholeText(text) }
 
     func editorRequestsNotesPanel(_ editor: EditorViewController) {
         editingDelegate?.editorRequestsNotesPanel(self)

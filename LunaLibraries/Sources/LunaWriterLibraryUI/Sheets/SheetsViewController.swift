@@ -83,7 +83,7 @@ public final class SheetsViewController: UICollectionViewController {
         configureNavigationItems()
         configureSearch()
         library.addObserver(self)
-        select(.all)
+        select(currentSelection)
     }
 
     deinit { library.removeObserver(self) }
@@ -136,7 +136,12 @@ public final class SheetsViewController: UICollectionViewController {
 
     // MARK: - Loading
 
+    /// On a compact width the split view is collapsed and this column's view
+    /// loads only when it is first pushed, so a `select(_:)` from the sidebar
+    /// can arrive before `viewDidLoad` built the data source. The selection
+    /// is kept and `viewDidLoad` applies it (organiser #29).
     public func reload() {
+        guard isViewLoaded else { return }
         let documents = loadDocuments()
         documentsByID = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
 
@@ -275,9 +280,11 @@ public final class SheetsViewController: UICollectionViewController {
         createSheet()
     }
 
+    /// Creates a document in `group`, or in the current selection's group
+    /// (the Inbox for a library scope), and opens it.
     @discardableResult
-    public func createSheet() -> WriterDocument? {
-        let group = targetGroupForNewSheet()
+    public func createSheet(in group: GroupID? = nil) -> WriterDocument? {
+        let group = group ?? targetGroupForNewSheet()
         guard let document = try? library.createDocument(in: group, title: nil) else { return nil }
         reload()
         selectionDelegate?.sheetsViewController(self, didSelect: document)

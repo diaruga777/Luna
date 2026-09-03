@@ -327,8 +327,20 @@ public final class GroupsViewController: UICollectionViewController {
 
     // MARK: - New group / filter
 
-    private func newItemMenu() -> UIMenu {
+    /// The group a document made from the sidebar lands in: the highlighted
+    /// group, or the Inbox (`nil`) for a library scope, a filter or the Trash.
+    private var newDocumentTargetGroup: GroupID? {
+        if case .group(let id) = selectedRow { return id }
+        return nil
+    }
+
+    /// The `+` menu. Tests read it through this rather than the bar button.
+    func newItemMenu() -> UIMenu {
         UIMenu(children: [
+            UIAction(
+                title: L10n.string("WriterLibrary_command_newSheet"),
+                image: UIImage(systemName: "square.and.pencil")
+            ) { [weak self] _ in self?.requestNewDocument(in: self?.newDocumentTargetGroup) },
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newGroupAction"),
                 image: UIImage(systemName: "folder.badge.plus")
@@ -338,6 +350,10 @@ public final class GroupsViewController: UICollectionViewController {
                 image: UIImage(systemName: "line.3.horizontal.decrease.circle")
             ) { [weak self] _ in self?.createFilter(scope: nil) },
         ])
+    }
+
+    public func requestNewDocument(in group: GroupID?) {
+        selectionDelegate?.groupsViewController(self, requestsNewDocumentIn: group)
     }
 
     @discardableResult
@@ -377,6 +393,10 @@ public final class GroupsViewController: UICollectionViewController {
 
     private func groupContextMenu(for id: GroupID) -> UIMenu {
         UIMenu(children: [
+            UIAction(
+                title: L10n.string("WriterLibrary_command_newSheet"),
+                image: UIImage(systemName: "square.and.pencil")
+            ) { [weak self] _ in self?.requestNewDocument(in: id) },
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newGroupAction"),
                 image: UIImage(systemName: "folder.badge.plus")

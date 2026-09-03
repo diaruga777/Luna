@@ -27,6 +27,41 @@ final class SheetsViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.visibleRowsForTesting, [.document(inA.id)])
     }
 
+    /// On an iPhone the split view is collapsed, so the sidebar's first tap
+    /// selects a scope in a sheets list whose view has never loaded. That
+    /// used to trap on the nil data source (organiser #29).
+    @MainActor
+    func testSelectingBeforeTheViewLoadsKeepsTheSelectionForViewDidLoad() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "A", icon: "folder", parent: nil)
+        let inGroup = try stack.library.createDocument(in: group.id, title: "In A")
+        _ = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "In Inbox")
+
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        controller.select(.group(group.id))
+        XCTAssertFalse(controller.isViewLoaded)
+
+        layoutWriterScreen(controller)
+        XCTAssertEqual(controller.visibleRowsForTesting, [.document(inGroup.id)])
+    }
+
+    @MainActor
+    func testCreatingASheetBeforeTheViewLoadsStillCreatesAndReportsIt() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "A", icon: "folder", parent: nil)
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        let delegate = RecordingSheetsSelectionDelegate()
+        controller.selectionDelegate = delegate
+
+        let created = try XCTUnwrap(controller.createSheet(in: group.id))
+        XCTAssertEqual(created.groupID, group.id)
+        XCTAssertEqual(delegate.selected.map(\.id), [created.id])
+
+        layoutWriterScreen(controller)
+        controller.select(.group(group.id))
+        XCTAssertEqual(controller.visibleRowsForTesting, [.document(created.id)])
+    }
+
     @MainActor
     func testManualSortOrdersByTitleWhenAsked() throws {
         let stack = try makeWriterStack()
@@ -249,5 +284,13 @@ final class SheetsViewControllerTests: XCTestCase {
         let created = try XCTUnwrap(controller.createSheet())
         XCTAssertEqual(created.groupID, group.id)
         XCTAssertEqual(recorder.selected?.id, created.id)
+    }
+}
+
+@MainActor
+private final class RecordingSheetsSelectionDelegate: SheetsSelectionDelegate {
+    var selected: [WriterDocument] = []
+    func sheetsViewController(_ controller: SheetsViewController, didSelect document: WriterDocument) {
+        selected.append(document)
     }
 }

@@ -52,6 +52,38 @@ final class LibraryRootViewControllerTests: XCTestCase {
         XCTAssertTrue(inputs.contains("\(UIKeyModifierFlags.command.rawValue)-,"), "settings")
     }
 
+    // MARK: - Compact width (organiser #29)
+
+    /// A 390 pt root is collapsed: the sheets column has no loaded view when
+    /// the sidebar's first tap arrives. Selecting a scope and creating a
+    /// document from the sidebar must both work there.
+    @MainActor
+    func testSidebarSelectionAndNewDocumentWorkOnACompactWidth() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let inGroup = try stack.library.createDocument(in: group.id, title: "In G")
+        let editorMaker = FakeDocumentEditorMaker()
+        let root = LibraryRootViewController(environment: makeLibraryEnvironment(stack: stack, editorMaker: editorMaker))
+        let window = hostWriterScreen(root, width: 390, height: 844)
+        defer { window.isHidden = true }
+        XCTAssertTrue(root.isCollapsed)
+
+        let sidebar = try XCTUnwrap(
+            (root.viewController(for: .primary) as? UINavigationController)?.viewControllers.first
+                as? GroupsViewController)
+        root.groupsViewController(sidebar, didSelect: .group(group.id))
+        let sheets = try XCTUnwrap(
+            (root.viewController(for: .supplementary) as? UINavigationController)?.viewControllers.first
+                as? SheetsViewController)
+        layoutWriterScreen(sheets)
+        XCTAssertEqual(sheets.visibleRowsForTesting, [.document(inGroup.id)])
+
+        root.groupsViewController(sidebar, requestsNewDocumentIn: nil)
+        XCTAssertEqual(editorMaker.madeEditors.count, 1)
+        let opened = try XCTUnwrap(root.currentDocumentIDForTesting)
+        XCTAssertEqual(try stack.library.document(opened).groupID, stack.library.inboxGroupID)
+    }
+
     // MARK: - Selection and re-selection (organiser #10)
 
     @MainActor

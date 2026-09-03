@@ -84,6 +84,10 @@ public enum LibrarySelection: Hashable {
 /// Weak reference from `SheetsViewController` back to whatever hosts it.
 public protocol GroupsSelectionDelegate: AnyObject {
     func groupsViewController(_ controller: GroupsViewController, didSelect selection: LibrarySelection)
+    /// The sidebar's "New Document": `group` is the highlighted group, or
+    /// `nil` for the Inbox. On a compact width the sidebar is the only
+    /// column on screen, so this is the one way to start writing there.
+    func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?)
 }
 
 /// Weak reference from `EditorContainerViewController` back to whatever

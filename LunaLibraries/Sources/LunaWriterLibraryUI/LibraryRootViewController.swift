@@ -201,6 +201,10 @@ extension LibraryRootViewController: GroupsSelectionDelegate {
         sheetsViewController.select(selection)
         show(.supplementary)
     }
+
+    public func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?) {
+        sheetsViewController.createSheet(in: group)
+    }
 }
 
 extension LibraryRootViewController: SheetsSelectionDelegate {

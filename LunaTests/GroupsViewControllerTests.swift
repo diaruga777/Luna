@@ -6,6 +6,7 @@
 import UIKit
 import XCTest
 @testable import LunaWriterLibraryUI
+import LunaModels
 import LunaWriterModels
 import LunaWriterStorage
 
@@ -21,6 +22,25 @@ final class GroupsViewControllerTests: XCTestCase {
         XCTAssertEqual(
             Set([.libraryAll, .libraryRecent, .libraryFavorites, .inboxRow, .trashRow]) as Set<GroupsRow>,
             Set(rows).intersection([.libraryAll, .libraryRecent, .libraryFavorites, .inboxRow, .trashRow]))
+    }
+
+    /// On a compact width the sidebar is the only column on screen, so its
+    /// `+` menu must lead with a document, not only a group and a filter.
+    @MainActor
+    func testThePlusMenuLeadsWithNewDocumentAndRoutesItToTheDelegate() throws {
+        let stack = try makeWriterStack()
+        let controller = GroupsViewController(library: stack.library, notes: stack.library)
+        let delegate = RecordingGroupsSelectionDelegate()
+        controller.selectionDelegate = delegate
+        layoutWriterScreen(controller)
+
+        let first = try XCTUnwrap(controller.newItemMenu().children.first as? UIAction)
+        XCTAssertEqual(first.title, L10n.string("WriterLibrary_command_newSheet"))
+
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        controller.requestNewDocument(in: nil)
+        controller.requestNewDocument(in: group.id)
+        XCTAssertEqual(delegate.newDocumentRequests, [nil, group.id])
     }
 
     @MainActor
@@ -164,5 +184,17 @@ final class GroupsViewControllerTests: XCTestCase {
         XCTAssertFalse(controller.moveGroup(parent.id, toParent: child.id, index: 0))
         XCTAssertFalse(controller.moveGroup(parent.id, toParent: parent.id, index: 0))
         XCTAssertEqual(try stack.library.groups().first { $0.id == parent.id }?.parentID, nil)
+    }
+}
+
+@MainActor
+private final class RecordingGroupsSelectionDelegate: GroupsSelectionDelegate {
+    var selections: [LibrarySelection] = []
+    var newDocumentRequests: [GroupID?] = []
+    func groupsViewController(_ controller: GroupsViewController, didSelect selection: LibrarySelection) {
+        selections.append(selection)
+    }
+    func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?) {
+        newDocumentRequests.append(group)
     }
 }

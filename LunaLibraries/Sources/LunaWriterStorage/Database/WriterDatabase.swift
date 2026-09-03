@@ -36,13 +36,28 @@ public final class WriterDatabase {
 
     /// Schema revision in `PRAGMA user_version`. Bump it and add a step to
     /// `WriterSchema.migrations` when the tables change.
-    public static let schemaVersion: Int32 = 1
+    public static let schemaVersion: Int32 = 2
+
+    /// Distinct prepared SQL strings kept alive at once. Every query in this
+    /// tier binds its variable parts rather than interpolating them into the
+    /// SQL text, so the number of distinct statements is small and fixed;
+    /// this cap is a backstop, not a budget anything is expected to near.
+    static let maxCachedStatements = 128
 
     public let fileURL: URL
 
     private var handle: OpaquePointer?
     private let queue: DispatchQueue
     private var statements: [String: OpaquePointer] = [:]
+    /// Cache keys, oldest first. The front is evicted (and finalized) when
+    /// the cache grows past `maxCachedStatements`.
+    private var statementRecency: [String] = []
+    #if DEBUG
+    /// SQL currently mid-`step()` in `query`/`run`, so a closure that calls
+    /// back into the same statement is caught rather than silently rebinding
+    /// (and so invalidating) the row it is still reading.
+    private var inFlightStatements: Set<String> = []
+    #endif
 
     /// Opens (creating if needed) the database at `fileURL`, applies the
     /// connection settings and brings the schema up to `schemaVersion`.
@@ -63,7 +78,10 @@ public final class WriterDatabase {
         self.handle = opened
         try queue.sync {
             try configure()
-            try WriterSchema.migrate(self)
+            // A busy file at launch (another process mid-write) must not
+            // throw the whole store out of existence; retry the migration
+            // rather than leaving `makeDefault` with nothing to show.
+            try retryingWhileBusy { try WriterSchema.migrate(self) }
         }
     }
 
@@ -112,10 +130,23 @@ public final class WriterDatabase {
                     try execute("COMMIT")
                     return result
                 } catch {
-                    try? execute("ROLLBACK")
+                    rollbackAfterFailedTransaction()
                     throw error
                 }
             }
+        }
+    }
+
+    /// A `ROLLBACK` that itself fails leaves the connection mid-transaction —
+    /// every write after it would wedge behind a transaction nobody can
+    /// close. `sqlite3_get_autocommit` says whether that happened; one retry
+    /// after a short wait is the same recovery `retryingWhileBusy` gives
+    /// every other statement.
+    private func rollbackAfterFailedTransaction() {
+        guard (try? execute("ROLLBACK")) == nil else { return }
+        if sqlite3_get_autocommit(handle) == 0 {
+            Thread.sleep(forTimeInterval: 0.05)
+            _ = try? execute("ROLLBACK")
         }
     }
 
@@ -135,12 +166,15 @@ public final class WriterDatabase {
     }
 
     /// A cached, reset statement ready to bind. `SQLITE_PREPARE_PERSISTENT`
-    /// suits the handful of statements this store runs over and over.
+    /// suits the handful of statements this store runs over and over. The
+    /// cache is bounded: past `maxCachedStatements` the least recently used
+    /// entry is finalized and dropped.
     func prepare(_ sql: String) throws -> WriterStatement {
         assertOnQueue()
         if let existing = statements[sql] {
             sqlite3_reset(existing)
             sqlite3_clear_bindings(existing)
+            touch(sql)
             return WriterStatement(handle: existing, sql: sql, database: self)
         }
         var prepared: OpaquePointer?
@@ -151,12 +185,37 @@ public final class WriterDatabase {
                 code: status, message: String(cString: sqlite3_errmsg(handle)), sql: sql)
         }
         statements[sql] = prepared
+        statementRecency.append(sql)
+        evictLeastRecentlyUsedIfNeeded()
         return WriterStatement(handle: prepared, sql: sql, database: self)
+    }
+
+    private func touch(_ sql: String) {
+        guard let index = statementRecency.firstIndex(of: sql) else { return }
+        statementRecency.remove(at: index)
+        statementRecency.append(sql)
+    }
+
+    private func evictLeastRecentlyUsedIfNeeded() {
+        while statementRecency.count > Self.maxCachedStatements {
+            let oldest = statementRecency.removeFirst()
+            if let handle = statements.removeValue(forKey: oldest) {
+                sqlite3_finalize(handle)
+            }
+        }
+    }
+
+    /// The number of distinct SQL strings currently cached. A test seam: the
+    /// cache is otherwise private.
+    var statementCacheCountForTesting: Int {
+        assertOnQueue()
+        return statements.count
     }
 
     func run(_ sql: String, _ bind: (WriterStatement) throws -> Void = { _ in }) throws {
         let statement = try prepare(sql)
-        defer { statement.reset() }
+        markInFlight(sql)
+        defer { statement.reset(); clearInFlight(sql) }
         try bind(statement)
         while try statement.step() {}
     }
@@ -166,9 +225,30 @@ public final class WriterDatabase {
         row: (WriterStatement) throws -> Void
     ) throws {
         let statement = try prepare(sql)
-        defer { statement.reset() }
+        markInFlight(sql)
+        defer { statement.reset(); clearInFlight(sql) }
         try bind(statement)
         while try statement.step() { try row(statement) }
+    }
+
+    /// A `row:`/`bind:` closure that calls back into `query`/`run` for the
+    /// SAME sql would reset and rebind the cached statement out from under
+    /// the outer call's still-open `step()` loop. Caught only in DEBUG: it is
+    /// a programmer error, not a condition production code should handle.
+    private func markInFlight(_ sql: String) {
+        #if DEBUG
+        assert(
+            !inFlightStatements.contains(sql),
+            "Re-entrant WriterDatabase call for the same SQL invalidates the cached "
+            + "statement mid-iteration: \(sql)")
+        inFlightStatements.insert(sql)
+        #endif
+    }
+
+    private func clearInFlight(_ sql: String) {
+        #if DEBUG
+        inFlightStatements.remove(sql)
+        #endif
     }
 
     func scalarInt(_ sql: String, _ bind: (WriterStatement) throws -> Void = { _ in }) throws -> Int64? {
@@ -184,7 +264,18 @@ public final class WriterDatabase {
     /// contentless index reaches the row it describes.
     var lastInsertRowID: Int64 { sqlite3_last_insert_rowid(handle) }
 
-    /// The schema revision recorded in the file.
+    /// Rows the last `run`/`execute` on this connection touched. Read it only
+    /// from inside `perform`/`transaction`, right after the statement whose
+    /// count is wanted.
+    var changesCount: Int32 {
+        assertOnQueue()
+        return sqlite3_changes(handle)
+    }
+
+    /// The schema revision recorded in the file. Opens its own turn on the
+    /// queue: call it only from OUTSIDE `perform`/`transaction`, never from a
+    /// closure already running on the queue, or the nested `queue.sync`
+    /// deadlocks.
     public var userVersion: Int32 {
         (try? perform { try $0.readUserVersion() }) ?? 0
     }
@@ -251,6 +342,16 @@ struct WriterStatement {
         try check(value.withUnsafeBytes {
             sqlite3_bind_blob(handle, index, $0.baseAddress, Int32(value.count), writerSQLiteTransient)
         })
+    }
+
+    /// Binds a list of ids as one JSON array, for an
+    /// `IN (SELECT value FROM json_each(?))` clause. The SQL text — and so
+    /// the statement-cache key — stays the same however many ids are in the
+    /// list, where interpolating each id into the SQL would mint a new
+    /// permanently cached statement per distinct id set.
+    func bind(_ index: Int32, jsonArray values: [String]) throws {
+        let data = try JSONSerialization.data(withJSONObject: values)
+        try bind(index, String(decoding: data, as: UTF8.self))
     }
 
     // MARK: - Step

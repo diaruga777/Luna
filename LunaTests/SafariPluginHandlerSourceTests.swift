@@ -37,6 +37,7 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         "plugins.collection.put", "plugins.collection.get", "plugins.collection.delete",
         "plugins.collection.find", "plugins.collection.count",
         "plugins.log", "plugins.settings.get", "plugins.browserDeferred", "plugins.queueModel",
+        "plugins.recoveryHandoff",
     ]
 
     /// The shared handler dispatches every `plugins.*` string by prefix, to
@@ -193,5 +194,19 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         XCTAssertTrue(lunaVariantSource.contains("static let handler: SafariPluginMessaging?"))
         XCTAssertTrue(noneVariantSource.contains("static let handler: SafariPluginMessaging?"))
         XCTAssertTrue(noneVariantSource.contains("= nil"))
+    }
+
+    func testRecoveryHandoffIsOnlyOpenedAfterAnExplicitPluginSaveAttempt() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("LunaSafari/Resources/content.js"),
+            encoding: .utf8)
+        let passiveWalk = try XCTUnwrap(source.range(of: "function runPluginWalkForPage()"))
+        let ingestTarget = try XCTUnwrap(source.range(of: "function pluginSaveTargetFor"))
+        let between = String(source[passiveWalk.lowerBound..<ingestTarget.lowerBound])
+
+        XCTAssertFalse(between.contains("persistPluginRecoveryHandoff("))
+        XCTAssertTrue(String(source[ingestTarget.lowerBound...]).contains(
+            "persistPluginRecoveryHandoff(walk.matched, walk.outcomes)"))
     }
 }

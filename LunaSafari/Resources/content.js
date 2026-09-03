@@ -242,6 +242,7 @@
     var PLUGIN_CLASSIFY_TIMEOUT_MS = 8000;
     var PLUGIN_INGEST_TIMEOUT_MS = 20000;
     var PLUGIN_PAGE_HTML_LIMIT = 200000;
+    var PLUGIN_RECOVERY_DIGEST_LIMIT = 12000;
 
     function withTimeout(promise, ms) {
         return new Promise(function (resolve, reject) {
@@ -414,6 +415,10 @@
             pluginPageSnapshot = {
                 url: location.href,
                 html: rawHTML.slice(0, PLUGIN_PAGE_HTML_LIMIT),
+                // The handoff gets a smaller evidence digest, while hooks keep
+                // the full bounded snapshot. Both values are derived from this
+                // one read of outerHTML so they cannot disagree about truncation.
+                digest: rawHTML.slice(0, PLUGIN_RECOVERY_DIGEST_LIMIT),
                 title: document.title || "",
                 source: "safari",
                 truncated: rawHTML.length > PLUGIN_PAGE_HTML_LIMIT
@@ -429,11 +434,22 @@
     ///
     /// The answered walk carries the list it came from and its own place in
     /// it, so an `ingest` that declines can resume from the next plugin.
-    function walkClassify(matched, index) {
+    function recordPluginOutcome(outcomes, meta, phase, result, message) {
+        outcomes.push({
+            pluginID: meta.id, version: meta.version || null, phase: phase,
+            result: result, message: message ? String(message).slice(0, 512) : null
+        });
+    }
+
+    function walkClassify(matched, index, outcomes) {
+        outcomes = outcomes || [];
         if (index >= matched.length) { return Promise.resolve(null); }
         var meta = matched[index];
         return loadPluginRuntime(meta).then(function (loaded) {
-            if (typeof loaded.hooks.classify !== "function") { return walkClassify(matched, index + 1); }
+            if (typeof loaded.hooks.classify !== "function") {
+                recordPluginOutcome(outcomes, meta, "classify", "missing-hook", "plugin has no classify hook");
+                return walkClassify(matched, index + 1, outcomes);
+            }
             return withTimeout(
                 Promise.resolve().then(function () {
                     return loaded.hooks.classify({
@@ -443,22 +459,58 @@
                 PLUGIN_CLASSIFY_TIMEOUT_MS
             ).then(function (claim) {
                 if (claim && claim.kind && (meta.produces || []).indexOf(claim.kind) >= 0) {
-                    return { plugin: meta, claim: claim, matched: matched, index: index };
+                    recordPluginOutcome(outcomes, meta, "classify", "claimed", claim.kind);
+                    return {
+                        plugin: meta, claim: claim, matched: matched, index: index,
+                        outcomes: outcomes
+                    };
                 }
                 if (claim && claim.kind) {
+                    recordPluginOutcome(outcomes, meta, "classify", "invalid-claim", "claimed " + claim.kind);
                     logPluginSkip(
                         meta.id, "classify",
                         new Error("claimed " + claim.kind + ", which it does not declare in produces"));
+                } else {
+                    recordPluginOutcome(outcomes, meta, "classify", "declined", null);
                 }
-                return walkClassify(matched, index + 1);
+                return walkClassify(matched, index + 1, outcomes);
             }, function (error) {
+                recordPluginOutcome(outcomes, meta, "classify", "failed", error && error.message);
                 logPluginSkip(meta.id, "classify", error);
-                return walkClassify(matched, index + 1);
+                return walkClassify(matched, index + 1, outcomes);
             });
         }, function (error) {
+            recordPluginOutcome(outcomes, meta, "load", "failed", error && error.message);
             logPluginSkip(meta.id, "load", error);
-            return walkClassify(matched, index + 1);
+            return walkClassify(matched, index + 1, outcomes);
         });
+    }
+
+    var pluginRecoverySentForURL = null;
+    function persistPluginRecoveryHandoff(matched, outcomes) {
+        if (typeof browser === "undefined" || pluginRecoverySentForURL === location.href) {
+            return Promise.resolve(null);
+        }
+        pluginRecoverySentForURL = location.href;
+        var snapshot = pageSnapshotForPlugins();
+        var plugins = (matched || []).map(function (meta) {
+            return {
+                id: meta.id, version: meta.version || null, status: "enabled",
+                hooks: ["classify", "ingest"]
+            };
+        });
+        var page = {
+            url: snapshot.url, html: snapshot.html, digest: snapshot.digest,
+            title: snapshot.title, source: snapshot.source, truncated: snapshot.truncated
+        };
+        var sent = browser.runtime.sendMessage({
+            type: "plugins.recoveryHandoff", url: location.href,
+            page: page, plugins: plugins, outcomes: outcomes || []
+        });
+        return sent && sent.then
+            ? sent.then(function (response) { return response && response.deepLink || null; })
+                .catch(function () { return null; })
+            : Promise.resolve(null);
     }
 
     function runPluginWalkForPage() {
@@ -466,7 +518,8 @@
         return loadPluginCatalog().then(function (catalog) {
             var matched = matchedPluginsForHost(catalog, location.hostname);
             if (matched.length === 0) { return null; }
-            return walkClassify(matched, 0);
+            var outcomes = [];
+            return walkClassify(matched, 0, outcomes);
         }, function () { return null; });
     }
 
@@ -476,7 +529,12 @@
     /// route to the save-first hand-off instead of the plain one (§7.2).
     function runPluginIngestOnce(walk, url, reason) {
         return loadPluginRuntime(walk.plugin).then(function (loaded) {
-            if (typeof loaded.hooks.ingest !== "function") { return null; }
+            if (typeof loaded.hooks.ingest !== "function") {
+                recordPluginOutcome(
+                    walk.outcomes || [], walk.plugin, "ingest", "missing-hook",
+                    "plugin has no ingest hook");
+                return null;
+            }
             return withTimeout(
                 Promise.resolve().then(function () {
                     return loaded.hooks.ingest({
@@ -487,10 +545,16 @@
                 PLUGIN_INGEST_TIMEOUT_MS
             );
         }).then(function (model) {
-            if (!model) { return null; }
+            if (!model) {
+                recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "declined", null);
+                return null;
+            }
+            recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "produced", model.kind);
             return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id };
         }, function (error) {
             if (error && error.code === "browser-deferred") { throw error; }
+            recordPluginOutcome(
+                walk.outcomes || [], walk.plugin, "ingest", "failed", error && error.message);
             logPluginSkip(walk.plugin.id, "ingest", error);
             return null;
         });
@@ -505,7 +569,7 @@
             if (outcome) { return outcome; }
             var matched = walk.matched || [];
             if (walk.index + 1 >= matched.length) { return null; }
-            return walkClassify(matched, walk.index + 1).then(function (nextWalk) {
+            return walkClassify(matched, walk.index + 1, walk.outcomes || []).then(function (nextWalk) {
                 if (!nextWalk) { return null; }
                 return runPluginIngestForWalk(nextWalk, url, reason);
             });
@@ -551,7 +615,9 @@
                 }
                 runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
                     if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp); }
-                    window.location.href = pluginSaveDeepLink(resp);
+                    persistPluginRecoveryHandoff(walk.matched, walk.outcomes).then(function (link) {
+                        window.location.href = link || pluginSaveDeepLink(resp);
+                    });
                 }, function (error) {
                     if (error && error.code === "browser-deferred") {
                         window.location.href = pluginBrowserDeferredLink(resp);

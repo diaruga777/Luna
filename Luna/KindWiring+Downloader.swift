@@ -82,6 +82,9 @@ enum KindWiring {
     /// anything.
     static func drainPendingPluginModels(returningToSource: Bool) {}
 
+    /// Central Luna only; Downloader's Safari extension never creates this handoff.
+    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         MediaShellWiring.appDidLaunch()

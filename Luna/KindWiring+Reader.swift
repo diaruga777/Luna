@@ -185,6 +185,9 @@ enum KindWiring {
     /// runs no plugin platform, so its own queue can never hold anything.
     static func drainPendingPluginModels(returningToSource: Bool) {}
 
+    /// Central Luna only; Reader's Safari extension never creates this handoff.
+    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+
     /// Reader handles no products, so there is no runner. AppDelegate never
     /// registers or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (any PriceRefreshRunning)? = nil

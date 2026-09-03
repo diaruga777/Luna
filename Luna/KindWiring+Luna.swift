@@ -305,6 +305,26 @@ enum KindWiring {
             productInfoBuilder: PluginProductInfoBuilder.make(from:imageURL:))
     }
 
+    /// Drains Safari's bounded plugin-recovery case and presents the central
+    /// copy/paste workshop. The App-Group row is consumed only after this app
+    /// route lands; if opening Luna fails, Safari keeps its ordinary save path
+    /// and the case remains available for a later launch.
+    @MainActor
+    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {
+        guard let handoff = PluginRecoveryHandoffStore.shared.take(caseID: caseID),
+              let importer = PluginPlatformServices.importer,
+              let presenter = PluginExportTopPresenter.current()
+        else { return }
+        let screen = PluginRecoveryWorkshopViewController(
+            recoveryCase: handoff.recoveryCase,
+            validationURL: URL(string: handoff.validationURL), importer: importer)
+        if let navigation = presenter.navigationController {
+            navigation.pushViewController(screen, animated: true)
+        } else {
+            presenter.present(UINavigationController(rootViewController: screen), animated: true)
+        }
+    }
+
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()

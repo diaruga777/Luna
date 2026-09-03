@@ -1,4 +1,15 @@
 import Foundation
+import LunaWriterModels
+
+/// One sheet a routed note landed on, and whether the router made that sheet.
+public struct NotePlacement: Equatable, Sendable {
+    public let documentID: DocumentID
+    public let title: String
+    public let created: Bool
+    public init(documentID: DocumentID, title: String, created: Bool) {
+        self.documentID = documentID; self.title = title; self.created = created
+    }
+}
 
 public protocol NoteRouting: AnyObject {
     /// Decides which sheets a capture belongs to, creating one when no sheet

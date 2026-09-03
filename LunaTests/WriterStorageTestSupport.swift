@@ -6,6 +6,7 @@
 import Foundation
 import XCTest
 @testable import LunaWriterStorage
+import LunaWriterModels
 
 /// A sentence embedding a test writes the answers for, so a score in an
 /// assertion is a fact rather than a model's opinion.

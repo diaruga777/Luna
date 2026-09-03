@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// What the note router searches to decide where a note belongs, and what the
 /// library's own search reads.

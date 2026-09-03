@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// Where a note ended up, so the intent can say so out loud.
 public enum NoteAddResult: Equatable, Sendable {

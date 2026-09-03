@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// The library over `writer.sqlite`: groups, sheets, filters, notes, marks and
 /// snapshots.

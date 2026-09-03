@@ -1,4 +1,6 @@
 import Foundation
+import LunaWriterModels
+import LunaWriterText
 
 /// Asks whether a sheet is open with edits the library has not seen.
 ///
@@ -47,7 +49,6 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
     private let snapshots: DocumentSnapshotStoring
     private let marksStore: DocumentMarksStoring
     private let documentIndex: DocumentIndexing?
-    private let resolver = TextAnchorResolver()
 
     /// Installed by the app so an open sheet with unsaved edits is left alone.
     public var openDocuments: OpenDocumentQuerying?
@@ -109,12 +110,12 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         let text = (try? String(contentsOf: textStore.url(for: file.relativePath), encoding: .utf8))
             ?? ""
         let group = try groupForFolder(of: file.relativePath)
-        var document = try library.createDocument(in: group, title: TitleDeriver.title(of: text))
-        let statistics = TextStatistics.measure(text)
+        let summary = DocumentTextSummary.summarize(text)
+        var document = try library.createDocument(in: group, title: summary.title)
         document.fileRelativePath = file.relativePath
-        document.snippet = TitleDeriver.snippet(of: text)
-        document.wordCount = statistics.words
-        document.characterCount = statistics.characters
+        document.snippet = summary.snippet
+        document.wordCount = summary.words
+        document.characterCount = summary.characters
         document.revision = 1
         try library.update(document)
         try documentIndex?.index(document, body: text)
@@ -130,11 +131,11 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         try snapshots.recordSnapshot(text, for: document.id)
 
         var updated = document
-        let statistics = TextStatistics.measure(text)
-        updated.title = TitleDeriver.title(of: text)
-        updated.snippet = TitleDeriver.snippet(of: text)
-        updated.wordCount = statistics.words
-        updated.characterCount = statistics.characters
+        let summary = DocumentTextSummary.summarize(text)
+        updated.title = summary.title
+        updated.snippet = summary.snippet
+        updated.wordCount = summary.words
+        updated.characterCount = summary.characters
         updated.revision += 1
         try library.update(updated)
         try reanchorMarks(of: document.id, in: text)
@@ -148,9 +149,9 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         var marks = try marksStore.marks(for: id)
         guard !marks.annotations.isEmpty || !marks.authorship.isEmpty else { return }
         marks.annotations = marks.annotations.compactMap { annotation in
-            guard let range = resolver.resolve(annotation.anchor, in: text) else { return nil }
+            guard let range = TextAnchorResolver.resolve(annotation.anchor, in: text as NSString) else { return nil }
             var updated = annotation
-            updated.anchor = resolver.make(range: range, in: text)
+            updated.anchor = TextAnchorResolver.make(range: range, in: text as NSString)
             return updated
         }
         let length = (text as NSString).length

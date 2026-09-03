@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// How much of the sheet stays lit while the caret moves.
 public enum FocusMode: String, Codable, CaseIterable, Sendable {

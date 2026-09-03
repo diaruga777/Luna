@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// First run: the two system groups exist by then, so all this adds is one
 /// sheet that shows what the app does.

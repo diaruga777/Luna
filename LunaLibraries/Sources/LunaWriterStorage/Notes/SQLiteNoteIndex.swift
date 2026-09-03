@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 public struct NoteQuery: Equatable, Sendable {
     public enum Scope: Equatable, Sendable {

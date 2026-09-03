@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// Turns a typed phrase into an FTS5 MATCH expression.
 ///

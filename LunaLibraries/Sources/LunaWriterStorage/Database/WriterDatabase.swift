@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 import SQLite3
 
 /// A SQLite failure carrying the library's own message, so a log line says what

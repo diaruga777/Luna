@@ -1,4 +1,6 @@
 import Foundation
+import LunaWriterModels
+import LunaWriterText
 
 /// Cuts a long capture into notes before any of it is routed.
 ///
@@ -51,7 +53,7 @@ public enum NoteCaptureSplitter {
     private static func packSentences(of paragraph: String) -> [String] {
         let string = paragraph as NSString
         let ranges = SentenceSegmenter()
-            .sentences(in: NSRange(location: 0, length: string.length), of: paragraph)
+            .sentences(in: NSRange(location: 0, length: string.length), of: string)
         guard !ranges.isEmpty else { return [paragraph] }
         var chunks: [String] = []
         var current = ""

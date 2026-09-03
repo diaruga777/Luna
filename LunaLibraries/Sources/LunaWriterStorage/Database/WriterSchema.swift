@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// The `writer.sqlite` schema, and the runner that brings a file up to
 /// `WriterDatabase.schemaVersion`.

@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// One file that has to move because a sheet was renamed or regrouped.
 public struct FileMove: Equatable, Sendable {

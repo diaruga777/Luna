@@ -6,6 +6,7 @@
 import Foundation
 import XCTest
 @testable import LunaWriterStorage
+import LunaWriterModels
 
 final class NoteCaptureSplitterTests: XCTestCase {
 

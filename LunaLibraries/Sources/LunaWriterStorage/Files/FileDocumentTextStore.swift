@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// Sheets as plain `.md` files under the library root.
 ///
@@ -33,11 +34,11 @@ public final class FileDocumentTextStore: DocumentTextStoring {
     }
 
     public func saveText(_ text: String, for document: inout WriterDocument) throws {
-        let statistics = TextStatistics.measure(text)
-        document.title = TitleDeriver.title(of: text)
-        document.snippet = TitleDeriver.snippet(of: text)
-        document.wordCount = statistics.words
-        document.characterCount = statistics.characters
+        let summary = DocumentTextSummary.summarize(text)
+        document.title = summary.title
+        document.snippet = summary.snippet
+        document.wordCount = summary.words
+        document.characterCount = summary.characters
 
         let previousPath = document.fileRelativePath
         let target = LibraryFileLayout.path(

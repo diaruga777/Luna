@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 import NaturalLanguage
 
 /// The seam the index scores meaning through. Production is `NLEmbedding`;

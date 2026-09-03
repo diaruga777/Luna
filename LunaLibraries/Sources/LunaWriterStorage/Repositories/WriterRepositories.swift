@@ -1,4 +1,11 @@
 import Foundation
+import LunaWriterModels
+
+/// How a note came to sit on a sheet. Stored raw in `note_documents.attachment`;
+/// an unknown value reads back as `.manual`.
+public enum NoteAttachment: String, Codable, Sendable {
+    case routed, created, manual, mention, voice
+}
 
 /// The range-bearing data a document carries beside its text. Replaced as a
 /// set: an editing session owns both lists while it is open and writes them

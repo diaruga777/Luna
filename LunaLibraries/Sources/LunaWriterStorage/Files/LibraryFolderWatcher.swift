@@ -1,4 +1,5 @@
 import Foundation
+import LunaWriterModels
 
 /// One `.md` file as the folder scan found it.
 public struct ExternalFileSnapshot: Equatable, Sendable {

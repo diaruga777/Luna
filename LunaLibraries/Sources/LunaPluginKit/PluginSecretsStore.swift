@@ -37,4 +37,10 @@ public final class PluginSecretsStore: @unchecked Sendable {
     public func removeSecret(pluginID: String, key: String) {
         CredentialKeychain.delete(service: Self.service(pluginID: pluginID), account: key)
     }
+
+    /// Removes every secret belonging to a plugin, including accounts the
+    /// plugin created before an update changed its settings schema.
+    public func removeAll(pluginID: String) {
+        CredentialKeychain.deleteAll(service: Self.service(pluginID: pluginID))
+    }
 }

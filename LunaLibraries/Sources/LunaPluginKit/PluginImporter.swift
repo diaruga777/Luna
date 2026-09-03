@@ -11,6 +11,12 @@ import Foundation
 /// install is a verbatim copy of the bytes the user handed over.
 public final class PluginImporter: PluginImporting {
 
+    private struct StagedImport {
+        let manifest: PluginManifest
+        let previous: InstalledPlugin?
+        let previousSource: String?
+    }
+
     private let store: PluginStore
     private let bundled: BundledPluginCatalog
     /// Reloaded after a successful install, so the new plugin is live without a
@@ -49,12 +55,65 @@ public final class PluginImporter: PluginImporting {
     }
 
     public func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {
+        let staged = try stage(preview, origin: origin)
+        guard let runtime else { return }
+        do {
+            try runtime.activate(pluginID: staged.manifest.id)
+        } catch {
+            // The old source remains available as a value even though the new
+            // version is currently staged in the store. Restore it before
+            // rebuilding the runtime, so a failed update never leaves a
+            // working installation disabled.
+            do {
+                try restore(staged)
+                try runtime.activate(pluginID: staged.manifest.id)
+            } catch let rollbackError {
+                throw PluginStoreError.fileSystem(
+                    detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+            }
+            throw error
+        }
+    }
+
+    /// Transactional, nonblocking installation for UI callers. All runtime
+    /// evaluation happens in `PluginRuntime.activateAsync`, so the main actor
+    /// is never held while a candidate's top-level code is preflighted.
+    public func installAsync(
+        _ preview: PluginImportPreview, origin: PluginImportOrigin
+    ) async throws {
+        let staged = try stage(preview, origin: origin)
+        guard let runtime else { return }
+        do {
+            try await runtime.activateAsync(pluginID: staged.manifest.id)
+        } catch {
+            do {
+                try restore(staged)
+                try await runtime.activateAsync(pluginID: staged.manifest.id)
+            } catch let rollbackError {
+                throw PluginStoreError.fileSystem(
+                    detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+            }
+            throw error
+        }
+    }
+
+    private func stage(
+        _ preview: PluginImportPreview, origin: PluginImportOrigin
+    ) throws -> StagedImport {
         let manifest: PluginManifest
         switch PluginManifestParser.parse(source: preview.sourceText) {
         case .success(let parsed): manifest = parsed
         case .failure(let error): throw error
         }
-        try store.install(source: preview.sourceText, manifest: manifest, origin: origin)
-        runtime?.reloadAll()
+        let previous = store.plugin(id: manifest.id)
+        let previousSource = previous?.sourceText()
+        _ = try store.install(source: preview.sourceText, manifest: manifest, origin: origin)
+        return StagedImport(
+            manifest: manifest, previous: previous, previousSource: previousSource)
+    }
+
+    private func restore(_ staged: StagedImport) throws {
+        try store.restore(
+            staged.previous, source: staged.previousSource, pluginID: staged.manifest.id)
     }
 }

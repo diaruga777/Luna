@@ -285,6 +285,24 @@ final class PluginStoreTests: XCTestCase {
         XCTAssertTrue(preview.requiresConsent)
     }
 
+    func testImporterRestoresTheCapturedSourceWhenActivationRejectsAnUpdate() throws {
+        let first = source(version: "1.0.0")
+        let initial = PluginImporter(
+            store: store, bundled: BundledPluginCatalog(bundle: nil, store: store), runtime: nil)
+        try initial.install(try initial.preview(sourceText: first), origin: .paste)
+
+        let replacement = source(version: "2.0.0")
+        let runtime = FailOnceActivationInvoker()
+        let importer = PluginImporter(
+            store: store, bundled: BundledPluginCatalog(bundle: nil, store: store), runtime: runtime)
+
+        XCTAssertThrowsError(
+            try importer.install(try importer.preview(sourceText: replacement), origin: .paste))
+        XCTAssertEqual(store.plugin(id: "app.luna.test")?.manifest.version.description, "1.0.0")
+        XCTAssertEqual(store.plugin(id: "app.luna.test")?.sourceText(), first)
+        XCTAssertEqual(runtime.activationCalls, ["app.luna.test", "app.luna.test"])
+    }
+
     func testAPreviewOfAMalformedHeaderThrowsTheParserSSentence() {
         let importer = PluginImporter(
             store: store, bundled: BundledPluginCatalog(bundle: nil, store: store), runtime: nil)
@@ -301,4 +319,28 @@ private final class FailingMoveFileManager: FileManager, @unchecked Sendable {
     override func moveItem(at srcURL: URL, to dstURL: URL) throws {
         throw CocoaError(.fileWriteNoPermission)
     }
+}
+
+private final class FailOnceActivationInvoker: PluginHookInvoking {
+    var loadedPlugins: [PluginSummary] = []
+    var disabledPlugins: [String: String] = [:]
+    private(set) var activationCalls: [String] = []
+
+    func matchedPlugins(forHost host: String) -> [PluginSummary] { loadedPlugins }
+
+    func invoke<T: Decodable>(
+        _ hook: PluginHook, pluginID: String, argument: Encodable,
+        timeout: TimeInterval, decode: T.Type
+    ) async -> Result<T, PluginInvocationFailure> {
+        .failure(.missingHook)
+    }
+
+    func activate(pluginID: String) throws {
+        activationCalls.append(pluginID)
+        if activationCalls.count == 1 {
+            throw PluginActivationError(failure: .exception(message: "bad update", stack: nil))
+        }
+    }
+
+    func reloadAll() {}
 }

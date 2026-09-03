@@ -13,6 +13,12 @@ import JavaScriptCore
 /// anywhere else races both.
 public protocol PluginCallbackScheduling: AnyObject {
     func schedulePluginCallback(_ work: @escaping () -> Void)
+    /// Schedules a callback and restores the invocation that created it.
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?
+    )
+    /// The invocation currently entering JavaScript on this scheduler's queue.
+    var currentPluginInvocation: PluginInvocationDiagnostics? { get }
     /// Records that the plugin is still doing useful work, so an idle-budgeted
     /// hook is not abandoned mid-fetch. A nil `pluginID` touches every plugin
     /// in flight, which is what a bridge that cannot name one must ask for.
@@ -24,6 +30,14 @@ public protocol PluginCallbackScheduling: AnyObject {
 }
 
 public extension PluginCallbackScheduling {
+    func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?
+    ) {
+        schedulePluginCallback(work)
+    }
+
+    var currentPluginInvocation: PluginInvocationDiagnostics? { nil }
+
     func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?) {}
 }
 
@@ -130,11 +144,16 @@ public final class PluginPromiseBox {
     private var reject: JSValue?
     private let scheduler: PluginCallbackScheduling
     private let pluginID: String?
+    private let invocation: PluginInvocationDiagnostics?
     private let lock = NSLock()
 
-    private init(scheduler: PluginCallbackScheduling, pluginID: String?) {
+    private init(
+        scheduler: PluginCallbackScheduling, pluginID: String?,
+        invocation: PluginInvocationDiagnostics?
+    ) {
         self.scheduler = scheduler
         self.pluginID = pluginID
+        self.invocation = invocation
     }
 
     /// Makes a pending promise in `context` and the box that settles it.
@@ -145,7 +164,9 @@ public final class PluginPromiseBox {
     public static func make(
         in context: JSContext, scheduler: PluginCallbackScheduling, pluginID: String? = nil
     ) -> (promise: JSValue, box: PluginPromiseBox) {
-        let box = PluginPromiseBox(scheduler: scheduler, pluginID: pluginID)
+        let box = PluginPromiseBox(
+            scheduler: scheduler, pluginID: pluginID,
+            invocation: scheduler.currentPluginInvocation)
         let promise = JSValue(newPromiseIn: context) { resolve, reject in
             box.resolve = resolve
             box.reject = reject
@@ -181,7 +202,7 @@ public final class PluginPromiseBox {
 
     private func settle(_ value: Any, rejecting: Bool) {
         scheduler.notePluginActivity(pluginID: pluginID)
-        scheduler.schedulePluginCallback { [self] in
+        scheduler.schedulePluginCallback({ [self] in
             lock.lock()
             let function = rejecting ? reject : resolve
             let context = function?.context
@@ -199,7 +220,7 @@ public final class PluginPromiseBox {
             } else {
                 function.call(withArguments: [value])
             }
-        }
+        }, invocation: invocation)
     }
 
     /// A `LunaError` built in the plugin's own context, so `instanceof` and

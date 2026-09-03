@@ -18,15 +18,17 @@ public final class PluginCatalog: PluginCatalogProviding {
     private let bundled: BundledPluginCatalog
     private let runtime: PluginRuntime
     private let kv: PluginKVStore
+    private let secrets: PluginSecretsStore
 
     public init(
         store: PluginStore, bundled: BundledPluginCatalog, runtime: PluginRuntime,
-        kv: PluginKVStore = .shared
+        kv: PluginKVStore = .shared, secrets: PluginSecretsStore = .shared
     ) {
         self.store = store
         self.bundled = bundled
         self.runtime = runtime
         self.kv = kv
+        self.secrets = secrets
     }
 
     public func listings() -> [PluginListing] {
@@ -60,6 +62,7 @@ public final class PluginCatalog: PluginCatalogProviding {
         }
         try store.delete(pluginID: pluginID)
         kv.removeAll(pluginID: pluginID)
+        secrets.removeAll(pluginID: pluginID)
         // `reload` unloads first, and a bundled plugin of the same id becomes
         // live again, so this loads whatever the id now resolves to.
         runtime.reload(pluginID: pluginID)

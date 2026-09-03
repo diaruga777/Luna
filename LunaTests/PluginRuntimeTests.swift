@@ -4,8 +4,11 @@
 //
 
 import LunaModels
+import LunaIngest
+import LunaPluginIngest
 import LunaPluginKit
 import LunaPluginRuntime
+import LunaStorage
 import XCTest
 
 /// The runtime's contract with the stages: what loads, what is refused, what a
@@ -330,6 +333,143 @@ final class PluginRuntimeTests: XCTestCase {
             return XCTFail("expected an exception, got \(String(describing: failure))")
         }
         XCTAssertTrue(message.contains("no idea"))
+    }
+
+    func testActivationSurfacesTopLevelFailureWithoutUnloadingThePreviousPlugin() throws {
+        try runner.load(plugin(body: claimingBody))
+        let broken = plugin(body: "throw new Error(\"activation boom\");")
+        let manifest = try XCTUnwrap(try? PluginManifestParser.parse(source: broken).get())
+        try runner.store.install(source: broken, manifest: manifest, origin: .paste)
+
+        XCTAssertThrowsError(try runner.runtime.activate(pluginID: manifest.id)) { error in
+            guard let activation = error as? PluginActivationError else {
+                return XCTFail("expected activation failure, got \(error)")
+            }
+            guard case let .exception(message, _) = activation.failure else {
+                return XCTFail("expected an exception, got \(activation.failure)")
+            }
+            XCTAssertTrue(message.contains("activation boom"))
+        }
+        XCTAssertEqual(runner.runtime.loadedPlugins.map(\.id), [manifest.id])
+    }
+
+    func testActivationSurfacesMissingRegistrationWithoutChangingTheLiveRuntime() throws {
+        try runner.load(plugin(body: claimingBody))
+        let broken = plugin(body: "luna.register({});")
+        let manifest = try XCTUnwrap(try? PluginManifestParser.parse(source: broken).get())
+        try runner.store.install(source: broken, manifest: manifest, origin: .paste)
+
+        XCTAssertThrowsError(try runner.runtime.activate(pluginID: manifest.id)) { error in
+            guard let activation = error as? PluginActivationError else {
+                return XCTFail("expected activation failure, got \(error)")
+            }
+            XCTAssertEqual(activation.failure, .missingHook)
+        }
+        XCTAssertEqual(runner.runtime.loadedPlugins.map(\.id), [manifest.id])
+    }
+
+    @MainActor
+    func testActivateAsyncReturnsBoundedlyForANonterminatingTopLevelScript() async throws {
+        let source = plugin(body: "while (true) {}")
+        let manifest = try XCTUnwrap(try? PluginManifestParser.parse(source: source).get())
+        try runner.store.install(source: source, manifest: manifest, origin: .paste)
+        let started = Date()
+
+        do {
+            try await runner.runtime.activateAsync(pluginID: manifest.id)
+            XCTFail("a nonterminating draft must not activate")
+        } catch let error as PluginActivationError {
+            XCTAssertEqual(error.failure, .timedOut)
+        }
+        XCTAssertLessThan(
+            Date().timeIntervalSince(started), 2,
+            "async activation should not wait indefinitely on the main actor")
+    }
+
+    func testPluginIngestStageCorrelatesOverlappingRuntimeBridgeLogs() async throws {
+        let firstURL = URL(string: "https://example.com/first")!
+        let secondURL = URL(string: "https://example.com/second")!
+        let logRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plugin-runtime-diagnostics-\(UUID().uuidString)")
+        let fetcher = StubPluginFetcher()
+        fetcher.respond(to: firstURL.absoluteString, body: "first")
+        fetcher.respond(to: secondURL.absoluteString, body: "second")
+        fetcher.delay = 0.05
+        let host = PluginJSFixtureRunner(
+            fetcher: fetcher,
+            diagnostics: PluginDiagnostics(log: DiagnosticLog(containerURL: logRoot)))
+        defer {
+            host.cleanUp()
+            try? FileManager.default.removeItem(at: logRoot)
+        }
+        let body = """
+        luna.register({
+            async classify({ url }) {
+                await luna.fetch({ url });
+                luna.log("classified " + url);
+                return false;
+            },
+            async ingest() { return null; }
+        });
+        """
+        try host.load(plugin(capabilities: ["fetch"], body: body))
+        let stage = PluginIngestStage(invoker: host.runtime, processKind: .app)
+        let firstRecorder = SaveDiagnosticsRecorder(itemID: UUID())
+        let secondRecorder = SaveDiagnosticsRecorder(itemID: UUID())
+
+        async let first = SaveDiagnostics.$recorder.withValue(firstRecorder) {
+            await stage.run(IngestInput(url: firstURL, source: .manual), fetcher: MockArticleFetcher())
+        }
+        async let second = SaveDiagnostics.$recorder.withValue(secondRecorder) {
+            await stage.run(IngestInput(url: secondURL, source: .manual), fetcher: MockArticleFetcher())
+        }
+        _ = await (first, second)
+
+        let firstLines = firstRecorder.drainLines().joined(separator: "\n")
+        let secondLines = secondRecorder.drainLines().joined(separator: "\n")
+        XCTAssertTrue(firstLines.contains(firstURL.absoluteString), firstLines)
+        XCTAssertFalse(firstLines.contains(secondURL.absoluteString), firstLines)
+        XCTAssertTrue(secondLines.contains(secondURL.absoluteString), secondLines)
+        XCTAssertFalse(secondLines.contains(firstURL.absoluteString), secondLines)
+    }
+
+    func testLateRuntimeBridgeCallbackOnlyReachesTheGlobalDiagnosticsSink() async throws {
+        let url = URL(string: "https://example.com/late")!
+        let logRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plugin-runtime-diagnostics-\(UUID().uuidString)")
+        let fetcher = StubPluginFetcher()
+        fetcher.respond(to: url.absoluteString, body: "late")
+        fetcher.delay = 0.2
+        let host = PluginJSFixtureRunner(
+            fetcher: fetcher,
+            diagnostics: PluginDiagnostics(log: DiagnosticLog(containerURL: logRoot)))
+        defer {
+            host.cleanUp()
+            try? FileManager.default.removeItem(at: logRoot)
+        }
+        let body = """
+        luna.register({
+            async classify({ url }) {
+                await luna.fetch({ url });
+                return false;
+            },
+            async ingest() { return null; }
+        });
+        """
+        try host.load(plugin(capabilities: ["fetch"], body: body))
+        let recorder = SaveDiagnosticsRecorder(itemID: UUID())
+        let result = await host.runtime.invoke(
+            .classify, pluginID: "app.luna.test",
+            argument: ["url": url.absoluteString], timeout: 0.05,
+            decode: Bool.self, invocationID: UUID(), diagnosticRecorder: recorder)
+        guard case .failure(.timedOut) = result else {
+            return XCTFail("expected a timeout, got \(result)")
+        }
+
+        try await Task.sleep(nanoseconds: 400_000_000)
+        let lines = recorder.drainLines().joined(separator: "\n")
+        XCTAssertTrue(lines.contains("fetch GET \(url.absoluteString)"), lines)
+        XCTAssertFalse(lines.contains("fetch → 200"), "late response leaked into closed save: \(lines)")
     }
 
     func testAHookThatRejectsWithBrowserDeferredIsReadAsTheDeferralItIs() async throws {

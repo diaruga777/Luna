@@ -418,4 +418,26 @@ final class PluginBridgeRuntimeTests: XCTestCase {
             PluginSecretsStore.service(pluginID: "a.b").hasSuffix("a.b"),
             "the service names the plugin, so deleting one plugin's secrets is one prefix")
     }
+
+    func testDeletingAnInstalledPluginRemovesAllOfItsSecrets() throws {
+        let pluginID = "app.luna.deleted.\(UUID().uuidString.lowercased().prefix(8))"
+        let secrets = PluginSecretsStore()
+        secrets.setSecret("token", pluginID: pluginID, key: "token")
+        try XCTSkipIf(
+            secrets.secret(pluginID: pluginID, key: "token") != "token",
+            "the test host cannot reach the keychain")
+        defer { secrets.removeAll(pluginID: pluginID) }
+
+        try runner.install(plugin(id: pluginID, body: "return null;"))
+        let catalog = PluginCatalog(
+            store: runner.store,
+            bundled: BundledPluginCatalog(bundle: nil, store: runner.store),
+            runtime: runner.runtime,
+            kv: runner.kv,
+            secrets: secrets)
+
+        try catalog.delete(pluginID: pluginID)
+
+        XCTAssertNil(secrets.secret(pluginID: pluginID, key: "token"))
+    }
 }

@@ -73,6 +73,17 @@ public enum CredentialKeychain {
         ) as CFDictionary)
     }
 
+    /// Deletes every generic-password account under one service, including
+    /// synchronizable and legacy private-access-group copies.
+    public static func deleteAll(service: String) {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
     public static func baseQuery(
         service: String, account: String, synchronizable: Any? = nil
     ) -> [String: Any] {

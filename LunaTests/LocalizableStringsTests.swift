@@ -21,12 +21,12 @@ import XCTest
 /// rather than at the point some screen tries to draw itself.
 ///
 /// A key here is `"<base>_<suffix>"` — `Luna`, `Core`, `Reader`, `Downloader`
-/// `PriceTracker`, or `Vault` (see `Localization.swift`) — never the English text.
+/// `PriceTracker`, `Vault`, or `Writer` (see `Localization.swift`) — never the English text.
 /// `L10n.string("<base>")` tries `"<base>_<app's own suffix>"` first, then
 /// `"<base>_Luna"`, so every base key referenced from code MUST have a
 /// `_Luna` entry — that's the fallback with nowhere further to go.
 final class LocalizableStringsTests: XCTestCase {
-    static let suffixes = ["Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault"]
+    static let suffixes = ["Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault", "Writer"]
 
     /// The compiled `Localizable.strings` from LunaModels' resource bundle,
     /// as it sits inside the test host app.
@@ -95,7 +95,7 @@ final class LocalizableStringsTests: XCTestCase {
         XCTAssertTrue(
             unrecognized.isEmpty,
             "\(unrecognized.count) key(s) don't end in _Luna/_Core/_Reader/_Downloader/"
-                + "_PriceTracker/_Vault: " + unrecognized.prefix(5).joined(separator: " | "))
+                + "_PriceTracker/_Vault/_Writer: " + unrecognized.prefix(5).joined(separator: " | "))
     }
 
     /// Every base key needs a `_Luna` line — the universal fallback `L10n`

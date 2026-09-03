@@ -17,6 +17,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.downloader"), .downloader)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.pricetracker"), .priceTracker)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.vault"), .vault)
+        XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.writer"), .writer)
     }
 
     func testExtensionBundleIdentifierParsing() {
@@ -62,6 +63,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.downloader.displayName, "Luna Video")
         XCTAssertEqual(LunaApp.priceTracker.displayName, "Luna Price Tracker")
         XCTAssertEqual(LunaApp.vault.displayName, "Luna Vault")
+        XCTAssertEqual(LunaApp.writer.displayName, "Luna Writer")
     }
 
     // MARK: - deepLinkScheme
@@ -72,6 +74,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.downloader.deepLinkScheme, "lunadownloader")
         XCTAssertEqual(LunaApp.priceTracker.deepLinkScheme, "lunapricetracker")
         XCTAssertEqual(LunaApp.vault.deepLinkScheme, "lunavault")
+        XCTAssertEqual(LunaApp.writer.deepLinkScheme, "lunawriter")
     }
 
     func testLegacySiblingSystemsDoNotSelectVaultBeforeCentralIntegration() {
@@ -82,6 +85,7 @@ final class LunaAppTests: XCTestCase {
             LunaApp.legacyContentApps,
             [.luna, .reader, .downloader, .priceTracker])
         XCTAssertFalse(LunaApp.onboardingRankedSiblings.contains(.vault))
+        XCTAssertFalse(LunaApp.onboardingRankedSiblings.contains(.writer))
     }
 
     // MARK: - current

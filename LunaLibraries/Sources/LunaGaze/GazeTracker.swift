@@ -1,6 +1,6 @@
 //
 //  GazeTracker.swift
-//  LunaReaderUI
+//  LunaGaze
 //
 
 import ARKit

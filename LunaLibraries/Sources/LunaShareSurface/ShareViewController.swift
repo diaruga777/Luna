@@ -879,7 +879,7 @@ open class ShareViewController: UIViewController {
         switch LunaApp.current {
         case .downloader, .priceTracker:
             return true
-        case .luna, .reader, .vault:
+        case .luna, .reader, .vault, .writer:
             return false
         }
     }

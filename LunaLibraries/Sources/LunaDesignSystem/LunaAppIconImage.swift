@@ -32,6 +32,7 @@ public enum LunaAppIconImage {
         case .downloader: return "LunaAppIconDownloader"
         case .priceTracker: return "LunaAppIconPriceTracker"
         case .vault: return "LunaAppIconVault"
+        case .writer: return "LunaAppIconWriter"
         }
     }
 }

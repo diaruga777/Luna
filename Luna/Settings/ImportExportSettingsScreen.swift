@@ -274,6 +274,7 @@ private extension LunaApp {
         case .downloader: return "Luna-Downloader-Links"
         case .priceTracker: return "Luna-Price-Tracker-Links"
         case .vault: return "Luna-Vault-Files"
+        case .writer: return "Luna-Writer-Sheets"
         }
     }
 }

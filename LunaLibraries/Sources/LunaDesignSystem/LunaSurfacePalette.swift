@@ -17,6 +17,7 @@ public enum LunaSurfacePalette {
         case downloader
         case priceTracker
         case vault
+        case writer
     }
 
     public static var currentSurface: Surface {
@@ -29,6 +30,7 @@ public enum LunaSurfacePalette {
         if components.contains("pricetracker") { return .priceTracker }
         if components.contains("reader") { return .reader }
         if components.contains("vault") { return .vault }
+        if components.contains("writer") { return .writer }
         return .luna
     }
 
@@ -47,6 +49,9 @@ public enum LunaSurfacePalette {
             return UIColor(red: 7 / 255, green: 255 / 255, blue: 157 / 255, alpha: 1)
         case .vault:
             return UIColor(red: 71 / 255, green: 170 / 255, blue: 255 / 255, alpha: 1)
+        case .writer:
+            // iA-blue caret and accent on the Luna sky (writer-app.md Q2).
+            return UIColor(red: 30 / 255, green: 144 / 255, blue: 255 / 255, alpha: 1)
         }
     }
 

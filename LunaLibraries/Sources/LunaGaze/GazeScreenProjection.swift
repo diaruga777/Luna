@@ -1,6 +1,6 @@
 //
 //  GazeScreenProjection.swift
-//  LunaReaderUI
+//  LunaGaze
 //
 
 import CoreGraphics

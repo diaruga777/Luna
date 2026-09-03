@@ -16,6 +16,9 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     case priceTracker
     /// Standalone encrypted file vault; not a URL content-kind surface.
     case vault
+    /// Standalone Markdown writing app (claudedocs/plans/writer-app.md); not a
+    /// URL content-kind surface and not on the shared saves store.
+    case writer
 
     public static var current: LunaApp {
         detect(bundleIdentifier: Bundle.main.bundleIdentifier)
@@ -41,6 +44,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         if identifier.contains(".pricetracker") { return .priceTracker }
         if identifier.contains(".reader") { return .reader }
         if identifier.contains(".vault") { return .vault }
+        if identifier.contains(".writer") { return .writer }
         return .luna
     }
 
@@ -53,6 +57,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         case .downloader: return "downloader"
         case .priceTracker: return "pricetracker"
         case .vault: return "vault"
+        case .writer: return "writer"
         }
     }
 
@@ -100,6 +105,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         case .downloader: return "Downloader"
         case .priceTracker: return "PriceTracker"
         case .vault: return "Vault"
+        case .writer: return "Writer"
         }
     }
 
@@ -128,7 +134,7 @@ public enum DoubleSaveSurface: String, Codable, Equatable, Sendable {
         switch app {
         case .luna: self = .luna
         case .reader: self = .reader
-        case .downloader, .priceTracker, .vault: return nil
+        case .downloader, .priceTracker, .vault, .writer: return nil
         }
     }
 }

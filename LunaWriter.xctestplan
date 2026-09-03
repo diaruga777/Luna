@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "options" : {
+        "performanceMetrics" : [ ]
+      },
+      "id" : "5C570000-0000-4000-8000-0000000000A1",
+      "name" : "Luna Writer"
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Luna.xcodeproj",
+        "identifier" : "AAE200000000000000000000",
+        "name" : "LunaTests"
+      }
+    }
+  ],
+  "version" : 1
+}

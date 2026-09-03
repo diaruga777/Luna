@@ -65,6 +65,16 @@ let package = Package(
         .library(name: "LunaVaultUI", targets: ["LunaVaultUI"]),
         .library(name: "LunaVaultMac", targets: ["LunaVaultMac"]),
         .library(name: "VaultTestKit", targets: ["VaultTestKit"]),
+        // Luna Writer (claudedocs/plans/writer-app.md) and the gaze tracking it
+        // shares with the Reader's RSVP eye tracking.
+        .library(name: "LunaGaze", targets: ["LunaGaze"]),
+        .library(name: "LunaWriterModels", targets: ["LunaWriterModels"]),
+        .library(name: "LunaWriterText", targets: ["LunaWriterText"]),
+        .library(name: "LunaWriterStorage", targets: ["LunaWriterStorage"]),
+        .library(name: "LunaWriterVoice", targets: ["LunaWriterVoice"]),
+        .library(name: "LunaWriterEditor", targets: ["LunaWriterEditor"]),
+        .library(name: "LunaWriterReadAlong", targets: ["LunaWriterReadAlong"]),
+        .library(name: "LunaWriterLibraryUI", targets: ["LunaWriterLibraryUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -185,7 +195,7 @@ let package = Package(
         // readers hand read-aloud to the app-wide `AudioPlaybackCenter` when the app shell
         // installs it, and keep the legacy self-contained SpeechController path when it's
         // absent (the share/action extensions never install it).
-        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", "LunaArticleIngest", "LunaShareSurface", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaGaze", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", "LunaArticleIngest", "LunaShareSurface", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaSocial: `PriceRefreshCoordinator` posts price-drop local
         // notifications through LunaSocial's `NotificationManager`. No reader
         // modules: product-kind UI stands alone so the Price Tracker
@@ -340,6 +350,27 @@ let package = Package(
             "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
             "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
             "LunaVaultSetup",
+        ]),
+        // LunaGaze: ARKit face-tracking gaze samples, screen projection, bias
+        // calibration and the pure reading tracker. Shared by LunaReaderUI (RSVP
+        // eye tracking, which re-exports it) and Luna Writer's read-along.
+        .target(name: "LunaGaze"),
+        // Luna Writer tiers, bottom up. Foundation-only through LunaWriterVoice;
+        // UIKit from LunaWriterEditor up. See claudedocs/plans/writer-app.md §2.
+        .target(name: "LunaWriterModels"),
+        .target(name: "LunaWriterText", dependencies: ["LunaWriterModels"]),
+        .target(name: "LunaWriterStorage", dependencies: ["LunaWriterModels", "LunaWriterText"]),
+        .target(name: "LunaWriterVoice", dependencies: ["LunaWriterModels"]),
+        .target(name: "LunaWriterEditor", dependencies: [
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaDesignSystem", "LunaModels",
+        ]),
+        .target(name: "LunaWriterReadAlong", dependencies: [
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaWriterEditor",
+            "LunaWriterVoice", "LunaGaze", "LunaDesignSystem", "LunaModels",
+        ]),
+        .target(name: "LunaWriterLibraryUI", dependencies: [
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaWriterEditor",
+            "LunaWriterReadAlong", "LunaDesignSystem", "LunaModels",
         ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural

@@ -336,7 +336,6 @@
 "Onboarding_Demo_readerSeedTitle_Luna" = "Save anything in Safari";
 
 /* ===== Onboarding_Safari — Safari extension explainer page, mock ads/newsletter/paywall/lorem-ipsum body (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Safari). title, bylineTemplate, explainerChunkN, stepsHeading, pageMenuStep, manageExtensionsStepTemplate and appStepTemplate are no longer read by Swift (only manageExtensionsTitle still is, by the Manage Extensions sheet mock) — the step-by-step instructions they used to print now live on the hosted web page, and scripts/build_site.py reads these exact keys straight out of this file, so keep them even though nothing else in Swift references them any more. ===== */
-"Onboarding_Safari_activate_Luna" = "Activate Safari";
 "Onboarding_Safari_adCruise_Luna" = "WIN A FREE CRUISE 🚢 TAP NOW";
 "Onboarding_Safari_adDeals_Luna" = "HOT DEALS NEAR YOU ▸▸▸";
 "Onboarding_Safari_adSale_Luna" = "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥";
@@ -999,12 +998,7 @@
 "PriceTrackerCompareDoc_07_noHistoryCaption_Luna" = "Not enough price history yet.";
 
 /* ===== PriceTracker_graph — PriceGraphView.swift ===== */
-"PriceTracker_graph_cancelThresholdLabel_Luna" = "Cancel";
 "PriceTracker_graph_emptyCaption_Luna" = "No price history yet";
-"PriceTracker_graph_saveThresholdLabel_Luna" = "Save";
-"PriceTracker_graph_setButtonHint_Luna" = "Starts watching for a price drop and asks to send notifications";
-"PriceTracker_graph_thresholdFieldLabel_Luna" = "Alert price threshold";
-"PriceTracker_graph_thresholdHandleHint_Luna" = "Drag vertically to edit the alert price";
 
 /* ===== PriceTracker_addSeller — shared between PriceTrackingViewController.swift and ProductSearchOverlayViewController.swift (identical "Already tracked" title in both add-seller flows) ===== */
 "PriceTracker_addSeller_alreadyTrackedTitle_Luna" = "Already tracked";
@@ -1163,7 +1157,6 @@
 "Saves_doubleSave_actionViewImmediatelyTitle_Luna" = "View immediately";
 
 /* ===== Saves_store — SavesStore.swift ===== */
-"Saves_store_unknownSendErrorMessage_Luna" = "Unknown error";
 
 /* ===== ShareExtension_share — ShareViewController.swift ===== */
 "ShareExtension_share_noAttachmentsMessage_Luna" = "Nothing to read was shared.";
@@ -1483,3 +1476,4 @@
 "WriterReadAlong_quadrantBottomRight_Luna" = "bottom right";
 "WriterReadAlong_quadrantTopLeft_Luna" = "top left";
 "WriterReadAlong_quadrantTopRight_Luna" = "top right";
+

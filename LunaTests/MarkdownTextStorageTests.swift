@@ -87,7 +87,7 @@ final class MarkdownTextStorageTests: XCTestCase {
         }
         let storage = MarkdownTextStorage(text: "alpha\nbravo\n")
         let recorder = Recorder()
-        storage.observer = recorder
+        storage.addObserver(recorder)
         storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "X")
         XCTAssertEqual(recorder.ranges.count, 1)
         XCTAssertEqual(recorder.ranges.first?.location, 0)

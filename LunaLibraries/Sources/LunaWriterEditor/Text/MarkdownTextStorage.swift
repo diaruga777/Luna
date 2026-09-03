@@ -20,7 +20,23 @@ public final class MarkdownTextStorage: NSTextStorage {
     private let backing: NSMutableAttributedString
     public let model: MarkdownDocumentModel
 
-    public weak var observer: MarkdownTextStorageObserving?
+    private let observers = NSHashTable<AnyObject>.weakObjects()
+
+    /// Observers are held weakly: the geometry provider, the syntax layer and
+    /// the session all watch the same storage.
+    public func addObserver(_ observer: MarkdownTextStorageObserving) {
+        observers.add(observer)
+    }
+
+    public func removeObserver(_ observer: MarkdownTextStorageObserving) {
+        observers.remove(observer)
+    }
+
+    private func notify(_ range: NSRange) {
+        for case let observer as MarkdownTextStorageObserving in observers.allObjects {
+            observer.markdownTextStorage(self, didRescan: range)
+        }
+    }
 
     /// Bumps on every character edit, so an async job can tell whether its
     /// answer is still about the text on screen.
@@ -103,7 +119,7 @@ public final class MarkdownTextStorage: NSTextStorage {
         super.processEditing()
         if let rescanned = lastRescan {
             lastRescan = nil
-            observer?.markdownTextStorage(self, didRescan: rescanned)
+            notify(rescanned)
         }
     }
 
@@ -123,7 +139,7 @@ public final class MarkdownTextStorage: NSTextStorage {
         styler.apply(model, to: backing, in: whole)
         edited(.editedAttributes, range: whole, changeInLength: 0)
         endEditing()
-        observer?.markdownTextStorage(self, didRescan: whole)
+        notify(whole)
     }
 
     /// The paragraph the offset sits in, as the model sees it.

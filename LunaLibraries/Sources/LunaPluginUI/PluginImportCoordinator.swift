@@ -48,9 +48,20 @@ public final class PluginImportCoordinator: NSObject {
                 [weak self] _ in self?.presentPasteSheet()
             })
         sheet.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = sourceView
-        sheet.popoverPresentationController?.sourceRect = sourceView?.bounds ?? .zero
+        let anchor = sourceView ?? presenter.view
+        sheet.popoverPresentationController?.sourceView = anchor
+        sheet.popoverPresentationController?.sourceRect = anchor?.bounds ?? .zero
         presenter.present(sheet, animated: true)
+    }
+
+    /// Continues the normal preview/consent/transactional-install flow with a
+    /// source that another Luna screen has already collected and validated.
+    public func begin(
+        sourceText: String, origin: PluginImportOrigin = .paste,
+        from presenter: UIViewController
+    ) {
+        self.presenter = presenter
+        handle(sourceText: sourceText, origin: origin)
     }
 
     private func pickFile() {

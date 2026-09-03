@@ -10,6 +10,7 @@
 //
 
 import LunaBundledPlugins
+import LunaAppConfig
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
@@ -22,6 +23,7 @@ import LunaModels
 import LunaPriceUI
 import LunaReaderUI
 import LunaSaves
+import LunaSavesUI
 import LunaSend
 import LunaSocialUI
 import LunaStorage
@@ -57,6 +59,7 @@ enum KindWiring {
         MediaKindComposition.install()
         ProductKindComposition.install()
         installFullPluginComposition()
+        installPluginRecoveryRoute()
         PluginModelDrain.returnOpener = SystemPluginModelReturnOpener()
         // A destination plugin's "Auto-send" row opens the app shell's
         // per-capture-source screen, which LunaPluginUI cannot see.
@@ -110,6 +113,41 @@ enum KindWiring {
         PluginExportComposition.install(
             mediaFiles: PluginMediaFileLocator(),
             recipientPicker: PluginMailRecipientPrompt())
+    }
+
+    /// Failed saves reuse their durable attempt trace; unlike the Settings
+    /// entry point this route does not refetch the page just to make a prompt.
+    @MainActor
+    private static func installPluginRecoveryRoute() {
+        FailedSavePluginRecovery.present = { itemID, url, presenter in
+            guard let importer = PluginPlatformServices.importer else { return }
+            let traceText = SaveDiagnosticsStore.shared.contents(for: itemID) ?? ""
+            let trace = PluginRecoveryTraceParser.parse(
+                traceText.components(separatedBy: .newlines))
+            let summaries = PluginPlatformServices.invoker?
+                .matchedPlugins(forHost: url.host ?? "") ?? []
+            let plugins = summaries.map {
+                PluginRecoveryPlugin(
+                    id: $0.id, version: $0.version, status: "enabled",
+                    hooks: $0.hooks.map(\.rawValue).sorted())
+            }
+            let reason = SaveFailureStore.shared.record(for: itemID)?.reason?.headline
+            let recoveryCase = PluginRecoveryCase(
+                caseID: itemID, originalURL: url.absoluteString, source: .manual,
+                appVersion: AppConfig.appVersion, locale: Locale.current.identifier,
+                languages: Locale.preferredLanguages, outcome: "failed",
+                failureReason: reason, attempts: trace.attempts,
+                attemptsDropped: trace.dropped, matchingPlugins: plugins,
+                pageDigest: nil, redactions: ["live page snapshot unavailable"])
+            let screen = PluginRecoveryWorkshopViewController(
+                recoveryCase: recoveryCase, importer: importer)
+            if let navigation = presenter.navigationController {
+                navigation.pushViewController(screen, animated: true)
+            } else {
+                presenter.present(
+                    UINavigationController(rootViewController: screen), animated: true)
+            }
+        }
     }
 
     /// The Kindle plugin's own settings screen, where its address lives.

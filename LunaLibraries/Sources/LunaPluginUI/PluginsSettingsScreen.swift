@@ -8,6 +8,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaPluginIngest
 import LunaPluginKit
 import UIKit
 
@@ -59,6 +60,9 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
         guard importer != nil else { return [] }
         return [
             NavHeaderBar.imageButton(
+                systemName: "wand.and.stars", target: self, action: #selector(createTapped),
+                accessibilityLabel: L10n.string("Plugins_recoveryCreateForWebsite")),
+            NavHeaderBar.imageButton(
                 systemName: "plus", target: self, action: #selector(addTapped),
                 accessibilityLabel: L10n.string("Plugins_importTitle")),
         ]
@@ -71,6 +75,55 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
 
     @objc private func addTapped() {
         importCoordinator?.begin(from: self, sourceView: header)
+    }
+
+    @objc private func createTapped() {
+        let alert = UIAlertController(
+            title: L10n.string("Plugins_recoveryURLTitle"),
+            message: L10n.string("Plugins_recoveryURLMessage"), preferredStyle: .alert)
+        alert.addTextField {
+            $0.placeholder = "https://example.com/article"
+            $0.keyboardType = .URL
+            $0.autocapitalizationType = .none
+            $0.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_continue"), style: .default) {
+            [weak self, weak alert] _ in
+            self?.probe(alert?.textFields?.first?.text ?? "")
+        })
+        present(alert, animated: true)
+    }
+
+    private func probe(_ value: String) {
+        guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              url.host != nil else {
+            reportRecoveryError(L10n.string("Plugins_recoveryInvalidURL"))
+            return
+        }
+        let progress = UIAlertController(
+            title: L10n.string("Plugins_recoveryProbing"), message: url.host,
+            preferredStyle: .alert)
+        present(progress, animated: true)
+        Task { @MainActor [weak self, weak progress] in
+            let result = await PluginRecoveryProbe.run(url: url)
+            progress?.dismiss(animated: true) {
+                guard let self, let importer = self.importer else { return }
+                self.navigationController?.pushViewController(
+                    PluginRecoveryWorkshopViewController(
+                        recoveryCase: result.recoveryCase, importer: importer),
+                    animated: true)
+            }
+        }
+    }
+
+    private func reportRecoveryError(_ message: String) {
+        let alert = UIAlertController(
+            title: L10n.string("Plugins_recoveryURLTitle"), message: message,
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
+        present(alert, animated: true)
     }
 
     // MARK: - Table

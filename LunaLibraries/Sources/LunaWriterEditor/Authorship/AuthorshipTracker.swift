@@ -12,7 +12,7 @@ public protocol AuthorshipObserving: AnyObject {
 }
 
 /// Keeps the document's authorship spans in step with its text.
-public final class AuthorshipTracker: AuthorshipSpanProviding, WriterTextViewDataSource {
+public final class AuthorshipTracker: AuthorshipSpanProviding {
 
     public weak var observer: AuthorshipObserving?
 
@@ -58,12 +58,12 @@ public final class AuthorshipTracker: AuthorshipSpanProviding, WriterTextViewDat
         list.spans(in: range)
     }
 
-    // MARK: - WriterTextViewDataSource
+    // MARK: - Foreign authorship
 
-    public func writerTextView(
-        _ textView: WriterTextView, selectionTouchesForeignAuthorship range: NSRange
-    ) -> Bool {
-        list.containsForeignText(in: widened(range, upTo: textView.textStorage.length))
+    /// True when part of `range` — widened to the caret's neighbours when it
+    /// is empty — was written by somebody other than the writer.
+    public func containsForeignAuthorship(in range: NSRange, documentLength: Int) -> Bool {
+        list.containsForeignText(in: widened(range, upTo: documentLength))
     }
 
     /// A caret touches the characters on either side of it.

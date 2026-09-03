@@ -32,7 +32,9 @@ public final class PasteInterceptor {
         self.pasteboard = pasteboard
     }
 
-    public var hasText: Bool { pasteboard.pastedString?.isEmpty == false }
+    /// Whether the edit menu should offer "Paste as AI text", checked without
+    /// reading the pasteboard's content.
+    public var hasText: Bool { pasteboard.hasStrings }
 
     public func pasted() -> PastedText? {
         guard let text = pasteboard.pastedString, !text.isEmpty else { return nil }

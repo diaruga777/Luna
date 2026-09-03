@@ -146,7 +146,7 @@ public final class EditorViewController: UIViewController {
     private func wire() {
         textView.delegate = self
         textView.actionDelegate = self
-        textView.authorshipDataSource = session.authorship
+        textView.authorshipDataSource = session
 
         composer.viewportProvider = self
         composer.addLayer(markupLayer)

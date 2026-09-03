@@ -232,3 +232,16 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         delegate?.documentSessionDidReceiveExternalChange(self)
     }
 }
+
+// MARK: - WriterTextViewDataSource
+
+extension DocumentSession: WriterTextViewDataSource {
+
+    public var documentLength: Int { storage.length }
+
+    public func writerTextView(
+        _ textView: WriterTextView, selectionTouchesForeignAuthorship range: NSRange
+    ) -> Bool {
+        authorship.containsForeignAuthorship(in: range, documentLength: storage.length)
+    }
+}

@@ -36,6 +36,10 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func flushPendingSave() { try? session.save() }
 
+    /// A snapshot restore replaces the text out from under the open session,
+    /// the same shape as the file changing on disk underneath it.
+    func replaceText(_ text: String) { session.externalChangeArrived(text: text) }
+
     func editorRequestsNotesPanel(_ editor: EditorViewController) {
         editingDelegate?.editorRequestsNotesPanel(self)
     }

@@ -16,6 +16,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     private(set) var document: WriterDocument
     private(set) var focusedAnchors: [TextAnchor] = []
     private(set) var flushCount = 0
+    private(set) var replacedTexts: [String] = []
 
     init(document: WriterDocument) {
         self.document = document
@@ -27,6 +28,7 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
 
     func focus(on anchor: TextAnchor) { focusedAnchors.append(anchor) }
     func flushPendingSave() { flushCount += 1 }
+    func replaceText(_ text: String) { replacedTexts.append(text) }
 
     /// Simulates the real editor reporting a save back to its container.
     func simulateUpdate(_ document: WriterDocument) {
@@ -93,6 +95,24 @@ extension XCTestCase {
         viewController.loadViewIfNeeded()
         viewController.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
         viewController.view.layoutIfNeeded()
+    }
+
+    /// Puts `viewController` in a real (offscreen) window. UIKit's
+    /// presentation machinery — `present(_:animated:)`, `presentedViewController`
+    /// — is a no-op off a live window, which the plain window-less
+    /// `layoutWriterScreen` gives every other test. Keep the returned window
+    /// alive for the assertion: a deallocated window tears the controller
+    /// back down.
+    @discardableResult
+    @MainActor
+    func hostWriterScreenInWindow(
+        _ viewController: UIViewController, width: CGFloat = 390, height: CGFloat = 844
+    ) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        window.rootViewController = viewController
+        window.makeKeyAndVisible()
+        viewController.view.layoutIfNeeded()
+        return window
     }
 
     /// Pumps the run loop until `condition` is true or `timeout` elapses —

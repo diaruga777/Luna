@@ -18,6 +18,9 @@ public struct WriterDocument: Codable, Equatable, Identifiable, Sendable {
     public var fileRelativePath: String
     public var wordCount: Int
     public var characterCount: Int
+    /// Filled by `DocumentTextSummary` on save, alongside `wordCount` — used
+    /// by the `.sentences` writing-goal unit.
+    public var sentenceCount: Int = 0
     /// Bumps once per saved text change.
     public var revision: Int64
     public var createdAt: Date

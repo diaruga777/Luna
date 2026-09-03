@@ -185,6 +185,12 @@ final class PluginMailBridgeTests: XCTestCase {
                 attachments: [{ file: input.file, mime: "application/epub+zip" }] });
             return { status: "sent" };
             """)
+        _ = scratch.openScratchGeneration(
+            pluginID: Self.pluginID, generationID: "one")
+        defer {
+            scratch.closeScratchGeneration(
+                pluginID: Self.pluginID, generationID: "one")
+        }
         // Loading a plugin clears the generations a killed process left behind,
         // so the input file is written after the load, as the export stage does.
         let descriptor = try scratch.writeFile(

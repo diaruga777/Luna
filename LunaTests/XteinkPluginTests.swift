@@ -75,11 +75,15 @@ final class XteinkPluginTests: XCTestCase {
                 .appendingPathComponent("xteink.js"), encoding: .utf8)
         try runner.load(source)
         XCTAssertEqual(runner.runtime.loadedPlugins.first?.id, pluginID)
+        _ = runner.scratch.openScratchGeneration(
+            pluginID: pluginID, generationID: "fixture")
     }
 
     override func tearDown() {
         PluginSecretsStore.shared.removeSecret(pluginID: pluginID, key: "pairingSecret")
         PluginPlatformServices.settings = previousSettings
+        runner?.scratch.closeScratchGeneration(
+            pluginID: pluginID, generationID: "fixture")
         runner?.cleanUp()
         // XCTest keeps every test-case instance alive for the whole run, so a
         // fixture left in a property outlives its test. The runner owns a

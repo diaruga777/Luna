@@ -32,9 +32,11 @@ final class PluginExportInputTests: XCTestCase {
         store = SavesStore(containerURL: containerURL)
         scratch = PluginScratchStore(
             rootURL: containerURL.appendingPathComponent("scratch"))
+        _ = scratch.openScratchGeneration(pluginID: "test.plugin", generationID: "one")
     }
 
     override func tearDown() {
+        scratch?.closeScratchGeneration(pluginID: "test.plugin", generationID: "one")
         try? FileManager.default.removeItem(at: containerURL)
         containerURL = nil
         store = nil

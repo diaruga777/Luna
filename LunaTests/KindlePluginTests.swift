@@ -32,6 +32,8 @@ final class KindlePluginTests: XCTestCase {
     }
 
     override func tearDown() {
+        runner?.scratch.closeScratchGeneration(
+            pluginID: KindlePlugin.pluginID, generationID: "one")
         runner.cleanUp()
         runner = nil
         sender = nil
@@ -55,6 +57,8 @@ final class KindlePluginTests: XCTestCase {
         runner.capabilities.register(PluginSettingsBridge(
             processKind: .app, scheduler: runner.runtime))
         try runner.load(try kindleSource())
+        _ = runner.scratch.openScratchGeneration(
+            pluginID: KindlePlugin.pluginID, generationID: "one")
         if let address {
             try PluginPlatformServices.settings?.setValueJSON(
                 "\"\(address)\"", pluginID: KindlePlugin.pluginID,

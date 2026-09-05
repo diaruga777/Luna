@@ -99,7 +99,6 @@ public final class EditorViewController: UIViewController {
     private lazy var authorshipLayer = AuthorshipLayer(provider: session.authorship)
     private lazy var focusLayer = FocusLayer(provider: focus)
     private lazy var annotationLayer = AnnotationLayer(provider: session)
-    private lazy var streamer = StreamingTextInserter(textView: textView)
 
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
@@ -154,6 +153,7 @@ public final class EditorViewController: UIViewController {
         lastLayoutWidth = width
         lastLayoutInset = inset
         geometry.invalidate(nil)
+        composer.invalidate(nil)
         layoutObserver?.editorDidRelayout(self)
     }
 
@@ -258,7 +258,6 @@ public final class EditorViewController: UIViewController {
         session.storage.addObserver(self)
         session.authorship.observer = self
         session.delegate = self
-        streamer.delegate = self
         // The storage's own initial scan ran before this observer existed
         // (the session is built well before the view controller), so the
         // syntax layer never saw a rescan for the document it opens on.
@@ -565,20 +564,13 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        composer.invalidate(nil)
         if !overlay.isHidden {
             placeOverlay()
         }
         layoutObserver?.editorDidScroll(self)
     }
 
-    public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        composer.invalidate(nil)
-    }
-
-    public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard !decelerate else { return }
-        composer.invalidate(nil)
-    }
 }
 
 // MARK: - RenderingViewportProviding
@@ -845,20 +837,6 @@ extension EditorViewController: StatisticsBarViewDelegate {
     }
 }
 
-// MARK: - StreamingTextInserterDelegate
-
-extension EditorViewController: StreamingTextInserterDelegate {
-
-    public func streamingTextInserter(
-        _ inserter: StreamingTextInserter, didInsert range: NSRange, as source: AuthorshipSpan.Source
-    ) {
-        session.recordInsertion(range, source: source)
-        composer.invalidate(range)
-    }
-
-    public func streamingTextInserterDidFinish(_ inserter: StreamingTextInserter) {}
-}
-
 // MARK: - WriterTextViewActionDelegate — AI
 
 extension EditorViewController {
@@ -901,15 +879,15 @@ extension EditorViewController {
             guard let self else { return }
             guard let answer = try? await assistant.continueWriting(context: context), !answer.isEmpty else { return }
             guard !Task.isCancelled, self.session.storage.revision == revision else { return }
-            self.streamer.insert(answer, as: .ai(model: assistant.modelIdentifier), at: caret)
+            self.textView.selectedRange = NSRange(location: caret, length: 0)
+            self.textView.insert(answer, as: .ai(model: assistant.modelIdentifier))
         }
     }
 
     /// Rewrites the selection as `.ai` text. The same revision guard as
-    /// `continueWriting`, and for a sharper reason: without it, an edit
-    /// during generation means `replaceText(in: selection, with: "")` below
-    /// deletes whatever now occupies that range — text the writer typed
-    /// after the request went out, not the text the model rewrote.
+    /// `continueWriting` protects text typed while generation was running.
+    /// The complete answer replaces the selection in one undoable operation;
+    /// a timer must not keep inserting fragments after the writer moves on.
     public func rewriteSelection(instruction: String? = nil) {
         guard let assistant = environment.aiAssistant, assistant.isAvailable else { return }
         let selection = textView.selectedRange
@@ -923,9 +901,8 @@ extension EditorViewController {
                   !answer.isEmpty
             else { return }
             guard !Task.isCancelled, self.session.storage.revision == revision else { return }
-            self.textView.replaceText(in: selection, with: "")
-            self.streamer.insert(
-                answer, as: .ai(model: assistant.modelIdentifier), at: selection.location)
+            self.textView.selectedRange = selection
+            self.textView.insert(answer, as: .ai(model: assistant.modelIdentifier))
         }
     }
 }

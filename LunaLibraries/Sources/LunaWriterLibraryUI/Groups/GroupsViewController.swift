@@ -42,7 +42,9 @@ public final class GroupsViewController: UICollectionViewController {
     private var dataSource: UICollectionViewDiffableDataSource<Section, GroupsRow>!
     private var groupsByID: [GroupID: WriterGroup] = [:]
     private var childGroups: [GroupID?: [WriterGroup]] = [:]
-    private var filtersByGroup: [GroupID: [WriterFilter]] = [:]
+    /// Filters by scope; `nil` holds the library-wide ones, shown at the
+    /// root of the Groups section.
+    private var filtersByGroup: [GroupID?: [WriterFilter]] = [:]
     private var unattachedNoteCount = 0
     /// The row shown highlighted — kept so a reload from a `LibraryChange`
     /// does not lose the sidebar's selection (organiser #8).
@@ -118,10 +120,10 @@ public final class GroupsViewController: UICollectionViewController {
             childGroups[key]?.sort { $0.sortIndex < $1.sortIndex }
         }
         let filters = (try? library.filters()) ?? []
-        filtersByGroup = Dictionary(grouping: filters.compactMap { filter -> (GroupID, WriterFilter)? in
-            guard let scope = filter.scopeGroupID else { return nil }
-            return (scope, filter)
-        }, by: \.0).mapValues { $0.map(\.1) }
+        filtersByGroup = Dictionary(grouping: filters, by: \.scopeGroupID)
+        for key in filtersByGroup.keys {
+            filtersByGroup[key]?.sort { $0.sortIndex < $1.sortIndex }
+        }
         unattachedNoteCount = (try? notes.unattachedNotes().count) ?? 0
         applySnapshots()
     }
@@ -229,7 +231,10 @@ public final class GroupsViewController: UICollectionViewController {
         into snapshot: inout NSDiffableDataSourceSectionSnapshot<GroupsRow>, parent: GroupID?
     ) {
         let groups = childGroups[parent] ?? []
-        let rows = groups.map { GroupsRow.group($0.id) }
+        var rows = groups.map { GroupsRow.group($0.id) }
+        if parent == nil {
+            rows += (filtersByGroup[nil] ?? []).map { GroupsRow.filter($0.id) }
+        }
         if let parent {
             snapshot.append(rows, to: .group(parent))
         } else {
@@ -272,6 +277,9 @@ public final class GroupsViewController: UICollectionViewController {
 
     private func configure(cell: UICollectionViewListCell, for row: GroupsRow) {
         var content = UIListContentConfiguration.sidebarCell()
+        // Pinned, so a row reconfigured after it was selected does not keep
+        // the accent tint UIKit gave its glyph while it was highlighted.
+        content.imageProperties.tintColor = LunaColors.primaryText
         switch row {
         case .libraryAll:
             content.text = L10n.string("WriterLibrary_groups_libraryAll")
@@ -349,12 +357,27 @@ public final class GroupsViewController: UICollectionViewController {
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newGroupAction"),
                 image: UIImage(systemName: "folder.badge.plus")
-            ) { [weak self] _ in self?.createGroup(parent: nil) },
+            ) { [weak self] _ in self?.createGroupAndAskForName(parent: nil) },
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newFilterAction"),
                 image: UIImage(systemName: "line.3.horizontal.decrease.circle")
-            ) { [weak self] _ in self?.createFilter(scope: nil) },
+            ) { [weak self] _ in self?.presentNewFilterEditor(scope: nil) },
         ])
+    }
+
+    /// A group made from a menu gets its name asked for at once, instead of
+    /// landing as "New Group" and waiting for a long-press rename.
+    private func createGroupAndAskForName(parent: GroupID?) {
+        guard let created = createGroup(parent: parent) else { return }
+        presentRename(for: created.id)
+    }
+
+    /// A filter's editor before it exists: nothing is stored until Save.
+    public func presentNewFilterEditor(scope: GroupID?) {
+        let filter = WriterFilter(
+            scopeGroupID: scope, name: "",
+            sortIndex: (filtersByGroup[scope] ?? []).count)
+        presentFilterEditor(filter)
     }
 
     @objc private func settingsTapped() {
@@ -391,13 +414,55 @@ public final class GroupsViewController: UICollectionViewController {
         _ collectionView: UICollectionView, contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard indexPaths.count == 1,
-              let row = dataSource.itemIdentifier(for: indexPaths[0]),
-              case .group(let id) = row
-        else { return nil }
-        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            self?.groupContextMenu(for: id)
-        })
+        guard indexPaths.count == 1, let row = dataSource.itemIdentifier(for: indexPaths[0]) else { return nil }
+        switch row {
+        case .group(let id):
+            return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+                self?.groupContextMenu(for: id)
+            })
+        case .filter(let id):
+            return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+                self?.filterContextMenu(for: id)
+            })
+        default:
+            return nil
+        }
+    }
+
+    func filterContextMenu(for id: FilterID) -> UIMenu {
+        UIMenu(children: [
+            UIAction(
+                title: L10n.string("WriterLibrary_groups_editFilterAction"),
+                image: UIImage(systemName: "pencil")
+            ) { [weak self] _ in self?.presentFilterEditor(for: id) },
+            UIAction(
+                title: L10n.string("WriterLibrary_groups_deleteFilterAction"),
+                image: UIImage(systemName: "trash"), attributes: .destructive
+            ) { [weak self] _ in self?.deleteFilter(id) },
+        ])
+    }
+
+    public func presentFilterEditor(for id: FilterID) {
+        guard let filter = filtersByID(id) else { return }
+        presentFilterEditor(filter)
+    }
+
+    private func presentFilterEditor(_ filter: WriterFilter) {
+        let editor = FilterEditorViewController(library: library, filter: filter)
+        editor.onSave = { [weak self] saved in
+            guard let self else { return }
+            if let scope = saved.scopeGroupID { self.setCollapsed(false, for: scope) }
+            self.reload()
+        }
+        present(UINavigationController(rootViewController: editor), animated: true)
+    }
+
+    @discardableResult
+    public func deleteFilter(_ id: FilterID) -> Bool {
+        guard (try? library.deleteFilter(id)) != nil else { return false }
+        if selectedRow == .filter(id) { selectedRow = .libraryAll }
+        reload()
+        return true
     }
 
     private func groupContextMenu(for id: GroupID) -> UIMenu {
@@ -409,11 +474,11 @@ public final class GroupsViewController: UICollectionViewController {
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newGroupAction"),
                 image: UIImage(systemName: "folder.badge.plus")
-            ) { [weak self] _ in self?.createGroup(parent: id) },
+            ) { [weak self] _ in self?.createGroupAndAskForName(parent: id) },
             UIAction(
                 title: L10n.string("WriterLibrary_groups_newFilterAction"),
                 image: UIImage(systemName: "line.3.horizontal.decrease.circle")
-            ) { [weak self] _ in self?.createFilter(scope: id) },
+            ) { [weak self] _ in self?.presentNewFilterEditor(scope: id) },
             UIAction(
                 title: L10n.string("WriterLibrary_groups_renameAction"),
                 image: UIImage(systemName: "pencil")
@@ -444,8 +509,9 @@ public final class GroupsViewController: UICollectionViewController {
         let count = totalDocumentCount(in: id)
         let alert = UIAlertController(
             title: L10n.string("WriterLibrary_groups_deleteConfirmTitle", group.name),
-            message: count > 0
-                ? L10n.string("WriterLibrary_groups_deleteConfirmMessage", count) : nil,
+            message: count == 0 ? nil : count == 1
+                ? L10n.string("WriterLibrary_groups_deleteConfirmMessageOne")
+                : L10n.string("WriterLibrary_groups_deleteConfirmMessage", count),
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("Common_delete"), style: .destructive) { [weak self] _ in

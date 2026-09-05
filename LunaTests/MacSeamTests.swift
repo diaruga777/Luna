@@ -128,12 +128,4 @@ final class MacSeamTests: XCTestCase {
         XCTAssertFalse(policy.shouldShowAccessoryBar(hasHardwareKeyboard: true, containerWidth: 300))
     }
 
-    // MARK: - KeyboardMetricsProviding
-
-    func testNoKeyboardMetricsReportsNoKeyboardEver() {
-        let metrics = NoKeyboardMetrics()
-        let view = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 700))
-        XCTAssertFalse(metrics.isVisible)
-        XCTAssertEqual(metrics.keyboardOverlap(in: view), 0)
-    }
 }

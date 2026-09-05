@@ -68,7 +68,6 @@ public final class EditorViewController: UIViewController {
         focus = FocusModeController(
             mode: environment.settings.focusMode,
             typewriterScrolling: environment.settings.typewriterScrolling)
-        keyboard = environment.keyboardMetrics
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -81,7 +80,6 @@ public final class EditorViewController: UIViewController {
     private let mention: MentionController
     private let related: RelatedNotesRanker
     private let focus: FocusModeController
-    private let keyboard: KeyboardMetricsProviding
     private let accessoryBar = EditorAccessoryBar()
     private let relatedStrip = RelatedNoteStripView()
     private lazy var accessoryContainer = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
@@ -102,7 +100,7 @@ public final class EditorViewController: UIViewController {
 
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
-    private var lastLayoutWidth: CGFloat = -1
+    private var lastLayoutSize = CGSize(width: -1, height: -1)
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
     /// The one AI request in flight. A second request cancels the first —
     /// there is only one caret, one selection, one place the answer lands.
@@ -127,6 +125,7 @@ public final class EditorViewController: UIViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         relayoutIfNeeded()
+        if !overlay.isHidden { placeOverlay() }
     }
 
     public override func viewWillTransition(
@@ -147,14 +146,15 @@ public final class EditorViewController: UIViewController {
     /// invisible to `MarkdownTextStorageObserving`, so this is the one place
     /// that watches the text view's own geometry directly.
     private func relayoutIfNeeded() {
-        let width = textView.bounds.width
+        let size = textView.bounds.size
         let inset = textView.textContainerInset
-        guard width != lastLayoutWidth || inset != lastLayoutInset else { return }
-        lastLayoutWidth = width
+        guard size != lastLayoutSize || inset != lastLayoutInset else { return }
+        lastLayoutSize = size
         lastLayoutInset = inset
         geometry.invalidate(nil)
         composer.invalidate(nil)
         layoutObserver?.editorDidRelayout(self)
+        if focus.typewriterScrolling { scrollCaretToTypewriterLine() }
     }
 
     /// A stable point in the text under the middle of what's on screen right
@@ -208,7 +208,7 @@ public final class EditorViewController: UIViewController {
             readAlongHost.bottomAnchor.constraint(equalTo: textView.bottomAnchor),
             statisticsBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             statisticsBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            statisticsBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            statisticsBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
         ])
 
         accessoryContainer.axis = .vertical
@@ -268,9 +268,6 @@ public final class EditorViewController: UIViewController {
         overlay.delegate = self
         related.observer = self
         focus.delegate = self
-        // Only the concrete `KeyboardFrameObserver` ever calls back — a Mac
-        // root's `NoKeyboardMetrics` never changes, so it needs no observer.
-        (keyboard as? KeyboardFrameObserver)?.observer = self
         accessoryBar.policy = environment.accessoryBarPolicy
         accessoryBar.delegate = self
         accessoryBar.setFocusActive(focus.mode != .off)
@@ -370,8 +367,7 @@ public final class EditorViewController: UIViewController {
         guard !textView.isDragging, !textView.isDecelerating else { return }
         guard let selected = textView.selectedTextRange else { return }
         let caret = textView.caretRect(for: selected.end)
-        let overlap = keyboard.keyboardOverlap(in: textView)
-        let visibleHeight = textView.bounds.height - overlap
+        let visibleHeight = textView.bounds.height
         let bottom = TypewriterScroller.bottomInset(visibleHeight: visibleHeight - textView.adjustedContentInset.top)
         if abs(textView.contentInset.bottom - bottom) > 1 {
             textView.contentInset.bottom = bottom
@@ -400,7 +396,7 @@ public final class EditorViewController: UIViewController {
 
     private func placeOverlay() {
         let caret = view.convert(mention.markerRect(), from: textView)
-        let keyboardTop = view.bounds.maxY - keyboard.keyboardOverlap(in: view)
+        let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
     }
 
@@ -773,18 +769,6 @@ extension EditorViewController: RelatedNoteStripViewDelegate {
 
     public func relatedNoteStrip(_ strip: RelatedNoteStripView, didSelect noteID: NoteID) {
         delegate?.editorRequestsNotesPanel(self)
-    }
-}
-
-// MARK: - KeyboardFrameObserving
-
-extension EditorViewController: KeyboardFrameObserving {
-
-    public func keyboardFrameDidChange(_ frame: CGRect) {
-        // isComposing tracks first-responder state, not the keyboard: a
-        // hardware keyboard means this never fires with anything to say.
-        guard !overlay.isHidden else { return }
-        placeOverlay()
     }
 }
 

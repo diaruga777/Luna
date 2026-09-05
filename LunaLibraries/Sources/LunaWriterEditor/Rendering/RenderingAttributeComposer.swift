@@ -27,6 +27,40 @@ public final class RenderingAttributeComposer: LayerInvalidating {
     public init(layoutManager: NSTextLayoutManager?, storage: NSTextStorage) {
         self.layoutManager = layoutManager
         self.storage = storage
+        installValidator()
+    }
+
+    /// TextKit 2 clears a fragment's rendering attributes whenever it lays
+    /// that fragment out again, and an edit invalidates the fragment it
+    /// touched. Attributes written between the edit and that layout are
+    /// lost, so the layout manager's own validator paints each fragment as
+    /// it is laid out. UIKit may have installed a validator of its own; it
+    /// runs first and keeps whatever it did.
+    private func installValidator() {
+        guard let layoutManager else { return }
+        let previous = layoutManager.renderingAttributesValidator
+        layoutManager.renderingAttributesValidator = { [weak self] manager, fragment in
+            previous?(manager, fragment)
+            self?.paint(fragment: fragment, in: manager)
+        }
+    }
+
+    private func paint(fragment: NSTextLayoutFragment, in layoutManager: NSTextLayoutManager) {
+        guard let contentManager = layoutManager.textContentManager else { return }
+        let origin = contentManager.documentRange.location
+        let range = fragment.rangeInElement
+        let location = contentManager.offset(from: origin, to: range.location)
+        let end = contentManager.offset(from: origin, to: range.endLocation)
+        guard end > location else { return }
+        paint(NSRange(location: location, length: end - location), in: layoutManager)
+    }
+
+    private func paint(_ range: NSRange, in layoutManager: NSTextLayoutManager) {
+        let text = storage.string as NSString
+        for run in composedRuns(in: range, text: text) {
+            guard let textRange = textRange(run.range, in: layoutManager) else { continue }
+            layoutManager.setRenderingAttributes(run.attributes, for: textRange)
+        }
     }
 
     // MARK: - Layers
@@ -70,11 +104,7 @@ public final class RenderingAttributeComposer: LayerInvalidating {
         let viewport = NSIntersectionRange(viewportProvider.renderingViewportRange, whole)
         let range = widened(viewport, in: whole)
         guard range.length > 0 else { return }
-        let text = storage.string as NSString
-        for run in composedRuns(in: range, text: text) {
-            guard let textRange = textRange(run.range, in: layoutManager) else { continue }
-            layoutManager.setRenderingAttributes(run.attributes, for: textRange)
-        }
+        paint(range, in: layoutManager)
     }
 
     private func widened(_ range: NSRange, in whole: NSRange) -> NSRange {

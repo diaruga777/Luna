@@ -19,6 +19,18 @@ final class MarkdownTextStorageTests: XCTestCase {
         storage.attributes(at: location, effectiveRange: nil)[.paragraphStyle] as? NSParagraphStyle
     }
 
+    /// TextKit draws a run with no foreground colour in black, so a storage
+    /// that dropped the ink while restyling drew typed text black on the
+    /// night background.
+    func testTypedTextKeepsTheInkColourAfterRestyling() throws {
+        let storage = MarkdownTextStorage(text: "Body\n")
+        storage.replaceCharacters(in: NSRange(location: 4, length: 0), with: " and **more**")
+        for location in [0, 6, 12] {
+            let colour = storage.attributes(at: location, effectiveRange: nil)[.foregroundColor] as? UIColor
+            XCTAssertEqual(colour, EditorTheme.ink, "no ink at \(location)")
+        }
+    }
+
     func testHeadingLineCarriesALargerBoldFontThanBody() throws {
         let storage = MarkdownTextStorage(text: "# Title\nBody text\n")
         let heading = try XCTUnwrap(font(storage, at: 2))

@@ -8,11 +8,12 @@ import LunaDesignSystem
 import LunaWriterText
 
 /// Writes the attributes that change geometry: the font of each block and
-/// inline run, and the paragraph style that indents it.
-///
-/// Colour is never written here. A colour that lived in the storage would be
-/// re-applied on every edit and would fight the rendering layers, which is why
-/// the two channels are split (writer-app.md §6.1).
+/// inline run, and the paragraph style that indents it. It also writes the
+/// one colour the storage must carry, `EditorTheme.ink`: TextKit draws a run
+/// with no foreground colour in black, and the rendering layers only paint
+/// the ranges they have something to say about, so body text needs its ink
+/// in the storage. Every other colour is a rendering attribute
+/// (writer-app.md §6.1).
 public struct LayoutAttributeStyler: Equatable {
 
     public var metrics: EditorMetrics
@@ -30,7 +31,7 @@ public struct LayoutAttributeStyler: Equatable {
     }
 
     public var bodyAttributes: [NSAttributedString.Key: Any] {
-        [.font: bodyFont, .paragraphStyle: paragraphStyle(for: .paragraph)]
+        [.font: bodyFont, .paragraphStyle: paragraphStyle(for: .paragraph), .foregroundColor: EditorTheme.ink]
     }
 
     /// Styles every line the range touches. The caller passes the range the
@@ -52,7 +53,7 @@ public struct LayoutAttributeStyler: Equatable {
             guard lineRange.length > 0, NSMaxRange(lineRange) <= length else { continue }
             let base = blockFont(for: scan.block.kind)
             text.setAttributes(
-                [.font: base, .paragraphStyle: paragraphStyle(for: scan.block.kind)],
+                [.font: base, .paragraphStyle: paragraphStyle(for: scan.block.kind), .foregroundColor: EditorTheme.ink],
                 range: lineRange)
             for inline in scan.inlines {
                 applyInline(inline, to: text, base: base, limit: length)

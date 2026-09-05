@@ -255,6 +255,31 @@ final class RenderingAttributeComposerTests: XCTestCase {
         }
     }
 
+    /// TextKit 2 drops a fragment's rendering attributes when it lays the
+    /// fragment out again, and asks the layout manager's validator to paint
+    /// it. The composer must answer that call, or every edit erases the
+    /// markup grey and the focus dim on the line it touched.
+    func testTheLayoutManagerValidatorPaintsAFragmentFromTheLayers() throws {
+        let storage = MarkdownTextStorage(text: text)
+        let layoutManager = makeLayoutManager(storage: storage)
+        let composer = RenderingAttributeComposer(layoutManager: layoutManager, storage: storage)
+        composer.viewportProvider = FakeViewport(hasViewport: false, range: NSRange(location: 0, length: 0))
+        composer.addLayer(FixedLayer(
+            identifier: .syntax, range: NSRange(location: 0, length: 3),
+            attributes: [.foregroundColor: EditorTheme.syntaxNoun]))
+        let validator = try XCTUnwrap(layoutManager.renderingAttributesValidator)
+
+        layoutManager.ensureLayout(for: layoutManager.documentRange)
+        var fragment: NSTextLayoutFragment?
+        layoutManager.enumerateTextLayoutFragments(from: nil, options: []) { fragment = $0; return false }
+        validator(layoutManager, try XCTUnwrap(fragment))
+
+        XCTAssertFalse(layoutManager.paintedRanges.isEmpty, "the validator painted nothing")
+        let content = try XCTUnwrap(layoutManager.textContentManager)
+        let starts = layoutManager.paintedRanges.map { content.offset(from: content.documentRange.location, to: $0.location) }
+        XCTAssertTrue(starts.contains(0))
+    }
+
     func testApplyNowWithARealTextViewSmokeTest() {
         let storage = MarkdownTextStorage(text: text)
         let textView = WriterTextView(metrics: EditorMetrics(), textStorage: storage)

@@ -26,6 +26,13 @@ public final class DocumentNotesPanelViewController: UIViewController {
     private let composePlaceholder = UILabel()
     private let errorLabel = UILabel()
     private let emptyLabel = UILabel()
+    private let leadingSeparator = UIView()
+
+    /// A hairline on the leading edge, for the side-by-side host where the
+    /// panel shares the editor's background.
+    public var showsLeadingSeparator: Bool = false {
+        didSet { leadingSeparator.isHidden = !showsLeadingSeparator }
+    }
     private var editingNote: WriterNote?
     private var isSaving = false
     private let saveQueue = DispatchQueue(label: "com.luna.writer.notes.save", qos: .userInitiated)
@@ -80,6 +87,16 @@ public final class DocumentNotesPanelViewController: UIViewController {
         emptyLabel.textAlignment = .center
         emptyLabel.numberOfLines = 0
         tableView.backgroundView = emptyLabel
+        leadingSeparator.backgroundColor = LunaColors.separator
+        leadingSeparator.isHidden = !showsLeadingSeparator
+        leadingSeparator.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(leadingSeparator)
+        NSLayoutConstraint.activate([
+            leadingSeparator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            leadingSeparator.topAnchor.constraint(equalTo: view.topAnchor),
+            leadingSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            leadingSeparator.widthAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+        ])
     }
 
     private func configureComposeBar() {

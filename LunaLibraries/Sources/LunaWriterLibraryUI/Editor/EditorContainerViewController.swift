@@ -48,6 +48,16 @@ public final class EditorContainerViewController: UIViewController {
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
+        updateLeadingControls()
+    }
+
+    /// The header's back chevron pops a collapsed stack. Beside a visible
+    /// sheets column there is nothing to pop, so the control is dropped
+    /// rather than left as a dead button.
+    private func updateLeadingControls() {
+        let isPushed = (navigationController?.viewControllers.count ?? 0) > 1
+        header.setLeadingControls(
+            isPushed ? [NavHeaderBar.backButton(target: self, action: #selector(backTapped))] : [])
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -75,7 +85,7 @@ public final class EditorContainerViewController: UIViewController {
         notesButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         header.title = displayTitle(for: document)
-        header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(backTapped))])
+        updateLeadingControls()
         header.setTrailingControls(trailingHeaderControls())
         let contentTop = header.mount(in: self)
 
@@ -325,6 +335,7 @@ public final class EditorContainerViewController: UIViewController {
             addChild(panel)
             panel.view.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(panel.view)
+            panel.showsLeadingSeparator = true
             NSLayoutConstraint.activate([
                 panel.view.topAnchor.constraint(equalTo: header.bottomAnchor),
                 panel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -334,6 +345,7 @@ public final class EditorContainerViewController: UIViewController {
             editorTrailingConstraint.constant = -Self.notesPanelWidth
             panel.didMove(toParent: self)
         } else {
+            panel.showsLeadingSeparator = false
             let nav = UINavigationController(rootViewController: panel)
             nav.presentationController?.delegate = self
             panel.navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -353,6 +365,7 @@ public final class EditorContainerViewController: UIViewController {
     /// Re-hosts the open notes panel as a side child or a sheet when the
     /// container crosses `LunaLayout.wideThreshold`.
     private func layoutForCurrentWidth() {
+        updateLeadingControls()
         guard let notesPanel else { return }
         let isWide = LunaLayout.isWide(containerWidth: view.bounds.width)
         let isSideChild = notesPanel.parent === self

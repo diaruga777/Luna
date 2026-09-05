@@ -81,7 +81,11 @@ final class WriterFlowUITests: XCTestCase {
             case "swipeUp": app.swipeUp()
             case "swipeDown": app.swipeDown()
             case "swipeLeft": app.swipeLeft()
-            case "back": app.navigationBars.buttons.element(boundBy: 0).tap()
+            case "back":
+                // The editor draws its own header, so its back control is a
+                // plain button; a pushed list has a real navigation bar.
+                let custom = app.buttons["Back"].firstMatch
+                if custom.exists { custom.tap() } else { app.navigationBars.buttons.element(boundBy: 0).tap() }
             case "exists":
                 XCTAssertTrue(app.descendants(matching: .any)[arg].firstMatch.waitForExistence(timeout: 5), "expected \(arg)")
             case "rotate":

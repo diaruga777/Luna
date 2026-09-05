@@ -29,6 +29,17 @@
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5C57000000000000000000B1"
+               BuildableName = "LunaWriterUITests.xctest"
+               BlueprintName = "LunaWriterUITests"
+               ReferencedContainer = "container:Luna.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

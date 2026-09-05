@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5C57000000000000000000BD /* WriterFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C57000000000000000000BC /* WriterFlowUITests.swift */; };
 		004D6B2EC6400E1B8AB54302 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		00E81FA7348B98F12E825428 /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		00F83CC26403EC44DE773845 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
@@ -426,6 +427,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		5C57000000000000000000B9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5C570000000000000000AA01;
+			remoteInfo = LunaWriter;
+		};
 		019AFC8CDB7CCEC35B2E3F5B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AAA000000000000000000000 /* Project object */;
@@ -645,6 +653,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5C57000000000000000000BC /* WriterFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriterFlowUITests.swift; sourceTree = "<group>"; };
+		5C57000000000000000000BA /* LunaWriterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaWriterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03209A3839713E5B2151D087 /* LunaVaultShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaVaultShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		062D53662477EEF9A388EF94 /* Localizable.strings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings; sourceTree = SOURCE_ROOT; };
 		17C57D675E0712054ACE6584 /* LunaPriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaPriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1084,6 +1094,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5C57000000000000000000B6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		04C4B73342B81E2FE429106D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1618,6 +1635,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5C57000000000000000000BB /* LunaWriterUITests */ = {
+			isa = PBXGroup;
+			children = (
+				5C57000000000000000000BC /* WriterFlowUITests.swift */,
+			);
+			path = LunaWriterUITests;
+			sourceTree = "<group>";
+		};
 		79583DFD2FE0BAD100C775CA /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -1662,6 +1687,7 @@
 				AA0700000000000000000002 /* LunaSafari */,
 				AA0700000000000000000004 /* LunaShare */,
 				AA0700000000000000000003 /* LunaTests */,
+				5C57000000000000000000BB /* LunaWriterUITests */,
 				79583E002FE0BAD100C775CA /* LunaAction */,
 				LDCL00000000000000000008 /* LunaDownloaderClip */,
 				LDLA0000000000000000008 /* LunaDownloaderLiveActivity */,
@@ -1686,6 +1712,7 @@
 				AA0200000000000000000002 /* LunaReaderSafari.appex */,
 				AA0200000000000000000004 /* LunaReaderShare.appex */,
 				AA0200000000000000000003 /* LunaTests.xctest */,
+				5C57000000000000000000BA /* LunaWriterUITests.xctest */,
 				79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */,
 				B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */,
 				D3B0961D49B070035B3E0FD1 /* LunaDownloaderAction.appex */,
@@ -1742,6 +1769,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		5C57000000000000000000B1 /* LunaWriterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C57000000000000000000B2 /* Build configuration list for PBXNativeTarget "LunaWriterUITests" */;
+			buildPhases = (
+				5C57000000000000000000B5 /* Sources */,
+				5C57000000000000000000B6 /* Frameworks */,
+				5C57000000000000000000B7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5C57000000000000000000B8 /* PBXTargetDependency */,
+			);
+			name = LunaWriterUITests;
+			productName = LunaWriterUITests;
+			productReference = 5C57000000000000000000BA /* LunaWriterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		0CEBC49567245F50D79EA991 /* LunaVault */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 12A4E3478FBC225B34CD5292 /* Build configuration list for PBXNativeTarget "LunaVault" */;
@@ -2682,6 +2727,12 @@
 						DevelopmentTeam = MM5QBNLXR6;
 						ProvisioningStyle = Automatic;
 					};
+					5C57000000000000000000B1 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 5C570000000000000000AA01;
+					};
 					AAE200000000000000000000 = {
 						CreatedOnToolsVersion = 16.2;
 						DevelopmentTeam = MM5QBNLXR6;
@@ -2747,11 +2798,19 @@
 				0CEBC49567245F50D79EA991 /* LunaVault */,
 				5C570000000000000000AA01 /* LunaWriter */,
 				7E30034D8CFBB706C24C9448 /* LunaVaultShare */,
+				5C57000000000000000000B1 /* LunaWriterUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		5C57000000000000000000B7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		048291C3B03514BE45628006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -3251,6 +3310,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		5C57000000000000000000B5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5C57000000000000000000BD /* WriterFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		090152A075555CC1E88333EA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -3431,6 +3498,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		5C57000000000000000000B8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunaWriter;
+			target = 5C570000000000000000AA01 /* LunaWriter */;
+			targetProxy = 5C57000000000000000000B9 /* PBXContainerItemProxy */;
+		};
 		0665879E5C0FDB9B54C481ED /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = LunaPriceTrackerAction;
@@ -3539,6 +3612,45 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		5C57000000000000000000B3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).writer.uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LunaWriter;
+			};
+			name = Debug;
+		};
+		5C57000000000000000000B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).writer.uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LunaWriter;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		023E20620BE250C369387843 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -5277,6 +5389,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		5C57000000000000000000B2 /* Build configuration list for PBXNativeTarget "LunaWriterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C57000000000000000000B3 /* Debug */,
+				5C57000000000000000000B4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		12A4E3478FBC225B34CD5292 /* Build configuration list for PBXNativeTarget "LunaVault" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

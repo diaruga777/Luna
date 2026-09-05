@@ -36,6 +36,7 @@ public final class SheetsViewController: UICollectionViewController {
     private static let resortDebounceInterval: TimeInterval = 2
 
     private let searchController = UISearchController(searchResultsController: nil)
+    private let emptyLabel = UILabel()
     /// The live configuration the list layout was built from — reachable so
     /// a test can pull a swipe action through the SAME provider the real
     /// layout uses, rather than calling `leadingSwipeActions(for:)` directly
@@ -77,6 +78,7 @@ public final class SheetsViewController: UICollectionViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         collectionView.backgroundColor = LunaColors.background
+        configureEmptyState()
         configureSwipeActionsLayout()
         configureDataSource()
         configureDragAndDrop()
@@ -155,6 +157,31 @@ public final class SheetsViewController: UICollectionViewController {
             snapshot.appendItems(unattached.map { .unattachedNote($0.id) }, toSection: .unattachedNotes)
         }
         dataSource.apply(snapshot, animatingDifferences: false)
+        updateEmptyState(rowCount: snapshot.numberOfItems)
+    }
+
+    private func configureEmptyState() {
+        emptyLabel.font = .preferredFont(forTextStyle: .body)
+        emptyLabel.adjustsFontForContentSizeCategory = true
+        emptyLabel.textColor = LunaColors.secondaryText
+        emptyLabel.textAlignment = .center
+        emptyLabel.numberOfLines = 0
+        emptyLabel.isHidden = true
+        collectionView.backgroundView = emptyLabel
+    }
+
+    /// Says why the list is blank: nothing matched the search, the Trash is
+    /// empty, or this scope has no documents yet.
+    private func updateEmptyState(rowCount: Int) {
+        emptyLabel.isHidden = rowCount > 0
+        guard rowCount == 0 else { return }
+        if let searchQuery, !searchQuery.isEmpty {
+            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptySearch")
+        } else if currentSelection == .trash {
+            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyTrash")
+        } else {
+            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyScope")
+        }
     }
 
     private func loadDocuments() -> [WriterDocument] {
@@ -233,11 +260,40 @@ public final class SheetsViewController: UICollectionViewController {
     private func trailingBarButtons() -> [UIBarButtonItem] {
         var items = [UIBarButtonItem(
             image: UIImage(systemName: "arrow.up.arrow.down"), menu: sortMenu())]
-        if currentSelection != .trash {
+        if currentSelection == .trash {
+            let empty = UIBarButtonItem(
+                title: L10n.string("WriterLibrary_sheets_emptyTrashAction"), style: .plain,
+                target: self, action: #selector(emptyTrashTapped))
+            items.append(empty)
+        } else {
             items.append(UIBarButtonItem(
                 barButtonSystemItem: .add, target: self, action: #selector(newSheetTapped)))
         }
         return items
+    }
+
+    @objc private func emptyTrashTapped() {
+        let count = dataSource.snapshot().numberOfItems(inSection: .documents)
+        guard count > 0 else { return }
+        let alert = UIAlertController(
+            title: L10n.string("WriterLibrary_sheets_emptyTrashConfirmTitle"),
+            message: count == 1
+                ? L10n.string("WriterLibrary_sheets_emptyTrashConfirmMessageOne")
+                : L10n.string("WriterLibrary_sheets_emptyTrashConfirmMessage", count),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(
+            title: L10n.string("WriterLibrary_sheets_emptyTrashAction"), style: .destructive
+        ) { [weak self] _ in self?.emptyTrash() })
+        present(alert, animated: true)
+    }
+
+    /// Deletes every trashed document for good. Exposed for tests.
+    @discardableResult
+    public func emptyTrash() -> Bool {
+        guard (try? library.emptyTrash()) != nil else { return false }
+        reload()
+        return true
     }
 
     private func sortMenu() -> UIMenu {

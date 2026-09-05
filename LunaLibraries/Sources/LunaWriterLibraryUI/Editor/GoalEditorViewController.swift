@@ -60,6 +60,11 @@ public final class GoalEditorViewController: UIViewController {
         targetField.text = "\(target)"
         targetField.keyboardType = .numberPad
         targetField.textColor = LunaColors.primaryText
+        targetField.borderStyle = .roundedRect
+        targetField.backgroundColor = LunaColors.secondaryBackground
+        targetField.placeholder = L10n.string("WriterLibrary_goal_targetPlaceholder")
+        targetField.accessibilityLabel = L10n.string("WriterLibrary_goal_targetPlaceholder")
+        targetField.clearButtonMode = .whileEditing
         targetField.addTarget(self, action: #selector(targetFieldChanged), for: .editingChanged)
 
         goalBar.showsActivityPulse = false

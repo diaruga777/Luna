@@ -1307,9 +1307,10 @@
 "WriterLibrary_goal_modeAtLeast_Luna" = "At Least";
 "WriterLibrary_goal_modeAtMost_Luna" = "At Most";
 "WriterLibrary_goal_removeAction_Luna" = "Remove Goal";
+"WriterLibrary_goal_targetPlaceholder_Luna" = "Target";
 "WriterLibrary_goal_title_Luna" = "Goal";
 "WriterLibrary_goal_unitCharacters_Luna" = "Characters";
-"WriterLibrary_goal_unitReadingMinutes_Luna" = "Reading Minutes";
+"WriterLibrary_goal_unitReadingMinutes_Luna" = "Minutes";
 "WriterLibrary_goal_unitSentences_Luna" = "Sentences";
 "WriterLibrary_goal_unitWords_Luna" = "Words";
 "WriterLibrary_groups_changeIconAction_Luna" = "Change Icon";

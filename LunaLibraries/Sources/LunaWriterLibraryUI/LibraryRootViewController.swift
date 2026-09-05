@@ -241,6 +241,10 @@ extension LibraryRootViewController: GroupsSelectionDelegate {
     public func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?) {
         sheetsViewController.createSheet(in: group ?? environment.library.inboxGroupID)
     }
+
+    public func groupsViewControllerRequestsSettings(_ controller: GroupsViewController) {
+        presentSettings()
+    }
 }
 
 extension LibraryRootViewController: SheetsSelectionDelegate {

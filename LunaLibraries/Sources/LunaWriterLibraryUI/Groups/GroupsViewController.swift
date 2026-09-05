@@ -88,6 +88,11 @@ public final class GroupsViewController: UICollectionViewController {
         configureDragAndDrop()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "plus"), menu: newItemMenu())
+        let settings = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"), style: .plain, target: self,
+            action: #selector(settingsTapped))
+        settings.accessibilityLabel = L10n.string("Common_settings")
+        navigationItem.leftBarButtonItem = settings
         library.addObserver(self)
         reload()
     }
@@ -350,6 +355,10 @@ public final class GroupsViewController: UICollectionViewController {
                 image: UIImage(systemName: "line.3.horizontal.decrease.circle")
             ) { [weak self] _ in self?.createFilter(scope: nil) },
         ])
+    }
+
+    @objc private func settingsTapped() {
+        selectionDelegate?.groupsViewControllerRequestsSettings(self)
     }
 
     public func requestNewDocument(in group: GroupID?) {

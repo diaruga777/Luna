@@ -197,4 +197,8 @@ private final class RecordingGroupsSelectionDelegate: GroupsSelectionDelegate {
     func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?) {
         newDocumentRequests.append(group)
     }
+    var settingsRequests = 0
+    func groupsViewControllerRequestsSettings(_ controller: GroupsViewController) {
+        settingsRequests += 1
+    }
 }

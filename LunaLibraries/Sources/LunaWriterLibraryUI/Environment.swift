@@ -81,6 +81,9 @@ public protocol GroupsSelectionDelegate: AnyObject {
     /// `nil` for the Inbox. On a compact width the sidebar is the only
     /// column on screen, so this is the one way to start writing there.
     func groupsViewController(_ controller: GroupsViewController, requestsNewDocumentIn group: GroupID?)
+    /// The sidebar's gear. Settings has no other on-screen entry: the ⌘,
+    /// command and the Mac menu need a keyboard.
+    func groupsViewControllerRequestsSettings(_ controller: GroupsViewController)
 }
 
 /// Weak reference from `EditorContainerViewController` back to whatever

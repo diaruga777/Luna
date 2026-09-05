@@ -21,7 +21,11 @@ public final class EditorContainerViewController: UIViewController {
     private var notesPanel: DocumentNotesPanelViewController?
     private var editorTrailingConstraint: NSLayoutConstraint!
 
-    private let notesButton = UIButton(type: .system)
+    /// Built through the header's factory so it keeps a bar button's minimum
+    /// width; a long title would otherwise squeeze it to nothing.
+    private lazy var notesButton = NavHeaderBar.imageButton(
+        systemName: "note.text", target: self, action: #selector(notesTapped),
+        accessibilityLabel: L10n.string("WriterLibrary_editor_notesButtonLabel"))
 
     /// The header's current title — for tests, which cannot see `header`.
     var headerTitleForTesting: String? { header.title }
@@ -68,9 +72,7 @@ public final class EditorContainerViewController: UIViewController {
         editor = environment.editorMaker.makeEditor(for: document)
         editor.editingDelegate = self
 
-        notesButton.setImage(UIImage(systemName: "note.text"), for: .normal)
-        notesButton.tintColor = LunaColors.primaryText
-        notesButton.addTarget(self, action: #selector(notesTapped), for: .touchUpInside)
+        notesButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         header.title = displayTitle(for: document)
         header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(backTapped))])
@@ -180,13 +182,13 @@ public final class EditorContainerViewController: UIViewController {
                 image: UIImage(systemName: document.isFavorite ? "star.slash" : "star")
             ) { [weak self] _ in self?.toggleFavorite() },
             UIAction(
-                title: L10n.string("Common_delete"),
-                image: UIImage(systemName: "trash"), attributes: .destructive
-            ) { [weak self] _ in self?.trashDocument() },
-            UIAction(
                 title: L10n.string("WriterLibrary_snapshots_title"),
                 image: UIImage(systemName: "clock.arrow.circlepath")
             ) { [weak self] _ in self?.presentSnapshots() },
+            UIAction(
+                title: L10n.string("Common_delete"),
+                image: UIImage(systemName: "trash"), attributes: .destructive
+            ) { [weak self] _ in self?.trashDocument() },
         ])
     }
 

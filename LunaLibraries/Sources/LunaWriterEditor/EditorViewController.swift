@@ -315,7 +315,7 @@ public final class EditorViewController: UIViewController {
         textView.metrics = metrics
         session.storage.styler = LayoutAttributeStyler(
             metrics: metrics, font: ReaderFont(rawValue: settings.fontIdentifier ?? "") ?? .system)
-        focus.mode = settings.focusMode
+        setFocusMode(settings.focusMode)
         focus.typewriterScrolling = settings.typewriterScrolling
         if !settings.typewriterScrolling {
             // The extra bottom room typewriter mode holds open so the last
@@ -324,10 +324,6 @@ public final class EditorViewController: UIViewController {
         }
         syntaxLayer.isEnabled = settings.syntaxColouring
         authorshipLayer.isEnabled = settings.showAuthorship
-        accessoryBar.setFocusActive(focus.mode != .off)
-        // The styler assignment above already restyles and repaints through
-        // MarkdownTextStorageObserving when it actually changed; a second,
-        // unconditional repaint here was pure duplication.
     }
 
     // MARK: - Statistics
@@ -495,8 +491,18 @@ public final class EditorViewController: UIViewController {
         case .paragraph: next = .off
         }
         environment.settings.focusMode = next
-        focus.mode = next
-        accessoryBar.setFocusActive(next != .off)
+        setFocusMode(next)
+    }
+
+    /// The lit range is computed from the caret, so a mode switched on
+    /// between keystrokes recomputes it now instead of waiting for the next
+    /// caret move to show anything.
+    private func setFocusMode(_ mode: FocusMode) {
+        focus.mode = mode
+        if mode != .off {
+            focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
+        }
+        accessoryBar.setFocusActive(mode != .off)
         composer.invalidate(nil)
     }
 

@@ -815,7 +815,13 @@ extension EditorViewController: EditorAccessoryBarDelegate {
 extension EditorViewController: StatisticsBarViewDelegate {
 
     public func statisticsBarViewDidSelect(_ view: StatisticsBarView) {
-        let sheet = StatisticsSheet(stats: view.stats, goal: session.document.goal)
+        presentStatisticsSheet()
+    }
+
+    /// The one statistics surface, reached from the counts bar and from the
+    /// container's ⋯ menu alike.
+    public func presentStatisticsSheet() {
+        let sheet = StatisticsSheet(stats: statisticsBar.stats, goal: session.document.goal)
         sheet.modalPresentationStyle = .pageSheet
         present(sheet, animated: true)
     }

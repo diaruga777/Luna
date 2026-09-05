@@ -63,6 +63,11 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func replaceText(_ text: String) { session.replaceWholeText(text) }
 
+    func presentStatistics(from presenter: UIViewController) -> Bool {
+        editor.presentStatisticsSheet()
+        return true
+    }
+
     func editorRequestsNotesPanel(_ editor: EditorViewController) {
         editingDelegate?.editorRequestsNotesPanel(self)
     }

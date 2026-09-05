@@ -78,6 +78,16 @@ final class WriterFlowUITests: XCTestCase {
                 let el = app.textViews[p[0]].exists ? app.textViews[p[0]] : app.textFields[p[0]]
                 el.tap()
                 el.typeText(p[1].replacingOccurrences(of: "\\n", with: "\n"))
+            case "tapAlert":
+                let button = app.alerts.buttons[arg].firstMatch
+                XCTAssertTrue(button.waitForExistence(timeout: 5), "missing alert button \(arg)")
+                button.tap()
+            case "typeFirstField":
+                // An alert's text field carries no label.
+                let field = app.textFields.firstMatch
+                XCTAssertTrue(field.waitForExistence(timeout: 5), "no text field")
+                field.tap()
+                field.typeText(arg)
             case "swipeUp": app.swipeUp()
             case "swipeDown": app.swipeDown()
             case "swipeLeft": app.swipeLeft()

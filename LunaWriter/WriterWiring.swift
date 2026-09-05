@@ -70,7 +70,7 @@ import LunaWriterVoice
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
             settings: stack.settings, editorMaker: maker,
-            readAlongChrome: readAlong, readAlongSettings: readAlong, noteRelevance: nil,
+            readAlongChrome: readAlong, readAlongSettings: readAlong,
             libraryRootPath: stack.libraryRoot.path)
         let root = LibraryRootViewController(environment: environment)
         self.root = root

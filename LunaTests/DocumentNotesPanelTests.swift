@@ -25,34 +25,10 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(newer.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
         XCTAssertEqual(panel.rows.map(\.id), [newer.id, older.id])
-    }
-
-    @MainActor
-    func testNotesOrderByRelevanceScoresWhenSupplied() throws {
-        let stack = try makeWriterStack()
-        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
-        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
-
-        let low = WriterNote(documentIDs: [document.id], text: "Low score")
-        let high = WriterNote(documentIDs: [document.id], text: "High score")
-        try stack.library.insert(low)
-        try stack.library.insert(high)
-        try stack.library.attach(low.id, to: document.id, attachment: .manual)
-        try stack.library.attach(high.id, to: document.id, attachment: .manual)
-
-        let relevance = ScriptedNoteRelevance()
-        relevance.scores[document.id] = [low.id: 0.1, high.id: 0.9]
-
-        let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
-        panel.relevance = relevance
-        layoutWriterScreen(panel)
-
-        XCTAssertEqual(panel.rows.map(\.id), [high.id, low.id])
     }
 
     @MainActor
@@ -68,7 +44,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(note.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, textStore: stack.textStore, document: document)
         let editor = FakeDocumentEditor(document: document)
         panel.editor = editor
         layoutWriterScreen(panel)
@@ -84,13 +60,57 @@ final class DocumentNotesPanelTests: XCTestCase {
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
-        let note = try XCTUnwrap(panel.composeNote("A fresh thought"))
-        XCTAssertEqual(note.text, "A fresh thought")
+        panel.composeField.text = "A fresh thought\nAnd another line"
+        let saved = expectation(description: "note saved")
+        panel.saveDraft { success in XCTAssertTrue(success); saved.fulfill() }
+        wait(for: [saved], timeout: 3)
+        let note = try XCTUnwrap(panel.rows.first)
+        XCTAssertEqual(note.text, "A fresh thought\nAnd another line")
+        XCTAssertEqual(panel.composeField.text, "")
         XCTAssertTrue(try stack.library.notes(for: document.id).contains { $0.id == note.id })
         XCTAssertTrue(panel.rows.contains { $0.id == note.id })
+    }
+
+    @MainActor
+    func testEditingANoteKeepsItsIdentityAndUpdatesSearch() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let note = WriterNote(documentIDs: [document.id], text: "Old thought")
+        try stack.library.insert(note)
+        let panel = DocumentNotesPanelViewController(library: stack.library, notesStore: stack.library,
+            textStore: stack.textStore, document: document)
+        layoutWriterScreen(panel)
+        panel.selectNote(at: 0)
+        XCTAssertEqual(panel.composeField.text, note.text)
+        panel.composeField.text = "Updated thought\nWith another line"
+        let saved = expectation(description: "note updated")
+        panel.saveDraft { success in XCTAssertTrue(success); saved.fulfill() }
+        wait(for: [saved], timeout: 3)
+        XCTAssertEqual(try stack.library.notes(for: document.id).map(\.id), [note.id])
+        XCTAssertEqual(try stack.library.note(note.id)?.text, "Updated thought\nWith another line")
+        XCTAssertEqual(try stack.noteIndex.search(NoteQuery(text: "Updated")).first?.noteID, note.id)
+    }
+
+    @MainActor
+    func testAFailedSaveKeepsTheDraftForRetry() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let panel = DocumentNotesPanelViewController(library: stack.library, notesStore: stack.library,
+            textStore: stack.textStore, document: document)
+        layoutWriterScreen(panel)
+        // A real foreign-key failure, with no injected failure implementation.
+        try stack.library.trash(document.id)
+        try stack.library.emptyTrash()
+        panel.composeField.text = "Keep this thought\nAnd this one"
+        let saved = expectation(description: "save refused")
+        panel.saveDraft { success in XCTAssertFalse(success); saved.fulfill() }
+        wait(for: [saved], timeout: 3)
+        XCTAssertEqual(panel.composeField.text, "Keep this thought\nAnd this one")
+        XCTAssertTrue(panel.saveButton.isEnabled)
+        XCTAssertTrue(panel.rows.isEmpty)
     }
 
     @MainActor
@@ -103,7 +123,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.library.attach(note.id, to: document.id, attachment: .manual)
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
         XCTAssertTrue(panel.deleteNote(note.id))
 
@@ -127,7 +147,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         try stack.textStore.saveText("Completely different content now.", for: &document)
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex, textStore: stack.textStore, document: document)
+            library: stack.library, notesStore: stack.library, textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
 
         XCTAssertTrue(panel.orphanedNoteIDs.contains(note.id))
@@ -142,7 +162,7 @@ final class DocumentNotesPanelTests: XCTestCase {
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
 
         let panel = DocumentNotesPanelViewController(
-            library: stack.library, notesStore: stack.library, noteIndex: stack.noteIndex,
+            library: stack.library, notesStore: stack.library,
             textStore: stack.textStore, document: document)
         layoutWriterScreen(panel)
         XCTAssertTrue(panel.rows.isEmpty)

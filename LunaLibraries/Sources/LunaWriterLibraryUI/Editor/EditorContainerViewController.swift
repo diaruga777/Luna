@@ -252,8 +252,8 @@ public final class EditorContainerViewController: UIViewController {
 
     @discardableResult
     public func toggleFavorite() -> Bool {
+        guard (try? environment.library.setFavorite(!document.isFavorite, for: document.id)) != nil else { return false }
         document.isFavorite.toggle()
-        guard (try? environment.library.update(document)) != nil else { return false }
         header.setTrailingControls(trailingHeaderControls())
         return true
     }
@@ -292,15 +292,21 @@ public final class EditorContainerViewController: UIViewController {
 
     private func presentNotesPanel() {
         let panel = DocumentNotesPanelViewController(
-            library: environment.library, notesStore: environment.notes, noteIndex: environment.noteIndex,
+            library: environment.library, notesStore: environment.notes,
             textStore: environment.textStore, document: document)
         panel.editor = editor
-        panel.relevance = environment.noteRelevance
         notesPanel = panel
         host(panel, asSideChild: LunaLayout.isWide(containerWidth: view.bounds.width), animated: true)
     }
 
     private func dismissNotesPanel(_ panel: DocumentNotesPanelViewController) {
+        panel.saveDraft { [weak self, weak panel] saved in
+            guard saved, let self, let panel else { return }
+            self.removeNotesPanel(panel)
+        }
+    }
+
+    private func removeNotesPanel(_ panel: DocumentNotesPanelViewController) {
         if panel.parent === self {
             panel.willMove(toParent: nil)
             panel.view.removeFromSuperview()
@@ -349,7 +355,7 @@ public final class EditorContainerViewController: UIViewController {
         let isWide = LunaLayout.isWide(containerWidth: view.bounds.width)
         let isSideChild = notesPanel.parent === self
         guard isWide != isSideChild else { return }
-        dismissNotesPanel(notesPanel)
+        removeNotesPanel(notesPanel)
         self.notesPanel = notesPanel
         host(notesPanel, asSideChild: isWide, animated: false)
     }
@@ -359,7 +365,6 @@ extension EditorContainerViewController: DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didUpdate document: WriterDocument) {
         self.document = document
         header.title = displayTitle(for: document)
-        updateNotesButton()
         header.setTrailingControls(trailingHeaderControls())
     }
 

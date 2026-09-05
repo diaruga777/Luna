@@ -264,7 +264,9 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         case .location:
             return valueCell(
                 title: L10n.string("WriterLibrary_settings_locationRow"),
-                value: environment.libraryRootPath ?? L10n.string("WriterLibrary_settings_locationUnknown"))
+                value: environment.libraryRootPath == nil
+                    ? L10n.string("WriterLibrary_settings_locationUnknown")
+                    : L10n.string("WriterLibrary_settings_locationValue"))
         case .snapshotCount:
             return valueCell(
                 title: L10n.string("WriterLibrary_settings_snapshotCountRow"),

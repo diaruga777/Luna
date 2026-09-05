@@ -25,6 +25,7 @@ public final class DocumentNotesPanelViewController: UIViewController {
     private let cancelButton = UIButton(type: .system)
     private let composePlaceholder = UILabel()
     private let errorLabel = UILabel()
+    private let emptyLabel = UILabel()
     private var editingNote: WriterNote?
     private var isSaving = false
     private let saveQueue = DispatchQueue(label: "com.luna.writer.notes.save", qos: .userInitiated)
@@ -58,6 +59,13 @@ public final class DocumentNotesPanelViewController: UIViewController {
 
     deinit { library.removeObserver(self) }
 
+    /// A panel with nothing in it is opened to write; the keyboard comes up
+    /// without a second tap.
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if rows.isEmpty, editingNote == nil { composeField.becomeFirstResponder() }
+    }
+
     private func configureTableView() {
         tableView.dataSource = self
         tableView.delegate = self
@@ -65,6 +73,13 @@ public final class DocumentNotesPanelViewController: UIViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Note")
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
+        emptyLabel.text = L10n.string("WriterLibrary_notes_emptyMessage")
+        emptyLabel.font = .preferredFont(forTextStyle: .body)
+        emptyLabel.adjustsFontForContentSizeCategory = true
+        emptyLabel.textColor = LunaColors.secondaryText
+        emptyLabel.textAlignment = .center
+        emptyLabel.numberOfLines = 0
+        tableView.backgroundView = emptyLabel
     }
 
     private func configureComposeBar() {
@@ -127,6 +142,7 @@ public final class DocumentNotesPanelViewController: UIViewController {
         }
         rows = notes
         orphanedNoteIDs = Self.orphanedNotes(notes, document: document, textStore: textStore)
+        emptyLabel.isHidden = !notes.isEmpty
         tableView.reloadData()
     }
 

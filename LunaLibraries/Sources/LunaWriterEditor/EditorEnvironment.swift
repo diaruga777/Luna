@@ -19,18 +19,13 @@ public struct EditorEnvironment {
     /// Whether the accessory bar earns its space on this root. Defaults to
     /// iOS's width-plus-hardware-keyboard rule.
     public var accessoryBarPolicy: AccessoryBarPolicy
-    /// The keyboard geometry this root can offer. Defaults to a real
-    /// `KeyboardFrameObserver`; the Mac root installs `NoKeyboardMetrics`.
-    public var keyboardMetrics: KeyboardMetricsProviding
-
     public init(
         noteIndex: NoteIndexing,
         noteStore: NoteStoring,
         marksStore: DocumentMarksStoring,
         settings: WriterSettings,
         aiAssistant: AIWritingAssisting? = nil,
-        accessoryBarPolicy: AccessoryBarPolicy = DefaultAccessoryBarPolicy(),
-        keyboardMetrics: KeyboardMetricsProviding = KeyboardFrameObserver()
+        accessoryBarPolicy: AccessoryBarPolicy = DefaultAccessoryBarPolicy()
     ) {
         self.noteIndex = noteIndex
         self.noteStore = noteStore
@@ -38,7 +33,6 @@ public struct EditorEnvironment {
         self.settings = settings
         self.aiAssistant = aiAssistant
         self.accessoryBarPolicy = accessoryBarPolicy
-        self.keyboardMetrics = keyboardMetrics
     }
 }
 

@@ -62,13 +62,6 @@ public protocol ReadAlongSettingsHandling: AnyObject {
     func presentCalibration(from presenter: UIViewController)
 }
 
-/// A relevance score per note, keyed by note id, fed by the editor's
-/// continuous matcher while a sheet is open. Recency order is used until one
-/// is supplied.
-public protocol NoteRelevanceProviding: AnyObject {
-    func relevanceScores(for document: DocumentID) -> [NoteID: Double]
-}
-
 /// Where the groups list sent the reader: a fixed library scope, a group, or
 /// a saved filter.
 public enum LibrarySelection: Hashable {
@@ -118,7 +111,6 @@ public final class LibraryEnvironment {
     public let editorMaker: DocumentEditorMaking
     public let readAlongChrome: ReadAlongChromeProviding?
     public let readAlongSettings: ReadAlongSettingsHandling?
-    public let noteRelevance: NoteRelevanceProviding?
     /// Where sheets live on disk, for the Settings → Library row. `nil` in a
     /// test stack that never needs to show one.
     public let libraryRootPath: String?
@@ -134,7 +126,6 @@ public final class LibraryEnvironment {
         editorMaker: DocumentEditorMaking,
         readAlongChrome: ReadAlongChromeProviding? = nil,
         readAlongSettings: ReadAlongSettingsHandling? = nil,
-        noteRelevance: NoteRelevanceProviding? = nil,
         libraryRootPath: String? = nil
     ) {
         self.library = library
@@ -147,7 +138,6 @@ public final class LibraryEnvironment {
         self.editorMaker = editorMaker
         self.readAlongChrome = readAlongChrome
         self.readAlongSettings = readAlongSettings
-        self.noteRelevance = noteRelevance
         self.libraryRootPath = libraryRootPath
     }
 }

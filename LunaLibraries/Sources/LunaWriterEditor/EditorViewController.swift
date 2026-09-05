@@ -68,7 +68,6 @@ public final class EditorViewController: UIViewController {
         focus = FocusModeController(
             mode: environment.settings.focusMode,
             typewriterScrolling: environment.settings.typewriterScrolling)
-        keyboard = environment.keyboardMetrics
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -81,7 +80,6 @@ public final class EditorViewController: UIViewController {
     private let mention: MentionController
     private let related: RelatedNotesRanker
     private let focus: FocusModeController
-    private let keyboard: KeyboardMetricsProviding
     private let accessoryBar = EditorAccessoryBar()
     private let relatedStrip = RelatedNoteStripView()
     private lazy var accessoryContainer = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
@@ -99,12 +97,10 @@ public final class EditorViewController: UIViewController {
     private lazy var authorshipLayer = AuthorshipLayer(provider: session.authorship)
     private lazy var focusLayer = FocusLayer(provider: focus)
     private lazy var annotationLayer = AnnotationLayer(provider: session)
-    private lazy var streamer = StreamingTextInserter(textView: textView)
 
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
-    private var pendingEdit: (range: NSRange, replacementLength: Int)?
-    private var lastLayoutWidth: CGFloat = -1
+    private var lastLayoutSize = CGSize(width: -1, height: -1)
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
     /// The one AI request in flight. A second request cancels the first —
     /// there is only one caret, one selection, one place the answer lands.
@@ -121,9 +117,15 @@ public final class EditorViewController: UIViewController {
         composer.invalidate(nil)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if session.storage.length == 0 { textView.becomeFirstResponder() }
+    }
+
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         relayoutIfNeeded()
+        if !overlay.isHidden { placeOverlay() }
     }
 
     public override func viewWillTransition(
@@ -144,13 +146,15 @@ public final class EditorViewController: UIViewController {
     /// invisible to `MarkdownTextStorageObserving`, so this is the one place
     /// that watches the text view's own geometry directly.
     private func relayoutIfNeeded() {
-        let width = textView.bounds.width
+        let size = textView.bounds.size
         let inset = textView.textContainerInset
-        guard width != lastLayoutWidth || inset != lastLayoutInset else { return }
-        lastLayoutWidth = width
+        guard size != lastLayoutSize || inset != lastLayoutInset else { return }
+        lastLayoutSize = size
         lastLayoutInset = inset
         geometry.invalidate(nil)
+        composer.invalidate(nil)
         layoutObserver?.editorDidRelayout(self)
+        if focus.typewriterScrolling { scrollCaretToTypewriterLine() }
     }
 
     /// A stable point in the text under the middle of what's on screen right
@@ -204,7 +208,7 @@ public final class EditorViewController: UIViewController {
             readAlongHost.bottomAnchor.constraint(equalTo: textView.bottomAnchor),
             statisticsBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             statisticsBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            statisticsBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            statisticsBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
         ])
 
         accessoryContainer.axis = .vertical
@@ -254,7 +258,6 @@ public final class EditorViewController: UIViewController {
         session.storage.addObserver(self)
         session.authorship.observer = self
         session.delegate = self
-        streamer.delegate = self
         // The storage's own initial scan ran before this observer existed
         // (the session is built well before the view controller), so the
         // syntax layer never saw a rescan for the document it opens on.
@@ -265,9 +268,6 @@ public final class EditorViewController: UIViewController {
         overlay.delegate = self
         related.observer = self
         focus.delegate = self
-        // Only the concrete `KeyboardFrameObserver` ever calls back — a Mac
-        // root's `NoKeyboardMetrics` never changes, so it needs no observer.
-        (keyboard as? KeyboardFrameObserver)?.observer = self
         accessoryBar.policy = environment.accessoryBarPolicy
         accessoryBar.delegate = self
         accessoryBar.setFocusActive(focus.mode != .off)
@@ -367,8 +367,7 @@ public final class EditorViewController: UIViewController {
         guard !textView.isDragging, !textView.isDecelerating else { return }
         guard let selected = textView.selectedTextRange else { return }
         let caret = textView.caretRect(for: selected.end)
-        let overlap = keyboard.keyboardOverlap(in: textView)
-        let visibleHeight = textView.bounds.height - overlap
+        let visibleHeight = textView.bounds.height
         let bottom = TypewriterScroller.bottomInset(visibleHeight: visibleHeight - textView.adjustedContentInset.top)
         if abs(textView.contentInset.bottom - bottom) > 1 {
             textView.contentInset.bottom = bottom
@@ -397,7 +396,7 @@ public final class EditorViewController: UIViewController {
 
     private func placeOverlay() {
         let caret = view.convert(mention.markerRect(), from: textView)
-        let keyboardTop = view.bounds.maxY - keyboard.keyboardOverlap(in: view)
+        let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
     }
 
@@ -525,9 +524,6 @@ extension EditorViewController: UITextViewDelegate {
     public func textView(
         _ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String
     ) -> Bool {
-        // Cleared up front: a rejected change must never leave a stale edit
-        // for the NEXT accepted change's textViewDidChange to pick up.
-        pendingEdit = nil
         guard mention.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
         // A bare Return in a list item or a blockquote continues it (or, on
         // an empty item, ends the list) instead of just breaking the line.
@@ -536,25 +532,17 @@ extension EditorViewController: UITextViewDelegate {
             apply(edits)
             return false
         }
-        pendingEdit = (range, (text as NSString).length)
         return true
     }
 
     public func textViewDidChange(_ textView: UITextView) {
-        if let edit = pendingEdit {
-            pendingEdit = nil
-            session.textDidChange(
-                edit: edit.range, replacementLength: edit.replacementLength, typedBy: .author)
-        }
         mention.textViewDidChange(textView)
         updateOverlay()
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
         scheduleStatistics()
-        delegate?.editorDidUpdateDocument(self, document: session.document)
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
-        pendingEdit = nil
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
@@ -568,24 +556,17 @@ extension EditorViewController: UITextViewDelegate {
     public func textViewDidEndEditing(_ textView: UITextView) {
         focus.editingEnded()
         mention.dismiss()
-        try? session.save()
+        session.save()
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        composer.invalidate(nil)
         if !overlay.isHidden {
             placeOverlay()
         }
         layoutObserver?.editorDidScroll(self)
     }
 
-    public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        composer.invalidate(nil)
-    }
-
-    public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard !decelerate else { return }
-        composer.invalidate(nil)
-    }
 }
 
 // MARK: - RenderingViewportProviding
@@ -634,7 +615,12 @@ extension EditorViewController: AuthorshipObserving {
 extension EditorViewController: DocumentSessionDelegate {
 
     public func documentSessionDidSave(_ session: DocumentSession) {
+        statisticsBar.saveFailed = false
         delegate?.editorDidUpdateDocument(self, document: session.document)
+    }
+
+    public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {
+        statisticsBar.saveFailed = true
     }
 
     public func documentSession(_ session: DocumentSession, didReanchorWithOrphans orphans: [Annotation]) {
@@ -649,6 +635,7 @@ extension EditorViewController: DocumentSessionDelegate {
     public func documentSessionDidReceiveExternalChange(_ session: DocumentSession) {
         textView.undoManager?.removeAllActions()
         mention.dismiss()
+        scheduleStatistics()
         delegate?.editorDidUpdateDocument(self, document: session.document)
     }
 }
@@ -678,7 +665,7 @@ extension EditorViewController: WriterTextViewActionDelegate {
     }
 
     public func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange) {
-        session.authorship.markAsOwn(range)
+        session.markAsOwn(range)
     }
 
     /// Anchors an annotation to the selection right away, so the mark shows
@@ -785,18 +772,6 @@ extension EditorViewController: RelatedNoteStripViewDelegate {
     }
 }
 
-// MARK: - KeyboardFrameObserving
-
-extension EditorViewController: KeyboardFrameObserving {
-
-    public func keyboardFrameDidChange(_ frame: CGRect) {
-        // isComposing tracks first-responder state, not the keyboard: a
-        // hardware keyboard means this never fires with anything to say.
-        guard !overlay.isHidden else { return }
-        placeOverlay()
-    }
-}
-
 // MARK: - EditorAccessoryBarDelegate
 
 extension EditorViewController: EditorAccessoryBarDelegate {
@@ -846,20 +821,6 @@ extension EditorViewController: StatisticsBarViewDelegate {
     }
 }
 
-// MARK: - StreamingTextInserterDelegate
-
-extension EditorViewController: StreamingTextInserterDelegate {
-
-    public func streamingTextInserter(
-        _ inserter: StreamingTextInserter, didInsert range: NSRange, as source: AuthorshipSpan.Source
-    ) {
-        session.recordInsertion(range, source: source)
-        composer.invalidate(range)
-    }
-
-    public func streamingTextInserterDidFinish(_ inserter: StreamingTextInserter) {}
-}
-
 // MARK: - WriterTextViewActionDelegate — AI
 
 extension EditorViewController {
@@ -902,15 +863,15 @@ extension EditorViewController {
             guard let self else { return }
             guard let answer = try? await assistant.continueWriting(context: context), !answer.isEmpty else { return }
             guard !Task.isCancelled, self.session.storage.revision == revision else { return }
-            self.streamer.insert(answer, as: .ai(model: assistant.modelIdentifier), at: caret)
+            self.textView.selectedRange = NSRange(location: caret, length: 0)
+            self.textView.insert(answer, as: .ai(model: assistant.modelIdentifier))
         }
     }
 
     /// Rewrites the selection as `.ai` text. The same revision guard as
-    /// `continueWriting`, and for a sharper reason: without it, an edit
-    /// during generation means `replaceText(in: selection, with: "")` below
-    /// deletes whatever now occupies that range — text the writer typed
-    /// after the request went out, not the text the model rewrote.
+    /// `continueWriting` protects text typed while generation was running.
+    /// The complete answer replaces the selection in one undoable operation;
+    /// a timer must not keep inserting fragments after the writer moves on.
     public func rewriteSelection(instruction: String? = nil) {
         guard let assistant = environment.aiAssistant, assistant.isAvailable else { return }
         let selection = textView.selectedRange
@@ -924,9 +885,8 @@ extension EditorViewController {
                   !answer.isEmpty
             else { return }
             guard !Task.isCancelled, self.session.storage.revision == revision else { return }
-            self.textView.replaceText(in: selection, with: "")
-            self.streamer.insert(
-                answer, as: .ai(model: assistant.modelIdentifier), at: selection.location)
+            self.textView.selectedRange = selection
+            self.textView.insert(answer, as: .ai(model: assistant.modelIdentifier))
         }
     }
 }

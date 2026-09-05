@@ -69,11 +69,11 @@ public final class RelatedNotesRanker {
         guard window != lastWindow else { return }
         lastWindow = window
         timer?.invalidate()
+        generation &+= 1
         guard !window.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             publish([])
             return
         }
-        generation &+= 1
         let generation = self.generation
         timer = Timer.scheduledTimer(withTimeInterval: debounce, repeats: false) { [weak self] _ in
             self?.run(window, generation: generation)

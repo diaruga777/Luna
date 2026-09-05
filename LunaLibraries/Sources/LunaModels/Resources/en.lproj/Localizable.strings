@@ -1481,3 +1481,7 @@
 "WriterReadAlong_quadrantTopLeft_Luna" = "top left";
 "WriterReadAlong_quadrantTopRight_Luna" = "top right";
 
+
+"WriterLibrary_notes_edit_Luna" = "Edit note";
+"WriterLibrary_notes_saveFailed_Luna" = "Couldn’t save this note. Your text is still here. Try Save again.";
+"WriterEditor_saveFailed_Luna" = "Couldn’t save. Luna will retry.";

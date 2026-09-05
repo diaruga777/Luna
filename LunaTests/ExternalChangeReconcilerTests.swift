@@ -224,6 +224,19 @@ final class ExternalChangeReconcilerTests: XCTestCase {
             try stack.library.snapshots(for: document.id).first?.text, "# Draft\n\nFirst pass.")
     }
 
+    func testAMissingFileDoesNotTrashAnOpenUnsavedDocument() throws {
+        let stack = try makeWriterStack()
+        var document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        try stack.textStore.saveText("Work in progress", for: &document)
+        let open = StubOpenDocuments()
+        open.unsaved = [document.id]
+        stack.reconciler.openDocuments = open
+        let outcome = try stack.reconciler.reconcile([])
+        XCTAssertEqual(outcome.deferred, [document.id])
+        XCTAssertTrue(outcome.trashed.isEmpty)
+        XCTAssertNil(try stack.library.document(document.id)?.trashedAt)
+    }
+
     func testASheetWithNoFileYetIsNotTrashedByAScan() throws {
         let stack = try makeWriterStack()
         let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "New")

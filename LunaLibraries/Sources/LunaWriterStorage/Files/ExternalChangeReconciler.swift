@@ -131,6 +131,10 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         }
 
         for document in missing {
+            if openDocuments?.hasUnsavedEdits(document.id) == true {
+                outcome.deferred.append(document.id)
+                continue
+            }
             try library.trash(document.id)
             try documentIndex?.remove(document.id)
             outcome.trashed.append(document.id)

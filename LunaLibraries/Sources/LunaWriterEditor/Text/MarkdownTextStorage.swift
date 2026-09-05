@@ -11,6 +11,11 @@ import LunaWriterText
 /// drop what they cached about it.
 public protocol MarkdownTextStorageObserving: AnyObject {
     func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange)
+    func markdownTextStorage(_ storage: MarkdownTextStorage, didReplace range: NSRange, replacementLength: Int)
+}
+
+extension MarkdownTextStorageObserving {
+    public func markdownTextStorage(_ storage: MarkdownTextStorage, didReplace range: NSRange, replacementLength: Int) {}
 }
 
 /// The editor's text storage. It keeps a `MarkdownDocumentModel` in step with
@@ -97,6 +102,10 @@ public final class MarkdownTextStorage: NSTextStorage {
         // from an earlier edit in the same editing group, so nothing here
         // needs to reconstruct that union itself.
         backing.replaceCharacters(in: range, with: str)
+        cachedString = nil
+        for case let observer as MarkdownTextStorageObserving in observers.allObjects {
+            observer.markdownTextStorage(self, didReplace: range, replacementLength: replacementLength)
+        }
         model.apply(edit: range, replacementLength: replacementLength)
         pendingRescanSeed = NSRange(location: range.location, length: replacementLength)
         edited(.editedCharacters, range: range, changeInLength: replacementLength - range.length)

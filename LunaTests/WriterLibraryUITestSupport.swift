@@ -52,13 +52,6 @@ final class FakeDocumentEditorMaker: DocumentEditorMaking {
     }
 }
 
-/// A scripted relevance witness, so a notes-panel test can assert on the
-/// ordering the score map produces without a real embedding model.
-final class ScriptedNoteRelevance: NoteRelevanceProviding {
-    var scores: [DocumentID: [NoteID: Double]] = [:]
-    func relevanceScores(for document: DocumentID) -> [NoteID: Double] { scores[document] ?? [:] }
-}
-
 /// A scripted read-along settings witness for the Settings screen tests.
 final class ScriptedReadAlongSettings: ReadAlongSettingsHandling {
     var gazeAvailable = true
@@ -77,14 +70,13 @@ extension XCTestCase {
     /// fake editor maker the caller can inspect afterward.
     func makeLibraryEnvironment(
         stack: WriterStorageStack, editorMaker: FakeDocumentEditorMaker = FakeDocumentEditorMaker(),
-        noteRelevance: NoteRelevanceProviding? = nil,
         readAlongSettings: ReadAlongSettingsHandling? = nil
     ) -> LibraryEnvironment {
         LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
             settings: stack.settings, editorMaker: editorMaker, readAlongChrome: nil,
-            readAlongSettings: readAlongSettings, noteRelevance: noteRelevance,
+            readAlongSettings: readAlongSettings,
             libraryRootPath: stack.libraryRoot.path)
     }
 

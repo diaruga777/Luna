@@ -5,37 +5,39 @@ import LunaWriterModels
 import LunaWriterStorage
 import LunaWriterText
 
-/// The notes panel for one open sheet: notes in relevance order when a
-/// `NoteRelevanceProviding` witness has scores, else recency; a compose field
-/// at the bottom; swipe to delete; tap an anchored row to jump the editor
-/// there.
+/// Notes for one document, newest first. Capture several lines, then save;
+/// tap a note to edit it, or an anchored note to jump to its text.
 public final class DocumentNotesPanelViewController: UIViewController {
 
     private let library: WriterLibraryStoring
     private let notesStore: NoteStoring
-    private let noteIndex: NoteIndexing
     private let textStore: DocumentTextStoring
     private var document: WriterDocument
 
     /// The open editor a tap on an anchored row focuses. Weak: the panel
     /// outlives neither the editor nor the container that owns both.
     public weak var editor: (UIViewController & DocumentEditing)?
-    public weak var relevance: NoteRelevanceProviding?
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let composeBar = UIView()
-    private let composeField = UITextField()
+    let composeField = UITextView()
+    let saveButton = UIButton(type: .system)
+    private let cancelButton = UIButton(type: .system)
+    private let composePlaceholder = UILabel()
+    private let errorLabel = UILabel()
+    private var editingNote: WriterNote?
+    private var isSaving = false
+    private let saveQueue = DispatchQueue(label: "com.luna.writer.notes.save", qos: .userInitiated)
 
     private(set) var rows: [WriterNote] = []
     private(set) var orphanedNoteIDs: Set<NoteID> = []
 
     public init(
-        library: WriterLibraryStoring, notesStore: NoteStoring, noteIndex: NoteIndexing,
+        library: WriterLibraryStoring, notesStore: NoteStoring,
         textStore: DocumentTextStoring, document: WriterDocument
     ) {
         self.library = library
         self.notesStore = notesStore
-        self.noteIndex = noteIndex
         self.textStore = textStore
         self.document = document
         super.init(nibName: nil, bundle: nil)
@@ -67,43 +69,61 @@ public final class DocumentNotesPanelViewController: UIViewController {
 
     private func configureComposeBar() {
         composeBar.backgroundColor = LunaColors.secondaryBackground
-        composeField.placeholder = L10n.string("WriterLibrary_notes_composePlaceholder")
+        composeField.font = .preferredFont(forTextStyle: .body)
+        composeField.adjustsFontForContentSizeCategory = true
         composeField.textColor = LunaColors.primaryText
-        composeField.returnKeyType = .send
+        composeField.backgroundColor = .clear
         composeField.delegate = self
-        composeField.translatesAutoresizingMaskIntoConstraints = false
+        composeField.accessibilityLabel = L10n.string("WriterLibrary_notes_composePlaceholder")
+        composePlaceholder.text = L10n.string("WriterLibrary_notes_composePlaceholder")
+        composePlaceholder.font = .preferredFont(forTextStyle: .body)
+        composePlaceholder.textColor = LunaColors.tertiaryText
+        composePlaceholder.isUserInteractionEnabled = false
+        saveButton.setTitle(L10n.string("Common_save"), for: .normal)
+        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        cancelButton.setTitle(L10n.string("Common_cancel"), for: .normal)
+        cancelButton.addTarget(self, action: #selector(cancelEditing), for: .touchUpInside)
+        cancelButton.isHidden = true
+        errorLabel.font = .preferredFont(forTextStyle: .caption1)
+        errorLabel.textColor = .systemRed
+        errorLabel.numberOfLines = 0
+        errorLabel.isHidden = true
+        let buttons = UIStackView(arrangedSubviews: [cancelButton, UIView(), saveButton])
+        buttons.axis = .horizontal
+        let content = UIStackView(arrangedSubviews: [composeField, errorLabel, buttons])
+        content.axis = .vertical
+        content.spacing = 4
+        content.translatesAutoresizingMaskIntoConstraints = false
         composeBar.translatesAutoresizingMaskIntoConstraints = false
-        composeBar.addSubview(composeField)
+        composePlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        composeBar.addSubview(content)
+        composeBar.addSubview(composePlaceholder)
         view.addSubview(composeBar)
-
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: composeBar.topAnchor),
-
             composeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // The keyboard layout guide already sits at the safe area's
-            // bottom when the keyboard is hidden, and rises with it when
-            // shown — a safe-area pin left the field under the keyboard.
             composeBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
-
-            composeField.leadingAnchor.constraint(equalTo: composeBar.leadingAnchor, constant: 16),
-            composeField.trailingAnchor.constraint(equalTo: composeBar.trailingAnchor, constant: -16),
-            composeField.topAnchor.constraint(equalTo: composeBar.topAnchor, constant: 10),
-            composeField.bottomAnchor.constraint(equalTo: composeBar.bottomAnchor, constant: -10),
+            content.leadingAnchor.constraint(equalTo: composeBar.leadingAnchor, constant: 16),
+            content.trailingAnchor.constraint(equalTo: composeBar.trailingAnchor, constant: -16),
+            content.topAnchor.constraint(equalTo: composeBar.topAnchor, constant: 8),
+            content.bottomAnchor.constraint(equalTo: composeBar.bottomAnchor, constant: -8),
+            composeField.heightAnchor.constraint(equalToConstant: 96),
+            composePlaceholder.leadingAnchor.constraint(equalTo: composeField.leadingAnchor, constant: 5),
+            composePlaceholder.topAnchor.constraint(equalTo: composeField.topAnchor, constant: 8),
+            saveButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])
+        updateComposeState()
     }
 
     // MARK: - Data
 
     public func reload() {
-        var notes = (try? notesStore.notes(for: document.id)) ?? []
-        if let scores = relevance?.relevanceScores(for: document.id), !scores.isEmpty {
-            notes.sort { (scores[$0.id] ?? -Double.greatestFiniteMagnitude) > (scores[$1.id] ?? -Double.greatestFiniteMagnitude) }
-        } else {
-            notes.sort { $0.updatedAt > $1.updatedAt }
+        let notes = ((try? notesStore.notes(for: document.id)) ?? []).sorted {
+            $0.updatedAt > $1.updatedAt
         }
         rows = notes
         orphanedNoteIDs = Self.orphanedNotes(notes, document: document, textStore: textStore)
@@ -113,7 +133,8 @@ public final class DocumentNotesPanelViewController: UIViewController {
     private static func orphanedNotes(
         _ notes: [WriterNote], document: WriterDocument, textStore: DocumentTextStoring
     ) -> Set<NoteID> {
-        guard let text = try? textStore.loadText(document) else { return [] }
+        guard notes.contains(where: { $0.anchor != nil }),
+              let text = try? textStore.loadText(document) else { return [] }
         let nsText = text as NSString
         var orphaned: Set<NoteID> = []
         for note in notes {
@@ -125,29 +146,90 @@ public final class DocumentNotesPanelViewController: UIViewController {
 
     // MARK: - Compose
 
-    @discardableResult
-    public func composeNote(_ text: String) -> WriterNote? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let note = WriterNote(documentIDs: [document.id], text: trimmed, source: .typed)
-        guard (try? notesStore.insert(note)) != nil else { return nil }
-        _ = try? notesStore.attach(note.id, to: document.id, attachment: .manual)
-        _ = try? noteIndex.index(note)
-        reload()
-        return note
+    /// A Done action can save the draft before dismissing the panel. Errors
+    /// leave both the text and the panel in place so the writer can retry.
+    public func saveDraft(completion: @escaping (Bool) -> Void = { _ in }) {
+        guard !isSaving else { completion(false); return }
+        let text = composeField.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { completion(true); return }
+        var note = editingNote ?? WriterNote(documentIDs: [document.id], text: text)
+        note.text = text
+        let isNew = editingNote == nil
+        let store = notesStore
+        isSaving = true
+        updateComposeState()
+        saveQueue.async { [self, note] in
+            let result = Result {
+                if isNew { try store.insert(note) } else { try store.update(note) }
+            }
+            DispatchQueue.main.async { [self] in
+                isSaving = false
+                switch result {
+                case .success:
+                    composeField.text = ""
+                    editingNote = nil
+                    cancelButton.isHidden = true
+                    errorLabel.isHidden = true
+                    reload()
+                    updateComposeState()
+                    completion(true)
+                case .failure:
+                    errorLabel.text = L10n.string("WriterLibrary_notes_saveFailed")
+                    errorLabel.isHidden = false
+                    updateComposeState()
+                    completion(false)
+                }
+            }
+        }
+    }
+
+    @objc private func saveTapped() { saveDraft() }
+
+    private func updateComposeState() {
+        let hasText = !composeField.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        composePlaceholder.isHidden = !composeField.text.isEmpty
+        saveButton.isEnabled = hasText && !isSaving
+        composeField.isEditable = !isSaving
+        cancelButton.isEnabled = !isSaving
+        // Do not let a swipe discard a draft. Done saves before closing.
+        navigationController?.isModalInPresentation = hasText || isSaving
+    }
+
+    private func editNote(_ note: WriterNote) {
+        guard !isSaving else { return }
+        guard composeField.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            composeField.becomeFirstResponder()
+            return
+        }
+        editingNote = note
+        composeField.text = note.text
+        cancelButton.isHidden = false
+        updateComposeState()
+        composeField.becomeFirstResponder()
+    }
+
+    @objc private func cancelEditing() {
+        editingNote = nil
+        composeField.text = ""
+        cancelButton.isHidden = true
+        errorLabel.isHidden = true
+        updateComposeState()
     }
 
     @discardableResult
     public func deleteNote(_ id: NoteID) -> Bool {
         guard (try? notesStore.delete(id)) != nil else { return false }
-        _ = try? noteIndex.remove(id)
         reload()
         return true
     }
 
     public func selectNote(at index: Int) {
-        guard index < rows.count, let anchor = rows[index].anchor else { return }
-        editor?.focus(on: anchor)
+        guard rows.indices.contains(index) else { return }
+        if let anchor = rows[index].anchor {
+            editor?.focus(on: anchor)
+        } else {
+            editNote(rows[index])
+        }
     }
 }
 
@@ -157,7 +239,9 @@ extension DocumentNotesPanelViewController: UITableViewDataSource, UITableViewDe
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Note", for: indexPath)
         let note = rows[indexPath.row]
-        cell.textLabel?.numberOfLines = 3
+        cell.textLabel?.numberOfLines = 4
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
         cell.backgroundColor = LunaColors.secondaryBackground
         if note.anchor != nil {
             let orphaned = orphanedNoteIDs.contains(note.id)
@@ -175,6 +259,15 @@ extension DocumentNotesPanelViewController: UITableViewDataSource, UITableViewDe
         selectNote(at: indexPath.row)
     }
 
+    public func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath,
+                          point: CGPoint) -> UIContextMenuConfiguration? {
+        let note = rows[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [UIAction(title: L10n.string("WriterLibrary_notes_edit"),
+                                      image: UIImage(systemName: "pencil")) { _ in self?.editNote(note) }])
+        }
+    }
+
     public func tableView(
         _ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
@@ -187,12 +280,8 @@ extension DocumentNotesPanelViewController: UITableViewDataSource, UITableViewDe
     }
 }
 
-extension DocumentNotesPanelViewController: UITextFieldDelegate {
-    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        composeNote(textField.text ?? "")
-        textField.text = ""
-        return true
-    }
+extension DocumentNotesPanelViewController: UITextViewDelegate {
+    public func textViewDidChange(_ textView: UITextView) { updateComposeState() }
 }
 
 extension DocumentNotesPanelViewController: LibraryChangeObserving {

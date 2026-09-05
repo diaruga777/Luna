@@ -42,7 +42,9 @@ extension SQLiteWriterLibrary {
                 try Self.attach(note.id, to: document, attachment: .manual, in: db)
             }
         }
-        try noteIndex?.index(note)
+        // The note and its FTS row have committed. A derived embedding failure
+        // must not report a failed insert and encourage a duplicate on retry.
+        try? noteIndex?.index(note)
         changes.post(.notes(note.documentIDs.first))
     }
 
@@ -70,7 +72,9 @@ extension SQLiteWriterLibrary {
                 try statement.bind(10, note.id.rawValue.uuidString)
             }
         }
-        try noteIndex?.index(note)
+        // The note and its FTS row have committed. A derived embedding failure
+        // must not report a failed insert and encourage a duplicate on retry.
+        try? noteIndex?.index(note)
         changes.post(.notes(note.documentIDs.first))
     }
 

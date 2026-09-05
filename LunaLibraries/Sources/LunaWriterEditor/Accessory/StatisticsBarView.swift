@@ -22,6 +22,9 @@ public final class StatisticsBarView: UIView {
 
     private let label = UILabel()
     private let progress = MoonHorizonProgressBar()
+    public var saveFailed = false {
+        didSet { update(stats: stats, goal: goal) }
+    }
 
     public private(set) var stats = TextStatistics.Stats(
         words: 0, characters: 0, charactersWithoutSpaces: 0, sentences: 0, paragraphs: 0, readingTime: 0)
@@ -66,7 +69,8 @@ public final class StatisticsBarView: UIView {
     public func update(stats: TextStatistics.Stats, goal: WritingGoal?) {
         self.stats = stats
         self.goal = goal
-        label.text = Self.summary(stats)
+        label.text = saveFailed ? L10n.string("WriterEditor_saveFailed") : Self.summary(stats)
+        label.textColor = saveFailed ? .systemRed : LunaColors.tertiaryText
         accessibilityLabel = label.text
         if let goal {
             progress.isHidden = false

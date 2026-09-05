@@ -82,7 +82,7 @@ public final class FocusModeController: FocusRangeProviding, FocusIdleTimerDeleg
 
     /// The range the mode wants lit around a selection, whatever the timer says.
     public func focusRange(for selection: NSRange, in text: NSString) -> NSRange? {
-        guard text.length > 0 else { return nil }
+        guard mode != .off, text.length > 0 else { return nil }
         // A caret at the very end of the document — right after a Return —
         // sits in a new, empty final paragraph. Clamping to `length - 1`
         // would read that as the LAST CHARACTER of the paragraph before it.

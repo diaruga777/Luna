@@ -178,6 +178,82 @@ keyboard observer, injectable metrics and unused Mac stub.
 
 See `claudedocs/writer-review-2026-09-05.md` for findings, verification and limits.
 
+## Simulator audit (2026-09-05)
+
+Every flow was driven on an iPhone 17 Pro and an iPad Pro 13" simulator
+(iOS 26.2) through `LunaWriterUITests`, a scripted XCUITest driver (below),
+because neither `idb` nor the blitz MCP could reach the iOS 26 simulator's
+HID port and the Mac's own display locked mid-session. What it found, and
+what changed:
+
+- **Typed text was black on the night background.** `LayoutAttributeStyler`
+  replaced every attribute on a restyled line and wrote no colour, so TextKit
+  drew its default black. The styler now writes `EditorTheme.ink` with the
+  font and paragraph style; every other colour stays a rendering attribute.
+- **Rendering attributes never reached the screen.** TextKit 2 clears a
+  fragment's rendering attributes whenever it lays that fragment out again,
+  and an edit invalidates the fragment it touched, so the composer's viewport
+  pass landed on fragments about to be rebuilt: markup stayed ink-coloured,
+  syntax colours, focus dim and annotation washes never showed.
+  `RenderingAttributeComposer` now installs the layout manager's
+  `renderingAttributesValidator` (chaining any UIKit installed first) and
+  paints each fragment as it is laid out; `applyNow` still repaints the
+  viewport for colour-only changes. `RenderingAttributeComposerTests` pins
+  the validator; `MarkdownTextStorageTests` pins the ink.
+- **Focus mode did nothing when switched on.** The lit range was computed
+  only on a caret move. `EditorViewController.setFocusMode` recomputes it.
+- **Settings had no button.** Only ⌘, and the Mac menu opened it. The
+  sidebar carries a gear (`GroupsSelectionDelegate.groupsViewControllerRequestsSettings`).
+- **The pushed sheets list had no back button** on a phone (its Edit item
+  replaced it); `leftItemsSupplementBackButton` keeps both.
+- **The @ overlay called every note "From another document"**:
+  `SQLiteNoteIndex` built hits with no `documentIDs`. Hits now carry their
+  sheets and text (`WriterNoteIndexTests`).
+- **Filters were a dead end**: a library-wide filter was never listed, and
+  no filter could be edited or deleted. `FilterEditorViewController` edits
+  name, search text, favourites, modified-within and keywords; filter rows
+  have Edit and Delete; library-wide filters sit at the root of Groups.
+- Smaller: a long title squeezed the notes button out of the header; the ⋯
+  menu's Statistics showed an alert while the counts bar showed the sheet;
+  Delete sat mid-menu; Settings printed the raw container path as the storage
+  location; the notes panel, the sheets list, the Trash and a search with no
+  matches showed blank pages; the goal target was a borderless field on the
+  night background; New Group landed as "New Group" with no name prompt; the
+  Trash had no Empty action; iPad kept a dead back chevron beside a visible
+  sheets column; "1 documents".
+
+Verified working and left alone: New Document from the sidebar and the list,
+heading/list/emphasis/code rendering, the notes panel save path and its
+count badge, "@" lookup and note creation, snapshots on close, export to the
+share sheet, Move, Keywords, Goal, group rename and context menus, Trash and
+Restore, the two- and three-column iPad layouts with the side notes panel.
+Read-along cannot run on a simulator (no TrueDepth camera, no on-device
+speech model), so its chrome stays hidden there by design.
+
+### The UI driver
+
+`LunaWriterUITests/WriterFlowUITests.swift` runs one test that reads a
+`;`-separated script from `WRITER_UI_SCRIPT` and writes a numbered PNG per
+`shot:` step to `WRITER_UI_SHOTS` (a host path — simulator processes share the
+host filesystem), plus an accessibility dump per `dump:`. Commands: `shot`,
+`dump`, `sleep`, `tap:<label>`, `tapType:<type>|<label>`, `tapIndex:<type>|<n>`,
+`tapAt:x,y`, `pressAt`, `press:<label>`, `tapAlert:<label>`, `type:<text>`,
+`typeInto:<label>|<text>`, `typeFirstField:<text>`, `swipeUp/Down/Left`,
+`back`, `exists:<label>`, `rotate:landscape|portrait`, `background`. Pass the
+two variables with the `TEST_RUNNER_` prefix as xcodebuild's environment:
+
+```sh
+TEST_RUNNER_WRITER_UI_SHOTS=/tmp/shots TEST_RUNNER_WRITER_UI_SCRIPT='tap:All Documents; shot:list' \
+  xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM" \
+  -only-testing:LunaWriterUITests DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
+```
+
+A sidebar section header is a cell with the same label as its row (`Trash`),
+so tap rows by coordinate or `tapType:cell|…` with care. The test target is
+a plain `PBXNativeTarget` hand-added to `project.pbxproj` (the `xcodeproj`
+gem cannot save this project); the `LunaWriter` scheme lists it as its one
+testable.
+
 ## Testing
 
 Suites are `Writer*`, `Note*`, `Library*`, `Gaze*`, `Reading*`, `Voice*`,

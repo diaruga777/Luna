@@ -54,6 +54,22 @@ final class WriterNoteIndexTests: XCTestCase {
         XCTAssertEqual(hits.map(\.noteID), [onMine])
     }
 
+    /// The "@" overlay marks a hit "from another document" when the open
+    /// sheet is not among its `documentIDs`; hits that carried none marked
+    /// every note that way, including the sheet's own.
+    func testAHitNamesTheSheetsItsNoteSitsOn() throws {
+        let stack = try makeWriterStack()
+        let library = stack.library
+        let mine = try library.createDocument(in: library.inboxGroupID, title: "Mine")
+        let onMine = try insert("harbour lights", in: stack, on: mine.id)
+
+        let hit = try XCTUnwrap(stack.noteIndex.search(NoteQuery(text: "harbour")).first)
+
+        XCTAssertEqual(hit.noteID, onMine)
+        XCTAssertEqual(hit.documentIDs, [mine.id])
+        XCTAssertEqual(hit.noteText, "harbour lights")
+    }
+
     // MARK: - Hybrid ordering
 
     func testMeaningOutranksWordOverlapOnceTheQueryIsLongEnough() throws {

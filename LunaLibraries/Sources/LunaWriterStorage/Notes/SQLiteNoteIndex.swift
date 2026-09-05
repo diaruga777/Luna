@@ -150,7 +150,8 @@ public final class SQLiteNoteIndex: NoteIndexing {
 
         var sql = """
             SELECT n.id, snippet(notes_fts, 0, '', '', '…', 12), bm25(notes_fts) AS rank,
-                e.vector, e.dims
+                e.vector, e.dims, n.text,
+                (SELECT group_concat(document_id, ',') FROM note_documents WHERE note_id = n.id)
             FROM notes_fts
             JOIN notes n ON n.rowid = notes_fts.rowid
             LEFT JOIN note_embeddings e ON e.note_id = n.id
@@ -184,7 +185,8 @@ public final class SQLiteNoteIndex: NoteIndexing {
                     score = HybridScorer.lexical(bm25Rank: bm25)
                 }
                 hits.append((NoteHit(
-                    noteID: NoteID(uuid), score: score, snippet: row.string(1) ?? ""),
+                    noteID: NoteID(uuid), score: score, snippet: row.string(1) ?? "",
+                    noteText: row.string(5) ?? "", documentIDs: Self.documentIDs(row.string(6))),
                     hits.count))
             })
         }
@@ -194,6 +196,12 @@ public final class SQLiteNoteIndex: NoteIndexing {
             .sorted { $0.hit.score == $1.hit.score ? $0.rank < $1.rank : $0.hit.score > $1.hit.score }
             .map(\.hit)
             .prefix(max(0, query.limit)))
+    }
+
+    /// The sheets a note sits on, from `group_concat` over `note_documents`.
+    /// The "@" overlay reads these to say whether a hit is from another sheet.
+    private static func documentIDs(_ joined: String?) -> [DocumentID] {
+        (joined ?? "").split(separator: ",").compactMap { UUID(uuidString: String($0)) }.map { DocumentID($0) }
     }
 
     public func related(to windowText: String, in document: DocumentID, limit: Int) throws -> [NoteHit] {
@@ -226,7 +234,8 @@ public final class SQLiteNoteIndex: NoteIndexing {
                         .max() ?? 0
                     hits.append((NoteHit(
                         noteID: NoteID(uuid), score: best,
-                        snippet: String((row.string(1) ?? "").prefix(160))), hits.count))
+                        snippet: String((row.string(1) ?? "").prefix(160)),
+                        noteText: row.string(1) ?? "", documentIDs: [document]), hits.count))
                 })
         }
         return Array(hits

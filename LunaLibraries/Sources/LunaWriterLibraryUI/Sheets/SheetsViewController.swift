@@ -224,6 +224,10 @@ public final class SheetsViewController: UICollectionViewController {
     private func configureNavigationItems() {
         navigationItem.rightBarButtonItems = trailingBarButtons()
         navigationItem.leftBarButtonItem = editButtonItem
+        // On a collapsed (phone) stack this list is pushed over the sidebar;
+        // a leading item alone would replace the back button and strand the
+        // writer here.
+        navigationItem.leftItemsSupplementBackButton = true
     }
 
     private func trailingBarButtons() -> [UIBarButtonItem] {

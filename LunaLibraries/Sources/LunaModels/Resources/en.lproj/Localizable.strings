@@ -1481,3 +1481,5 @@
 "WriterReadAlong_quadrantTopLeft_Luna" = "top left";
 "WriterReadAlong_quadrantTopRight_Luna" = "top right";
 
+
+"WriterEditor_saveFailed_Luna" = "Couldn’t save. Luna will retry.";

@@ -103,7 +103,6 @@ public final class EditorViewController: UIViewController {
 
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
-    private var pendingEdit: (range: NSRange, replacementLength: Int)?
     private var lastLayoutWidth: CGFloat = -1
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
     /// The one AI request in flight. A second request cancels the first —
@@ -119,6 +118,11 @@ public final class EditorViewController: UIViewController {
         wire()
         updateStatistics()
         composer.invalidate(nil)
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if session.storage.length == 0 { textView.becomeFirstResponder() }
     }
 
     public override func viewDidLayoutSubviews() {
@@ -525,9 +529,6 @@ extension EditorViewController: UITextViewDelegate {
     public func textView(
         _ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String
     ) -> Bool {
-        // Cleared up front: a rejected change must never leave a stale edit
-        // for the NEXT accepted change's textViewDidChange to pick up.
-        pendingEdit = nil
         guard mention.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
         // A bare Return in a list item or a blockquote continues it (or, on
         // an empty item, ends the list) instead of just breaking the line.
@@ -536,25 +537,17 @@ extension EditorViewController: UITextViewDelegate {
             apply(edits)
             return false
         }
-        pendingEdit = (range, (text as NSString).length)
         return true
     }
 
     public func textViewDidChange(_ textView: UITextView) {
-        if let edit = pendingEdit {
-            pendingEdit = nil
-            session.textDidChange(
-                edit: edit.range, replacementLength: edit.replacementLength, typedBy: .author)
-        }
         mention.textViewDidChange(textView)
         updateOverlay()
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
         scheduleStatistics()
-        delegate?.editorDidUpdateDocument(self, document: session.document)
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
-        pendingEdit = nil
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
@@ -568,7 +561,7 @@ extension EditorViewController: UITextViewDelegate {
     public func textViewDidEndEditing(_ textView: UITextView) {
         focus.editingEnded()
         mention.dismiss()
-        try? session.save()
+        session.save()
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -634,7 +627,12 @@ extension EditorViewController: AuthorshipObserving {
 extension EditorViewController: DocumentSessionDelegate {
 
     public func documentSessionDidSave(_ session: DocumentSession) {
+        statisticsBar.saveFailed = false
         delegate?.editorDidUpdateDocument(self, document: session.document)
+    }
+
+    public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {
+        statisticsBar.saveFailed = true
     }
 
     public func documentSession(_ session: DocumentSession, didReanchorWithOrphans orphans: [Annotation]) {
@@ -649,6 +647,7 @@ extension EditorViewController: DocumentSessionDelegate {
     public func documentSessionDidReceiveExternalChange(_ session: DocumentSession) {
         textView.undoManager?.removeAllActions()
         mention.dismiss()
+        scheduleStatistics()
         delegate?.editorDidUpdateDocument(self, document: session.document)
     }
 }
@@ -678,7 +677,7 @@ extension EditorViewController: WriterTextViewActionDelegate {
     }
 
     public func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange) {
-        session.authorship.markAsOwn(range)
+        session.markAsOwn(range)
     }
 
     /// Anchors an annotation to the selection right away, so the mark shows

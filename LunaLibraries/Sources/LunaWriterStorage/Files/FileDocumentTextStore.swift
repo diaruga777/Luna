@@ -37,12 +37,13 @@ public protocol DocumentFileRelocating: AnyObject {
 public final class FileDocumentTextStore: DocumentTextStoring {
 
     public let rootDirectory: URL
-    private let library: WriterLibraryStoring
+    private let library: SQLiteWriterLibrary
     private let documentIndex: DocumentIndexing?
     private let fileManager: FileManager
+    private let saveLock = NSLock()
 
     public init(
-        rootDirectory: URL, library: WriterLibraryStoring, documentIndex: DocumentIndexing? = nil,
+        rootDirectory: URL, library: SQLiteWriterLibrary, documentIndex: DocumentIndexing? = nil,
         fileManager: FileManager = .default
     ) {
         self.rootDirectory = rootDirectory
@@ -93,6 +94,14 @@ public final class FileDocumentTextStore: DocumentTextStoring {
     }
 
     public func saveText(_ text: String, for document: inout WriterDocument) throws {
+        saveLock.lock()
+        defer { saveLock.unlock() }
+        // Metadata can change while this editor is open, and another queued
+        // save may have renamed the file since this snapshot was captured.
+        guard let latest = try library.document(document.id), latest.trashedAt == nil else {
+            throw WriterLibraryConflictError(id: document.id)
+        }
+        document = latest
         let summary = DocumentTextSummary.summarize(text)
         document.title = summary.title
         document.snippet = summary.snippet
@@ -113,17 +122,16 @@ public final class FileDocumentTextStore: DocumentTextStoring {
         // that fails partway never destroys a file that already existed. The
         // old path is cleaned up only once the new one is safely down.
         try write(text, to: targetURL)
+        document.fileRelativePath = target
+        document = try library.updateTextMetadata(document)
         if !previousPath.isEmpty, previousPath != target {
             let previousURL = url(for: previousPath)
             if fileManager.fileExists(atPath: previousURL.path) {
                 coordinatedRemove(previousURL)
             }
         }
-
-        document.fileRelativePath = target
-        document.revision += 1
-        document.updatedAt = Date()
-        try library.update(document)
+        // Index once, with the text already in memory. A metadata update used
+        // to read the file and build the same index before this second pass.
         try documentIndex?.index(document, body: text)
     }
 

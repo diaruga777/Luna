@@ -6,19 +6,14 @@ import LunaWriterStorage
 /// The sessions currently open in editors, held weakly. The reconciler asks it
 /// before adopting an external change, and the app flushes them on background.
 @MainActor final class OpenSessionRegistry: OpenDocumentQuerying {
-    /// How often the dirty-id snapshot below is refreshed while sessions are
-    /// open. A test can shrink this to avoid waiting out the production value.
-    static var snapshotRefreshInterval: TimeInterval = 0.25
-
     private var sessions: [DocumentID: WeakSession] = [:]
     private let unsavedSnapshot = LockedIDSet()
-    private var refreshTimer: Timer?
 
     func register(_ session: DocumentSession) {
         sessions[session.document.id] = WeakSession(session)
         prune()
         refreshSnapshot()
-        startTimerIfNeeded()
+        session.unsavedChangesDidChange = { [weak self] in self?.refreshSnapshot() }
     }
 
     var openSessions: [DocumentSession] {
@@ -43,26 +38,6 @@ import LunaWriterStorage
     /// anything that can change which sessions are dirty.
     func refreshSnapshot() {
         unsavedSnapshot.replace(with: Set(openSessions.filter(\.hasUnsavedChanges).map(\.document.id)))
-    }
-
-    private func startTimerIfNeeded() {
-        guard refreshTimer == nil else { return }
-        let timer = Timer.scheduledTimer(
-            withTimeInterval: Self.snapshotRefreshInterval, repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
-    }
-
-    private func tick() {
-        prune()
-        if sessions.isEmpty {
-            refreshTimer?.invalidate()
-            refreshTimer = nil
-        }
-        refreshSnapshot()
     }
 
     private func prune() {

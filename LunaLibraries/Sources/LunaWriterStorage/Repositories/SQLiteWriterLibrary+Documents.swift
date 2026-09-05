@@ -242,6 +242,35 @@ extension SQLiteWriterLibrary {
         changes.post(.document(document.id))
     }
 
+    /// A text save owns only text-derived columns. Never overwrite a goal,
+    /// favourite or keyword edit made while the file was being written.
+    func updateTextMetadata(_ document: WriterDocument) throws -> WriterDocument {
+        try database.transaction { db in
+            try db.run("""
+                UPDATE documents SET title = ?, snippet = ?, file_path = ?, word_count = ?,
+                    char_count = ?, sentence_count = ?, revision = revision + 1, updated_at = ?
+                WHERE id = ? AND trashed_at IS NULL
+                """) { statement in
+                try statement.bind(1, document.title)
+                try statement.bind(2, document.snippet)
+                try statement.bind(3, document.fileRelativePath)
+                try statement.bind(4, document.wordCount)
+                try statement.bind(5, document.characterCount)
+                try statement.bind(6, document.sentenceCount)
+                try statement.bind(7, date: Date())
+                try statement.bind(8, document.id.rawValue.uuidString)
+            }
+            guard db.changesCount > 0 else {
+                throw WriterLibraryConflictError(id: document.id)
+            }
+        }
+        guard let updated = try self.document(document.id) else {
+            throw WriterLibraryConflictError(id: document.id)
+        }
+        changes.post(.document(document.id))
+        return updated
+    }
+
     /// Re-derives the document index's row for `document` after a
     /// metadata-only write. `documents_fts` is contentless, so its row can
     /// only be rewritten whole — the body is read back through `textStore`,

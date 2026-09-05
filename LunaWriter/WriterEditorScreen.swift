@@ -6,10 +6,11 @@ import LunaWriterStorage
 
 /// The organiser's `DocumentEditing` face over the real `EditorViewController`.
 /// Hosts the editor as its one child and forwards the two delegate events.
-final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewControllerDelegate {
+final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewControllerDelegate, LibraryChangeObserving {
     let editor: EditorViewController
     let session: DocumentSession
     weak var editingDelegate: DocumentEditingDelegate?
+    private let library: WriterLibraryStoring
 
     /// Surfaces the editor's layout witness, so a wiring root that only
     /// holds this `DocumentEditing` value's own concrete type (read-along's,
@@ -20,11 +21,13 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
         set { editor.layoutObserver = newValue }
     }
 
-    init(session: DocumentSession, environment: EditorEnvironment) {
+    init(session: DocumentSession, environment: EditorEnvironment, library: WriterLibraryStoring) {
+        self.library = library
         self.session = session
         self.editor = EditorViewController(session: session, environment: environment)
         super.init(nibName: nil, bundle: nil)
         editor.delegate = self
+        library.addObserver(self)
     }
 
     @available(*, unavailable)
@@ -33,6 +36,7 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     /// The one place the session's I/O actually ends — this screen leaving
     /// scope is what "the sheet is closing" means.
     deinit {
+        library.removeObserver(self)
         editor.close()
     }
 
@@ -43,6 +47,12 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
         editor.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(editor.view)
         editor.didMove(toParent: self)
+    }
+
+    func libraryDidChange(_ change: LibraryChange) {
+        guard case .document(let id) = change, id == session.document.id,
+              let latest = try? library.document(id) else { return }
+        session.refreshDocument(latest)
     }
 
     var document: WriterDocument { session.document }
@@ -84,7 +94,7 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
                 document: document, textStore: storage.textStore, marksStore: storage.library,
                 settings: storage.settings, snapshots: storage.library)
             registry.register(session)
-            return WriterEditorScreen(session: session, environment: environment)
+            return WriterEditorScreen(session: session, environment: environment, library: storage.library)
         } catch {
             return UnavailableEditorScreen(document: document, error: error)
         }

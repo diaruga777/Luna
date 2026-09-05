@@ -115,11 +115,8 @@ public final class MarkdownDocumentModel {
     public func apply(edit: NSRange, replacementLength: Int) {
         let predictedLength = table.length + (replacementLength - edit.length)
         guard NSMaxRange(edit) <= table.length, predictedLength == sharedText.length else {
-            // Loud in a debug app; stands down under XCTest so a test can
-            // drive the recovery this guards without crashing the runner.
-            if !MarkdownDocumentModel.isRunningUnderXCTest {
-                assertionFailure("MarkdownDocumentModel.apply(edit:replacementLength:) does not match its text")
-            }
+            // Recover from stale/coalesced edits identically in the app and
+            // in tests; a recoverable mismatch must not crash a debug editor.
             table = LineTable(text: sharedText)
             lines = Array(repeating: nil, count: table.lineCount)
             pendingLines = 0..<table.lineCount
@@ -301,9 +298,4 @@ public final class MarkdownDocumentModel {
         return first...max(first, last)
     }
 
-    private static var isRunningUnderXCTest: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
-            || NSClassFromString("XCTestCase") != nil
-    }
 }

@@ -11,9 +11,14 @@ import LunaWriterText
 
 public protocol DocumentSessionDelegate: AnyObject {
     func documentSessionDidSave(_ session: DocumentSession)
+    func documentSession(_ session: DocumentSession, didFailToSave error: Error)
     /// The annotations whose text is gone. They stay in the store, listed.
     func documentSession(_ session: DocumentSession, didReanchorWithOrphans orphans: [Annotation])
     func documentSessionDidReceiveExternalChange(_ session: DocumentSession)
+}
+
+extension DocumentSessionDelegate {
+    public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {}
 }
 
 /// One open sheet.
@@ -22,7 +27,7 @@ public protocol DocumentSessionDelegate: AnyObject {
 /// three back: one second after the last keystroke, when the app goes to the
 /// background, and when the sheet closes. Closing a sheet that changed also
 /// keeps a snapshot of it.
-public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled {
+public final class DocumentSession: AnnotationRangeProviding, MarkdownTextStorageObserving {
 
     public static let autosaveDelay: TimeInterval = 1
 
@@ -38,13 +43,19 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     /// The annotations whose text is gone.
     public private(set) var orphanedAnnotations: [Annotation] = []
 
-    public private(set) var hasUnsavedChanges = false
+    public private(set) var hasUnsavedChanges = false {
+        didSet {
+            if oldValue != hasUnsavedChanges { unsavedChangesDidChange?() }
+        }
+    }
+    /// Updates the app's thread-safe reconciliation guard immediately.
+    public var unsavedChangesDidChange: (() -> Void)?
 
     private let textStore: DocumentTextStoring
     private let marksStore: DocumentMarksStoring
     private let snapshots: DocumentSnapshotStoring?
-    private let scheduler: AutosaveScheduling
-    private let autosaveDelay: TimeInterval
+    private var autosaveTimer: Timer?
+    private var replacingWholeText = false
     private var storedAnnotations: [AnnotationID: Annotation] = [:]
     private var changedSinceOpen = false
     private var isClosed = false
@@ -53,10 +64,14 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     /// marks the session dirty. Serial, so a slow write can never race past
     /// a faster one queued after it.
     private let saveQueue = DispatchQueue(label: "com.luna.writer.documentSession.save")
-    /// Bumped by every write this session starts; a write only applies its
-    /// result if its own number is still the newest one to have landed.
-    private var writeRevision = 0
-    private var lastWrittenRevision = 0
+    private var editRevision = 0
+    private var submittedRevision = -1
+    private var appliedRevision = -1
+    // Accessed only on saveQueue, including by a synchronous flush. Keeping
+    // the last result here lets a flush finish an in-flight save even while
+    // its main-queue completion is still waiting to run.
+    private var writtenDocument: WriterDocument
+    private var completedWrite: (revision: Int, document: WriterDocument, error: Error?)?
 
     public init(
         document: WriterDocument,
@@ -64,17 +79,14 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         marksStore: DocumentMarksStoring,
         settings: WriterSettings,
         snapshots: DocumentSnapshotStoring? = nil,
-        styler: LayoutAttributeStyler? = nil,
-        scheduler: AutosaveScheduling = TimerAutosaveScheduler(),
-        autosaveDelay: TimeInterval = DocumentSession.autosaveDelay
+        styler: LayoutAttributeStyler? = nil
     ) throws {
         self.document = document
+        self.writtenDocument = document
         self.textStore = textStore
         self.marksStore = marksStore
         self.snapshots = snapshots
         self.settings = settings
-        self.scheduler = scheduler
-        self.autosaveDelay = autosaveDelay
 
         let text = try textStore.loadText(document)
         let resolvedStyler = styler ?? LayoutAttributeStyler(
@@ -85,18 +97,28 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         let marks = (try? marksStore.marks(for: document.id)) ?? .empty
         authorship = AuthorshipTracker(spans: marks.authorship)
         reanchor(marks.annotations)
+        storage.addObserver(self)
     }
+
+    deinit { autosaveTimer?.invalidate() }
 
     // MARK: - Text
 
     public var text: String { storage.string }
 
-    /// One edit made in the text view.
-    public func textDidChange(
-        edit: NSRange, replacementLength: Int, typedBy source: AuthorshipSpan.Source?
-    ) {
-        authorship.textDidChange(edit: edit, replacementLength: replacementLength, typedBy: source)
+    // Track actual character mutations, including undo, dictation and marked
+    // text. UITextView selection/change callbacks are not ordered edit events.
+    public func markdownTextStorage(_ storage: MarkdownTextStorage, didReplace edit: NSRange, replacementLength: Int) {
+        guard !replacingWholeText, !isClosed else { return }
+        authorship.textDidChange(edit: edit, replacementLength: replacementLength, typedBy: .author)
         shiftAnnotations(edit: edit, replacementLength: replacementLength)
+        markDirty()
+    }
+
+    public func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange) {}
+
+    public func markAsOwn(_ range: NSRange) {
+        authorship.markAsOwn(range)
         markDirty()
     }
 
@@ -107,9 +129,19 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     }
 
     private func markDirty() {
+        editRevision &+= 1
         hasUnsavedChanges = true
         changedSinceOpen = true
-        scheduler.schedule(after: autosaveDelay, for: self)
+        scheduleAutosave()
+    }
+
+    private func scheduleAutosave() {
+        autosaveTimer?.invalidate()
+        let timer = Timer(timeInterval: Self.autosaveDelay, repeats: false) { [weak self] _ in
+            self?.save()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autosaveTimer = timer
     }
 
     // MARK: - Annotations
@@ -202,22 +234,10 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
 
     // MARK: - Saving
 
-    public func autosaveDeadlineReached() {
-        save()
-    }
-
-    /// Writes what changed since the last save. The snapshot — the text,
-    /// the marks — is taken here, on whatever thread called this; the file
-    /// and database I/O run on `saveQueue`, off it.
     public func save() {
         performSave(waitForCompletion: false)
     }
 
-    /// Writes synchronously: waits for this write, and for anything already
-    /// queued ahead of it, to land before returning. `flushPendingSave()`
-    /// and a background flush both need the write actually DONE before
-    /// they hand control back — an async fire-and-forget would let the
-    /// scene suspend, or the sheet close, out from under it.
     @discardableResult
     public func saveNow() -> Bool {
         performSave(waitForCompletion: true)
@@ -225,63 +245,54 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
 
     @discardableResult
     private func performSave(waitForCompletion: Bool) -> Bool {
-        guard hasUnsavedChanges, !isClosed else {
-            if waitForCompletion { saveQueue.sync {} }
-            return true
-        }
-        writeRevision &+= 1
-        let revision = writeRevision
+        guard hasUnsavedChanges, !isClosed else { return !hasUnsavedChanges }
+        let revision = editRevision
+        guard waitForCompletion || submittedRevision != revision else { return true }
+        submittedRevision = revision
         let text = storage.string
         let marks = DocumentMarks(annotations: currentAnnotations(), authorship: authorship.spans)
-        hasUnsavedChanges = false
-        scheduler.cancel()
+        autosaveTimer?.invalidate()
 
-        if waitForCompletion {
-            var updated = document
-            var succeeded = false
-            saveQueue.sync {
-                do {
-                    try self.textStore.saveText(text, for: &updated)
-                    try self.marksStore.replaceMarks(marks, for: updated.id)
-                    succeeded = true
-                } catch {
-                    succeeded = false
-                }
+        let write = { [self] in
+            if let completedWrite, completedWrite.revision == revision, completedWrite.error == nil {
+                return completedWrite
             }
-            applyWriteResult(revision: revision, updated: updated, succeeded: succeeded)
-            return succeeded
-        } else {
-            let textStore = self.textStore
-            let marksStore = self.marksStore
-            var updated = document
-            saveQueue.async { [weak self] in
-                var succeeded = true
-                do {
-                    try textStore.saveText(text, for: &updated)
-                    try marksStore.replaceMarks(marks, for: updated.id)
-                } catch {
-                    succeeded = false
-                }
-                DispatchQueue.main.async {
-                    self?.applyWriteResult(revision: revision, updated: updated, succeeded: succeeded)
-                }
+            var error: Error?
+            do {
+                try textStore.saveText(text, for: &writtenDocument)
+                try marksStore.replaceMarks(marks, for: writtenDocument.id)
+            } catch let failure {
+                error = failure
             }
-            return true
+            let result = (revision: revision, document: writtenDocument, error: error)
+            completedWrite = result
+            return result
         }
+        if waitForCompletion {
+            let result = saveQueue.sync(execute: write)
+            applyWriteResult(result)
+            return result.error == nil
+        }
+        saveQueue.async { [self] in
+            let result = write()
+            DispatchQueue.main.async { [self] in applyWriteResult(result) }
+        }
+        return true
     }
 
-    /// A revision guard: a write that started before a later one already
-    /// landed must never overwrite that newer result. A failed write leaves
-    /// `hasUnsavedChanges` set so the next edit — or the next background
-    /// flush — retries it.
-    private func applyWriteResult(revision: Int, updated: WriterDocument, succeeded: Bool) {
-        guard succeeded else {
-            hasUnsavedChanges = true
+    private func applyWriteResult(_ result: (revision: Int, document: WriterDocument, error: Error?)) {
+        guard result.revision > appliedRevision else { return }
+        if let error = result.error {
+            // A newer write/flush may already have saved these changes.
+            guard result.revision == editRevision else { return }
+            submittedRevision = -1
+            scheduleAutosave()
+            delegate?.documentSession(self, didFailToSave: error)
             return
         }
-        guard revision >= lastWrittenRevision else { return }
-        lastWrittenRevision = revision
-        document = updated
+        appliedRevision = result.revision
+        document = result.document
+        hasUnsavedChanges = result.revision != editRevision
         delegate?.documentSessionDidSave(self)
     }
 
@@ -310,11 +321,35 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         if changedSinceOpen {
             try? snapshots?.recordSnapshot(storage.string, for: document.id)
         }
-        scheduler.cancel()
+        autosaveTimer?.invalidate()
         isClosed = true
     }
 
     // MARK: - External change
+
+    /// A library notification may describe a metadata edit, our own save,
+    /// or a new file revision from the reconciler. File reads stay off main;
+    /// edits made while the read runs take precedence over that read.
+    public func refreshDocument(_ latest: WriterDocument) {
+        guard latest.id == document.id, !isClosed, !hasUnsavedChanges,
+              latest.trashedAt == nil else { return }
+        guard latest.revision > document.revision else {
+            if latest.revision == document.revision { document = latest }
+            return
+        }
+        let revision = editRevision
+        let textStore = self.textStore
+        saveQueue.async { [weak self] in
+            guard let text = try? textStore.loadText(latest) else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isClosed, !self.hasUnsavedChanges,
+                      self.editRevision == revision,
+                      latest.revision > self.document.revision else { return }
+                self.document = latest
+                self.externalChangeArrived(text: text)
+            }
+        }
+    }
 
     /// The file changed under the sheet. The text is replaced and every mark
     /// is put back onto it. Authorship spans are plain ranges with no text
@@ -322,10 +357,13 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     /// reliable way to say which stretch of the NEW text a span was about,
     /// so they are dropped rather than left pointing at the wrong words.
     public func externalChangeArrived(text: String) {
+        replacingWholeText = true
         storage.setText(text)
+        replacingWholeText = false
         authorship.reset(to: [])
         reanchor(Array(storedAnnotations.values))
         hasUnsavedChanges = false
+        autosaveTimer?.invalidate()
         delegate?.documentSessionDidReceiveExternalChange(self)
     }
 
@@ -337,7 +375,9 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     public func replaceWholeText(_ text: String) {
         guard text != storage.string else { return }
         try? snapshots?.recordSnapshot(storage.string, for: document.id)
+        replacingWholeText = true
         storage.setText(text)
+        replacingWholeText = false
         authorship.reset(to: [])
         reanchor(Array(storedAnnotations.values))
         markDirty()

@@ -9,29 +9,6 @@ import LunaWriterModels
 import LunaWriterStorage
 import LunaWriterText
 
-/// Holds the autosave deadline until the test says the pause is over.
-private final class ManualAutosaveScheduler: AutosaveScheduling {
-    private(set) var scheduleCount = 0
-    private(set) var lastDelay: TimeInterval?
-    private(set) var cancelCount = 0
-    private weak var target: AutosaveScheduled?
-
-    func schedule(after delay: TimeInterval, for target: AutosaveScheduled) {
-        scheduleCount += 1
-        lastDelay = delay
-        self.target = target
-    }
-
-    func cancel() {
-        cancelCount += 1
-    }
-
-    /// The pause after the last keystroke elapsed.
-    func fire() {
-        target?.autosaveDeadlineReached()
-    }
-}
-
 private final class SessionRecorder: DocumentSessionDelegate {
     var saves = 0
     var orphans: [Annotation] = []
@@ -48,7 +25,6 @@ final class WriterDocumentSessionTests: XCTestCase {
 
     private var stack: WriterStorageStack!
     private var document: WriterDocument!
-    private var scheduler: ManualAutosaveScheduler!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -57,7 +33,6 @@ final class WriterDocumentSessionTests: XCTestCase {
         var seeded = document!
         try stack.textStore.saveText("The first sentence. The second sentence.", for: &seeded)
         document = seeded
-        scheduler = ManualAutosaveScheduler()
     }
 
     override func tearDown() {
@@ -71,20 +46,17 @@ final class WriterDocumentSessionTests: XCTestCase {
             textStore: stack.textStore,
             marksStore: stack.library,
             settings: stack.settings,
-            snapshots: stack.library,
-            scheduler: scheduler)
+            snapshots: stack.library)
     }
 
     private func type(_ text: String, into session: DocumentSession, at location: Int) {
         let edit = NSRange(location: location, length: 0)
         session.storage.replaceCharacters(in: edit, with: text)
-        session.textDidChange(
-            edit: edit, replacementLength: (text as NSString).length, typedBy: .author)
     }
 
     /// `save()` writes off the keystroke's own thread now; a test that
     /// needs the write to have actually landed polls for it instead of
-    /// assuming `scheduler.fire()` returning means the file changed.
+    /// assuming `session.save()` returning means the file changed.
     private func waitUntil(
         _ condition: () -> Bool, timeout: TimeInterval = 2,
         file: StaticString = #filePath, line: UInt = #line
@@ -115,19 +87,9 @@ final class WriterDocumentSessionTests: XCTestCase {
         XCTAssertEqual(recorder.saves, 0)
         XCTAssertEqual(try stack.textStore.loadText(session.document), "The first sentence. The second sentence.")
 
-        scheduler.fire()
         waitUntil { recorder.saves == 1 }
         XCTAssertFalse(session.hasUnsavedChanges)
         XCTAssertEqual(try stack.textStore.loadText(session.document), "Added. The first sentence. The second sentence.")
-    }
-
-    func testEveryKeystrokePushesTheDeadlineBack() throws {
-        let session = try makeSession()
-        type("a", into: session, at: 0)
-        type("b", into: session, at: 1)
-        type("c", into: session, at: 2)
-        XCTAssertEqual(scheduler.scheduleCount, 3)
-        XCTAssertEqual(scheduler.lastDelay, DocumentSession.autosaveDelay)
     }
 
     func testSavingWithNothingChangedWritesNothing() throws {
@@ -151,7 +113,7 @@ final class WriterDocumentSessionTests: XCTestCase {
         let recorder = SessionRecorder()
         session.delegate = recorder
         type("# Sea Notes\n\n", into: session, at: 0)
-        scheduler.fire()
+        session.save()
         waitUntil { recorder.saves == 1 }
         XCTAssertEqual(session.document.title, "Sea Notes")
         XCTAssertGreaterThan(session.document.wordCount, 0)
@@ -185,6 +147,92 @@ final class WriterDocumentSessionTests: XCTestCase {
         XCTAssertEqual(recorder.saves, 1)
     }
 
+    func testAnImmediateFlushFinishesTheSaveWhoseCompletionIsStillQueued() throws {
+        let session = try makeSession()
+        type("# New title\n", into: session, at: 0)
+        session.save()
+        XCTAssertTrue(session.hasUnsavedChanges, "A queued write is not saved yet")
+        XCTAssertTrue(session.saveNow())
+        XCTAssertFalse(session.hasUnsavedChanges)
+        XCTAssertEqual(session.document.title, "New title")
+        XCTAssertEqual(try stack.textStore.loadText(session.document), session.text)
+        XCTAssertEqual(try stack.library.document(document.id)?.fileRelativePath, session.document.fileRelativePath)
+    }
+
+    func testAFailedQueuedSaveCanBeRetriedWithoutLosingTheDirtyBuffer() throws {
+        let session = try makeSession()
+        type("Keep this. ", into: session, at: 0)
+        // Turn the temporary library directory into a file to produce a real
+        // write failure, then restore the directory and retry the same edit.
+        try FileManager.default.removeItem(at: stack.libraryRoot)
+        try Data().write(to: stack.libraryRoot)
+        session.save()
+        XCTAssertFalse(session.saveNow())
+        XCTAssertTrue(session.hasUnsavedChanges)
+        try FileManager.default.removeItem(at: stack.libraryRoot)
+        try FileManager.default.createDirectory(at: stack.libraryRoot, withIntermediateDirectories: true)
+        XCTAssertTrue(session.saveNow())
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertFalse(session.hasUnsavedChanges, "A late failed completion must not undo a successful retry")
+        XCTAssertEqual(try stack.textStore.loadText(session.document), session.text)
+    }
+
+    func testConsecutiveRenamingSavesLeaveOnlyTheLatestFile() throws {
+        let session = try makeSession()
+        session.replaceWholeText("# First title\nBody")
+        session.save()
+        session.replaceWholeText("# Second title\nBody")
+        XCTAssertTrue(session.saveNow())
+        let files = try FileManager.default.subpathsOfDirectory(atPath: stack.libraryRoot.path)
+            .filter { $0.hasSuffix(".md") }
+        XCTAssertEqual(files, [session.document.fileRelativePath])
+        XCTAssertEqual(try stack.textStore.loadText(session.document), "# Second title\nBody")
+    }
+
+    func testAutosavePreservesMetadataChangedWhileTheEditorWasOpen() throws {
+        let session = try makeSession()
+        try stack.library.setFavorite(true, for: document.id)
+        try stack.library.setKeywords(["ideas"], for: document.id)
+        type("Fresh text. ", into: session, at: 0)
+        XCTAssertTrue(session.saveNow())
+        let stored = try XCTUnwrap(stack.library.document(document.id))
+        XCTAssertTrue(stored.isFavorite)
+        XCTAssertEqual(stored.keywords, ["ideas"])
+    }
+
+    func testMarkAsMineIsSavedWithoutAnotherKeystroke() throws {
+        let session = try makeSession()
+        session.recordInsertion(NSRange(location: 0, length: 3), source: .pasted)
+        XCTAssertTrue(session.saveNow())
+        session.markAsOwn(NSRange(location: 0, length: 3))
+        XCTAssertTrue(session.hasUnsavedChanges)
+        XCTAssertTrue(session.saveNow())
+        XCTAssertFalse(try stack.library.marks(for: document.id).authorship.contains { $0.source == .pasted })
+    }
+
+    @MainActor
+    func testTypingAndUndoPersistThroughTheRealTextView() throws {
+        let session = try makeSession()
+        let environment = EditorEnvironment(noteIndex: stack.noteIndex, noteStore: stack.library,
+            marksStore: stack.library, settings: stack.settings)
+        let editor = EditorViewController(session: session, environment: environment)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = editor
+        window.isHidden = false
+        defer { window.isHidden = true }
+        editor.loadViewIfNeeded()
+        editor.textView.becomeFirstResponder()
+        editor.textView.selectedRange = NSRange(location: 0, length: 0)
+        editor.textView.insertText("Typed. ")
+        XCTAssertTrue(session.hasUnsavedChanges)
+        XCTAssertTrue(session.saveNow())
+        XCTAssertTrue(try stack.textStore.loadText(session.document).hasPrefix("Typed. "))
+        editor.textView.undoManager?.undo()
+        XCTAssertTrue(session.hasUnsavedChanges)
+        XCTAssertTrue(session.saveNow())
+        XCTAssertEqual(try stack.textStore.loadText(session.document), "The first sentence. The second sentence.")
+    }
+
     // MARK: - Marks
 
     func testAuthorshipAndAnnotationsComeBackOnTheNextOpen() throws {
@@ -197,7 +245,7 @@ final class WriterDocumentSessionTests: XCTestCase {
         let quoted = NSRange(location: 14, length: 19)
         let anchor = TextAnchorResolver.make(range: quoted, in: session.storage.nsText)
         session.add(Annotation(documentID: document.id, kind: .cut, source: .manual, anchor: anchor))
-        scheduler.fire()
+        session.save()
         waitUntil { recorder.saves == 1 }
 
         let reopened = try makeSession(session.document)
@@ -217,7 +265,7 @@ final class WriterDocumentSessionTests: XCTestCase {
         session.add(Annotation(
             documentID: document.id, kind: .keep, source: .voice,
             anchor: TextAnchorResolver.make(range: quoted, in: session.storage.nsText)))
-        scheduler.fire()
+        session.save()
         waitUntil { recorder.saves == 1 }
 
         // The file is rewritten while the sheet is closed, so the anchor has
@@ -228,7 +276,7 @@ final class WriterDocumentSessionTests: XCTestCase {
         let reopenRecorder = SessionRecorder()
         let reopened = try DocumentSession(
             document: onDisk, textStore: stack.textStore, marksStore: stack.library,
-            settings: stack.settings, snapshots: stack.library, scheduler: scheduler)
+            settings: stack.settings, snapshots: stack.library)
         reopened.delegate = reopenRecorder
         XCTAssertEqual(reopened.annotations.count, 0)
         XCTAssertEqual(reopened.orphanedAnnotations.count, 1)
@@ -259,7 +307,6 @@ final class WriterDocumentSessionTests: XCTestCase {
         session.delegate = recorder
         let edit = NSRange(location: 0, length: 19)
         session.storage.replaceCharacters(in: edit, with: "")
-        session.textDidChange(edit: edit, replacementLength: 0, typedBy: .author)
 
         XCTAssertTrue(session.annotations.isEmpty)
         XCTAssertEqual(session.orphanedAnnotations.count, 1)
@@ -289,6 +336,28 @@ final class WriterDocumentSessionTests: XCTestCase {
         type("Kept. ", into: session, at: 0)
         session.close()
         XCTAssertTrue(try stack.textStore.loadText(session.document).hasPrefix("Kept. "))
+    }
+
+    func testRefreshingAnExternalRevisionUpdatesTheOpenBuffer() throws {
+        let session = try makeSession()
+        var external = session.document
+        try stack.textStore.saveText("Rewritten elsewhere", for: &external)
+        session.refreshDocument(external)
+        waitUntil { session.text == "Rewritten elsewhere" }
+        XCTAssertFalse(session.hasUnsavedChanges)
+        XCTAssertEqual(session.document.revision, external.revision)
+    }
+
+    func testTypingDuringAnExternalReloadKeepsTheLocalEdit() throws {
+        let session = try makeSession()
+        var external = session.document
+        try stack.textStore.saveText("Rewritten elsewhere", for: &external)
+        session.refreshDocument(external)
+        type("Local. ", into: session, at: 0)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(session.text, "Local. The first sentence. The second sentence.")
+        XCTAssertTrue(session.hasUnsavedChanges)
+        session.close()
     }
 
     // MARK: - External change

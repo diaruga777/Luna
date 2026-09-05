@@ -26,10 +26,10 @@ intents' "Document" parameter). Keep new strings on the user's word.
 
 The organiser never imports the editor or read-along modules. It declares
 seams (`DocumentEditing`, `DocumentEditorMaking`, `ReadAlongChromeProviding`,
-`ReadAlongSettingsHandling`, `NoteRelevanceProviding`) and
+`ReadAlongSettingsHandling`) and
 `WriterWiring` adapts the real types to them (`WriterEditorScreen`,
-`WriterEditorMaker`). That is what let three agents build the three UI tiers
-in parallel, and it keeps the organiser testable with fakes.
+`WriterEditorMaker`). The app adapter also observes library changes and refreshes an idle editor
+when the reconciler publishes a newer file revision.
 
 ## Where a sheet lives
 
@@ -127,6 +127,56 @@ competed with the text view's own tap and the keyboard never came up.
 The HUD menu's calibration items are "Calibrate gaze (25s)" and
 "Recalibrate gaze (8s)" — the old "Quick touch-up" read as text
 correction.
+
+## Writing and note capture review (2026-09-05)
+
+Character mutations in `MarkdownTextStorage` drive session dirtiness and mark
+shifting directly. UITextView's selection/delegate ordering is not used to
+infer edits. This covers typing, paste, undo and marked-text replacement.
+Autosave uses one private common-run-loop timer; the injectable autosave
+scheduler and its two protocols were removed. A queued save stays dirty until
+its write succeeds. A synchronous flush consumes an already-completed queued
+write even if the main-queue callback has not run. Failures retain the buffer,
+show a message in the statistics bar and retry. The registry's dirty snapshot
+updates on state changes, with no polling timer.
+
+Text saves fetch the current path and update only text-derived database
+columns. They preserve favourites, keywords and goals, serialise writes to the
+file store, remove the old path after updating the row, and index once using
+the text already in memory. The reconciler defers missing files for dirty
+open documents. `WriterEditorScreen` now connects real library notifications
+to `DocumentSession.refreshDocument`; an asynchronous reload checks again for
+local edits before replacing the buffer. New empty documents focus the editor.
+
+The notes panel has a multiline composer and an explicit Save button. Writes
+run on a serial background queue; success clears the composer, failure keeps
+the draft and shows a retry message. Done saves a pending draft before closing,
+and a draft prevents interactive dismissal. Tap an ordinary note to edit it;
+anchored notes still jump to the document and have an Edit note context action.
+The note repository owns attachments and indexing, so the panel no longer
+repeats those operations or takes a separate index dependency. A failure in
+the derived embedding cache cannot turn a committed note into a reported
+failure. The unused `NoteRelevanceProviding` interface and its test-only
+implementation were removed; the panel orders notes by recency.
+
+Editor delegate updates no longer rebuild header controls or query notes per
+keystroke. Related-note requests are invalidated when their context becomes
+empty, and Focus mode avoids paragraph work when switched off. Markdown model
+recovery behaves the same under XCTest and in the actual app.
+
+Formatting composition uses Foundation attributed strings instead of scanning
+every contribution at every boundary. Painting is restricted to the viewport
+and slack, including after large edits, and refreshes while scrolling. The
+1,000-paragraph Debug simulator composition benchmark fell from 1.939 seconds
+to 0.011 seconds; this measures composition rather than whole-app latency.
+
+AI continue/rewrite apply the complete model response as one attributed edit
+after checking cancellation and intervening edits. The simulated typing timer
+was removed; a rewrite is one undo operation. UIKit's keyboard layout guide
+keeps the editor and statistics bar above the keyboard, replacing the custom
+keyboard observer, injectable metrics and unused Mac stub.
+
+See `claudedocs/writer-review-2026-09-05.md` for findings, verification and limits.
 
 ## Testing
 

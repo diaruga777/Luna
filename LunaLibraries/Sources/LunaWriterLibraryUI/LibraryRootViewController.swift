@@ -53,6 +53,12 @@ public final class LibraryRootViewController: UISplitViewController {
     /// re-selection can no-op and an outgoing editor can be flushed before
     /// it is replaced (organiser #10).
     private weak var currentContainer: EditorContainerViewController?
+    /// The last session is reopened once, on the first layout pass — that is
+    /// the first moment `isCollapsed` says which columns exist.
+    private var didRestore = false
+    /// The scope the sidebar is on, so a snapshot written from anywhere
+    /// records the scope the writer can see.
+    private var currentSelection: LibrarySelection = .all
 
     var hasOpenDocumentForTesting: Bool { hasOpenDocument }
     var currentDocumentIDForTesting: DocumentID? { currentContainer?.document.id }
@@ -73,6 +79,7 @@ public final class LibraryRootViewController: UISplitViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updatePreferredDisplayMode()
+        restoreLastSession()
     }
 
     private func configureColumnWidths() {
@@ -118,6 +125,71 @@ public final class LibraryRootViewController: UISplitViewController {
             label.centerYAnchor.constraint(equalTo: placeholder.view.centerYAnchor),
         ])
         return placeholder
+    }
+
+    // MARK: - Session restoration
+
+    /// Reopens the page the last run ended on: the sidebar scope, the sheet,
+    /// and the caret inside it.
+    ///
+    /// A sheet opened before the first layout (a deep link, an intent, or a
+    /// first run's Welcome sheet) is already the page, so restoring is
+    /// finished. A recorded sheet that is gone or trashed restores the scope
+    /// alone. Nothing here animates: the app is meant to be back where it
+    /// was, not to be seen travelling there.
+    private func restoreLastSession() {
+        guard !didRestore, view.bounds.width > 0 else { return }
+        didRestore = true
+        let hadSession = environment.sessionState.hasSnapshot
+        let snapshot = environment.sessionState.snapshot
+        let selection = LibrarySelection(snapshot.selection)
+        currentSelection = selection
+        groupsViewController.highlight(selection)
+        sheetsViewController.select(selection)
+        guard currentContainer == nil else { return }
+        guard let id = snapshot.documentID, let document = try? environment.library.document(id),
+              document.trashedAt == nil
+        else {
+            environment.sessionState.recordOpenDocument(nil)
+            // The scope is a page of its own on a phone: a writer who left
+            // the app on a sheets list comes back to that list.
+            if hadSession, isCollapsed {
+                supplementaryNavigation.setViewControllers([], animated: false)
+                primaryNavigation.setViewControllers(
+                    [groupsViewController, sheetsViewController], animated: false)
+            }
+            return
+        }
+        let container = EditorContainerViewController(environment: environment, document: document)
+        container.editingStateObserver = self
+        container.restoreEditingState(
+            EditorEditingState(
+                caretLocation: snapshot.caretLocation ?? 0,
+                isKeyboardVisible: snapshot.keyboardVisible))
+        currentContainer = container
+        sheetsViewController.openDocumentID = document.id
+        if isCollapsed {
+            container.loadViewIfNeeded()
+            supplementaryNavigation.setViewControllers([], animated: false)
+            primaryNavigation.setViewControllers(
+                [groupsViewController, sheetsViewController, container], animated: false)
+        } else {
+            setViewController(container, for: .secondary)
+        }
+    }
+
+    /// Writes the page as it stands now. The app calls this on its way to
+    /// the background, where an editor that has not autosaved since the last
+    /// caret move would otherwise leave a stale caret behind.
+    public func recordSessionState() {
+        var snapshot = WriterSessionState.Snapshot(
+            documentID: currentContainer?.document.id, selection: currentSelection.storedValue)
+        if let container = currentContainer {
+            let state = container.editingState
+            snapshot.caretLocation = state.caretLocation
+            snapshot.keyboardVisible = state.isKeyboardVisible
+        }
+        environment.sessionState.snapshot = snapshot
     }
 
     // MARK: - Keyboard commands
@@ -203,6 +275,8 @@ public enum WriterCommandTitles {
 
 extension LibraryRootViewController: GroupsSelectionDelegate {
     public func groupsViewController(_ controller: GroupsViewController, didSelect selection: LibrarySelection) {
+        currentSelection = selection
+        environment.sessionState.recordSelection(selection.storedValue)
         sheetsViewController.select(selection)
         showSheetsList()
     }
@@ -263,7 +337,13 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
         }
         currentContainer?.editor.flushPendingSave()
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
+        editorContainer.editingStateObserver = self
         currentContainer = editorContainer
+        // A sheet opened before the first layout is the page to come back
+        // to, so the restore pass has nothing left to do.
+        didRestore = true
+        environment.sessionState.recordOpenDocument(document.id)
+        sheetsViewController.openDocumentID = document.id
         if isCollapsed {
             // Same as `showSheetsList()`: the collapsed split view does not
             // push a freshly set secondary column, so the editor replaces
@@ -287,6 +367,8 @@ extension LibraryRootViewController: LibraryNavigationHandling {
     public func documentDidClose(_ id: DocumentID) {
         guard currentContainer?.document.id == id else { return }
         currentContainer = nil
+        environment.sessionState.recordOpenDocument(nil)
+        sheetsViewController.openDocumentID = nil
         whenPrimaryStackSettles { [self] in
             let stack = primaryNavigation.viewControllers.filter { !($0 is EditorContainerViewController) }
             if stack.count != primaryNavigation.viewControllers.count {
@@ -296,6 +378,14 @@ extension LibraryRootViewController: LibraryNavigationHandling {
         if !isCollapsed {
             setViewController(Self.emptySecondaryPlaceholder(), for: .secondary)
         }
+    }
+}
+
+extension LibraryRootViewController: EditorEditingStateObserving {
+    public func editorContainer(
+        _ container: EditorContainerViewController, didChangeEditingState state: EditorEditingState
+    ) {
+        environment.sessionState.recordEditingState(state, for: container.document.id)
     }
 }
 

@@ -13,6 +13,13 @@ import LunaWriterText
 public protocol EditorViewControllerDelegate: AnyObject {
     func editorRequestsNotesPanel(_ editor: EditorViewController)
     func editorDidUpdateDocument(_ editor: EditorViewController, document: WriterDocument)
+    /// The caret came to rest, or the keyboard went up or down. Reported
+    /// when editing starts and ends and on each save, not per keystroke.
+    func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState)
+}
+
+extension EditorViewControllerDelegate {
+    public func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {}
 }
 
 /// Told when the text re-wraps or the page scrolls, so anything drawing
@@ -98,6 +105,9 @@ public final class EditorViewController: UIViewController {
     private lazy var focusLayer = FocusLayer(provider: focus)
     private lazy var annotationLayer = AnnotationLayer(provider: session)
 
+    /// A caret and keyboard state to put back, handed in before the text
+    /// view exists. The keyboard waits for `viewDidAppear`.
+    private var pendingRestoredState: EditorEditingState?
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
     private var lastLayoutSize = CGSize(width: -1, height: -1)
@@ -115,11 +125,22 @@ public final class EditorViewController: UIViewController {
         wire()
         updateStatistics()
         composer.invalidate(nil)
+        if let pendingRestoredState { applyCaret(of: pendingRestoredState) }
     }
 
+    /// A restored sheet takes the keyboard the writer left up; a sheet with
+    /// nothing in it takes it because there is nothing else to do there.
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if session.storage.length == 0 { textView.becomeFirstResponder() }
+        if let state = pendingRestoredState {
+            pendingRestoredState = nil
+            // Applied again now the text view has its final size: a scroll
+            // asked for before layout has nothing to scroll within.
+            applyCaret(of: state)
+            if state.isKeyboardVisible { textView.becomeFirstResponder() }
+        } else if session.storage.length == 0 {
+            textView.becomeFirstResponder()
+        }
     }
 
     public override func viewDidLayoutSubviews() {
@@ -304,6 +325,40 @@ public final class EditorViewController: UIViewController {
         textView.selectedRange = range
         guard !focus.typewriterScrolling else { return }
         textView.scrollRangeToVisible(range)
+    }
+
+    // MARK: - Session state
+
+    /// Where the caret rests and whether the keyboard is up. Read before the
+    /// view loads it answers with the state waiting to be restored, so a
+    /// snapshot taken at that moment does not overwrite it with zero.
+    public var editingState: EditorEditingState {
+        guard isViewLoaded else { return pendingRestoredState ?? EditorEditingState() }
+        return EditorEditingState(
+            caretLocation: textView.selectedRange.location,
+            isKeyboardVisible: textView.isFirstResponder)
+    }
+
+    /// Puts the caret back where the last run left it. The keyboard follows
+    /// in `viewDidAppear`, which is the earliest a text view can take it.
+    public func restoreEditingState(_ state: EditorEditingState) {
+        pendingRestoredState = state
+        guard isViewLoaded else { return }
+        applyCaret(of: state)
+    }
+
+    /// Clamps to the text as it is now: the file may have been edited
+    /// elsewhere, or by an external change, since the caret was recorded.
+    private func applyCaret(of state: EditorEditingState) {
+        let location = min(max(0, state.caretLocation), session.storage.length)
+        let range = NSRange(location: location, length: 0)
+        textView.selectedRange = range
+        textView.scrollRangeToVisible(range)
+    }
+
+    private func reportEditingState() {
+        guard isViewLoaded else { return }
+        delegate?.editorDidChangeEditingState(self, state: editingState)
     }
 
     // MARK: - Settings
@@ -557,12 +612,14 @@ extension EditorViewController: UITextViewDelegate {
 
     public func textViewDidBeginEditing(_ textView: UITextView) {
         focus.isComposing = true
+        reportEditingState()
     }
 
     public func textViewDidEndEditing(_ textView: UITextView) {
         focus.editingEnded()
         mention.dismiss()
         session.save()
+        reportEditingState()
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -620,9 +677,13 @@ extension EditorViewController: AuthorshipObserving {
 
 extension EditorViewController: DocumentSessionDelegate {
 
+    /// The autosave lands a second after a burst of typing stops, which is
+    /// the caret's resting position — cheap enough to record, and often
+    /// enough that a session snapshot is never more than a burst behind.
     public func documentSessionDidSave(_ session: DocumentSession) {
         statisticsBar.saveFailed = false
         delegate?.editorDidUpdateDocument(self, document: session.document)
+        reportEditingState()
     }
 
     public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {

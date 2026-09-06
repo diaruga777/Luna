@@ -19,6 +19,9 @@ public final class EditorContainerViewController: UIViewController {
     private(set) var editor: (UIViewController & DocumentEditing)!
     private var readAlongChromeView: UIView?
     private var notesPanel: DocumentNotesPanelViewController?
+    /// A caret and keyboard state handed in before `viewDidLoad` built the
+    /// editor; given to it as soon as it exists.
+    private var pendingEditingState: EditorEditingState?
     private var editorTrailingConstraint: NSLayoutConstraint!
 
     /// Built through the header's factory so it keeps a bar button's minimum
@@ -26,6 +29,10 @@ public final class EditorContainerViewController: UIViewController {
     private lazy var notesButton = NavHeaderBar.imageButton(
         systemName: "note.text", target: self, action: #selector(notesTapped),
         accessibilityLabel: L10n.string("WriterLibrary_editor_notesButtonLabel"))
+
+    /// Told where the caret rests in this sheet, so the root can record the
+    /// page for the next launch.
+    public weak var editingStateObserver: EditorEditingStateObserving?
 
     /// The header's current title — for tests, which cannot see `header`.
     var headerTitleForTesting: String? { header.title }
@@ -81,6 +88,10 @@ public final class EditorContainerViewController: UIViewController {
 
         editor = environment.editorMaker.makeEditor(for: document)
         editor.editingDelegate = self
+        if let pendingEditingState {
+            self.pendingEditingState = nil
+            editor.restoreEditingState(pendingEditingState)
+        }
 
         notesButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -376,6 +387,28 @@ public final class EditorContainerViewController: UIViewController {
     }
 }
 
+extension EditorContainerViewController {
+    /// Where the caret rests in this sheet right now.
+    public var editingState: EditorEditingState { editor?.editingState ?? EditorEditingState() }
+
+    /// Reopens this sheet where it was left. Called before the container is
+    /// on screen, so the editor may not exist yet.
+    public func restoreEditingState(_ state: EditorEditingState) {
+        if let editor {
+            editor.restoreEditingState(state)
+        } else {
+            pendingEditingState = state
+        }
+    }
+}
+
+/// Weak reference from `EditorContainerViewController` back to the root,
+/// which records the caret for the next launch.
+public protocol EditorEditingStateObserving: AnyObject {
+    func editorContainer(
+        _ container: EditorContainerViewController, didChangeEditingState state: EditorEditingState)
+}
+
 extension EditorContainerViewController: DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didUpdate document: WriterDocument) {
         self.document = document
@@ -385,6 +418,10 @@ extension EditorContainerViewController: DocumentEditingDelegate {
 
     public func editorRequestsNotesPanel(_ editor: DocumentEditing) {
         if notesPanel == nil { presentNotesPanel() }
+    }
+
+    public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {
+        editingStateObserver?.editorContainer(self, didChangeEditingState: state)
     }
 }
 

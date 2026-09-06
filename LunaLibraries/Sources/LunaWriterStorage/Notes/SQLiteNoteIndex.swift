@@ -92,9 +92,9 @@ public final class SQLiteNoteIndex: NoteIndexing {
     }
 
     /// Repairs a drifted index from `notes` itself. The embedding half is
-    /// skipped — never destroyed — when this index has no embedding model:
-    /// a build without on-device embeddings must not erase vectors a later
-    /// build with the model could still use.
+    /// skipped — never destroyed — when this index has no working embedding
+    /// model: a build without on-device embeddings, or a language the model
+    /// does not cover, must not erase vectors a later build could still use.
     public func rebuild() throws {
         var notes: [(NoteID, String)] = []
         try database.perform { db in
@@ -105,7 +105,7 @@ public final class SQLiteNoteIndex: NoteIndexing {
         }
         try database.transaction { db in
             try db.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
-            guard let embedding else { return }
+            guard let embedding, embedding.dimensions > 0 else { return }
             try db.execute("DELETE FROM note_embeddings")
             for (id, text) in notes {
                 try Self.applyEmbedding(embedding.vector(for: text), for: id, embedding: embedding, in: db)

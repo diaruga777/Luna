@@ -10,30 +10,60 @@ public protocol SentenceEmbedding: AnyObject {
     func vector(for text: String) -> [Float]?
 }
 
-/// Apple's on-device sentence embedding. `init?` returns nil where the model
-/// is missing for the language, and the index then runs on FTS alone.
+/// Apple's on-device sentence embedding. The model loads on first use
+/// rather than at construction, so building the storage stack never touches
+/// NaturalLanguage. Where the language has no model, `dimensions` is 0 and
+/// `vector(for:)` is nil, and the index then runs on FTS alone.
 public final class NLSentenceEmbedding: SentenceEmbedding {
-    private let embedding: NLEmbedding
+    private let language: NLLanguage
+    /// How the model is loaded. Production calls `NLEmbedding` directly; a
+    /// test substitutes a counting fake to prove the load stays lazy.
+    private let loader: (NLLanguage) -> NLEmbedding?
     /// `NLEmbedding.vector(for:)`'s thread safety is undocumented, and this
     /// tier calls it from the database queue, the editor's mention lookup and
-    /// the router — all different threads. One queue serialises every call.
+    /// the router — all different threads. One queue serialises every call,
+    /// including the model load, so the load happens exactly once.
     private let queue = DispatchQueue(label: "com.hsanabria.luna.writerSentenceEmbedding")
-    public let modelVersion: String
-    public var dimensions: Int { embedding.dimension }
+    private var resolved: Resolved?
 
-    public init?(language: NLLanguage = .english) {
-        guard let embedding = NLEmbedding.sentenceEmbedding(for: language) else { return nil }
-        self.embedding = embedding
-        self.modelVersion = "nl-sentence-\(language.rawValue)-\(embedding.revision)"
+    private struct Resolved {
+        let embedding: NLEmbedding?
+        let modelVersion: String
     }
+
+    public convenience init(language: NLLanguage = .english) {
+        self.init(language: language, loader: NLEmbedding.sentenceEmbedding(for:))
+    }
+
+    init(language: NLLanguage, loader: @escaping (NLLanguage) -> NLEmbedding?) {
+        self.language = language
+        self.loader = loader
+    }
+
+    public var modelVersion: String { queue.sync { resolve().modelVersion } }
+    public var dimensions: Int { queue.sync { resolve().embedding?.dimension ?? 0 } }
 
     public func vector(for text: String) -> [Float]? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return queue.sync {
-            guard let values = embedding.vector(for: trimmed) else { return nil }
+            guard let embedding = resolve().embedding, let values = embedding.vector(for: trimmed) else {
+                return nil
+            }
             let floats = values.map(Float.init)
             return floats.allSatisfy(\.isFinite) ? floats : nil
         }
+    }
+
+    /// Loads the model, if the language has one, and caches the result.
+    /// Runs on `queue`, so concurrent callers share one load.
+    private func resolve() -> Resolved {
+        if let resolved { return resolved }
+        let embedding = loader(language)
+        let version = embedding.map { "nl-sentence-\(language.rawValue)-\($0.revision)" }
+            ?? "nl-sentence-\(language.rawValue)-unavailable"
+        let resolved = Resolved(embedding: embedding, modelVersion: version)
+        self.resolved = resolved
+        return resolved
     }
 }

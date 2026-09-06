@@ -243,6 +243,30 @@ final class WriterNoteIndexTests: XCTestCase {
         XCTAssertEqual(try embeddedCount(), 1)
     }
 
+    func testRebuildWithAnUnavailableModelKeepsExistingEmbeddings() throws {
+        let embedding = ScriptedEmbedding(fallback: [1, 0])
+        let stack = try makeWriterStack(embedding: embedding)
+        let id = try insert("the harbour lights", in: stack)
+        let embeddedCount: () throws -> Int64 = {
+            try stack.database.perform { db in
+                (try db.scalarInt(
+                    "SELECT COUNT(*) FROM note_embeddings WHERE note_id = ?"
+                ) { try $0.bind(1, id.rawValue.uuidString) }) ?? 0
+            }
+        }
+        XCTAssertEqual(try embeddedCount(), 1)
+
+        // An embedding that is configured but reports no working model
+        // (dimensions 0, e.g. the language has no on-device model) must be
+        // treated the same as no embedding at all: rebuild must not erase a
+        // vector an earlier build with a working model wrote.
+        let unavailable = ScriptedEmbedding(dimensions: 0)
+        let stillLexicalOnly = SQLiteNoteIndex(database: stack.database, embedding: unavailable)
+        try stillLexicalOnly.rebuild()
+
+        XCTAssertEqual(try embeddedCount(), 1)
+    }
+
     // MARK: - Reindexing on update
 
     func testUpdatingANoteRefreshesWhatRelatedSees() throws {

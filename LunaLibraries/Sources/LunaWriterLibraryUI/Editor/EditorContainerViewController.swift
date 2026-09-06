@@ -19,6 +19,9 @@ public final class EditorContainerViewController: UIViewController {
     private(set) var editor: (UIViewController & DocumentEditing)!
     private var readAlongChromeView: UIView?
     private var notesPanel: DocumentNotesPanelViewController?
+    /// Whether the header shows a back chevron. Nil until the first update,
+    /// so the first call always installs whichever controls belong there.
+    private var showsBackControl: Bool?
     /// A caret and keyboard state handed in before `viewDidLoad` built the
     /// editor; given to it as soon as it exists.
     private var pendingEditingState: EditorEditingState?
@@ -61,8 +64,14 @@ public final class EditorContainerViewController: UIViewController {
     /// The header's back chevron pops a collapsed stack. Beside a visible
     /// sheets column there is nothing to pop, so the control is dropped
     /// rather than left as a dead button.
+    ///
+    /// Every layout pass asks, so the answer must only be acted on when it
+    /// changed: replacing the leading stack dirties layout, and a rebuild
+    /// per pass never lets the pass settle.
     private func updateLeadingControls() {
         let isPushed = (navigationController?.viewControllers.count ?? 0) > 1
+        guard showsBackControl != isPushed else { return }
+        showsBackControl = isPushed
         header.setLeadingControls(
             isPushed ? [NavHeaderBar.backButton(target: self, action: #selector(backTapped))] : [])
     }

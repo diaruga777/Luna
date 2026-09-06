@@ -11,10 +11,6 @@ final class WriterAppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    func applicationDidEnterBackground(_ application: UIApplication) {
-        WriterWiring.applicationDidEnterBackground()
-    }
-
     func applicationWillTerminate(_ application: UIApplication) {
         WriterWiring.applicationDidEnterBackground()
     }

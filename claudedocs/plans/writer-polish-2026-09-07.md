@@ -153,3 +153,125 @@ Merge WP branches into `writer-polish`, resolve conflicts, then
 simulator (open a sheet, type, background, relaunch, `shot:`), merge to
 `main`, delete worktrees, build to the iPhone 16 Pro (iOS 27 → Xcode 27 beta
 `DEVELOPER_DIR`).
+
+## Addendum (same day): a minimal writing surface and Nodes-style live Markdown
+
+Owner request: the document surface should be as minimal as possible to
+leave room for the text. Hide the header and top controls while typing;
+bring them back when the document is scrolled to its top or on a
+double-tap on blank space (toggle). Always hide on keyboard focus, always
+show when focus is lost. Mirror the Markdown editing behaviour of Nodes
+(nodes-web.com), whose editor is open source as
+[nodes-app/swift-markdown-engine](https://github.com/nodes-app/swift-markdown-engine)
+(Apache 2.0, AppKit + TextKit 2). A clone is under the session scratchpad
+for reading; port ideas and small routines with attribution, never the
+package (it is AppKit-only).
+
+What the Nodes engine does that Writer does not (read from its source):
+
+- **Markers are hidden by size, not colour.** Every Markdown marker run
+  (`#`, `*`, `_`, `` ` ``, `>`, list bullets, `[ ]`) is set to a 0.1 pt
+  font plus a per-character negative kern that collapses the run to zero
+  width (`MarkdownStyler.hiddenRunKern`). The source is untouched, so
+  offsets map one to one. Writer today only greys markers (`MarkupLayer`).
+- **The caret reveals.** Markers on the paragraph holding the caret (or
+  touched by a selection) render at full size; leaving the paragraph
+  collapses them again. The restyle is scoped to the old and new caret
+  paragraphs (`NativeTextViewCoordinator+TextDelegate`).
+- **Painted decorations** come from an `NSTextLayoutFragment` subclass
+  (`MarkdownTextLayoutFragment`): a `•` over a hidden bullet marker, a
+  vertical bar per blockquote level in the gutter, a full-width rule for a
+  thematic break, a checkbox for a task item. Fonts and paragraph styles
+  stay attributes.
+- A collapsible scrolling header (`ScrollingHeaderController`).
+
+### WP-C1 — Chrome that gets out of the way (Sonnet, after WP-A merges)
+
+Organiser tier plus one seam. `EditorContainerViewController` owns the
+`NavHeaderBar`; the editor reports the cues.
+
+- `DocumentEditing` gains a chrome seam: `protocol EditorChromeObserving:
+  AnyObject { func editorDidBeginEditing(_:); func editorDidEndEditing(_:);
+  func editor(_:, didScrollToTop atTop: Bool); func editorDidRequestChromeToggle(_:) }`
+  (names indicative), with `weak var chromeObserver`. `EditorViewController`
+  drives it from `textViewDidBeginEditing` / `textViewDidEndEditing`,
+  `scrollViewDidScroll` (at top ⇔ `contentOffset.y <= -adjustedContentInset.top + 1`),
+  and a two-tap `UITapGestureRecognizer` on the text view that fires only
+  when the tap point is not over a glyph (`closestPosition` lands at the
+  document end or the tapped line fragment does not contain the point);
+  the recogniser must not delay the single tap (`delaysTouchesEnded = false`,
+  no `require(toFail:)` from the text view's own gestures).
+- Container: `setChromeHidden(_:animated:)`. Hidden: the header slides up by
+  its height and fades; the editor's top constraint switches from the
+  header's bottom anchor to the view's top anchor (the text view has
+  `contentInsetAdjustmentBehavior = .always`, so the safe area still
+  clears the notch); the read-along chip re-anchors to the safe-area top.
+  Shown: the reverse. 0.25 s, `.easeInOut`, alongside `UIView.animate`
+  with `layoutIfNeeded`. State machine: keyboard focus → hidden; focus
+  lost → shown; scrolled to top → shown; double-tap blank → toggle; a
+  toggle while the keyboard is up shows the header until the next
+  keyboard event.
+- Tests: `EditorContainerViewControllerTests` drive the fake editor's
+  chrome observer and assert the header's hidden state and the editor's
+  top constraint; an `EditorViewController` test that a double tap on
+  blank space calls the observer and a tap on text does not.
+
+### WP-C2 — Nodes-style live Markdown (Opus, starts now)
+
+Editor tier only (`LunaWriterEditor`, `LunaWriterText` if a token needs a
+range it does not expose). Source stays plain Markdown; nothing about the
+file format, anchors or export changes.
+
+- `LayoutAttributeStyler` gains a `revealRange: NSRange?` input (the caret
+  paragraph, or the selection's paragraphs). Markers OUTSIDE it get the
+  hidden font (`UIFont` at 0.1 pt, same family) and a negative kern that
+  collapses the run to zero width (port `hiddenRunKern`, computing the run
+  width with Core Text / `NSAttributedString.size()`). Markers INSIDE it
+  keep the block font. Inline markers (`**`, `*`, `~~`, `==`, `` ` ``,
+  link brackets/destination) and block markers (`#…# `, `> `, list
+  bullets with their trailing space, `- [ ] `) alike. Code fence
+  delimiters and the fenced code lines' content stay visible (they are
+  the code). Headings keep their size; body ink stays as today.
+- `MarkdownTextStorage` gains `setRevealRange(_:)` which restyles the old
+  and new reveal paragraphs only (through `styler.apply(model, to:, in:)`
+  and `edited(.editedAttributes …)`), and `EditorViewController
+  .textViewDidChangeSelection` calls it. `processEditing`'s rescan must
+  apply the same reveal, so the styler must read the reveal range from
+  the storage, not from a call argument (keep `LayoutAttributeStyler:
+  Equatable` — the reveal range is storage state, not styler identity).
+- `MarkupLayer` stops greying hidden markers (they are invisible) and
+  greys only revealed ones; keep code tint and link colour.
+- A `WriterTextLayoutFragment: NSTextLayoutFragment` installed through
+  `NSTextLayoutManagerDelegate.textLayoutManager(_:textLayoutFragmentFor:in:)`
+  on `WriterTextView`'s layout manager (the delegate is `EditorViewController`
+  or a small `WriterLayoutFragmentProvider` object owned by the text view)
+  paints: `•` at the hidden bullet marker's position (colour
+  `EditorTheme.markup`), one `EditorTheme.quoteBar` bar per blockquote
+  depth in the gutter (`metrics.quoteIndent` per level), a hairline rule
+  across the column for a thematic break (the `---` collapses), and a
+  checkbox glyph for a task item (`☐`/`☑` via SF Symbols `square` /
+  `checkmark.square`, drawn as an image). Decorations are suppressed on
+  the revealed paragraph so the raw syntax is what the writer edits. The
+  fragment reads block kinds from the storage's `MarkdownDocumentModel`
+  by character offset; keep it free of per-draw allocations beyond the
+  path.
+- Tapping a checkbox toggles the task (`MarkdownEditingCommands
+  .toggleTask`) — the text view's `WriterTextView` intercepts a tap whose
+  point lies within the hidden `[ ]` marker's line-fragment leading gutter.
+- Caret geometry: the caret at a hidden run's boundary must not vanish.
+  Verify on the simulator with the UI driver that typing `**bold**` then
+  moving the caret off the line collapses the stars and moving back
+  reveals them; that headings, lists, quotes, rules and tasks render;
+  that undo, paste and Focus mode still work. Screenshots go in the
+  report.
+- Tests: `MarkdownTextStorageTests` — a marker outside the reveal range
+  carries the hidden font and a kern whose sum cancels its width; a marker
+  inside the reveal range carries the block font; moving the reveal range
+  restyles exactly the two paragraphs (observer ranges). A layout-fragment
+  test that a bullet line yields a `WriterTextLayoutFragment` and a
+  paragraph line does not. Existing suites: `MarkdownTextStorageTests`,
+  `RenderingAttributeComposerTests`, `FocusModeControllerTests`,
+  `WriterEditingCommandsTests`, `WriterMarkdownScannerTests` stay green.
+- Attribution: a `THIRD_PARTY_NOTICES.md` at the repo root naming
+  swift-markdown-engine (Apache 2.0, copyright holder from its LICENSE) and
+  a one-line header note in each file that ports a routine.

@@ -243,4 +243,70 @@ final class EditorContainerViewControllerTests: XCTestCase {
         pollUntil { container.headerTitleForTesting == "Renamed Elsewhere" }
         XCTAssertEqual(container.headerTitleForTesting, "Renamed Elsewhere")
     }
+
+    // MARK: - Chrome
+
+    @MainActor
+    func testWantsChromeHiddenHidesTheHeaderAndRepinsTheEditorToTheViewTop() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let shownTop = container.editor.view.frame.minY
+        XCTAssertGreaterThan(shownTop, 0, "the editor starts below the header")
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+        editor.simulateChromeHiddenRequest(true)
+        container.view.layoutIfNeeded()
+
+        XCTAssertTrue(container.isChromeHiddenForTesting)
+        XCTAssertEqual(container.editor.view.frame.minY, 0, "hidden chrome pins the editor to the view's own top")
+    }
+
+    @MainActor
+    func testWantsChromeShownRestoresTheHeaderAndTheOriginalPin() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let shownTop = container.editor.view.frame.minY
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+
+        editor.simulateChromeHiddenRequest(true)
+        container.view.layoutIfNeeded()
+        editor.simulateChromeHiddenRequest(false)
+        container.view.layoutIfNeeded()
+
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+        XCTAssertEqual(container.editor.view.frame.minY, shownTop)
+    }
+
+    @MainActor
+    func testChromeToggleFlipsTheHiddenState() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+
+        editor.simulateChromeToggleRequest()
+        XCTAssertTrue(container.isChromeHiddenForTesting)
+
+        editor.simulateChromeToggleRequest()
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+    }
 }

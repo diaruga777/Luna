@@ -169,4 +169,120 @@ final class MarkdownTextStorageTests: XCTestCase {
 
         XCTAssertEqual(recorder.count, 1)
     }
+
+    // MARK: - Live Markdown
+
+    private func kern(_ storage: MarkdownTextStorage, at location: Int) -> CGFloat? {
+        (storage.attributes(at: location, effectiveRange: nil)[.kern] as? NSNumber)
+            .map { CGFloat($0.doubleValue) }
+    }
+
+    /// A hidden marker keeps its characters — every offset in the document
+    /// still maps one to one — and lays out zero points wide.
+    func testAMarkerAwayFromTheCaretCollapsesToZeroWidth() throws {
+        let storage = MarkdownTextStorage(text: "# Title\nBody\n")
+        var effective = NSRange(location: 0, length: 0)
+        let attributes = storage.attributes(at: 0, effectiveRange: &effective)
+        let marker = try XCTUnwrap(attributes[.font] as? UIFont)
+        let kern = try XCTUnwrap(kern(storage, at: 0))
+
+        // The hashes and the space after them, and nothing else.
+        XCTAssertEqual(effective, NSRange(location: 0, length: 2))
+        XCTAssertEqual(marker.pointSize, LayoutAttributeStyler.hiddenMarkerSize, accuracy: 0.0001)
+        let run = "# " as NSString
+        let width = run.size(withAttributes: [.font: marker]).width
+        XCTAssertEqual(width + CGFloat(run.length) * kern, 0, accuracy: 0.001)
+        XCTAssertEqual(storage.string, "# Title\nBody\n")
+    }
+
+    func testAMarkerOnTheCaretsParagraphKeepsTheBlockFont() throws {
+        let storage = MarkdownTextStorage(text: "# Title\nBody\n")
+        storage.setRevealRange(NSRange(location: 3, length: 0))
+        let marker = try XCTUnwrap(font(storage, at: 0))
+        let content = try XCTUnwrap(font(storage, at: 2))
+        XCTAssertEqual(marker.pointSize, content.pointSize)
+        XCTAssertNil(kern(storage, at: 0))
+    }
+
+    /// Moving the caret to another paragraph collapses the one it left.
+    func testLeavingAParagraphCollapsesItsMarkersAgain() throws {
+        let storage = MarkdownTextStorage(text: "# Title\nBody\n")
+        storage.setRevealRange(NSRange(location: 3, length: 0))
+        storage.setRevealRange(NSRange(location: 9, length: 0))
+        let marker = try XCTUnwrap(font(storage, at: 0))
+        XCTAssertEqual(marker.pointSize, LayoutAttributeStyler.hiddenMarkerSize, accuracy: 0.0001)
+    }
+
+    func testEmphasisMarkersCollapseWhileItsContentKeepsItsFace() throws {
+        let storage = MarkdownTextStorage(text: "one **two** three\n")
+        let stars = try XCTUnwrap(font(storage, at: 4))
+        let content = try XCTUnwrap(font(storage, at: 6))
+        XCTAssertEqual(stars.pointSize, LayoutAttributeStyler.hiddenMarkerSize, accuracy: 0.0001)
+        XCTAssertTrue(content.fontDescriptor.symbolicTraits.contains(.traitBold))
+    }
+
+    /// Nothing paints a number in an ordered item's place, so its marker
+    /// stays where the writer typed it.
+    func testAnOrderedListItemKeepsItsNumberVisible() throws {
+        let storage = MarkdownTextStorage(text: "1. one\n- two\n")
+        let number = try XCTUnwrap(font(storage, at: 0))
+        let bullet = try XCTUnwrap(font(storage, at: 7))
+        XCTAssertEqual(number.pointSize, storage.styler.bodyFont.pointSize)
+        XCTAssertEqual(bullet.pointSize, LayoutAttributeStyler.hiddenMarkerSize, accuracy: 0.0001)
+    }
+
+    /// The backticks are the code, so a fence keeps every character.
+    func testAFenceKeepsItsDelimitersVisible() throws {
+        let storage = MarkdownTextStorage(text: "```\nlet a = 1\n```\n")
+        let delimiter = try XCTUnwrap(font(storage, at: 0))
+        XCTAssertEqual(delimiter.pointSize, storage.styler.codeFont.pointSize)
+        XCTAssertNil(kern(storage, at: 0))
+    }
+
+    /// A caret move costs two paragraphs, whatever the document's length.
+    func testMovingTheRevealRangeRestylesTheOldAndTheNewParagraphOnly() throws {
+        final class Recorder: MarkdownTextStorageObserving {
+            var ranges: [NSRange] = []
+            func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange) {
+                ranges.append(range)
+            }
+        }
+        let storage = MarkdownTextStorage(text: "# One\n\n# Two\n\n# Three\n")
+        let recorder = Recorder()
+        storage.addObserver(recorder)
+
+        storage.setRevealRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(recorder.ranges, [NSRange(location: 0, length: 6)])
+
+        recorder.ranges = []
+        storage.setRevealRange(NSRange(location: 7, length: 0))
+        XCTAssertEqual(
+            recorder.ranges,
+            [NSRange(location: 0, length: 6), NSRange(location: 7, length: 6)])
+    }
+
+    /// The same caret twice is not a restyle.
+    func testSettingTheSameRevealRangeAgainRestylesNothing() throws {
+        final class Recorder: MarkdownTextStorageObserving {
+            var count = 0
+            func markdownTextStorage(_ storage: MarkdownTextStorage, didRescan range: NSRange) { count += 1 }
+        }
+        let storage = MarkdownTextStorage(text: "# One\nbody\n")
+        let recorder = Recorder()
+        storage.addObserver(recorder)
+        storage.setRevealRange(NSRange(location: 2, length: 0))
+        recorder.count = 0
+        storage.setRevealRange(NSRange(location: 4, length: 0))
+        XCTAssertEqual(recorder.count, 0)
+    }
+
+    /// Typing on the revealed paragraph must not collapse the markers under
+    /// the caret: the rescan reads the reveal from the storage.
+    func testTypingOnTheRevealedParagraphKeepsItsMarkersVisible() throws {
+        let storage = MarkdownTextStorage(text: "# Title\nBody\n")
+        storage.setRevealRange(NSRange(location: 7, length: 0))
+        storage.replaceCharacters(in: NSRange(location: 7, length: 0), with: "!")
+        let marker = try XCTUnwrap(font(storage, at: 0))
+        XCTAssertGreaterThan(marker.pointSize, LayoutAttributeStyler.hiddenMarkerSize)
+    }
 }

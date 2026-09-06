@@ -53,6 +53,17 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     func simulateNotesPanelRequest() {
         editingDelegate?.editorRequestsNotesPanel(self)
     }
+
+    /// Simulates the real editor's chrome cue: typing began/ended, or the
+    /// page reached its top.
+    func simulateChromeHiddenRequest(_ hidden: Bool) {
+        editingDelegate?.editor(self, wantsChromeHidden: hidden)
+    }
+
+    /// Simulates a double tap on blank space.
+    func simulateChromeToggleRequest() {
+        editingDelegate?.editorDidRequestChromeToggle(self)
+    }
 }
 
 /// Builds a `FakeDocumentEditor` per sheet and remembers each one.

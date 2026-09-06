@@ -41,10 +41,17 @@ public protocol DocumentEditingDelegate: AnyObject {
     /// The caret came to rest somewhere new, or the keyboard went up or
     /// down. Reported at the caret's resting position, not per keystroke.
     func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState)
+    /// The chrome (nav header, read-along chip) should hide or show: typing
+    /// began or ended, or the page reached its top.
+    func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool)
+    /// A double tap on blank space: flip whatever the chrome is doing now.
+    func editorDidRequestChromeToggle(_ editor: DocumentEditing)
 }
 
 extension DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {}
+    public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {}
+    public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {}
 }
 
 /// Builds the concrete editor screen for a sheet. One production witness in

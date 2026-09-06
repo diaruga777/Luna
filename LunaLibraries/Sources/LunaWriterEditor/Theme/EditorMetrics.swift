@@ -58,6 +58,22 @@ public struct EditorMetrics: Equatable {
 
     public var codeSize: CGFloat { (bodySize * 0.92).rounded() }
 
+    /// The floor a line box keeps when every character on it is a collapsed
+    /// marker, so a thematic break or a bare `- ` still has a line to paint
+    /// in. It sits below the natural body line height, so a line with text
+    /// on it is unaffected.
+    public var collapsedLineHeight: CGFloat { (bodySize * 1.4).rounded() }
+
+    /// The gutter a painted bullet or checkbox sits in, measured left from
+    /// the list item's text.
+    public var markerSlot: CGFloat { (bodySize * 1.1).rounded() }
+
+    /// The bar a blockquote level paints in the gutter.
+    public var quoteBarWidth: CGFloat { 2 }
+
+    /// The rule a thematic break paints across the column.
+    public var ruleThickness: CGFloat { 1 }
+
     /// The widest the text column may grow, whatever the screen does.
     public var maximumColumnWidth: CGFloat {
         switch lineWidth {

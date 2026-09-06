@@ -37,6 +37,7 @@ public final class SystemPasteboard: PasteboardReading {
 
 extension WriterTextViewActionDelegate {
     public func writerTextView(_ textView: WriterTextView, additionalMenuElementsFor range: NSRange) -> [UIMenuElement] { [] }
+    public func writerTextView(_ textView: WriterTextView, didTapTaskMarkerAt offset: Int) {}
 }
 
 /// What the text view asks about the text under the selection.
@@ -57,6 +58,8 @@ public protocol WriterTextViewActionDelegate: AnyObject {
     func writerTextView(_ textView: WriterTextView, didInsert text: String, as source: AuthorshipSpan.Source, in range: NSRange)
     func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange)
     func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange)
+    /// A tap landed on the checkbox painted for the task item at `offset`.
+    func writerTextView(_ textView: WriterTextView, didTapTaskMarkerAt offset: Int)
     /// Whether the on-device assistant is here at all, which is what gates
     /// "Continue writing" and "Rewrite selection" in the edit menu.
     var writerTextViewAIAssistantIsAvailable: Bool { get }
@@ -86,9 +89,15 @@ public final class WriterTextView: UITextView {
     public var metrics: EditorMetrics {
         didSet {
             guard metrics != oldValue else { return }
+            fragmentProvider?.metrics = metrics
             applyMetrics()
         }
     }
+
+    /// Paints what a collapsed Markdown marker left behind, and answers where
+    /// a task item's checkbox is. Absent for a plain storage with no
+    /// Markdown model.
+    public let fragmentProvider: WriterLayoutFragmentProvider?
 
     private var appliedInsetWidth: CGFloat = -1
 
@@ -101,6 +110,11 @@ public final class WriterTextView: UITextView {
         let contentStorage = NSTextContentStorage()
         contentStorage.addTextLayoutManager(layoutManager)
         contentStorage.textStorage = textStorage
+        let provider = (textStorage as? MarkdownTextStorage).map {
+            WriterLayoutFragmentProvider(storage: $0, metrics: metrics)
+        }
+        fragmentProvider = provider
+        layoutManager.delegate = provider
         super.init(frame: .zero, textContainer: container)
         configure()
     }
@@ -133,7 +147,39 @@ public final class WriterTextView: UITextView {
         // so newly typed text gets its default through `typingAttributes`.
         typingAttributes[.foregroundColor] = EditorTheme.ink
         contentInsetAdjustmentBehavior = .always
+        installTaskMarkerTap()
         applyMetrics()
+    }
+
+    // MARK: - Task marker
+
+    /// A tap in a task item's gutter ticks its box. The recogniser takes no
+    /// touches from the text view's own gestures, so the tap also places the
+    /// caret on the line — which reveals the line's raw source, exactly as a
+    /// tap anywhere else on it would.
+    private func installTaskMarkerTap() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTaskMarkerTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        addGestureRecognizer(tap)
+    }
+
+    @objc private func handleTaskMarkerTap(_ recognizer: UITapGestureRecognizer) {
+        guard let fragmentProvider, let offset = taskMarkerOffset(
+            at: recognizer.location(in: self), provider: fragmentProvider)
+        else { return }
+        actionDelegate?.writerTextView(self, didTapTaskMarkerAt: offset)
+    }
+
+    /// The character offset to toggle for a tap, or nil when the tap missed
+    /// every painted checkbox.
+    func taskMarkerOffset(at point: CGPoint, provider: WriterLayoutFragmentProvider) -> Int? {
+        guard let position = closestPosition(to: point) else { return nil }
+        let offset = self.offset(from: beginningOfDocument, to: position)
+        let containerX = point.x - textContainerInset.left
+        guard provider.hitsTaskMarker(at: offset, containerX: containerX) else { return nil }
+        return offset
     }
 
     private func applyMetrics() {

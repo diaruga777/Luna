@@ -92,7 +92,7 @@ public final class EditorViewController: UIViewController {
     private lazy var geometry = SentenceGeometryProvider(
         layoutManager: textView.textLayoutManager, storage: session.storage)
     private lazy var posService = POSTaggingService()
-    private lazy var markupLayer = MarkupLayer(model: session.storage.model)
+    private lazy var markupLayer = MarkupLayer(storage: session.storage)
     private lazy var syntaxLayer = SyntaxColourLayer(service: posService, storage: session.storage)
     private lazy var authorshipLayer = AuthorshipLayer(provider: session.authorship)
     private lazy var focusLayer = FocusLayer(provider: focus)
@@ -549,6 +549,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
+        session.storage.setRevealRange(textView.selectedRange)
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
@@ -850,6 +851,10 @@ extension EditorViewController {
 
     public func writerTextViewRewriteSelection(_ textView: WriterTextView) {
         rewriteSelection()
+    }
+
+    public func writerTextView(_ textView: WriterTextView, didTapTaskMarkerAt offset: Int) {
+        apply(MarkdownEditingCommands.toggleTask(at: offset, in: session.storage.nsText))
     }
 }
 

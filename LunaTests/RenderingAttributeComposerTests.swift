@@ -184,7 +184,7 @@ final class RenderingAttributeComposerTests: XCTestCase {
         let text = String(repeating: "A **bold phrase** and `code` in a paragraph.\n\n", count: 1_000)
         let storage = MarkdownTextStorage(text: text)
         let composer = RenderingAttributeComposer(layoutManager: nil, storage: storage)
-        composer.addLayer(MarkupLayer(model: storage.model))
+        composer.addLayer(MarkupLayer(storage: storage))
         let options = XCTMeasureOptions()
         options.iterationCount = 3
         measure(metrics: [XCTClockMetric()], options: options) {

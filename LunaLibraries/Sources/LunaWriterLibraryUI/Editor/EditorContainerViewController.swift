@@ -29,6 +29,9 @@ public final class EditorContainerViewController: UIViewController {
 
     /// The header's current title — for tests, which cannot see `header`.
     var headerTitleForTesting: String? { header.title }
+    /// The header's current trailing controls — for a test that must tell a
+    /// rebuilt control apart from the same one left alone.
+    var trailingControlsForTesting: [UIView] { header.trailingControlsForTesting }
     /// Whether the notes panel is hosted as a side child right now.
     var isNotesPanelChildForTesting: Bool { notesPanel?.parent === self }
     /// Whether the notes panel is presented as a sheet right now.
@@ -132,6 +135,14 @@ public final class EditorContainerViewController: UIViewController {
         document.title.isEmpty ? L10n.string("Common_untitled") : document.title
     }
 
+    /// Assigning `header.title` re-renders its label even when the string is
+    /// unchanged, which an autosave one second after every typing burst
+    /// otherwise does for nothing.
+    private func setTitleIfChanged(_ title: String) {
+        guard header.title != title else { return }
+        header.title = title
+    }
+
     @objc private func backTapped() {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
@@ -140,13 +151,21 @@ public final class EditorContainerViewController: UIViewController {
 
     // MARK: - Header controls
 
+    /// Built once, in `viewDidLoad`. The ⋯ button's menu wraps a deferred
+    /// element so a save never needs to rebuild the button or its menu — the
+    /// favourite title and icon are read from `document` when the menu
+    /// opens, not when this is called.
     private func trailingHeaderControls() -> [UIView] {
         // `NavHeaderBar.imageButton` needs a real target action; `showsMenuAsPrimaryAction`
         // below replaces it as the button's actual tap behaviour, so it never runs.
         let menuButton = NavHeaderBar.imageButton(
             systemName: "ellipsis.circle", target: self, action: #selector(unusedMenuButtonAction),
             accessibilityLabel: L10n.string("WriterLibrary_editor_moreMenuTitle"))
-        menuButton.menu = ellipsisMenu()
+        menuButton.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] completion in
+                completion(self?.ellipsisMenuChildren() ?? [])
+            },
+        ])
         menuButton.showsMenuAsPrimaryAction = true
         return [notesButton, menuButton]
     }
@@ -159,15 +178,16 @@ public final class EditorContainerViewController: UIViewController {
     }
 
     /// For tests, which cannot see the private trailing header button whose
-    /// menu this is.
-    var ellipsisMenuForTesting: UIMenu { ellipsisMenu() }
+    /// menu this is. Resolves the children eagerly, unlike the deferred
+    /// element the real button opens.
+    var ellipsisMenuForTesting: UIMenu { UIMenu(children: ellipsisMenuChildren()) }
 
     /// Identifies the export submenu so a test can find it among the ⋯
     /// menu's other children without depending on its position.
     static let exportMenuIdentifier = UIMenu.Identifier("com.hsanabria.luna.writer.exportMenu")
 
-    private func ellipsisMenu() -> UIMenu {
-        UIMenu(children: [
+    private func ellipsisMenuChildren() -> [UIMenuElement] {
+        [
             exportMenu(),
             UIAction(
                 title: L10n.string("WriterLibrary_editor_statisticsAction"),
@@ -199,7 +219,7 @@ public final class EditorContainerViewController: UIViewController {
                 title: L10n.string("Common_delete"),
                 image: UIImage(systemName: "trash"), attributes: .destructive
             ) { [weak self] _ in self?.trashDocument() },
-        ])
+        ]
     }
 
     /// The export formats as a `UIMenu` submenu — never an action sheet,
@@ -266,7 +286,6 @@ public final class EditorContainerViewController: UIViewController {
     public func toggleFavorite() -> Bool {
         guard (try? environment.library.setFavorite(!document.isFavorite, for: document.id)) != nil else { return false }
         document.isFavorite.toggle()
-        header.setTrailingControls(trailingHeaderControls())
         return true
     }
 
@@ -379,8 +398,7 @@ public final class EditorContainerViewController: UIViewController {
 extension EditorContainerViewController: DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didUpdate document: WriterDocument) {
         self.document = document
-        header.title = displayTitle(for: document)
-        header.setTrailingControls(trailingHeaderControls())
+        setTitleIfChanged(displayTitle(for: document))
     }
 
     public func editorRequestsNotesPanel(_ editor: DocumentEditing) {
@@ -412,7 +430,6 @@ extension EditorContainerViewController: LibraryChangeObserving {
     private func refreshFromStore() {
         guard let latest = try? environment.library.document(document.id) else { return }
         document = latest
-        header.title = displayTitle(for: document)
-        header.setTrailingControls(trailingHeaderControls())
+        setTitleIfChanged(displayTitle(for: document))
     }
 }

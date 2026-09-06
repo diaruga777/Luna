@@ -160,6 +160,10 @@ public final class NavHeaderBar: UIView {
         replace(stack: trailingStack, with: controls)
     }
 
+    /// The trailing control cluster's current views — for a test that must
+    /// tell a rebuilt control apart from the same one left alone.
+    public var trailingControlsForTesting: [UIView] { trailingStack.arrangedSubviews }
+
     private func replace(stack: UIStackView, with controls: [UIView]) {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)

@@ -17,6 +17,9 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     private(set) var focusedAnchors: [TextAnchor] = []
     private(set) var flushCount = 0
     private(set) var replacedTexts: [String] = []
+    /// The state a restore handed in, and what `editingState` answers with.
+    var editingState = EditorEditingState()
+    private(set) var restoredStates: [EditorEditingState] = []
 
     init(document: WriterDocument) {
         self.document = document
@@ -29,6 +32,17 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     func focus(on anchor: TextAnchor) { focusedAnchors.append(anchor) }
     func flushPendingSave() { flushCount += 1 }
     func replaceText(_ text: String) { replacedTexts.append(text) }
+
+    func restoreEditingState(_ state: EditorEditingState) {
+        restoredStates.append(state)
+        editingState = state
+    }
+
+    /// Simulates the real editor reporting the caret's resting position.
+    func simulateEditingState(_ state: EditorEditingState) {
+        editingState = state
+        editingDelegate?.editor(self, didChangeEditingState: state)
+    }
 
     /// Simulates the real editor reporting a save back to its container.
     func simulateUpdate(_ document: WriterDocument) {
@@ -75,7 +89,8 @@ extension XCTestCase {
         LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
-            settings: stack.settings, editorMaker: editorMaker, readAlongChrome: nil,
+            settings: stack.settings, sessionState: stack.sessionState,
+            editorMaker: editorMaker, readAlongChrome: nil,
             readAlongSettings: readAlongSettings,
             libraryRootPath: stack.libraryRoot.path)
     }

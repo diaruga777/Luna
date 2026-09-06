@@ -59,6 +59,10 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func focus(on anchor: TextAnchor) { editor.focus(on: anchor) }
 
+    var editingState: EditorEditingState { editor.editingState }
+
+    func restoreEditingState(_ state: EditorEditingState) { editor.restoreEditingState(state) }
+
     func flushPendingSave() { session.saveNow() }
 
     func replaceText(_ text: String) { session.replaceWholeText(text) }
@@ -74,6 +78,10 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
 
     func editorDidUpdateDocument(_ editor: EditorViewController, document: WriterDocument) {
         editingDelegate?.editor(self, didUpdate: document)
+    }
+
+    func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {
+        editingDelegate?.editor(self, didChangeEditingState: state)
     }
 }
 

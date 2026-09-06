@@ -285,6 +285,66 @@ final class SheetsViewControllerTests: XCTestCase {
         XCTAssertEqual(created.groupID, group.id)
         XCTAssertEqual(recorder.selected?.id, created.id)
     }
+
+    // MARK: - The open sheet's highlight (organiser #8)
+
+    /// Beside a visible editor column the list must say which sheet is on
+    /// screen. A diffable reload used to drop that highlight.
+    @MainActor
+    func testTheOpenSheetStaysHighlightedAcrossAReload() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "A", icon: "folder", parent: nil)
+        _ = try stack.library.createDocument(in: group.id, title: "First")
+        let second = try stack.library.createDocument(in: group.id, title: "Second")
+
+        let controller = SheetsViewController(
+            library: stack.library, notes: stack.library, textStore: stack.textStore)
+        let window = hostSheetsBesideAnEditor(controller)
+        defer { window.isHidden = true }
+
+        controller.select(.group(group.id))
+        controller.openDocumentID = second.id
+        pollUntil { controller.selectedRowsForTesting == [.document(second.id)] }
+        XCTAssertEqual(controller.selectedRowsForTesting, [.document(second.id)])
+
+        controller.reload()
+        pollUntil { controller.selectedRowsForTesting == [.document(second.id)] }
+        XCTAssertEqual(
+            controller.selectedRowsForTesting, [.document(second.id)],
+            "a reload keeps the open sheet highlighted")
+    }
+
+    /// A collapsed list is about to be pushed off screen by the editor, so a
+    /// tap there flashes and clears instead of leaving a highlight behind.
+    @MainActor
+    func testACollapsedListKeepsNoHighlight() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "A", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "First")
+
+        let controller = SheetsViewController(
+            library: stack.library, notes: stack.library, textStore: stack.textStore)
+        layoutWriterScreen(controller)
+        controller.select(.group(group.id))
+        controller.openDocumentID = document.id
+        pollUntil { !controller.visibleRowsForTesting.isEmpty }
+
+        XCTAssertEqual(controller.selectedRowsForTesting, [])
+    }
+
+    /// A `UISplitViewController` whose primary column holds `controller` and
+    /// whose traits are regular, so it is expanded rather than collapsed —
+    /// the layout the open sheet's highlight belongs to.
+    @MainActor
+    private func hostSheetsBesideAnEditor(_ controller: SheetsViewController) -> UIWindow {
+        let split = UISplitViewController(style: .doubleColumn)
+        split.traitOverrides.horizontalSizeClass = .regular
+        split.setViewController(UINavigationController(rootViewController: controller), for: .primary)
+        split.setViewController(UIViewController(), for: .secondary)
+        let window = hostWriterScreen(split, width: 1024, height: 768)
+        XCTAssertFalse(split.isCollapsed)
+        return window
+    }
 }
 
 @MainActor

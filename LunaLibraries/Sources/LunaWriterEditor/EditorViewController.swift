@@ -566,7 +566,6 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        composer.invalidate(nil)
         if !overlay.isHidden {
             placeOverlay()
         }

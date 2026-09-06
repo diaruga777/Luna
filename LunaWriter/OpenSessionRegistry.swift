@@ -13,7 +13,7 @@ import LunaWriterStorage
         sessions[session.document.id] = WeakSession(session)
         prune()
         refreshSnapshot()
-        session.unsavedChangesDidChange = { [weak self] in self?.refreshSnapshot() }
+        session.observer = self
     }
 
     var openSessions: [DocumentSession] {
@@ -47,6 +47,12 @@ import LunaWriterStorage
     private struct WeakSession {
         weak var session: DocumentSession?
         init(_ session: DocumentSession) { self.session = session }
+    }
+}
+
+extension OpenSessionRegistry: DocumentSessionObserving {
+    func documentSessionUnsavedChangesDidChange(_ session: DocumentSession) {
+        refreshSnapshot()
     }
 }
 

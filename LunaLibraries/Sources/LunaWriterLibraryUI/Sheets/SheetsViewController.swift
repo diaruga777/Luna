@@ -51,6 +51,12 @@ public final class SheetsViewController: UICollectionViewController {
     /// (organiser #18).
     private(set) var swipeConfigurationForTesting: UICollectionLayoutListConfiguration!
 
+    /// The rows drawn highlighted. Internal rather than private so a test
+    /// can read the highlight the collection view actually holds.
+    var selectedRowsForTesting: [SheetsRow] {
+        (collectionView.indexPathsForSelectedItems ?? []).compactMap { dataSource.itemIdentifier(for: $0) }
+    }
+
     /// The rows on screen, flattened in display order. Internal rather than
     /// private so tests can assert on the applied snapshot directly.
     var visibleRowsForTesting: [SheetsRow] { dataSource.snapshot().itemIdentifiers }

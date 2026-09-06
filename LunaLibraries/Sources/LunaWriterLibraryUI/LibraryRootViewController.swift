@@ -53,8 +53,7 @@ public final class LibraryRootViewController: UISplitViewController {
     /// re-selection can no-op and an outgoing editor can be flushed before
     /// it is replaced (organiser #10).
     private weak var currentContainer: EditorContainerViewController?
-    /// The last session is reopened once, on the first layout pass — that is
-    /// the first moment `isCollapsed` says which columns exist.
+    /// The last session is reopened once, when the root first appears.
     private var didRestore = false
     /// The scope the sidebar is on, so a snapshot written from anywhere
     /// records the scope the writer can see.
@@ -79,6 +78,14 @@ public final class LibraryRootViewController: UISplitViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updatePreferredDisplayMode()
+    }
+
+    /// The last page is reopened here rather than in `viewDidLoad`: this is
+    /// the first moment `isCollapsed` says which columns exist, and setting
+    /// a navigation stack from inside a layout pass loops UIKit's layout
+    /// until it runs out of memory.
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
         restoreLastSession()
     }
 
@@ -138,7 +145,7 @@ public final class LibraryRootViewController: UISplitViewController {
     /// alone. Nothing here animates: the app is meant to be back where it
     /// was, not to be seen travelling there.
     private func restoreLastSession() {
-        guard !didRestore, view.bounds.width > 0 else { return }
+        guard !didRestore else { return }
         didRestore = true
         let hadSession = environment.sessionState.hasSnapshot
         let snapshot = environment.sessionState.snapshot

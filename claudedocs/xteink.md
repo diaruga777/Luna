@@ -57,8 +57,9 @@ authenticates a Keychain-persisted pairing secret using HMAC-SHA256 over
 pairing.
 
 First-use pairing goes through AccessorySetupKit rather than a typed-in code.
-Settings → Pair Xteink shows an instruction alert ("Open File Transfer → Pair
-Luna on the reader, then continue"), then presents the system picker
+Settings → Pair Xteink shows an instruction alert naming both reader paths
+(File Transfer → Pair Luna on the fork; Settings → Plugins → Pair Luna, or
+the unpaired home row, on a plugin build), then presents the system picker
 (`ASAccessorySession.showPicker(for:)`) scoped to the sync service UUID via
 `ASDiscoveryDescriptor.bluetoothServiceUUID`. **The picker cannot appear while
 the process holds any live CBManager** — once the app has the global Bluetooth
@@ -324,6 +325,51 @@ image removal and compression: files at or below 200 KiB use
 consumes this decision after EPUB generation, so the limit applies to the bytes
 actually sent rather than an estimate of the source article.
 
+## Reader firmware: fork and plugin
+
+The reader side ships in two packagings that speak the same wire protocol,
+so one Luna build talks to both:
+
+- **The firmware fork**, `~/Desktop/CrossPoint-Luna-X3` (branch
+  `feature/luna-sync-x3`, protocol doc `docs/luna-x3-sync.md`). Hand-edits a
+  handful of shared CrossPoint files: File Transfer rows (Pair Luna / Luna
+  Sync), the home-menu row, the reader's end-of-book hook, the HAL's GPIO13
+  handling. Built with `pio run -e default` in that checkout.
+- **The plugin**, `~/Desktop/xteink-plugins` (branch `lunasync`, directory
+  `plugins/lunasync/`), a fork of `JustinOros/xteink-plugins`. That project
+  is the community "plugin" mechanism for CrossPoint: source-level patches a
+  Python installer applies to a fresh clone of upstream `develop` before
+  building and flashing (`python3 install.py`, pick "Luna Sync (Xteink
+  X3)"). CrossPoint itself has no runtime plugin loader; upstream's roadmap
+  item "SD-loaded plugins" is web-server connectors, not compiled code or
+  BLE. `LunaSyncRendezvous.cpp` and `LunaBooksStore.cpp` are copied into the
+  plugin VERBATIM from the fork; the two small extra units are
+  `LunaSyncPlugin.cpp` (home-row glue) and `LunaPairActivity.cpp` (Settings
+  → Plugins → Pair Luna). The rendezvous engine is the one implementation —
+  fix it in the fork and copy the file over, or the reverse.
+
+The plugin form differs from the fork in three user-visible ways:
+
+1. **Pairing entry.** There are no File Transfer rows. The home row pairs
+   when no host is stored and syncs otherwise; re-pairing is Settings →
+   Plugins → Pair Luna. Luna's own pairing alert therefore describes both
+   reader paths.
+2. **No read-state handback.** "Read-state handback" below is fork-only: the
+   plugin does not hook the reader's end-of-book screen, so a plugin-built
+   reader never sends `read_ids`. Luna's `read_ack` path is unaffected (it
+   only answers what arrives).
+3. **No GPIO13 change.** Upstream's boot path is untouched.
+
+Two framework facts matter when touching the plugin. Upstream lists `BLE`
+under `lib_ignore`, and pioarduino's custom core rebuild reads that as "drop
+the IDF `bt` component", so the plugin's `platformio_lib_unignore=["BLE"]`
+is what puts NimBLE back (first build rebuilds the core; minutes, then
+cached). And the framework patches by exact text anchor against upstream
+`develop` and stops when one is missing — the `lunasync` branch re-anchored
+it to develop `7db14a0` (2026-09-06) and added the `HomeMenuEntry`
+contribution the home row rides on; upstream moves fast, so an install
+failure that names an anchor is drift, not a plugin bug.
+
 ## Modules and types
 
 All in **LunaSend** (linked by the article-capable Reader app):
@@ -422,8 +468,10 @@ on.
   is a device-initiated deletion policy of its own accord — the X3 never
   deletes a book on its own schedule, only in response to Luna's `delete`.
 - **Reader-side pair vs sync are separate actions** (CrossPoint fork,
-  2026-08-27): "Pair Luna" lives only under File Transfer; "Luna Sync" is on
-  the home menu and File Transfer. A sync window never pairs and refuses up
+  2026-08-27): on the fork, "Pair Luna" lives only under File Transfer and
+  "Luna Sync" is on the home menu and File Transfer; on the plugin build,
+  "Pair Luna" is Settings → Plugins and the home row pairs only while no
+  host is stored (see "Reader firmware: fork and plugin"). A sync window never pairs and refuses up
   front with "Not paired" when no trusted host is stored; the pairing window
   clears the reader's NimBLE bond store at start so a re-pair after an iOS
   unpair cannot wedge on a stale device-side bond. Outcome popups report a

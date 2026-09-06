@@ -17,7 +17,7 @@
     { "key": "enabled", "type": "toggle", "label": "Send to Xteink", "default": false,
       "help": "Queued articles are delivered when the reader opens a Luna Sync window." },
     { "key": "device", "type": "pairedDevice", "label": "Reader", "required": true,
-      "help": "Open File Transfer → Pair Luna on the reader, then pair here." },
+      "help": "Start pairing on the reader (File Transfer → Pair Luna, or Settings → Plugins → Pair Luna on a plugin build), then pair here." },
     { "key": "unpair", "type": "action", "label": "Unpair" }
   ],
   "export": {

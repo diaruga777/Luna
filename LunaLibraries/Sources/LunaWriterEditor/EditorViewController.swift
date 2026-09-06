@@ -16,10 +16,17 @@ public protocol EditorViewControllerDelegate: AnyObject {
     /// The caret came to rest, or the keyboard went up or down. Reported
     /// when editing starts and ends and on each save, not per keystroke.
     func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState)
+    /// The chrome should hide or show: typing began or ended, or the page
+    /// reached its top.
+    func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool)
+    /// A double tap landed on blank space: flip the chrome's state.
+    func editorDidRequestChromeToggle(_ editor: EditorViewController)
 }
 
 extension EditorViewControllerDelegate {
     public func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {}
+    public func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool) {}
+    public func editorDidRequestChromeToggle(_ editor: EditorViewController) {}
 }
 
 /// Told when the text re-wraps or the page scrolls, so anything drawing
@@ -112,6 +119,20 @@ public final class EditorViewController: UIViewController {
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
     private var lastLayoutSize = CGSize(width: -1, height: -1)
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
+    /// Whether the last scroll report had the page at its top, so the
+    /// chrome-show cue fires once on arrival rather than every frame spent
+    /// there.
+    private var isScrolledToTop = true
+    /// A double tap toggles the chrome only on blank space; on a word it
+    /// must stay out of the way of the system's word-selection gesture.
+    private lazy var chromeToggleGesture: UITapGestureRecognizer = {
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleChromeToggleTap))
+        gesture.numberOfTapsRequired = 2
+        gesture.delaysTouchesEnded = false
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
     /// The one AI request in flight. A second request cancels the first —
     /// there is only one caret, one selection, one place the answer lands.
     private var aiTask: Task<Void, Never>?
@@ -262,6 +283,7 @@ public final class EditorViewController: UIViewController {
         textView.delegate = self
         textView.actionDelegate = self
         textView.authorshipDataSource = session
+        textView.addGestureRecognizer(chromeToggleGesture)
 
         composer.viewportProvider = self
         composer.addLayer(markupLayer)
@@ -613,6 +635,7 @@ extension EditorViewController: UITextViewDelegate {
     public func textViewDidBeginEditing(_ textView: UITextView) {
         focus.isComposing = true
         reportEditingState()
+        delegate?.editor(self, wantsChromeHidden: true)
     }
 
     public func textViewDidEndEditing(_ textView: UITextView) {
@@ -620,6 +643,7 @@ extension EditorViewController: UITextViewDelegate {
         mention.dismiss()
         session.save()
         reportEditingState()
+        delegate?.editor(self, wantsChromeHidden: false)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -627,8 +651,53 @@ extension EditorViewController: UITextViewDelegate {
             placeOverlay()
         }
         layoutObserver?.editorDidScroll(self)
+        let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+        guard atTop != isScrolledToTop else { return }
+        isScrolledToTop = atTop
+        if atTop { delegate?.editor(self, wantsChromeHidden: false) }
     }
 
+}
+
+// MARK: - Chrome toggle
+
+extension EditorViewController: UIGestureRecognizerDelegate {
+
+    @objc private func handleChromeToggleTap(_ gesture: UITapGestureRecognizer) {
+        delegate?.editorDidRequestChromeToggle(self)
+    }
+
+    /// Claims a double tap only on blank space, so the system's own
+    /// double-tap word selection still runs on text.
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+        guard gestureRecognizer === chromeToggleGesture else { return true }
+        return isBlankSpace(at: touch.location(in: textView))
+    }
+
+    /// Whether `point` (in the text view's own coordinate space) falls
+    /// outside every line of text: past the last line fragment's bottom, or
+    /// on a fragment the tap does not actually resolve into.
+    func isBlankSpace(at point: CGPoint) -> Bool {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager
+        else { return true }
+        let containerPoint = CGPoint(
+            x: point.x - textView.textContainerInset.left,
+            y: point.y - textView.textContainerInset.top)
+        guard containerPoint.y >= 0,
+              let fragment = layoutManager.textLayoutFragment(for: containerPoint),
+              fragment.layoutFragmentFrame.contains(containerPoint)
+        else { return true }
+        guard let position = textView.closestPosition(to: point) else { return true }
+        let tappedOffset = textView.offset(from: textView.beginningOfDocument, to: position)
+        let origin = contentManager.documentRange.location
+        let range = fragment.rangeInElement
+        let start = contentManager.offset(from: origin, to: range.location)
+        let end = contentManager.offset(from: origin, to: range.endLocation)
+        return tappedOffset < start || tappedOffset >= end
+    }
 }
 
 // MARK: - RenderingViewportProviding

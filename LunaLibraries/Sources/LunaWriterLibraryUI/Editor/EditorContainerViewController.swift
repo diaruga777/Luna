@@ -26,6 +26,24 @@ public final class EditorContainerViewController: UIViewController {
     /// editor; given to it as soon as it exists.
     private var pendingEditingState: EditorEditingState?
     private var editorTrailingConstraint: NSLayoutConstraint!
+    /// The editor's top constraint when the header is shown (pinned below
+    /// it) and when the header is hidden (pinned to the view's own top —
+    /// the text view's own inset adjustment still clears the safe area).
+    /// Exactly one is active at a time.
+    private var editorTopToHeaderConstraint: NSLayoutConstraint!
+    private var editorTopToViewConstraint: NSLayoutConstraint!
+    /// The read-along chip's equivalent pair, when read-along installed one.
+    private var chromeTopToHeaderConstraint: NSLayoutConstraint?
+    private var chromeTopToSafeAreaConstraint: NSLayoutConstraint?
+    /// The open notes panel's top constraint, when it is hosted as a side
+    /// child — re-pinned alongside the editor when the chrome toggles.
+    private var notesPanelTopConstraint: NSLayoutConstraint?
+    /// Whether the header, the read-along chip and the side notes panel are
+    /// hidden right now: typing hides them, losing focus or reaching the
+    /// top of the page shows them, and a double tap on blank space toggles.
+    private var isChromeHidden = false
+    /// The chrome's hidden state, for a test that cannot see `isChromeHidden`.
+    var isChromeHiddenForTesting: Bool { isChromeHidden }
 
     /// Built through the header's factory so it keeps a bar button's minimum
     /// width; a long title would otherwise squeeze it to nothing.
@@ -118,8 +136,11 @@ public final class EditorContainerViewController: UIViewController {
         editor.didMove(toParent: self)
 
         editorTrailingConstraint = editor.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        editorTopToHeaderConstraint = editor.view.topAnchor.constraint(equalTo: contentTop)
+        editorTopToViewConstraint = editor.view.topAnchor.constraint(equalTo: view.topAnchor)
+        editorTopToViewConstraint.isActive = false
         NSLayoutConstraint.activate([
-            editor.view.topAnchor.constraint(equalTo: contentTop),
+            editorTopToHeaderConstraint,
             editor.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             editor.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             editorTrailingConstraint,
@@ -131,8 +152,14 @@ public final class EditorContainerViewController: UIViewController {
             readAlongChromeView = chrome
             chrome.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(chrome)
+            let toHeader = chrome.topAnchor.constraint(equalTo: contentTop, constant: 8)
+            let toSafeArea = chrome.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8)
+            toSafeArea.isActive = false
+            chromeTopToHeaderConstraint = toHeader
+            chromeTopToSafeAreaConstraint = toSafeArea
             NSLayoutConstraint.activate([
-                chrome.topAnchor.constraint(equalTo: contentTop, constant: 8),
+                toHeader,
                 chrome.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             ])
         }
@@ -363,6 +390,7 @@ public final class EditorContainerViewController: UIViewController {
             panel.view.removeFromSuperview()
             panel.removeFromParent()
             editorTrailingConstraint.constant = 0
+            notesPanelTopConstraint = nil
         } else {
             panel.presentingViewController?.dismiss(animated: true)
         }
@@ -375,8 +403,12 @@ public final class EditorContainerViewController: UIViewController {
             panel.view.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(panel.view)
             panel.showsLeadingSeparator = true
+            let topConstraint = isChromeHidden
+                ? panel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+                : panel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+            notesPanelTopConstraint = topConstraint
             NSLayoutConstraint.activate([
-                panel.view.topAnchor.constraint(equalTo: header.bottomAnchor),
+                topConstraint,
                 panel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                 panel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 panel.view.widthAnchor.constraint(equalToConstant: Self.notesPanelWidth),
@@ -412,6 +444,48 @@ public final class EditorContainerViewController: UIViewController {
         removeNotesPanel(notesPanel)
         self.notesPanel = notesPanel
         host(notesPanel, asSideChild: isWide, animated: false)
+    }
+
+    // MARK: - Chrome
+
+    /// Hides or shows the header, the read-along chip and the side notes
+    /// panel — the editor's own inset adjustment keeps its text clear of the
+    /// safe area either way. Idempotent: a repeated call for the state
+    /// already showing does nothing.
+    func setChromeHidden(_ hidden: Bool, animated: Bool) {
+        guard isChromeHidden != hidden else { return }
+        isChromeHidden = hidden
+
+        editorTopToHeaderConstraint.isActive = !hidden
+        editorTopToViewConstraint.isActive = hidden
+        chromeTopToHeaderConstraint?.isActive = !hidden
+        chromeTopToSafeAreaConstraint?.isActive = hidden
+        reanchorNotesPanelTop()
+
+        let apply = {
+            self.header.alpha = hidden ? 0 : 1
+            self.header.transform = hidden
+                ? CGAffineTransform(translationX: 0, y: -self.header.bounds.height)
+                : .identity
+            self.view.layoutIfNeeded()
+        }
+        if animated {
+            UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseInOut], animations: apply)
+        } else {
+            apply()
+        }
+    }
+
+    /// Re-pins the side notes panel's top between the header's bottom and
+    /// the safe-area top, alongside the editor's own top constraint.
+    private func reanchorNotesPanelTop() {
+        guard let notesPanel, notesPanel.parent === self else { return }
+        if let notesPanelTopConstraint { notesPanelTopConstraint.isActive = false }
+        let topConstraint = isChromeHidden
+            ? notesPanel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+            : notesPanel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+        topConstraint.isActive = true
+        notesPanelTopConstraint = topConstraint
     }
 }
 
@@ -449,6 +523,14 @@ extension EditorContainerViewController: DocumentEditingDelegate {
 
     public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {
         editingStateObserver?.editorContainer(self, didChangeEditingState: state)
+    }
+
+    public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {
+        setChromeHidden(hidden, animated: true)
+    }
+
+    public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {
+        setChromeHidden(!isChromeHidden, animated: true)
     }
 }
 

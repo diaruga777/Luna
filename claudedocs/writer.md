@@ -299,11 +299,40 @@ highlighted (`SheetsViewController.openDocumentID`), reselected after each
 diffable apply. A collapsed list is about to be pushed off screen, so a tap
 there still flashes and clears.
 
+## Minimal chrome (2026-09-07)
+
+The header hides while the writer types, and comes back at the top of the
+page or on a double tap. `DocumentEditingDelegate.editor(_:wantsChromeHidden:)`
+and `editorDidRequestChromeToggle(_:)` carry the cue from `EditorViewController`
+(mirrored on `EditorViewControllerDelegate`, forwarded by `WriterEditorScreen`)
+to `EditorContainerViewController.setChromeHidden(_:animated:)`. The editor
+fires the cue from `textViewDidBeginEditing`/`textViewDidEndEditing` (focus
+hides, losing it shows), from `scrollViewDidScroll` on arrival at the top
+(`contentOffset.y <= -adjustedContentInset.top + 1`, fired once per arrival
+rather than every frame spent there), and from a two-tap
+`UITapGestureRecognizer` on the text view that only claims a touch on blank
+space — `EditorViewController.isBlankSpace(at:)` asks
+`NSTextLayoutManager.textLayoutFragment(for:)` for the fragment under the
+point and treats it as text only when `closestPosition(to:)` resolves inside
+that fragment's own range, so a double tap on a word still runs the system's
+word-selection gesture untouched (`gestureRecognizer(_:shouldReceive:)` gates
+it, not `require(toFail:)`, so a single tap stays instant).
+
+`setChromeHidden` swaps the editor's top constraint between the header's
+bottom anchor and the view's own top anchor (the text view's own
+`contentInsetAdjustmentBehavior` still clears the safe area), re-anchors the
+read-along chip and a side notes panel the same way, and slides the header up
+by its own height while fading it — 0.25 s ease-in-out, alongside
+`layoutIfNeeded`. Toggling while the keyboard is up shows the header until
+the next keyboard event, because the state machine has no separate "pinned"
+flag: a toggle just flips `isChromeHidden`, and the next focus/blur cue sets
+it again unconditionally.
+
 ## Testing
 
 Suites are `Writer*`, `Note*`, `Library*`, `Gaze*`, `Reading*`, `Voice*`,
 `Utterance*`, `EnergyVAD*`, `Mention*`, `Authorship*`, `Rendering*`,
-`Focus*`, `SentenceGeometry*`, `Groups*`, `Sheets*`, `EditorContainer*`,
+`Focus*`, `SentenceGeometry*`, `Groups*`, `Sheets*`, `Editor*`,
 `DocumentExporter*`, `DocumentNotesPanel*`, `ReadAlong*`, all in `LunaTests`
 on the central host; `LunaWriter.xctestplan` / `LunaWriterTests` scheme
 select them. The simulator ships no lexical-class model, so syntax colouring

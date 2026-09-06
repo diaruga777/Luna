@@ -83,6 +83,14 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {
         editingDelegate?.editor(self, didChangeEditingState: state)
     }
+
+    func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool) {
+        editingDelegate?.editor(self, wantsChromeHidden: hidden)
+    }
+
+    func editorDidRequestChromeToggle(_ editor: EditorViewController) {
+        editingDelegate?.editorDidRequestChromeToggle(self)
+    }
 }
 
 /// Builds one `WriterEditorScreen` per opened sheet and keeps the session in

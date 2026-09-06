@@ -254,6 +254,51 @@ a plain `PBXNativeTarget` hand-added to `project.pbxproj` (the `xcodeproj`
 gem cannot save this project); the `LunaWriter` scheme lists it as its one
 testable.
 
+## Reopening the last page (2026-09-07)
+
+Luna Writer comes back to the page it was on. `WriterSessionState`
+(`LunaWriterStorage`) holds four values in the same defaults suite
+`WriterSettings` uses — the open sheet, the sidebar scope, the caret's
+location and whether the keyboard was up. The scope is stored as
+`LibrarySelectionValue`, a mirror of the organiser's own `LibrarySelection`,
+because that type belongs to `LunaWriterLibraryUI` and this tier holds no
+view types.
+
+`LibraryRootViewController.restoreLastSession()` runs once, from
+`viewDidAppear`: that is the first moment `isCollapsed` says which columns
+exist, and setting a navigation stack from inside a layout pass loops
+UIKit's layout until the process runs out of memory (measured at 1.9 GB).
+It sets the whole page at once and never animates — a collapsed stack
+becomes groups/sheets/editor, an expanded root takes the secondary column.
+A sheet that is gone or trashed restores the scope alone; a sheet opened
+before the root appeared (a deep link, an intent) is already the page, so
+the restore stands down. On a first run `WriterWiring` seeds the snapshot
+with the Welcome sheet `bootstrap()` returns, so it opens through the same
+path.
+
+The page is recorded as the writer moves: `show(document:)`,
+`documentDidClose`, each sidebar selection, and each editing-state report.
+`WriterWiring.applicationDidEnterBackground` writes the whole snapshot as
+well, which is what catches a caret the autosave has not reached — and,
+because a popped editor has already deallocated, what forgets a sheet the
+writer backed out of.
+
+The caret crosses two seams. `DocumentEditing.editingState` /
+`restoreEditingState(_:)` and `DocumentEditingDelegate.editor(_:
+didChangeEditingState:)` are the organiser's side;
+`EditorViewControllerDelegate.editorDidChangeEditingState` is the editor's,
+with `WriterEditorScreen` between them. The editor reports when editing
+begins and ends and on each autosave — the caret's resting position, never
+per keystroke — and puts a restored caret back clamped to the text it
+finds, since the file may have been rewritten elsewhere meanwhile. The
+keyboard waits for `viewDidAppear`, and comes up only when it was up; a
+sheet with nothing in it still takes it, as before.
+
+Beside a visible editor column the sheets list keeps the open sheet
+highlighted (`SheetsViewController.openDocumentID`), reselected after each
+diffable apply. A collapsed list is about to be pushed off screen, so a tap
+there still flashes and clears.
+
 ## Testing
 
 Suites are `Writer*`, `Note*`, `Library*`, `Gaze*`, `Reading*`, `Voice*`,

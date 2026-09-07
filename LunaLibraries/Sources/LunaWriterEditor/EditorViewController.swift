@@ -153,6 +153,16 @@ public final class EditorViewController: UIViewController {
 
     /// A restored sheet takes the keyboard the writer left up; a sheet with
     /// nothing in it takes it because there is nothing else to do there.
+    /// A keyboard asked for before the first frame is part of that frame;
+    /// asked for after it, it slides up. The restored state is tried here
+    /// and again in `viewDidAppear`, which covers a view that was not yet in
+    /// a window to take it.
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        guard let state = pendingRestoredState, state.isKeyboardVisible, view.window != nil else { return }
+        raiseKeyboardWithoutAnimation()
+    }
+
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if let state = pendingRestoredState {
@@ -160,10 +170,14 @@ public final class EditorViewController: UIViewController {
             // Applied again now the text view has its final size: a scroll
             // asked for before layout has nothing to scroll within.
             applyCaret(of: state)
-            if state.isKeyboardVisible { textView.becomeFirstResponder() }
+            if state.isKeyboardVisible, !textView.isFirstResponder { raiseKeyboardWithoutAnimation() }
         } else if session.storage.length == 0 {
             textView.becomeFirstResponder()
         }
+    }
+
+    private func raiseKeyboardWithoutAnimation() {
+        UIView.performWithoutAnimation { _ = textView.becomeFirstResponder() }
     }
 
     public override func viewDidLayoutSubviews() {
@@ -374,7 +388,7 @@ public final class EditorViewController: UIViewController {
         applyCaret(of: state)
         guard view.window != nil else { return }
         pendingRestoredState = nil
-        if state.isKeyboardVisible { textView.becomeFirstResponder() }
+        if state.isKeyboardVisible { raiseKeyboardWithoutAnimation() }
     }
 
     /// Clamps to the text as it is now: the file may have been edited

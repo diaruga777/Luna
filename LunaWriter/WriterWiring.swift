@@ -65,6 +65,9 @@ import LunaWriterVoice
     /// waiting for the next unrelated write.
     static func sceneWillEnterForeground() {
         storage?.watcher.scanNow()
+        // Before the scene's first foreground frame, so the keyboard is in
+        // it rather than sliding up once the app is active.
+        root?.refocusEditorIfNeeded()
     }
 
     /// The writer left with the keyboard up and comes back to it up.

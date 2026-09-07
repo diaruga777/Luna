@@ -39,14 +39,14 @@ public final class StatisticsSheet: UIViewController {
             stack.addArrangedSubview(makeRow(name: row.0, value: row.1))
         }
         if let goal {
-            let done = StatisticsBarView.measure(stats, in: goal.unit)
+            let done = StatisticsFormatting.measure(stats, in: goal.unit)
             stack.addArrangedSubview(makeRow(
                 name: L10n.string("WriterEditor_statisticsGoal"),
                 value: L10n.string(
                     "WriterEditor_statisticsGoalProgress", done as CVarArg, goal.target as CVarArg)))
             let bar = MoonHorizonProgressBar()
             bar.showsActivityPulse = false
-            bar.setProgress(Float(StatisticsBarView.fraction(of: stats, against: goal)), animated: false)
+            bar.setProgress(Float(StatisticsFormatting.fraction(of: stats, against: goal)), animated: false)
             stack.addArrangedSubview(bar)
         }
 
@@ -64,7 +64,7 @@ public final class StatisticsSheet: UIViewController {
             (L10n.string("WriterEditor_statisticsCharactersNoSpaces"), "\(stats.charactersWithoutSpaces)"),
             (L10n.string("WriterEditor_statisticsSentences"), "\(stats.sentences)"),
             (L10n.string("WriterEditor_statisticsParagraphs"), "\(stats.paragraphs)"),
-            (L10n.string("WriterEditor_statisticsReadingTime"), StatisticsBarView.readingTime(stats.readingTime)),
+            (L10n.string("WriterEditor_statisticsReadingTime"), StatisticsFormatting.readingTime(stats.readingTime)),
         ]
     }
 

@@ -133,7 +133,9 @@ public final class WriterTextView: UITextView {
         backgroundColor = .clear
         spellCheckingType = .no
         inlinePredictionType = .no
-        autocorrectionType = .default
+        // Off: it also removes the predictive bar, so the keyboard stands at
+        // its own height.
+        autocorrectionType = .no
         smartQuotesType = .default
         smartDashesType = .default
         smartInsertDeleteType = .default

@@ -16,23 +16,18 @@ public struct EditorEnvironment {
     public var settings: WriterSettings
     /// nil where no on-device model exists, which is most devices.
     public var aiAssistant: AIWritingAssisting?
-    /// Whether the accessory bar earns its space on this root. Defaults to
-    /// iOS's width-plus-hardware-keyboard rule.
-    public var accessoryBarPolicy: AccessoryBarPolicy
     public init(
         noteIndex: NoteIndexing,
         noteStore: NoteStoring,
         marksStore: DocumentMarksStoring,
         settings: WriterSettings,
-        aiAssistant: AIWritingAssisting? = nil,
-        accessoryBarPolicy: AccessoryBarPolicy = DefaultAccessoryBarPolicy()
+        aiAssistant: AIWritingAssisting? = nil
     ) {
         self.noteIndex = noteIndex
         self.noteStore = noteStore
         self.marksStore = marksStore
         self.settings = settings
         self.aiAssistant = aiAssistant
-        self.accessoryBarPolicy = accessoryBarPolicy
     }
 }
 

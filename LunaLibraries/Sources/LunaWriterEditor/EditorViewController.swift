@@ -431,12 +431,10 @@ public final class EditorViewController: UIViewController {
     private func updateStatistics() {
         let text = session.storage.string
         let revision = session.storage.revision
-        let goal = session.document.goal
         statisticsQueue.async { [weak self] in
             let stats = TextStatistics.measure(text)
             DispatchQueue.main.async {
                 guard let self, self.session.storage.revision == revision else { return }
-                _ = goal
                 self.stats = stats
             }
         }

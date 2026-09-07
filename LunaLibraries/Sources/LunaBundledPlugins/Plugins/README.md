@@ -16,6 +16,22 @@ Downloader app still runs. `LunaTests/<Platform>PluginTests` runs BOTH engines
 over the fixtures in `LunaTests/Fixtures/Plugins/<platform>/` and compares what
 they resolved, so a fix to one that is not mirrored fails the suite.
 
+Each media plugin also has a TRANSCRIPT twin, `<platform>-transcript.js`
+(`app.luna.<platform>.transcript`, `produces: ["article"]`), that reads the
+same URL family as a reader article (`claudedocs/plans/transcription-plugins.md`
+§7). Its `ingest` offers the cheapest source of the spoken words, in this
+order: captions the site publishes (an `html` Model, no file fetched), an
+audio-only file, then the video file — the last two as an `article` Model
+with a `transcription` spec Luna downloads, transcribes on device and
+deletes. The twins sit at a LOWER priority (90; `direct-media-transcript.js`
+at 80, below its `any`-matched twin at 90), and every media plugin's
+`classify` returns `false` when the hook input carries `intent:
+"transcribe"`, so a plain save still downloads the video, a Transcribe action
+reaches the transcript twin, and disabling the media plugin in Settings →
+Plugins makes transcribing the platform's default.
+`LunaTests/<Platform>TranscriptPluginTests` runs each twin over the same
+fixture directory.
+
 No media plugin sets an asset's `headers`: `LiveMediaDownloadManager` already
 sends the per-platform User-Agent and Referer those CDNs ask for, and a
 plugin's headers would override them.

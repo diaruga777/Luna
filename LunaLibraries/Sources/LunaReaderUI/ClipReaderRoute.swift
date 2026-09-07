@@ -31,8 +31,9 @@ public enum ClipReaderRoute: Equatable {
         case .article: return .reader
         case .needsArchive: return .archiveUnlock
         case .product, .video, .social, .document: return .notReadable
-        // The clip runs no plugin platform, so `.locked` cannot arrive here.
-        case .failed, .unsupported, .locked: return .failed
+        // The clip runs no plugin platform, so neither `.locked` nor
+        // `.transcription` can arrive here.
+        case .failed, .unsupported, .locked, .transcription: return .failed
         }
     }
 }

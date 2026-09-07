@@ -39,11 +39,18 @@ public struct PluginClassifyInput: Encodable, Sendable {
     public let url: String
     public let page: PluginPageSnapshot?
     public let context: String
+    /// `IngestIntent.rawValue`. Absent from the JSON for an ordinary save, so a
+    /// plugin written before intents existed sees the input it always saw.
+    public let intent: String?
 
-    public init(url: String, page: PluginPageSnapshot?, context: PluginProcessKind) {
+    public init(
+        url: String, page: PluginPageSnapshot?, context: PluginProcessKind,
+        intent: String? = nil
+    ) {
         self.url = url
         self.page = page
         self.context = context.rawValue
+        self.intent = intent
     }
 }
 
@@ -113,15 +120,18 @@ public struct PluginIngestHookInput: Encodable, Sendable {
     public let reason: String
     public let context: String
     public let saveID: String?
+    /// `IngestIntent.rawValue`, absent for an ordinary save.
+    public let intent: String?
 
     private enum CodingKeys: String, CodingKey {
-        case url, claim, page, reason, context
+        case url, claim, page, reason, context, intent
         case saveID = "saveId"
     }
 
     public init(
         url: String, claim: PluginIngestClaim, page: PluginPageSnapshot?,
-        reason: PluginIngestReason, context: PluginProcessKind, saveID: String? = nil
+        reason: PluginIngestReason, context: PluginProcessKind, saveID: String? = nil,
+        intent: String? = nil
     ) {
         self.url = url
         self.claim = claim
@@ -129,6 +139,7 @@ public struct PluginIngestHookInput: Encodable, Sendable {
         self.reason = reason.rawValue
         self.context = context.rawValue
         self.saveID = saveID
+        self.intent = intent
     }
 }
 

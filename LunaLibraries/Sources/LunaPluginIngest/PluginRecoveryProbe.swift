@@ -103,6 +103,7 @@ public enum PluginRecoveryProbe {
         case .failed: return "failed"
         case .unsupported: return "unsupported"
         case .locked: return "locked"
+        case .transcription: return "transcription"
         }
     }
 

@@ -181,6 +181,44 @@ public struct ArticleDocumentSpec: Decodable, Equatable, Sendable {
     }
 }
 
+/// A recording an article plugin points at instead of HTML. The core downloads
+/// it, transcribes it on device, and stores the transcript as the article;
+/// the file is deleted afterwards (`claudedocs/plans/transcription-plugins.md`).
+public struct ArticleTranscriptionSpec: Decodable, Equatable, Sendable {
+    public enum MediaType: String, Decodable, Sendable {
+        case audio, video
+    }
+
+    public let url: URL
+    public let type: MediaType
+    /// A separate audio leg for a video. When present, only this leg is fetched.
+    public let audioURL: URL?
+    /// Sent on the download request. Only the allowlist in
+    /// `PluginModelCaps.allowedHeaderNames` may appear.
+    public let headers: [String: String]
+    /// Epoch seconds after which the URLs are stale and the runner re-runs the
+    /// owning plugin before fetching.
+    public let expiresAt: Date?
+
+    private enum CodingKeys: String, CodingKey { case url, type, audioURL, headers, expiresAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = try c.requiredPluginURL(.url, field: "transcription.url")
+        guard let rawType = try c.decodeIfPresent(String.self, forKey: .type) else {
+            throw PluginModelValidationError.missingField("transcription.type")
+        }
+        guard let type = MediaType(rawValue: rawType) else {
+            throw PluginModelValidationError.unknownKind(rawType)
+        }
+        self.type = type
+        audioURL = try c.optionalPluginURL(.audioURL, field: "transcription.audioURL")
+        headers = try c.pluginHeaders(.headers)
+        expiresAt = try c.decodeIfPresent(Double.self, forKey: .expiresAt)
+            .map { Date(timeIntervalSince1970: $0) }
+    }
+}
+
 public struct ArticleModel: Decodable, Equatable, Sendable {
     public let title: String
     public let author: String?
@@ -194,10 +232,14 @@ public struct ArticleModel: Decodable, Equatable, Sendable {
     public let excerpt: String?
     public let language: String?
     public let document: ArticleDocumentSpec?
+    /// A recording to transcribe into the body. `html` may then be empty; when
+    /// it is not, its blocks precede the transcript. Never present together
+    /// with `document`.
+    public let transcription: ArticleTranscriptionSpec?
 
     private enum CodingKeys: String, CodingKey {
         case title, author, publishedAt, html, baseURL, leadImageURL
-        case excerpt, language, document
+        case excerpt, language, document, transcription
     }
 
     public init(from decoder: Decoder) throws {
@@ -206,13 +248,18 @@ public struct ArticleModel: Decodable, Equatable, Sendable {
         author = try c.optionalPluginString(.author, field: "author", cap: PluginModelCaps.title)
         publishedAt = try c.optionalPluginString(
             .publishedAt, field: "publishedAt", cap: PluginModelCaps.shortString)
-        guard let html = try c.decodeIfPresent(String.self, forKey: .html) else {
+        let transcription = try c.decodeIfPresent(ArticleTranscriptionSpec.self, forKey: .transcription)
+        // `html` is required unless a recording supplies the body.
+        guard let html = try c.decodeIfPresent(String.self, forKey: .html)
+            ?? (transcription == nil ? nil : "")
+        else {
             throw PluginModelValidationError.missingField("html")
         }
         guard html.utf8.count <= PluginModelCaps.html else {
             throw PluginModelValidationError.htmlTooLarge(html.utf8.count)
         }
         self.html = html
+        self.transcription = transcription
         baseURL = try c.optionalPluginURL(.baseURL, field: "baseURL")
         leadImageURL = try c.optionalPluginURL(.leadImageURL, field: "leadImageURL")
         excerpt = try c.optionalPluginString(
@@ -220,6 +267,9 @@ public struct ArticleModel: Decodable, Equatable, Sendable {
         language = try c.optionalPluginString(
             .language, field: "language", cap: PluginModelCaps.shortString)
         document = try c.decodeIfPresent(ArticleDocumentSpec.self, forKey: .document)
+        if document != nil, transcription != nil {
+            throw PluginModelValidationError.conflictingFields("document", "transcription")
+        }
     }
 }
 
@@ -373,6 +423,8 @@ public enum PluginModelValidationError: Error, Equatable {
     case negativeByteCount(field: String)
     /// `price.amount` did not parse as a decimal.
     case invalidPrice(String)
+    /// Two fields that each supply the whole body were both present.
+    case conflictingFields(String, String)
 }
 
 // MARK: - Decoding helpers

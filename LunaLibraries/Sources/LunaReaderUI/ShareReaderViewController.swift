@@ -289,10 +289,11 @@ public final class ShareReaderViewController: UIViewController {
             // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right
             // here in the extension's own UI — the URL is pre-filled.
             presentArchiveReader(for: item, fallbackTitle: title)
-        case .video, .social, .document:
+        case .video, .social, .document, .transcription:
             // A video/post/document reached the reader VC (shouldn't, since the
             // host routes those to SavedNonTextualViewController) — never extract it;
-            // confirm the save and let the app render it.
+            // confirm the save and let the app render it. A transcription is
+            // parked by the driver and finished in the app the same way.
             presentSavedConfirmation(productName: url.host ?? L10n.string("Common_saved"))
         case .failed, .unsupported, .locked:
             // Neither .unsupported nor .locked can genuinely occur here: the

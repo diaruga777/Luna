@@ -204,7 +204,9 @@ struct RescueDirectiveApplier {
     /// can NOT loop — the pipeline was called at most once with the raw closure).
     private func classify(_ result: IngestResult, request: RescueRequest, method: RescueMethod) -> RescueOutcome {
         switch result.outcome {
-        case .article, .product:
+        case .article, .product, .transcription:
+            // A recording handed over for transcription is a save the ingestor
+            // can finish: it parks the row and the runner writes the article.
             return .rescued(result, method: method)
         case .social, .video, .document, .needsArchive, .failed, .unsupported, .locked:
             // A rescue that ends in a plugin lock has not recovered the save:

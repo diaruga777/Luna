@@ -41,6 +41,8 @@ public enum PluginOutcomeMapping {
                 : .social(platform ?? .web, itemID: itemID)
         case let .article(content, sourceHTML):
             return .article(content, html: sourceHTML ?? "")
+        case let .transcription(request):
+            return .transcription(request)
         case let .product(model, imageURL):
             return .product(productInfo(model, imageURL), html: "")
         }

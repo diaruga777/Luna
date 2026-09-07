@@ -86,6 +86,12 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// see `claudedocs/social-sharing.md`.
     public var sharesByEmail: Bool { self == .luna || self == .reader }
 
+    /// Whether this app transcribes a plugin's recording into a reader article
+    /// (`claudedocs/plans/transcription-plugins.md`). Only central Luna runs
+    /// plugins, so only it can queue or finish a transcription; the Transcribe
+    /// affordances read this before they show.
+    public var transcribesMedia: Bool { self == .luna }
+
     /// App-Group marker key recording that this app has run on this device.
     /// The Safari extensions' native handlers read these raw strings (they
     /// don't share a framework), so the format is part of the App-Group

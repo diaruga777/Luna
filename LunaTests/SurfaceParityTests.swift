@@ -251,6 +251,9 @@ final class SurfaceParityTests: XCTestCase {
         // same silent "it is saved" every surface reports. No fixture link
         // reaches it — the suite installs no plugin stage.
         case .locked: return .savedDocument
+        // A transcription parks the save and confirms it, the way a document
+        // import does. No fixture link reaches it either.
+        case .transcription: return .savedDocument
         }
     }
 

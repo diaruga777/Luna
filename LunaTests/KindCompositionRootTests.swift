@@ -222,7 +222,7 @@ final class KindCompositionRootTests: XCTestCase {
             for line in source.split(separator: "\n") {
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
-                if text.range(of: #"(PluginPlatformServices\.\w+|IngestPipeline\.pluginStage|PluginModelAdopters\.\w+)\s*=[^=]"#, options: .regularExpression) != nil {
+                if text.range(of: #"(PluginPlatformServices\.\w+|IngestPipeline\.pluginStage|PluginModelAdopters\.\w+|PluginTranscriptionSeams\.\w+)\s*=[^=]"#, options: .regularExpression) != nil {
                     offenders.append("\(path): \(text)")
                 }
             }
@@ -232,7 +232,8 @@ final class KindCompositionRootTests: XCTestCase {
             """
             A composition root wrote a plugin registry itself. The runtime fills \
             `PluginPlatformServices`, `PluginPlatformComposition.install()` fills \
-            the stage, and each kind pack fills its own adopter:
+            the stage and the transcription re-resolver, and each kind pack fills \
+            its own adopter:
             \(offenders.joined(separator: "\n"))
             """)
     }

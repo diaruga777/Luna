@@ -20,6 +20,9 @@ public enum PluginAdoptedOutcome {
         title: String?,
         thumbnailURL: URL?)
     case article(ArticleContent, sourceHTML: String?)
+    /// An article whose body arrives later: the app downloads and transcribes
+    /// `request`'s recording, then persists the transcript as the article.
+    case transcription(TranscriptionRequest)
     case product(ProductModel, imageURL: URL?)
     /// The kind module read the Model and kept nothing. The walk continues with
     /// the next plugin, then the Swift classifier.

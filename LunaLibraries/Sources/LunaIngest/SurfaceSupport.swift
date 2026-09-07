@@ -14,7 +14,7 @@ public extension Outcome {
     /// just to know about `Outcome`.
     var owningApp: LunaApp? {
         switch self {
-        case .article, .needsArchive, .document:
+        case .article, .needsArchive, .document, .transcription:
             return .reader
         case .social, .video:
             return .downloader

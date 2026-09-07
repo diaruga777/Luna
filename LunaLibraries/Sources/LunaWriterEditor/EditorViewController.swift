@@ -655,7 +655,11 @@ extension EditorViewController: UITextViewDelegate {
         let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
         guard atTop != isScrolledToTop else { return }
         isScrolledToTop = atTop
-        if atTop { delegate?.editor(self, wantsChromeHidden: false) }
+        // Only the writer's own scroll brings the chrome back. The keyboard
+        // rising, a caret restore and typewriter mode all move the offset
+        // through the top as well, and none of them is a request to see it.
+        let byUser = scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
+        if atTop, byUser { delegate?.editor(self, wantsChromeHidden: false) }
     }
 
 }

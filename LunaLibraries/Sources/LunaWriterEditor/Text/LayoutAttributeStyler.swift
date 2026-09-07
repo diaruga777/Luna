@@ -76,9 +76,11 @@ public struct LayoutAttributeStyler: Equatable {
             guard lineRange.length > 0, NSMaxRange(lineRange) <= length else { continue }
             let revealed = Self.reveals(reveal, lineRange)
             let base = blockFont(for: scan.block.kind)
+            let markerWidth = revealed ? Self.blockMarkerWidth(of: scan.block, in: nsText, font: base) : 0
             text.setAttributes(
                 [.font: base,
-                 .paragraphStyle: paragraphStyle(for: scan.block.kind, hidingMarkers: !revealed),
+                 .paragraphStyle: paragraphStyle(
+                    for: scan.block.kind, hidingMarkers: !revealed, revealedMarkerWidth: markerWidth),
                  .foregroundColor: EditorTheme.ink],
                 range: lineRange)
             for inline in scan.inlines {
@@ -216,7 +218,22 @@ public struct LayoutAttributeStyler: Equatable {
         }
     }
 
-    public func paragraphStyle(for kind: BlockKind, hidingMarkers hidden: Bool = false) -> NSParagraphStyle {
+    /// The width the revealed block marker (`- `, `- [ ] `, `> `) takes at
+    /// the block font, so a revealed line can hang it in the gutter and keep
+    /// its text where the collapsed line had it.
+    static func blockMarkerWidth(of block: BlockToken, in text: NSString, font: UIFont) -> CGFloat {
+        hiddenBlockMarkers(of: block).reduce(0) { width, range in
+            guard range.length > 0, NSMaxRange(range) <= text.length else { return width }
+            return width + text.substring(with: range).size(withAttributes: [.font: font]).width
+        }
+    }
+
+    /// `revealedMarkerWidth` is the block marker's width when the line is
+    /// revealed; the first line starts that much before the text column, so
+    /// revealing a list item or a quote never moves its words.
+    public func paragraphStyle(
+        for kind: BlockKind, hidingMarkers hidden: Bool = false, revealedMarkerWidth: CGFloat = 0
+    ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = metrics.lineHeightMultiple
         style.paragraphSpacing = metrics.paragraphSpacing
@@ -227,17 +244,23 @@ public struct LayoutAttributeStyler: Equatable {
             style.minimumLineHeight = metrics.collapsedLineHeight
         case .blockquote(let depth):
             let indent = metrics.quoteIndent * CGFloat(max(1, depth))
-            style.firstLineHeadIndent = indent
+            style.firstLineHeadIndent = max(0, indent - revealedMarkerWidth)
             style.headIndent = indent
             style.paragraphSpacing = 0
             style.minimumLineHeight = metrics.collapsedLineHeight
         case .listItem(let ordered, let indent, _):
             let step = metrics.listIndent
-            // A hidden marker takes no width, so the first line must start
-            // where the wrapped lines hang; the fragment paints the bullet
-            // or the checkbox in the gutter that leaves.
-            style.firstLineHeadIndent = step * CGFloat(hidden && !ordered ? indent + 1 : indent)
-            style.headIndent = step * CGFloat(indent + 1)
+            // A hidden marker takes no width, so the first line starts where
+            // the wrapped lines hang and the fragment paints the bullet or
+            // the checkbox in the gutter that leaves. A revealed marker hangs
+            // in that same gutter.
+            let textColumn = step * CGFloat(indent + 1)
+            if ordered {
+                style.firstLineHeadIndent = step * CGFloat(indent)
+            } else {
+                style.firstLineHeadIndent = hidden ? textColumn : max(step * CGFloat(indent), textColumn - revealedMarkerWidth)
+            }
+            style.headIndent = textColumn
             style.paragraphSpacing = 0
             style.minimumLineHeight = metrics.collapsedLineHeight
         case .fencedCode, .fenceDelimiter:

@@ -677,6 +677,16 @@ extension EditorViewController: UIGestureRecognizerDelegate {
         return isBlankSpace(at: touch.location(in: textView))
     }
 
+    /// Runs beside the text view's own taps. A second recogniser that waits
+    /// to fail takes caret placement away from a single tap (measured on
+    /// iOS 26.2; `TaskMarkerTapGate` carries the same rule).
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
     /// Whether `point` (in the text view's own coordinate space) falls
     /// outside every line of text: past the last line fragment's bottom, or
     /// on a fragment the tap does not actually resolve into.

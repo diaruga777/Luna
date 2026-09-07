@@ -242,6 +242,21 @@ public final class SavesStore {
         return result
     }
 
+    /// Inserts a NEW pending save for `urlString` even when the list already
+    /// holds one for it. `add` and `reserveSaveAttempt` both answer the existing
+    /// row for a repeated URL; a transcription of a video Luna already stores is
+    /// a second save of the same link, so it needs a row of its own.
+    @discardableResult
+    public func addSeparate(urlString: String, source: CaptureSource) -> SavedItem {
+        var item = SavedItem(urlString: urlString)
+        item.captureSource = source
+        let inserted: SavedItem? = write { db in
+            try self.insertAtFront([item], in: db)
+            return item
+        }
+        return inserted ?? item
+    }
+
     @discardableResult
     public func add(urlString: String, source: CaptureSource = .manual) -> SavedItem {
         var item = SavedItem(urlString: urlString)

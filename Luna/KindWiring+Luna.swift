@@ -83,6 +83,7 @@ enum KindWiring {
         ArticleShellWiring.install()
         MediaShellWiring.install()
         ProductShellWiring.install()
+        TranscriptionShellWiring.install()
         // A Luna email carrying a price tracker shows its graph as an image —
         // the one seam that needs an article-app capability (email) and a
         // product-app one (the graph) at once, so it belongs to neither leg.
@@ -331,6 +332,7 @@ enum KindWiring {
         MediaShellWiring.appDidLaunch()
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ProductShellWiring.appDidLaunch()
+        TranscriptionShellWiring.appDidLaunch()
         // Xteink is a bundled PLUGIN in this app: `xteink.js` owns the
         // rendezvous sweep, the transfer and the settings screen, and its
         // `luna.bluetooth` center opens the standing connect a short wake
@@ -352,10 +354,12 @@ enum KindWiring {
         ArticleShellWiring.sceneDidForeground()
         drainPendingPluginModels(returningToSource: false)
         PluginTransportComposition.sceneDidForeground()
+        TranscriptionShellWiring.sceneDidForeground()
     }
 
     static func savesDidChange() {
         MediaShellWiring.savesDidChange()
+        TranscriptionShellWiring.savesDidChange()
     }
 
     static func wifiBecameAvailable() {

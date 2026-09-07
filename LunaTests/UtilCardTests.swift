@@ -1518,6 +1518,13 @@ final class FakeUtilCardEnvironment: UtilCardDataSource, UtilCardDelegate {
         completion(saveSucceeds)
     }
 
+    func utilCardTranscribe(
+        urlString: String, sourceView: UIView, completion: @escaping (Bool) -> Void
+    ) {
+        savedURL = urlString
+        completion(saveSucceeds)
+    }
+
     func utilCardOpenSystemSettings() { openedSystemSettings += 1 }
 }
 

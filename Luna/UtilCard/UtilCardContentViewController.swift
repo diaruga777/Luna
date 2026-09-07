@@ -113,6 +113,15 @@ protocol UtilCardDelegate: AnyObject {
         sourceView: UIView,
         completion: @escaping (Bool) -> Void)
 
+    /// Saves `urlString` as a NEW save with the transcribe intent, so a
+    /// transcript plugin claims it instead of the media plugin
+    /// (`TranscribeSaveAction`). Offered only where `TranscribeSaveAction
+    /// .isOffered` is true.
+    func utilCardTranscribe(
+        urlString: String,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void)
+
     /// The only way back to a Photos permission the user has already refused,
     /// since iOS will not prompt twice.
     func utilCardOpenSystemSettings()
@@ -265,6 +274,9 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         view.addSubview(weeklyHost)
         view.addSubview(pasteRow)
+        if TranscribeSaveAction.isOffered {
+            pasteRow.addInteraction(UIContextMenuInteraction(delegate: self))
+        }
 
         weeklyHost.delegate = self
         weeklyAppearanceDeferred = animatesIntro
@@ -1514,5 +1526,48 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
             cornerRadius: max(0, corner - 0.5)).cgPath
         highlight.strokeColor = (rimTint ?? GlassStyle.glassBorderColor)
             .resolvedColor(with: traitCollection).cgColor
+    }
+}
+
+// MARK: - Paste & Transcribe
+
+/// A long press on the paste row offers the one alternative to a plain
+/// paste: transcribing the pasted link instead of storing its video. The
+/// action reads the pasteboard itself, so iOS asks the paste permission it
+/// asks for any read the user did not make through a paste control.
+extension UtilCardContentViewController: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard TranscribeSaveAction.isOffered else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [
+                UIAction(
+                    title: L10n.string("Transcribe_pasteAndTranscribe"),
+                    image: UIImage(systemName: "text.quote")
+                ) { _ in self?.transcribePasteboard() },
+            ])
+        }
+    }
+
+    private func transcribePasteboard() {
+        let pasteboard = UIPasteboard.general
+        guard let value = pasteboard.url?.absoluteString ?? pasteboard.string else {
+            pasteRow.setState(.failure(L10n.string("Onboarding_Util_invalidURL")))
+            return
+        }
+        pasteRow.showPastedValue(value)
+        guard let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true) else {
+            pasteRow.setState(.failure(L10n.string("Onboarding_Util_invalidURL")))
+            return
+        }
+        pasteRow.setState(.loading)
+        delegate?.utilCardTranscribe(
+            urlString: url.absoluteString, sourceView: pasteRow
+        ) { [weak self] succeeded in
+            self?.pasteRow.setState(
+                succeeded ? .success : .failure(L10n.string("Onboarding_Util_unableToSaveURL")))
+        }
     }
 }

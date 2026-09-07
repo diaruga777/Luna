@@ -284,7 +284,7 @@ final class MediaCardPresenter: CardKindPresenting {
     func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
         guard let media = media(for: item) else { return [] }
         let anchor = host.cardView(forItemID: item.id)
-        return MediaItemActions.menuActions(
+        var actions = MediaItemActions.menuActions(
             for: media,
             download: { MediaItemActions.startManualDownload(media) },
             share: { [weak self, weak host] in
@@ -296,6 +296,21 @@ final class MediaCardPresenter: CardKindPresenting {
                 MediaItemActions.saveToPhotos(
                     media, saver: self.photoSaver, from: host.presentingController)
             })
+        // A transcript is a SECOND save of the same link, read in the reader;
+        // the media row is untouched (`TranscribeSaveAction`).
+        if TranscribeSaveAction.isOffered {
+            let urlString = item.urlString
+            actions.append(UIAction(
+                title: L10n.string("Transcribe_cardAction"),
+                image: UIImage(systemName: "text.quote")
+            ) { [weak host] _ in
+                Task { @MainActor in
+                    _ = await TranscribeSaveAction.start(urlString: urlString, source: .manual)
+                    host?.reloadDeck()
+                }
+            })
+        }
+        return actions
     }
 
     /// The ladder the deck's trailing circle hangs on this row: Copy link and

@@ -251,7 +251,7 @@ final class KindDeckProvider: CardDeckProviding {
         // shares one metadata-free state. In particular, don't construct an
         // article card whose fallback header would briefly say "Untitled" and
         // show a globe before this URL turns out to be a product or media save.
-        guard item.state != .pending else { return PendingSaveCardContentViewController() }
+        guard item.state != .pending else { return PendingSaveCardContentViewController(itemID: item.id) }
         guard let presenter = presenter(for: item) else {
             // A save that FAILED gets the shared error card instead of an empty
             // one with a one-line apology: the page itself in a near-full-bleed

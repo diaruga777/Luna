@@ -895,6 +895,31 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
             case .unsupportedKind:
                 item = nil
             }
+            self.settleUtilCardSave(item: item, urlString: urlString, completion: completion)
+        }
+    }
+
+    /// The transcribe variant of `saveUtilCardURL`: a separate save, ingested
+    /// with the transcribe intent (`TranscribeSaveAction`).
+    private func transcribeUtilCardURL(
+        _ urlString: String,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        beginUtilCardSaveTransition(for: urlString, from: sourceView)
+        Task { @MainActor [weak self] in
+            let item = await TranscribeSaveAction.start(urlString: urlString, source: .paste)
+            guard let self else { return }
+            self.settleUtilCardSave(item: item, urlString: urlString, completion: completion)
+        }
+    }
+
+    /// Lands the util card's save transition on the new card, or cancels it
+    /// when the save produced no item.
+    private func settleUtilCardSave(
+        item: SavedItem?, urlString: String, completion: @escaping (Bool) -> Void
+    ) {
+        do {
             guard let item else {
                 self.cancelUtilCardSaveTransition()
                 completion(false)
@@ -1526,5 +1551,13 @@ extension CardCarouselHostViewController: UtilCardDelegate {
     ) {
         saveUtilCardURL(
             urlString, source: source, sourceView: sourceView, completion: completion)
+    }
+
+    func utilCardTranscribe(
+        urlString: String,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        transcribeUtilCardURL(urlString, sourceView: sourceView, completion: completion)
     }
 }

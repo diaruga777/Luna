@@ -619,6 +619,12 @@ final class StageUtilCardEnvironment: UtilCardDataSource, UtilCardDelegate {
         completion(true)
     }
 
+    func utilCardTranscribe(
+        urlString: String, sourceView: UIView, completion: @escaping (Bool) -> Void
+    ) {
+        completion(true)
+    }
+
     func utilCardOpenSystemSettings() {}
 }
 

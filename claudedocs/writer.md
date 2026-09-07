@@ -417,4 +417,14 @@ text view's typing attributes from the styler's body attributes, so the
 caret is body-sized before the first keystroke. The read-along chip hides
 with the header. When the app returns to the foreground with the keyboard
 recorded as up, `LibraryRootViewController.refocusEditorIfNeeded()` raises
-it again at once (`WriterSceneDelegate.sceneDidBecomeActive`).
+it again at once (`WriterSceneDelegate.sceneWillEnterForeground`, and again
+in `sceneDidBecomeActive` as a fallback). The keyboard state is captured the
+instant the scene resigns active and recording is suspended until it is
+active again: the system takes the keyboard down on the way to the app
+switcher, and a force quit follows with no further hook. **Before the first
+frame**: the page is restored in the root's `viewWillAppear` and the editor
+asks for the keyboard in its own `viewWillAppear`, so the keyboard is drawn
+with the first frame instead of sliding up after it (`viewDidAppear` stays
+as the fallback for a view that had no window yet). iOS offers no way to
+disable the keyboard's own slide; requesting focus before the first render
+is what makes it instant.

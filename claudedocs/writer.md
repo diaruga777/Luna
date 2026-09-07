@@ -259,7 +259,10 @@ lives on the storage, not on the styler, so `processEditing`'s rescan
 restyles a line with the same reveal the caret last set and
 `LayoutAttributeStyler` stays `Equatable` on metrics and font alone.
 `MarkupLayer` greys only revealed markers; a collapsed one is invisible
-and gets no colour.
+and gets no colour. A revealed list item or quote hangs its marker in the
+gutter — `LayoutAttributeStyler.paragraphStyle(for:hidingMarkers:
+revealedMarkerWidth:)` pulls the first line back by the marker's width —
+so revealing a line never moves its words.
 
 **Where decorations are painted**: `WriterTextLayoutFragment`, an
 `NSTextLayoutFragment` subclass installed through
@@ -365,7 +368,10 @@ to `EditorContainerViewController.setChromeHidden(_:animated:)`. The editor
 fires the cue from `textViewDidBeginEditing`/`textViewDidEndEditing` (focus
 hides, losing it shows), from `scrollViewDidScroll` on arrival at the top
 (`contentOffset.y <= -adjustedContentInset.top + 1`, fired once per arrival
-rather than every frame spent there), and from a two-tap
+rather than every frame spent there, and only while the scroll view is
+tracking, dragging or decelerating — the keyboard rising and a caret
+restore move the offset through the top too, and neither is a request to
+see the header), and from a two-tap
 `UITapGestureRecognizer` on the text view that only claims a touch on blank
 space — `EditorViewController.isBlankSpace(at:)` asks
 `NSTextLayoutManager.textLayoutFragment(for:)` for the fragment under the

@@ -104,6 +104,13 @@ final class WriterFlowUITests: XCTestCase {
                 XCUIDevice.shared.press(.home)
                 Thread.sleep(forTimeInterval: 1)
                 app.activate()
+            case "relaunch":
+                // A force quit from the switcher: home, then the process is
+                // killed, then a cold launch.
+                XCUIDevice.shared.press(.home)
+                Thread.sleep(forTimeInterval: 1)
+                app.terminate()
+                app.launch()
             default:
                 XCTFail("unknown command \(command)")
             }

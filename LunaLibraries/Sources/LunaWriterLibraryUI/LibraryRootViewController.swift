@@ -189,6 +189,7 @@ public final class LibraryRootViewController: UISplitViewController {
     /// the background, where an editor that has not autosaved since the last
     /// caret move would otherwise leave a stale caret behind.
     public func recordSessionState() {
+        guard !isRecordingSuspended else { return }
         var snapshot = WriterSessionState.Snapshot(
             documentID: currentContainer?.document.id, selection: currentSelection.storedValue)
         if let container = currentContainer {
@@ -197,6 +198,24 @@ public final class LibraryRootViewController: UISplitViewController {
             snapshot.keyboardVisible = state.isKeyboardVisible
         }
         environment.sessionState.snapshot = snapshot
+    }
+
+    /// Whether editing-state reports are being ignored. Set while the scene is
+    /// inactive: the system takes the keyboard down on the way to the app
+    /// switcher and to the background, and those resignations would
+    /// otherwise overwrite the state the writer actually left.
+    private var isRecordingSuspended = false
+
+    /// The scene is resigning active: the page is written once, as it stands
+    /// this instant, and nothing the system does after that changes it.
+    public func suspendRecording() {
+        recordSessionState()
+        isRecordingSuspended = true
+    }
+
+    /// The scene is active again: reports count once more.
+    public func resumeRecording() {
+        isRecordingSuspended = false
     }
 
     /// Raises the keyboard again on the open sheet when the last snapshot
@@ -405,6 +424,7 @@ extension LibraryRootViewController: EditorEditingStateObserving {
     public func editorContainer(
         _ container: EditorContainerViewController, didChangeEditingState state: EditorEditingState
     ) {
+        guard !isRecordingSuspended else { return }
         environment.sessionState.recordEditingState(state, for: container.document.id)
     }
 }

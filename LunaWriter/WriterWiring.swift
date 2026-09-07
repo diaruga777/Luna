@@ -50,7 +50,13 @@ import LunaWriterVoice
 
     static func applicationDidEnterBackground() {
         openSessions.flushAll()
-        root?.recordSessionState()
+    }
+
+    /// The last moment the keyboard is where the writer left it: the app
+    /// switcher and a force quit both take it down after this.
+    static func sceneWillResignActive() {
+        root?.suspendRecording()
+        openSessions.flushAll()
     }
 
     /// A folder change made while suspended (an iCloud sync, another
@@ -63,6 +69,7 @@ import LunaWriterVoice
 
     /// The writer left with the keyboard up and comes back to it up.
     static func sceneDidBecomeActive() {
+        root?.resumeRecording()
         root?.refocusEditorIfNeeded()
     }
 

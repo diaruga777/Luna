@@ -69,6 +69,25 @@ final class SaveFailureReasonTests: XCTestCase {
         XCTAssertFalse(SaveFailureReason.httpStatus(404).isWorthRetrying)
         XCTAssertFalse(SaveFailureReason.notReadable.isWorthRetrying)
         XCTAssertFalse(SaveFailureReason.noMediaFound.isWorthRetrying)
+        XCTAssertFalse(SaveFailureReason.noTranscriptSource.isWorthRetrying)
+        XCTAssertFalse(SaveFailureReason.transcriptionFailed("x").isWorthRetrying)
+    }
+
+    /// A recording that would not transcribe has no page for the LLM rescue to
+    /// read, so — like a listing page — it never spends the version's attempt.
+    func testTranscriptionFailuresAreNeverRescued() {
+        XCTAssertFalse(SaveFailureReason.noTranscriptSource.isWorthRescuing)
+        XCTAssertFalse(SaveFailureReason.transcriptionFailed("x").isWorthRescuing)
+        XCTAssertTrue(SaveFailureReason.httpStatus(403).isWorthRescuing)
+    }
+
+    /// The runner localizes the detail itself, so the card shows it verbatim.
+    func testATranscriptionFailureHeadlineIsTheRunnersDetail() {
+        XCTAssertEqual(
+            SaveFailureReason.transcriptionFailed("The recording has no audio track").headline,
+            "The recording has no audio track")
+        XCTAssertFalse(SaveFailureReason.noTranscriptSource.headline.isEmpty)
+        XCTAssertNil(SaveFailureReason.noTranscriptSource.suggestion)
     }
 
 }

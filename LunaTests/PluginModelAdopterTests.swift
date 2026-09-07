@@ -117,6 +117,53 @@ final class PluginModelAdopterTests: XCTestCase {
         XCTAssertEqual(content.blocks.first?.imageURLString, "https://example.com/hero.jpg")
     }
 
+    /// A recording is handed back as a request, not fetched: the runner does the
+    /// work later. The Model's html becomes the lead the transcript follows.
+    func testATranscriptionModelBecomesARequestWithTheHTMLAsLead() async {
+        let expiry = Date(timeIntervalSince1970: 1_800_000_000)
+        let model = ArticleModel(
+            title: "A talk", author: "Someone",
+            html: "<p>The description.</p>",
+            leadImageURL: URL(string: "https://example.com/poster.jpg")!,
+            language: "en",
+            transcription: ArticleTranscriptionSpec(
+                url: URL(string: "https://cdn.example.com/v.mp4")!, type: .video,
+                audioURL: URL(string: "https://cdn.example.com/a.m4a")!,
+                headers: ["Referer": "https://example.com/"], expiresAt: expiry))
+
+        guard case let .transcription(request) = await ArticleModelAdopter().adopt(
+            model, url: url, page: .none, pluginID: "app.luna.yt.transcript")
+        else { return XCTFail("expected .transcription") }
+
+        XCTAssertEqual(request.mediaURL.absoluteString, "https://cdn.example.com/v.mp4")
+        XCTAssertEqual(request.mediaKind, .video)
+        XCTAssertEqual(request.audioURL?.absoluteString, "https://cdn.example.com/a.m4a")
+        XCTAssertEqual(request.fetchURL, request.audioURL, "the audio leg is what gets fetched")
+        XCTAssertEqual(request.requestHeaders["Referer"], "https://example.com/")
+        XCTAssertEqual(request.expiresAt, expiry)
+        XCTAssertEqual(request.language, "en")
+        XCTAssertEqual(request.title, "A talk")
+        XCTAssertEqual(request.author, "Someone")
+        XCTAssertEqual(request.pluginID, "app.luna.yt.transcript")
+        let lead = request.leadContent
+        XCTAssertEqual(lead?.blocks.first?.kind, .image)
+        XCTAssertEqual(lead?.blocks.first?.imageURLString, "https://example.com/poster.jpg")
+        XCTAssertTrue(lead?.blocks.last?.text.contains("The description.") ?? false)
+    }
+
+    func testATranscriptionModelWithNoHTMLHasNoLead() async {
+        let model = ArticleModel(
+            title: "A talk", html: "   ",
+            transcription: ArticleTranscriptionSpec(
+                url: URL(string: "https://cdn.example.com/a.m4a")!, type: .audio))
+        guard case let .transcription(request) = await ArticleModelAdopter().adopt(
+            model, url: url, page: .none, pluginID: "p")
+        else { return XCTFail("expected .transcription") }
+        XCTAssertNil(request.leadContent)
+        XCTAssertEqual(request.mediaKind, .audio)
+        XCTAssertNil(request.audioURL)
+    }
+
     func testAnEmptyFragmentFails() async {
         let model = ArticleModel(title: "T", html: "   ")
         guard case let .failed(reason) = await ArticleModelAdopter().adopt(

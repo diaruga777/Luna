@@ -74,6 +74,35 @@ final class PluginModelDecodingTests: XCTestCase {
         XCTAssertEqual(article.document?.headers["user-agent"], "Luna")
     }
 
+    func testArticleModelDecodesATranscriptionWithoutHTML() throws {
+        let model = try decode("""
+            {"kind":"article","title":"A talk","author":"Someone","language":"en-AU",
+             "transcription":{"url":"https://cdn.example/v.mp4","type":"video",
+                              "audioURL":"https://cdn.example/a.m4a","expiresAt":1700000000,
+                              "headers":{"Referer":"https://example.com"}}}
+            """)
+        guard case .article(let article) = model else { return XCTFail("expected an article Model") }
+        XCTAssertEqual(article.html, "", "a recording stands in for the body")
+        let spec = try XCTUnwrap(article.transcription)
+        XCTAssertEqual(spec.type, .video)
+        XCTAssertEqual(spec.url.absoluteString, "https://cdn.example/v.mp4")
+        XCTAssertEqual(spec.audioURL?.absoluteString, "https://cdn.example/a.m4a")
+        XCTAssertEqual(spec.expiresAt, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(spec.headers["Referer"], "https://example.com")
+        XCTAssertEqual(article.language, "en-AU")
+    }
+
+    func testArticleModelKeepsHTMLBesideATranscription() throws {
+        let model = try decode("""
+            {"kind":"article","title":"A talk","html":"<p>Description</p>",
+             "transcription":{"url":"/a.m4a","type":"audio"}}
+            """)
+        guard case .article(let article) = model else { return XCTFail("expected an article Model") }
+        XCTAssertEqual(article.html, "<p>Description</p>")
+        XCTAssertEqual(article.transcription?.url.absoluteString, "/a.m4a",
+                       "a relative recording URL is kept for the stage to resolve")
+    }
+
     func testProductModelKeepsTheExactDecimalAndItsSellers() throws {
         let model = try decode("""
             {"kind":"product","name":"Kettle","price":{"amount":"129.95","currency":"AUD"},
@@ -107,6 +136,38 @@ final class PluginModelDecodingTests: XCTestCase {
         XCTAssertEqual(
             error(#"{"kind":"media","assets":[{"type":"video"}]}"#),
             .missingField("assets[].url"))
+    }
+
+    func testTranscriptionRefusesAnUnknownTypeAndAMissingURL() {
+        XCTAssertEqual(
+            error(#"{"kind":"article","title":"t","transcription":{"url":"https://c.example/a","type":"pdf"}}"#),
+            .unknownKind("pdf"))
+        XCTAssertEqual(
+            error(#"{"kind":"article","title":"t","transcription":{"type":"audio"}}"#),
+            .missingField("transcription.url"))
+        XCTAssertEqual(
+            error(#"{"kind":"article","title":"t","transcription":{"url":"https://c.example/a"}}"#),
+            .missingField("transcription.type"))
+    }
+
+    func testTranscriptionHeadersFollowTheAllowlist() {
+        XCTAssertEqual(
+            error("""
+                {"kind":"article","title":"t","transcription":{"url":"https://c.example/a",
+                 "type":"audio","headers":{"Authorization":"Bearer x"}}}
+                """),
+            .disallowedHeader("Authorization"))
+    }
+
+    /// Two fields that each supply the whole body cannot both be present.
+    func testADocumentAndATranscriptionTogetherAreRefused() {
+        XCTAssertEqual(
+            error("""
+                {"kind":"article","title":"t","html":"<p>x</p>",
+                 "document":{"url":"https://c.example/a.pdf","type":"pdf"},
+                 "transcription":{"url":"https://c.example/a.m4a","type":"audio"}}
+                """),
+            .conflictingFields("document", "transcription"))
     }
 
     func testNonHTTPURLSchemeIsRefused() {

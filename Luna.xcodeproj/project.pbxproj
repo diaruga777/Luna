@@ -365,6 +365,8 @@
 		F7000000000000000000000B /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		F7000000000000000000000C /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		F765D4E8850BE72809FC5760 /* LunaPriceCompare in Frameworks */ = {isa = PBXBuildFile; productRef = 3A730A61461C658DA1DA02E5 /* LunaPriceCompare */; };
+		7C0000000000000000000B01 /* LunaTranscribe in Frameworks */ = {isa = PBXBuildFile; productRef = 7C0000000000000000000A01 /* LunaTranscribe */; };
+		7C0000000000000000000B02 /* LunaTranscribe in Frameworks */ = {isa = PBXBuildFile; productRef = 7C0000000000000000000A02 /* LunaTranscribe */; };
 		F9EE5F8EFCB17C42CF162DC7 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		FC3B05B51F7C576146ECF6CD /* LunaSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LunaSocial */; };
 		FC97FE4E8E8CC2C0B46CE853 /* LunaPriceIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 0A5E4DC54DD727092F10D7B7 /* LunaPriceIngest */; };
@@ -1150,6 +1152,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C0000000000000000000B01 /* LunaTranscribe in Frameworks */,
 				5C5700000000000000000042 /* LunaGaze in Frameworks */,
 				C1W0000000000000000000011 /* LunaWeekly in Frameworks */,
 				C086E1ECBF38A717F497A0F1 /* SwiftSoup in Frameworks */,
@@ -1401,6 +1404,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C0000000000000000000B02 /* LunaTranscribe in Frameworks */,
 				C1W0000000000000000000015 /* LunaWeekly in Frameworks */,
 				7A70000000000000000000B2 /* LunaVaultTailscale in Frameworks */,
 				79E9F2763000949300329B57 /* LunaAudioPlayback in Frameworks */,
@@ -2354,6 +2358,7 @@
 			);
 			name = LunaTests;
 			packageProductDependencies = (
+				7C0000000000000000000A02 /* LunaTranscribe */,
 				C1W0000000000000000000001 /* LunaWeekly */,
 				7A70000000000000000000C2 /* LunaVaultTailscale */,
 				C100000000000000000000016 /* LunaModels */,
@@ -2576,6 +2581,7 @@
 			);
 			name = Luna;
 			packageProductDependencies = (
+				7C0000000000000000000A01 /* LunaTranscribe */,
 				5C5700000000000000000041 /* LunaGaze */,
 				C1W0000000000000000000001 /* LunaWeekly */,
 				AA0300000000000000000002 /* SwiftSoup */,
@@ -6134,6 +6140,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
+		};
+		7C0000000000000000000A01 /* LunaTranscribe */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaTranscribe;
+		};
+		7C0000000000000000000A02 /* LunaTranscribe */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaTranscribe;
 		};
 		F58AF0A41218472B40C8B60E /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;

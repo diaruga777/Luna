@@ -53,6 +53,7 @@ let package = Package(
         .library(name: "LunaPluginTransport", targets: ["LunaPluginTransport"]),
         .library(name: "LunaPluginUI", targets: ["LunaPluginUI"]),
         .library(name: "LunaBundledPlugins", targets: ["LunaBundledPlugins"]),
+        .library(name: "LunaTranscribe", targets: ["LunaTranscribe"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
@@ -237,6 +238,10 @@ let package = Package(
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
         .target(name: "LunaSaves", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
+        // On-device transcription of a plugin's recording into a reader
+        // article (claudedocs/plans/transcription-plugins.md §5). Linked by the
+        // central Luna app and LunaTests only; AVFoundation + Speech, no UIKit.
+        .target(name: "LunaTranscribe", dependencies: ["LunaModels", "LunaStorage", "LunaAppConfig", "LunaSaves"]),
         // The plugin platform (claudedocs/plans/plugin-platform.md §2.2). One
         // JavaScript file extends ingest and export; render stays native. Only
         // the CENTRAL Luna app and its extensions link any of this — the three

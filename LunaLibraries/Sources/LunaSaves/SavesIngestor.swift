@@ -100,7 +100,13 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     ) {
         self.store = store
         self.surfaceGate = surfaceGate
+        self.transcriptions = TranscriptionJobStore(saves: store)
     }
+
+    /// The transcription job rows over this ingestor's store. A save with a row
+    /// belongs to the transcription runner, and this ingestor never re-walks it
+    /// (`claudedocs/plans/transcription-plugins.md` decision 3).
+    private let transcriptions: TranscriptionJobStore
 
     /// IDs currently being ingested, to avoid duplicate concurrent work.
     private var inFlight = Set<UUID>()
@@ -136,8 +142,12 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     @discardableResult
     public func ingest(_ item: SavedItem, forceArticle: Bool = false,
                        page: CapturedPage = .none,
-                       allowsInteractivePrompt: Bool = true) async -> SurfaceSupport.Decision {
+                       allowsInteractivePrompt: Bool = true,
+                       intent: IngestIntent? = nil) async -> SurfaceSupport.Decision {
         guard item.state != .ready, let initialURL = item.url else { return .supported }
+        // A queued transcription is the runner's. Re-walking it would queue a
+        // second job, or hand a failed article attempt to a media plugin.
+        guard !transcriptions.hasJob(saveID: item.id) else { return .supported }
 
         let alreadyRunning = lock.withLock {
             let running = inFlight.contains(item.id)
@@ -160,6 +170,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
         recorder.record(
             "ingest: begin \(SaveDiagnostics.url(url)) source=\(item.effectiveCaptureSource.rawValue)"
                 + (forceArticle ? " forceArticle" : "")
+                + (intent.map { " intent=\($0.rawValue)" } ?? "")
                 + (page.html.map { " prefetchedHTML=\($0.count)ch" } ?? ""),
             category: "ingest")
 
@@ -170,7 +181,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
             await IngestPipeline.processResolved(
                 IngestInput(url: url, source: item.effectiveCaptureSource,
                             documentType: item.sanitizedDocumentType,
-                            page: page, forceArticle: forceArticle),
+                            page: page, forceArticle: forceArticle, intent: intent),
                 fetcher: fetcher)
         }
 
@@ -396,6 +407,19 @@ public final class SavesIngestor: PluginLockedSaveResuming {
         store.markNeedsCaptcha(item.id, title: title)
     }
 
+    /// Parks a save whose plugin handed over a recording. The save stays
+    /// `.pending` under the recording's title; the job row hands it to the
+    /// central app's transcription runner, and `ingest` leaves it alone from
+    /// here on.
+    fileprivate func parkTranscription(_ request: TranscriptionRequest, for item: SavedItem) async {
+        store.setPendingTitle(item.id, title: request.title)
+        transcriptions.enqueue(saveID: item.id, request: request)
+        SaveDiagnostics.record(
+            "transcription: queued by plugin \(request.pluginID) "
+                + "(\(request.mediaKind.rawValue), audio leg: \(request.audioURL == nil ? "no" : "yes"))",
+            category: "transcription")
+    }
+
     /// Parks a save whose plugin needs a browser this process cannot present.
     /// The row lands in the same `.needsCaptcha` lock the archive path uses, so
     /// every deck and both extensions already draw it; the plugin id is what
@@ -506,7 +530,13 @@ public final class SavesIngestor: PluginLockedSaveResuming {
             // leftovers are discarded silently, while email/friend-share
             // items stay exempt.
             let items = self.store.items()
-            for item in items where item.state == .pending || item.state == .failed {
+            // A save with a transcription job is finished by the runner, not by
+            // a re-walk: re-ingesting it would queue a second job, and a failed
+            // one would lose its transcribe intent to a media plugin.
+            let transcribing = self.transcriptions.saveIDsWithJobs()
+            for item in items
+            where (item.state == .pending || item.state == .failed)
+                && !transcribing.contains(item.id) {
                 Task { await self.ingest(item, allowsInteractivePrompt: false) }
             }
             // The sweep already holds the whole list, which is the one thing
@@ -850,6 +880,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.handleDocument(type: type, for: item)
         case let .needsArchive(title):
             await ingestor.parkNeedsArchive(title: title, for: item)
+        case let .transcription(request):
+            await ingestor.parkTranscription(request, for: item)
         case let .failed(reason):
             await ingestor.markFailed(for: item, reason: reason)
         case let .unsupported(owner):

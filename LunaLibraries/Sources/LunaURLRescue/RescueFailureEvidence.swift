@@ -204,6 +204,10 @@ enum RescueFailureEvidence {
             return "the content was read but could not be stored"
         case .subscribeRedirect:
             return "the site redirected the article request to its own subscribe/sign-in page, so the article was never served"
+        case .noTranscriptSource:
+            return "a transcript was asked for, but no plugin found captions or a recording to transcribe"
+        case let .transcriptionFailed(detail):
+            return "the recording could not be transcribed: \(detail)"
         case .unknown:
             return fallbackSentence(kind)
         }

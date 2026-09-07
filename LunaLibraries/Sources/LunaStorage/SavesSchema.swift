@@ -86,6 +86,9 @@ enum SavesSchema {
                 where try !hasColumn(column, in: table, of: database) {
                     try database.execute("ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
                 }
+                // Version 14 adds the `transcriptions` table. It is a new table
+                // with no column changes elsewhere, so CREATE TABLE above covers
+                // a fresh file and an existing one alike.
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
                 // retirement. Preserve that fact before a reaper clears it.
@@ -621,6 +624,24 @@ enum SavesSchema {
             return_to_source_until REAL
         ) WITHOUT ROWID;
 
+        -- A recording a plugin handed over to transcribe, and where its job is
+        -- (`claudedocs/plans/transcription-plugins.md` §4). One row per save,
+        -- cascading with it. `status` is queued | downloading | transcribing |
+        -- done | failed, raw text with no CHECK: an unknown value reads as
+        -- failed in Swift. `request_json` is the `TranscriptionRequest`.
+        -- `scratch_path` names the downloaded file while one exists, so a
+        -- launch sweep can tell a live file from an orphan.
+        CREATE TABLE IF NOT EXISTS transcriptions (
+            save_id      TEXT    PRIMARY KEY NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            status       TEXT    NOT NULL,
+            request_json TEXT    NOT NULL,
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            failure      TEXT,
+            scratch_path TEXT,
+            created_at   REAL    NOT NULL,
+            updated_at   REAL    NOT NULL
+        ) WITHOUT ROWID;
+
         -- Files whose last holder is gone, waiting to be unlinked. A file system
         -- cannot join a transaction, so the COMMIT records the intent and
         -- `PendingDeleteReaper` does the unlink afterwards; a process killed in
@@ -713,6 +734,10 @@ enum SavesSchema {
             ON plugin_collections(plugin_id, collection, k1);
         CREATE INDEX IF NOT EXISTS plugin_collections_k2
             ON plugin_collections(plugin_id, collection, k2);
+
+        -- `TranscriptionJobStore.nextRunnable` and `liveScratchPaths`: the
+        -- runner asks for the rows in a few states, never for every row.
+        CREATE INDEX IF NOT EXISTS transcriptions_status ON transcriptions(status);
         """
 
     /// The invariant no Swift caller can be trusted with: **a `files` row never

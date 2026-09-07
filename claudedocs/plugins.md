@@ -310,6 +310,14 @@ refused at decode time. Request headers on a `MediaAssetSpec` or
   fetches and imports the file like a shared document; otherwise the
   `html` fragment is adopted directly (`ArticleExtractor.convertTrusted`,
   skipping readability scoring — the plugin already chose the body).
+  A third body source, `transcription` (`ArticleTranscriptionSpec`: `url`,
+  `type: "audio" | "video"`, `audioURL?`, `headers?`, `expiresAt?`), makes
+  `html` optional and is refused beside `document`. The adopter answers
+  `.transcription(TranscriptionRequest)` without fetching anything; the
+  save parks `.pending` with a `transcriptions` row and the central app's
+  runner downloads, transcribes and persists the article later
+  (`claudedocs/plans/transcription-plugins.md`). Non-empty `html` beside
+  it becomes the lead the transcript follows.
 - **`ProductModel`** → `ProductModelAdopting` in LunaPriceIngest, via
   `PluginProductInfoBuilder.make(from:imageURL:)`
   (`LunaLibraries/Sources/LunaPluginIngest/PluginProductInfoBuilder.swift`).

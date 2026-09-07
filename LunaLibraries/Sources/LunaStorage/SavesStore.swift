@@ -96,6 +96,14 @@ public final class SavesStore {
         return dir
     }
 
+    /// Where a transcription job's downloaded recording lives while the job
+    /// runs (`claudedocs/plans/transcription-plugins.md` §4.3). The runner
+    /// unlinks the file; `TranscriptionScratchSweep` removes what a killed
+    /// process left.
+    public var transcriptionScratchDirectoryURL: URL {
+        containerURL.appendingPathComponent("Transcriptions", isDirectory: true)
+    }
+
     /// Original page artifacts are deliberately separate from parsed article JSON
     /// and downloaded reader images. A `.webarchive` is immutable source material;
     /// the reader must never regenerate it from `ArticleContent`.
@@ -1061,6 +1069,19 @@ public final class SavesStore {
         return saved
     }
 
+    /// Titles a save that is still waiting for its content, so a parked row
+    /// reads as the thing it will become rather than as its URL. A readable
+    /// item keeps the title its content gave it.
+    public func setPendingTitle(_ itemID: UUID, title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        updateItem(itemID) { item in
+            guard item.state != .ready, item.title != trimmed else { return false }
+            item.title = trimmed
+            return true
+        }
+    }
+
     /// Marks a hard-paywalled article as needing a user-solved archive CAPTCHA: it
     /// lands in the list (with its real title) in the `.needsCaptcha` state, shown
     /// with a "tap to unlock" affordance. Tapping opens the archive.today snapshot in
@@ -1356,11 +1377,13 @@ public final class SavesStore {
         }
     }
 
-    /// A transaction over one of the plugin sidecar tables
-    /// (`plugin_browser_requests`, `pending_plugin_models`). Like the
-    /// file-ownership transaction it posts NO change notification and leaves the
-    /// item cache alone: no deck reads these rows. It exists so the plugin
-    /// stores share this process's ONE connection rather than opening a second.
+    /// A transaction over one of the sidecar tables
+    /// (`plugin_browser_requests`, `pending_plugin_models`, `transcriptions`).
+    /// Like the file-ownership transaction it posts NO change notification and
+    /// leaves the item cache alone: no deck reads these rows as list items. It
+    /// exists so the sidecar stores share this process's ONE connection rather
+    /// than opening a second. A store whose rows drive a card's status line
+    /// follows its write with `notifySidecarChanged()`.
     func pluginSidecar<T>(_ body: (SavesDatabase) throws -> T) -> T? {
         guard let database = database() else { return nil }
         do {
@@ -2186,6 +2209,12 @@ public final class SavesStore {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .savesChanged, object: nil)
         }
+    }
+
+    /// Posts `.savesChanged` for a sidecar write a card reads (a transcription
+    /// job's status). The item cache is untouched: no `saves` row changed.
+    func notifySidecarChanged() {
+        postChanged()
     }
 
     // MARK: - Row writes

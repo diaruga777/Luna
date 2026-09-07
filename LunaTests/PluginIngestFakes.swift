@@ -30,6 +30,10 @@ final class FakePluginInvoker: PluginHookInvoking {
     private(set) var calls: [(hook: PluginHook, pluginID: String)] = []
     /// The decoded `reason` of each ingest call.
     private(set) var ingestReasons: [String] = []
+    /// Every hook argument as the plugin would receive it, decoded back from
+    /// the JSON the runtime encodes. What a plugin sees is an assertion about
+    /// these objects.
+    private(set) var encodedArguments: [(hook: PluginHook, pluginID: String, json: [String: Any])] = []
 
     func matchedPlugins(forHost host: String) -> [PluginSummary] {
         loadedPlugins.filter { $0.matches(host: host) }
@@ -40,10 +44,12 @@ final class FakePluginInvoker: PluginHookInvoking {
         timeout: TimeInterval, decode: T.Type
     ) async -> Result<T, PluginInvocationFailure> {
         calls.append((hook, pluginID))
-        if hook == .ingest, let data = try? JSONEncoder().encode(argument),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let reason = object["reason"] as? String {
-            ingestReasons.append(reason)
+        if let data = try? JSONEncoder().encode(argument),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            encodedArguments.append((hook, pluginID, object))
+            if hook == .ingest, let reason = object["reason"] as? String {
+                ingestReasons.append(reason)
+            }
         }
         let answer = hook == .classify ? classifyAnswers[pluginID] : ingestAnswers[pluginID]
         switch answer {
@@ -93,6 +99,20 @@ final class FakeMediaModelAdopter: MediaModelAdopting {
         return .media(
             assets: assets, platform: .web, itemID: model.itemID,
             title: model.title, thumbnailURL: model.thumbnailURL)
+    }
+}
+
+/// A scripted article adopter: answers `outcome` and remembers every Model it
+/// was handed.
+final class FakeArticleModelAdopter: ArticleModelAdopting {
+    var outcome: PluginAdoptedOutcome = .declined
+    private(set) var seen: [ArticleModel] = []
+
+    func adopt(
+        _ model: ArticleModel, url: URL, page: CapturedPage, pluginID: String
+    ) async -> PluginAdoptedOutcome {
+        seen.append(model)
+        return outcome
     }
 }
 

@@ -31,20 +31,34 @@ public struct IngestInput {
     /// The "Read instead" override. Forces the article path even for a
     /// product page.
     public let forceArticle: Bool
+    /// What the user asked for beyond a plain save. Travels to every plugin
+    /// hook as `intent`; nil is the ordinary save.
+    public let intent: IngestIntent?
 
     public init(
         url: URL,
         source: CaptureSource,
         documentType: String? = nil,
         page: CapturedPage = .none,
-        forceArticle: Bool = false
+        forceArticle: Bool = false,
+        intent: IngestIntent? = nil
     ) {
         self.url = url
         self.source = source
         self.documentType = documentType
         self.page = page
         self.forceArticle = forceArticle
+        self.intent = intent
     }
+}
+
+/// A user's explicit ask for a save, beyond storing the link
+/// (`claudedocs/plans/transcription-plugins.md` decision 4).
+public enum IngestIntent: String, Equatable, Sendable {
+    /// Transcribe the recording behind the URL into a reader article. The media
+    /// plugins decline it; a transcript plugin claims it; a walk nobody serves
+    /// ends in `.failed(.noTranscriptSource)` rather than a download.
+    case transcribe
 }
 
 /// Controls whether the pipeline may enter the installed plugin stage. A
@@ -96,6 +110,11 @@ public enum Outcome: Equatable {
     /// Only the central Luna app can produce this — the sibling apps install no
     /// plugin stage (`claudedocs/plans/plugin-platform.md` §8).
     case locked(pluginID: String)
+    /// A plugin handed over a recording to transcribe. The save is parked
+    /// `.pending` under its title with a job row, and the central app's runner
+    /// downloads, transcribes and persists the article later
+    /// (`claudedocs/plans/transcription-plugins.md` §3.4).
+    case transcription(TranscriptionRequest)
 
     public static func == (lhs: Outcome, rhs: Outcome) -> Bool {
         switch (lhs, rhs) {
@@ -109,6 +128,7 @@ public enum Outcome: Equatable {
         case let (.failed(l), .failed(r)): return l == r
         case let (.unsupported(lo), .unsupported(ro)): return lo == ro
         case let (.locked(lp), .locked(rp)): return lp == rp
+        case let (.transcription(lr), .transcription(rr)): return lr == rr
         default: return false
         }
     }
@@ -263,11 +283,19 @@ public enum IngestPipeline {
             switch await pluginStage.run(
                 IngestInput(
                     url: url, source: input.source, documentType: input.documentType,
-                    page: input.page, forceArticle: input.forceArticle),
+                    page: input.page, forceArticle: input.forceArticle, intent: input.intent),
                 fetcher: fetcher)
             {
             case .passed:
-                break
+                // A transcribe request only a plugin can serve. The Swift
+                // classifier would turn it into a download, which is the one
+                // outcome the user did not ask for.
+                if input.intent == .transcribe {
+                    SaveDiagnostics.record(
+                        "pipeline: transcribe intent, every plugin passed — failing noTranscriptSource",
+                        category: "plugin")
+                    return IngestResult(url: url, outcome: .failed(.noTranscriptSource))
+                }
             case let .outcome(outcome, pluginID):
                 return IngestResult(url: url, outcome: outcome, pluginID: pluginID)
             case let .locked(pluginID):

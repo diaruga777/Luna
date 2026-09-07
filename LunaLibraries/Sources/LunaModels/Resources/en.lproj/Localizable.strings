@@ -236,6 +236,8 @@
 "SaveFailure_noMediaFound_Luna" = "There was no playable video to fetch";
 "SaveFailure_couldntStoreDownload_Luna" = "Unable to save the file, is your phone out of space?";
 "SaveFailure_sentToSubscribePage_Luna" = "The site sent Luna to its subscribe page";
+"SaveFailure_noTranscriptSource_Luna" = "Nothing here could be transcribed";
+"SaveFailure_transcriptionFailed_Luna" = "%@";
 "SaveFailure_couldntFetchLink_Luna" = "Luna couldn't fetch this link";
 "SaveFailure_willRetryHint_Luna" = "It will retry automatically once you're back online.";
 "SaveFailure_pullToRetryHint_Luna" = "Pull to retry, or open it in your browser.";
@@ -1498,3 +1500,22 @@
 "WriterLibrary_notes_edit_Luna" = "Edit note";
 "WriterLibrary_notes_saveFailed_Luna" = "Couldn’t save this note. Your text is still here. Try Save again.";
 "WriterEditor_saveFailed_Luna" = "Couldn’t save. Luna will retry.";
+
+/* ===== Transcription — a plugin's recording being transcribed into a reader
+ * article (claudedocs/plans/transcription-plugins.md): the two Transcribe_
+ * menu actions (the paste row's long-press and a media card's long-press,
+ * central Luna only), the pending card's status line while the job runs, and
+ * the sentence a failed card shows under its title, in that order.
+ * (LunaTranscribe, PendingSaveCardContentViewController) ===== */
+"Transcribe_cardAction_Luna" = "Transcribe";
+"Transcribe_pasteAndTranscribe_Luna" = "Paste & Transcribe";
+"Transcription_statusQueued_Luna" = "Waiting to transcribe…";
+"Transcription_statusDownloading_Luna" = "Downloading audio…";
+"Transcription_statusTranscribing_Luna" = "Transcribing…";
+"Transcription_needsIOS26_Luna" = "Transcription needs iOS 26 or later";
+"Transcription_languageUnsupported_Luna" = "On-device transcription does not support this language";
+"Transcription_modelUnavailable_Luna" = "The speech model for this language could not be downloaded";
+"Transcription_noAudioTrack_Luna" = "The recording has no audio track";
+"Transcription_noSpeech_Luna" = "No speech was found in this recording";
+"Transcription_fileTooLarge_Luna" = "The recording is too large to transcribe";
+"Transcription_failed_Luna" = "The recording could not be transcribed";

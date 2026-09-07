@@ -69,6 +69,15 @@ public extension ArticleDocumentSpec {
     }
 }
 
+public extension ArticleTranscriptionSpec {
+    func resolvingRelativeURLs(against base: URL) -> ArticleTranscriptionSpec {
+        ArticleTranscriptionSpec(
+            url: pluginAbsoluteURL(url, base: base) ?? url, type: type,
+            audioURL: pluginAbsoluteURL(audioURL, base: base),
+            headers: headers, expiresAt: expiresAt)
+    }
+}
+
 public extension ArticleModel {
     func resolvingRelativeURLs(against base: URL) -> ArticleModel {
         ArticleModel(
@@ -76,7 +85,8 @@ public extension ArticleModel {
             baseURL: pluginAbsoluteURL(baseURL, base: base),
             leadImageURL: pluginAbsoluteURL(leadImageURL, base: base),
             excerpt: excerpt, language: language,
-            document: document?.resolvingRelativeURLs(against: base))
+            document: document?.resolvingRelativeURLs(against: base),
+            transcription: transcription?.resolvingRelativeURLs(against: base))
     }
 }
 
@@ -141,11 +151,25 @@ public extension ArticleDocumentSpec {
     }
 }
 
+public extension ArticleTranscriptionSpec {
+    init(
+        url: URL, type: MediaType, audioURL: URL? = nil,
+        headers: [String: String] = [:], expiresAt: Date? = nil
+    ) {
+        self.url = url
+        self.type = type
+        self.audioURL = audioURL
+        self.headers = headers
+        self.expiresAt = expiresAt
+    }
+}
+
 public extension ArticleModel {
     init(
         title: String, author: String? = nil, publishedAt: String? = nil, html: String,
         baseURL: URL? = nil, leadImageURL: URL? = nil, excerpt: String? = nil,
-        language: String? = nil, document: ArticleDocumentSpec? = nil
+        language: String? = nil, document: ArticleDocumentSpec? = nil,
+        transcription: ArticleTranscriptionSpec? = nil
     ) {
         self.title = title
         self.author = author
@@ -156,6 +180,7 @@ public extension ArticleModel {
         self.excerpt = excerpt
         self.language = language
         self.document = document
+        self.transcription = transcription
     }
 }
 

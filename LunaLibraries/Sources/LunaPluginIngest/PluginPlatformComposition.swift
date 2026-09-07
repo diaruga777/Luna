@@ -91,6 +91,8 @@ public enum PluginPlatformComposition {
         let resolver = PluginMediaResolver(invoker: runtime, processKind: processKind)
         PluginMediaSeams.resolver = resolver
         PluginMediaSeams.reresolver = resolver
+        PluginTranscriptionSeams.reresolver = PluginTranscriptionReresolver(
+            invoker: runtime, processKind: processKind)
         PluginPriceSeams.fetcher = PluginPriceFetcher(
             invoker: runtime, processKind: processKind)
         PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()

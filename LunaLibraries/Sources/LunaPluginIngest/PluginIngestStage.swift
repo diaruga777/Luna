@@ -46,7 +46,7 @@ public final class PluginIngestStage: PluginIngestStaging {
 
         let snapshot = Self.snapshot(of: input)
         for plugin in matched {
-            switch await claim(plugin, url: input.url, page: snapshot) {
+            switch await claim(plugin, url: input.url, page: snapshot, intent: input.intent) {
             case .none:
                 continue
             case let .some(claim):
@@ -71,11 +71,12 @@ public final class PluginIngestStage: PluginIngestStaging {
     /// This plugin's claim, or nil when it declined, broke, or claimed a kind it
     /// cannot serve here.
     private func claim(
-        _ plugin: PluginSummary, url: URL, page: PluginPageSnapshot?
+        _ plugin: PluginSummary, url: URL, page: PluginPageSnapshot?, intent: IngestIntent?
     ) async -> PluginIngestClaim? {
         guard plugin.hooks.contains(.classify) else { return nil }
         let argument = PluginClassifyInput(
-            url: url.absoluteString, page: page, context: processKind)
+            url: url.absoluteString, page: page, context: processKind,
+            intent: intent?.rawValue)
         let recorder = SaveDiagnostics.recorder
         let result = await invoker.invoke(
             .classify, pluginID: plugin.id, argument: argument,
@@ -131,7 +132,8 @@ public final class PluginIngestStage: PluginIngestStaging {
                 ?? false ? .resume : .save
         let argument = PluginIngestHookInput(
             url: input.url.absoluteString, claim: claim, page: page,
-            reason: reason, context: processKind, saveID: saveID?.uuidString)
+            reason: reason, context: processKind, saveID: saveID?.uuidString,
+            intent: input.intent?.rawValue)
         let recorder = SaveDiagnostics.recorder
         let result = await PluginIngestScope.run(saveID: saveID, pluginID: plugin.id) {
             await invoker.invoke(
@@ -233,6 +235,10 @@ public final class PluginIngestStage: PluginIngestStaging {
         case let (_, .article(content, _)):
             SaveDiagnostics.record(
                 "plugin \(plugin.id): adopted an article, \(content.bodyTextLength)ch",
+                category: "plugin")
+        case let (_, .transcription(request)):
+            SaveDiagnostics.record(
+                "plugin \(plugin.id): adopted a \(request.mediaKind.rawValue) recording to transcribe",
                 category: "plugin")
         case let (_, .product(info, _)):
             SaveDiagnostics.record(

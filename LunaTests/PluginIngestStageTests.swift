@@ -36,8 +36,21 @@ final class PluginIngestStageTests: XCTestCase {
     }
 
     private func run(_ invoker: FakePluginInvoker) async -> PluginIngestVerdict {
-        await stage(invoker).run(IngestInput(url: url, source: .manual), fetcher: MockArticleFetcher())
+        await run(invoker, input: IngestInput(url: url, source: .manual))
     }
+
+    private func run(_ invoker: FakePluginInvoker, input: IngestInput) async -> PluginIngestVerdict {
+        await stage(invoker).run(input, fetcher: MockArticleFetcher())
+    }
+
+    private static let articleClaim = #"{"kind":"article","itemId":"abc"}"#
+    private static let transcriptionModel = """
+        {"kind":"article","title":"A talk","author":"Someone","language":"en",
+         "transcription":{"url":"https://cdn.example.com/a.m4a","type":"audio"}}
+        """
+    private static let sampleRequest = TranscriptionRequest(
+        mediaURL: URL(string: "https://cdn.example.com/a.m4a")!, mediaKind: .audio,
+        title: "A talk", pluginID: "t")
 
     private static let mediaClaim = #"{"kind":"media","itemId":"abc"}"#
     private static let mediaModel = """
@@ -135,6 +148,59 @@ final class PluginIngestStageTests: XCTestCase {
             return XCTFail("expected an outcome")
         }
         XCTAssertEqual(pluginID, "b")
+    }
+
+    // MARK: - The intent
+
+    /// A plugin written before intents existed must see the input it always
+    /// saw: no `intent` key at all for an ordinary save.
+    func testAnOrdinarySaveCarriesNoIntentKeyToEitherHook() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id: "a")]
+        invoker.classifyAnswers["a"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["a"] = .json(Self.mediaModel)
+
+        _ = await run(invoker)
+
+        XCTAssertEqual(invoker.encodedArguments.count, 2)
+        for argument in invoker.encodedArguments {
+            XCTAssertNil(argument.json["intent"], "\(argument.hook) carried an intent for a plain save")
+        }
+    }
+
+    func testTheTranscribeIntentReachesBothHooksAsAString() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id: "a")]
+        invoker.classifyAnswers["a"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["a"] = .json(Self.mediaModel)
+
+        _ = await run(invoker, input: IngestInput(url: url, source: .manual, intent: .transcribe))
+
+        let intents = invoker.encodedArguments.map { $0.json["intent"] as? String }
+        XCTAssertEqual(intents, ["transcribe", "transcribe"])
+    }
+
+    /// A media plugin that declines the transcribe intent (as every bundled one
+    /// does) lets the transcript plugin behind it claim.
+    func testADecliningMediaPluginLetsTheTranscriptPluginClaim() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [
+            .fake(id: "media", priority: 100),
+            .fake(id: "t", priority: 90, produces: [.article]),
+        ]
+        invoker.classifyAnswers["media"] = .json("false")
+        invoker.classifyAnswers["t"] = .json(Self.articleClaim)
+        invoker.ingestAnswers["t"] = .json(Self.transcriptionModel)
+        let article = FakeArticleModelAdopter()
+        article.outcome = .transcription(Self.sampleRequest)
+        PluginModelAdopters.article = article
+
+        guard case let .outcome(outcome, pluginID) = await run(
+            invoker, input: IngestInput(url: url, source: .manual, intent: .transcribe))
+        else { return XCTFail("expected an outcome") }
+        XCTAssertEqual(pluginID, "t")
+        XCTAssertEqual(outcome, .transcription(Self.sampleRequest))
+        XCTAssertEqual(article.seen.first?.transcription?.type, .audio)
     }
 
     // MARK: - The browser lock

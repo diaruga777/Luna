@@ -222,6 +222,21 @@ public final class ShareSurfaceDriver {
             guard let article = Self.requireArticlePresenter(host: host) else { return }
             presentArchive(url: url, title: title, presenter: article)
 
+        case let .transcription(request):
+            // The recording is downloaded and transcribed by the app, never by
+            // an extension. The save is parked under its title with a job row
+            // the app's runner picks up, and the surface confirms the save it
+            // did make — the same ending a document import gets.
+            if let item = store.item(forURLString: url.absoluteString) {
+                store.setPendingTitle(item.id, title: request.title)
+                TranscriptionJobStore(saves: store).enqueue(saveID: item.id, request: request)
+            }
+            if host.readerMode != nil {
+                host.confirmSavedThenComplete()
+            } else {
+                host.completeSilently()
+            }
+
         case let .failed(reason):
             // Never shows a misleading "Saved". Marks the row failed so the
             // main app's list shows it, records the failure reason and

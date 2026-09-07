@@ -282,6 +282,12 @@ final class RecentURLMatcher {
                 urlString: result.url.absoluteString,
                 title: title, subtitle: result.url.host,
                 kind: .article, imageData: await faviconData(for: result.url))
+        case let .transcription(request):
+            guard surface.handlesArticles else { return nil }
+            return RecentURLPreview(
+                urlString: result.url.absoluteString,
+                title: request.title, subtitle: result.url.host,
+                kind: .article, imageData: await faviconData(for: result.url))
         case let .social(platform, itemID), let .video(platform, itemID):
             guard surface.handlesMedia else { return nil }
             let metadata = await PasteboardSuggester.platformPreviewArt?.preview(

@@ -7,7 +7,7 @@ import Foundation
 
 /// Extracted, formatted article text: an ordered list of text blocks with
 /// inline link ranges (UTF-16 offsets, ready for NSAttributedString).
-public struct ArticleContent: Codable, Equatable {
+public struct ArticleContent: Codable, Equatable, Sendable {
     public var title: String
     public var author: String?
     public var blocks: [Block]
@@ -19,8 +19,8 @@ public struct ArticleContent: Codable, Equatable {
     }
 
     /// One paragraph-level unit of the article.
-    public struct Block: Codable, Equatable {
-        public enum Kind: String, Codable, Equatable {
+    public struct Block: Codable, Equatable, Sendable {
+        public enum Kind: String, Codable, Equatable, Sendable {
             case paragraph
             case heading
             case quote
@@ -118,7 +118,7 @@ public struct ArticleContent: Codable, Equatable {
 
     /// A `.image` block's declared source dimensions. Both fields are always
     /// present together, so no consumer needs to handle a partial state.
-    public struct BlockImageSize: Codable, Equatable {
+    public struct BlockImageSize: Codable, Equatable, Sendable {
         public let width: Int
         public let height: Int
 
@@ -129,7 +129,7 @@ public struct ArticleContent: Codable, Equatable {
     }
 
     /// An inline link inside a block. `start`/`length` are UTF-16 offsets into `text`.
-    public struct Link: Codable, Equatable {
+    public struct Link: Codable, Equatable, Sendable {
         public var start: Int
         public var length: Int
         public var urlString: String

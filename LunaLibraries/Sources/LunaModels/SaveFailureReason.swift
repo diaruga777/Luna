@@ -77,6 +77,12 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     /// The site answered the article request by redirecting to its own subscribe /
     /// sign-in page, so the article was never served.
     case subscribeRedirect
+    /// A transcribe request that no plugin could serve: nothing on the page
+    /// carries speech Luna can fetch.
+    case noTranscriptSource
+    /// The recording was fetched but could not be transcribed. `detail` is the
+    /// user-facing sentence the runner already localized.
+    case transcriptionFailed(String)
     /// Nothing more specific was captured.
     case unknown
 
@@ -112,6 +118,10 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return L10n.string("SaveFailure_couldntStoreDownload")
         case .subscribeRedirect:
             return L10n.string("SaveFailure_sentToSubscribePage")
+        case .noTranscriptSource:
+            return L10n.string("SaveFailure_noTranscriptSource")
+        case let .transcriptionFailed(detail):
+            return L10n.string("SaveFailure_transcriptionFailed", detail)
         case .unknown:
             return L10n.string("SaveFailure_couldntFetchLink")
         }
@@ -142,7 +152,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return L10n.string("SaveFailure_searchResultsHint")
         case .subscribeRedirect:
             return L10n.string("SaveFailure_openInBrowserToReadHint")
-        case .tooLarge, .noMediaFound, .couldNotSave, .unknown:
+        case .tooLarge, .noMediaFound, .couldNotSave, .noTranscriptSource,
+             .transcriptionFailed, .unknown:
             return nil
         }
     }
@@ -156,7 +167,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
         case let .httpStatus(code):
             return code == 429 || (500...599).contains(code)
         case .notReadable, .notContent, .notHTML, .tooLarge,
-             .noMediaFound, .subscribeRedirect, .unknown:
+             .noMediaFound, .subscribeRedirect, .noTranscriptSource,
+             .transcriptionFailed, .unknown:
             return false
         }
     }
@@ -185,11 +197,19 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     }
 
     /// Whether the LLM rescue has anything to work with. False for `.notContent`
-    /// alone: every other failure is "we couldn't GET the article", which a model
-    /// reading the page can sometimes fix, whereas a search-results or index page
-    /// has no article to find and a rescue would spend the version's single
-    /// attempt proving it (`claudedocs/failed-saves.md`).
+    /// and the two transcription reasons: every other failure is "we couldn't
+    /// GET the article", which a model reading the page can sometimes fix,
+    /// whereas a search-results or index page has no article to find, and a
+    /// recording that would not transcribe has no page for a model to read. A
+    /// rescue would spend the version's single attempt proving it
+    /// (`claudedocs/failed-saves.md`).
     public var isWorthRescuing: Bool {
-        self != .notContent
+        switch self {
+        case .notContent, .noTranscriptSource, .transcriptionFailed:
+            return false
+        case .offline, .timedOut, .httpStatus, .network, .notReadable, .notHTML,
+             .tooLarge, .noMediaFound, .couldNotSave, .subscribeRedirect, .unknown:
+            return true
+        }
     }
 }

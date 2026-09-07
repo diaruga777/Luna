@@ -44,6 +44,15 @@ public struct ArticleModelAdopter: ArticleModelAdopting {
             return .article(content, sourceHTML: model.html)
         }
 
+        // A recording the plugin pointed at IS the article, once the app has
+        // transcribed it. Nothing is fetched here: the request parks the save,
+        // and the runner does the work (`claudedocs/plans/transcription-plugins.md`
+        // §3.6).
+        if let spec = model.transcription {
+            return .transcription(
+                transcriptionRequest(spec, model: model, base: base, pluginID: pluginID))
+        }
+
         guard var content = try? extractor.convertTrusted(
             fragmentHTML: model.html, baseURL: base,
             title: model.title, author: model.author)
@@ -56,6 +65,41 @@ public struct ArticleModelAdopter: ArticleModelAdopting {
                 at: 0)
         }
         return .article(content, sourceHTML: model.html)
+    }
+
+    // MARK: - The optional recording
+
+    /// The Model's html, when it has any, becomes the lead the transcript
+    /// follows: a video's description or the post's own text.
+    private func transcriptionRequest(
+        _ spec: ArticleTranscriptionSpec, model: ArticleModel, base: URL, pluginID: String
+    ) -> TranscriptionRequest {
+        var lead: ArticleContent?
+        if !model.html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           var content = try? extractor.convertTrusted(
+               fragmentHTML: model.html, baseURL: base,
+               title: model.title, author: model.author),
+           !content.blocks.isEmpty {
+            if let leadImage = model.leadImageURL,
+               !content.blocks.contains(where: { $0.kind == .image }) {
+                content.blocks.insert(
+                    ArticleContent.Block(
+                        kind: .image, text: "", links: [],
+                        imageURLString: leadImage.absoluteString),
+                    at: 0)
+            }
+            lead = content
+        }
+        let kind: TranscriptionRequest.MediaKind
+        switch spec.type {
+        case .audio: kind = .audio
+        case .video: kind = .video
+        }
+        return TranscriptionRequest(
+            mediaURL: spec.url, mediaKind: kind, audioURL: spec.audioURL,
+            requestHeaders: spec.headers, expiresAt: spec.expiresAt,
+            language: model.language, title: model.title, author: model.author,
+            pluginID: pluginID, leadContent: lead)
     }
 
     // MARK: - The optional document

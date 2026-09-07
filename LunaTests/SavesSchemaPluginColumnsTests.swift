@@ -131,6 +131,33 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         }
     }
 
+    /// Schema 14's table: cascades with its save and carries no CHECK on
+    /// `status`, so a sibling build writing a status this one never heard of
+    /// still lands its row.
+    func testTranscriptionsCascadeWithTheirSaveAndTakeAnyStatus() throws {
+        let store = SavesStore(containerURL: container)
+        let save = store.add(urlString: "https://example.com/talk")
+
+        try withDatabase { db in
+            XCTAssertTrue(objectNames(in: db).contains("transcriptions"))
+            execute(
+                "INSERT INTO transcriptions "
+                    + "(save_id, status, request_json, attempts, created_at, updated_at) "
+                    + "VALUES ('\(save.id.uuidString)', 'some-future-state', '{}', 0, 1.0, 1.0)",
+                in: db)
+        }
+
+        store.delete(save)
+        try withDatabase { db in
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(
+                db, "SELECT count(*) FROM transcriptions", -1, &statement, nil), SQLITE_OK)
+            defer { sqlite3_finalize(statement) }
+            XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+            XCTAssertEqual(sqlite3_column_int(statement, 0), 0)
+        }
+    }
+
     // MARK: - The mappers
 
     func testASavesPluginOwnerSurvivesAWriteAndRead() {
@@ -188,6 +215,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
             execute("DROP TABLE plugin_collections", in: db)
             execute("DROP TABLE plugin_browser_requests", in: db)
             execute("DROP TABLE pending_plugin_models", in: db)
+            execute("DROP TABLE transcriptions", in: db)
             execute("PRAGMA user_version = 11", in: db)
         }
         try withDatabase { db in
@@ -200,7 +228,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertNil(migrated.items().first?.pluginID)
 
         try withDatabase { db in
-            XCTAssertEqual(userVersion(in: db), 13)
+            XCTAssertEqual(userVersion(in: db), 14)
             XCTAssertTrue(columns(of: "saves", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "tracker_stores", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "media_download_jobs", in: db)
@@ -208,6 +236,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
             XCTAssertTrue(objectNames(in: db).isSuperset(of: [
                 "plugin_kv", "plugin_collections",
                 "plugin_browser_requests", "pending_plugin_models",
+                "transcriptions", "transcriptions_status",
             ]))
         }
 

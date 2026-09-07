@@ -340,9 +340,14 @@ so one Luna build talks to both:
   is the community "plugin" mechanism for CrossPoint: source-level patches a
   Python installer applies to a fresh clone of upstream `develop` before
   building and flashing (`python3 install.py`, pick "Luna Sync (Xteink
-  X3)"). CrossPoint itself has no runtime plugin loader; upstream's roadmap
-  item "SD-loaded plugins" is web-server connectors, not compiled code or
-  BLE. `LunaSyncRendezvous.cpp` and `LunaBooksStore.cpp` are copied into the
+  X3)"). This is NOT CrossPoint's own plugin system. Upstream's SD plugins
+  (branch `feat-sd-plugins`, shipped through the beta channel; the Libby
+  "Protected Content" plugin is one) are folders on the card holding a
+  browser-side `plugin.js` that runs in the web UI page, a declarative
+  `device.json` catalog the firmware renders, and HTTP event templates. No
+  plugin code runs natively on the device and the surface has no Bluetooth
+  at all (the firmware still builds with the `bt` component dropped), so
+  the BLE rendezvous cannot be an SD plugin. `LunaSyncRendezvous.cpp` and `LunaBooksStore.cpp` are copied into the
   plugin VERBATIM from the fork; the two small extra units are
   `LunaSyncPlugin.cpp` (home-row glue) and `LunaPairActivity.cpp` (Settings
   → Plugins → Pair Luna). The rendezvous engine is the one implementation —

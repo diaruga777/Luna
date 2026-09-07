@@ -410,7 +410,10 @@ function watchURL(videoID) {
 }
 
 luna.register({
-    classify({ url }) {
+    classify({ url, intent }) {
+        // A transcribe intent belongs to the transcript plugin, which sits
+        // below this one in the walk.
+        if (intent === "transcribe") { return false; }
         const parsed = luna.parseURL(url);
         if (!parsed) { return false; }
         const videoID = videoIDOf(parsed);

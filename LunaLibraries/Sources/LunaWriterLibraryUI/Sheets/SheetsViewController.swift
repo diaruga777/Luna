@@ -28,6 +28,14 @@ public final class SheetsViewController: UICollectionViewController {
     private var documentsByID: [DocumentID: WriterDocument] = [:]
     private var notesByID: [NoteID: WriterNote] = [:]
     private var currentSelection: LibrarySelection = .all
+    /// The sheet open in the editor. Beside a visible editor column the row
+    /// stays highlighted, so the list says which sheet is on screen.
+    public var openDocumentID: DocumentID? {
+        didSet {
+            guard openDocumentID != oldValue else { return }
+            reselectOpenDocument()
+        }
+    }
     private var currentSort: DocumentSort = .modifiedDescending
     private var searchQuery: String?
     private var pendingResort: DispatchWorkItem?
@@ -42,6 +50,12 @@ public final class SheetsViewController: UICollectionViewController {
     /// layout uses, rather than calling `leadingSwipeActions(for:)` directly
     /// (organiser #18).
     private(set) var swipeConfigurationForTesting: UICollectionLayoutListConfiguration!
+
+    /// The rows drawn highlighted. Internal rather than private so a test
+    /// can read the highlight the collection view actually holds.
+    var selectedRowsForTesting: [SheetsRow] {
+        (collectionView.indexPathsForSelectedItems ?? []).compactMap { dataSource.itemIdentifier(for: $0) }
+    }
 
     /// The rows on screen, flattened in display order. Internal rather than
     /// private so tests can assert on the applied snapshot directly.
@@ -120,6 +134,24 @@ public final class SheetsViewController: UICollectionViewController {
         reload()
     }
 
+    /// Never clears the open sheet's highlight on a wide layout, where the
+    /// list stays on screen beside the editor; behaves normally when
+    /// collapsed, where the list is what the writer came back to.
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
+        reselectOpenDocument()
+    }
+
+    /// Puts `openDocumentID`'s highlight back after a snapshot rebuild,
+    /// which otherwise drops it (organiser #8).
+    private func reselectOpenDocument() {
+        guard isViewLoaded, !(splitViewController?.isCollapsed ?? true) else { return }
+        guard let id = openDocumentID, let indexPath = dataSource.indexPath(for: .document(id))
+        else { return }
+        collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+    }
+
     /// A group or filter's own name, looked up from the store — `title(for:)`
     /// used to return an empty string for both (organiser #20).
     private func titleText(for selection: LibrarySelection) -> String {
@@ -156,7 +188,12 @@ public final class SheetsViewController: UICollectionViewController {
             notesByID = Dictionary(uniqueKeysWithValues: unattached.map { ($0.id, $0) })
             snapshot.appendItems(unattached.map { .unattachedNote($0.id) }, toSection: .unattachedNotes)
         }
-        dataSource.apply(snapshot, animatingDifferences: false)
+        // `apply` updates asynchronously even with no animation, so the
+        // reselect waits for its completion rather than running against a
+        // collection view that has not caught up yet.
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+            self?.reselectOpenDocument()
+        }
         updateEmptyState(rowCount: snapshot.numberOfItems)
     }
 
@@ -362,9 +399,20 @@ public final class SheetsViewController: UICollectionViewController {
 
     public override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !isEditing, let row = dataSource.itemIdentifier(for: indexPath) else { return }
-        collectionView.deselectItem(at: indexPath, animated: true)
-        guard case .document(let id) = row, let document = documentsByID[id] else { return }
-        selectionDelegate?.sheetsViewController(self, didSelect: document)
+        let opensASheet: Bool
+        if case .document(let id) = row, let document = documentsByID[id] {
+            opensASheet = true
+            selectionDelegate?.sheetsViewController(self, didSelect: document)
+        } else {
+            opensASheet = false
+        }
+        // Beside a visible editor column the open sheet's row keeps its
+        // highlight, which is what says which sheet is on screen. A
+        // collapsed list is about to be pushed off screen, and a note row
+        // opens no sheet, so both just flash.
+        if !opensASheet || (splitViewController?.isCollapsed ?? true) {
+            collectionView.deselectItem(at: indexPath, animated: true)
+        }
     }
 
     // MARK: - Context menu

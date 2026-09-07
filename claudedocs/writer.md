@@ -230,6 +230,65 @@ Restore, the two- and three-column iPad layouts with the side notes panel.
 Read-along cannot run on a simulator (no TrueDepth camera, no on-device
 speech model), so its chrome stays hidden there by design.
 
+### Live Markdown (2026-09-07)
+
+Markers hide by size, not colour. `LayoutAttributeStyler` gives every
+marker run outside the reveal range a 0.1 pt font plus a per-character
+kern that cancels that font's own width, so the run lays out zero points
+wide and every character offset still maps one to one (the recipe is
+ported from nodes-app/swift-markdown-engine, Apache 2.0 —
+`THIRD_PARTY_NOTICES.md`). `.kern` applies to EVERY character, so the
+kern is one character's share of the run width, never the whole width.
+
+**What hides**: heading hashes with the space after them and any closing
+run, blockquote `>` marks, an UNORDERED list item's `- ` and its
+`[ ] `/`[x] ` box, a thematic break's `---`, and every inline marker
+(`**`, `*`, `~~`, `==`, backticks, link and image brackets with their
+destination, autolink angle brackets, a hard break's trailing spaces).
+
+**What stays**: fence delimiters and fenced code (the backticks are the
+code), an ordered item's `1.`, table pipes, a footnote definition's
+`[^1]:` and a footnote reference — nothing paints in their place.
+
+**What reveals**: the paragraphs the selection touches.
+`MarkdownTextStorage.setRevealRange` widens a selection to whole
+paragraphs, restyles only the paragraph the caret left and the one it
+reached, and tells its observers those two ranges;
+`EditorViewController.textViewDidChangeSelection` calls it. The reveal
+lives on the storage, not on the styler, so `processEditing`'s rescan
+restyles a line with the same reveal the caret last set and
+`LayoutAttributeStyler` stays `Equatable` on metrics and font alone.
+`MarkupLayer` greys only revealed markers; a collapsed one is invisible
+and gets no colour. A revealed list item or quote hangs its marker in the
+gutter — `LayoutAttributeStyler.paragraphStyle(for:hidingMarkers:
+revealedMarkerWidth:)` pulls the first line back by the marker's width —
+so revealing a line never moves its words.
+
+**Where decorations are painted**: `WriterTextLayoutFragment`, an
+`NSTextLayoutFragment` subclass installed through
+`WriterLayoutFragmentProvider` on `WriterTextView`'s layout manager. It
+paints a dot for a bullet, a `square`/`checkmark.square` for a task, one
+`EditorTheme.quoteBar` bar per blockquote level, and a hairline rule for
+a thematic break — all in the gutter the collapsed marker left, on the
+text's own baseline, and suppressed on the revealed paragraph. A hidden
+list item's paragraph style starts its first line at the wrapped lines'
+indent, so the gutter exists; `EditorMetrics.collapsedLineHeight` floors
+a line box whose every character collapsed.
+
+A tap in a task item's gutter ticks its box. Two ordering facts shape
+that gesture, both measured on iOS 26.2: a second tap recogniser on the
+text view takes caret placement away even when it fails every touch (so
+the gate returns true from `shouldRecognizeSimultaneouslyWith`), and the
+text view's own tap reveals the line before any recogniser reaches its
+action (so the hit is decided in `shouldReceive` at touch down and
+remembered).
+
+Verified on the simulator through the UI driver: typing `# Heading`,
+`**bold** and *italic*`, `- item`, `- [ ] task`, `---` and `> quote`,
+then tapping between lines. Markers collapse when the caret leaves and
+come back at full size when it returns; the four decorations render; a
+gutter tap turns `- [ ]` into `- [x]`.
+
 ### The UI driver
 
 `LunaWriterUITests/WriterFlowUITests.swift` runs one test that reads a
@@ -254,11 +313,88 @@ a plain `PBXNativeTarget` hand-added to `project.pbxproj` (the `xcodeproj`
 gem cannot save this project); the `LunaWriter` scheme lists it as its one
 testable.
 
+## Reopening the last page (2026-09-07)
+
+Luna Writer comes back to the page it was on. `WriterSessionState`
+(`LunaWriterStorage`) holds four values in the same defaults suite
+`WriterSettings` uses — the open sheet, the sidebar scope, the caret's
+location and whether the keyboard was up. The scope is stored as
+`LibrarySelectionValue`, a mirror of the organiser's own `LibrarySelection`,
+because that type belongs to `LunaWriterLibraryUI` and this tier holds no
+view types.
+
+`LibraryRootViewController.restoreLastSession()` runs once, from
+`viewDidAppear`: that is the first moment `isCollapsed` says which columns
+exist, and setting a navigation stack from inside a layout pass loops
+UIKit's layout until the process runs out of memory (measured at 1.9 GB).
+It sets the whole page at once and never animates — a collapsed stack
+becomes groups/sheets/editor, an expanded root takes the secondary column.
+A sheet that is gone or trashed restores the scope alone; a sheet opened
+before the root appeared (a deep link, an intent) is already the page, so
+the restore stands down. On a first run `WriterWiring` seeds the snapshot
+with the Welcome sheet `bootstrap()` returns, so it opens through the same
+path.
+
+The page is recorded as the writer moves: `show(document:)`,
+`documentDidClose`, each sidebar selection, and each editing-state report.
+`WriterWiring.applicationDidEnterBackground` writes the whole snapshot as
+well, which is what catches a caret the autosave has not reached — and,
+because a popped editor has already deallocated, what forgets a sheet the
+writer backed out of.
+
+The caret crosses two seams. `DocumentEditing.editingState` /
+`restoreEditingState(_:)` and `DocumentEditingDelegate.editor(_:
+didChangeEditingState:)` are the organiser's side;
+`EditorViewControllerDelegate.editorDidChangeEditingState` is the editor's,
+with `WriterEditorScreen` between them. The editor reports when editing
+begins and ends and on each autosave — the caret's resting position, never
+per keystroke — and puts a restored caret back clamped to the text it
+finds, since the file may have been rewritten elsewhere meanwhile. The
+keyboard waits for `viewDidAppear`, and comes up only when it was up; a
+sheet with nothing in it still takes it, as before.
+
+Beside a visible editor column the sheets list keeps the open sheet
+highlighted (`SheetsViewController.openDocumentID`), reselected after each
+diffable apply. A collapsed list is about to be pushed off screen, so a tap
+there still flashes and clears.
+
+## Minimal chrome (2026-09-07)
+
+The header hides while the writer types, and comes back at the top of the
+page or on a double tap. `DocumentEditingDelegate.editor(_:wantsChromeHidden:)`
+and `editorDidRequestChromeToggle(_:)` carry the cue from `EditorViewController`
+(mirrored on `EditorViewControllerDelegate`, forwarded by `WriterEditorScreen`)
+to `EditorContainerViewController.setChromeHidden(_:animated:)`. The editor
+fires the cue from `textViewDidBeginEditing`/`textViewDidEndEditing` (focus
+hides, losing it shows), from `scrollViewDidScroll` on arrival at the top
+(`contentOffset.y <= -adjustedContentInset.top + 1`, fired once per arrival
+rather than every frame spent there, and only while the scroll view is
+tracking, dragging or decelerating — the keyboard rising and a caret
+restore move the offset through the top too, and neither is a request to
+see the header), and from a two-tap
+`UITapGestureRecognizer` on the text view that only claims a touch on blank
+space — `EditorViewController.isBlankSpace(at:)` asks
+`NSTextLayoutManager.textLayoutFragment(for:)` for the fragment under the
+point and treats it as text only when `closestPosition(to:)` resolves inside
+that fragment's own range, so a double tap on a word still runs the system's
+word-selection gesture untouched (`gestureRecognizer(_:shouldReceive:)` gates
+it, not `require(toFail:)`, so a single tap stays instant).
+
+`setChromeHidden` swaps the editor's top constraint between the header's
+bottom anchor and the view's own top anchor (the text view's own
+`contentInsetAdjustmentBehavior` still clears the safe area), re-anchors the
+read-along chip and a side notes panel the same way, and slides the header up
+by its own height while fading it — 0.25 s ease-in-out, alongside
+`layoutIfNeeded`. Toggling while the keyboard is up shows the header until
+the next keyboard event, because the state machine has no separate "pinned"
+flag: a toggle just flips `isChromeHidden`, and the next focus/blur cue sets
+it again unconditionally.
+
 ## Testing
 
 Suites are `Writer*`, `Note*`, `Library*`, `Gaze*`, `Reading*`, `Voice*`,
 `Utterance*`, `EnergyVAD*`, `Mention*`, `Authorship*`, `Rendering*`,
-`Focus*`, `SentenceGeometry*`, `Groups*`, `Sheets*`, `EditorContainer*`,
+`Focus*`, `SentenceGeometry*`, `Groups*`, `Sheets*`, `Editor*`,
 `DocumentExporter*`, `DocumentNotesPanel*`, `ReadAlong*`, all in `LunaTests`
 on the central host; `LunaWriter.xctestplan` / `LunaWriterTests` scheme
 select them. The simulator ships no lexical-class model, so syntax colouring

@@ -6,6 +6,7 @@
 import UIKit
 import XCTest
 @testable import LunaWriterLibraryUI
+import LunaModels
 import LunaWriterModels
 import LunaWriterStorage
 
@@ -29,6 +30,31 @@ final class EditorContainerViewControllerTests: XCTestCase {
         editor.simulateUpdate(updated)
 
         XCTAssertEqual(container.headerTitleForTesting, "New Title")
+    }
+
+    /// A save fires `editor(_:didUpdate:)` roughly one second after every
+    /// typing burst. The trailing controls (the notes button and the ⋯
+    /// button) must be the same views before and after, not rebuilt ones.
+    @MainActor
+    func testTrailingControlsIdentityIsStableAcrossADelegateUpdate() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Original Title")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let before = container.trailingControlsForTesting
+
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+        var updated = document
+        updated.title = "New Title"
+        editor.simulateUpdate(updated)
+
+        let after = container.trailingControlsForTesting
+        XCTAssertEqual(before.count, after.count)
+        XCTAssertEqual(before.map(ObjectIdentifier.init), after.map(ObjectIdentifier.init))
     }
 
     @MainActor
@@ -105,6 +131,29 @@ final class EditorContainerViewControllerTests: XCTestCase {
 
         XCTAssertTrue(container.toggleFavorite())
         XCTAssertEqual(try stack.library.document(document.id)?.isFavorite, true)
+    }
+
+    /// The ⋯ menu's favourite action reads `document.isFavorite` when the
+    /// menu is opened (`ellipsisMenuForTesting` resolves the same children
+    /// the deferred element would), not when the trailing controls were
+    /// built — so a toggle needs no control rebuild to stay correct.
+    @MainActor
+    func testFavoriteToggleNeedsNoTrailingControlsRebuildToStayCorrect() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let environment = makeLibraryEnvironment(stack: stack)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let before = container.trailingControlsForTesting
+
+        XCTAssertTrue(container.toggleFavorite())
+
+        XCTAssertEqual(before.map(ObjectIdentifier.init), container.trailingControlsForTesting.map(ObjectIdentifier.init))
+        let favoriteAction = try XCTUnwrap(container.ellipsisMenuForTesting.children.compactMap { $0 as? UIAction }
+            .first { $0.title == L10n.string("WriterLibrary_sheets_unfavoriteAction") })
+        XCTAssertEqual(favoriteAction.title, L10n.string("WriterLibrary_sheets_unfavoriteAction"))
     }
 
     @MainActor
@@ -193,5 +242,71 @@ final class EditorContainerViewControllerTests: XCTestCase {
         // turn later.
         pollUntil { container.headerTitleForTesting == "Renamed Elsewhere" }
         XCTAssertEqual(container.headerTitleForTesting, "Renamed Elsewhere")
+    }
+
+    // MARK: - Chrome
+
+    @MainActor
+    func testWantsChromeHiddenHidesTheHeaderAndRepinsTheEditorToTheViewTop() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let shownTop = container.editor.view.frame.minY
+        XCTAssertGreaterThan(shownTop, 0, "the editor starts below the header")
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+        editor.simulateChromeHiddenRequest(true)
+        container.view.layoutIfNeeded()
+
+        XCTAssertTrue(container.isChromeHiddenForTesting)
+        XCTAssertEqual(container.editor.view.frame.minY, 0, "hidden chrome pins the editor to the view's own top")
+    }
+
+    @MainActor
+    func testWantsChromeShownRestoresTheHeaderAndTheOriginalPin() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let shownTop = container.editor.view.frame.minY
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+
+        editor.simulateChromeHiddenRequest(true)
+        container.view.layoutIfNeeded()
+        editor.simulateChromeHiddenRequest(false)
+        container.view.layoutIfNeeded()
+
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+        XCTAssertEqual(container.editor.view.frame.minY, shownTop)
+    }
+
+    @MainActor
+    func testChromeToggleFlipsTheHiddenState() throws {
+        let stack = try makeWriterStack()
+        let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
+        let document = try stack.library.createDocument(in: group.id, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let environment = makeLibraryEnvironment(stack: stack, editorMaker: editorMaker)
+
+        let container = EditorContainerViewController(environment: environment, document: document)
+        layoutWriterScreen(container)
+        let editor = try XCTUnwrap(editorMaker.madeEditors.first)
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+
+        editor.simulateChromeToggleRequest()
+        XCTAssertTrue(container.isChromeHiddenForTesting)
+
+        editor.simulateChromeToggleRequest()
+        XCTAssertFalse(container.isChromeHiddenForTesting)
     }
 }

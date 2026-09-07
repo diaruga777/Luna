@@ -19,7 +19,31 @@ public final class EditorContainerViewController: UIViewController {
     private(set) var editor: (UIViewController & DocumentEditing)!
     private var readAlongChromeView: UIView?
     private var notesPanel: DocumentNotesPanelViewController?
+    /// Whether the header shows a back chevron. Nil until the first update,
+    /// so the first call always installs whichever controls belong there.
+    private var showsBackControl: Bool?
+    /// A caret and keyboard state handed in before `viewDidLoad` built the
+    /// editor; given to it as soon as it exists.
+    private var pendingEditingState: EditorEditingState?
     private var editorTrailingConstraint: NSLayoutConstraint!
+    /// The editor's top constraint when the header is shown (pinned below
+    /// it) and when the header is hidden (pinned to the view's own top —
+    /// the text view's own inset adjustment still clears the safe area).
+    /// Exactly one is active at a time.
+    private var editorTopToHeaderConstraint: NSLayoutConstraint!
+    private var editorTopToViewConstraint: NSLayoutConstraint!
+    /// The read-along chip's equivalent pair, when read-along installed one.
+    private var chromeTopToHeaderConstraint: NSLayoutConstraint?
+    private var chromeTopToSafeAreaConstraint: NSLayoutConstraint?
+    /// The open notes panel's top constraint, when it is hosted as a side
+    /// child — re-pinned alongside the editor when the chrome toggles.
+    private var notesPanelTopConstraint: NSLayoutConstraint?
+    /// Whether the header, the read-along chip and the side notes panel are
+    /// hidden right now: typing hides them, losing focus or reaching the
+    /// top of the page shows them, and a double tap on blank space toggles.
+    private var isChromeHidden = false
+    /// The chrome's hidden state, for a test that cannot see `isChromeHidden`.
+    var isChromeHiddenForTesting: Bool { isChromeHidden }
 
     /// Built through the header's factory so it keeps a bar button's minimum
     /// width; a long title would otherwise squeeze it to nothing.
@@ -27,8 +51,15 @@ public final class EditorContainerViewController: UIViewController {
         systemName: "note.text", target: self, action: #selector(notesTapped),
         accessibilityLabel: L10n.string("WriterLibrary_editor_notesButtonLabel"))
 
+    /// Told where the caret rests in this sheet, so the root can record the
+    /// page for the next launch.
+    public weak var editingStateObserver: EditorEditingStateObserving?
+
     /// The header's current title — for tests, which cannot see `header`.
     var headerTitleForTesting: String? { header.title }
+    /// The header's current trailing controls — for a test that must tell a
+    /// rebuilt control apart from the same one left alone.
+    var trailingControlsForTesting: [UIView] { header.trailingControlsForTesting }
     /// Whether the notes panel is hosted as a side child right now.
     var isNotesPanelChildForTesting: Bool { notesPanel?.parent === self }
     /// Whether the notes panel is presented as a sheet right now.
@@ -54,8 +85,14 @@ public final class EditorContainerViewController: UIViewController {
     /// The header's back chevron pops a collapsed stack. Beside a visible
     /// sheets column there is nothing to pop, so the control is dropped
     /// rather than left as a dead button.
+    ///
+    /// Every layout pass asks, so the answer must only be acted on when it
+    /// changed: replacing the leading stack dirties layout, and a rebuild
+    /// per pass never lets the pass settle.
     private func updateLeadingControls() {
         let isPushed = (navigationController?.viewControllers.count ?? 0) > 1
+        guard showsBackControl != isPushed else { return }
+        showsBackControl = isPushed
         header.setLeadingControls(
             isPushed ? [NavHeaderBar.backButton(target: self, action: #selector(backTapped))] : [])
     }
@@ -81,6 +118,10 @@ public final class EditorContainerViewController: UIViewController {
 
         editor = environment.editorMaker.makeEditor(for: document)
         editor.editingDelegate = self
+        if let pendingEditingState {
+            self.pendingEditingState = nil
+            editor.restoreEditingState(pendingEditingState)
+        }
 
         notesButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -95,8 +136,11 @@ public final class EditorContainerViewController: UIViewController {
         editor.didMove(toParent: self)
 
         editorTrailingConstraint = editor.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        editorTopToHeaderConstraint = editor.view.topAnchor.constraint(equalTo: contentTop)
+        editorTopToViewConstraint = editor.view.topAnchor.constraint(equalTo: view.topAnchor)
+        editorTopToViewConstraint.isActive = false
         NSLayoutConstraint.activate([
-            editor.view.topAnchor.constraint(equalTo: contentTop),
+            editorTopToHeaderConstraint,
             editor.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             editor.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             editorTrailingConstraint,
@@ -108,8 +152,14 @@ public final class EditorContainerViewController: UIViewController {
             readAlongChromeView = chrome
             chrome.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(chrome)
+            let toHeader = chrome.topAnchor.constraint(equalTo: contentTop, constant: 8)
+            let toSafeArea = chrome.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8)
+            toSafeArea.isActive = false
+            chromeTopToHeaderConstraint = toHeader
+            chromeTopToSafeAreaConstraint = toSafeArea
             NSLayoutConstraint.activate([
-                chrome.topAnchor.constraint(equalTo: contentTop, constant: 8),
+                toHeader,
                 chrome.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             ])
         }
@@ -132,6 +182,14 @@ public final class EditorContainerViewController: UIViewController {
         document.title.isEmpty ? L10n.string("Common_untitled") : document.title
     }
 
+    /// Assigning `header.title` re-renders its label even when the string is
+    /// unchanged, which an autosave one second after every typing burst
+    /// otherwise does for nothing.
+    private func setTitleIfChanged(_ title: String) {
+        guard header.title != title else { return }
+        header.title = title
+    }
+
     @objc private func backTapped() {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
@@ -140,13 +198,21 @@ public final class EditorContainerViewController: UIViewController {
 
     // MARK: - Header controls
 
+    /// Built once, in `viewDidLoad`. The ⋯ button's menu wraps a deferred
+    /// element so a save never needs to rebuild the button or its menu — the
+    /// favourite title and icon are read from `document` when the menu
+    /// opens, not when this is called.
     private func trailingHeaderControls() -> [UIView] {
         // `NavHeaderBar.imageButton` needs a real target action; `showsMenuAsPrimaryAction`
         // below replaces it as the button's actual tap behaviour, so it never runs.
         let menuButton = NavHeaderBar.imageButton(
             systemName: "ellipsis.circle", target: self, action: #selector(unusedMenuButtonAction),
             accessibilityLabel: L10n.string("WriterLibrary_editor_moreMenuTitle"))
-        menuButton.menu = ellipsisMenu()
+        menuButton.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] completion in
+                completion(self?.ellipsisMenuChildren() ?? [])
+            },
+        ])
         menuButton.showsMenuAsPrimaryAction = true
         return [notesButton, menuButton]
     }
@@ -159,15 +225,16 @@ public final class EditorContainerViewController: UIViewController {
     }
 
     /// For tests, which cannot see the private trailing header button whose
-    /// menu this is.
-    var ellipsisMenuForTesting: UIMenu { ellipsisMenu() }
+    /// menu this is. Resolves the children eagerly, unlike the deferred
+    /// element the real button opens.
+    var ellipsisMenuForTesting: UIMenu { UIMenu(children: ellipsisMenuChildren()) }
 
     /// Identifies the export submenu so a test can find it among the ⋯
     /// menu's other children without depending on its position.
     static let exportMenuIdentifier = UIMenu.Identifier("com.hsanabria.luna.writer.exportMenu")
 
-    private func ellipsisMenu() -> UIMenu {
-        UIMenu(children: [
+    private func ellipsisMenuChildren() -> [UIMenuElement] {
+        [
             exportMenu(),
             UIAction(
                 title: L10n.string("WriterLibrary_editor_statisticsAction"),
@@ -199,7 +266,7 @@ public final class EditorContainerViewController: UIViewController {
                 title: L10n.string("Common_delete"),
                 image: UIImage(systemName: "trash"), attributes: .destructive
             ) { [weak self] _ in self?.trashDocument() },
-        ])
+        ]
     }
 
     /// The export formats as a `UIMenu` submenu — never an action sheet,
@@ -266,7 +333,6 @@ public final class EditorContainerViewController: UIViewController {
     public func toggleFavorite() -> Bool {
         guard (try? environment.library.setFavorite(!document.isFavorite, for: document.id)) != nil else { return false }
         document.isFavorite.toggle()
-        header.setTrailingControls(trailingHeaderControls())
         return true
     }
 
@@ -324,6 +390,7 @@ public final class EditorContainerViewController: UIViewController {
             panel.view.removeFromSuperview()
             panel.removeFromParent()
             editorTrailingConstraint.constant = 0
+            notesPanelTopConstraint = nil
         } else {
             panel.presentingViewController?.dismiss(animated: true)
         }
@@ -336,8 +403,12 @@ public final class EditorContainerViewController: UIViewController {
             panel.view.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(panel.view)
             panel.showsLeadingSeparator = true
+            let topConstraint = isChromeHidden
+                ? panel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+                : panel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+            notesPanelTopConstraint = topConstraint
             NSLayoutConstraint.activate([
-                panel.view.topAnchor.constraint(equalTo: header.bottomAnchor),
+                topConstraint,
                 panel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                 panel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 panel.view.widthAnchor.constraint(equalToConstant: Self.notesPanelWidth),
@@ -374,17 +445,92 @@ public final class EditorContainerViewController: UIViewController {
         self.notesPanel = notesPanel
         host(notesPanel, asSideChild: isWide, animated: false)
     }
+
+    // MARK: - Chrome
+
+    /// Hides or shows the header, the read-along chip and the side notes
+    /// panel — the editor's own inset adjustment keeps its text clear of the
+    /// safe area either way. Idempotent: a repeated call for the state
+    /// already showing does nothing.
+    func setChromeHidden(_ hidden: Bool, animated: Bool) {
+        guard isChromeHidden != hidden else { return }
+        isChromeHidden = hidden
+
+        editorTopToHeaderConstraint.isActive = !hidden
+        editorTopToViewConstraint.isActive = hidden
+        chromeTopToHeaderConstraint?.isActive = !hidden
+        chromeTopToSafeAreaConstraint?.isActive = hidden
+        reanchorNotesPanelTop()
+
+        let apply = {
+            self.header.alpha = hidden ? 0 : 1
+            self.header.transform = hidden
+                ? CGAffineTransform(translationX: 0, y: -self.header.bounds.height)
+                : .identity
+            self.view.layoutIfNeeded()
+        }
+        if animated {
+            UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseInOut], animations: apply)
+        } else {
+            apply()
+        }
+    }
+
+    /// Re-pins the side notes panel's top between the header's bottom and
+    /// the safe-area top, alongside the editor's own top constraint.
+    private func reanchorNotesPanelTop() {
+        guard let notesPanel, notesPanel.parent === self else { return }
+        if let notesPanelTopConstraint { notesPanelTopConstraint.isActive = false }
+        let topConstraint = isChromeHidden
+            ? notesPanel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+            : notesPanel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+        topConstraint.isActive = true
+        notesPanelTopConstraint = topConstraint
+    }
+}
+
+extension EditorContainerViewController {
+    /// Where the caret rests in this sheet right now.
+    public var editingState: EditorEditingState { editor?.editingState ?? EditorEditingState() }
+
+    /// Reopens this sheet where it was left. Called before the container is
+    /// on screen, so the editor may not exist yet.
+    public func restoreEditingState(_ state: EditorEditingState) {
+        if let editor {
+            editor.restoreEditingState(state)
+        } else {
+            pendingEditingState = state
+        }
+    }
+}
+
+/// Weak reference from `EditorContainerViewController` back to the root,
+/// which records the caret for the next launch.
+public protocol EditorEditingStateObserving: AnyObject {
+    func editorContainer(
+        _ container: EditorContainerViewController, didChangeEditingState state: EditorEditingState)
 }
 
 extension EditorContainerViewController: DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didUpdate document: WriterDocument) {
         self.document = document
-        header.title = displayTitle(for: document)
-        header.setTrailingControls(trailingHeaderControls())
+        setTitleIfChanged(displayTitle(for: document))
     }
 
     public func editorRequestsNotesPanel(_ editor: DocumentEditing) {
         if notesPanel == nil { presentNotesPanel() }
+    }
+
+    public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {
+        editingStateObserver?.editorContainer(self, didChangeEditingState: state)
+    }
+
+    public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {
+        setChromeHidden(hidden, animated: true)
+    }
+
+    public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {
+        setChromeHidden(!isChromeHidden, animated: true)
     }
 }
 
@@ -412,7 +558,6 @@ extension EditorContainerViewController: LibraryChangeObserving {
     private func refreshFromStore() {
         guard let latest = try? environment.library.document(document.id) else { return }
         document = latest
-        header.title = displayTitle(for: document)
-        header.setTrailingControls(trailingHeaderControls())
+        setTitleIfChanged(displayTitle(for: document))
     }
 }

@@ -15,6 +15,11 @@ public protocol DocumentEditing: AnyObject {
     /// live buffer takes the new text so its next autosave cannot overwrite it
     /// with what was on screen before the replace.
     func replaceText(_ text: String)
+    /// Where the caret rests and whether the keyboard is up right now.
+    var editingState: EditorEditingState { get }
+    /// Puts the caret back where a previous run left it and raises the
+    /// keyboard when it was up. Called before the editor appears.
+    func restoreEditingState(_ state: EditorEditingState)
     /// Presents the editor's own statistics surface (`StatisticsSheet`) over
     /// `presenter`, returning `true` when it did. Returning `false` — the
     /// default — tells the caller no such surface is reachable, so it falls
@@ -23,6 +28,8 @@ public protocol DocumentEditing: AnyObject {
 }
 
 extension DocumentEditing {
+    public var editingState: EditorEditingState { EditorEditingState() }
+    public func restoreEditingState(_ state: EditorEditingState) {}
     public func replaceText(_ text: String) {}
     public func presentStatistics(from presenter: UIViewController) -> Bool { false }
 }
@@ -31,6 +38,20 @@ extension DocumentEditing {
 public protocol DocumentEditingDelegate: AnyObject {
     func editor(_ editor: DocumentEditing, didUpdate document: WriterDocument)
     func editorRequestsNotesPanel(_ editor: DocumentEditing)
+    /// The caret came to rest somewhere new, or the keyboard went up or
+    /// down. Reported at the caret's resting position, not per keystroke.
+    func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState)
+    /// The chrome (nav header, read-along chip) should hide or show: typing
+    /// began or ended, or the page reached its top.
+    func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool)
+    /// A double tap on blank space: flip whatever the chrome is doing now.
+    func editorDidRequestChromeToggle(_ editor: DocumentEditing)
+}
+
+extension DocumentEditingDelegate {
+    public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {}
+    public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {}
+    public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {}
 }
 
 /// Builds the concrete editor screen for a sheet. One production witness in
@@ -74,6 +95,33 @@ public enum LibrarySelection: Hashable {
     case filter(FilterID)
 }
 
+extension LibrarySelection {
+    /// The storage tier's mirror of this scope, for the session snapshot.
+    public var storedValue: LibrarySelectionValue {
+        switch self {
+        case .all: return .all
+        case .recent: return .recent
+        case .favorites: return .favorites
+        case .inbox: return .inbox
+        case .trash: return .trash
+        case .group(let id): return .group(id)
+        case .filter(let id): return .filter(id)
+        }
+    }
+
+    public init(_ stored: LibrarySelectionValue) {
+        switch stored {
+        case .all: self = .all
+        case .recent: self = .recent
+        case .favorites: self = .favorites
+        case .inbox: self = .inbox
+        case .trash: self = .trash
+        case .group(let id): self = .group(id)
+        case .filter(let id): self = .filter(id)
+        }
+    }
+}
+
 /// Weak reference from `SheetsViewController` back to whatever hosts it.
 public protocol GroupsSelectionDelegate: AnyObject {
     func groupsViewController(_ controller: GroupsViewController, didSelect selection: LibrarySelection)
@@ -111,6 +159,8 @@ public final class LibraryEnvironment {
     public let snapshots: DocumentSnapshotStoring
     public let noteIndex: NoteIndexing
     public let settings: WriterSettings
+    /// The page to reopen on the next launch, recorded as the writer moves.
+    public let sessionState: WriterSessionState
     public let editorMaker: DocumentEditorMaking
     public let readAlongChrome: ReadAlongChromeProviding?
     public let readAlongSettings: ReadAlongSettingsHandling?
@@ -126,6 +176,7 @@ public final class LibraryEnvironment {
         snapshots: DocumentSnapshotStoring,
         noteIndex: NoteIndexing,
         settings: WriterSettings,
+        sessionState: WriterSessionState,
         editorMaker: DocumentEditorMaking,
         readAlongChrome: ReadAlongChromeProviding? = nil,
         readAlongSettings: ReadAlongSettingsHandling? = nil,
@@ -138,6 +189,7 @@ public final class LibraryEnvironment {
         self.snapshots = snapshots
         self.noteIndex = noteIndex
         self.settings = settings
+        self.sessionState = sessionState
         self.editorMaker = editorMaker
         self.readAlongChrome = readAlongChrome
         self.readAlongSettings = readAlongSettings

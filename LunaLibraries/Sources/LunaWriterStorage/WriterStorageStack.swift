@@ -19,6 +19,8 @@ public final class WriterStorageStack {
     public let router: NoteRouter
     public let intents: WriterIntentServices
     public let settings: WriterSettings
+    /// The page the app was last on, for the next launch.
+    public let sessionState: WriterSessionState
     public let libraryRoot: URL
 
     public init(
@@ -48,6 +50,7 @@ public final class WriterStorageStack {
             documentIndex: documentIndex)
         self.router = NoteRouter(library: library, documentIndex: documentIndex)
         self.settings = WriterSettings(defaults: defaults)
+        self.sessionState = WriterSessionState(defaults: defaults)
         self.intents = WriterIntentServices(
             library: library, notes: library, textStore: textStore, router: router)
         watcher.handler = reconciler

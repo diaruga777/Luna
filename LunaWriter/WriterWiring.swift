@@ -32,7 +32,12 @@ import LunaWriterVoice
     static func storageStack() throws -> WriterStorageStack {
         if let storage { return storage }
         let stack = try WriterStorageStack.makeDefault()
-        try stack.bootstrap()
+        // A first run has no page to return to, so the Welcome sheet becomes
+        // one: the root then opens it through the same restore path.
+        if let welcome = try stack.bootstrap(), !stack.sessionState.hasSnapshot {
+            stack.sessionState.snapshot = WriterSessionState.Snapshot(
+                documentID: welcome.id, selection: .inbox)
+        }
         stack.reconciler.openDocuments = openSessions
         stack.watcher.start()
         storage = stack
@@ -45,6 +50,7 @@ import LunaWriterVoice
 
     static func applicationDidEnterBackground() {
         openSessions.flushAll()
+        root?.recordSessionState()
     }
 
     /// A folder change made while suspended (an iCloud sync, another
@@ -69,7 +75,7 @@ import LunaWriterVoice
         let environment = LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
-            settings: stack.settings, editorMaker: maker,
+            settings: stack.settings, sessionState: stack.sessionState, editorMaker: maker,
             readAlongChrome: readAlong, readAlongSettings: readAlong,
             libraryRootPath: stack.libraryRoot.path)
         let root = LibraryRootViewController(environment: environment)

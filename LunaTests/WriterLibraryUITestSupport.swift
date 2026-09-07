@@ -17,6 +17,9 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     private(set) var focusedAnchors: [TextAnchor] = []
     private(set) var flushCount = 0
     private(set) var replacedTexts: [String] = []
+    /// The state a restore handed in, and what `editingState` answers with.
+    var editingState = EditorEditingState()
+    private(set) var restoredStates: [EditorEditingState] = []
 
     init(document: WriterDocument) {
         self.document = document
@@ -30,6 +33,17 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
     func flushPendingSave() { flushCount += 1 }
     func replaceText(_ text: String) { replacedTexts.append(text) }
 
+    func restoreEditingState(_ state: EditorEditingState) {
+        restoredStates.append(state)
+        editingState = state
+    }
+
+    /// Simulates the real editor reporting the caret's resting position.
+    func simulateEditingState(_ state: EditorEditingState) {
+        editingState = state
+        editingDelegate?.editor(self, didChangeEditingState: state)
+    }
+
     /// Simulates the real editor reporting a save back to its container.
     func simulateUpdate(_ document: WriterDocument) {
         self.document = document
@@ -38,6 +52,17 @@ final class FakeDocumentEditor: UIViewController, DocumentEditing {
 
     func simulateNotesPanelRequest() {
         editingDelegate?.editorRequestsNotesPanel(self)
+    }
+
+    /// Simulates the real editor's chrome cue: typing began/ended, or the
+    /// page reached its top.
+    func simulateChromeHiddenRequest(_ hidden: Bool) {
+        editingDelegate?.editor(self, wantsChromeHidden: hidden)
+    }
+
+    /// Simulates a double tap on blank space.
+    func simulateChromeToggleRequest() {
+        editingDelegate?.editorDidRequestChromeToggle(self)
     }
 }
 
@@ -75,7 +100,8 @@ extension XCTestCase {
         LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
-            settings: stack.settings, editorMaker: editorMaker, readAlongChrome: nil,
+            settings: stack.settings, sessionState: stack.sessionState,
+            editorMaker: editorMaker, readAlongChrome: nil,
             readAlongSettings: readAlongSettings,
             libraryRootPath: stack.libraryRoot.path)
     }

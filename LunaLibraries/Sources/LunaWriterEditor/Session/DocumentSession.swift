@@ -21,6 +21,12 @@ extension DocumentSessionDelegate {
     public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {}
 }
 
+/// Told when a session's unsaved-changes flag flips, so a registry can
+/// update its thread-safe reconciliation guard immediately.
+public protocol DocumentSessionObserving: AnyObject {
+    func documentSessionUnsavedChangesDidChange(_ session: DocumentSession)
+}
+
 /// One open sheet.
 ///
 /// It owns the text, who wrote it and what is marked on it, and it writes all
@@ -45,11 +51,10 @@ public final class DocumentSession: AnnotationRangeProviding, MarkdownTextStorag
 
     public private(set) var hasUnsavedChanges = false {
         didSet {
-            if oldValue != hasUnsavedChanges { unsavedChangesDidChange?() }
+            if oldValue != hasUnsavedChanges { observer?.documentSessionUnsavedChangesDidChange(self) }
         }
     }
-    /// Updates the app's thread-safe reconciliation guard immediately.
-    public var unsavedChangesDidChange: (() -> Void)?
+    public weak var observer: DocumentSessionObserving?
 
     private let textStore: DocumentTextStoring
     private let marksStore: DocumentMarksStoring

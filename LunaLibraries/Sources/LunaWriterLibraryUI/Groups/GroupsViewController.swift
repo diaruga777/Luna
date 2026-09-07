@@ -220,6 +220,27 @@ public final class GroupsViewController: UICollectionViewController {
         }
     }
 
+    /// Highlights the row for `selection` without telling the delegate — a
+    /// restored scope, not a tap. A call before `viewDidLoad` is kept and
+    /// applied by the first snapshot.
+    public func highlight(_ selection: LibrarySelection) {
+        selectedRow = Self.row(for: selection)
+        guard isViewLoaded else { return }
+        reselect()
+    }
+
+    private static func row(for selection: LibrarySelection) -> GroupsRow {
+        switch selection {
+        case .all: return .libraryAll
+        case .recent: return .libraryRecent
+        case .favorites: return .libraryFavorites
+        case .inbox: return .inboxRow
+        case .trash: return .trashRow
+        case .group(let id): return .group(id)
+        case .filter(let id): return .filter(id)
+        }
+    }
+
     /// Re-applies `selectedRow`'s highlight after a snapshot rebuild, which
     /// otherwise drops it (organiser #8).
     private func reselect() {

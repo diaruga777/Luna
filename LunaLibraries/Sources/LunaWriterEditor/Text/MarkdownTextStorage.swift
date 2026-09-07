@@ -54,6 +54,11 @@ public final class MarkdownTextStorage: NSTextStorage {
         }
     }
 
+    /// The paragraphs whose Markdown markers stay at full size. Everything
+    /// else collapses. The styler reads it from here on every pass, so a
+    /// rescan restyles a line with the same reveal the caret last set.
+    public private(set) var revealRange: NSRange?
+
     /// Seeds the next rescan. `MarkdownDocumentModel` already unions every
     /// edit applied since the last rescan into its own pending-lines range, so
     /// this only needs to name one location the edit touched.
@@ -125,7 +130,7 @@ public final class MarkdownTextStorage: NSTextStorage {
             pendingRescanSeed = nil
             revision &+= 1
             let rescanned = model.rescan(afterEditIn: seed)
-            styler.apply(model, to: backing, in: rescanned)
+            styler.apply(model, to: backing, in: rescanned, revealing: revealRange)
             lastRescan = rescanned
             // The characters already edited() this group covered their own
             // attributes; only tell the layout manager about the extra reach
@@ -156,10 +161,49 @@ public final class MarkdownTextStorage: NSTextStorage {
         let whole = NSRange(location: 0, length: backing.length)
         guard whole.length > 0 else { return }
         beginEditing()
-        styler.apply(model, to: backing, in: whole)
+        styler.apply(model, to: backing, in: whole, revealing: revealRange)
         edited(.editedAttributes, range: whole, changeInLength: 0)
         endEditing()
         notify(whole)
+    }
+
+    // MARK: - Reveal
+
+    /// Reveals the markers on the paragraphs `selection` touches and
+    /// collapses the ones it left. Only the old and the new reveal restyle,
+    /// so a caret move costs two paragraphs however long the document is.
+    public func setRevealRange(_ selection: NSRange?) {
+        let next = selection.flatMap { revealParagraphs(for: $0) }
+        guard next != revealRange else { return }
+        let previous = revealRange
+        revealRange = next
+        for range in [previous, next].compactMap({ $0 }) {
+            restyle(range)
+        }
+    }
+
+    private func restyle(_ range: NSRange) {
+        let clamped = NSIntersectionRange(range, NSRange(location: 0, length: backing.length))
+        guard clamped.length > 0 else { return }
+        beginEditing()
+        styler.apply(model, to: backing, in: clamped, revealing: revealRange)
+        edited(.editedAttributes, range: clamped, changeInLength: 0)
+        endEditing()
+        notify(clamped)
+    }
+
+    /// Widens a selection to whole paragraphs. A selection that spans several
+    /// reveals every paragraph it touches, so its markup reads as source
+    /// while it is being worked on.
+    private func revealParagraphs(for selection: NSRange) -> NSRange? {
+        guard length > 0 else { return nil }
+        let first = paragraphRange(containing: selection.location)
+        let last = selection.length > 0
+            ? paragraphRange(containing: max(selection.location, NSMaxRange(selection) - 1))
+            : first
+        let start = min(first.location, last.location)
+        let end = max(NSMaxRange(first), NSMaxRange(last))
+        return NSRange(location: start, length: max(0, end - start))
     }
 
     /// The paragraph the offset sits in, as the model sees it.

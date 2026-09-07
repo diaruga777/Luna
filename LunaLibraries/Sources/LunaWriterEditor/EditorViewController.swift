@@ -13,6 +13,20 @@ import LunaWriterText
 public protocol EditorViewControllerDelegate: AnyObject {
     func editorRequestsNotesPanel(_ editor: EditorViewController)
     func editorDidUpdateDocument(_ editor: EditorViewController, document: WriterDocument)
+    /// The caret came to rest, or the keyboard went up or down. Reported
+    /// when editing starts and ends and on each save, not per keystroke.
+    func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState)
+    /// The chrome should hide or show: typing began or ended, or the page
+    /// reached its top.
+    func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool)
+    /// A double tap landed on blank space: flip the chrome's state.
+    func editorDidRequestChromeToggle(_ editor: EditorViewController)
+}
+
+extension EditorViewControllerDelegate {
+    public func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {}
+    public func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool) {}
+    public func editorDidRequestChromeToggle(_ editor: EditorViewController) {}
 }
 
 /// Told when the text re-wraps or the page scrolls, so anything drawing
@@ -92,16 +106,33 @@ public final class EditorViewController: UIViewController {
     private lazy var geometry = SentenceGeometryProvider(
         layoutManager: textView.textLayoutManager, storage: session.storage)
     private lazy var posService = POSTaggingService()
-    private lazy var markupLayer = MarkupLayer(model: session.storage.model)
+    private lazy var markupLayer = MarkupLayer(storage: session.storage)
     private lazy var syntaxLayer = SyntaxColourLayer(service: posService, storage: session.storage)
     private lazy var authorshipLayer = AuthorshipLayer(provider: session.authorship)
     private lazy var focusLayer = FocusLayer(provider: focus)
     private lazy var annotationLayer = AnnotationLayer(provider: session)
 
+    /// A caret and keyboard state to put back, handed in before the text
+    /// view exists. The keyboard waits for `viewDidAppear`.
+    private var pendingRestoredState: EditorEditingState?
     private var statisticsTimer: Timer?
     private let statisticsQueue = DispatchQueue(label: "com.luna.writer.statistics", qos: .userInitiated)
     private var lastLayoutSize = CGSize(width: -1, height: -1)
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
+    /// Whether the last scroll report had the page at its top, so the
+    /// chrome-show cue fires once on arrival rather than every frame spent
+    /// there.
+    private var isScrolledToTop = true
+    /// A double tap toggles the chrome only on blank space; on a word it
+    /// must stay out of the way of the system's word-selection gesture.
+    private lazy var chromeToggleGesture: UITapGestureRecognizer = {
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleChromeToggleTap))
+        gesture.numberOfTapsRequired = 2
+        gesture.delaysTouchesEnded = false
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
     /// The one AI request in flight. A second request cancels the first —
     /// there is only one caret, one selection, one place the answer lands.
     private var aiTask: Task<Void, Never>?
@@ -115,11 +146,22 @@ public final class EditorViewController: UIViewController {
         wire()
         updateStatistics()
         composer.invalidate(nil)
+        if let pendingRestoredState { applyCaret(of: pendingRestoredState) }
     }
 
+    /// A restored sheet takes the keyboard the writer left up; a sheet with
+    /// nothing in it takes it because there is nothing else to do there.
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if session.storage.length == 0 { textView.becomeFirstResponder() }
+        if let state = pendingRestoredState {
+            pendingRestoredState = nil
+            // Applied again now the text view has its final size: a scroll
+            // asked for before layout has nothing to scroll within.
+            applyCaret(of: state)
+            if state.isKeyboardVisible { textView.becomeFirstResponder() }
+        } else if session.storage.length == 0 {
+            textView.becomeFirstResponder()
+        }
     }
 
     public override func viewDidLayoutSubviews() {
@@ -241,6 +283,7 @@ public final class EditorViewController: UIViewController {
         textView.delegate = self
         textView.actionDelegate = self
         textView.authorshipDataSource = session
+        textView.addGestureRecognizer(chromeToggleGesture)
 
         composer.viewportProvider = self
         composer.addLayer(markupLayer)
@@ -304,6 +347,40 @@ public final class EditorViewController: UIViewController {
         textView.selectedRange = range
         guard !focus.typewriterScrolling else { return }
         textView.scrollRangeToVisible(range)
+    }
+
+    // MARK: - Session state
+
+    /// Where the caret rests and whether the keyboard is up. Read before the
+    /// view loads it answers with the state waiting to be restored, so a
+    /// snapshot taken at that moment does not overwrite it with zero.
+    public var editingState: EditorEditingState {
+        guard isViewLoaded else { return pendingRestoredState ?? EditorEditingState() }
+        return EditorEditingState(
+            caretLocation: textView.selectedRange.location,
+            isKeyboardVisible: textView.isFirstResponder)
+    }
+
+    /// Puts the caret back where the last run left it. The keyboard follows
+    /// in `viewDidAppear`, which is the earliest a text view can take it.
+    public func restoreEditingState(_ state: EditorEditingState) {
+        pendingRestoredState = state
+        guard isViewLoaded else { return }
+        applyCaret(of: state)
+    }
+
+    /// Clamps to the text as it is now: the file may have been edited
+    /// elsewhere, or by an external change, since the caret was recorded.
+    private func applyCaret(of state: EditorEditingState) {
+        let location = min(max(0, state.caretLocation), session.storage.length)
+        let range = NSRange(location: location, length: 0)
+        textView.selectedRange = range
+        textView.scrollRangeToVisible(range)
+    }
+
+    private func reportEditingState() {
+        guard isViewLoaded else { return }
+        delegate?.editorDidChangeEditingState(self, state: editingState)
     }
 
     // MARK: - Settings
@@ -549,6 +626,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
+        session.storage.setRevealRange(textView.selectedRange)
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
@@ -557,22 +635,84 @@ extension EditorViewController: UITextViewDelegate {
 
     public func textViewDidBeginEditing(_ textView: UITextView) {
         focus.isComposing = true
+        reportEditingState()
+        delegate?.editor(self, wantsChromeHidden: true)
     }
 
     public func textViewDidEndEditing(_ textView: UITextView) {
         focus.editingEnded()
         mention.dismiss()
         session.save()
+        reportEditingState()
+        delegate?.editor(self, wantsChromeHidden: false)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        composer.invalidate(nil)
         if !overlay.isHidden {
             placeOverlay()
         }
         layoutObserver?.editorDidScroll(self)
+        let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+        guard atTop != isScrolledToTop else { return }
+        isScrolledToTop = atTop
+        // Only the writer's own scroll brings the chrome back. The keyboard
+        // rising, a caret restore and typewriter mode all move the offset
+        // through the top as well, and none of them is a request to see it.
+        let byUser = scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
+        if atTop, byUser { delegate?.editor(self, wantsChromeHidden: false) }
     }
 
+}
+
+// MARK: - Chrome toggle
+
+extension EditorViewController: UIGestureRecognizerDelegate {
+
+    @objc private func handleChromeToggleTap(_ gesture: UITapGestureRecognizer) {
+        delegate?.editorDidRequestChromeToggle(self)
+    }
+
+    /// Claims a double tap only on blank space, so the system's own
+    /// double-tap word selection still runs on text.
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+        guard gestureRecognizer === chromeToggleGesture else { return true }
+        return isBlankSpace(at: touch.location(in: textView))
+    }
+
+    /// Runs beside the text view's own taps. A second recogniser that waits
+    /// to fail takes caret placement away from a single tap (measured on
+    /// iOS 26.2; `TaskMarkerTapGate` carries the same rule).
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    /// Whether `point` (in the text view's own coordinate space) falls
+    /// outside every line of text: past the last line fragment's bottom, or
+    /// on a fragment the tap does not actually resolve into.
+    func isBlankSpace(at point: CGPoint) -> Bool {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager
+        else { return true }
+        let containerPoint = CGPoint(
+            x: point.x - textView.textContainerInset.left,
+            y: point.y - textView.textContainerInset.top)
+        guard containerPoint.y >= 0,
+              let fragment = layoutManager.textLayoutFragment(for: containerPoint),
+              fragment.layoutFragmentFrame.contains(containerPoint)
+        else { return true }
+        guard let position = textView.closestPosition(to: point) else { return true }
+        let tappedOffset = textView.offset(from: textView.beginningOfDocument, to: position)
+        let origin = contentManager.documentRange.location
+        let range = fragment.rangeInElement
+        let start = contentManager.offset(from: origin, to: range.location)
+        let end = contentManager.offset(from: origin, to: range.endLocation)
+        return tappedOffset < start || tappedOffset >= end
+    }
 }
 
 // MARK: - RenderingViewportProviding
@@ -620,9 +760,13 @@ extension EditorViewController: AuthorshipObserving {
 
 extension EditorViewController: DocumentSessionDelegate {
 
+    /// The autosave lands a second after a burst of typing stops, which is
+    /// the caret's resting position — cheap enough to record, and often
+    /// enough that a session snapshot is never more than a burst behind.
     public func documentSessionDidSave(_ session: DocumentSession) {
         statisticsBar.saveFailed = false
         delegate?.editorDidUpdateDocument(self, document: session.document)
+        reportEditingState()
     }
 
     public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {
@@ -851,6 +995,10 @@ extension EditorViewController {
 
     public func writerTextViewRewriteSelection(_ textView: WriterTextView) {
         rewriteSelection()
+    }
+
+    public func writerTextView(_ textView: WriterTextView, didTapTaskMarkerAt offset: Int) {
+        apply(MarkdownEditingCommands.toggleTask(at: offset, in: session.storage.nsText))
     }
 }
 

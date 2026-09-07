@@ -100,6 +100,8 @@ public final class WriterTextView: UITextView {
     public let fragmentProvider: WriterLayoutFragmentProvider?
 
     private var appliedInsetWidth: CGFloat = -1
+    private let taskMarkerGate = TaskMarkerTapGate()
+    private var pendingTaskMarker: Int?
 
     public init(metrics: EditorMetrics, textStorage: NSTextStorage) {
         self.metrics = metrics
@@ -151,37 +153,6 @@ public final class WriterTextView: UITextView {
         applyMetrics()
     }
 
-    // MARK: - Task marker
-
-    /// A tap in a task item's gutter ticks its box. The recogniser takes no
-    /// touches from the text view's own gestures, so the tap also places the
-    /// caret on the line — which reveals the line's raw source, exactly as a
-    /// tap anywhere else on it would.
-    private func installTaskMarkerTap() {
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTaskMarkerTap(_:)))
-        tap.cancelsTouchesInView = false
-        tap.delaysTouchesBegan = false
-        tap.delaysTouchesEnded = false
-        addGestureRecognizer(tap)
-    }
-
-    @objc private func handleTaskMarkerTap(_ recognizer: UITapGestureRecognizer) {
-        guard let fragmentProvider, let offset = taskMarkerOffset(
-            at: recognizer.location(in: self), provider: fragmentProvider)
-        else { return }
-        actionDelegate?.writerTextView(self, didTapTaskMarkerAt: offset)
-    }
-
-    /// The character offset to toggle for a tap, or nil when the tap missed
-    /// every painted checkbox.
-    func taskMarkerOffset(at point: CGPoint, provider: WriterLayoutFragmentProvider) -> Int? {
-        guard let position = closestPosition(to: point) else { return nil }
-        let offset = self.offset(from: beginningOfDocument, to: position)
-        let containerX = point.x - textContainerInset.left
-        guard provider.hitsTaskMarker(at: offset, containerX: containerX) else { return nil }
-        return offset
-    }
-
     private func applyMetrics() {
         appliedInsetWidth = -1
         setNeedsLayout()
@@ -216,6 +187,48 @@ public final class WriterTextView: UITextView {
         replaceText(in: target, with: string)
         let inserted = NSRange(location: target.location, length: (string as NSString).length)
         actionDelegate?.writerTextView(self, didInsert: string, as: source, in: inserted)
+    }
+
+    // MARK: - Task marker
+
+    /// A tap in a task item's gutter ticks its box.
+    ///
+    /// Two ordering facts shape this. The recogniser must run BESIDE the text
+    /// view's own tap, not instead of it — measured on iOS 26.2, a second tap
+    /// recogniser takes caret placement away even when it fails every touch,
+    /// so the gate allows simultaneous recognition. And the text view's tap
+    /// reveals the line's raw source before any recogniser reaches its
+    /// action, so the hit is decided at touch DOWN and remembered.
+    private func installTaskMarkerTap() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTaskMarkerTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = taskMarkerGate
+        taskMarkerGate.textView = self
+        addGestureRecognizer(tap)
+    }
+
+    /// Remembers what a touch landed on, and says whether it was a checkbox.
+    func beginTaskMarkerTracking(at point: CGPoint) -> Bool {
+        pendingTaskMarker = taskMarkerOffset(at: point)
+        return pendingTaskMarker != nil
+    }
+
+    @objc private func handleTaskMarkerTap(_ recognizer: UITapGestureRecognizer) {
+        guard let offset = pendingTaskMarker else { return }
+        pendingTaskMarker = nil
+        actionDelegate?.writerTextView(self, didTapTaskMarkerAt: offset)
+    }
+
+    /// The character offset to toggle for a tap, or nil when the tap missed
+    /// every painted checkbox.
+    func taskMarkerOffset(at point: CGPoint) -> Int? {
+        guard let provider = fragmentProvider, let position = closestPosition(to: point) else { return nil }
+        let offset = self.offset(from: beginningOfDocument, to: position)
+        let containerX = point.x - textContainerInset.left
+        guard provider.hitsTaskMarker(at: offset, containerX: containerX) else { return nil }
+        return offset
     }
 
     // MARK: - Paste
@@ -308,5 +321,26 @@ public final class WriterTextView: UITextView {
         default:
             return super.canPerformAction(action, withSender: sender)
         }
+    }
+}
+
+/// Gates the task-marker tap and lets it run beside the text view's own
+/// gestures, so ticking a box never costs the writer a caret placement.
+private final class TaskMarkerTapGate: NSObject, UIGestureRecognizerDelegate {
+
+    weak var textView: WriterTextView?
+
+    /// Asked at touch down, which is the last moment the line's markers are
+    /// still collapsed.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let textView else { return false }
+        return textView.beginTaskMarkerTracking(at: touch.location(in: textView))
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }

@@ -112,13 +112,12 @@ final class WriterLiveMarkdownTests: XCTestCase {
     /// can run on it.
     func testTheTextViewReportsATaskGutterTap() throws {
         let (view, storage) = makeTextView("- [ ] task\n")
-        let provider = try XCTUnwrap(view.fragmentProvider)
         let metrics = EditorMetrics()
-        let point = CGPoint(
+        let gutter = CGPoint(
             x: view.textContainerInset.left + metrics.listIndent - metrics.markerSlot / 2,
             y: view.textContainerInset.top + 4)
-        let offset = view.taskMarkerOffset(at: point, provider: provider)
-        XCTAssertNotNil(offset)
+        XCTAssertNotNil(view.taskMarkerOffset(at: gutter))
+        XCTAssertNil(view.taskMarkerOffset(at: CGPoint(x: gutter.x + 120, y: gutter.y)))
         XCTAssertEqual(storage.model.blockKind(at: 0), .listItem(ordered: false, indent: 0, task: .unchecked))
     }
 

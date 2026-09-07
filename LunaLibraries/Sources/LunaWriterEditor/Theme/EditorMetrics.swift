@@ -66,7 +66,7 @@ public struct EditorMetrics: Equatable {
 
     /// The gutter a painted bullet or checkbox sits in, measured left from
     /// the list item's text.
-    public var markerSlot: CGFloat { (bodySize * 1.1).rounded() }
+    public var markerSlot: CGFloat { (bodySize * 1.3).rounded() }
 
     /// The bar a blockquote level paints in the gutter.
     public var quoteBarWidth: CGFloat { 2 }

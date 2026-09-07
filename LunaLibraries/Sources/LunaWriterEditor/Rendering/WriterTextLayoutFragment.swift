@@ -123,7 +123,7 @@ final class WriterTextLayoutFragment: NSTextLayoutFragment {
         defer { UIGraphicsPopContext() }
         switch decoration {
         case .bullet:
-            drawMarkerGlyph("\u{2022}", at: point, metrics: metrics)
+            drawBullet(at: point, metrics: metrics)
         case .task(let state):
             drawCheckbox(state, at: point, metrics: metrics)
         case .quote(let depth):
@@ -141,15 +141,20 @@ final class WriterTextLayoutFragment: NSTextLayoutFragment {
             from: contentManager.documentRange.location, to: rangeInElement.location)
     }
 
-    /// Where the first character of the paragraph draws, in fragment
-    /// coordinates. A collapsed marker sits exactly there, so the gutter is
-    /// everything left of it.
-    private func firstGlyphOrigin() -> CGPoint? {
+    /// Where the paragraph's first character draws, in fragment coordinates.
+    /// A collapsed marker sits exactly there, so the gutter is everything
+    /// left of it, and a painted glyph shares the text's own baseline.
+    private struct Anchor {
+        var textX: CGFloat
+        var baselineY: CGFloat
+    }
+
+    private func firstLineAnchor() -> Anchor? {
         guard let line = textLineFragments.first else { return nil }
-        let inLine = line.locationForCharacter(at: 0)
-        return CGPoint(
-            x: line.typographicBounds.origin.x + inLine.x,
-            y: line.typographicBounds.origin.y)
+        let bounds = line.typographicBounds
+        return Anchor(
+            textX: bounds.origin.x + line.locationForCharacter(at: 0).x,
+            baselineY: bounds.origin.y + line.glyphOrigin.y)
     }
 
     private var containerPadding: CGFloat {
@@ -158,45 +163,50 @@ final class WriterTextLayoutFragment: NSTextLayoutFragment {
 
     // MARK: - Painting
 
-    private func drawMarkerGlyph(_ glyph: String, at point: CGPoint, metrics: EditorMetrics) {
-        guard let line = textLineFragments.first, let origin = firstGlyphOrigin() else { return }
+    /// The middle of the lower case letters, which is where a bullet or a
+    /// checkbox reads as level with the text.
+    private func markerCentre(_ anchor: Anchor, at point: CGPoint, metrics: EditorMetrics) -> CGPoint {
         let font = UIFont.systemFont(ofSize: metrics.bodySize)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: EditorTheme.markup,
-        ]
-        let size = (glyph as NSString).size(withAttributes: attributes)
-        let height = line.typographicBounds.height
-        let x = point.x + origin.x - metrics.markerSlot + (metrics.markerSlot - size.width) / 2
-        let y = point.y + origin.y + (height - size.height) / 2
-        (glyph as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attributes)
+        return CGPoint(
+            x: point.x + anchor.textX - metrics.markerSlot / 2,
+            y: point.y + anchor.baselineY - font.xHeight / 2)
+    }
+
+    private func drawBullet(at point: CGPoint, metrics: EditorMetrics) {
+        guard let anchor = firstLineAnchor() else { return }
+        let centre = markerCentre(anchor, at: point, metrics: metrics)
+        let diameter = max(3, (metrics.bodySize * 0.3).rounded())
+        EditorTheme.markup.setFill()
+        UIBezierPath(ovalIn: CGRect(
+            x: (centre.x - diameter / 2).rounded(),
+            y: (centre.y - diameter / 2).rounded(),
+            width: diameter, height: diameter)).fill()
     }
 
     private func drawCheckbox(_ state: TaskState, at point: CGPoint, metrics: EditorMetrics) {
-        guard let line = textLineFragments.first, let origin = firstGlyphOrigin() else { return }
-        let side = (metrics.bodySize * 0.86).rounded()
+        guard let anchor = firstLineAnchor() else { return }
+        let side = (metrics.bodySize * 0.8).rounded()
         guard let image = Self.symbol(
             state == .checked ? "checkmark.square" : "square", size: side)
         else { return }
-        let height = line.typographicBounds.height
-        let box = CGRect(
-            x: point.x + origin.x - metrics.markerSlot + (metrics.markerSlot - image.size.width) / 2,
-            y: point.y + origin.y + (height - image.size.height) / 2,
-            width: image.size.width,
-            height: image.size.height)
+        let centre = markerCentre(anchor, at: point, metrics: metrics)
         image.withTintColor(
             state == .checked ? EditorTheme.caret : EditorTheme.markup,
             renderingMode: .alwaysOriginal
-        ).draw(in: box)
+        ).draw(in: CGRect(
+            x: (centre.x - image.size.width / 2).rounded(),
+            y: (centre.y - image.size.height / 2).rounded(),
+            width: image.size.width, height: image.size.height))
     }
 
     private func drawQuoteBars(depth: Int, at point: CGPoint, metrics: EditorMetrics) {
-        guard let origin = firstGlyphOrigin() else { return }
+        guard let anchor = firstLineAnchor() else { return }
         let indent = metrics.quoteIndent
         let width = metrics.quoteBarWidth
         EditorTheme.quoteBar.setFill()
         for level in 1...depth {
-            let gutter = origin.x - indent * CGFloat(depth - level + 1)
-            let x = point.x + gutter + (indent - width) / 2
+            let gutter = anchor.textX - indent * CGFloat(depth - level + 1)
+            let x = (point.x + gutter + (indent - width) / 2).rounded()
             for line in textLineFragments {
                 let bounds = line.typographicBounds
                 UIRectFill(CGRect(

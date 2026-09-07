@@ -34,7 +34,7 @@ final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
-        WriterWiring.applicationDidEnterBackground()
+        WriterWiring.sceneWillResignActive()
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {

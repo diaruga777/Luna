@@ -303,6 +303,37 @@ final class LibraryRootViewControllerTests: XCTestCase {
         XCTAssertTrue(stack.sessionState.snapshot.keyboardVisible)
     }
 
+    /// On the way to the app switcher the system takes the keyboard down, and
+    /// a force quit follows with no further hook. The state the writer left is
+    /// the one captured when the scene resigned active; nothing after it counts
+    /// until the scene is active again.
+    @MainActor
+    func testReportsWhileTheSceneIsInactiveDoNotOverwriteTheSuspendedSnapshot() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Sheet")
+        let editorMaker = FakeDocumentEditorMaker()
+        let root = LibraryRootViewController(
+            environment: makeLibraryEnvironment(stack: stack, editorMaker: editorMaker))
+        layoutWriterScreen(root)
+        root.show(document: document)
+        let editor = try XCTUnwrap(editorMaker.madeEditors.last)
+        editor.editingState = EditorEditingState(caretLocation: 8, isKeyboardVisible: true)
+
+        root.suspendRecording()
+        XCTAssertTrue(stack.sessionState.snapshot.keyboardVisible)
+        XCTAssertEqual(stack.sessionState.snapshot.caretLocation, 8)
+
+        editor.simulateEditingState(EditorEditingState(caretLocation: 8, isKeyboardVisible: false))
+        editor.editingState = EditorEditingState(caretLocation: 8, isKeyboardVisible: false)
+        root.recordSessionState()
+        XCTAssertTrue(stack.sessionState.snapshot.keyboardVisible, "the system's own resignation is not the writer's")
+
+        root.resumeRecording()
+        editor.simulateEditingState(EditorEditingState(caretLocation: 2, isKeyboardVisible: false))
+        XCTAssertFalse(stack.sessionState.snapshot.keyboardVisible)
+        XCTAssertEqual(stack.sessionState.snapshot.caretLocation, 2)
+    }
+
     /// The way to the background is the last chance to record a caret the
     /// autosave has not caught up with.
     @MainActor

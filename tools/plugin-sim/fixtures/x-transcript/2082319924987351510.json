@@ -1,0 +1,79 @@
+{
+ "status": {
+  "id": "2082319924987351510",
+  "text": "Those who follow my feed know that I test new video models by having them show an otter using a laptop on an airplane.\n\nThe new Flux 3 video model is really good, so I had it do a variation on theme, which will become apparent a couple seconds in. See the change from 2 years ago.",
+  "is_note_tweet": false,
+  "author": {
+   "screen_name": "emollick",
+   "name": "Ethan Mollick",
+   "id": "39125788"
+  },
+  "media": {
+   "all": [
+    {
+     "type": "video",
+     "url": "https://video.twimg.com/amplify_video/2082317468211585024/vid/avc1/1280x704/yHZp_y-JcL_ej8j6.mp4?tag=29",
+     "width": 1280,
+     "height": 704
+    }
+   ]
+  }
+ },
+ "thread": [
+  {
+   "id": "2082319924987351510",
+   "text": "Those who follow my feed know that I test new video models by having them show an otter using a laptop on an airplane.\n\nThe new Flux 3 video model is really good, so I had it do a variation on theme, which will become apparent a couple seconds in. See the change from 2 years ago.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "video",
+      "url": "https://video.twimg.com/amplify_video/2082317468211585024/vid/avc1/1280x704/yHZp_y-JcL_ej8j6.mp4?tag=29",
+      "width": 1280,
+      "height": 704
+     }
+    ]
+   }
+  },
+  {
+   "id": "2082322141505040500",
+   "text": "1990s movie version (the otter sounds like Christian Slater?)",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "video",
+      "url": "https://video.twimg.com/amplify_video/2082321947589812227/vid/avc1/1280x704/6XtOhp_oc1BkPl4o.mp4?tag=29",
+      "width": 1280,
+      "height": 704
+     }
+    ]
+   }
+  },
+  {
+   "id": "2082322715751399426",
+   "text": "Original prompt: a hacker movie where an otter on a standard commercial plane sitting and using a laptop needs to hack into the mainframe to turn off the alarm before the otters entering the vault are captured. the otters all speak in human voices.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "emollick",
+  "name": "Ethan Mollick",
+  "id": "39125788"
+ }
+}

@@ -1,0 +1,14 @@
+{"streamingData":{"formats":[{
+  "itag":18,
+  "mimeType":"video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+  "url":"https://video.example.com/youtube.mp4?expire=4102444800",
+  "audioQuality":"AUDIO_QUALITY_LOW",
+  "height":640,
+  "contentLength":"123456"
+}],"adaptiveFormats":[
+  {"itag":140,"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","url":"https://video.example.com/audio-128k.m4a?expire=4102444800","bitrate":130000,"audioQuality":"AUDIO_QUALITY_MEDIUM"},
+  {"itag":139,"mimeType":"audio/mp4; codecs=\"mp4a.40.5\"","url":"https://video.example.com/audio-48k.m4a?expire=4102444800","bitrate":49000,"audioQuality":"AUDIO_QUALITY_LOW"},
+  {"itag":141,"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","signatureCipher":"s=abc&sp=sig&url=https%3A%2F%2Fvideo.example.com%2Fciphered-audio.m4a","bitrate":256000,"audioQuality":"AUDIO_QUALITY_HIGH"},
+  {"itag":137,"mimeType":"video/mp4; codecs=\"avc1.640028\"","url":"https://video.example.com/1080-video-only.mp4","bitrate":4000000,"height":1080}
+]},
+"videoDetails":{"videoId":"bcHXFQIZ4lY","title":"Fixture talk","author":"Fixture Channel","lengthSeconds":"42","shortDescription":"A synthetic description."}}

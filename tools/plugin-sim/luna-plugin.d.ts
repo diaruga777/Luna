@@ -92,10 +92,20 @@ export interface PageSnapshot {
   truncated?: boolean;
 }
 
+/**
+ * What the user asked for, when they asked for something other than a plain
+ * save. `"transcribe"` is set by the app's Transcribe actions only: a plugin
+ * that would store the media declines it, so the walk reaches the plugin that
+ * reads it as an article. Absent (not null) on a plain save, in the share and
+ * action extensions, and in Safari.
+ */
+export type IngestIntent = "transcribe";
+
 export interface ClassifyInput {
   url: string;
   page?: PageSnapshot;
   context: "app" | "share" | "action" | "safari";
+  intent?: IngestIntent;
 }
 
 export type ClassifyResult =
@@ -109,6 +119,7 @@ export interface IngestInput {
   reason: "save" | "resume" | "refresh" | "reresolve" | "rescue";
   context: "app" | "share" | "action" | "safari";
   saveId?: string;
+  intent?: IngestIntent;
 }
 
 export interface ExportInput {
@@ -208,17 +219,35 @@ export interface ArticleDocumentSpec {
   headers?: Record<string, string>;
 }
 
+/**
+ * An audio or video file Luna downloads, transcribes on device into the
+ * article's body, and deletes. `audioURL` names a separate audio leg for a
+ * video; when present ONLY that leg is fetched. `expiresAt` is epoch seconds;
+ * a stale URL makes Luna re-run `ingest` with `reason: "reresolve"` first.
+ */
+export interface ArticleTranscriptionSpec {
+  url: string;
+  type: "audio" | "video";
+  audioURL?: string;
+  headers?: Record<string, string>;
+  expiresAt?: number;
+}
+
 export interface ArticleModel {
   kind: "article";
   title: string;
   author?: string;
   publishedAt?: string;
-  html: string;
+  /** Required unless `transcription` is set; with it, optional text that
+   *  PRECEDES the transcript (a description, the post's own words). */
+  html?: string;
   baseURL?: string;
   leadImageURL?: string;
   excerpt?: string;
   language?: string;
+  /** Cannot be combined with `transcription`. */
   document?: ArticleDocumentSpec;
+  transcription?: ArticleTranscriptionSpec;
 }
 
 export interface Price { amount: string; currency: string }

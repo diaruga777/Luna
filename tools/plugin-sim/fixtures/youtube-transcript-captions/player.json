@@ -1,0 +1,17 @@
+{"streamingData":{"formats":[{
+  "itag":18,
+  "mimeType":"video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+  "url":"https://video.example.com/youtube.mp4?expire=4102444800",
+  "audioQuality":"AUDIO_QUALITY_LOW",
+  "height":640,
+  "contentLength":"123456"
+}]},
+"videoDetails":{"videoId":"bcHXFQIZ4lY","title":"Fixture talk","author":"Fixture Channel","lengthSeconds":"42","defaultAudioLanguage":"en","shortDescription":"A synthetic description.\n\nSecond paragraph."},
+"captions":{"playerCaptionsTracklistRenderer":{
+  "captionTracks":[
+    {"baseUrl":"https://www.youtube.com/api/timedtext?v=bcHXFQIZ4lY&lang=en&kind=asr","name":{"simpleText":"English (auto-generated)"},"vssId":"a.en","languageCode":"en","kind":"asr","isTranslatable":true},
+    {"baseUrl":"https://www.youtube.com/api/timedtext?v=bcHXFQIZ4lY&lang=en","name":{"runs":[{"text":"English"}]},"vssId":".en","languageCode":"en","isTranslatable":true}
+  ],
+  "audioTracks":[{"captionTrackIndices":[0,1],"defaultCaptionTrackIndex":1}],
+  "defaultAudioTrackIndex":0
+}}}

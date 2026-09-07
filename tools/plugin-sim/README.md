@@ -29,9 +29,17 @@ node run.mjs <plugin.js> <url> --hook classify   # classify only
 node run.mjs <plugin.js> <url> --hook ingest     # ingest only, against a synthetic claim
 node run.mjs <plugin.js> <url> --hook export     # export-only convenience run
 node run.mjs <plugin.js> <url> --fixture ./fixtures/some-platform
+node run.mjs <plugin.js> <url> --intent transcribe  # the app's Transcribe action: `intent` on the hook input
 node run.mjs validate <plugin.js>                 # JSON preflight report
 node run.mjs test <plugin.js> <url> --fixture ./fixtures/some-platform
 ```
+
+`--intent transcribe` sets `intent: "transcribe"` on the `classify` and
+`ingest` inputs, exactly as the app does for its Transcribe actions and never
+otherwise (the key is absent, not null, on a plain save). A media plugin must
+decline it; an `article` Model may then carry a `transcription` spec instead
+of `html`, and the validator checks that spec's shape. The bundled transcript
+plugins' fixture directories are under `fixtures/<platform>-transcript*/`.
 
 The first form prints the `classify` verdict and, when it claims the URL, the
 `ingest` Model as JSON. `validate` and `test` print one structured JSON report

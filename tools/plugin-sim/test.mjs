@@ -113,6 +113,59 @@ try {
   assert.equal(badCookieResult.report.ok, false);
   assert.match(badCookieResult.report.errors[0], /cookies/);
 
+  // A transcript plugin: `--intent transcribe` reaches classify, and an
+  // article Model may carry a `transcription` spec in place of `html`.
+  const transcript = path.join(temp, "transcript.js");
+  writeFileSync(
+    transcript,
+    header(
+      "test.transcript",
+      `"produces":["article"],"match":{"hosts":["example.com"]}`,
+    ) +
+      `luna.register({ classify: ({intent}) => ({kind:"article", itemId: intent || "none"}), ingest: async ({url, intent}) => ({kind:"article", title: intent || "plain", transcription:{url: url, type:"audio", expiresAt: 4102444800}}) });`,
+  );
+  const transcribed = invoke([
+    "test",
+    transcript,
+    "https://example.com/talk.mp3",
+    "--intent",
+    "transcribe",
+  ]);
+  assert.equal(transcribed.report.ok, true);
+  assert.equal(transcribed.report.result.value.itemId, "transcribe");
+  assert.equal(transcribed.report.result.ingest.title, "transcribe");
+  assert.equal(transcribed.report.result.ingest.transcription.type, "audio");
+  const plain = invoke(["test", transcript, "https://example.com/talk.mp3"]);
+  assert.equal(plain.report.ok, true);
+  assert.equal(plain.report.result.value.itemId, "none");
+  assert.equal(plain.report.result.ingest.title, "plain");
+
+  const badSpec = path.join(temp, "bad-spec.js");
+  writeFileSync(
+    badSpec,
+    header(
+      "test.bad-spec",
+      `"produces":["article"],"match":{"hosts":["example.com"]}`,
+    ) +
+      `luna.register({ classify: () => ({kind:"article"}), ingest: async ({url}) => ({kind:"article", title:"t", transcription:{url: url, type:"image"}}) });`,
+  );
+  const badSpecResult = invoke(["test", badSpec, "https://example.com/a.mp3"]);
+  assert.equal(badSpecResult.report.ok, false);
+  assert.match(badSpecResult.report.errors[0], /transcription.type/);
+
+  const bothSpecs = path.join(temp, "both-specs.js");
+  writeFileSync(
+    bothSpecs,
+    header(
+      "test.both-specs",
+      `"produces":["article"],"match":{"hosts":["example.com"]}`,
+    ) +
+      `luna.register({ classify: () => ({kind:"article"}), ingest: async ({url}) => ({kind:"article", title:"t", document:{url: url, type:"pdf"}, transcription:{url: url, type:"video"}}) });`,
+  );
+  const bothSpecsResult = invoke(["test", bothSpecs, "https://example.com/a"]);
+  assert.equal(bothSpecsResult.report.ok, false);
+  assert.match(bothSpecsResult.report.errors[0], /document and article.transcription/);
+
   const exportPlugin = path.join(temp, "export.js");
   writeFileSync(
     exportPlugin,

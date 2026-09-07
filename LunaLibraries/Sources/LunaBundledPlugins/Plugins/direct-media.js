@@ -45,7 +45,10 @@ function assetType(rawURL) {
 }
 
 luna.register({
-    classify({ url }) {
+    classify({ url, intent }) {
+        // A transcribe intent belongs to the transcript plugin, which sits
+        // below this one in the walk.
+        if (intent === "transcribe") { return false; }
         return assetType(url) ? { kind: "media" } : false;
     },
 

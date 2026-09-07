@@ -108,6 +108,24 @@ An ingest plugin (`produces` non-empty) must define both `classify` and
 `ingest`, or the plugin fails to load. An `export` declaration requires
 `export`; a `bluetooth` declaration requires `onBluetooth`.
 
+```ts
+interface ClassifyInput { url: string; page?: PageSnapshot; context: "app"|"share"|"action"|"safari"; intent?: "transcribe" }
+interface IngestInput {
+  url: string; claim: { kind: PluginModelKind; itemId?: string }; page?: PageSnapshot;
+  reason: "save"|"resume"|"refresh"|"reresolve"|"rescue"; context: "app"|"share"|"action"|"safari";
+  saveId?: string; intent?: "transcribe";
+}
+```
+
+`intent` is present ONLY when the user chose one of the app's Transcribe
+actions; on a plain save, in the share and action extensions, and in Safari
+the key is absent. A plugin that would store the media (`produces:
+["media"]`) returns `false` from `classify` when `intent === "transcribe"`,
+so the walk reaches a lower-priority plugin that reads the same URL as an
+`article` — either text it already has (captions) or a `transcription` file
+for Luna to transcribe (see [Models](#models)). A transcribe intent that no
+plugin serves fails the save; it never falls through to a download.
+
 ## Always present
 
 ```ts
@@ -484,10 +502,20 @@ decode time (`PluginModelCaps` in
 (long enough for a signed CDN URL carrying its whole signature in the
 query), an article's `html` 4 MB, `assets` 1–50 entries, `sellers` up to 20.
 A relative URL is resolved against the page's own URL for you; only an
-ABSOLUTE URL with a non-http(s) scheme is refused. Asset/document `headers`
-are filtered to `user-agent`, `referer`, `cookie`, `accept`,
-`accept-language`, `origin`, `range` — any other header name is a decode
-error.
+ABSOLUTE URL with a non-http(s) scheme is refused. Asset/document/
+transcription `headers` are filtered to `user-agent`, `referer`, `cookie`,
+`accept`, `accept-language`, `origin`, `range` — any other header name is a
+decode error.
+
+An `article` Model has three body sources, tried in this order by Luna:
+`document` (a file Luna parses), `transcription` (an audio or video file Luna
+downloads, transcribes on device and deletes; the save waits as pending until
+the transcript is written), then `html`. `html` is required only when neither
+file spec is set; beside `transcription` it is optional text that precedes
+the transcript. `document` and `transcription` together are a decode error.
+A transcript plugin should offer the cheapest source it can: text the site
+already publishes (captions) as plain `html`, else an audio-only file, else
+the video.
 
 ```ts
 type PluginModelKind = "article" | "media" | "product";
@@ -504,10 +532,19 @@ interface MediaModel {
 }
 
 interface ArticleDocumentSpec { url: string; type: "pdf"|"epub"|"docx"|"rtf"|"html"|"md"|"txt"; headers?: Record<string,string> }
+interface ArticleTranscriptionSpec {
+  url: string; type: "audio" | "video";
+  audioURL?: string;                 // a separate audio leg for a video: only this is fetched
+  headers?: Record<string,string>;   // same allowed names as an asset's headers
+  expiresAt?: number;                // epoch seconds; stale → ingest re-runs with reason "reresolve"
+}
 interface ArticleModel {
   kind: "article"; title: string; author?: string; publishedAt?: string;
-  html: string; baseURL?: string; leadImageURL?: string; excerpt?: string;
-  language?: string; document?: ArticleDocumentSpec;
+  html?: string;                     // required unless transcription is set; then it PRECEDES the transcript
+  baseURL?: string; leadImageURL?: string; excerpt?: string;
+  language?: string;                 // BCP-47; also the transcription language when set
+  document?: ArticleDocumentSpec;    // never together with transcription
+  transcription?: ArticleTranscriptionSpec;
 }
 
 interface Price { amount: string; currency: string }   // amount is a decimal STRING

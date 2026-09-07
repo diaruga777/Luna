@@ -1,0 +1,19 @@
+WEBVTT
+
+NOTE a synthetic caption file
+
+1
+00:00:00.000 --> 00:00:02.000 align:start position:0%
+Hello and welcome.
+
+2
+00:00:02.000 --> 00:00:03.500
+This <b>clip</b> is about
+testing captions.
+
+3
+00:00:03.500 --> 00:00:04.000
+This clip is about testing captions.
+
+00:00:07.000 --> 00:00:09.000
+A pause starts a new paragraph.

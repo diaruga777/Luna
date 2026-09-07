@@ -207,7 +207,8 @@ return {
 Luna's reader renders `html` almost as-is (no readability scoring — your
 plugin already chose the body). Point `document` at a URL instead of/beside
 `html` when the real content is a PDF/EPUB/DOCX file Luna should download and
-open as a document.
+open as a document. Point `transcription` at an audio or video file when the
+words are SPOKEN rather than written — Step 5 below.
 
 **`product`**:
 
@@ -227,6 +228,58 @@ that item.
 Every field has a size cap (titles 300 characters, a URL string 4096
 characters, and so on) — see `PluginModelCaps` in `api.md`. A URL you write
 may be a relative path; Luna resolves it against the page's own URL for you.
+
+### Step 5 — a file to transcribe
+
+An `article` Model can hand Luna an audio or video file instead of text.
+Luna downloads the file, transcribes it on the device (iOS 26 and later,
+no server), writes the transcript as the article's body, and deletes the
+file. The save shows as pending until the transcript is in. The smallest
+possible plugin of this kind is `direct-media-transcript.js`
+(`LunaLibraries/Sources/LunaBundledPlugins/Plugins/direct-media-transcript.js`),
+which reads a URL that is itself an `.mp3`/`.m4a`/`.mp4`/… file:
+
+```js
+async ingest({ url }) {
+  const file = source(url);              // { type: "audio" | "video", name }
+  if (!file) return null;
+  return {
+    kind: "article",
+    title: file.name,
+    transcription: { url: url, type: file.type },
+  };
+},
+```
+
+Three rules make a transcript plugin behave well:
+
+1. **Offer the cheapest source you can, in this order.** Captions the site
+   already publishes are text — return them as an ordinary `html` Model and
+   no file is fetched at all. Otherwise an audio-only file (a few megabytes
+   per hour). Only then the video. `youtube-transcript.js` shows all three
+   legs; `reddit-transcript.js` shows the audio leg, since Reddit stores a
+   video's sound as a separate file.
+2. **Lead with the text you have.** `html` is optional beside
+   `transcription`, and what you put there — the post's own words, a
+   description — is placed BEFORE the transcript in the reader. Omit it
+   when there is none; never send `""`.
+3. **Respect the intent.** The app's Transcribe actions call every matched
+   plugin with `intent: "transcribe"` in the `classify` input. A plugin that
+   would STORE the media (`produces: ["media"]`) must return `false` then, so
+   the walk reaches your transcript plugin. Give the transcript plugin a
+   LOWER priority than the media plugin for the same site (the bundled
+   pairs use 100 and 90): on a plain save the media plugin wins, on a
+   Transcribe action it steps aside, and a user who disables the media
+   plugin in Settings → Plugins makes yours the default. Your own
+   `classify` ignores `intent` — it claims whenever the URL is yours.
+
+`transcription.headers` takes the same header names an asset's do. Set
+`expiresAt` (epoch seconds) when the URL is signed: Luna re-runs your
+`ingest` with `reason: "reresolve"` before fetching a stale one, and again
+if the CDN answers 401/403/410. Set `language` (BCP-47) on the Model when
+you know what is spoken; the transcriber uses it to pick its on-device
+model. A video with a separate audio leg goes in as `type: "video"` with
+`audioURL` set, and Luna fetches ONLY the audio.
 
 ## 3. `luna.html` — reading a page
 
@@ -518,7 +571,11 @@ directory instead of the real network — save a page once (`curl` it into the
 directory under a name matching either its URL's last path segment or its
 full host+path with `/`/`?`/`&`/`=` turned into `_`), then iterate offline.
 Drop `--fixture` to hit the real network instead. Add `--hook classify` or
-`--hook ingest` to run just one hook.
+`--hook ingest` to run just one hook. Add `--intent transcribe` to run the
+hooks the way the app's Transcribe actions call them (`intent` set on the
+input); a media plugin must then decline, and a transcript plugin's Model
+is checked for a valid `transcription` spec. The bundled transcript plugins'
+fixtures live under `tools/plugin-sim/fixtures/<platform>-transcript*/`.
 
 `run.mjs`'s normal convenience form exercises `classify` and `ingest`; the
 `test` form also accepts `--hook export` and returns a JSON pass/fail report.

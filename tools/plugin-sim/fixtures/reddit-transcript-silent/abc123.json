@@ -1,0 +1,4 @@
+[{"data":{"children":[{"data":{"is_video":true,"thumbnail":"https://b.thumbs.redditmedia.com/abc123.jpg","secure_media":{"reddit_video":{
+    "fallback_url":"https://v.redd.it/abc123def456/DASH_720.mp4?source=fallback",
+    "has_audio":false
+}}}}]}},{"data":{"children":[]}}]

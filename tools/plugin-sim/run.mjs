@@ -159,10 +159,17 @@ export function fixtureFetch(dir) {
 }
 
 function options(argv) {
-  const out = { fixture: null, hook: null, timeout: 10_000, positional: [] };
+  const out = {
+    fixture: null,
+    hook: null,
+    intent: null,
+    timeout: 10_000,
+    positional: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--fixture") out.fixture = argv[++i];
     else if (argv[i] === "--hook") out.hook = argv[++i];
+    else if (argv[i] === "--intent") out.intent = argv[++i];
     else if (argv[i] === "--timeout") out.timeout = Number(argv[++i]);
     else out.positional.push(argv[i]);
   }
@@ -233,7 +240,25 @@ function modelError(value, manifest) {
   if (value.kind === "article") {
     if (typeof value.title !== "string" || !value.title.trim())
       return "article.title must be a non-empty string";
-    if (typeof value.html !== "string" || !value.html.trim())
+    const spec = value.transcription;
+    if (spec !== undefined) {
+      if (!spec || typeof spec !== "object")
+        return "article.transcription must be an object";
+      if (typeof spec.url !== "string" || !spec.url.trim())
+        return "article.transcription.url must be a non-empty string";
+      if (!["audio", "video"].includes(spec.type))
+        return "article.transcription.type must be audio or video";
+      if (spec.audioURL !== undefined && typeof spec.audioURL !== "string")
+        return "article.transcription.audioURL must be a string when provided";
+      if (spec.headers !== undefined && (!spec.headers || typeof spec.headers !== "object"))
+        return "article.transcription.headers must be an object when provided";
+      if (spec.expiresAt !== undefined && typeof spec.expiresAt !== "number")
+        return "article.transcription.expiresAt must be a number (epoch seconds)";
+      if (value.document !== undefined)
+        return "article.document and article.transcription cannot both be set";
+      if (value.html !== undefined && typeof value.html !== "string")
+        return "article.html must be a string when provided";
+    } else if (typeof value.html !== "string" || !value.html.trim())
       return "article.html must be a non-empty string";
   } else if (value.kind === "media") {
     if (
@@ -302,6 +327,12 @@ function exportError(value) {
   return null;
 }
 
+/// The hook argument with `intent` added ONLY when `--intent` was given — the
+/// app encodes the key the same way, so an unset intent is absent, not null.
+function hookInput(input, opts) {
+  return opts.intent ? { ...input, intent: opts.intent } : input;
+}
+
 function addEvent(report, phase, detail) {
   report.events.push({ phase, detail });
 }
@@ -336,28 +367,40 @@ export async function evaluate(mode, pluginPath, url, opts) {
   try {
     addEvent(report, hook, "started");
     if (hook === "classify") {
-      const value = await loaded.hooks.classify({ url, context: "app" });
+      const value = await loaded.hooks.classify(
+        hookInput({ url, context: "app" }, opts),
+      );
       report.result = { hook, value };
       const error = claimError(value, loaded.manifest);
       if (error) report.errors.push(error);
       if (!error && value && loaded.hooks.ingest) {
-        const model = await loaded.hooks.ingest({
-          url,
-          claim: { kind: value.kind, itemId: value.itemId },
-          context: "app",
-          reason: "save",
-        });
+        const model = await loaded.hooks.ingest(
+          hookInput(
+            {
+              url,
+              claim: { kind: value.kind, itemId: value.itemId },
+              context: "app",
+              reason: "save",
+            },
+            opts,
+          ),
+        );
         report.result.ingest = model;
         const modelIssue = modelError(model, loaded.manifest);
         if (modelIssue) report.errors.push(modelIssue);
       }
     } else if (hook === "ingest") {
-      const value = await loaded.hooks.ingest({
-        url,
-        claim: { kind: loaded.manifest.produces?.[0] || "article" },
-        context: "app",
-        reason: "save",
-      });
+      const value = await loaded.hooks.ingest(
+        hookInput(
+          {
+            url,
+            claim: { kind: loaded.manifest.produces?.[0] || "article" },
+            context: "app",
+            reason: "save",
+          },
+          opts,
+        ),
+      );
       report.result = { hook, value };
       const error = modelError(value, loaded.manifest);
       if (error) report.errors.push(error);
@@ -398,6 +441,7 @@ function bounded(mode, pluginPath, url, opts) {
       ...(url ? [url] : []),
       ...(opts.fixture ? ["--fixture", opts.fixture] : []),
       ...(opts.hook ? ["--hook", opts.hook] : []),
+      ...(opts.intent ? ["--intent", opts.intent] : []),
     ];
     const child = spawn(process.execPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -463,7 +507,7 @@ async function main() {
   const [pluginPath, url] = opts.positional;
   if (!pluginPath || (mode === "test" && !url)) {
     console.error(
-      "usage: run.mjs validate <plugin.js> [--timeout ms]\n       run.mjs test <plugin.js> <url> [--fixture dir] [--hook classify|ingest|export]\n       run.mjs <plugin.js> <url> [--fixture dir] [--hook classify|ingest]",
+      "usage: run.mjs validate <plugin.js> [--timeout ms]\n       run.mjs test <plugin.js> <url> [--fixture dir] [--hook classify|ingest|export] [--intent transcribe]\n       run.mjs <plugin.js> <url> [--fixture dir] [--hook classify|ingest] [--intent transcribe]",
     );
     process.exitCode = 2;
     return;
@@ -481,18 +525,17 @@ async function main() {
   );
   const hook = opts.hook || "classify";
   if (hook === "classify") {
-    const claim = await loaded.hooks.classify({ url, context: "app" });
+    const claim = await loaded.hooks.classify(
+      hookInput({ url, context: "app" }, opts),
+    );
     console.log("classify:", JSON.stringify(claim, null, 2));
     if (claim && loaded.hooks.ingest)
       console.log(
         "ingest:",
         JSON.stringify(
-          await loaded.hooks.ingest({
-            url,
-            claim,
-            context: "app",
-            reason: "save",
-          }),
+          await loaded.hooks.ingest(
+            hookInput({ url, claim, context: "app", reason: "save" }, opts),
+          ),
           null,
           2,
         ),
@@ -501,12 +544,17 @@ async function main() {
     console.log(
       "ingest:",
       JSON.stringify(
-        await loaded.hooks.ingest({
-          url,
-          claim: { kind: loaded.manifest.produces?.[0] || "article" },
-          context: "app",
-          reason: "save",
-        }),
+        await loaded.hooks.ingest(
+          hookInput(
+            {
+              url,
+              claim: { kind: loaded.manifest.produces?.[0] || "article" },
+              context: "app",
+              reason: "save",
+            },
+            opts,
+          ),
+        ),
         null,
         2,
       ),

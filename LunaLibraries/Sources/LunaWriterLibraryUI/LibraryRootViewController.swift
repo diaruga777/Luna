@@ -199,6 +199,19 @@ public final class LibraryRootViewController: UISplitViewController {
         environment.sessionState.snapshot = snapshot
     }
 
+    /// Raises the keyboard again on the open sheet when the last snapshot
+    /// had it up — the app is back in the foreground, and typing resumes
+    /// without a tap.
+    public func refocusEditorIfNeeded() {
+        let snapshot = environment.sessionState.snapshot
+        guard snapshot.keyboardVisible, let container = currentContainer,
+              container.document.id == snapshot.documentID else { return }
+        container.restoreEditingState(
+            EditorEditingState(
+                caretLocation: snapshot.caretLocation ?? container.editingState.caretLocation,
+                isKeyboardVisible: true))
+    }
+
     // MARK: - Keyboard commands
 
     public override var keyCommands: [UIKeyCommand]? {

@@ -40,4 +40,8 @@ final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillEnterForeground(_ scene: UIScene) {
         WriterWiring.sceneWillEnterForeground()
     }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        WriterWiring.sceneDidBecomeActive()
+    }
 }

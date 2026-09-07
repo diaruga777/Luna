@@ -55,6 +55,21 @@ final class EditorRestorationTests: XCTestCase {
         XCTAssertFalse(editor.textView.isFirstResponder)
     }
 
+    /// The app came back to the foreground with the sheet already on screen:
+    /// the keyboard rises now, with no new appearance to wait for.
+    @MainActor
+    func testRestoringOnAnOnScreenEditorRaisesTheKeyboardAtOnce() throws {
+        let (editor, _) = try makeEditor(text: "The quick brown fox.")
+        let window = hostWriterScreen(editor)
+        defer { editor.close(); window.isHidden = true }
+        XCTAssertFalse(editor.textView.isFirstResponder)
+
+        editor.restoreEditingState(EditorEditingState(caretLocation: 3, isKeyboardVisible: true))
+
+        XCTAssertTrue(editor.textView.isFirstResponder)
+        XCTAssertEqual(editor.textView.selectedRange, NSRange(location: 3, length: 0))
+    }
+
     /// The file may have been edited elsewhere since the caret was recorded.
     @MainActor
     func testACaretPastTheEndOfTheTextIsClampedToIt() throws {

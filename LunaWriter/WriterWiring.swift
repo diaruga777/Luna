@@ -61,6 +61,11 @@ import LunaWriterVoice
         storage?.watcher.scanNow()
     }
 
+    /// The writer left with the keyboard up and comes back to it up.
+    static func sceneDidBecomeActive() {
+        root?.refocusEditorIfNeeded()
+    }
+
     static func makeRootViewController() -> UIViewController {
         guard let stack = try? storageStack() else {
             let placeholder = UIViewController()

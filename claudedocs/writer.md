@@ -230,6 +230,62 @@ Restore, the two- and three-column iPad layouts with the side notes panel.
 Read-along cannot run on a simulator (no TrueDepth camera, no on-device
 speech model), so its chrome stays hidden there by design.
 
+### Live Markdown (2026-09-07)
+
+Markers hide by size, not colour. `LayoutAttributeStyler` gives every
+marker run outside the reveal range a 0.1 pt font plus a per-character
+kern that cancels that font's own width, so the run lays out zero points
+wide and every character offset still maps one to one (the recipe is
+ported from nodes-app/swift-markdown-engine, Apache 2.0 —
+`THIRD_PARTY_NOTICES.md`). `.kern` applies to EVERY character, so the
+kern is one character's share of the run width, never the whole width.
+
+**What hides**: heading hashes with the space after them and any closing
+run, blockquote `>` marks, an UNORDERED list item's `- ` and its
+`[ ] `/`[x] ` box, a thematic break's `---`, and every inline marker
+(`**`, `*`, `~~`, `==`, backticks, link and image brackets with their
+destination, autolink angle brackets, a hard break's trailing spaces).
+
+**What stays**: fence delimiters and fenced code (the backticks are the
+code), an ordered item's `1.`, table pipes, a footnote definition's
+`[^1]:` and a footnote reference — nothing paints in their place.
+
+**What reveals**: the paragraphs the selection touches.
+`MarkdownTextStorage.setRevealRange` widens a selection to whole
+paragraphs, restyles only the paragraph the caret left and the one it
+reached, and tells its observers those two ranges;
+`EditorViewController.textViewDidChangeSelection` calls it. The reveal
+lives on the storage, not on the styler, so `processEditing`'s rescan
+restyles a line with the same reveal the caret last set and
+`LayoutAttributeStyler` stays `Equatable` on metrics and font alone.
+`MarkupLayer` greys only revealed markers; a collapsed one is invisible
+and gets no colour.
+
+**Where decorations are painted**: `WriterTextLayoutFragment`, an
+`NSTextLayoutFragment` subclass installed through
+`WriterLayoutFragmentProvider` on `WriterTextView`'s layout manager. It
+paints a dot for a bullet, a `square`/`checkmark.square` for a task, one
+`EditorTheme.quoteBar` bar per blockquote level, and a hairline rule for
+a thematic break — all in the gutter the collapsed marker left, on the
+text's own baseline, and suppressed on the revealed paragraph. A hidden
+list item's paragraph style starts its first line at the wrapped lines'
+indent, so the gutter exists; `EditorMetrics.collapsedLineHeight` floors
+a line box whose every character collapsed.
+
+A tap in a task item's gutter ticks its box. Two ordering facts shape
+that gesture, both measured on iOS 26.2: a second tap recogniser on the
+text view takes caret placement away even when it fails every touch (so
+the gate returns true from `shouldRecognizeSimultaneouslyWith`), and the
+text view's own tap reveals the line before any recogniser reaches its
+action (so the hit is decided in `shouldReceive` at touch down and
+remembered).
+
+Verified on the simulator through the UI driver: typing `# Heading`,
+`**bold** and *italic*`, `- item`, `- [ ] task`, `---` and `> quote`,
+then tapping between lines. Markers collapse when the caret leaves and
+come back at full size when it returns; the four decorations render; a
+gutter tap turns `- [ ]` into `- [x]`.
+
 ### The UI driver
 
 `LunaWriterUITests/WriterFlowUITests.swift` runs one test that reads a

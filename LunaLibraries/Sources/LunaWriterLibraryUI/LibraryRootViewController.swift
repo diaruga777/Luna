@@ -84,6 +84,17 @@ public final class LibraryRootViewController: UISplitViewController {
     /// the first moment `isCollapsed` says which columns exist, and setting
     /// a navigation stack from inside a layout pass loops UIKit's layout
     /// until it runs out of memory.
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Before the first frame, so a keyboard asked for now is drawn with
+        // that frame instead of sliding up after it. The split view decides
+        // whether it is collapsed in its first layout pass, and the restore
+        // needs that answer, so the pass runs here first — outside it, which
+        // is what keeps setting a navigation stack from looping layout.
+        view.layoutIfNeeded()
+        restoreLastSession()
+    }
+
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         restoreLastSession()

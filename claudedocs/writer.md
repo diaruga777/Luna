@@ -298,7 +298,8 @@ host filesystem), plus an accessibility dump per `dump:`. Commands: `shot`,
 `dump`, `sleep`, `tap:<label>`, `tapType:<type>|<label>`, `tapIndex:<type>|<n>`,
 `tapAt:x,y`, `pressAt`, `press:<label>`, `tapAlert:<label>`, `type:<text>`,
 `typeInto:<label>|<text>`, `typeFirstField:<text>`, `swipeUp/Down/Left`,
-`back`, `exists:<label>`, `rotate:landscape|portrait`, `background`. Pass the
+`back`, `exists:<label>`, `rotate:landscape|portrait`, `background`,
+`relaunch` (home, kill, cold launch — a force quit). Pass the
 two variables with the `TEST_RUNNER_` prefix as xcodebuild's environment:
 
 ```sh

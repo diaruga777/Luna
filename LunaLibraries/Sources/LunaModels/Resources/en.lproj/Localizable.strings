@@ -1428,17 +1428,6 @@
 "WriterIntents_documentEntity_typeName_Luna" = "Document";
 
 // Luna Writer — editor (claudedocs/plans/writer-app.md)
-"WriterEditor_accessory_bold_Luna" = "Bold";
-"WriterEditor_accessory_code_Luna" = "Code";
-"WriterEditor_accessory_focus_Luna" = "Focus";
-"WriterEditor_accessory_heading_Luna" = "Heading";
-"WriterEditor_accessory_italic_Luna" = "Italic";
-"WriterEditor_accessory_link_Luna" = "Link";
-"WriterEditor_accessory_list_Luna" = "List";
-"WriterEditor_accessory_mention_Luna" = "Look up a note";
-"WriterEditor_accessory_quote_Luna" = "Quote";
-"WriterEditor_accessory_statistics_Luna" = "Statistics";
-"WriterEditor_accessory_task_Luna" = "Task";
 "WriterEditor_mentionNewNote_Luna" = "New note";
 "WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
 "WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another document";

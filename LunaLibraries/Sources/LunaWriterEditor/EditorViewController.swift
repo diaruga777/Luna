@@ -94,10 +94,12 @@ public final class EditorViewController: UIViewController {
     private let mention: MentionController
     private let related: RelatedNotesRanker
     private let focus: FocusModeController
-    private let accessoryBar = EditorAccessoryBar()
     private let relatedStrip = RelatedNoteStripView()
-    private lazy var accessoryContainer = UIStackView(arrangedSubviews: [relatedStrip, accessoryBar])
-    private let statisticsBar = StatisticsBarView()
+    /// The latest count of the text, for the statistics sheet.
+    private var stats = TextStatistics.Stats(
+        words: 0, characters: 0, charactersWithoutSpaces: 0, sentences: 0, paragraphs: 0, readingTime: 0)
+    /// Shown above the keyboard only while a save keeps failing.
+    private let saveFailureLabel = UILabel()
     private let overlay = MentionOverlayView()
     private var peekCard: NotePeekCardView?
 
@@ -233,8 +235,12 @@ public final class EditorViewController: UIViewController {
         readAlongHost.backgroundColor = .clear
         view.addSubview(readAlongHost)
 
-        statisticsBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(statisticsBar)
+        saveFailureLabel.font = .preferredFont(forTextStyle: .caption1)
+        saveFailureLabel.textColor = .systemRed
+        saveFailureLabel.text = L10n.string("WriterEditor_saveFailed")
+        saveFailureLabel.isHidden = true
+        saveFailureLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(saveFailureLabel)
 
         overlay.isHidden = true
         view.addSubview(overlay)
@@ -243,40 +249,40 @@ public final class EditorViewController: UIViewController {
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             textView.topAnchor.constraint(equalTo: view.topAnchor),
-            textView.bottomAnchor.constraint(equalTo: statisticsBar.topAnchor),
+            textView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             readAlongHost.leadingAnchor.constraint(equalTo: textView.leadingAnchor),
             readAlongHost.trailingAnchor.constraint(equalTo: textView.trailingAnchor),
             readAlongHost.topAnchor.constraint(equalTo: textView.topAnchor),
             readAlongHost.bottomAnchor.constraint(equalTo: textView.bottomAnchor),
-            statisticsBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            statisticsBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            statisticsBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            saveFailureLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            saveFailureLabel.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8),
         ])
-
-        accessoryContainer.axis = .vertical
-        accessoryContainer.spacing = 0
         updateAccessoryContainer()
     }
 
-    /// Recomputes the accessory's height from which of its two children are
-    /// actually visible, and drops it entirely when neither is — the note
-    /// strip only shows when a match exists, and the Markdown bar hides
-    /// itself with a hardware keyboard attached; a fixed 80 pt used to sit
-    /// above the keyboard regardless.
+    /// The related-note strip is the only input accessory, and only while a
+    /// match exists; with none the keyboard stands at its own height.
     private func updateAccessoryContainer() {
-        let height = (relatedStrip.isHidden ? 0 : RelatedNoteStripView.height)
-            + (accessoryBar.isHidden ? 0 : EditorAccessoryBar.height)
-        guard height > 0 else {
+        guard !relatedStrip.isHidden else {
             guard textView.inputAccessoryView != nil else { return }
             textView.inputAccessoryView = nil
             textView.reloadInputViews()
             return
         }
-        accessoryContainer.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
-        accessoryContainer.autoresizingMask = .flexibleWidth
-        guard textView.inputAccessoryView !== accessoryContainer else { return }
-        textView.inputAccessoryView = accessoryContainer
+        relatedStrip.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: RelatedNoteStripView.height)
+        relatedStrip.autoresizingMask = .flexibleWidth
+        guard textView.inputAccessoryView !== relatedStrip else { return }
+        textView.inputAccessoryView = relatedStrip
         textView.reloadInputViews()
+    }
+
+    /// An empty sheet has no character to take typing attributes from, so the
+    /// caret would stand at UIKit's default size until the first keystroke.
+    private func seedTypingAttributesIfEmpty() {
+        guard session.storage.length == 0 else { return }
+        let styler = session.storage.styler
+        textView.font = styler.bodyFont
+        textView.typingAttributes = styler.bodyAttributes
     }
 
     private func wire() {
@@ -311,11 +317,8 @@ public final class EditorViewController: UIViewController {
         overlay.delegate = self
         related.observer = self
         focus.delegate = self
-        accessoryBar.policy = environment.accessoryBarPolicy
-        accessoryBar.delegate = self
-        accessoryBar.setFocusActive(focus.mode != .off)
         relatedStrip.delegate = self
-        statisticsBar.delegate = self
+        seedTypingAttributesIfEmpty()
     }
 
     // MARK: - Overlay layer
@@ -361,12 +364,17 @@ public final class EditorViewController: UIViewController {
             isKeyboardVisible: textView.isFirstResponder)
     }
 
-    /// Puts the caret back where the last run left it. The keyboard follows
-    /// in `viewDidAppear`, which is the earliest a text view can take it.
+    /// Puts the caret back where the last run left it. On a sheet already on
+    /// screen (the app returning to the foreground) the keyboard comes up
+    /// now; before that it waits for `viewDidAppear`, the earliest a text
+    /// view can take it.
     public func restoreEditingState(_ state: EditorEditingState) {
         pendingRestoredState = state
         guard isViewLoaded else { return }
         applyCaret(of: state)
+        guard view.window != nil else { return }
+        pendingRestoredState = nil
+        if state.isKeyboardVisible { textView.becomeFirstResponder() }
     }
 
     /// Clamps to the text as it is now: the file may have been edited
@@ -401,6 +409,7 @@ public final class EditorViewController: UIViewController {
         }
         syntaxLayer.isEnabled = settings.syntaxColouring
         authorshipLayer.isEnabled = settings.showAuthorship
+        seedTypingAttributesIfEmpty()
     }
 
     // MARK: - Statistics
@@ -422,12 +431,11 @@ public final class EditorViewController: UIViewController {
     private func updateStatistics() {
         let text = session.storage.string
         let revision = session.storage.revision
-        let goal = session.document.goal
         statisticsQueue.async { [weak self] in
             let stats = TextStatistics.measure(text)
             DispatchQueue.main.async {
                 guard let self, self.session.storage.revision == revision else { return }
-                self.statisticsBar.update(stats: stats, goal: goal)
+                self.stats = stats
             }
         }
     }
@@ -579,7 +587,6 @@ public final class EditorViewController: UIViewController {
         if mode != .off {
             focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         }
-        accessoryBar.setFocusActive(mode != .off)
         composer.invalidate(nil)
     }
 
@@ -626,6 +633,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
+        seedTypingAttributesIfEmpty()
         session.storage.setRevealRange(textView.selectedRange)
         mention.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
@@ -764,13 +772,13 @@ extension EditorViewController: DocumentSessionDelegate {
     /// the caret's resting position — cheap enough to record, and often
     /// enough that a session snapshot is never more than a burst behind.
     public func documentSessionDidSave(_ session: DocumentSession) {
-        statisticsBar.saveFailed = false
+        saveFailureLabel.isHidden = true
         delegate?.editorDidUpdateDocument(self, document: session.document)
         reportEditingState()
     }
 
     public func documentSession(_ session: DocumentSession, didFailToSave error: Error) {
-        statisticsBar.saveFailed = true
+        saveFailureLabel.isHidden = false
     }
 
     public func documentSession(_ session: DocumentSession, didReanchorWithOrphans orphans: [Annotation]) {
@@ -922,56 +930,13 @@ extension EditorViewController: RelatedNoteStripViewDelegate {
     }
 }
 
-// MARK: - EditorAccessoryBarDelegate
+// MARK: - Statistics sheet
 
-extension EditorViewController: EditorAccessoryBarDelegate {
+extension EditorViewController {
 
-    public func editorAccessoryBar(_ bar: EditorAccessoryBar, didSelect action: EditorAccessoryAction) {
-        let text = session.storage.nsText
-        let selection = textView.selectedRange
-        switch action {
-        case .heading:
-            apply(MarkdownEditingCommands.setHeading(1, paragraphAt: selection.location, in: text))
-        case .bold:
-            apply(MarkdownEditingCommands.toggleWrap(selection, marker: "**", in: text))
-        case .italic:
-            apply(MarkdownEditingCommands.toggleWrap(selection, marker: "*", in: text))
-        case .list:
-            apply(MarkdownEditingCommands.toggleList(.bullet, in: selection, of: text))
-        case .task:
-            apply(MarkdownEditingCommands.toggleTask(at: selection.location, in: text))
-        case .quote:
-            apply(EditorMarkdownActions.toggleQuote(selection, in: text))
-        case .link:
-            insertLink()
-        case .code:
-            apply(MarkdownEditingCommands.toggleWrap(selection, marker: "`", in: text))
-        case .mention:
-            textView.insertText("@")
-        case .focus:
-            cycleFocusMode()
-        case .statistics:
-            statisticsBarViewDidSelect(statisticsBar)
-        }
-    }
-
-    public func editorAccessoryBarVisibilityDidChange(_ bar: EditorAccessoryBar) {
-        updateAccessoryContainer()
-    }
-}
-
-// MARK: - StatisticsBarViewDelegate
-
-extension EditorViewController: StatisticsBarViewDelegate {
-
-    public func statisticsBarViewDidSelect(_ view: StatisticsBarView) {
-        presentStatisticsSheet()
-    }
-
-    /// The one statistics surface, reached from the counts bar and from the
-    /// container's ⋯ menu alike.
+    /// The one statistics surface, reached from the container's ⋯ menu.
     public func presentStatisticsSheet() {
-        let sheet = StatisticsSheet(stats: statisticsBar.stats, goal: session.document.goal)
+        let sheet = StatisticsSheet(stats: stats, goal: session.document.goal)
         sheet.modalPresentationStyle = .pageSheet
         present(sheet, animated: true)
     }

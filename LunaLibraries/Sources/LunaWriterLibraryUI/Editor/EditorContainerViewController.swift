@@ -464,6 +464,7 @@ public final class EditorContainerViewController: UIViewController {
 
         let apply = {
             self.header.alpha = hidden ? 0 : 1
+            self.readAlongChromeView?.alpha = hidden ? 0 : 1
             self.header.transform = hidden
                 ? CGAffineTransform(translationX: 0, y: -self.header.bounds.height)
                 : .identity

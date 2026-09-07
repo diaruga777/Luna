@@ -101,31 +101,4 @@ final class MacSeamTests: XCTestCase {
         let maker: GazeTrackerMaking = ARFaceGazeTrackerMaker()
         XCTAssertNotNil(maker.makeGazeTracker())
     }
-
-    // MARK: - AccessoryBarPolicy
-
-    func testDefaultPolicyHidesTheBarOnAWideColumnWithAHardwareKeyboard() {
-        let policy = DefaultAccessoryBarPolicy()
-        XCTAssertFalse(policy.shouldShowAccessoryBar(
-            hasHardwareKeyboard: true, containerWidth: LunaLayout.wideThreshold))
-    }
-
-    func testDefaultPolicyKeepsTheBarOnAPhoneWidthColumnEvenWithAHardwareKeyboard() {
-        let policy = DefaultAccessoryBarPolicy()
-        XCTAssertTrue(policy.shouldShowAccessoryBar(
-            hasHardwareKeyboard: true, containerWidth: LunaLayout.wideThreshold - 1))
-    }
-
-    func testDefaultPolicyKeepsTheBarWithNoHardwareKeyboardRegardlessOfWidth() {
-        let policy = DefaultAccessoryBarPolicy()
-        XCTAssertTrue(policy.shouldShowAccessoryBar(
-            hasHardwareKeyboard: false, containerWidth: LunaLayout.wideThreshold + 400))
-    }
-
-    func testMacPolicyAlwaysHidesTheBar() {
-        let policy = MacAccessoryBarPolicy()
-        XCTAssertFalse(policy.shouldShowAccessoryBar(hasHardwareKeyboard: false, containerWidth: 1200))
-        XCTAssertFalse(policy.shouldShowAccessoryBar(hasHardwareKeyboard: true, containerWidth: 300))
-    }
-
 }

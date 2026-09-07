@@ -137,7 +137,7 @@ Autosave uses one private common-run-loop timer; the injectable autosave
 scheduler and its two protocols were removed. A queued save stays dirty until
 its write succeeds. A synchronous flush consumes an already-completed queued
 write even if the main-queue callback has not run. Failures retain the buffer,
-show a message in the statistics bar and retry. The registry's dirty snapshot
+show a red note above the keyboard and retry. The registry's dirty snapshot
 updates on state changes, with no polling timer.
 
 Text saves fetch the current path and update only text-derived database
@@ -173,7 +173,7 @@ to 0.011 seconds; this measures composition rather than whole-app latency.
 AI continue/rewrite apply the complete model response as one attributed edit
 after checking cancellation and intervening edits. The simulated typing timer
 was removed; a rewrite is one undo operation. UIKit's keyboard layout guide
-keeps the editor and statistics bar above the keyboard, replacing the custom
+keeps the editor above the keyboard, replacing the custom
 keyboard observer, injectable metrics and unused Mac stub.
 
 See `claudedocs/writer-review-2026-09-05.md` for findings, verification and limits.
@@ -402,3 +402,18 @@ tests assert the gate, not the colours. The `LunaGaze` product must stay
 linked by the central Luna app: with only the test bundle linking it, Xcode
 folded it statically into both the Reader framework and `LunaTests`, and the
 RSVP suites' `supportOverride` landed in a copy the Reader never read.
+
+## Surface tweaks (2026-09-07, evening)
+
+The Markdown accessory bar and the word-count bar are gone: the editor is
+text, a keyboard, and nothing between them. Statistics stay one tap away in
+the ⋯ menu (`StatisticsSheet`, worded by `StatisticsFormatting`); a failed
+save shows a red note above the keyboard until the retry lands. The
+related-note strip is the only input accessory, and only while a match
+exists. `autocorrectionType` is `.no`, which also removes the predictive
+row, so the keyboard stands at its own height. An empty sheet seeds the
+text view's typing attributes from the styler's body attributes, so the
+caret is body-sized before the first keystroke. The read-along chip hides
+with the header. When the app returns to the foreground with the keyboard
+recorded as up, `LibraryRootViewController.refocusEditorIfNeeded()` raises
+it again at once (`WriterSceneDelegate.sceneDidBecomeActive`).

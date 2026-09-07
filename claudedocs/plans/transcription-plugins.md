@@ -1,7 +1,8 @@
 # Plan: audio transcription through the plugin platform (central Luna)
 
-Status: approved 2026-09-07. Execution by work package (§10). Reference
-doc once landed: `claudedocs/transcription.md`.
+Status: LANDED on main 2026-09-07 (packages A–D). Reference doc:
+`claudedocs/transcription.md`. Deviations from this plan are recorded there
+and in the package commits.
 
 ## 0. Summary and locked decisions
 

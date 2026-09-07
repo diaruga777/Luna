@@ -551,6 +551,21 @@ author or an implementation agent runs against real or fixture-recorded
 <plugin.js> <url> [--fixture dir]`. It is a convenience tool, never a build
 gate; `LunaTests` is the one suite that matters.
 
+**Transcription (central Luna only).** An `article` Model may carry a
+`transcription` spec (an audio or video file) instead of `html`; the save
+parks `.pending` with a `transcriptions` row (schema 14) and
+`TranscriptionJobRunner` (new `LunaTranscribe` target, linked by `Luna` and
+`LunaTests` only) downloads it, transcribes it on device with `SpeechAnalyzer`
+(iOS 26), persists an ordinary article through `IngestorKindHandlers.article`,
+and deletes the recording. `IngestInput.intent == .transcribe` makes the
+seven media plugins decline so the seven `<platform>-transcript.js` plugins
+(priority 90, below their twins) claim; an intent no plugin serves fails
+with `.noTranscriptSource`, never a download. **`SavesIngestor.ingest` and
+`ingestAllPending` skip any save with a job row** — a re-walk would queue a
+second job or lose the intent to a media plugin. `Luna/TranscriptionShellWiring.swift`
+is excluded from the three sibling apps by membership exception. See
+`claudedocs/transcription.md`.
+
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 
 The full `LunaTests` suite runs from the command line on an **iOS 26.x simulator**

@@ -194,7 +194,7 @@ one fact shapes `onBluetooth` and `onAction` below.
 ### 3.1 `classify(input: ClassifyInput): ClassifyResult`
 
 ```ts
-interface ClassifyInput { url: string; page?: PageSnapshot; context: "app"|"share"|"action"|"safari" }
+interface ClassifyInput { url: string; page?: PageSnapshot; context: "app"|"share"|"action"|"safari"; intent?: "transcribe" }
 interface PageSnapshot { url: string; html?: string; title?: string; source: "safari"|"fetch"|"browser" }
 type ClassifyResult = false | { kind: "article"|"media"|"product"; itemId?: string; confidence?: number };
 ```
@@ -211,8 +211,14 @@ interface IngestInput {
   url: string; claim: { kind; itemId? }; page?: PageSnapshot;
   reason: "save"|"resume"|"refresh"|"reresolve"|"rescue";
   context: "app"|"share"|"action"|"safari"; saveId?: string;
+  intent?: "transcribe";
 }
 ```
+
+`intent` is present only when the user asked for a transcript
+(`IngestInput.intent`); the media plugins decline it and the transcript
+plugins claim regardless (`claudedocs/transcription.md`). Safari and the
+extensions never set it.
 
 `null` means "declined after reading the page": the walk continues with the
 next matched plugin, then the Swift classifier — this is the "claimed, then
@@ -503,7 +509,9 @@ is inserted into `IngestPipeline.runUnbounded` **after unwrap, before
    in central Luna, since all three kind packs install one; theoretically
    possible if a kind pack were ever removed) → walk continues.
 5. Every matched plugin passing → `.passed`, and the Swift `Classifier` is
-   the floor.
+   the floor — unless `IngestInput.intent == .transcribe`, which fails the
+   save with `.noTranscriptSource` instead: a transcribe request must never
+   turn into a download (`claudedocs/transcription.md`).
 
 Every step writes a `SaveDiagnostics` line under the `"plugin"` category, so
 a save's exported diagnostics trace shows exactly which plugins were asked
@@ -607,6 +615,21 @@ implements `PluginPriceFetching` (LunaModels), installed as
 `plugin_id` routes its refresh through the owning plugin's `ingest` hook
 (`reason: "refresh"`), reading only `price`; nil (plugin gone, declined, or
 returned no product) falls back to the Swift `PriceRefresher` path.
+
+### 6.3 Transcription
+
+An `article` Model may carry `transcription` instead of `html`
+(`ArticleTranscriptionSpec`). `ArticleModelAdopter` answers
+`PluginAdoptedOutcome.transcription(TranscriptionRequest)`, the stage maps it
+to `Outcome.transcription`, and the save parks `.pending` with a
+`transcriptions` row that the central app's `TranscriptionJobRunner`
+(LunaTranscribe) finishes: download, on-device `SpeechAnalyzer`, persist as
+an article, delete the recording. `PluginPlatformComposition.install()`
+installs `PluginTranscriptionSeams.reresolver` (`PluginTranscriptionReresolver`)
+so a stale or refused recording URL is re-resolved through the owning plugin
+once. Seven bundled `<platform>-transcript.js` plugins claim at priority 90
+(direct-media 80), below their media twins. Full detail:
+`claudedocs/transcription.md`.
 
 ## 7. The browser lock flow
 

@@ -85,10 +85,9 @@ final class SetupGuideVideo: NSObject {
         guard !didLoad else { return }
         didLoad = true
 
-        let base = Self.resourceName
-        let surface = base + guideSuffix
+        let surface = Self.resourceName + guideSuffix
         let appearance = currentAppearanceSuffix
-        let candidates = [surface + appearance, surface, base + appearance, base]
+        let candidates = [surface + appearance, surface]
         guard let url = candidates.lazy.compactMap({
             Bundle.main.url(forResource: $0, withExtension: "mp4")
         }).first else { return }

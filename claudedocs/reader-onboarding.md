@@ -731,10 +731,11 @@ their bar from that one ramp (so the two cannot drift into filling at different
 rates) and both answer `onReplayBeat` by re-running their beat on each pass of
 the looping demonstration.
 
-The clip lives in the APP bundle only (`ShareSetupPractice.bundledVideoURL`): a
-rehearsal is worth 400KB in the app that teaches it and is not worth it in eight
-extension bundles that will never run one, so a real appex handed the practice
-link falls back to the article preview.
+The clip ships only in Luna and LunaDownloader (`ShareSetupPractice.bundledVideoURL`):
+those are the only two apps whose own practice link is ever the InstaTok one, so a
+rehearsal is worth 400KB there and not worth it in the Reader or Price Tracker app,
+or in any of the eight extension bundles, which all resolve nil and fall back to
+the article preview.
 
 **Timing.** `start(in:)` mounts the surface hidden and lets `viewDidLoad` begin the
 work immediately, so the fetch overlaps the conversation animating in front of it;

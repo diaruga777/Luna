@@ -29,10 +29,12 @@ public enum ShareSetupPractice {
     /// in markup, which `ShareSetupPracticeMediaTests` checks.
     public static let videoResourceName = "LunaMoonPhases"
 
-    /// That clip on disk, or nil in a bundle that does not carry it. Only the
-    /// four APPS do: a rehearsal is worth 400KB in the app that teaches it and
-    /// is not worth it in eight extension bundles that will never run one, so a
-    /// real appex handed a practice link falls back to the article preview.
+    /// That clip on disk, or nil in a bundle that does not carry it. Only Luna
+    /// and LunaDownloader do: those are the only two whose own practice link
+    /// (`OnboardingSurfaceConfiguration.practiceURLString`) is ever the InstaTok
+    /// one, so the Reader or Price Tracker app's own save lesson, and every
+    /// share/action appex, resolve nil here and fall back to the article
+    /// preview.
     public static var bundledVideoURL: URL? {
         Bundle.main.url(forResource: videoResourceName, withExtension: "mp4")
     }

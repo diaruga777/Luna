@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "6C1A0000-0000-4000-8000-0000000000A2",
+      "name" : "Luna",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Luna.xcodeproj",
+        "identifier" : "AAE200000000000000000000",
+        "name" : "LunaTests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -87,8 +87,8 @@ provider wake, stale/current downloads, conflicts, revision/location/
 generation idempotency, authenticated-download rejection, artifact upload,
 delete, redacted error persistence, bounded retry, eviction state, and unique
 lease tokens. Source-boundary tests keep extraction, embeddings, and search
-free of backend/network dependencies. `scripts/run_vault_tests.sh` registers
-`VaultBackendTests` with the Vault test plan.
+free of backend/network dependencies. `VaultBackendTests` runs with the rest of
+the `LunaVaultTests` bundle under `scripts/run_vault_tests.sh`.
 
 Simulator tests cannot prove a real Apple ID's provider transitions. Before
 shipping iCloud, run a separately approved, signed physical-device smoke test

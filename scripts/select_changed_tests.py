@@ -6,10 +6,12 @@ partial run is a list of `-only-testing:` flags and nothing else. This script
 produces that list, and — just as importantly — refuses to produce a short one
 when it cannot explain its own choice.
 
-The Vault suites are the one exception: they live in the separate
-`LunaVaultTests` bundle on the `LunaVault` host, which this run cannot reach.
-A changed Vault input therefore prints an instruction to run
-`scripts/run_vault_tests.sh` rather than selecting a class here.
+The other two bundles are the exception. The Vault suites live in
+`LunaVaultTests` on the `LunaVault` host and the Writer suites in
+`LunaWriterTests` on the `LunaWriter` host, neither of which this run reaches.
+A changed Vault or Writer input therefore prints an instruction to run that
+bundle — `scripts/run_vault_tests.sh`, or the `LunaWriter` scheme — rather than
+selecting a class here.
 
 How a changed file reaches a test class, in the order the rules are tried:
 
@@ -54,10 +56,13 @@ CORE_CLASSES = ["KindCompositionRootTests"]
 # Non-Swift inputs, and the few files whose reach is wider than their symbols.
 # A pattern is a regex matched against the repo-relative path. `None` as the
 # class list means "this file cannot affect the tests" (docs, scripts).
-# `FULL` means "run everything". `VAULT` means "the tests for this input are
-# in the LunaVaultTests bundle, which this run does not cover".
+# `FULL` means "run everything". `VAULT` and `WRITER` mean "the tests for this
+# input are in the LunaVaultTests / LunaWriterTests bundle, which this run does
+# not cover"; either may also sit inside a class list, for an input that reaches
+# both its own bundle and a class still in LunaTests.
 FULL = "\0FULL\0"
 VAULT = "\0VAULT\0"
+WRITER = "\0WRITER\0"
 
 PATH_RULES: list[tuple[str, object]] = [
     # Anything that redefines the build graph itself.
@@ -123,31 +128,28 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^LunaVaultTailscale/", VAULT),
     (r"^LunaVault/", VAULT),
     (r"^LunaVaultShare/", VAULT),
-    # Luna Writer tiers (claudedocs/plans/writer-app.md). The name convention
-    # covers most of them; these rows catch the files whose class names do not
-    # echo the source file (test support, the synthetic reader, the router).
+    # Luna Writer inputs (claudedocs/plans/writer-app.md). Every suite above
+    # `LunaWriterModels` is in the LunaWriterTests bundle, so these rows name
+    # WRITER; the classes beside it are the ones a shared input still reaches
+    # in LunaTests.
     (r"^LunaLibraries/Sources/LunaGaze/", ["OneEuroFilterTests", "FixationDetectorTests", "GazeGateTests",
                                           "GazeAffineCalibrationTests", "CalibrationSampleCollectorTests",
                                           "PursuitCalibrationPathTests", "ReadingTrackerTests",
                                           "GazeDriftCorrectorTests", "GazeCalibrationTests",
                                           "GazeScreenProjectionTests", "GazeAttentionTests",
-                                          "RSVPEyeTrackingTests", "RSVPEyeTrackingReliabilityTests"]),
-    (r"^LunaLibraries/Sources/LunaWriterModels/", ["WriterDatabaseTests", "WriterNoteIndexTests", "NoteRouterTests",
-                                                  "WriterTextAnchorResolverTests", "WriterMarkdownDocumentModelTests"]),
-    (r"^LunaLibraries/Sources/LunaWriterText/", ["WriterMarkdownScannerTests", "WriterMarkdownDocumentModelTests",
-                                                "WriterTextAnchorResolverTests", "WriterSegmenterTests",
-                                                "WriterStatisticsTests", "WriterTitleDeriverTests",
-                                                "WriterHTMLRendererTests", "WriterEditingCommandsTests",
-                                                "ExternalChangeReconcilerTests", "NoteCaptureSplitterTests"]),
-    (r"^LunaLibraries/Sources/LunaWriterStorage/", ["WriterDatabaseTests", "WriterNoteIndexTests", "NoteRouterTests",
-                                                   "NoteCaptureSplitterTests", "LibraryFileLayoutTests",
-                                                   "ExternalChangeReconcilerTests", "WriterIntentServicesTests",
-                                                   "WriterSettingsTests", "LocalizableStringsTests"]),
-    (r"^LunaLibraries/Sources/LunaWriterVoice/", ["VoiceCommandClassifierTests", "UtteranceSegmenterTests",
-                                                 "EnergyVADTests"]),
+                                          "RSVPEyeTrackingTests", "RSVPEyeTrackingReliabilityTests",
+                                          WRITER]),
+    (r"^LunaLibraries/Sources/LunaWriterModels/", ["AuthorshipSpanListTests", "WriterModelsCodableTests",
+                                                  "ReadingTrackerTests", WRITER]),
+    (r"^LunaLibraries/Sources/LunaWriterStorage/", ["LocalizableStringsTests", WRITER]),
+    # LunaWriterText / Voice / Editor / ReadAlong / LibraryUI: the whole tier
+    # is exercised from the other bundle alone.
+    (r"^LunaLibraries/Sources/LunaWriter", [WRITER]),
     (r"^LunaTests/(GazeSimRandom|GazeSyntheticReader)\.swift$", ["ReadingTrackerTests", "GazeAffineCalibrationTests"]),
-    (r"^LunaTests/WriterStorageTestSupport\.swift$", ["WriterDatabaseTests", "WriterNoteIndexTests", "NoteRouterTests",
-                                                      "ExternalChangeReconcilerTests", "WriterIntentServicesTests"]),
+    (r"^LunaWriterTests/", [WRITER]),
+    (r"^LunaWriter/", [WRITER]),
+    # The scripted XCUITest driver is run on demand, never as part of a suite.
+    (r"^LunaWriterUITests/", None),
     (r"^LunaTests/ReferenceImages/", "SYMBOL"),
     # Inputs that cannot move a test result.
     (r"^claudedocs/", None),
@@ -226,6 +228,7 @@ def main() -> int:
     selected: dict[str, set[str]] = defaultdict(set)   # class -> reasons
     unplaced: list[str] = []
     vault: list[str] = []
+    writer: list[str] = []
 
     for rel in files:
         # --- rule 4 (checked first: it is the explicit override) -----------
@@ -253,7 +256,9 @@ def main() -> int:
                     unplaced.append(rel)
                 break
             for cls in target:            # type: ignore[union-attr]
-                if cls in all_classes:
+                if cls is WRITER:
+                    writer.append(rel)
+                elif cls in all_classes:
                     selected[cls].add(f"{rel} (path rule)")
             break
         if matched_rule:
@@ -303,6 +308,13 @@ def main() -> int:
         print("these changed files reach the LunaVaultTests bundle, which this run "
               "does not cover — run scripts/run_vault_tests.sh as well:", file=sys.stderr)
         for rel in vault:
+            print(f"  {rel}", file=sys.stderr)
+
+    if writer:
+        print("these changed files reach the LunaWriterTests bundle, which this run "
+              "does not cover — run `xcodebuild test -scheme LunaWriter` as well:",
+              file=sys.stderr)
+        for rel in writer:
             print(f"  {rel}", file=sys.stderr)
 
     if unplaced:

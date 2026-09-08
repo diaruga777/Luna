@@ -2,9 +2,11 @@
 #
 # Run LunaTests and report the result the tests actually produced.
 #
-# LunaTests is one of two unit-test bundles. It hosts on the central Luna app
-# and holds every suite except Vault's; the Vault suites are in LunaVaultTests
-# on the LunaVault host and run through scripts/run_vault_tests.sh. This
+# LunaTests is one of three unit-test bundles. It hosts on the central Luna app
+# and holds every suite except Vault's and Writer's. The Vault suites are in
+# LunaVaultTests on the LunaVault host and run through
+# scripts/run_vault_tests.sh; the Writer suites are in LunaWriterTests on the
+# LunaWriter host and run through `xcodebuild test -scheme LunaWriter`. This
 # script covers the first bundle only.
 #
 # Plain `xcodebuild test` lies on this project. After the suite finishes, it
@@ -41,8 +43,9 @@
 # -only-testing flags. When the selector cannot account for a changed file it
 # says so and this falls back to the whole suite — it never quietly runs less
 # than it should. When a changed file only reaches the Vault bundle the selector
-# says so and names run_vault_tests.sh. A green partial run is not a green
-# suite; run the full one before calling a task done.
+# says so and names run_vault_tests.sh; when it only reaches the Writer bundle
+# it names the LunaWriter scheme. A green partial run is not a green suite; run
+# the full one before calling a task done.
 #
 # Exit status is the suite's: 0 when it reported no failures, 1 when it did,
 # 2 when the run never produced a summary at all (a real infrastructure fail).

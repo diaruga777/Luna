@@ -430,7 +430,7 @@ test bundle hosted on it link that same product:
 
 | Kit | Linked by | On top of the universal set |
 | --- | --- | --- |
-| `LunaKit` | `Luna`, `LunaShare`, `LunaAction`, `LunaSafari`, `LunaLiveActivity`, `LunaTests` | article + media + product (everything), the plugin tier (LunaPluginKit, LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaPluginTransport, LunaPluginUI, LunaBundledPlugins), LunaTranscribe, LunaGaze |
+| `LunaKit` | `Luna`, `LunaShare`, `LunaAction`, `LunaSafari`, `LunaLiveActivity`, `LunaTests` | article + media + product (everything), the plugin tier (LunaPluginKit, LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaPluginTransport, LunaPluginUI, LunaBundledPlugins), LunaTranscribe, LunaGaze (LunaWriterModels arrives under it) |
 | `LunaReaderKit` | `LunaReader`, `LunaReaderShare`, `LunaReaderAction`, `LunaReaderSafari` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend, LunaMediaResolve, LunaPriceCompare |
 | `LunaDownloaderKit` | `LunaDownloader`, `LunaDownloaderShare`, `LunaDownloaderAction`, `LunaDownloaderSafari`, `LunaDownloaderLiveActivity` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms, LunaPriceCompare |
 | `LunaPriceTrackerKit` | `LunaPriceTracker`, `LunaPriceTrackerShare`, `LunaPriceTrackerAction`, `LunaPriceTrackerSafari` | LunaPriceIngest, LunaPriceUI, LunaPriceCompare, LunaMediaResolve |
@@ -457,9 +457,13 @@ extension, or whenever a target's package links drift.
   links while its host app uses the kit builds a second copy of every module,
   and `as?` casts on app-created views then fail (class-identity split).
 
-`LunaVault`, `LunaWriter`, `LunaVaultTests`, `LunaWriterUITests` and the
-`LunaVaultTailscale` package link static products, so every static `.library`
-stays declared.
+`LunaVault`, `LunaWriter`, `LunaVaultTests`, `LunaWriterTests`,
+`LunaWriterUITests` and the `LunaVaultTailscale` package link static products,
+so every static `.library` stays declared. `LunaWriterTests` links the same ten
+products `LunaWriter` links, and Xcode promotes the shared ones to frameworks in
+a Debug test build. **The Writer tier above `LunaWriterModels` is in no kit**:
+the central app carried it only while `LunaTests` held the Writer suites, which
+cost `Luna.app` 1,848 KB of code no app ran.
 
 **The plugin tier ships in `LunaKit` alone.** The three sibling kits carry none
 of it, so Reader, Downloader, Price Tracker and every one of THEIR extensions
@@ -589,30 +593,39 @@ is excluded from the three sibling apps by membership exception. See
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 
-The unit tests are **TWO bundles**, each hosted on the app whose code it exercises,
-and both run on an **iOS 26.x simulator** (the project's deployment target is iOS 18
+The unit tests are **THREE bundles**, each hosted on the app whose code it exercises,
+and all three run on an **iOS 26.x simulator** (the project's deployment target is iOS 18
 — the iOS 26.x simulator is just what's used for testing):
 
 | Bundle | Host app | Scheme | Runner |
 | --- | --- | --- | --- |
 | `LunaTests` (`LunaTests/`) | `Luna` | `Luna` | `scripts/run_tests.sh` |
 | `LunaVaultTests` (`LunaVaultTests/`) | `LunaVault` | `LunaVault` | `scripts/run_vault_tests.sh` |
+| `LunaWriterTests` (`LunaWriterTests/`) | `LunaWriter` | `LunaWriter` | `xcodebuild test -scheme LunaWriter` |
 
-`LunaTests` is everything except Vault, and the central Luna app hosts it so every
-kind processor is registered at launch. The Vault suites need the Vault tier plus the
-`LunaVaultTailscale` package, which the central app does not link, so they host on the
-`LunaVault` app instead; `scripts/add_vault_tests_target.rb` owns that bundle's
+`LunaTests` is everything except Vault and Writer, and the central Luna app hosts it
+so every kind processor is registered at launch. A hosted test bundle links its host's
+link set and nothing else, so a suite that needs a tier the central app does not carry
+hosts on the app that does. The Vault suites need the Vault tier plus the
+`LunaVaultTailscale` package; `scripts/add_vault_tests_target.rb` owns that bundle's
 topology and keeps the three Vault test plans (`LunaVault`, `LunaVaultPerformance`,
-`LunaVaultStage5`, all on the `LunaVault` scheme's Test action) pointing at it.
+`LunaVaultStage5`, all on the `LunaVault` scheme's Test action) pointing at it. The
+Writer suites need the Writer tier above `LunaWriterModels`;
+`scripts/add_writer_tests_target.rb` owns `LunaWriterTests` the same way and keeps
+`LunaWriter.xctestplan` (the scheme's default plan) and `LunaWriterUI.xctestplan`
+(the scripted XCUITest driver, run on demand with `-testPlan LunaWriterUI`) on the
+`LunaWriter` scheme's Test action.
 `scripts/select_changed_tests.py` serves `LunaTests` alone — a changed Vault input
-makes it name `run_vault_tests.sh` rather than select a class it cannot run. The
-`LunaReader` / `LunaDownloader` / `LunaPriceTracker` / `LunaWriter` schemes build
+makes it name `run_vault_tests.sh` and a changed Writer input the `LunaWriter` scheme,
+rather than select a class it cannot run. The
+`LunaReader` / `LunaDownloader` / `LunaPriceTracker` schemes build
 their apps (`xcodebuild build -scheme …`) but carry no test bundle of their own.
 Recipe:
 
 > **Schemes: one per app, plus the aggregate.** `Luna`, `LunaReader`,
 > `LunaDownloader`, `LunaPriceTracker`, `LunaVault`, `LunaWriter`, and
-> `AllLunaApps` — seven, and a test bundle never gets one of its own. Each app
+> `AllLunaApps` — seven, and a test bundle never gets one of its own
+> (`LunaWriterTests` runs from the `LunaWriter` scheme's default test plan). Each app
 > scheme's build action lists **only its app** — every extension and live activity
 > is already a target dependency and gets embedded and signed with the host, so
 > per-extension schemes are pure duplication and were deleted. `AllLunaApps` builds
@@ -681,8 +694,8 @@ scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff re
 > (`…ForTesting`, settable static, injected closure) may exist ONLY while a
 > behavior-asserting test uses it — a seam whose tests die dies with them.
 > **The package declares NO test targets**: `LunaLibraries/Tests/` was deleted
-> 2026-08-09 (its suites never ran; the suites are the two Xcode bundles,
-> `LunaTests` and `LunaVaultTests`). Never re-add a `.testTarget` — that also means
+> 2026-08-09 (its suites never ran; the suites are the three Xcode bundles,
+> `LunaTests`, `LunaVaultTests` and `LunaWriterTests`). Never re-add a `.testTarget` — that also means
 > a fresh worktree builds with no `mkdir` workaround.
 
 > **Looking at a screen, rather than testing it: `-LunaStage`.** Any app boots

@@ -305,14 +305,14 @@ two variables with the `TEST_RUNNER_` prefix as xcodebuild's environment:
 ```sh
 TEST_RUNNER_WRITER_UI_SHOTS=/tmp/shots TEST_RUNNER_WRITER_UI_SCRIPT='tap:All Documents; shot:list' \
   xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM" \
-  -only-testing:LunaWriterUITests DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
+  -testPlan LunaWriterUI DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
 ```
 
 A sidebar section header is a cell with the same label as its row (`Trash`),
-so tap rows by coordinate or `tapType:cell|…` with care. The test target is
-a plain `PBXNativeTarget` hand-added to `project.pbxproj` (the `xcodeproj`
-gem cannot save this project); the `LunaWriter` scheme lists it as its one
-testable.
+so tap rows by coordinate or `tapType:cell|…` with care. The driver is the one
+target in `LunaWriterUI.xctestplan`, the second plan on the `LunaWriter`
+scheme's Test action, so a plain `xcodebuild test -scheme LunaWriter` runs the
+unit bundle and never the driver.
 
 ## Reopening the last page (2026-09-07)
 
@@ -393,16 +393,35 @@ it again unconditionally.
 
 ## Testing
 
-Suites are `Writer*`, `Note*`, `Library*`, `Gaze*`, `Reading*`, `Voice*`,
-`Utterance*`, `EnergyVAD*`, `Mention*`, `Authorship*`, `Rendering*`,
-`Focus*`, `SentenceGeometry*`, `Groups*`, `Sheets*`, `Editor*`,
-`DocumentExporter*`, `DocumentNotesPanel*`, `ReadAlong*`, all in `LunaTests`
-on the central host; `LunaWriter.xctestplan` / `LunaWriterTests` scheme
-select them. The simulator ships no lexical-class model, so syntax colouring
-tests assert the gate, not the colours. The `LunaGaze` product must stay
-linked by the central Luna app: with only the test bundle linking it, Xcode
-folded it statically into both the Reader framework and `LunaTests`, and the
-RSVP suites' `supportOverride` landed in a copy the Reader never read.
+The 58 Writer suites are `LunaWriterTests/`, a unit-test bundle hosted on the
+`LunaWriter` app and run from the `LunaWriter` scheme's default test plan
+(`LunaWriter.xctestplan`):
+
+```sh
+xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM" \
+  DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
+```
+
+`scripts/add_writer_tests_target.rb` owns the bundle's topology. It links the
+same ten static products the app links, so a suite reaches
+`LunaWriterText`/`Storage`/`Voice`/`Editor`/`ReadAlong`/`LibraryUI` while the
+central `Luna.app` links none of them. The suites are `Writer*`, `Note*`,
+`Library*`, `Voice*`, `Utterance*`, `EnergyVAD*`, `Mention*`, `Rendering*`,
+`Focus*`, `SentenceGeometry*`, `SentenceEmbedding*`, `Groups*`, `Sheets*`,
+`Snapshots*`, `Editor*`, `LineTable*`, `MarkdownTextStorage*`, `LRUCache*`,
+`SyntaxColourLayer*`, `Speech*`, `GoalProgress*`, `SessionTrace*`, `MacSeam*`,
+`ExternalChangeReconciler*`, `GazeCalibrationFlow*`, `DocumentExporter*`,
+`DocumentNotesPanel*` and `ReadAlong*`.
+
+`LunaWriterModels`-only suites stay in `LunaTests`: `AuthorshipSpanList*`,
+`WriterModelsCodable*` and the `Gaze*` / `Reading*` eye-tracking suites, which
+exercise `LunaGaze` as the central app's Reader uses it. The `LunaGaze` product
+must stay linked by the central Luna app: with only the test bundle linking it,
+Xcode folded it statically into both the Reader framework and `LunaTests`, and
+the RSVP suites' `supportOverride` landed in a copy the Reader never read.
+
+The simulator ships no lexical-class model, so syntax colouring tests assert
+the gate, not the colours.
 
 ## Surface tweaks (2026-09-07, evening)
 

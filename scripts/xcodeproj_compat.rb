@@ -16,6 +16,13 @@ module Xcodeproj
       unless const_defined?(:XCLocalSwiftPackageReference, false)
         class XCLocalSwiftPackageReference < XCRemoteSwiftPackageReference
           attribute :relative_path, String
+
+          # A local reference has no repository URL, so the inherited
+          # annotation falls back to the class name. Name the package folder
+          # instead, which is what Xcode writes.
+          def display_name
+            relative_path ? File.basename(relative_path.to_s) : super
+          end
         end
       end
 

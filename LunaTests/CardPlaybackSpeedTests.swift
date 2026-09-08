@@ -135,10 +135,14 @@ final class CardPlaybackSpeedTests: XCTestCase {
             carousel.isPlaybackPositionBarShowingForTesting,
             "resuming leaves the scrub bar available for a brief interaction window")
 
+        // The bar leaves after a 1.25 s timer plus a 0.2 s fade, and an
+        // object-less predicate expectation only re-evaluates about once a
+        // second — so a 2 s budget times out against the poll that would have
+        // seen it.
         let hidden = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in !carousel.isPlaybackPositionBarShowingForTesting },
             object: nil)
-        XCTAssertEqual(XCTWaiter().wait(for: [hidden], timeout: 2), .completed)
+        XCTAssertEqual(XCTWaiter().wait(for: [hidden], timeout: 4), .completed)
         XCTAssertNil(carousel.playbackSpeedPillForTesting)
     }
 

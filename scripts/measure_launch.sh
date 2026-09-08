@@ -196,6 +196,9 @@ for test in raw:
                 "iterations": len(ms),
                 "mean_ms": round(statistics.fmean(ms), 2),
                 "stddev_ms": round(statistics.stdev(ms), 2) if len(ms) > 1 else 0.0,
+                # One stalled iteration moves the mean by several percent. Read
+                # the median next to it before calling a change real.
+                "median_ms": round(statistics.median(ms), 2),
                 "min_ms": round(min(ms), 2),
                 "max_ms": round(max(ms), 2),
                 "values_ms": [round(v, 2) for v in ms],
@@ -214,6 +217,7 @@ for entry in report["metrics"]:
     print(f"  mean       {entry['mean_ms']:.2f} ms")
     print(f"  stddev     {entry['stddev_ms']:.2f} ms"
           f"  ({entry['stddev_ms'] / entry['mean_ms'] * 100:.1f}% relative)")
+    print(f"  median     {entry['median_ms']:.2f} ms")
     print(f"  min        {entry['min_ms']:.2f} ms")
     print(f"  max        {entry['max_ms']:.2f} ms")
     print("  values     " + ", ".join(f"{v:.1f}" for v in entry["values_ms"]))

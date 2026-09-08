@@ -122,15 +122,12 @@ one variant, and the variants reference the kind modules' symbols directly
   (Info.plist names the stable @objc names `LunaShareEntry`/`LunaActionEntry`)
   is a per-target `ShareViewController` subclass that installs its app's kind
   packs in `init`, before any ingest can run.
-- App Clips: `LunaReaderClip/AppDelegate.swift` installs the article pack.
-  `LunaDownloaderClip` installs nothing — it registers no kind at all.
 
 ## Kind packs — one definition per kind, shared by every surface
 
 An app has SEVERAL composition roots, one per surface, running in separate
-processes with no shared launch code: the app shell, the share extension, the
-action extension, and (for Reader) the App Clip. **Seven roots for the article
-kind alone.**
+processes with no shared launch code: the app shell, the share extension and
+the action extension. **Six roots for the article kind alone.**
 
 Those roots used to each hand-list their `IngestKindProcessors` /
 `ShareKindPresenters` entries, and that broke exactly as you'd expect: when

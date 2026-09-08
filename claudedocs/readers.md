@@ -481,57 +481,7 @@ no nav bar of its own beyond Done.
 
 ## Reader share sheet (the share button) — Feature C
 
-The reader's nav-bar/footer Share button routes through `ReaderShareProviding.shareMenu` / `.presentShareSheet`. In the main app, `AppReaderShareProvider` builds one `ReaderShareSheet.rows(…)` list (`LunaSocialUI/ReaderShareSheet.swift`) and hangs it off the button as a native `UIMenu`, falling back to its own bottom sheet for entry points that aren't a button we own: **Copy link** (`SendToFriendSheet.copyLink`), **Share link** (`SendToFriendSheet.shareLink`), **Send as email** (`SendToFriendSheet.present` — recent-recipient bottom sheet, or the full picker when there are no past sends), and — for readable articles/documents only — **Export as…**, a submenu of EPUB / PDF / Word Document / Text (`ArticleExportService.presentShareSheet(_:for:…)`, see article-export.md). Share link hands the system share sheet a Reader/Downloader App Clip invocation URL from `LunaAppClipInvocationURL` when configured; Copy link always copies the plain source URL. Rows are a pure list (testable visibility/actions); tapping a sheet row dismisses first, then runs the action or presents the nested export sheet.
-
-## Reader App Clip
-
-`LunaReaderClip` is an App Clip target embedded by the Reader app. It accepts the same
-invocation shape as the Downloader clip (`?url=`, `?source=`, `?sourceURL=`, `?u=`, or a
-fragment) via `LunaAppClipInvocationURL.sourceURL(from:)`, runs the shared
-`IngestPipeline`, and presents the normal `ReaderViewController` with `forceMode: .scroll`,
-`persistsModePreference: false`, `marksOpenedOnLoad: false`, and `shareProvider: nil`.
-That keeps the clip read-only: no saved-list writes, no Save affordance, and no reader share
-button (iOS does not provide an API for an app/app clip to launch its own share extension as
-a share target). The source web URL is a normal shareable `SavedItem`, so the
-standard Original-mode capability path still appends Original alongside Scroll and RSVP.
-Original uses the frozen archive when one exists and otherwise the extracted local article
-snapshot; it never reopens the publisher URL.
-
-**The clip unlocks paywalls itself, and its routing is a PURE function the parity suite
-owns.** The clip's outcome switch is `ClipReaderRoute.route(for:)` (LunaReaderUI), not a
-switch written inside the clip target — because the clip is the one article surface a test
-bundle cannot drive (an `.app` inside an `.app`, hosted by nothing), and the one that
-therefore drifted: `.needsArchive` used to dead-end on "Download and open the Luna Reader
-app" while the app and both share-sheet extensions unlocked the same article in place.
-Nothing about that unlock needs the full app — [an App Clip may run a `WKWebView`, keep
-cookies, and open Safari](https://developer.apple.com/documentation/appclip/choosing-the-right-functionality-for-your-app-clip);
-the restriction list is background execution, ~20 no-op frameworks (AppIntents, Contacts,
-BackgroundTasks, HealthKit, …), tracking/privacy APIs, and size. So `.archiveUnlock`
-presents the same `ArchiveWebReaderViewController` every other surface does, pre-filled,
-with `onOpenInBrowser` wired (a clip HAS `UIApplication`, unlike the extensions). That
-route also carries the browser-recovery cases — an anti-bot front door such as Reuters
-resolves to `.needsArchive` with `webPreStages`, so the clip now gets the WKWebView
-direct-unlock tier too, not just archive.today.
-
-**The unlock writes to a SCRATCH store, not the App Group.**
-`ArchiveWebReaderViewController` extracts *through* a `SavesStore` (it saves the
-unlocked article onto an item and hands the item back), so the clip hands it a private
-`SavesStore(containerURL:)` under its own caches directory. The read-only contract
-holds — a clip unlock can never surface in the user's saved list — and the container goes
-away with the clip. Closing the unlock without solving returns to the clip's own failure
-screen, where `AppClip_reader_needsArchiveUnlockMessage` (the full app as the remaining
-route) is now the give-up message rather than the first answer, with Retry re-entering the
-unlock. Parity is pinned by `SurfaceParityTests
-.testAppClipRoutesEveryOutcomeLikeTheOtherArticleSurfaces` and
-`.testAppClipUnlocksAPaywalledArticleInsteadOfDeferringToTheFullApp`.
-
-**Size budget.** The clip links the archive/bypass stack already (LunaReaderUI depends on
-LunaArchiveReader), so this costs nothing new, but the ceiling is worth knowing: an
-uncompressed App Clip binary may be 100 MB on iOS 17+ **only** for digital invocations
-(a link, Spotlight) with no iOS 16 support — App Clip Codes / QR / NFC would drop the
-budget back to 15 MB. Luna's deployment target is iOS 18 and the clip is invoked by
-`LunaAppClipInvocationURL`, so the 100 MB tier applies; adding a physical invocation later
-would mean re-measuring, not just flipping a switch.
+The reader's nav-bar/footer Share button routes through `ReaderShareProviding.shareMenu` / `.presentShareSheet`. In the main app, `AppReaderShareProvider` builds one `ReaderShareSheet.rows(…)` list (`LunaSocialUI/ReaderShareSheet.swift`) and hangs it off the button as a native `UIMenu`, falling back to its own bottom sheet for entry points that aren't a button we own: **Copy link** (`SendToFriendSheet.copyLink`), **Share link** (`SendToFriendSheet.shareLink`), **Send as email** (`SendToFriendSheet.present` — recent-recipient bottom sheet, or the full picker when there are no past sends), and — for readable articles/documents only — **Export as…**, a submenu of EPUB / PDF / Word Document / Text (`ArticleExportService.presentShareSheet(_:for:…)`, see article-export.md). Share link and Copy link both carry the plain source URL. Rows are a pure list (testable visibility/actions); tapping a sheet row dismisses first, then runs the action or presents the nested export sheet.
 
 ## Share-sheet reader experience
 
@@ -596,7 +546,7 @@ it is up). The indicator's own default mirrors the scroll view's content insets,
 bottom inset reserves the completion lane, which ended its track well over a hundred points short of
 the screen. Tests: `ExtensionScrollGeometryTests`.
 
-**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. Only `content.js` BUILDS one (Swift only parses it via `LunaDeepLink.articleURL(from:)`) — the in-app "Share Link…" shares the plain source/App-Clip URL instead (`SendToFriendSheet.shareLink`), not this deep link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
+**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. Only `content.js` BUILDS one (Swift only parses it via `LunaDeepLink.articleURL(from:)`) — the in-app "Share Link…" shares the plain source URL instead (`SendToFriendSheet.shareLink`), not this deep link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
 
 ## Inline images
 

@@ -80,7 +80,7 @@ sibling apps, an in-app LLM plugin generator.
 | `LunaShare` / `LunaAction` appex | JavaScriptCore | yes | yes | no | no | defers: locks the save |
 | `LunaSafari` appex (native handler) | **none** — relays messages, serves sources, runs `PluginFetchService` | – | – | – | – | – |
 | Safari content-script world | the page's isolated world (`plugin_host.js` shim) | yes | yes | no | no | defers: hands off to the app |
-| Live Activity widget, App Clips | none | – | – | – | – | – |
+| Live Activity widget | none | – | – | – | – | – |
 
 ### 2.2 Native module map (SwiftPM, `LunaLibraries/`)
 

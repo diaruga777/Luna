@@ -584,8 +584,6 @@ Downloader-platform flow:
    - `isDownloaderHost` — true only for the `*.downloader.safari` extension bundle.
    - `readerInstalled` / `downloaderInstalled` / `priceTrackerInstalled` — see
      "Installed-app detection" above.
-   - `readerAppClipURL` — `LunaReaderAppClipURL` from `LunaSafari/Info.plist`.
-   - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
 2. Before article heuristics run, content.js recognizes Downloader-platform hosts (X,
    Bluesky, Reddit, TikTok, Instagram, Facebook) via `recognizedPlatformPage` — see
    "Shared platform-host list" below. These pages are never classified as articles by

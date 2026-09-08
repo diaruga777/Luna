@@ -44,7 +44,7 @@ Consequences to remember:
   longer report the device style (`AppearanceSettings.followSystemStyle(of:)`).
 - `AppearanceSettings.apply(to:)` has a `UIWindow` form for the apps and a
   `UIViewController` form for surfaces that render in someone else's window — the share and
-  action extensions (via `ShareViewController`) and both App Clips.
+  action extensions (via `ShareViewController`).
 - Anything rendering Luna colours onto a non-Luna surface must resolve them explicitly.
   The emailed price graph (`PriceGraphEmailSnapshot`) resolves against a plain dark trait
   collection so background and labels agree.
@@ -202,7 +202,7 @@ along a curved horizon, with an optional activity pulse while progress is in fli
 SwiftUI/WidgetKit renderer. Both honor Reduce Motion.
 
 The effect is used by Downloader progress surfaces including the Live Activity, action
-extension saved-media screen, save status pill, and Downloader App Clip.
+extension saved-media screen, and save status pill.
 Download surfaces show the traveling activity pulse. Playback uses of the UIKit bar
 (the audio mini-player and video scrub overlay) disable it, leaving only determinate
 progress and its head point.

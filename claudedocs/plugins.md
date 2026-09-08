@@ -21,7 +21,7 @@ once for the "why"; read this for the "what, exactly."
 | `LunaShare` / `LunaAction` (central Luna's) | JavaScriptCore | yes | yes | no | no | stores the request, rejects `browser-deferred` — the save locks |
 | `LunaSafari` (central Luna's) native handler | none — relays messages, serves plugin source, runs `PluginFetchService` | – | – | – | – | – |
 | Safari content-script world | the page's isolated world (`LunaSafari/Resources/plugin_host.js`) | yes | yes | no | no | rejects `browser-deferred` immediately (no save exists yet) |
-| Live Activity widget, App Clips | none | – | – | – | – | – |
+| Live Activity widget | none | – | – | – | – | – |
 
 The three sibling apps (Reader, Downloader, Price Tracker) and their
 extensions link none of the plugin modules and run no plugin code at all.

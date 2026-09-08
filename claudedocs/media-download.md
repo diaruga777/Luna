@@ -300,8 +300,8 @@ Photos references remain governed by the user's Photos library.
   Luna) and `LunaDownloaderLiveActivity` (Downloader) build host-prefixed copies of the
   same configuration out of `LunaDownloaderLiveActivity/`. Reader and Price Tracker used
   to embed copies too, but the four-app compile-time split left them without
-  `LunaMediaDownload` in the app, the share/action/Safari extensions, or the App Clip,
-  and `MediaIntentHandoff.install()` runs only from `KindWiring+Luna.swift` /
+  `LunaMediaDownload` in the app or the share/action/Safari extensions, and
+  `MediaIntentHandoff.install()` runs only from `KindWiring+Luna.swift` /
   `KindWiring+Downloader.swift`. An ActivityKit activity is owned by the process that
   requests it and rendered only by a widget extension embedded in that same app, so
   those two copies could never be reached; both targets were removed.
@@ -317,9 +317,6 @@ Photos references remain governed by the user's Photos library.
 - **Legacy saves list long press** — manual Save to Photos remains available in the
   combined/debug list and uses the same confirmed local-to-Photos transition for
   Downloader rows.
-- **Downloader App Clip** — downloads to a temporary file and presents the system share
-  sheet. It does not become part of the durable three-state store or request Photos
-  directly.
 
 The carousel observes both `.savedMediaChanged` and `.savesChanged`.
 `SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
@@ -500,8 +497,8 @@ job.
 `LiveMediaDownloadManager` uses a shared-container background `URLSession` with launch
 events, connectivity waiting, and a seven-day resource timeout. Its stable identifier is
 `<process bundle id>.mediaDownload.background.v2`, so the containing app and each of its
-share, action, Safari, Live Activity, and App Clip processes own distinct sessions even
-though they use the same App Group. When iOS wakes a containing app for a completed
+share, action, Safari, and Live Activity processes own distinct sessions even though
+they use the same App Group. When iOS wakes a containing app for a completed
 extension transfer, `AppDelegate` routes the callback's identifier through the media shell;
 the manager recreates that exact session and retains its delegate until the session finishes
 delivering events. The central app accepts only its own exact embedded-process identifiers,

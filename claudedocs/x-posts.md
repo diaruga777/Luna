@@ -142,8 +142,8 @@ seam and takes an article only when one comes back.
 article surface installs with a single call. Registering it per-surface by hand
 was tried first and shipped broken: the entry went into the two `KindWiring+*` app
 roots only, so a long X post read fine inside the app but was rejected from the
-**share sheet** as Downloader-owned. Seven roots handle the article kind (app
-shell, share extension, action extension and App Clip, for two apps), and
+**share sheet** as Downloader-owned. Six roots handle the article kind (app
+shell, share extension and action extension, for two apps), and
 `KindCompositionRootTests` now fails the build if any of them registers a kind
 directly or installs the wrong set. See `claudedocs/surface-support.md`'s
 "Kind packs" for the mechanism.

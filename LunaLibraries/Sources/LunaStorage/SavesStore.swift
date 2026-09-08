@@ -1773,8 +1773,8 @@ public final class SavesStore {
     ///
     /// This is the "start a download unless one is already running for this link"
     /// check. It has to be atomic across PROCESSES — the app, the share and action
-    /// extensions, the Live Activity widget and the App Clip all start downloads
-    /// through the same background session — and a transaction is what makes it so.
+    /// extensions and the Live Activity widget all start downloads through the
+    /// same background session — and a transaction is what makes it so.
     /// Returning nil from `body` means an existing job won, and nothing is written.
     public func insertMediaDownloadJob(
         forSourceURLString urlString: String,

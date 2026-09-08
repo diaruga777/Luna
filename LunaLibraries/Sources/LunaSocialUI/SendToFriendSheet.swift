@@ -106,16 +106,13 @@ public enum SendToFriendSheet {
         presenter.present(sheet, animated: true)
     }
 
-    /// Shares a URL via the system share sheet. `sharedURLString` lets callers hand
-    /// out an App Clip invocation URL while keeping Copy Link on the plain URL.
+    /// Shares a URL via the system share sheet.
     public static func shareLink(
         urlString: String,
-        sharedURLString: String? = nil,
         from presenter: UIViewController,
         sourceView: UIView?
     ) {
-        let urlToShare = sharedURLString ?? urlString
-        let shared: Any = URL(string: urlToShare) ?? urlToShare
+        let shared: Any = URL(string: urlString) ?? urlString
         LunaShareSheet.present(
             items: [shared], from: presenter, anchor: .view(sourceView ?? presenter.view))
     }

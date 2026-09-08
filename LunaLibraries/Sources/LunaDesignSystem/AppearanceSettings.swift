@@ -104,16 +104,16 @@ public enum AppearanceSettings {
         }
     }
 
-    /// View controllers, similarly held WEAKLY: an extension/App Clip screen that
+    /// View controllers, similarly held WEAKLY: an extension screen that
     /// deallocates should not leave a dangling registration behind.
     nonisolated(unsafe) private static let observedViewControllers =
         NSHashTable<UIViewController>.weakObjects()
 
-    /// A share/action extension or App Clip pins the VIEW CONTROLLER, not a window
-    /// it owns, so — same problem `followSystemStyle(of window:)` solves one level
-    /// up — its own resolved style can no longer report a device appearance flip
-    /// either. The window it's presented in (the host app's, for an extension; the
-    /// clip's own, for a Clip) carries no override of ours, so watch that instead.
+    /// A share/action extension pins the VIEW CONTROLLER, not a window it owns,
+    /// so — same problem `followSystemStyle(of window:)` solves one level up —
+    /// its own resolved style can no longer report a device appearance flip
+    /// either. The host app's window carries no override of ours, so watch that
+    /// instead.
     /// `viewDidLoad` runs before this screen is inserted into that window (an
     /// extension host attaches it only after presenting the principal view
     /// controller returns), so a still-nil window is retried a few run-loop turns

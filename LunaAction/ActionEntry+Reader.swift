@@ -8,7 +8,7 @@
 //  It installs the kind packs this app handles, one call each. A kind's own
 //  module defines what it registers — pipeline processors and extension
 //  presenters together — once, and every surface (app, share extension, action
-//  extension, App Clip) installs the same pack. See `ArticleKindComposition`
+//  extension) installs the same pack. See `ArticleKindComposition`
 //  and claudedocs/surface-support.md.
 //
 //  Never write `IngestKindProcessors` or `ShareKindPresenters` here directly.

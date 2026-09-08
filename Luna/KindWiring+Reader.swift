@@ -38,8 +38,7 @@ enum KindWiring {
         #endif
 
         // The article kind pack: one call, shared verbatim with Reader's
-        // share extension, action extension, and App Clip. See
-        // `ArticleKindComposition`.
+        // share extension and action extension. See `ArticleKindComposition`.
         ArticleKindComposition.install()
         // The article kind's card half follows the same rule — the one
         // definition the central app installs too. See `CardKindPresenter.swift`.

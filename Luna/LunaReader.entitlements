@@ -4,10 +4,6 @@
 <dict>
 	<key>com.apple.developer.networking.HotspotConfiguration</key>
 	<true/>
-	<key>com.apple.developer.associated-appclip-app-identifiers</key>
-	<array>
-		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).reader.Clip</string>
-	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudKit</string>

@@ -10,10 +10,6 @@
 	<string>iCloud.$(PRODUCT_BUNDLE_PREFIX)</string>
 	<key>LunaCoreAppStoreURL</key>
 	<string>$(LUNA_CORE_APP_STORE_URL)</string>
-	<key>LunaReaderAppClipURL</key>
-	<string></string>
-	<key>LunaDownloaderAppClipURL</key>
-	<string></string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>

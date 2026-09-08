@@ -725,8 +725,10 @@ Definitions stay in the app target (metadata extraction); logic is
   empty, editor with focus / syntax / authorship, mention overlay open, read-along
   HUD, calibration verdict — compiled only into `LunaWriter` (kind-pack rule).
 
-## 11. Tests (`LunaTests`, plan `LunaWriter.xctestplan`, scheme `LunaWriterTests`)
-Behaviour only, no constant echoes.
+## 11. Tests
+Behaviour only, no constant echoes. These suites are the `LunaWriterTests`
+bundle, hosted on the `LunaWriter` app and run from the `LunaWriter` scheme's
+default plan — see `claudedocs/writer.md` "Testing".
 
 | Suite | Asserts |
 | --- | --- |

@@ -8,8 +8,8 @@ import CoreText
 import LunaModels
 
 /// Preset reader typefaces. System and New York are provided by iOS; the
-/// remaining families are bundled with LunaDesignSystem under the SIL Open
-/// Font License. User-selectable in Settings.
+/// remaining families ship at the containing app's bundle root under the SIL
+/// Open Font License. User-selectable in Settings.
 public enum ReaderFont: String, CaseIterable {
     case lexend
     case literata
@@ -78,19 +78,24 @@ public enum ReaderFont: String, CaseIterable {
         return UIFont(descriptor: descriptor, size: size)
     }
 
+    /// The bundle carrying the typeface files: the CONTAINING APP's bundle.
+    ///
+    /// One copy of the five faces ships at the app bundle root, so the app and
+    /// every extension of it register the same files. An extension's own
+    /// `Bundle.main` is its `.appex`, which sits two levels down at
+    /// `<app>.app/PlugIns/<name>.appex`.
+    private static var typefaceBundle: Bundle? {
+        let url = Bundle.main.bundleURL
+        guard url.pathExtension == "appex" else { return .main }
+        let app = url.deletingLastPathComponent().deletingLastPathComponent()
+        return Bundle(url: app)
+    }
+
     private static let registerBundledFonts: Void = {
-        let resources = [
-            (name: "Lexend", ext: "ttf"),
-            (name: "Literata", ext: "ttf"),
-            (name: "Literata-Italic", ext: "ttf"),
-            (name: "NotoSans", ext: "ttf"),
-            (name: "NotoSans-Italic", ext: "ttf"),
-        ]
-        for resource in resources {
-            guard let url = Bundle.module.url(
-                forResource: resource.name,
-                withExtension: resource.ext
-            ) else { continue }
+        guard let bundle = typefaceBundle else { return }
+        let names = ["Lexend", "Literata", "Literata-Italic", "NotoSans", "NotoSans-Italic"]
+        for name in names {
+            guard let url = bundle.url(forResource: name, withExtension: "ttf") else { continue }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }()

@@ -1,7 +1,9 @@
 #!/bin/zsh
 # Subsets the five bundled reader fonts (Design/Fonts/Full/*.ttf) down to
-# Latin, Greek, and Cyrillic coverage and writes the result to
-# LunaDesignSystem's shipped Resources/Fonts under the SAME filenames.
+# Latin, Greek, and Cyrillic coverage and writes the result under the SAME
+# filenames to both places that ship them: Luna/Resources/Fonts (the four
+# content apps read them from their own bundle root, and so do their
+# extensions) and LunaWriter/Fonts (Writer's own copy).
 #
 # Coverage rule: a reader font renders Latin, Greek, and Cyrillic script
 # text; any other character falls back to the system font
@@ -22,7 +24,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="$REPO_ROOT/Design/Fonts/Full"
-DEST_DIR="$REPO_ROOT/LunaLibraries/Sources/LunaDesignSystem/Resources/Fonts"
+DEST_DIR="$REPO_ROOT/Luna/Resources/Fonts"
+WRITER_DIR="$REPO_ROOT/LunaWriter/Fonts"
 
 PYFTSUBSET="${PYFTSUBSET:-/Users/hsp/Library/Python/3.9/bin/pyftsubset}"
 command -v "$PYFTSUBSET" >/dev/null 2>&1 || {
@@ -47,6 +50,7 @@ for name in "${FONTS[@]}"; do
         --layout-features='*' \
         --notdef-outline \
         --name-IDs='*'
+    cp "$dest" "$WRITER_DIR/$name.ttf"
     before=$(du -h "$src" | cut -f1)
     after=$(du -h "$dest" | cut -f1)
     echo "$name.ttf: $before -> $after"

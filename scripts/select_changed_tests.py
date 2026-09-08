@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Pick the LunaTests classes worth running for a working-tree diff.
 
-Every test in the project lives in the ONE `LunaTests` bundle hosted on the
-central Luna app, so a partial run is a list of `-only-testing:` flags and
-nothing else. This script produces that list, and — just as importantly —
-refuses to produce a short one when it cannot explain its own choice.
+`run_tests.sh` runs the `LunaTests` bundle on the central Luna app, so a
+partial run is a list of `-only-testing:` flags and nothing else. This script
+produces that list, and — just as importantly — refuses to produce a short one
+when it cannot explain its own choice.
+
+The Vault suites are the one exception: they live in the separate
+`LunaVaultTests` bundle on the `LunaVault` host, which this run cannot reach.
+A changed Vault input therefore prints an instruction to run
+`scripts/run_vault_tests.sh` rather than selecting a class here.
 
 How a changed file reaches a test class, in the order the rules are tried:
 
@@ -49,8 +54,10 @@ CORE_CLASSES = ["KindCompositionRootTests"]
 # Non-Swift inputs, and the few files whose reach is wider than their symbols.
 # A pattern is a regex matched against the repo-relative path. `None` as the
 # class list means "this file cannot affect the tests" (docs, scripts).
-# `FULL` means "run everything".
+# `FULL` means "run everything". `VAULT` means "the tests for this input are
+# in the LunaVaultTests bundle, which this run does not cover".
 FULL = "\0FULL\0"
+VAULT = "\0VAULT\0"
 
 PATH_RULES: list[tuple[str, object]] = [
     # Anything that redefines the build graph itself.
@@ -108,14 +115,14 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^Luna/Resources/", ["ReaderOnboardingTests", "OnboardingSaveDemoTests"]),
     # Test inputs: whichever test names the fixture is the one that reads it.
     (r"^LunaTests/Fixtures/", "SYMBOL"),
-    (r"^Fixtures/Vault/manifest\.json$", ["VaultScaffoldTests"]),
-    (r"^LunaLibraries/Sources/LunaVault", ["VaultScaffoldTests", "VaultCryptoStorageTests",
-                                            "VaultBackendTests", "VaultExtractionTests", "VaultSearchTests",
-                                            "VaultStage5Tests", "VaultStage5SetupTests"]),
-    (r"^LunaTests/VaultSearchTests\.swift$", ["VaultSearchTests"]),
-    (r"^LunaTests/VaultStage5Tests\.swift$", ["VaultStage5Tests"]),
-    (r"^LunaTests/VaultStage5SetupTests\.swift$", ["VaultStage5SetupTests"]),
-    (r"^LunaTests/VaultStage5IntegrationTests\.swift$", ["VaultStage5IntegrationTests"]),
+    # Vault inputs, whose suites are in the other bundle.
+    (r"^Fixtures/Vault/", VAULT),
+    (r"^LunaVaultTests/", VAULT),
+    (r"^LunaLibraries/Sources/LunaVault", VAULT),
+    (r"^LunaLibraries/Sources/VaultTestKit/", VAULT),
+    (r"^LunaVaultTailscale/", VAULT),
+    (r"^LunaVault/", VAULT),
+    (r"^LunaVaultShare/", VAULT),
     # Luna Writer tiers (claudedocs/plans/writer-app.md). The name convention
     # covers most of them; these rows catch the files whose class names do not
     # echo the source file (test support, the synthetic reader, the router).
@@ -218,6 +225,7 @@ def main() -> int:
 
     selected: dict[str, set[str]] = defaultdict(set)   # class -> reasons
     unplaced: list[str] = []
+    vault: list[str] = []
 
     for rel in files:
         # --- rule 4 (checked first: it is the explicit override) -----------
@@ -231,6 +239,9 @@ def main() -> int:
             if target is FULL:
                 print(f"{rel}: changes the build graph — full suite", file=sys.stderr)
                 return 3
+            if target is VAULT:
+                vault.append(rel)
+                break
             if target == "SYMBOL":
                 # A data file: whoever names it (with or without extension).
                 stem = os.path.splitext(os.path.basename(rel))[0]
@@ -288,6 +299,12 @@ def main() -> int:
         if not found:
             unplaced.append(rel)
 
+    if vault:
+        print("these changed files reach the LunaVaultTests bundle, which this run "
+              "does not cover — run scripts/run_vault_tests.sh as well:", file=sys.stderr)
+        for rel in vault:
+            print(f"  {rel}", file=sys.stderr)
+
     if unplaced:
         print("could not map these changed files to any test:", file=sys.stderr)
         for rel in unplaced:
@@ -300,7 +317,7 @@ def main() -> int:
             selected[cls].add("always run")
 
     if not selected:
-        print("nothing to test for these changes", file=sys.stderr)
+        print("nothing to test in LunaTests for these changes", file=sys.stderr)
         return 4
 
     print(f"selected {len(selected)} test class(es) for {len(files)} changed file(s):",

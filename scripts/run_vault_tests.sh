@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Stage 1B harness. Deterministic Vault tests run on the Luna iOS test host;
-# no live provider is contacted unless the caller explicitly opts in.
+# Deterministic Vault tests run in the `LunaVaultTests` bundle, hosted on the
+# `LunaVault` app and reached through the `LunaVault` scheme. No live provider
+# is contacted unless the caller explicitly opts in.
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="emulator"
 DEVICE=""
@@ -87,16 +88,10 @@ if [[ "$PERFORMANCE" -eq 1 ]]; then
   # the performance-only plan gets its documented 20-minute execution cap.
   TIMEOUT_ARGS=(-default-test-execution-time-allowance 1200 -maximum-test-execution-time-allowance 1200)
 fi
-exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
+# The bundle holds Vault suites and nothing else, so the plan runs all of it;
+# `LunaVaultStage5` is the one plan that narrows to a single class.
+exec xcodebuild test -scheme LunaVault -testPlan "$TEST_PLAN" \
   -destination "$DESTINATION" \
-  -only-testing:LunaTests/VaultScaffoldTests \
-  -only-testing:LunaTests/VaultCryptoStorageTests \
-  -only-testing:LunaTests/VaultExtractionTests \
-  -only-testing:LunaTests/VaultSearchTests \
-  -only-testing:LunaTests/VaultBackendTests \
-  -only-testing:LunaTests/VaultStage5Tests \
-  -only-testing:LunaTests/VaultStage5SetupTests \
-  -only-testing:LunaTests/VaultStage5IntegrationTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
   ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} \
   ${EXTRA[@]+"${EXTRA[@]}"}

@@ -13,6 +13,56 @@ final class ArticleExtractorTests: XCTestCase {
     private let extractor = ArticleExtractor()
     private let baseURL = URL(string: "https://example.com/article")! // valid constant URL
 
+    /// Body markers can annotate individual paragraphs, not just a container.
+    /// Keep the whole story, including its last paragraph and intervening media.
+    func testRepeatedBodyMarkersDoNotTruncateToOneParagraph() throws {
+        for tag in ["p", "div", "section"] {
+            for marker in ["itemprop=\"articleBody\"", "class=\"article-body\""] {
+                let paragraphs = (1...8).map { index in
+                    "<\(tag) \(marker)>Paragraph \(index). "
+                    + String(repeating: "The neighbors gathered to discuss the garden and shared their observations about the changing seasons. ", count: 5)
+                    + "</\(tag)>"
+                }
+                let html = """
+                <html><head><title>A neighborhood garden</title></head><body>
+                <article><h1>A neighborhood garden</h1><div class="entry-content">
+                \(paragraphs.prefix(4).joined())
+                <h2>Later in the season</h2><figure><img src="/garden.jpg"><figcaption>The garden in bloom.</figcaption></figure>
+                \(paragraphs.suffix(4).joined())
+                </div></article>
+                <section class="comments"><p>Unrelated reader comment.</p></section>
+                </body></html>
+                """
+                let content = try extractor.extract(html: html, baseURL: baseURL)
+                for index in 1...8 {
+                    XCTAssertEqual(content.blocks.filter { $0.text.hasPrefix("Paragraph \(index).") }.count, 1, "\(tag) \(marker)")
+                }
+                XCTAssertTrue(content.wholeText.contains("Later in the season"))
+                XCTAssertTrue(content.blocks.contains { $0.imageURLString == "https://example.com/garden.jpg" })
+                XCTAssertFalse(content.wholeText.contains("Unrelated reader comment"))
+                XCTAssertTrue(ArticleExtraction.isReadableArticle(content, html: html))
+            }
+        }
+    }
+
+    func testBodyContainerAfterMarkedTeaserWinsWithoutRecirculation() throws {
+        let teaser = String(repeating: "Teaser from another story with only an introductory paragraph. ", count: 8)
+        let body = (1...8).map {
+            "<p>Garden report paragraph \($0). "
+            + String(repeating: "The residents described their plans for planting trees and caring for the neighborhood garden. ", count: 3)
+            + "</p>"
+        }.joined()
+        let html = """
+        <html><body><article><div itemprop="articleBody"><p>\(teaser)</p></div></article>
+        <article><h1>Garden report</h1><div itemprop="articleBody">\(body)</div></article>
+        <div><p>Unrelated trailing story.</p></div></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Garden report paragraph 8"))
+        XCTAssertFalse(content.wholeText.contains("Teaser from another story"))
+        XCTAssertFalse(content.wholeText.contains("Unrelated trailing story"))
+    }
+
     func testExtractsTitleAndParagraphs() throws {
         let html = """
         <html><head><title>Page Title</title>

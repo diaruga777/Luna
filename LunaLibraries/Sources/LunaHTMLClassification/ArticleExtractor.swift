@@ -64,7 +64,7 @@ public struct ArticleExtractor {
         // A SUBSTANTIAL refined result (≥1200 chars) wins outright, even when
         // `basic` is larger. Comment-heavy pages (e.g. an archived WSJ article)
         // inflate `basic` with the comment thread and subscription promos that
-        // refined correctly strips. A MEDIUM refined result (350–600) additionally
+        // refined correctly strips. A MEDIUM refined result (350–1199) additionally
         // needs `refined*3 >= basic`: a small refined result more likely means
         // refined's junk-class stripping removed real content.
         var chosen: [ArticleContent.Block]
@@ -734,15 +734,28 @@ public struct ArticleExtractor {
         // exactly the prose and exclude the comment threads / subscription
         // promos that would otherwise outscore the body on comment-heavy pages
         // (e.g. an archived WSJ article, where comments dwarf the article text).
+        // A marker on a paragraph is not a body container: publishers also put
+        // it on EVERY prose block. Let ancestor scoring below gather those blocks
+        // with their headings/images instead of returning one long paragraph.
         let articleBodySelectors = [
             "[itemprop=articleBody]", "[class*=article-body]", "[class*=articleBody]",
             "[class*=article__body]", "[class*=ArticleBody]", "[class*=article-content]",
         ]
         for selector in articleBodySelectors {
-            if let candidate = try? document.select(selector).first(),
-               paragraphTextLength(in: candidate) >= 400 {
-                return candidate
+            var best: Element?
+            var bestLength = 0
+            for candidate in try document.select(selector) {
+                guard candidate.tagName() != "p",
+                      !isParagraphLikeContainer(candidate) else { continue }
+                let length = paragraphTextLength(in: candidate)
+                // A teaser may precede the real body under the same selector.
+                // Rank complete containers, rather than accepting the first hit.
+                if length >= 400, length > bestLength {
+                    best = candidate
+                    bestLength = length
+                }
             }
+            if let best { return best }
         }
 
         var scores: [ObjectIdentifier: Double] = [:]

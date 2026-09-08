@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "options" : {
+        "performanceMetrics" : [ ]
+      },
+      "id" : "5C570000-0000-4000-8000-0000000000A2",
+      "name" : "Luna Writer UI driver"
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Luna.xcodeproj",
+        "identifier" : "5C57000000000000000000B1",
+        "name" : "LunaWriterUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

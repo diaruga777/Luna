@@ -11,6 +11,9 @@ import XCTest
 /// fixed-duration pump is never a wait for those; this spins the run loop in
 /// short slices so the condition is re-checked as soon as it might have
 /// changed.
+///
+/// `LunaTests` and `LunaWriterTests` each carry a copy: the two bundles host
+/// on different apps and share no module.
 func waitUntil(
     _ condition: @autoclosure () -> Bool,
     timeout: TimeInterval = 3,

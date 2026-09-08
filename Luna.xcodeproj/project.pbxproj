@@ -169,6 +169,7 @@
 		7148134A504E2679D2161243 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		71FE9DB128832A382EC0438E /* LunaSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LunaSocialUI */; };
 		720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = AF2F0183AA25D456A5323A04 /* LunaVaultUI */; };
+		140EC27992D35B1DD2DDC0D8 /* LunaVaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = AF2F0183AA25D456A5323A04 /* LunaVaultUI */; };
 		7284C730E5E4B4DEFEBD7574 /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
 		72CBAF942437AEB0C420300B /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		737D0DD69AD3749532FA9EF3 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = 7076E0CE300BEBCC529280E0 /* LunaURLClassification */; };
@@ -1441,7 +1442,7 @@
 				A3037871876F73287152BA9F /* LunaPriceCompare in Frameworks */,
 				40FC28B283DC74F6D4CD213E /* VaultTestKit in Frameworks */,
 				4B0000000000000000000001 /* LunaVaultMac in Frameworks */,
-				720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */,
+				140EC27992D35B1DD2DDC0D8 /* LunaVaultUI in Frameworks */,
 				565D8AC90F12D2227F8B3496 /* LunaPluginKit in Frameworks */,
 				738BEE97300246B7FF31AD92 /* LunaPluginRuntime in Frameworks */,
 				C65DD19BAC9F9D4AD41E43DA /* LunaPluginIngest in Frameworks */,

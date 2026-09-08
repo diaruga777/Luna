@@ -393,9 +393,9 @@ it again unconditionally.
 
 ## Testing
 
-The 58 Writer suites are `LunaWriterTests/`, a unit-test bundle hosted on the
-`LunaWriter` app and run from the `LunaWriter` scheme's default test plan
-(`LunaWriter.xctestplan`):
+The Writer suites are `LunaWriterTests/` (58 files, 600 tests), a unit-test
+bundle hosted on the `LunaWriter` app and run from that scheme's default test
+plan (`LunaWriter.xctestplan`):
 
 ```sh
 xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM" \

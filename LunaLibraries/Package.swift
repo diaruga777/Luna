@@ -11,6 +11,62 @@ let package = Package(
     // a `swift build` on the Mac still compiles the Foundation-only tiers.
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
+        // MARK: - Per-app kits
+        //
+        // One dynamic kit per content app. The app, every one of its
+        // extensions, and the test bundle hosted on it link the kit and
+        // NOTHING else from this package: a client that also links a static
+        // product sharing targets with the kit makes Xcode promote every
+        // doubly reached target into a framework of its own. The app target
+        // embeds the kit once (its "Embed Frameworks" phase); the extensions
+        // resolve it through their `@executable_path/../../Frameworks` rpath
+        // and carry no copy. `scripts/link_app_kits.rb` owns those link edges.
+        //
+        // Each kit lists every target its app group reaches directly.
+        // Transitive dependencies come along on their own.
+        .library(name: "LunaKit", type: .dynamic, targets: [
+            "LunaAppConfig", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",
+            "LunaBundledPlugins", "LunaDesignSystem", "LunaDocuments", "LunaEpub",
+            "LunaFetch", "LunaGaze", "LunaHTMLClassification", "LunaIngest",
+            "LunaIntents", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload",
+            "LunaMediaResolve", "LunaModels", "LunaPaywallBypass", "LunaPlatforms",
+            "LunaPluginExport", "LunaPluginIngest", "LunaPluginKit", "LunaPluginRuntime",
+            "LunaPluginTransport", "LunaPluginUI", "LunaPriceCompare", "LunaPriceIngest",
+            "LunaPriceMetadata", "LunaPriceUI", "LunaReaderEngine", "LunaReaderUI",
+            "LunaSaves", "LunaSavesUI", "LunaSend", "LunaShareSurface",
+            "LunaSocial", "LunaSocialUI", "LunaStorage", "LunaTranscribe",
+            "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
+        ]),
+        .library(name: "LunaReaderKit", type: .dynamic, targets: [
+            "LunaAppConfig", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",
+            "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaFetch",
+            "LunaHTMLClassification", "LunaIngest", "LunaIntents", "LunaMailAccount",
+            "LunaMailTransport", "LunaMediaResolve", "LunaModels", "LunaPaywallBypass",
+            "LunaPriceCompare", "LunaPriceMetadata", "LunaReaderEngine", "LunaReaderUI",
+            "LunaSaves", "LunaSavesUI", "LunaSend", "LunaShareSurface",
+            "LunaSocial", "LunaSocialUI", "LunaStorage", "LunaTransitions",
+            "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
+        ]),
+        .library(name: "LunaDownloaderKit", type: .dynamic, targets: [
+            "LunaAppConfig", "LunaDesignSystem", "LunaFetch", "LunaHTMLClassification",
+            "LunaIngest", "LunaIntents", "LunaMailAccount", "LunaMailTransport",
+            "LunaMediaDownload", "LunaMediaResolve", "LunaModels", "LunaPlatforms",
+            "LunaPriceCompare", "LunaPriceMetadata", "LunaSaves", "LunaSavesUI",
+            "LunaShareSurface", "LunaSocial", "LunaSocialUI", "LunaStorage",
+            "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
+        ]),
+        .library(name: "LunaPriceTrackerKit", type: .dynamic, targets: [
+            "LunaAppConfig", "LunaDesignSystem", "LunaFetch", "LunaHTMLClassification",
+            "LunaIngest", "LunaIntents", "LunaMailAccount", "LunaMailTransport",
+            "LunaMediaResolve", "LunaModels", "LunaPriceCompare", "LunaPriceIngest",
+            "LunaPriceMetadata", "LunaPriceUI", "LunaSaves", "LunaSavesUI",
+            "LunaShareSurface", "LunaSocial", "LunaSocialUI", "LunaStorage",
+            "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
+        ]),
+        // MARK: - Static products
+        //
+        // `LunaVault`, `LunaWriter`, their test bundles and the
+        // `LunaVaultTailscale` package link these directly.
         .library(name: "LunaAppConfig", targets: ["LunaAppConfig"]),
         .library(name: "LunaModels", targets: ["LunaModels"]),
         .library(name: "LunaURLClassification", targets: ["LunaURLClassification"]),

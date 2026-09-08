@@ -53,8 +53,8 @@ are reported.
 ## Reading the output
 
 Per metric the script prints the iteration count, mean, standard deviation (with
-its size relative to the mean), min, max, and every iteration value, then writes
-the same numbers to
+its size relative to the mean), median, min, max, and every iteration value,
+then writes the same numbers to
 `/private/tmp/claude-501/-Users-hsp-Desktop-Lune/0ce06c9e-b7f9-484a-9547-b90401fbae15/scratchpad/launch/<label>-<app>.json`
 plus a timestamped copy, so a second run under one label keeps the first.
 
@@ -66,6 +66,26 @@ difference. The working bar for a refactor is 5% on the mean.
 
 A rising standard deviation with a flat mean is usually thermal or background
 load on the phone, not the code. Re-run rather than reason about it.
+
+## Measured noise floor on the iPhone 11 (Sep 2026)
+
+Two runs of `Luna` and three of `LunaReader`, same unchanged binary:
+
+| app | metric | run-to-run spread of the mean | spread of the median |
+| --- | --- | --- | --- |
+| `Luna` | first frame | 1.7% | 1.2% |
+| `Luna` | responsive | 0.3% | 0.2% |
+| `LunaReader` | first frame | 10.9% | 6.2% |
+| `LunaReader` | responsive | 7.4% | 3.5% |
+
+`Luna` sits far inside a 5% bar, so a 5% change in its mean is a real change.
+
+`LunaReader` does not. Its three means rose 2393 → 2480 → 2667 ms across
+consecutive runs, so a single before/after pair cannot resolve 5% on that app.
+For `LunaReader`, interleave the before and after runs (before, after, before,
+after) and compare medians, or take three runs of each side. Its standard
+deviation reaches 12% within one run, which is where the drift comes from.
+
 
 ## The plan and the targets
 

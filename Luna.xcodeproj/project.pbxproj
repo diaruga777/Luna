@@ -695,21 +695,27 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				Resources/ActionButtonGuideLunaDark.mp4,
+				Resources/ActionButtonGuideLunaLight.mp4,
+				Resources/ActionButtonGuidePriceTrackerDark.mp4,
+				Resources/ActionButtonGuidePriceTrackerLight.mp4,
+				Resources/ActionButtonGuideReaderDark.mp4,
+				Resources/ActionButtonGuideReaderLight.mp4,
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Reader.shortcut",
 				Resources/Luna.shortcut,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/EmailAndKindleSettingsScreen.swift,
+				Settings/PluginsSettingsCategory.swift,
 				Settings/ReaderSettingsScreens.swift,
 				Settings/VoiceInstallLink.swift,
 				Settings/XteinkSettingsScreen.swift,
 				Social/AppReaderProviders.swift,
 				"Stage/StageCatalog+Article.swift",
 				"Stage/StageCatalog+Email.swift",
-				"Stage/StageCatalog+Product.swift",
 				"Stage/StageCatalog+Plugins.swift",
-				Settings/PluginsSettingsCategory.swift,
+				"Stage/StageCatalog+Product.swift",
 				TranscriptionShellWiring.swift,
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
@@ -746,13 +752,23 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				Resources/ActionButtonGuideDownloaderDark.mp4,
+				Resources/ActionButtonGuideDownloaderLight.mp4,
+				Resources/ActionButtonGuideLunaDark.mp4,
+				Resources/ActionButtonGuideLunaLight.mp4,
+				Resources/ActionButtonGuideReaderDark.mp4,
+				Resources/ActionButtonGuideReaderLight.mp4,
 				"Resources/Luna Reader.shortcut",
 				"Resources/Luna Video.shortcut",
 				Resources/Luna.shortcut,
+				Resources/LunaMoonPhases.mp4,
+				Resources/LunaMoonPhasesAttribution.txt,
+				Resources/LunaMoonPhasesPoster.jpg,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/DownloadsSettingsScreen.swift,
 				Settings/EmailAndKindleSettingsScreen.swift,
+				Settings/PluginsSettingsCategory.swift,
 				Settings/ReaderSettingsScreens.swift,
 				Settings/VoiceInstallLink.swift,
 				Settings/XteinkSettingsScreen.swift,
@@ -761,7 +777,6 @@
 				"Stage/StageCatalog+Email.swift",
 				"Stage/StageCatalog+Media.swift",
 				"Stage/StageCatalog+Plugins.swift",
-				Settings/PluginsSettingsCategory.swift,
 				TranscriptionShellWiring.swift,
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
@@ -822,14 +837,23 @@
 				PriceTracker/ProductCardPresenter.swift,
 				PriceTracker/ProductIntentHandoff.swift,
 				ProductShellWiring.swift,
+				Resources/ActionButtonGuideDownloaderDark.mp4,
+				Resources/ActionButtonGuideDownloaderLight.mp4,
+				Resources/ActionButtonGuideLunaDark.mp4,
+				Resources/ActionButtonGuideLunaLight.mp4,
+				Resources/ActionButtonGuidePriceTrackerDark.mp4,
+				Resources/ActionButtonGuidePriceTrackerLight.mp4,
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Video.shortcut",
 				Resources/Luna.shortcut,
+				Resources/LunaMoonPhases.mp4,
+				Resources/LunaMoonPhasesAttribution.txt,
+				Resources/LunaMoonPhasesPoster.jpg,
 				Settings/DownloadsSettingsScreen.swift,
-				"Stage/StageCatalog+Media.swift",
-				"Stage/StageCatalog+Product.swift",
-				"Stage/StageCatalog+Plugins.swift",
 				Settings/PluginsSettingsCategory.swift,
+				"Stage/StageCatalog+Media.swift",
+				"Stage/StageCatalog+Plugins.swift",
+				"Stage/StageCatalog+Product.swift",
 				TranscriptionShellWiring.swift,
 			);
 			target = AAE000000000000000000000 /* LunaReader */;
@@ -890,6 +914,12 @@
 				"KindWiring+Reader.swift",
 				"Mail/Intents/LunaShortcuts+SaveOnly.swift",
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
+				Resources/ActionButtonGuideDownloaderDark.mp4,
+				Resources/ActionButtonGuideDownloaderLight.mp4,
+				Resources/ActionButtonGuidePriceTrackerDark.mp4,
+				Resources/ActionButtonGuidePriceTrackerLight.mp4,
+				Resources/ActionButtonGuideReaderDark.mp4,
+				Resources/ActionButtonGuideReaderLight.mp4,
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Reader.shortcut",
 				"Resources/Luna Video.shortcut",
@@ -2597,7 +2627,7 @@
 			packageReferences = (
 				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */,
 				C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */,
-				7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */,
+				7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */,
 			);
 			productRefGroup = AA0900000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -5252,7 +5282,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */ = {
+		7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LunaVaultTailscale;
 		};
@@ -5688,12 +5718,12 @@
 		};
 		7A70000000000000000000C1 /* LunaVaultTailscale */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
+			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultTailscale;
 		};
 		7A70000000000000000000C2 /* LunaVaultTailscale */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
+			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultTailscale;
 		};
 		7B33BAF00CD2BE5E49340839 /* LunaMailTransport */ = {

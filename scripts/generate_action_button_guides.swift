@@ -577,11 +577,6 @@ private func writeAllVideos() throws {
             try writeVideo(to: url, surface: surface, appearance: appearance)
         }
     }
-    // `ActionButtonGuide.mp4` remains the compatibility fallback for the Luna
-    // target. It is intentionally the same, current dark guide as Luna's named
-    // variant, so an older resource membership cannot surface stale instructions.
-    let luna = surfaces[0]
-    try writeVideo(to: resources.appendingPathComponent("ActionButtonGuide.mp4"), surface: luna, appearance: .dark)
 }
 
 do {

@@ -7,6 +7,15 @@
 #   DISPLAY=<words>  e.g. "Downloader"           (visible name -> "$(DISPLAY_NAME_PREFIX) <words>")
 #
 # Idempotent: skips creation if the app target already exists.
+#
+# PACKAGE LINKING IS A SECOND STEP. Each content app links ONE dynamic kit
+# product holding all of its package code, shared with its extensions
+# (`LunaKit`, `LunaReaderKit`, …). This script copies the source app's package
+# links as a starting point, which is the WRONG kit for a new app. After
+# running it: declare the new app's kit in `LunaLibraries/Package.swift`, add
+# the app and its extensions to `GROUPS` in `scripts/link_app_kits.rb`, and run
+# that script — it strips every other package link, links the kit, and adds the
+# app's "Embed Frameworks" phase.
 require 'xcodeproj'
 
 SUFFIX  = ENV.fetch('APP')
@@ -48,7 +57,8 @@ def attach_sync_group(proj, target, group)
 end
 
 # Reuse the source target's package product dependency OBJECTS (shared) and create
-# this target's own frameworks build files referencing them.
+# this target's own frameworks build files referencing them. A new app's real
+# links come from `scripts/link_app_kits.rb` afterwards; see the header.
 def link_same_packages(proj, target, src_target)
   fw = target.frameworks_build_phase
   src_target.package_product_dependencies.each do |dep|

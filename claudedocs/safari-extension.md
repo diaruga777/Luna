@@ -28,12 +28,11 @@ Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product 
 **Extraction runs in shared Swift, in every process. It is never re-implemented
 for Safari.**
 
-The four Safari appex targets used to link no package at all, and a set of
-`LunaSafari/Shared*.swift` files hand-copied the app's App-Group key formats
-because of it. They are gone: the extension links the Foundation-only floor and
-writes through the same stores the app reads. What each product buys it:
+Each Safari appex links its app's kit, the same dynamic framework the app
+embeds, and writes through the same stores the app reads. What it actually
+USES is a Foundation-only floor:
 
-| linked product | what it buys the appex |
+| module used | what it buys the appex |
 | --- | --- |
 | `LunaAppConfig` | the App Group id (`AppConfig` reads the Info.plist key) |
 | `LunaModels` | `ProductIdentifiers` / `ProductIdentityMatching`, the shared identity primitives |
@@ -43,8 +42,8 @@ writes through the same stores the app reads. What each product buys it:
 | `LunaPriceCompare` | the alternative-seller fan-out, its bundled seller directory and lean page parser — and, through it, `LunaPriceMetadata` |
 
 All Foundation-only, no UIKit, on all four host copies (the per-kind gates are
-runtime, so the Downloader's extension links the price engine too and simply
-never reaches it).
+runtime, so the Downloader's extension reaches the price engine too and simply
+never calls it).
 
 - **`LunaMediaResolve`** is the ONE implementation of "post URL → direct CDN
   asset" (`SocialMediaResolver`, `YouTubeMediaResolver`, the per-platform
@@ -52,9 +51,11 @@ never reaches it).
   share extension, the action extension and the Safari native handler all call
   it. It was split out of `LunaMediaDownload` for exactly this: resolution is
   Foundation + `URLSession`, while the download machinery around it pulls UIKit,
-  Photos, ActivityKit and SwiftSoup, none of which belong in an appex with an
-  ~80MB ceiling. `LunaMediaDownload` `@_exported import`s it, so no call site
-  outside the extension changed.
+  Photos, ActivityKit and SwiftSoup. Keeping resolution in its own Foundation
+  tier is what lets the appex answer a media message without touching that
+  machinery, and it keeps one implementation for every process.
+  `LunaMediaDownload` `@_exported import`s it, so no call site outside the
+  extension names the split.
 - **`SafariWebExtensionHandler` is an adapter and nothing more**: parse the
   message, call the shared code, serialize the answer.
   `SafariVideoOverlayContractTests` fails the build if that file ever mentions
@@ -62,12 +63,14 @@ never reaches it).
   endpoint — and if any other `LunaSafari/*.swift` file starts naming
   `MediaAsset` or a platform's JSON keys.
 
-**Only the central `LunaSafari` target additionally links `LunaPluginKit`
-and `LunaBundledPlugins`** (`claudedocs/plugins.md`, its §12 "Safari"): the
-other three Safari appexes do not, even though all four compile the same
+**Only the central `LunaSafari` target runs the plugin platform**
+(`claudedocs/plugins.md`, its §12 "Safari"): the other three Safari appexes do
+not, even though all four compile the same
 `SafariWebExtensionHandler`/`content.js` source — the split is a per-target
 FILE (`SafariPluginMessages+Luna.swift` vs `+None.swift`), not a compile-time
-guard. `content.js`'s pill decision runs a plugin walk FIRST, evaluating a
+guard and not a link edge. `LunaPluginKit` and `LunaBundledPlugins` are in
+`LunaKit` alone, so the three sibling appexes could not reach them either
+way. `content.js`'s pill decision runs a plugin walk FIRST, evaluating a
 matched plugin's `classify`/`ingest` in the page's own isolated world via
 `plugin_host.js`, and falls back to the Swift-parity heuristics below only
 when no plugin claims the page.
@@ -391,8 +394,8 @@ instead of offering an action, so they stay the dark chip they have always been
 with the tint mixed 22% into it — filling them would make them read as a second
 button.
 
-`content.js` hand-copies the four hex values (this target links no package — the
-same trade the `Shared*.swift` files make), and `SafariSurfaceTintTests` holds the
+`content.js` hand-copies the four hex values (JavaScript reaches no Swift
+module), and `SafariSurfaceTintTests` holds the
 copy, the kind mapping, the text-colour rule and the resulting contrast against
 `LunaSurfacePalette`. The Downloader's onboarding Safari lesson replicates the
 player panel in UIKit and reads the same palette
@@ -641,7 +644,8 @@ overlay plays the post's video right there, with one Download button under it.
 media page uninvited is the point of the feature and exactly why it needs a
 switch: Settings → Safari → "Play in Safari", in the two media apps only,
 default ON. The app writes `safariVideoPlayerEnabled` into the App Group, the
-appex reads that key as a literal (it links no app code) and answers
+appex reads that key by its own literal name — the app shell that writes it is
+not package code either appex compiles — and answers
 `videoPlayer` on the `buttonContext` reply, and `videoOverlayTargetFor` returns
 the plain hand-off target when the answer is `false` — so the pill is exactly
 what it was before the player existed (same label, same tint, same
@@ -976,8 +980,8 @@ deduped by (canonical url, day), pruned past 365 days / 5000 records;
 see `claudedocs/price-tracking.md`'s "Product snapshots"). Then it ANSWERS the
 history-pill query by matching the page against (a) the user's own price trackers,
 read straight out of `saves.sqlite` via `SavesStore.activePriceTrackers()` — this
-appex links `LunaStorage` and holds the App Group entitlement, so there is no
-mirror file and nothing to regenerate — and (b) the observations whose keyed
+appex reaches `LunaStorage` through its kit and holds the App Group
+entitlement, so there is no mirror file and nothing to regenerate — and (b) the observations whose keyed
 SQLite rows share one of this page's identifiers, using the SAME precedence
 `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family → mpn+brand →
 sku+host → canonical URL; no fuzzy name — a name is not an identifier), through
@@ -1035,9 +1039,9 @@ runs two legs in order:
 2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with
    `.constrained` (6 candidate retailers, 3 results, no web-search layer, **no
    name-only matches**), fetched with a bare ephemeral `URLSession` carrying
-   `WebFetchConstants.safariUserAgent` and its byte cap — the appex cannot link
-   `LunaFetch`, and the engine takes its fetching injected precisely so this
-   environment exists. A page declaring **no GTIN and no MPN skips this leg
+   `WebFetchConstants.safariUserAgent` and its byte cap — `LunaPriceCompare`
+   depends on no fetch tier at all, and the engine takes its fetching injected
+   precisely so this environment exists. A page declaring **no GTIN and no MPN skips this leg
    entirely**: with name-only matching off, the run could only end in refusals after
    spending 15s and six retailers' bandwidth. Everything it fetches is written back
    through `ProductSnapshotStore.record` — a fan-out result IS an observation — so it

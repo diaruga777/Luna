@@ -32,7 +32,8 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
 Every app classifies ANY incoming URL through the one shared pipeline; a
 single-content app then DROPS foreign kinds with a generic error (nothing is
 stored), while the central Luna app processes everything — behavior is fixed at
-compile time by each target's link set + per-target composition files. See
+compile time by which modules its app's kit carries plus the per-target
+composition files it compiles. See
 `claudedocs/surface-support.md`.
 
 **`luna` is a placeholder namespace** — rename it by editing the two top lines of
@@ -49,10 +50,10 @@ read-along built on the Reader's ARKit tracker (now the shared `LunaGaze` module
 shares no store with the other apps and talks to no server: sheets are plain `.md`
 files under Documents, everything else in its own `writer.sqlite`. Its tiers are
 `LunaWriter*` in the package plus `LunaGaze`; the organiser never imports the editor,
-it declares seams the composition root (`LunaWriter/WriterWiring.swift`) adapts. The
-central Luna app links `LunaGaze` ONLY so one dynamic framework serves both it and
-`LunaTests` (a product linked by the test bundle alone is folded statically into two
-copies and test seams stop reaching the Reader). See `claudedocs/writer.md` and
+it declares seams the composition root (`LunaWriter/WriterWiring.swift`) adapts.
+`LunaGaze` is in `LunaKit` ONLY so the central app and `LunaTests` share one copy of
+it (a module the test bundle alone reached would be built a second time and its test
+seams would stop reaching the Reader). See `claudedocs/writer.md` and
 `claudedocs/plans/writer-app.md`.
 
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
@@ -380,23 +381,20 @@ Rescue's kind legs via
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
 media: the media deck provider, auto-download settings, intent handoff, the bulk
 import's download watcher) are excluded from foreign targets via the same
-membership-exception mechanism. The Share/Action extensions
-link `LunaShareSurface` (+ transitive) plus their host's kind modules. **The four
-`LunaSafari` appexes used to link NOTHING; they now link the Foundation-only floor**
-— `LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
-`LunaStorage` — so the Safari extension runs the SAME `SocialMediaResolver` the app and
-the share/action extensions do rather than a Safari-local fork (it resolves a social
-post's video for the in-page player; see `claudedocs/safari-extension.md`'s "Where the
-work runs"). `LunaMediaResolve` exists for exactly that: post URL → direct CDN asset is
+membership-exception mechanism. Every extension links its app's kit and so reaches
+the same modules the app does (see "Per-app kits" below). **Each `LunaSafari` appex
+runs the SAME `SocialMediaResolver` the app and the share/action extensions run**
+rather than a Safari-local fork — it resolves a social post's video for the in-page
+player (see `claudedocs/safari-extension.md`'s "Where the work runs"). Its Foundation
+floor is `LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
+`LunaStorage`. `LunaMediaResolve` exists for that: post URL → direct CDN asset is
 Foundation + URLSession, while the rest of `LunaMediaDownload` pulls UIKit/Photos/
-ActivityKit/SwiftSoup that no appex can afford; `LunaMediaDownload` `@_exported import`s
-it, so nothing else changed. The App-Group key format and product-matching hand-copies
-that used to live in `LunaSafari/Shared*.swift` are gone — `LunaSafari/SharedProductMatching.swift`
-now just reduces a "Was $X on <date>" answer over the real `LunaPriceCompare.ProductPageMatching`
-the app links too. **The central `LunaSafari` target ALONE also links `LunaPluginKit` and
-`LunaBundledPlugins`** on top of that shared floor — the other three Safari appexes do not,
-even though all four compile the same `SafariWebExtensionHandler`/`content.js` source. See
-"Plugins" below. `AppConfig.appGroupID` reads the App Group id from the extension's own
+ActivityKit/SwiftSoup; `LunaMediaDownload` `@_exported import`s it.
+`LunaSafari/SharedProductMatching.swift` reduces a "Was $X on <date>" answer over the
+real `LunaPriceCompare.ProductPageMatching` the app uses too. All four Safari appexes
+compile the same `SafariWebExtensionHandler`/`content.js` source; only the central one
+gets the plugin platform, and it gets it by source membership exception rather than by
+a link edge. See "Plugins" below. `AppConfig.appGroupID` reads the App Group id from the extension's own
 Info.plist, the same `LunaAppGroupID` key every other target reads (`Bundle.main` always
 resolves to the calling process's own bundle). **Wiring is protocol contracts,
 never stored closures** (owner standard, 2026-08): a stored closure property or a
@@ -426,59 +424,83 @@ result in a type only the processor can construct (worked examples:
 `OwnedFilePath`, `UTCDay`, `CapturedPage`) instead of writing prose. Do not mint
 NonEmptyString-grade wrappers for local trivia.
 
-**Per-app SwiftPM link groups.** Every app links the universal set — Models / Storage /
-DesignSystem / Transitions / Fetch / Ingest / URLClassification / HTMLClassification /
+**Per-app kits: one dynamic framework per app.** Each content app links ONE
+dynamic package product carrying all of its package code. Its extensions and the
+test bundle hosted on it link that same product:
+
+| Kit | Linked by | On top of the universal set |
+| --- | --- | --- |
+| `LunaKit` | `Luna`, `LunaShare`, `LunaAction`, `LunaSafari`, `LunaLiveActivity`, `LunaTests` | article + media + product (everything), the plugin tier (LunaPluginKit, LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaPluginTransport, LunaPluginUI, LunaBundledPlugins), LunaTranscribe, LunaGaze |
+| `LunaReaderKit` | `LunaReader`, `LunaReaderShare`, `LunaReaderAction`, `LunaReaderSafari` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend, LunaMediaResolve, LunaPriceCompare |
+| `LunaDownloaderKit` | `LunaDownloader`, `LunaDownloaderShare`, `LunaDownloaderAction`, `LunaDownloaderSafari`, `LunaDownloaderLiveActivity` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms, LunaPriceCompare |
+| `LunaPriceTrackerKit` | `LunaPriceTracker`, `LunaPriceTrackerShare`, `LunaPriceTrackerAction`, `LunaPriceTrackerSafari` | LunaPriceIngest, LunaPriceUI, LunaPriceCompare, LunaMediaResolve |
+
+The universal set every kit holds: AppConfig / Models / Storage / DesignSystem /
+Transitions / Fetch / Ingest / URLClassification / HTMLClassification /
 PriceMetadata / MailAccount / MailTransport / Social / SocialUI / Saves /
-SavesUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own kind group(s):
+SavesUI / Intents / URLRescue / ShareSurface, and SwiftSoup through them.
 
-| App target | Kind group(s) linked on top of the universal set |
-| --- | --- |
-| `Luna` (central) | article + media + product (everything), plus the plugin tier: LunaPluginKit, LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaPluginTransport, LunaPluginUI, LunaBundledPlugins |
-| `LunaReader` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend |
-| `LunaDownloader` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms |
-| `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI, LunaPriceCompare |
+**Four rules hold the arrangement up.** `scripts/link_app_kits.rb` writes it and
+is idempotent — run it after `scripts/add_luna_app.rb`, after adding an
+extension, or whenever a target's package links drift.
 
-The plugin tier links only into `Luna`, plus `LunaShare`/`LunaAction` (the
-central app's own share/action extensions — `LunaPluginKit`/`Runtime`/`Ingest`
-only, no export/transport/UI) and the central `LunaSafari` (`LunaPluginKit`/
-`LunaBundledPlugins` only, no JS runtime — see "Plugins" below). The three
-sibling apps and every one of THEIR extensions link none of it.
+- A client links the kit and NOTHING else from `LunaLibraries`. Add a static
+  product beside the kit and Xcode promotes every doubly reached target into a
+  framework of its own — thirteen frameworks instead of one. SwiftSoup counts:
+  it arrives through the kit's targets, never as its own link.
+- The APP target alone embeds the kit, through an "Embed Frameworks" copy phase
+  that signs on copy. Xcode does not auto-embed a declared dynamic product.
+- No appex embeds anything. Each resolves the kit through its existing
+  `@executable_path/../../Frameworks` rpath, which leaves an appex binary at
+  ~76 KB.
+- `LunaTests` links `LunaKit` and nothing else. A test bundle that keeps static
+  links while its host app uses the kit builds a second copy of every module,
+  and `as?` casts on app-created views then fail (class-identity split).
 
-**`LunaPriceCompare` is the one kind module that also goes into the SAFARI
-appexes** (`claudedocs/price-comparison.md`): the alternative-seller fan-out —
-bundled seller directory, local candidate ranking, regex-only page parser, match
-verification — runs at save time in the app and the share/action extensions AND
-inside all four Safari extensions. **It also owns the product-snapshot store**
-(`ProductSnapshot` / `ProductSnapshotStore`), for exactly that reachability
-reason: a product observation is written by the app, the share/action extensions
-AND the Safari appexes, so it lives in the one kind module all of them link
-rather than in a hand-copy per process (`claudedocs/price-tracking.md`). It
-therefore depends on LunaModels / LunaURLClassification / LunaPriceMetadata /
-LunaAppConfig (the App Group container, bottom-most and dependency-free) and
-**nothing else**, all Foundation-only, the same ~80MB-ceiling trade
-`LunaMediaResolve` makes. Every
-network call and the optional rich page resolution are INJECTED closures, so the
-app can route them through the shared ingest pipeline while the appex uses
-URLSession plus the lean parser. Its link edges are added by
-`scripts/add_price_compare_links.rb`. Do not give it a heavier dependency: if a
-helper you want lives in LunaHTMLClassification or LunaFetch, re-implement the
-small piece locally with a parity test (`LeanProductURLParityTests`,
-`ComparisonMatchingParityTests` are the two worked examples).
+`LunaVault`, `LunaWriter`, `LunaVaultTests`, `LunaWriterUITests` and the
+`LunaVaultTailscale` package link static products, so every static `.library`
+stays declared.
 
-`LunaTests` keeps everything the central app links (it hosts on that app; the Vault
-tier is the one tier it does not link, and `LunaVaultTests` covers it). No foreign-kind
-transitive edges remain: `SocialMediaResolving` lives with `MediaAsset` in
-LunaModels and the rescue engine takes an injected resolver
-(`URLRescueWiring.mediaResolverFactory`, installed by media KindWirings; the
-`NoMediaResolver` default keeps media rescues unrescuable elsewhere); the
+**The plugin tier ships in `LunaKit` alone.** The three sibling kits carry none
+of it, so Reader, Downloader, Price Tracker and every one of THEIR extensions
+can run no plugin code. Inside the central group, WHICH surface runs the
+platform is a composition question rather than a link question:
+`PluginPlatformComposition.install()` runs from exactly three roots, export and
+transport install only from `KindWiring+Luna`, and the Safari handler picks its
+`SafariPluginMessages+*` variant by membership exception. See "Plugins" below.
+
+**`LunaPriceCompare` is deliberately lean** (`claudedocs/price-comparison.md`):
+the alternative-seller fan-out — bundled seller directory, local candidate
+ranking, regex-only page parser, match verification — runs at save time in the
+app and the share/action extensions AND inside all four Safari extensions, so it
+depends on LunaModels / LunaURLClassification / LunaPriceMetadata / LunaAppConfig
+(the App Group container, bottom-most and dependency-free) and **nothing else**,
+all Foundation-only. No SwiftSoup, no UIKit, no LunaFetch: every network call and
+the optional rich page resolution are INJECTED closures, so the app routes them
+through the shared ingest pipeline while the Safari appex uses URLSession plus
+the lean parser. **It also owns the product-snapshot store**
+(`ProductSnapshot` / `ProductSnapshotStore`), for the same reachability reason: a
+product observation is written by the app, the share/action extensions AND the
+Safari appexes, so it lives in the one kind module all of them reach rather than
+in a hand-copy per process (`claudedocs/price-tracking.md`). It is in all four
+kits. Do not give it a heavier dependency: if a helper you want lives in
+LunaHTMLClassification or LunaFetch, re-implement the small piece locally with a
+parity test (`LeanProductURLParityTests`, `ComparisonMatchingParityTests` are the
+two worked examples). `LunaMediaResolve` is the same trade one tier over — post
+URL → direct CDN asset on Foundation + URLSession, while the rest of
+`LunaMediaDownload` pulls UIKit/Photos/ActivityKit/SwiftSoup.
+
+`LunaTests` reaches everything the central app reaches, through `LunaKit` (the
+Vault tier is the one tier it does not, and `LunaVaultTests` covers it). No
+foreign-kind transitive edges remain in the package graph: `SocialMediaResolving`
+lives with `MediaAsset` in LunaModels and the rescue engine takes an injected
+resolver (`URLRescueWiring.mediaResolverFactory`, installed by media KindWirings;
+the `NoMediaResolver` default keeps media rescues unrescuable elsewhere); the
 intent post-search machinery (`SocialPostFinder`/`Bluesky|RedditSearchClient`)
 moved into LunaIntents (URL search is kind-neutral), while `DuckDuckGoSearch`
-itself sits one tier lower in **LunaFetch** — only the four APPS link
-LunaIntents, and the share/action extensions run the same save-time seller
-fan-out that uses it as its Layer-2 leg; `BlueskyLink` moved to
-LunaURLClassification. Correctness never
-depended on the link graph — it comes from the `SurfaceSupport` ingest gate
-plus `LunaApp.includes` — but the graph now matches it.
+itself sits one tier lower in **LunaFetch**; `BlueskyLink` moved to
+LunaURLClassification. Correctness never depended on the link graph — it comes
+from the `SurfaceSupport` ingest gate plus `LunaApp.includes`.
 
 ## Plugins (central Luna only)
 
@@ -554,8 +576,7 @@ gate; `LunaTests` is the suite that matters for the plugin platform.
 **Transcription (central Luna only).** An `article` Model may carry a
 `transcription` spec (an audio or video file) instead of `html`; the save
 parks `.pending` with a `transcriptions` row (schema 14) and
-`TranscriptionJobRunner` (new `LunaTranscribe` target, linked by `Luna` and
-`LunaTests` only) downloads it, transcribes it on device with `SpeechAnalyzer`
+`TranscriptionJobRunner` (`LunaTranscribe`, in `LunaKit` only) downloads it, transcribes it on device with `SpeechAnalyzer`
 (iOS 26), persists an ordinary article through `IngestorKindHandlers.article`,
 and deletes the recording. `IngestInput.intent == .transcribe` makes the
 seven media plugins decline so the seven `<platform>-transcript.js` plugins

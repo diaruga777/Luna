@@ -21,7 +21,8 @@ Every app runs the SAME classification pipeline (`LunaIngest`: unwrap → classi
 including the page fetch and HTML heuristics) on any incoming URL from any surface
 (paste, share/action extension, app intent, Safari extension, email, friend share).
 What differs per app is HANDLING, and that difference is fixed at build time by
-which per-kind packages the target links. There is no purchase, no runtime
+which per-kind modules the app's kit carries and which composition root the target
+compiles. There is no purchase, no runtime
 entitlement, and no per-source exemption — email and friend-share ingestion drop
 foreign kinds too, and the owning app's own import picks the same link up when
 it's installed.
@@ -30,7 +31,8 @@ it's installed.
 
 1. **Pipeline processors (`IngestKindProcessors`, LunaIngest).** Article
    resolution (`LunaArticleIngest`) and product price extraction
-   (`LunaPriceIngest`) are link-optional modules. Each target's composition root
+   (`LunaPriceIngest`) sit in the kits of the apps that handle those kinds.
+   Each target's composition root
    installs exactly the KIND PACKS its app handles (see "Kind packs" below); a
    classified kind with no registered processor becomes
    `Outcome.unsupported(owner:)` — the page is never processed at all in an app
@@ -81,9 +83,8 @@ reporting").
 only yields its own artwork at runtime, so the four icons ship separately as
 96pt PNG trios in LunaDesignSystem's resource bundle
 (`LunaAppIconImage` / `LunaAppIconView`), downscaled from the same committed
-1024px masters the appiconsets use. LunaDesignSystem is on every app's and
-extension's link path, so any app can show whichever sibling owns a dropped
-link. The Safari extensions need none of this: they never inject a pill for a
+1024px masters the appiconsets use. Every kit carries LunaDesignSystem, so any
+app can show whichever sibling owns a dropped link. The Safari extensions need none of this: they never inject a pill for a
 kind their host doesn't handle, so they have no drop UI to show.
 
 ## Composition roots (how "which kinds" is wired)
@@ -259,19 +260,20 @@ and undo a media save. The shell reaches them through `ShareMediaSideEffects`, a
 thin façade in LunaShareSurface, rather than by naming `ShareKindPresenters`: every
 mention of the registry inside a composition-root DIRECTORY is what
 `KindCompositionRootTests` forbids, and keeping that rule as "no root says the word"
-is sharper than narrowing it to assignments. Three of the four apps link no media
+is sharper than narrowing it to assignments. Three of the four kits carry no media
 module, so both asks are no-ops there, which is correct — they have no media to
 preload or delete.
-- The Safari extensions link only the Foundation-only floor (`LunaAppConfig`,
-  `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`, `LunaStorage`) — no
-  kind module, and in particular no kind UI. They still derive their host's kinds
-  from their own bundle id rather than from the link graph, because all four
-  appexes share one source file: `hostHandlesArticles`/`hostHandlesMedia`/
-  `hostHandlesProducts` gate every branch, including the in-page video player's
-  `resolveMedia` (media hosts only). The one package they link for a KIND is
-  `LunaMediaResolve`, and it is deliberately kind-neutral machinery — post URL to
-  CDN URL — shared so the extension can never disagree with the app about what a
-  link resolves to (see `claudedocs/safari-extension.md`, "Where the work runs").
+- A Safari extension USES only the Foundation-only floor (`LunaAppConfig`,
+  `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`, `LunaStorage`) plus
+  `LunaPriceCompare` — no kind UI, and no kind processor. Its kit holds more than
+  that (one kit serves the app and every extension), so reachability is not the
+  gate: all four appexes share one source file and derive their host's kinds from
+  their own bundle id, with `hostHandlesArticles`/`hostHandlesMedia`/
+  `hostHandlesProducts` gating every branch, including the in-page video player's
+  `resolveMedia` (media hosts only). `LunaMediaResolve` is deliberately
+  kind-neutral machinery — post URL to CDN URL — shared so the extension can never
+  disagree with the app about what a link resolves to (see
+  `claudedocs/safari-extension.md`, "Where the work runs").
 
 ## Regression coverage
 

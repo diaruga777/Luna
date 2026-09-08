@@ -12,10 +12,10 @@ import Foundation
 ///
 /// The first two tables are a deliberate hand-copy of `ProductPageRules` +
 /// `ProductPageDetector.urlLooksLikeProduct` / `.urlIsMultiProductListing`
-/// (LunaHTMLClassification). That module links SwiftSoup and cannot go into the
-/// Safari appex under its ~80MB ceiling, and this module's whole point is to be
-/// linkable there — the same trade `SharedProductMatching` already makes on the
-/// extension side. `LeanProductURLParityTests` pins the tables and the two
+/// (LunaHTMLClassification). That module depends on SwiftSoup, and this module
+/// depends on Models + URLClassification + PriceMetadata and nothing heavier, so
+/// it cannot reach the originals — the fan-out has to stay affordable inside a
+/// Safari appex. `LeanProductURLParityTests` pins the tables and the two
 /// predicates to the originals, so the copy cannot drift silently.
 ///
 /// The RETAILER table below is this module's own and has no counterpart upstream:

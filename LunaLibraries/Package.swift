@@ -154,11 +154,12 @@ let package = Package(
         // the bundled seller directory, the local candidate ranking, a regex-only
         // page parser, and the fan-out orchestrator. DELIBERATELY LEAN — Models +
         // URLClassification + PriceMetadata and nothing else, all Foundation-only,
-        // because the four Safari appexes link it under their ~80MB ceiling
-        // (`LunaMediaResolve` is the precedent). No SwiftSoup, no UIKit, no
-        // LunaFetch: every network call and the optional rich page resolution are
-        // INJECTED closures, so the app can route them through the shared pipeline
-        // while the appex uses URLSession + the regex parser.
+        // because the fan-out also runs inside the four Safari appexes, under a
+        // hard memory ceiling and with no UI tier (`LunaMediaResolve` is the
+        // precedent). No SwiftSoup, no UIKit, no LunaFetch: every network call and
+        // the optional rich page resolution are INJECTED closures, so the app can
+        // route them through the shared pipeline while the appex uses URLSession +
+        // the regex parser.
         .target(
             name: "LunaPriceCompare",
             dependencies: ["LunaModels", "LunaURLClassification", "LunaPriceMetadata"],
@@ -216,11 +217,12 @@ let package = Package(
         // (`SavedNonTextualViewController`) + `ExtensionMediaPresenter` live
         // here with the download machinery they present.
         // Post-URL media RESOLUTION only (post URL → direct CDN asset), split out
-        // of LunaMediaDownload so the Safari extension can link it: resolution is
-        // Foundation + URLSession, while the download machinery around it pulls
-        // UIKit / Photos / ActivityKit / SwiftSoup, none of which belong in an
-        // appex with an ~80MB ceiling. LunaMediaDownload re-exports it, so no
-        // existing call site changed (`claudedocs/safari-extension.md`).
+        // of LunaMediaDownload so the Safari extension can call it without the
+        // download machinery: resolution is Foundation + URLSession, while the
+        // machinery around it pulls UIKit / Photos / ActivityKit / SwiftSoup, none
+        // of which an appex under a hard memory ceiling can run.
+        // LunaMediaDownload re-exports it, so no call site names the split
+        // (`claudedocs/safari-extension.md`).
         .target(name: "LunaMediaResolve", dependencies: ["LunaModels", "LunaURLClassification"]),
         .target(
             name: "LunaMediaDownload",
@@ -306,7 +308,7 @@ let package = Package(
         // Foundation-only floor: the manifest and its parser, the plugin store in
         // the App Group, the bundled catalog reader, and the App-Group-backed
         // fetch / kv / secrets / browser-request / pending-model stores. The
-        // central Safari appex links it, so it carries no UIKit and no
+        // central Safari appex runs it, so it carries no UIKit and no
         // JavaScriptCore.
         .target(name: "LunaPluginKit", dependencies: [
             "LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification",

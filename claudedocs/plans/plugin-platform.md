@@ -98,8 +98,8 @@ New targets, bottom-up. Dependencies listed are the complete set.
 
 Model types and adopter protocols go into **`LunaModels/Plugin/`** (bottom of
 the stack) so kind modules can provide witnesses without depending on the
-plugin platform (§7.3). Link edges are added by a new idempotent script,
-`scripts/add_plugin_links.rb`, modeled on `add_price_compare_links.rb`.
+plugin platform (§7.3). Link edges come from the per-app kit products;
+`scripts/link_app_kits.rb` writes them.
 
 ### 2.3 Composition rule
 
@@ -1182,8 +1182,7 @@ tables, docs and harnesses.
 
 ### Wave 0 — scaffolding (orchestrator, main checkout via worktree)
 
-Package targets from §2.2 with placeholder files, `scripts/add_plugin_links.rb`
-run, `LunaModels/Plugin/` types + adopter protocols + `PluginAdoptedOutcome`,
+Package targets from §2.2 with placeholder files, the kit link edges written, `LunaModels/Plugin/` types + adopter protocols + `PluginAdoptedOutcome`,
 `SavesSchema` bump with §12 tables, `MediaAsset.requestHeaders`, this plan,
 memory note. Exit: `build-for-testing` green.
 

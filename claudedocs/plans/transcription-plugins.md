@@ -304,10 +304,10 @@ save's artifact); the runner unlinks it, and `TranscriptionScratchSweep
 
 `dependencies: ["LunaModels", "LunaStorage", "LunaAppConfig",
 "LunaSaves"]`. Frameworks: AVFoundation, Speech. No UIKit. Linked
-into `Luna` and `LunaTests` only (`scripts/add_transcribe_links.rb`,
-modelled on `add_price_compare_links.rb`; the xcodeproj gem is
-installed — if `proj.save` crashes, hand-edit `project.pbxproj` the way
-the Vault work did).
+into `Luna` and `LunaTests` only — today that means listing it in the
+`LunaKit` product and running `scripts/link_app_kits.rb` (the xcodeproj
+gem is installed — if `proj.save` crashes, hand-edit `project.pbxproj`
+the way the Vault work did).
 
 ### 5.1 `TranscriptionEngine`
 

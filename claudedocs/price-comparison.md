@@ -16,11 +16,10 @@ are B2/B3.
 
 The comparison has to run in four very different places: the app, the
 share/action extensions, and the four Safari appexes. The Safari appex is the
-binding constraint — `claudedocs/safari-extension.md` documents its ~80MB
-ceiling, which is why `LunaMediaResolve` was split out of `LunaMediaDownload` in
-the first place. So `LunaPriceCompare` depends on **LunaModels,
-LunaURLClassification and LunaPriceMetadata and nothing else**, all
-Foundation-only. No SwiftSoup, no UIKit, no LunaFetch.
+binding constraint: it runs under a hard memory ceiling and has no UI tier to
+lean on. So `LunaPriceCompare` depends on **LunaModels, LunaURLClassification
+and LunaPriceMetadata and nothing else**, all Foundation-only. No SwiftSoup, no
+UIKit, no LunaFetch. `LunaMediaResolve` is the same trade one tier over.
 
 Two consequences run through the whole design:
 
@@ -972,17 +971,15 @@ geometry and the two states the lesson shows (looking, found), in its words, so
 what the lesson promises is what the extension delivers. Changing the pill's
 shape or copy means changing both.
 
-## Link set
+## Reach
 
-`LunaPriceCompare` is linked by: `Luna`, `LunaPriceTracker`, `LunaShare`,
-`LunaAction`, `LunaPriceTrackerShare`, `LunaPriceTrackerAction`, all four
-`*Safari` appexes, and `LunaTests`. Added by
-`scripts/add_price_compare_links.rb` (idempotent; re-run
-`scripts/hide_generated_schemes.rb` afterwards).
-
-All four Safari appexes link it, not just the Price-Tracker one, because the
-appex sources are shared and `hostHandlesProducts` is a runtime gate — the
-central Luna app's Safari extension handles products too.
+`LunaPriceCompare` is in all four per-app kits (`LunaKit`, `LunaReaderKit`,
+`LunaDownloaderKit`, `LunaPriceTrackerKit`), so every app, every share/action
+extension, every Safari appex and `LunaTests` reaches it. All four Safari
+appexes need it, not just the Price-Tracker one: the appex sources are shared
+and `hostHandlesProducts` is a runtime gate — the central Luna app's Safari
+extension handles products too. `scripts/link_app_kits.rb` writes the link
+edges (re-run `scripts/hide_generated_schemes.rb` afterwards).
 
 ---
 

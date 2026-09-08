@@ -24,7 +24,8 @@ once for the "why"; read this for the "what, exactly."
 | Live Activity widget | none | – | – | – | – | – |
 
 The three sibling apps (Reader, Downloader, Price Tracker) and their
-extensions link none of the plugin modules and run no plugin code at all.
+extensions run no plugin code at all: the plugin tier is in `LunaKit` and in no
+other kit, so their binaries never reach it.
 
 ### 1.2 Generated-plugin recovery
 
@@ -977,12 +978,12 @@ without the new columns.
 
 ### 12.1 Mechanics
 
-Only the CENTRAL `LunaSafari` appex's target links `LunaPluginKit` and
-`LunaBundledPlugins` in `Luna.xcodeproj/project.pbxproj` — the other three
-Safari appexes do not, even though `SafariWebExtensionHandler` and
-`content.js` are the SAME shared source file compiled into all four. The
-split is a per-target FILE substitution, not a `#if canImport` compile-time
-guard (CLAUDE.md already documents why that check is unreliable per target):
+Only the CENTRAL `LunaSafari` appex runs any of this, even though
+`SafariWebExtensionHandler` and `content.js` are the SAME shared source file
+compiled into all four. The plugin tier ships in `LunaKit`, which the central
+Safari appex resolves and the other three kits do not contain. Within the
+central group the split is a per-target FILE substitution, not a
+`#if canImport` compile-time guard (CLAUDE.md already documents why that check is unreliable per target):
 `LunaSafari/SafariPluginMessages+Luna.swift` (the real, `LunaPluginKit`-backed
 implementation) and `LunaSafari/SafariPluginMessages+None.swift`
 (`handler = nil`) both declare `enum SafariPluginMessages`, and exactly one

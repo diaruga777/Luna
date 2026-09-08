@@ -259,7 +259,7 @@ made by a different, independently-tracked copy task:
 | copy | who makes it |
 | --- | --- |
 | `LunaLibraries_LunaModels.bundle/en.lproj/Localizable.strings` | SwiftPM, from `.process("Resources")` on LunaModels — verbatim bytes |
-| the same bundle again inside every embedded `.appex`, App Clip and widget | each of those targets links LunaModels and embeds its own copy |
+| the same bundle again inside every embedded `.appex` and widget | each of those targets links LunaModels and embeds its own copy |
 | `<App>.app/en.lproj/Localizable.strings` | `CopyStringsFile`, from the resource reference `add_strings_to_app_bundles.rb` adds — converted to a binary plist, so it is NOT byte-identical to the source |
 
 Every one of those is an up-to-date decision the build system makes on its

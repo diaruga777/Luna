@@ -19,9 +19,9 @@ import LunaURLClassification
 /// This exists because the alternative was tried and failed. Each surface root
 /// used to hand-list its `IngestKindProcessors` / `ShareKindPresenters` entries,
 /// so `IngestKindProcessors.socialText` (long-form X posts) landed in the two app
-/// roots but not the share extension, the action extension, or the App Clip: the
-/// same link read fine inside the app and was rejected from the share sheet as
-/// Downloader-owned. See `claudedocs/x-posts.md`.
+/// roots but not the share extension or the action extension: the same link read
+/// fine inside the app and was rejected from the share sheet as Downloader-owned.
+/// See `claudedocs/x-posts.md`.
 ///
 /// These tests read composition-root SOURCE, because no unit test can load the
 /// real roots — each registry is set in a principal class's initializer inside a
@@ -38,9 +38,6 @@ final class KindCompositionRootTests: XCTestCase {
     /// Every composition root, and the kinds its app handles — the per-app split,
     /// which is deliberate and must NOT collapse: a single-content app installs
     /// only its own kind and drops the rest (`SurfaceSupport`).
-    ///
-    /// `LunaDownloaderClip` is absent on purpose: it registers no kind at all (it
-    /// only purges media storage), so it has nothing to install.
     private static let expected: [String: Set<String>] = [
         "Luna/KindWiring+Luna.swift":            ["article", "media", "product"],
         "Luna/KindWiring+Reader.swift":          ["article"],
@@ -54,13 +51,12 @@ final class KindCompositionRootTests: XCTestCase {
         "LunaAction/ActionEntry+Reader.swift":   ["article"],
         "LunaAction/ActionEntry+Downloader.swift": ["media"],
         "LunaAction/ActionEntry+PriceTracker.swift": ["product"],
-        "LunaReaderClip/AppDelegate.swift":      ["article"],
     ]
 
     /// Directories that hold composition roots. `LunaTests` is excluded: a test
     /// stubbing a processor is not a composition root.
     private static let rootDirectories = [
-        "Luna", "LunaShare", "LunaAction", "LunaReaderClip", "LunaDownloaderClip",
+        "Luna", "LunaShare", "LunaAction",
     ]
 
     /// These tests compare a `#filePath`-derived prefix against paths a

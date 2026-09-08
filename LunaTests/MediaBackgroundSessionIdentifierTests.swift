@@ -22,7 +22,6 @@ final class MediaBackgroundSessionIdentifierTests: XCTestCase {
             downloaderApp + ".action2",
             downloaderApp + ".safari",
             downloaderApp + ".liveactivity",
-            downloaderApp + ".Clip",
         ]
 
         let identifiers = processBundleIdentifiers.map {
@@ -45,7 +44,6 @@ final class MediaBackgroundSessionIdentifierTests: XCTestCase {
                 containingApp + ".action2",
                 containingApp + ".safari",
                 containingApp + ".liveactivity",
-                containingApp + ".Clip",
             ]
             for processBundleIdentifier in processBundleIdentifiers {
                 let identifier = MediaBackgroundSessionIdentifier.identifier(

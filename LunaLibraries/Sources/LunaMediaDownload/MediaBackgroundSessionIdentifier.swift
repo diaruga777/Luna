@@ -9,14 +9,14 @@ import Foundation
 ///
 /// A background session belongs to the process that created it, not to the
 /// shared App Group. The bundle identifier therefore stays in the session id:
-/// the containing app, share extension, action extension, Safari extension,
-/// App Clip, and Live Activity extension can never attach to one another's
-/// session accidentally.
+/// the containing app, share extension, action extension, Safari extension, and
+/// Live Activity extension can never attach to one another's session
+/// accidentally.
 public enum MediaBackgroundSessionIdentifier {
     public static let suffix = ".mediaDownload.background.v2"
 
     private static let embeddedProcessSuffixes = [
-        ".share", ".action2", ".safari", ".liveactivity", ".Clip",
+        ".share", ".action2", ".safari", ".liveactivity",
     ]
 
     public static func identifier(forBundleIdentifier bundleIdentifier: String) -> String {

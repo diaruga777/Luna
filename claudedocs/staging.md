@@ -284,9 +284,8 @@ their own; and the settings tree.
   themselves are staged IN-APP instead (`share.reader-article`,
   `share.media-saved`, `card.rescue-failure`, `card.unsupported-save`) — the
   same view controllers the extension presents, minus its host chrome.
-- **App Clips and the Live Activity widget.** Same reason: neither is launchable
-  by argument, and the Live Activity needs a real `Activity.request` from the
-  process that owns it.
+- **The Live Activity widget.** Same reason: it is not launchable by argument,
+  and it needs a real `Activity.request` from the process that owns it.
 - **Anything whose subject is a network round trip** — a live archive render, a
   real paywall unlock, a WKWebView showing a fetched page. Staged mode suppresses
   the network on purpose; a stage of a screen mid-fetch shows the loading state,

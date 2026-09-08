@@ -14,11 +14,11 @@ import Foundation
 ///
 /// Each app has several composition roots, one per surface — the app shell
 /// (`KindWiring+*`), the share extension (`ShareEntry+*`), the action extension
-/// (`ActionEntry+*`), the App Clip's `AppDelegate` — running in separate
-/// processes with no shared launch code. Every root makes ONE call —
-/// `ArticleKindComposition.install()` — and this type owns the list. Adding a
-/// processor or presenter to the article kind is a one-line change HERE, picked
-/// up by all seven surfaces at once. See `claudedocs/x-posts.md` for why this
+/// (`ActionEntry+*`) — running in separate processes with no shared launch
+/// code. Every root makes ONE call — `ArticleKindComposition.install()` — and
+/// this type owns the list. Adding a processor or presenter to the article kind
+/// is a one-line change HERE, picked up by all six surfaces at once. See
+/// `claudedocs/x-posts.md` for why this
 /// matters: a kind registered only on some surfaces silently drops content on
 /// the rest.
 ///

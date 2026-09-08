@@ -75,9 +75,9 @@ final class JobStore {
 
     /// Atomically creates `job`, unless a non-terminal job already owns the same
     /// source URL. Starting a transfer has to use this rather than a lookup
-    /// followed by `upsert`: the app, the share and action extensions, the Live
-    /// Activity widget and the App Clip all start downloads through one background
-    /// session, and simultaneous starts would otherwise both create work for a URL.
+    /// followed by `upsert`: the app, the share and action extensions and the Live
+    /// Activity widget all start downloads through one background session, and
+    /// simultaneous starts would otherwise both create work for a URL.
     func insertIfNoActiveJob(_ job: LiveMediaDownloadJob) -> InsertResult {
         var existing: LiveMediaDownloadJob?
         let inserted = store.insertMediaDownloadJob(

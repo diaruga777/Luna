@@ -81,20 +81,18 @@ See `claudedocs/saves.md`. Feature docs live in `claudedocs/` — keep them curr
 group. Each app bundles its OWN copies of the universal share / action / safari extensions
 (`<Target>Share/Action/Safari`, bundle ids `<app>.share|.action2|.safari`, all on the shared
 App Group) — an app-extension bundle id must be prefixed by its host app, so the same
-extension SOURCE is built once per host. **Two extensions are NOT universal**: an App
-Clip (`LunaReaderClip`, `LunaDownloaderClip` — the "Share Link…" recipient flow, see
-`claudedocs/readers.md`) and the Live Activity widget (`LunaLiveActivity`,
-`LunaDownloaderLiveActivity`). The Live Activity renders the ONE activity in the
-codebase, `LiveMediaDownloadAttributes` from LunaMediaDownload, and ActivityKit only
-lets the app whose process called `Activity.request` show it — so only the two
-media-handling hosts embed it. Reader and Price Tracker link no media module, so their
-copies could never fire and were removed; do not re-add one to an app that does not
-link `LunaMediaDownload`. Per-target COMPOSITION uses synchronized-group
+extension SOURCE is built once per host. **One extension is NOT universal**: the Live
+Activity widget (`LunaLiveActivity`, `LunaDownloaderLiveActivity`). It renders the ONE
+activity in the codebase, `LiveMediaDownloadAttributes` from LunaMediaDownload, and
+ActivityKit only lets the app whose process called `Activity.request` show it — so only
+the two media-handling hosts embed it. Reader and Price Tracker link no media module,
+so their copies could never fire and were removed; do not re-add one to an app that
+does not link `LunaMediaDownload`. Per-target COMPOSITION uses synchronized-group
 membership exceptions (exactly one `KindWiring+*.swift` / `ShareEntry+*.swift` /
 `ActionEntry+*.swift` variant compiles per target — `#if canImport` is NOT target-reliable
 here, never use it for gating). **An app has SEVERAL composition roots** — `KindWiring+<App>`
-(the app), `ShareEntry+<App>`, `ActionEntry+<App>`, and the App Clip's own `AppDelegate` —
-each running in a different process with no shared wiring code. They must NEVER write
+(the app), `ShareEntry+<App>` and `ActionEntry+<App>` — each running in a different
+process with no shared wiring code. They must NEVER write
 `IngestKindProcessors` / `ShareKindPresenters` themselves: **each kind's registrations are
 defined once in a KIND PACK** (`ArticleKindComposition` in LunaReaderUI,
 `MediaKindComposition` in LunaMediaDownload, `ProductKindComposition` in LunaPriceUI), and a
@@ -209,7 +207,7 @@ stable Xcode 26.2.
 > `registerForTraitChanges([LunaSkyTrait.self])` (**a style change will never arrive again**);
 > `.system` follows the device via the window *scene*, not the window; `AppearanceSettings.apply`
 > has a `UIWindow` form for apps and a `UIViewController` form for surfaces living in someone
-> else's window (share/action extensions via `ShareViewController`, both App Clips); and code
+> else's window (share/action extensions via `ShareViewController`); and code
 > rendering Luna colours onto a foreign surface must resolve them against an explicit trait
 > collection (as `PriceGraphEmailSnapshot` does). The one deliberate hold-out is the Live
 > Activity widget, which keeps system semantics and so still goes light with the OS.
@@ -281,7 +279,7 @@ stable Xcode 26.2.
 > only appends a placeholder for a referenced key missing its `_Luna` entry
 > and drops lines nothing references; it never re-sorts or re-groups.
 > `L10n.string` / `L10n.resource` are the only lookup points, resolving
-> against `Bundle.module`, which ships in every app, extension, clip and
+> against `Bundle.module`, which ships in every app, extension and
 > widget that links LunaModels. **`defaultLocalization: "en"` in
 > `Package.swift` is load-bearing**: without it the table is silently dropped
 > from the resource bundle and every lookup falls back to a raw key.
@@ -577,7 +575,7 @@ every kind processor is registered at launch). The `LunaReader` /
 
 > **Schemes: five, and only five.** `Luna`, `LunaReader`, `LunaDownloader`,
 > `LunaPriceTracker`, and `AllLunaApps`. Each app scheme's build action lists
-> **only its app** — every extension, clip and live activity is already a target
+> **only its app** — every extension and live activity is already a target
 > dependency and gets embedded and signed with the host, so per-extension schemes
 > are pure duplication and were deleted. `AllLunaApps` builds all four in one
 > press (Luna is its runnable). Xcode's Run only *installs* a scheme's runnable, so
@@ -652,7 +650,7 @@ scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff re
 > every app and writes a review guide. Stages follow the kind-pack rule — a
 > kind's stages live in `Stage/StageCatalog+<Kind>.swift`, compiled only into
 > the targets that link the kind. Full detail, including what is out of scope
-> (extensions, clips, the Live Activity — none launchable by argument), in
+> (extensions, the Live Activity — neither launchable by argument), in
 > `claudedocs/staging.md`.
 
 Or by hand:
@@ -729,13 +727,13 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   entitlement and the app group works on the simulator.
 - **Every app target gets its OWN entitlements file** — `Luna/{Luna,LunaReader,
   LunaDownloader,LunaPriceTracker}.entitlements`. Never point two apps at one file even
-  when the contents look identical today: `Luna` and `LunaReader` shared
-  `Luna/Luna.entitlements`, so the central app inherited the Reader's
-  `com.apple.developer.associated-appclip-app-identifiers` and every device build died
-  with `Entitlement … not found and could not be included in profile` plus a misleading
-  `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
-  account session to go edit the `com.hsanabria.luna` App ID it should never have been
-  touching). Only the two apps that actually have a clip may declare that key.
+  when the contents look identical today (`Luna`'s and `LunaReader`'s do): `Luna` and
+  `LunaReader` shared `Luna/Luna.entitlements`, so the central app declared a capability
+  keyed to the Reader's App ID and every device build died with `Entitlement … not found
+  and could not be included in profile` plus a misleading `No Accounts: Add a new account
+  in Accounts settings` (automatic signing wanted an account session to go edit the
+  `com.hsanabria.luna` App ID it should never have been touching). A capability belongs
+  in the file of the app that declares it.
 - **The executed-test COUNT varies between runs on different simulators — diff the
   failure list, not the total.** The same tree measured 2252/21/0 and, on a
   `simctl create`d sim later the same day, 2173/7/0: `ArticleAudioEngineTests` (14)

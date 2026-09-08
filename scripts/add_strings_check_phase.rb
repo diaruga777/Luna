@@ -7,7 +7,7 @@
 #
 # The one strings file reaches a built app through several INDEPENDENT copy
 # tasks (LunaModels' SwiftPM resource bundle, embedded once per nested
-# extension/clip/widget, plus the app's own `CopyStringsFile` copy added by
+# extension/widget, plus the app's own `CopyStringsFile` copy added by
 # add_strings_to_app_bundles.rb). Each is a separate up-to-date decision, and a
 # build that is interrupted part-way — or a products directory holding an app
 # this build did not rebuild — leaves copies disagreeing with the source with
@@ -29,8 +29,8 @@ PROJECT = File.expand_path('../Luna.xcodeproj', __dir__)
 PHASE_NAME = 'Verify bundled strings table'
 
 # Only the five APPS. Everything else that carries a copy — the share/action/
-# safari extensions, both App Clips, both Live Activity widgets — is embedded
-# inside one of them, so walking the .app covers it. The unit-test bundle is
+# safari extensions, both Live Activity widgets — is embedded inside one of
+# them, so walking the .app covers it. The unit-test bundle is
 # skipped by the checker itself (see SKIPPED_SUFFIXES there).
 APPS = %w[Luna LunaReader LunaDownloader LunaPriceTracker LunaVault LunaWriter].freeze
 
@@ -86,8 +86,8 @@ APPS.each do |name|
     puts "#{name}: added '#{PHASE_NAME}'"
   end
 
-  # The phase has to run after every embed phase, so the nested extensions,
-  # clips and widgets are already inside the .app when it walks it.
+  # The phase has to run after every embed phase, so the nested extensions
+  # and widgets are already inside the .app when it walks it.
   unless target.build_phases.last == phase
     target.build_phases.delete(phase)
     target.build_phases << phase

@@ -339,37 +339,6 @@ final class SurfaceParityTests: XCTestCase {
         }
     }
 
-    /// The Reader App Clip reaches the SAME answer as every other article surface.
-    ///
-    /// The clip is the one surface this bundle can't drive: an `.app` inside an
-    /// `.app`, hosted by nothing. So it was the one surface with no parity coverage,
-    /// and it drifted — `.needsArchive` dead-ended on "download the full app" while
-    /// the app and both extensions unlocked the article through the archive reader.
-    /// `ClipReaderRoute` is that switch, lifted into LunaReaderUI so this can hold it.
-    func testAppClipRoutesEveryOutcomeLikeTheOtherArticleSurfaces() async {
-        for link in links() {
-            let outcome = await process(link, source: .manual)
-            let expected: ClipReaderRoute
-            switch mainAppIntent(for: outcome) {
-            case .reader: expected = .reader
-            case .archiveReader: expected = .archiveUnlock
-            // The clip reads articles only: another kind's page, and a document
-            // (which the full Reader downloads and stores), have nothing to show.
-            case .tracker, .nonTextual, .savedDocument: expected = .notReadable
-            case .error, .rescue: expected = .failed
-            }
-            XCTAssertEqual(ClipReaderRoute.route(for: outcome), expected,
-                           "\(link.name): app clip must route like the main app")
-        }
-    }
-
-    /// The specific regression, pinned without needing a paywalled link to resolve:
-    /// a parked paywall opens the clip's own archive unlock, never an error.
-    func testAppClipUnlocksAPaywalledArticleInsteadOfDeferringToTheFullApp() {
-        XCTAssertEqual(ClipReaderRoute.route(for: .needsArchive(title: "A Real Story - WSJ")),
-                       .archiveUnlock)
-    }
-
     /// The extension PERSISTS the classified item the SAME shape the main app would:
     /// a non-downloadable platform post saved via the extension carries its platform +
     /// item id rather than a bare URL (the bug-4 regression), and a product becomes a

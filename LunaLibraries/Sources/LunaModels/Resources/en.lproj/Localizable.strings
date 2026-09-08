@@ -1104,28 +1104,6 @@
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
 
-/* ===== AppClip_downloader — the Downloader App Clip's single screen (ClipDownloadViewController.swift) ===== */
-"AppClip_downloader_navigationTitle_Luna" = "Luna";
-"AppClip_downloader_waitingHeadline_Luna" = "Ready to fetch video";
-"AppClip_downloader_waitingSubtitle_Luna" = "Open a Luna video link to start.";
-"AppClip_downloader_readyHeadline_Luna" = "Video ready";
-"AppClip_downloader_readySubtitle_Luna" = "Choose where to save or send it.";
-"AppClip_downloader_failedHeadline_Luna" = "Couldn't fetch video";
-"AppClip_downloader_retryButtonTitle_Luna" = "Try Again";
-"AppClip_downloader_missingURLMessage_Luna" = "This link is missing a video URL.";
-"AppClip_downloader_saveSheetUnavailableMessage_Luna" = "The video is ready, but iOS could not open the save sheet.";
-"AppClip_downloader_genericFailureMessage_Luna" = "Check the link and try again.";
-
-/* ===== AppClip_reader — the Reader App Clip's single screen (ClipReaderViewController.swift) ===== */
-"AppClip_reader_navigationTitle_Luna" = "Luna";
-"AppClip_reader_waitingHeadline_Luna" = "Ready to read";
-"AppClip_reader_waitingSubtitle_Luna" = "Open a Luna Reader link to start.";
-"AppClip_reader_failedHeadline_Luna" = "Couldn't open";
-"AppClip_reader_retryButtonTitle_Luna" = "Try Again";
-"AppClip_reader_missingURLMessage_Luna" = "This link is missing a readable URL.";
-"AppClip_reader_needsArchiveUnlockMessage_Luna" = "Download and open the Luna Reader app to access article contents.";
-"AppClip_reader_notReadableArticleMessage_Luna" = "This link is not a readable article.";
-
 /* ===== LiveActivity_downloader — non-intent-literal strings in LunaDownloaderLiveActivityWidget.swift ===== */
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";
 "LiveActivity_downloader_cancelButtonAccessibilityLabel_Luna" = "Cancel save";

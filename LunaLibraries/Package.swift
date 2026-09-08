@@ -36,6 +36,11 @@ let package = Package(
             "LunaSaves", "LunaSavesUI", "LunaSend", "LunaShareSurface",
             "LunaSocial", "LunaSocialUI", "LunaStorage", "LunaTranscribe",
             "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
+            // The Writer tier. `LunaTests` holds the Writer suites (62 files)
+            // and hosts on the central app, so the app's kit is the one place
+            // both can reach those modules from. The four apps run none of it.
+            "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaWriterVoice",
+            "LunaWriterEditor", "LunaWriterReadAlong", "LunaWriterLibraryUI",
         ]),
         .library(name: "LunaReaderKit", type: .dynamic, targets: [
             "LunaAppConfig", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",

@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Stage 1B harness. Deterministic Vault tests run on the Luna iOS test host;
-# no live provider is contacted unless the caller explicitly opts in.
+# Deterministic Vault tests run in the `LunaVaultTests` bundle, hosted on the
+# `LunaVault` app and reached through the `LunaVault` scheme. No live provider
+# is contacted unless the caller explicitly opts in.
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="emulator"
 DEVICE=""
@@ -14,8 +15,12 @@ EXTRA=()
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID] [--performance]
-       [--provider device|icloud|mac] [--live-provider device|icloud|mac] [-- ...]
+Usage: scripts/run_vault_tests.sh [--unit|--emulator|--simulator UDID|--device UDID]
+       [--performance] [--provider device|icloud|mac]
+       [--live-provider device|icloud|mac] [-- ...]
+
+--emulator picks a booted iOS 26.2 iPhone simulator. Name one with
+--simulator UDID when several are booted, which is what a shared Mac needs.
 
 The iCloud and Mac provider modes require --live-provider explicitly. Device
 and deterministic tests never access an external service and never start the
@@ -27,6 +32,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --unit) MODE="unit"; shift ;;
     --emulator) MODE="emulator"; shift ;;
+    --simulator) MODE="emulator"; DEVICE="${2:?missing UDID}"; shift 2 ;;
     --device) MODE="device"; DEVICE="${2:?missing UDID}"; shift 2 ;;
     --provider) PROVIDER="${2:?missing provider}"; shift 2 ;;
     --live-provider) PROVIDER="${2:?missing provider}"; LIVE=1; shift 2 ;;
@@ -55,7 +61,7 @@ if [[ "$MODE" == "unit" ]]; then
   exec swift build --package-path "$REPO/LunaLibraries" --target VaultTestKit ${EXTRA[@]+"${EXTRA[@]}"}
 fi
 
-if [[ "$MODE" == "emulator" ]]; then
+if [[ "$MODE" == "emulator" && -z "$DEVICE" ]]; then
   DEVICE=$(xcrun simctl list devices available -j | python3 -c '
 import json,sys
 data=json.load(sys.stdin)["devices"]
@@ -87,16 +93,10 @@ if [[ "$PERFORMANCE" -eq 1 ]]; then
   # the performance-only plan gets its documented 20-minute execution cap.
   TIMEOUT_ARGS=(-default-test-execution-time-allowance 1200 -maximum-test-execution-time-allowance 1200)
 fi
-exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
+# The bundle holds Vault suites and nothing else, so the plan runs all of it;
+# `LunaVaultStage5` is the one plan that narrows to a single class.
+exec xcodebuild test -scheme LunaVault -testPlan "$TEST_PLAN" \
   -destination "$DESTINATION" \
-  -only-testing:LunaTests/VaultScaffoldTests \
-  -only-testing:LunaTests/VaultCryptoStorageTests \
-  -only-testing:LunaTests/VaultExtractionTests \
-  -only-testing:LunaTests/VaultSearchTests \
-  -only-testing:LunaTests/VaultBackendTests \
-  -only-testing:LunaTests/VaultStage5Tests \
-  -only-testing:LunaTests/VaultStage5SetupTests \
-  -only-testing:LunaTests/VaultStage5IntegrationTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
   ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} \
   ${EXTRA[@]+"${EXTRA[@]}"}

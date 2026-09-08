@@ -41,7 +41,7 @@ swift build --package-path LunaLibraries --target LunaVaultIndexExtraction
 swift build --package-path LunaLibraries --target LunaVaultEmbeddings
 ```
 
-The iOS test host includes `VaultExtractionTests.swift`; run the normal `Luna`
-scheme on an iOS 26 simulator using the recipe in `AGENTS.md`. Tests inject all
-OCR, Speech, metadata, and artifact implementations, so fixture tests never
-open a network connection.
+`VaultExtractionTests.swift` is in the `LunaVaultTests` bundle; run
+`scripts/run_vault_tests.sh` on an iOS 26 simulator. Tests inject all OCR,
+Speech, metadata, and artifact implementations, so fixture tests never open a
+network connection.

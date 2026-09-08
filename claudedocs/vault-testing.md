@@ -26,25 +26,47 @@ and exit 3. They never run the deterministic suite and report that as a live
 success. The plain `--provider icloud|mac` form also refuses to proceed until
 the caller supplies explicit live consent.
 
-Run the focused emulator suite with:
+## Where the suites live
+
+The Vault suites are the `LunaVaultTests` bundle in `LunaVaultTests/`. Its test
+host is the `LunaVault` app, which links the Vault tier and the
+`LunaVaultTailscale` package; the central Luna app links neither, so its own
+bundle (`LunaTests`) can no longer carry a Vault test. The bundle holds Vault
+suites and nothing else, so a plan that names the bundle runs the whole Vault
+suite. `scripts/add_vault_tests_target.rb` owns that topology and keeps the
+three plans pointing at the bundle.
+
+The three plans hang off the `LunaVault` scheme's Test action:
+`LunaVault.xctestplan` (default, deterministic), `LunaVaultPerformance
+.xctestplan` (sets `LUNA_VAULT_PERFORMANCE=1` and raises the execution
+allowance), and `LunaVaultStage5.xctestplan` (`VaultStage5Tests` alone).
+
+Run the deterministic suite with:
 
 ```sh
 scripts/run_vault_tests.sh --emulator
 ```
 
-Use `--device <UDID>` for a physical-device destination. `--unit` compiles the
-Foundation-only `VaultTestKit` package target (the package also contains
-UIKit-only legacy targets, so a plain `swift build` on macOS is not expected to
-pass). `LunaVault.xctestplan` is registered by the shared `LunaVaultTests`
-scheme. The runner selects both `VaultScaffoldTests` and
-`VaultCryptoStorageTests` to cover deterministic encryption ranges/tampering,
-strict key-ring recovery, migrations/reopen/integrity, tombstones, cache expiry,
-job leases, encrypted artifacts, and legacy-store isolation.
+`--emulator` picks a booted iOS 26.2 iPhone simulator; name one with
+`--simulator <UDID>` when several are booted. Use `--device <UDID>` for a
+physical-device destination. `--unit` compiles the Foundation-only
+`VaultTestKit` package target (the package also contains UIKit-only legacy
+targets, so a plain `swift build` on macOS is not expected to pass).
+
+The deterministic plan covers encryption ranges/tampering, strict key-ring
+recovery, migrations/reopen/integrity, tombstones, cache expiry, job leases,
+encrypted artifacts, legacy-store isolation, extraction, search, the storage
+backends, the Mac protocol and store, and the Stage 5 setup and integration
+shells.
 
 `Fixtures/Vault/manifest.json` intentionally lives at the repository root: it
 is test input, not an app resource. `VaultScaffoldTests` decodes it from the
-source-file-relative repository path, and `select_changed_tests.py` maps that
-exact path to the focused suite.
+source-file-relative repository path.
+
+`scripts/select_changed_tests.py` serves `LunaTests` only. A changed Vault
+input makes it print the `scripts/run_vault_tests.sh` instruction instead of
+selecting a class, because `-only-testing` on the `Luna` scheme cannot reach
+this bundle.
 
 The no-egress URL protocol is opt-in. It can only intercept sessions created
 with its configuration; it cannot police `URLSession.shared` or Network.framework

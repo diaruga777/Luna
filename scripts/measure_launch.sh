@@ -59,6 +59,23 @@ case "$APP" in
 esac
 
 mkdir -p "$OUT_DIR"
+
+# devicectl and xcodebuild name the same phone differently: devicectl uses its
+# own identifier (5431A3BA-…), xcodebuild wants the HARDWARE udid
+# (00008030-…). Passing the devicectl one gets "Unable to find a device
+# matching the provided destination specifier". Resolve both from the device
+# list, so either identifier works on the command line.
+DC_JSON="$OUT_DIR/devices.json"
+xcrun devicectl list devices --quiet --json-output "$DC_JSON" >/dev/null 2>&1
+RESOLVED="$(DEVICE="$DEVICE" python3 "$REPO/scripts/resolve_device.py" "$DC_JSON")"
+DC_DEVICE="$(cut -f1 <<<"$RESOLVED")"
+HW_UDID="$(cut -f2 <<<"$RESOLVED")"
+if [[ -z "$HW_UDID" ]]; then
+  echo "device $DEVICE is not in \`xcrun devicectl list devices\`." >&2
+  echo "The phone must be awake, unlocked and on the same network." >&2
+  exit 2
+fi
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RESULT="$OUT_DIR/$LABEL-$APP-$STAMP.xcresult"
 LOG="$OUT_DIR/$LABEL-$APP-$STAMP.log"
@@ -66,7 +83,7 @@ JSON="$OUT_DIR/$LABEL-$APP.json"
 rm -rf "$RESULT"
 
 echo "app:      $APP ($BUNDLE_ID)"
-echo "device:   $DEVICE"
+echo "device:   $HW_UDID (devicectl $DC_DEVICE)"
 echo "label:    $LABEL"
 echo "result:   $RESULT"
 echo "log:      $LOG"
@@ -77,12 +94,12 @@ echo "log:      $LOG"
 # certain. Absence of the process is the normal case, so a failure here is not
 # an error.
 # devicectl reports executable PATHS, not bundle ids, so match the .app.
-PIDS="$(xcrun devicectl device info processes --device "$DEVICE" -t 60 2>/dev/null \
+PIDS="$(xcrun devicectl device info processes --device "$DC_DEVICE" -t 60 2>/dev/null \
         | awk -v needle="/$APP.app/" 'index($2, needle) {print $1}')"
 for pid in $PIDS; do
   [[ "$pid" =~ ^[0-9]+$ ]] || continue
   echo "terminating pid $pid"
-  xcrun devicectl device process terminate --device "$DEVICE" --pid "$pid" --kill --quiet 2>/dev/null
+  xcrun devicectl device process terminate --device "$DC_DEVICE" --pid "$pid" --kill --quiet 2>/dev/null
 done
 
 # ------------------------------------------------------------------------ run
@@ -92,7 +109,7 @@ run_xcodebuild() {
     -scheme "$APP" \
     -testPlan LaunchPerf \
     -only-testing:"$TEST_TARGET" \
-    -destination "platform=iOS,id=$DEVICE" \
+    -destination "platform=iOS,id=$HW_UDID" \
     -configuration Release \
     -derivedDataPath "$DD" \
     -resultBundlePath "$RESULT" \
@@ -115,10 +132,10 @@ if [[ $STATUS -ne 0 ]] && grep -qiE "device is locked|is not unlocked|Unable to 
   STATUS=$?
 fi
 
-if [[ ! -d "$RESULT" ]]; then
+if [[ ! -d "$RESULT" ]] || ! grep -q "Executed [0-9]* test" "$LOG"; then
   echo
-  echo "NO RESULT BUNDLE — the run never produced measurements. xcodebuild exit $STATUS."
-  grep -iE "^.*error:|Unable to install|device is locked|\*\* (TEST|BUILD) FAILED" "$LOG" | sort -u | head -20
+  echo "NO MEASUREMENTS — the run never executed a test. xcodebuild exit $STATUS."
+  grep -iE "error:|Unable to install|Unable to find a device|device is locked|\*\* (TEST|BUILD) FAILED" "$LOG" | sort -u | head -20
   echo "full log: $LOG"
   exit 3
 fi
@@ -135,7 +152,7 @@ if [[ ! -s "$METRICS_JSON" ]]; then
   echo "xcresulttool produced no metrics:"; cat "$METRICS_JSON.err"; exit 3
 fi
 
-APP="$APP" LABEL="$LABEL" DEVICE="$DEVICE" STAMP="$STAMP" \
+APP="$APP" LABEL="$LABEL" DEVICE="$HW_UDID" STAMP="$STAMP" \
 RESULT="$RESULT" JSON="$JSON" METRICS_JSON="$METRICS_JSON" \
 python3 - <<'PY'
 import json, os, statistics, sys

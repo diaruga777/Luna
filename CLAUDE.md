@@ -608,6 +608,15 @@ scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake mo
 scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff reaches
 ```
 
+> **Cold-launch timing lives outside the unit suite.**
+> `scripts/measure_launch.sh <Luna|LunaReader> [--label <name>]` builds in
+> Release, runs the `LaunchPerf` test plan on the physical iPhone 11, and prints
+> mean / stddev / min / max for both launch metrics. Attaching that plan moved
+> the `Luna` scheme onto test plans; its DEFAULT plan `Luna.xctestplan` still
+> runs `LunaTests`, so `run_tests.sh` is unaffected. Read
+> `claudedocs/launch-measurement.md` before quoting a number from it — a single
+> run is not a measurement, two baseline runs are the noise floor.
+
 > **`--changed` is for iterating, never for declaring a task done.** It asks
 > `scripts/select_changed_tests.py` which classes a `git diff <base>` (default
 > `HEAD`, so uncommitted work counts) can reach — by name convention

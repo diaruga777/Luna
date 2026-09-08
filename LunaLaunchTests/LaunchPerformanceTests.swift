@@ -24,7 +24,7 @@ final class LaunchPerformanceTests: XCTestCase {
     func testLaunchPerformance() throws {
         let options = XCTMeasureOptions()
         options.iterationCount = Self.iterationCount
-        measure(metric: XCTApplicationLaunchMetric(), options: options) {
+        measure(metrics: [XCTApplicationLaunchMetric()], options: options) {
             XCUIApplication().launch()
         }
     }
@@ -35,7 +35,7 @@ final class LaunchPerformanceTests: XCTestCase {
     func testLaunchToResponsivePerformance() throws {
         let options = XCTMeasureOptions()
         options.iterationCount = Self.iterationCount
-        measure(metric: XCTApplicationLaunchMetric(waitUntilResponsive: true), options: options) {
+        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)], options: options) {
             XCUIApplication().launch()
         }
     }

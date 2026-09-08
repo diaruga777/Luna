@@ -25,8 +25,8 @@
       "parallelizable" : false,
       "target" : {
         "containerPath" : "container:Luna.xcodeproj",
-        "identifier" : "AAE200000000000000000000",
-        "name" : "LunaTests"
+        "identifier" : "C4B53217A786B544A3BA3144",
+        "name" : "LunaVaultTests"
       }
     }
   ],

@@ -603,6 +603,14 @@ Downloader-platform flow:
    the "Download in Luna" pill when a platform page is not a static-image post. Explicit
    video/player metadata, `<video>` nodes, and GIF/GIFV/video URLs are treated as
    downloadable/animated; preview-image-only posts are suppressed.
+   **Instagram first requires a content permalink** (`currentInstagramIsPost`):
+   `/p|reel|reels|tv/<shortcode>`, optionally prefixed by an author. A host match
+   alone is not content: password-report/reset, login, challenge, inbox, profile,
+   and feed pages must not earn a pill just because they lack photo metadata.
+   They remain in the platform branch, so they cannot fall through to an article
+   or product pill. This visibility gate leaves other hosts' text, price, and media
+   checks unchanged, and keeps metadata-free post permalinks eligible while they
+   hydrate. `SafariInstagramEligibilityTests` covers the full pill decision.
    **A video-only URL SHAPE outranks that heuristic** (`pathIsInherentlyVideo`,
    the `INHERENTLY_VIDEO_PATH_SEGMENTS` table): Instagram serves a reel with
    markup identical to a photo post — `og:type` is literally `article`, the only

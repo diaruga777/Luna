@@ -3645,8 +3645,21 @@
     // whether Safari should proactively show the "Open in Luna" pill.
     function shouldShowDownloadPillForPlatform(platform) {
         if (platform === "reddit") { return redditPostHasMedia(); }
+        // A host match identifies the resolver, not a saveable item. Instagram's
+        // account/password/report pages often have no image metadata, so the
+        // static-photo veto alone let those empty utility pages earn a pill.
+        // Keep them in the platform branch (no article/product fallback), but
+        // require a post permalink before considering its media signals.
+        if (platform === "instagram" && !currentInstagramIsPost()) { return false; }
         if (pathIsInherentlyVideo(platform)) { return true; }
         return !looksLikeStaticImagePost();
+    }
+
+    function currentInstagramIsPost() {
+        // The media kinds supported by PlatformRecognizer.instagram, at the
+        // root or after one author segment (Instagram's own canonical URLs).
+        // Anchor the shape: a nested /accounts/.../reel/<token> isn't a reel.
+        return /^\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/[^/]+(?:\/|$)/i.test(location.pathname);
     }
 
     // Surfaces whose URL SHAPE alone settles it: the page can only ever be a

@@ -165,31 +165,70 @@ enum InPageAnchors {
     /// reach block emission. A wrapper that does NOT qualify (a sidebar holding a
     /// ToC plus a newsletter box) is deliberately left strippable — losing the
     /// ToC with it is the omission side of the trade.
+    ///
+    /// The links are gathered ONCE for the whole page and credited to every
+    /// container above them, rather than asking each container for its own
+    /// descendant links. SwiftSoup builds a lazy query index and a selector
+    /// cache on every element that answers a `select`, so a per-container
+    /// query on a page with hundreds of `<div>`s and thousands of links
+    /// (a reference-heavy paper) allocated tens of megabytes that lived until
+    /// the document was released, and re-derived each link's fragment once
+    /// per ancestor. The verdict per container is unchanged: the same link
+    /// set, the same counts, the same text tests.
     private static func markContainers(in document: Document, resolvable: Set<String>, baseURL: URL) {
-        guard let candidates = try? document.select(containerTags.sorted().joined(separator: ", "))
+        guard let candidates = try? document.select(containerTags.sorted().joined(separator: ", ")),
+              let anchors = try? document.select("a")
         else { return }
-        for candidate in candidates.array()
-        where qualifiesAsTableOfContents(candidate, resolvable: resolvable, baseURL: baseURL) {
+
+        var linksByContainer: [ObjectIdentifier: ContainerLinks] = [:]
+        for anchor in anchors.array() {
+            let inPageFragment = fragment(ofLink: anchor, baseURL: baseURL)
+                .flatMap { resolvable.contains($0) ? $0 : nil }
+            var parent = anchor.parent()
+            while let current = parent {
+                if containerTags.contains(current.tagName()) {
+                    linksByContainer[ObjectIdentifier(current), default: ContainerLinks()]
+                        .add(anchor, inPageFragment: inPageFragment)
+                }
+                parent = current.parent()
+            }
+        }
+
+        for candidate in candidates.array() {
+            guard let links = linksByContainer[ObjectIdentifier(candidate)],
+                  qualifiesAsTableOfContents(candidate, links: links)
+            else { continue }
             _ = try? candidate.attr(marker, "1")
         }
     }
 
-    private static func qualifiesAsTableOfContents(
-        _ element: Element, resolvable: Set<String>, baseURL: URL
-    ) -> Bool {
-        guard containerTags.contains(element.tagName()),
-              let anchors = try? element.select("a").array(), !anchors.isEmpty
-        else { return false }
+    /// Every link inside one container, in document order, with the in-page
+    /// tally already taken.
+    private struct ContainerLinks {
+        var anchors: [Element] = []
+        var inPageCount = 0
+        var distinctInPageFragments: Set<String> = []
 
-        let inPage = anchors.compactMap { fragment(ofLink: $0, baseURL: baseURL) }
-            .filter(resolvable.contains)
-        guard Set(inPage).count >= minimumEntries,
-              Double(inPage.count) >= minimumInPageLinkShare * Double(anchors.count)
+        mutating func add(_ anchor: Element, inPageFragment: String?) {
+            anchors.append(anchor)
+            if let inPageFragment {
+                inPageCount += 1
+                distinctInPageFragments.insert(inPageFragment)
+            }
+        }
+    }
+
+    private static func qualifiesAsTableOfContents(
+        _ element: Element, links: ContainerLinks
+    ) -> Bool {
+        guard !links.anchors.isEmpty,
+              links.distinctInPageFragments.count >= minimumEntries,
+              Double(links.inPageCount) >= minimumInPageLinkShare * Double(links.anchors.count)
         else { return false }
 
         let text = ((try? element.text()) ?? "")
         guard !text.isEmpty, text.count <= maximumContainerTextLength else { return false }
-        let linkTextLength = anchors.reduce(0) { $0 + (((try? $1.text()) ?? "")).count }
+        let linkTextLength = links.anchors.reduce(0) { $0 + (((try? $1.text()) ?? "")).count }
         return Double(linkTextLength) >= minimumLinkTextShare * Double(text.count)
     }
 
@@ -294,7 +333,7 @@ enum InPageAnchors {
     ) -> String? {
         guard !resolvable.isEmpty else { return nil }
         var candidates: [Element] = [element]
-        candidates.append(contentsOf: (try? element.select("[id], a[name]").array()) ?? [])
+        appendIdentifiedElements(in: element, to: &candidates)
         var parent = element.parent()
         while let current = parent, current !== container {
             candidates.append(current)
@@ -308,6 +347,20 @@ enum InPageAnchors {
             return id
         }
         return nil
+    }
+
+    /// `element` and its descendants that carry an `id` (or, for `<a>`, a
+    /// `name`), in document order: what `select("[id], a[name]")` answers,
+    /// walked by hand. This runs once per emitted block, and a `select` on
+    /// each of several hundred block elements would leave a query index and
+    /// selector cache on every one of them for the life of the document.
+    private static func appendIdentifiedElements(in element: Element, to candidates: inout [Element]) {
+        if element.hasAttr("id") || (element.tagName() == "a" && element.hasAttr("name")) {
+            candidates.append(element)
+        }
+        for child in element.children() {
+            appendIdentifiedElements(in: child, to: &candidates)
+        }
     }
 
     // MARK: - Final validation

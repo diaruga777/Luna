@@ -49,13 +49,28 @@ public struct ArticleExtractor {
     }
 
     public func extract(html: String, baseURL: URL) throws -> ArticleContent {
+        // Two parses, never alive at once. The refined layer works on its own
+        // document and releases it before the second parse; that second
+        // document first answers every read-only question (title, author,
+        // JSON-LD, lead image, the raw-text fallback) and is then handed to
+        // the basic layer, which strips it in place. A third parse for the
+        // basic layer used to hold a second megabyte-page DOM alongside this
+        // one and pay SwiftSoup's first-query index build a third time.
+        let refined = (try? refinedBlocks(html: html, baseURL: baseURL)) ?? []
+        let refinedLength = totalTextLength(refined)
+
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
         let title = extractTitle(from: document)
         let author = extractAuthor(from: document)
+        let ldBody = ldJSONBlocks(from: document)
+        let leadImage = leadImageURL(from: document, baseURL: baseURL)
+        // Layer 3 is consulted only when every other layer is empty. It reads
+        // the whole body, so it is taken before the basic pass strips the
+        // page chrome out of it; the basic result cannot be known yet, so this
+        // is taken whenever the two layers already known are empty.
+        let rawFallback = refined.isEmpty && ldBody.isEmpty ? rawBlocks(from: document) : []
 
-        let refined = (try? refinedBlocks(html: html, baseURL: baseURL)) ?? []
-        let basic = (try? basicBlocks(html: html, baseURL: baseURL)) ?? []
-        let refinedLength = totalTextLength(refined)
+        let basic = (try? basicBlocks(in: document, baseURL: baseURL)) ?? []
         let basicLength = totalTextLength(basic)
 
         // Thresholds arbitrate between layers. A short page keeps its structured
@@ -81,12 +96,11 @@ public struct ArticleExtractor {
         // Some sites ship the article body as JSON-LD metadata while the DOM
         // is JS-rendered scaffolding — if that text dwarfs what the DOM gave
         // us, it IS the article (loses inline links/images, gains the text).
-        let ldBody = ldJSONBlocks(from: document)
         if totalTextLength(ldBody) > 2 * totalTextLength(chosen) {
             chosen = ldBody
         }
         if chosen.isEmpty {
-            chosen = rawBlocks(from: document)
+            chosen = rawFallback
         }
         guard !chosen.isEmpty else { throw ExtractError.noContent }
 
@@ -106,7 +120,7 @@ public struct ArticleExtractor {
         // outside the scored article container. Treat it as the lead block so it
         // appears directly under the title instead of being silently limited to
         // the save thumbnail.
-        prependLeadImage(from: document, to: &chosen, baseURL: baseURL)
+        prependLeadImage(leadImage, to: &chosen)
         // Last, on the blocks that actually survived every trimming pass: a table
         // of contents whose destinations were trimmed away must not keep offering
         // jumps to them.
@@ -313,9 +327,9 @@ public struct ArticleExtractor {
         }
     }
 
-    /// Layer 2: conservative extraction — structural tags only.
-    private func basicBlocks(html: String, baseURL: URL) throws -> [ArticleContent.Block] {
-        let document = try SwiftSoup.parse(html, baseURL.absoluteString)
+    /// Layer 2: conservative extraction — structural tags only. Strips
+    /// `document` in place, so the caller must be finished reading it.
+    private func basicBlocks(in document: Document, baseURL: URL) throws -> [ArticleContent.Block] {
         let anchors = InPageAnchors.prepare(document: document, baseURL: baseURL)
         let structuralTags = "script, style, noscript, nav, header, footer, aside, form, iframe, svg, button"
         for element in try document.select(structuralTags)
@@ -817,16 +831,37 @@ public struct ArticleExtractor {
             guard listLinkDensity(of: list, text: text) > 0.8 else { continue }
             try list.remove()
         }
+        // Counted by walking each container's subtree rather than querying it:
+        // SwiftSoup leaves a query index and selector cache on every element
+        // that answers a `select`, and there is one of these per `<div>` in
+        // the article.
         for element in try container.select("div, section") {
             if isInsideFigure(element) { continue }
-            let imageCount = (try? element.select("img").count) ?? 0
+            let (imageCount, paragraphCount) = imageAndParagraphCounts(in: element)
             guard imageCount > 1 else { continue }
-            let paragraphCount = (try? element.select("p").count) ?? 0
             guard Double(paragraphCount) / Double(imageCount) < 0.5 else { continue }
             let ownText = (try? element.text()) ?? ""
             guard ownText.count < 200 else { continue }
             try element.remove()
         }
+    }
+
+    /// The `<img>` and `<p>` descendants of `element`, in one pass.
+    private func imageAndParagraphCounts(in element: Element) -> (images: Int, paragraphs: Int) {
+        var images = 0
+        var paragraphs = 0
+        func visit(_ element: Element) {
+            for child in element.children() {
+                switch child.tagName() {
+                case "img": images += 1
+                case "p": paragraphs += 1
+                default: break
+                }
+                visit(child)
+            }
+        }
+        visit(element)
+        return (images, paragraphs)
     }
 
     private func isInsideFigure(_ element: Element) -> Bool {
@@ -983,12 +1018,8 @@ public struct ArticleExtractor {
     /// same photo in the content reads as a rendering glitch, and an unrelated
     /// second picture that close is no better. If the lead image only appears
     /// deeper down, it's moved up rather than shown twice.
-    private func prependLeadImage(
-        from document: Document, to blocks: inout [ArticleContent.Block], baseURL: URL
-    ) {
-        guard let leadURL = leadImageURL(from: document, baseURL: baseURL),
-              !hasImageNearTop(of: blocks)
-        else { return }
+    private func prependLeadImage(_ leadURL: URL?, to blocks: inout [ArticleContent.Block]) {
+        guard let leadURL, !hasImageNearTop(of: blocks) else { return }
         let leadString = leadURL.absoluteString
         if let index = blocks.firstIndex(where: {
             $0.kind == .image && normalizedImageURL($0.imageURLString) == leadString

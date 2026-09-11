@@ -575,6 +575,24 @@ along as an unlinked row. A non-qualifying ancestor is deliberately still
 strippable — a ToC parked in a sidebar `<aside>` is GIVEN UP rather than dragging
 the newsletter box and popular-posts rail into the article.
 
+**One page-wide link pass, never a `select` per container.** `markContainers`
+gathers every `<a>` once and credits it to each `ul/ol/nav/div/section` above it;
+the per-container verdict then reads those tallies. The obvious shape — call
+`element.select("a")` on each candidate — is what it replaced, and it was a
+memory bug, not a style choice: SwiftSoup 2.13 builds lazy query indexes and a
+256-entry selector cache on EVERY element that answers a `select`, kept alive
+until the document is released. On a reference-heavy paper (MDPI, ~970 KB, 2000
+links, 600 `<div>`s) that pass alone held ~37 MB, and the same shape in
+`anchorID(for:)` (a `select("[id], a[name]")` per emitted block) and in
+`cleanConditionally` (`select("img")`/`select("p")` per `<div>`) added ~50 MB
+more — enough, with the third parse `extract()` used to make, to put the share
+extension at its jetsam limit while the main app sailed through. All three now
+walk `children()` by hand. The rule for new extractor code: `select` from the
+document (or the chosen container) once, then walk; never `select` inside a
+loop over many elements. `ExtractedArticle.isReadable` remembers its verdict
+for the same reason — each ask rescans and re-parses the whole source HTML, and
+the runner, the resolver and the processor each asked.
+
 **Detection errs toward omission** (a missed ToC reads as an ordinary article; a
 false positive turns prose into furniture that RSVP and read-aloud skip): ≥3
 distinct fragments that resolve to a real element, ≥80% of the container's links

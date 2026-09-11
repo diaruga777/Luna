@@ -13,10 +13,40 @@ import Foundation
 public struct ExtractedArticle: Equatable {
     public let content: ArticleContent
     public let sourceHTML: String
+    private let readability = MemoizedVerdict()
 
     public init(content: ArticleContent, sourceHTML: String) {
         self.content = content
         self.sourceHTML = sourceHTML
+    }
+
+    /// `ArticleExtraction.isReadableArticle`, remembered after the first ask.
+    /// Both inputs are immutable, so the verdict cannot go stale, and it is
+    /// asked for several times per candidate (the runner's attempt log, the
+    /// resolver's ranking, the processor). Each ask scans the entire source
+    /// HTML for lock declarations and parses it again for a truncation gate,
+    /// which on a megabyte page costs more than half a second every time.
+    var isReadable: Bool {
+        readability.value { ArticleExtraction.isReadableArticle(content, html: sourceHTML) }
+    }
+
+    public static func == (lhs: ExtractedArticle, rhs: ExtractedArticle) -> Bool {
+        lhs.content == rhs.content && lhs.sourceHTML == rhs.sourceHTML
+    }
+}
+
+/// A compute-once Bool shared by every copy of the value that owns it.
+private final class MemoizedVerdict: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: Bool?
+
+    func value(_ compute: () -> Bool) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let verdict = compute()
+        cached = verdict
+        return verdict
     }
 }
 
@@ -61,9 +91,10 @@ public struct ArticleExtraction {
     }
 
     /// The pair-shaped overload of `isReadableArticle`. The source HTML is
-    /// always known here, so it's passed through directly.
+    /// always known here, and the pair remembers the answer, so repeated
+    /// asks about the same candidate scan its HTML once.
     public static func isReadableArticle(_ article: ExtractedArticle) -> Bool {
-        isReadableArticle(article.content, html: article.sourceHTML)
+        article.isReadable
     }
 
     /// Fetches HTML and extracts it, pairing the parsed content with its

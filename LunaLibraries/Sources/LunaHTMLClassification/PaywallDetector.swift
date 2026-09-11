@@ -91,6 +91,12 @@ public enum PaywallDetector {
             || compact.contains("\"isaccessibleforfree\":\"false\"") {
             return true
         }
+        // Every tier shape below contains one of these two tokens. Checking for
+        // them first spares a page with no tier meta (the common case) twelve
+        // more full scans of its markup.
+        guard compact.contains("content_tier") || compact.contains("content-tier") else {
+            return false
+        }
         return ["locked", "metered", "premium"].contains { value in
             compact.contains("content_tier\"content=\"\(value)")
                 || compact.contains("content-tier\"content=\"\(value)")

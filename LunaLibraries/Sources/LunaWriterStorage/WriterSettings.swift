@@ -6,6 +6,14 @@ public enum FocusMode: String, Codable, CaseIterable, Sendable {
     case off, sentence, paragraph
 }
 
+/// What opens the command palette while typing.
+public enum PaletteTrigger: String, Codable, CaseIterable, Sendable {
+    /// Two spaces typed within `CommandPaletteController.doubleSpaceInterval`.
+    case doubleSpace
+    /// An "@" typed at a word boundary.
+    case atSign
+}
+
 /// The column width presets the editor offers.
 public enum EditorLineWidth: String, Codable, CaseIterable, Sendable {
     case narrow, medium, wide
@@ -30,6 +38,7 @@ public final class WriterSettings {
         static let gazeEnabled = "luna.writer.gazeEnabled"
         static let voiceEnabled = "luna.writer.voiceEnabled"
         static let lastCalibrationGrade = "luna.writer.lastCalibrationGrade"
+        static let paletteTrigger = "luna.writer.paletteTrigger"
     }
 
     public static let defaultFontSize = 18.0
@@ -87,6 +96,11 @@ public final class WriterSettings {
     public var voiceEnabled: Bool {
         get { defaults.object(forKey: Key.voiceEnabled) as? Bool ?? false }
         set { write(newValue, Key.voiceEnabled) }
+    }
+
+    public var paletteTrigger: PaletteTrigger {
+        get { PaletteTrigger(rawValue: defaults.string(forKey: Key.paletteTrigger) ?? "") ?? .doubleSpace }
+        set { write(newValue.rawValue, Key.paletteTrigger) }
     }
 
     public var lastCalibrationGrade: String? {

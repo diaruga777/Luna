@@ -114,7 +114,7 @@ public final class GroupsViewController: UICollectionViewController {
     public func reload() {
         let groups = (try? library.groups()) ?? []
         groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
-        let userGroups = groups.filter { $0.kind == .user }
+        let userGroups = groups.filter { $0.kind.isEditable }
         childGroups = Dictionary(grouping: userGroups, by: \.parentID)
         for key in childGroups.keys {
             childGroups[key]?.sort { $0.sortIndex < $1.sortIndex }

@@ -1,10 +1,15 @@
 import Foundation
 
 /// A library folder. Groups nest through `parentID`; the library holds one
-/// `inbox` row and one `trash` row that the user cannot delete.
+/// `inbox` row and one `trash` row that the user cannot delete. A `project`
+/// is a folder the editor made with "new chapter": its sheets are the
+/// chapters, in manual order.
 public struct WriterGroup: Codable, Equatable, Identifiable, Sendable {
     public enum Kind: String, Codable, Sendable, CaseIterable {
-        case user, inbox, trash
+        case user, inbox, trash, project
+
+        /// A folder the sidebar lists and the writer can rename, move or delete.
+        public var isEditable: Bool { self == .user || self == .project }
     }
 
     public var id: GroupID

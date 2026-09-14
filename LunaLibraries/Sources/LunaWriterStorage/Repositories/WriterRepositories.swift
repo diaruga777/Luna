@@ -66,7 +66,7 @@ public struct WriterLibraryConflictError: Error, Equatable {
 
 public protocol WriterLibraryStoring: AnyObject {
     func groups() throws -> [WriterGroup]
-    func createGroup(name: String, icon: String, parent: GroupID?) throws -> WriterGroup
+    func createGroup(name: String, icon: String, parent: GroupID?, kind: WriterGroup.Kind) throws -> WriterGroup
     func update(_ group: WriterGroup) throws
     /// Trashes the group's documents, then removes the group and its children.
     func delete(_ id: GroupID) throws
@@ -181,5 +181,12 @@ final class LibraryChangeBroadcaster {
         DispatchQueue.main.async {
             for observer in observers { observer.libraryDidChange(change) }
         }
+    }
+}
+
+extension WriterLibraryStoring {
+    /// A folder the writer made by hand.
+    public func createGroup(name: String, icon: String, parent: GroupID?) throws -> WriterGroup {
+        try createGroup(name: name, icon: icon, parent: parent, kind: .user)
     }
 }

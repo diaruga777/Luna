@@ -1252,9 +1252,11 @@
 // Luna Writer — storage (claudedocs/plans/writer-app.md)
 "WriterStorage_inboxGroupName_Luna" = "Inbox";
 "WriterStorage_trashGroupName_Luna" = "Trash";
+"WriterStorage_chapterTitle_Luna" = "Chapter %lld";
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
+"WriterStorage_untitledProjectName_Luna" = "Untitled Project";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
-"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Type \"@\" to look up a note, or to make one.\n- Focus mode dims everything but the sentence you are in.\n- Read a document aloud and Luna marks what you say about it.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Tap space twice, quickly, to open the palette: look up a note, make one, insert a symbol, find another word, format, or start a new chapter.\n- Focus mode dims everything but the sentence you are in.\n- Read a document aloud and Luna marks what you say about it.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
 "WriterLibrary_command_export_Luna" = "Export…";
@@ -1332,7 +1334,7 @@
 "WriterLibrary_keyword_title_Luna" = "Keywords";
 "WriterLibrary_move_title_Luna" = "Move to…";
 "WriterLibrary_notes_composePlaceholder_Luna" = "Add a note";
-"WriterLibrary_notes_emptyMessage_Luna" = "No notes yet. Write one below, or type @ in the document.";
+"WriterLibrary_notes_emptyMessage_Luna" = "No notes yet. Write one below, or open the palette in the document.";
 "WriterLibrary_notes_title_Luna" = "Notes";
 "WriterLibrary_settings_aboutSectionHeader_Luna" = "About";
 "WriterLibrary_settings_authorshipRow_Luna" = "Show Authorship";
@@ -1352,6 +1354,9 @@
 "WriterLibrary_settings_locationRow_Luna" = "Storage Location";
 "WriterLibrary_settings_locationUnknown_Luna" = "Unknown";
 "WriterLibrary_settings_locationValue_Luna" = "Files › Luna Writer › Library";
+"WriterLibrary_settings_paletteAtSign_Luna" = "@ Sign";
+"WriterLibrary_settings_paletteDoubleSpace_Luna" = "Double Space";
+"WriterLibrary_settings_paletteRow_Luna" = "Command Palette";
 "WriterLibrary_settings_readAlongSectionHeader_Luna" = "Read-Along";
 "WriterLibrary_settings_snapshotCountRow_Luna" = "Snapshots Kept";
 "WriterLibrary_settings_syntaxColouringRow_Luna" = "Syntax Colouring";
@@ -1411,6 +1416,41 @@
 "WriterEditor_paletteNewNote_Luna" = "New note";
 "WriterEditor_paletteNewNoteNamed_Luna" = "New note “%@”";
 "WriterEditor_paletteNoteFromAnotherSheet_Luna" = "From another document";
+"WriterEditor_commandNewChapter_Luna" = "New chapter";
+"WriterEditor_commandNewChapterDetail_Luna" = "End the chapter here and start the next";
+"WriterEditor_commandSymbol_Luna" = "Symbol";
+"WriterEditor_commandSymbolDetail_Luna" = "Insert a special character";
+"WriterEditor_commandSymbolHint_Luna" = "Type a name, like em dash or epsilon";
+"WriterEditor_commandSymbolNoMatch_Luna" = "No symbol matches “%@”";
+"WriterEditor_commandThesaurus_Luna" = "Thesaurus";
+"WriterEditor_commandThesaurusDetail_Luna" = "Find another word";
+"WriterEditor_commandThesaurusHint_Luna" = "Type a word";
+"WriterEditor_commandThesaurusNoMatch_Luna" = "No suggestions for “%@”";
+"WriterEditor_commandThesaurusUnavailable_Luna" = "The thesaurus isn’t available on this device";
+"WriterEditor_format_bold_Luna" = "Bold";
+"WriterEditor_format_boldItalic_Luna" = "Bold Italic";
+"WriterEditor_format_bulletList_Luna" = "Bullet List";
+"WriterEditor_format_codeBlock_Luna" = "Code Block";
+"WriterEditor_format_divider_Luna" = "Divider";
+"WriterEditor_format_footnote_Luna" = "Footnote";
+"WriterEditor_format_heading1_Luna" = "Heading 1";
+"WriterEditor_format_heading2_Luna" = "Heading 2";
+"WriterEditor_format_heading3_Luna" = "Heading 3";
+"WriterEditor_format_heading4_Luna" = "Heading 4";
+"WriterEditor_format_heading5_Luna" = "Heading 5";
+"WriterEditor_format_heading6_Luna" = "Heading 6";
+"WriterEditor_format_highlight_Luna" = "Highlight";
+"WriterEditor_format_image_Luna" = "Image";
+"WriterEditor_format_inlineCode_Luna" = "Inline Code";
+"WriterEditor_format_italic_Luna" = "Italic";
+"WriterEditor_format_link_Luna" = "Link";
+"WriterEditor_format_numberedList_Luna" = "Numbered List";
+"WriterEditor_format_quote_Luna" = "Quote";
+"WriterEditor_format_strikethrough_Luna" = "Strikethrough";
+"WriterEditor_format_taskList_Luna" = "Task List";
+"WriterEditor_format_underline_Luna" = "Underline";
+"WriterEditor_formatPreviewSample_Luna" = "text";
+"WriterEditor_formatSearchWords_Luna" = "format formatting style markdown";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
 "WriterEditor_menuContinueWriting_Luna" = "Continue writing";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";

@@ -19,12 +19,14 @@ final class WriterSettingsTests: XCTestCase {
         settings.fontSize = 21
         settings.showAuthorship = false
         settings.lastCalibrationGrade = "Good"
+        settings.paletteTrigger = .atSign
 
         let reader = WriterSettings(defaults: suite)
         XCTAssertEqual(reader.focusMode, .sentence)
         XCTAssertEqual(reader.lineWidth, .wide)
         XCTAssertEqual(reader.fontSize, 21)
         XCTAssertFalse(reader.showAuthorship)
+        XCTAssertEqual(reader.paletteTrigger, .atSign)
         XCTAssertEqual(reader.lastCalibrationGrade, "Good")
     }
 
@@ -38,16 +40,19 @@ final class WriterSettingsTests: XCTestCase {
         XCTAssertFalse(settings.gazeEnabled)
         XCTAssertFalse(settings.voiceEnabled)
         XCTAssertNil(settings.fontIdentifier)
+        XCTAssertEqual(settings.paletteTrigger, .doubleSpace, "the palette opens on a double space until changed")
     }
 
     func testAValueFromANewerBuildReadsAsTheShippedDefault() throws {
         let suite = try makeSuite()
         suite.set("kaleidoscope", forKey: "luna.writer.focusMode")
         suite.set("enormous", forKey: "luna.writer.lineWidth")
+        suite.set("whistle", forKey: "luna.writer.paletteTrigger")
 
         let settings = WriterSettings(defaults: suite)
         XCTAssertEqual(settings.focusMode, .off)
         XCTAssertEqual(settings.lineWidth, .medium)
+        XCTAssertEqual(settings.paletteTrigger, .doubleSpace)
     }
 
     func testEveryChangeIsAnnouncedOnce() throws {

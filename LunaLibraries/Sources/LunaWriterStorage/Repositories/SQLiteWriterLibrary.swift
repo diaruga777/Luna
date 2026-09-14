@@ -91,11 +91,13 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
         }
     }
 
-    public func createGroup(name: String, icon: String, parent: GroupID?) throws -> WriterGroup {
+    public func createGroup(
+        name: String, icon: String, parent: GroupID?, kind: WriterGroup.Kind
+    ) throws -> WriterGroup {
         let now = Date()
         let group = WriterGroup(
             parentID: parent, name: name, iconName: icon,
-            sortIndex: try nextGroupSortIndex(parent: parent), kind: .user,
+            sortIndex: try nextGroupSortIndex(parent: parent), kind: kind,
             createdAt: now, updatedAt: now)
         try database.transaction { db in
             try db.run(
@@ -208,7 +210,7 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
     private func nextGroupSortIndex(parent: GroupID?) throws -> Int {
         try database.perform { db in
             let sql = parent == nil
-                ? "SELECT COALESCE(MAX(sort_index), -1) + 1 FROM groups WHERE parent_id IS NULL AND kind = 'user'"
+                ? "SELECT COALESCE(MAX(sort_index), -1) + 1 FROM groups WHERE parent_id IS NULL AND kind IN ('user', 'project')"
                 : "SELECT COALESCE(MAX(sort_index), -1) + 1 FROM groups WHERE parent_id = ?"
             return Int((try db.scalarInt(sql) { statement in
                 if let parent { try statement.bind(1, parent.rawValue.uuidString) }
@@ -224,7 +226,7 @@ public final class SQLiteWriterLibrary: WriterLibraryStoring, NoteStoring,
     ) throws {
         var ids: [String] = []
         let sql = parent == nil
-            ? "SELECT id FROM groups WHERE parent_id IS NULL AND kind = 'user' ORDER BY sort_index ASC, name ASC"
+            ? "SELECT id FROM groups WHERE parent_id IS NULL AND kind IN ('user', 'project') ORDER BY sort_index ASC, name ASC"
             : "SELECT id FROM groups WHERE parent_id = ? ORDER BY sort_index ASC, name ASC"
         try db.query(sql, { statement in
             if let parent { try statement.bind(1, parent.rawValue.uuidString) }

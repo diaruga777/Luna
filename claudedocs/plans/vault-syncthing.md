@@ -1,6 +1,6 @@
 # Luna Vault on Syncthing — plan
 
-Status: PLANNING 2026-09-15. Supersedes the custom Mac protocol, the
+Status: IN PROGRESS 2026-09-15 (branch `vault-syncthing`). Supersedes the custom Mac protocol, the
 client-side encryption tier, and the device/iCloud storage locations.
 
 Luna Vault becomes a partial Syncthing peer. The Mac holds the files in a
@@ -27,6 +27,14 @@ Decisions locked with the owner on 2026-09-15:
 9. Transcription: SpeechAnalyzer on iOS 26, on-device SFSpeechRecognizer in
    60 s chunks below that.
 10. Existing Vault data is dropped without migration.
+11. The companion is a menu-bar accessory app built from the SwiftPM
+    executable. Pairing: scan the Mac's QR on the iPhone, click Accept on the
+    Mac; typing works both ways.
+12. iOS gets a Browse screen over the mirrored file tree.
+13. Dates: the BEP modification time only. No creation or content date.
+14. Embeddings: up to 8 chunk vectors per file, stored as Float16.
+15. One paired Mac, one folder. The companion keeps its embedded tsnet node.
+    The Vault share extension is unchanged.
 
 ## 0. Measured facts the design rests on
 
@@ -134,8 +142,7 @@ first launch). Tables:
   `size`, `modified_s`, `modified_ns`, `modified_by`, `deleted`, `invalid`,
   `version` (blob), `sequence`, `block_size`, `blocks` (blob: 32-byte hashes
   concatenated; sizes derive from block_size and size), `blocks_hash`,
-  `first_seen`, `content_date` (from EXIF/QuickTime/PDF metadata when
-  indexed), `needs_index` (dirty bit), `indexed_blocks_hash`,
+  `first_seen`, `needs_index` (dirty bit), `indexed_blocks_hash`,
   `thumbnail_blocks_hash`, `cache_blocks_hash`, `cache_bytes`,
   `cache_last_access`, `cache_pinned`.
 - `local_changes` — iOS-originated adds and deletes awaiting confirmation
@@ -227,10 +234,10 @@ Changed:
   at runtime; `NLEmbedding.sentenceEmbedding` fallback. Model version string
   includes the asset identifier so a model change reindexes.
 - Embeddings become per chunk: `embeddings(object_id, chunk_index,
-  model_version, values)`, up to 32 chunks per file; a query scores a file
-  by its best chunk.
-- `documents` keyed by file `name`; `created_at` = `content_date` if any,
-  else `modified`; `updated_at` = BEP `modified`.
+  model_version, values)`, up to 8 chunks per file as Float16; a query
+  scores a file by its best chunk.
+- `documents` keyed by file `name`; `created_at` and `updated_at` both carry
+  the BEP `modified` time (decision 13).
 - `VaultReindexRunner` replaces `VaultIndexWorker`: claims dirty files
   (`needs_index = 1`, not deleted, type FILE), fetches up to 3 in parallel
   into `VaultScratch/` under `min(scratchQuota, freeSpace − 200 MB)`,
@@ -239,17 +246,16 @@ Changed:
   removed from the index in the same transaction that records the
   tombstone. Runs opportunistically while foregrounded (low priority, pauses
   while the user fetches) and in the nightly task.
-- Content dates: EXIF `DateTimeOriginal`, QuickTime creation date, PDF
-  `CreationDate`, DOCX `dcterms:created`, else none.
 
 ### 1.9 Search with dates
 
 `VaultDateQueryParser` strips date terms from the query and produces a
 range: month names ("October" → the most recent October not in the future),
 "October 2023", "2023", "yesterday", "today", "last week", "last month",
-"this year", ISO `2023-10-05`, `10/2023`. Matching: `created_at` OR
-`updated_at` within the range. A date-only query lists files in the range
-by date. Text plus date filters the hybrid results.
+"this year", ISO `2023-10-05`, `10/2023`. Matching: the file's modification
+date within the range. A date-only query lists files in the range
+by date. Text plus date filters the hybrid results. Matching uses the
+modification date only.
 
 ### 1.10 Thumbnails
 
@@ -353,6 +359,3 @@ simulator ↔ vanilla Syncthing and ↔ companion, merge.
   against the Homebrew Syncthing (removed when the work is done).
 - `scripts/vault_interop.sh`: companion ↔ vanilla Syncthing on this Mac.
 
-## 5. Open questions for the owner
-
-See the conversation of 2026-09-15; answers are folded into §0 decisions.

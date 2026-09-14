@@ -1,5 +1,5 @@
 //
-//  MentionOverlayView.swift
+//  CommandPaletteOverlayView.swift
 //  LunaWriterEditor
 //
 
@@ -9,7 +9,7 @@ import LunaModels
 import LunaWriterModels
 
 /// One row of the "@" overlay.
-public struct MentionRow: Equatable {
+public struct PaletteRow: Equatable {
     public var noteID: NoteID?
     public var title: String
     public var detail: String?
@@ -23,9 +23,9 @@ public struct MentionRow: Equatable {
     }
 }
 
-public protocol MentionOverlayViewDelegate: AnyObject {
-    func mentionOverlay(_ overlay: MentionOverlayView, didSelectRowAt index: Int)
-    func mentionOverlayDidRequestDismiss(_ overlay: MentionOverlayView)
+public protocol CommandPaletteOverlayViewDelegate: AnyObject {
+    func paletteOverlay(_ overlay: CommandPaletteOverlayView, didSelectRowAt index: Int)
+    func paletteOverlayDidRequestDismiss(_ overlay: CommandPaletteOverlayView)
 }
 
 /// The panel that appears under the "@".
@@ -33,18 +33,18 @@ public protocol MentionOverlayViewDelegate: AnyObject {
 /// It never becomes first responder: the writer keeps typing into the sheet
 /// while it is up, and every key it handles arrives through the editor's own
 /// key commands.
-public final class MentionOverlayView: UIView {
+public final class CommandPaletteOverlayView: UIView {
 
     public static let maximumWidth: CGFloat = 360
     public static let rowHeight: CGFloat = 44
     /// The gap between the caret line and the panel.
     public static let anchorGap: CGFloat = 6
 
-    public weak var delegate: MentionOverlayViewDelegate?
+    public weak var delegate: CommandPaletteOverlayViewDelegate?
 
     private let panel = GlassStyle.focusPanel()
     private let stack = UIStackView()
-    private var rows: [MentionRow] = []
+    private var rows: [PaletteRow] = []
     private var highlighted = 0
 
     public override init(frame: CGRect) {
@@ -85,7 +85,7 @@ public final class MentionOverlayView: UIView {
 
     public var rowCount: Int { rows.count }
 
-    public func update(rows: [MentionRow], highlightedIndex: Int) {
+    public func update(rows: [PaletteRow], highlightedIndex: Int) {
         if rows != self.rows {
             self.rows = rows
             rebuild()
@@ -109,7 +109,7 @@ public final class MentionOverlayView: UIView {
         }
     }
 
-    private func makeRowView(_ row: MentionRow, index: Int) -> UIView {
+    private func makeRowView(_ row: PaletteRow, index: Int) -> UIView {
         let button = UIButton(type: .system)
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: row.symbolName)
@@ -140,7 +140,7 @@ public final class MentionOverlayView: UIView {
     }
 
     @objc private func rowTapped(_ sender: UIButton) {
-        delegate?.mentionOverlay(self, didSelectRowAt: sender.tag)
+        delegate?.paletteOverlay(self, didSelectRowAt: sender.tag)
     }
 
     // MARK: - Placement

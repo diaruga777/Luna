@@ -1,5 +1,5 @@
 //
-//  MentionControllerTests.swift
+//  CommandPaletteControllerTests.swift
 //  LunaWriterTests
 //
 
@@ -46,35 +46,35 @@ private final class FakeNoteStore: NoteStoring {
     func detach(_ id: NoteID, from document: DocumentID) throws {}
 }
 
-private final class MentionRecorder: MentionControllerDelegate {
-    var states: [MentionState] = []
+private final class PaletteRecorder: CommandPaletteControllerDelegate {
+    var states: [PaletteState] = []
     var results: [[NoteHit]] = []
     var peeked: [WriterNote] = []
     var created: [WriterNote] = []
     var ended = 0
 
-    func mentionController(_ controller: MentionController, didChange state: MentionState) {
+    func commandPalette(_ controller: CommandPaletteController, didChange state: PaletteState) {
         states.append(state)
     }
-    func mentionController(_ controller: MentionController, didUpdate results: [NoteHit], query: String) {
+    func commandPalette(_ controller: CommandPaletteController, didUpdate results: [NoteHit], query: String) {
         self.results.append(results)
     }
-    func mentionController(_ controller: MentionController, didRequestPeek note: WriterNote) {
+    func commandPalette(_ controller: CommandPaletteController, didRequestPeek note: WriterNote) {
         peeked.append(note)
     }
-    func mentionController(_ controller: MentionController, didCreate note: WriterNote, from markerRect: CGRect) {
+    func commandPalette(_ controller: CommandPaletteController, didCreate note: WriterNote, from markerRect: CGRect) {
         created.append(note)
     }
-    func mentionControllerDidEnd(_ controller: MentionController) { ended += 1 }
+    func commandPaletteDidEnd(_ controller: CommandPaletteController) { ended += 1 }
 }
 
-final class MentionControllerTests: XCTestCase {
+final class CommandPaletteControllerTests: XCTestCase {
 
     private var textView: WriterTextView!
     private var index: FakeNoteIndex!
     private var store: FakeNoteStore!
-    private var recorder: MentionRecorder!
-    private var controller: MentionController!
+    private var recorder: PaletteRecorder!
+    private var controller: CommandPaletteController!
     private let documentID = DocumentID()
 
     override func setUp() {
@@ -84,8 +84,8 @@ final class MentionControllerTests: XCTestCase {
         textView.frame = CGRect(x: 0, y: 0, width: 375, height: 600)
         index = FakeNoteIndex()
         store = FakeNoteStore()
-        recorder = MentionRecorder()
-        controller = MentionController(
+        recorder = PaletteRecorder()
+        controller = CommandPaletteController(
             noteIndex: index, noteStore: store, documentID: documentID, debounce: 0.01)
         controller.textView = textView
         controller.delegate = recorder
@@ -229,7 +229,7 @@ final class MentionControllerTests: XCTestCase {
         let first = try XCTUnwrap(index.queries.first)
         XCTAssertEqual(first.scope, .document(documentID))
         XCTAssertTrue(first.prefixMatchesLastToken)
-        XCTAssertEqual(first.limit, MentionController.resultLimit)
+        XCTAssertEqual(first.limit, CommandPaletteController.resultLimit)
         XCTAssertTrue(index.queries.contains { $0.scope == .all })
     }
 

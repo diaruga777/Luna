@@ -1408,9 +1408,9 @@
 "WriterIntents_documentEntity_typeName_Luna" = "Document";
 
 // Luna Writer — editor (claudedocs/plans/writer-app.md)
-"WriterEditor_mentionNewNote_Luna" = "New note";
-"WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
-"WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another document";
+"WriterEditor_paletteNewNote_Luna" = "New note";
+"WriterEditor_paletteNewNoteNamed_Luna" = "New note “%@”";
+"WriterEditor_paletteNoteFromAnotherSheet_Luna" = "From another document";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
 "WriterEditor_menuContinueWriting_Luna" = "Continue writing";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";

@@ -406,7 +406,7 @@ xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM"
 same ten static products the app links, so a suite reaches
 `LunaWriterText`/`Storage`/`Voice`/`Editor`/`ReadAlong`/`LibraryUI` while the
 central `Luna.app` links none of them. The suites are `Writer*`, `Note*`,
-`Library*`, `Voice*`, `Utterance*`, `EnergyVAD*`, `Mention*`, `Rendering*`,
+`Library*`, `Voice*`, `Utterance*`, `EnergyVAD*`, `CommandPalette*`, `Rendering*`,
 `Focus*`, `SentenceGeometry*`, `SentenceEmbedding*`, `Groups*`, `Sheets*`,
 `Snapshots*`, `Editor*`, `LineTable*`, `MarkdownTextStorage*`, `LRUCache*`,
 `SyntaxColourLayer*`, `Speech*`, `GoalProgress*`, `SessionTrace*`, `MacSeam*`,

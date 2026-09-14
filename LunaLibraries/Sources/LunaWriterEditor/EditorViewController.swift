@@ -74,7 +74,7 @@ public final class EditorViewController: UIViewController {
         self.session = session
         self.environment = environment
         metrics = EditorMetrics(settings: environment.settings)
-        mention = MentionController(
+        palette = CommandPaletteController(
             noteIndex: environment.noteIndex, noteStore: environment.noteStore,
             documentID: session.document.id)
         related = RelatedNotesRanker(
@@ -91,7 +91,7 @@ public final class EditorViewController: UIViewController {
     // MARK: - Parts
 
     private var metrics: EditorMetrics
-    private let mention: MentionController
+    private let palette: CommandPaletteController
     private let related: RelatedNotesRanker
     private let focus: FocusModeController
     private let relatedStrip = RelatedNoteStripView()
@@ -100,7 +100,7 @@ public final class EditorViewController: UIViewController {
         words: 0, characters: 0, charactersWithoutSpaces: 0, sentences: 0, paragraphs: 0, readingTime: 0)
     /// Shown above the keyboard only while a save keeps failing.
     private let saveFailureLabel = UILabel()
-    private let overlay = MentionOverlayView()
+    private let overlay = CommandPaletteOverlayView()
     private var peekCard: NotePeekCardView?
 
     private lazy var composer = RenderingAttributeComposer(
@@ -326,8 +326,8 @@ public final class EditorViewController: UIViewController {
         // syntax layer never saw a rescan for the document it opens on.
         syntaxLayer.invalidateTags(in: NSRange(location: 0, length: session.storage.length))
 
-        mention.textView = textView
-        mention.delegate = self
+        palette.textView = textView
+        palette.delegate = self
         overlay.delegate = self
         related.observer = self
         focus.delegate = self
@@ -477,41 +477,41 @@ public final class EditorViewController: UIViewController {
         }
     }
 
-    // MARK: - Mention overlay
+    // MARK: - Command palette
 
     fileprivate func updateOverlay() {
-        guard mention.state.isActive, !mention.isPeeking else {
+        guard palette.state.isActive, !palette.isPeeking else {
             overlay.isHidden = true
             return
         }
-        overlay.update(rows: mentionRows(), highlightedIndex: mention.highlightedIndex)
+        overlay.update(rows: paletteRows(), highlightedIndex: palette.highlightedIndex)
         overlay.isHidden = false
         placeOverlay()
     }
 
     private func placeOverlay() {
-        let caret = view.convert(mention.markerRect(), from: textView)
+        let caret = view.convert(palette.markerRect(), from: textView)
         let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
     }
 
     /// Reads only `NoteHit` itself — no store read per row, per keystroke,
     /// while the overlay is up.
-    private func mentionRows() -> [MentionRow] {
-        var rows = mention.results.map { hit -> MentionRow in
+    private func paletteRows() -> [PaletteRow] {
+        var rows = palette.results.map { hit -> PaletteRow in
             let elsewhere = !hit.documentIDs.contains(session.document.id)
-            return MentionRow(
+            return PaletteRow(
                 noteID: hit.noteID,
                 title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
-                detail: elsewhere ? L10n.string("WriterEditor_mentionNoteFromAnotherSheet") : nil,
+                detail: elsewhere ? L10n.string("WriterEditor_paletteNoteFromAnotherSheet") : nil,
                 symbolName: "note.text")
         }
-        let query = mention.state.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        rows.append(MentionRow(
+        let query = palette.state.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        rows.append(PaletteRow(
             noteID: nil,
             title: query.isEmpty
-                ? L10n.string("WriterEditor_mentionNewNote")
-                : L10n.string("WriterEditor_mentionNewNoteNamed", query),
+                ? L10n.string("WriterEditor_paletteNewNote")
+                : L10n.string("WriterEditor_paletteNewNoteNamed", query),
             symbolName: "plus.circle"))
         return rows
     }
@@ -530,10 +530,10 @@ public final class EditorViewController: UIViewController {
             UIKeyCommand(input: "i", modifierFlags: .command, action: #selector(toggleItalic)),
             UIKeyCommand(input: "k", modifierFlags: .command, action: #selector(insertLink)),
             UIKeyCommand(input: "f", modifierFlags: [.command, .shift], action: #selector(cycleFocusMode)),
-            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(mentionUp)),
-            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(mentionDown)),
-            UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(mentionCommit)),
-            UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(mentionDismiss)),
+            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(paletteUp)),
+            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(paletteDown)),
+            UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(paletteCommit)),
+            UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(paletteDismiss)),
             UIKeyCommand(
                 input: "\r", modifierFlags: [.command, .alternate], action: #selector(continueWritingKeyCommand)),
             UIKeyCommand(
@@ -545,9 +545,9 @@ public final class EditorViewController: UIViewController {
 
     public override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
-        case #selector(mentionUp), #selector(mentionDown),
-             #selector(mentionCommit), #selector(mentionDismiss):
-            return mention.state.isActive
+        case #selector(paletteUp), #selector(paletteDown),
+             #selector(paletteCommit), #selector(paletteDismiss):
+            return palette.state.isActive
         case #selector(continueWritingKeyCommand):
             return writerTextViewAIAssistantIsAvailable
         case #selector(rewriteSelectionKeyCommand):
@@ -568,10 +568,10 @@ public final class EditorViewController: UIViewController {
     @objc private func continueWritingKeyCommand() { continueWriting() }
     @objc private func rewriteSelectionKeyCommand() { rewriteSelection() }
 
-    @objc private func mentionUp() { mention.moveHighlight(by: -1); updateOverlay() }
-    @objc private func mentionDown() { mention.moveHighlight(by: 1); updateOverlay() }
-    @objc private func mentionCommit() { mention.commitHighlighted() }
-    @objc private func mentionDismiss() { mention.dismiss() }
+    @objc private func paletteUp() { palette.moveHighlight(by: -1); updateOverlay() }
+    @objc private func paletteDown() { palette.moveHighlight(by: 1); updateOverlay() }
+    @objc private func paletteCommit() { palette.commitHighlighted() }
+    @objc private func paletteDismiss() { palette.dismiss() }
 
     @objc private func toggleBold() { apply(MarkdownEditingCommands.toggleWrap(textView.selectedRange, marker: "**", in: session.storage.nsText)) }
     @objc private func toggleItalic() { apply(MarkdownEditingCommands.toggleWrap(textView.selectedRange, marker: "*", in: session.storage.nsText)) }
@@ -628,7 +628,7 @@ extension EditorViewController: UITextViewDelegate {
     public func textView(
         _ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String
     ) -> Bool {
-        guard mention.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
+        guard palette.textView(textView, shouldChangeTextIn: range, replacementText: text) else { return false }
         // A bare Return in a list item or a blockquote continues it (or, on
         // an empty item, ends the list) instead of just breaking the line.
         if range.length == 0, text == "\n",
@@ -640,7 +640,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidChange(_ textView: UITextView) {
-        mention.textViewDidChange(textView)
+        palette.textViewDidChange(textView)
         updateOverlay()
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
         scheduleStatistics()
@@ -649,7 +649,7 @@ extension EditorViewController: UITextViewDelegate {
     public func textViewDidChangeSelection(_ textView: UITextView) {
         seedTypingAttributesIfEmpty()
         session.storage.setRevealRange(textView.selectedRange)
-        mention.textViewDidChangeSelection(textView)
+        palette.textViewDidChangeSelection(textView)
         focus.selectionChanged(to: textView.selectedRange, in: session.storage.nsText)
         related.caretMoved(to: textView.selectedRange.location, in: session.storage.nsText)
         updateOverlay()
@@ -663,7 +663,7 @@ extension EditorViewController: UITextViewDelegate {
 
     public func textViewDidEndEditing(_ textView: UITextView) {
         focus.editingEnded()
-        mention.dismiss()
+        palette.dismiss()
         session.save()
         reportEditingState()
         delegate?.editor(self, wantsChromeHidden: false)
@@ -806,7 +806,7 @@ extension EditorViewController: DocumentSessionDelegate {
     /// something that no longer exists.
     public func documentSessionDidReceiveExternalChange(_ session: DocumentSession) {
         textView.undoManager?.removeAllActions()
-        mention.dismiss()
+        palette.dismiss()
         scheduleStatistics()
         delegate?.editorDidUpdateDocument(self, document: session.document)
     }
@@ -850,19 +850,19 @@ extension EditorViewController: WriterTextViewActionDelegate {
     }
 }
 
-// MARK: - MentionControllerDelegate
+// MARK: - CommandPaletteControllerDelegate
 
-extension EditorViewController: MentionControllerDelegate {
+extension EditorViewController: CommandPaletteControllerDelegate {
 
-    public func mentionController(_ controller: MentionController, didChange state: MentionState) {
+    public func commandPalette(_ controller: CommandPaletteController, didChange state: PaletteState) {
         updateOverlay()
     }
 
-    public func mentionController(_ controller: MentionController, didUpdate results: [NoteHit], query: String) {
+    public func commandPalette(_ controller: CommandPaletteController, didUpdate results: [NoteHit], query: String) {
         updateOverlay()
     }
 
-    public func mentionController(_ controller: MentionController, didRequestPeek note: WriterNote) {
+    public func commandPalette(_ controller: CommandPaletteController, didRequestPeek note: WriterNote) {
         overlay.isHidden = true
         let sheet = note.documentIDs.contains(session.document.id) ? session.document.title : nil
         let card = NotePeekCardView(note: note, sheetName: sheet)
@@ -872,39 +872,39 @@ extension EditorViewController: MentionControllerDelegate {
         NSLayoutConstraint.activate([
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             card.widthAnchor.constraint(
-                lessThanOrEqualToConstant: min(MentionOverlayView.maximumWidth, view.bounds.width - 32)),
+                lessThanOrEqualToConstant: min(CommandPaletteOverlayView.maximumWidth, view.bounds.width - 32)),
             card.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
             card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         peekCard = card
     }
 
-    public func mentionController(
-        _ controller: MentionController, didCreate note: WriterNote, from markerRect: CGRect
+    public func commandPalette(
+        _ controller: CommandPaletteController, didCreate note: WriterNote, from markerRect: CGRect
     ) {
         let from = view.convert(markerRect, from: textView)
         let target = CGPoint(x: view.bounds.maxX - 40, y: view.safeAreaInsets.top + 20)
         NoteFlyInAnimator.fly(from: from, to: target, in: view)
     }
 
-    public func mentionControllerDidEnd(_ controller: MentionController) {
+    public func commandPaletteDidEnd(_ controller: CommandPaletteController) {
         overlay.isHidden = true
         peekCard?.removeFromSuperview()
         peekCard = nil
     }
 }
 
-// MARK: - MentionOverlayViewDelegate
+// MARK: - CommandPaletteOverlayViewDelegate
 
-extension EditorViewController: MentionOverlayViewDelegate {
+extension EditorViewController: CommandPaletteOverlayViewDelegate {
 
-    public func mentionOverlay(_ overlay: MentionOverlayView, didSelectRowAt index: Int) {
-        mention.highlightRow(index)
-        mention.commitHighlighted()
+    public func paletteOverlay(_ overlay: CommandPaletteOverlayView, didSelectRowAt index: Int) {
+        palette.highlightRow(index)
+        palette.commitHighlighted()
     }
 
-    public func mentionOverlayDidRequestDismiss(_ overlay: MentionOverlayView) {
-        mention.dismiss()
+    public func paletteOverlayDidRequestDismiss(_ overlay: CommandPaletteOverlayView) {
+        palette.dismiss()
     }
 }
 
@@ -919,7 +919,7 @@ extension EditorViewController: NotePeekCardViewDelegate {
     public func notePeekCardDidClose(_ card: NotePeekCardView) {
         card.removeFromSuperview()
         peekCard = nil
-        mention.closePeek()
+        palette.closePeek()
     }
 }
 

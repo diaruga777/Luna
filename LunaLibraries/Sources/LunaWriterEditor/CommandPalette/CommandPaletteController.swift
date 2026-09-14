@@ -1,5 +1,5 @@
 //
-//  MentionController.swift
+//  CommandPaletteController.swift
 //  LunaWriterEditor
 //
 
@@ -9,7 +9,7 @@ import LunaWriterStorage
 import LunaWriterText
 
 /// Where the "@" overlay is in its short life.
-public enum MentionState: Equatable {
+public enum PaletteState: Equatable {
     case idle
     /// "@" was typed and nothing follows it yet.
     case armed(marker: Int)
@@ -34,14 +34,14 @@ public enum MentionState: Equatable {
     public var isActive: Bool { marker != nil }
 }
 
-public protocol MentionControllerDelegate: AnyObject {
-    func mentionController(_ controller: MentionController, didChange state: MentionState)
-    func mentionController(_ controller: MentionController, didUpdate results: [NoteHit], query: String)
+public protocol CommandPaletteControllerDelegate: AnyObject {
+    func commandPalette(_ controller: CommandPaletteController, didChange state: PaletteState)
+    func commandPalette(_ controller: CommandPaletteController, didUpdate results: [NoteHit], query: String)
     /// Show the note over the text. The "@" and the query stay until Close.
-    func mentionController(_ controller: MentionController, didRequestPeek note: WriterNote)
+    func commandPalette(_ controller: CommandPaletteController, didRequestPeek note: WriterNote)
     /// A note was made from the query; fly it toward the notes button.
-    func mentionController(_ controller: MentionController, didCreate note: WriterNote, from markerRect: CGRect)
-    func mentionControllerDidEnd(_ controller: MentionController)
+    func commandPalette(_ controller: CommandPaletteController, didCreate note: WriterNote, from markerRect: CGRect)
+    func commandPaletteDidEnd(_ controller: CommandPaletteController)
 }
 
 /// The "@" system: a lookup and a capture, never an insert.
@@ -50,13 +50,13 @@ public protocol MentionControllerDelegate: AnyObject {
 /// after it is ordinary text. Picking a note opens it over the page (Q5,
 /// peek only); the last row makes a note out of what was typed. Whatever the
 /// writer does, the words they typed stay in the sheet.
-public final class MentionController {
+public final class CommandPaletteController {
 
     public static let maximumQueryWords = 6
     public static let resultLimit = 6
     public static let defaultDebounce: TimeInterval = 0.12
 
-    public weak var delegate: MentionControllerDelegate?
+    public weak var delegate: CommandPaletteControllerDelegate?
     public weak var textView: WriterTextView?
 
     private let noteIndex: NoteIndexing
@@ -65,15 +65,15 @@ public final class MentionController {
     private let debounce: TimeInterval
     private let searchQueue: DispatchQueue
 
-    public private(set) var state: MentionState = .idle {
+    public private(set) var state: PaletteState = .idle {
         didSet {
             guard state != oldValue else { return }
-            delegate?.mentionController(self, didChange: state)
+            delegate?.commandPalette(self, didChange: state)
             // The one place a transition to idle is reported: `end()` used
             // to also call this explicitly, which meant every dismissal
             // told the delegate twice.
             if state == .idle {
-                delegate?.mentionControllerDidEnd(self)
+                delegate?.commandPaletteDidEnd(self)
             }
         }
     }
@@ -217,7 +217,7 @@ public final class MentionController {
     private func deliver(_ hits: [NoteHit], for query: String) {
         results = hits
         highlightedIndex = min(highlightedIndex, hits.count)
-        delegate?.mentionController(self, didUpdate: hits, query: query)
+        delegate?.commandPalette(self, didUpdate: hits, query: query)
     }
 
     // MARK: - Rows
@@ -253,7 +253,7 @@ public final class MentionController {
         guard let note = try? noteStore.note(noteID) else { return }
         isPeeking = true
         searchTimer?.invalidate()
-        delegate?.mentionController(self, didRequestPeek: note)
+        delegate?.commandPalette(self, didRequestPeek: note)
     }
 
     /// Closes a peek: the "@" and the query go, and the caret returns to
@@ -332,7 +332,7 @@ public final class MentionController {
         guard state.marker == marker else { return }
         let rect = markerRect()
         removeQueryText()
-        delegate?.mentionController(self, didCreate: note, from: rect)
+        delegate?.commandPalette(self, didCreate: note, from: rect)
         end()
     }
 

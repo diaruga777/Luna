@@ -530,9 +530,12 @@ public final class EditorViewController: UIViewController {
 
     public override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
-        case #selector(paletteUp), #selector(paletteDown),
-             #selector(paletteCommit), #selector(paletteDismiss):
+        case #selector(paletteUp), #selector(paletteDown), #selector(paletteDismiss):
             return palette.state.isActive
+        case #selector(paletteCommit):
+            // With no row highlighted, Return is the text view's own: it
+            // types the newline and the palette closes on it.
+            return palette.state.isActive && palette.highlightedIndex != nil
         case #selector(continueWritingKeyCommand):
             return writerTextViewAIAssistantIsAvailable
         case #selector(rewriteSelectionKeyCommand):

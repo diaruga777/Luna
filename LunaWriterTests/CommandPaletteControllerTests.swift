@@ -459,17 +459,21 @@ final class CommandPaletteControllerTests: XCTestCase {
 
     func testTheHighlightNeverLeavesTheRows() throws {
         type("@idea")
-        controller.moveHighlight(by: -5)
-        XCTAssertEqual(controller.highlightedIndex, 0)
+        controller.moveHighlight(by: 1)
+        XCTAssertEqual(controller.highlightedIndex, 0, "the first press lands on the first row")
         controller.moveHighlight(by: 9)
         XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1)
+        controller.moveHighlight(by: -99)
+        XCTAssertEqual(controller.highlightedIndex, 0)
     }
 
     // MARK: - Commands
 
     func testTypingACommandWordListsItFirstAndCommittingCompletesIt() throws {
         type("@sym")
-        waitUntil { self.actions.first == .completeCommand(.symbol) }
+        // The empty palette already lists Symbol first; the search's own
+        // delivery is what scores it and highlights it.
+        waitUntil { self.controller.highlightedIndex == 0 && self.actions.first == .completeCommand(.symbol) }
         controller.commitHighlighted()
         XCTAssertEqual(textView.text, "@symbol ")
         XCTAssertEqual(controller.state, .querying(marker: 0, query: "symbol "))
@@ -535,6 +539,7 @@ final class CommandPaletteControllerTests: XCTestCase {
     func testAHeadingRowMarksTheCaretsParagraph() throws {
         type("Title @h2")
         waitUntil { self.actions.first == .applyFormat(.heading2) }
+        controller.highlightRow(0)
         controller.commitHighlighted()
         XCTAssertEqual(textView.text, "## Title ")
         XCTAssertEqual(textView.selectedRange, NSRange(location: 9, length: 0))
@@ -545,6 +550,68 @@ final class CommandPaletteControllerTests: XCTestCase {
         waitUntil { self.actions.contains(.applyFormat(.bold)) }
         XCTAssertEqual(actions.filter { if case .applyFormat = $0 { return true } else { return false } }.count,
                        CommandPaletteController.commandRowLimit)
+    }
+
+    // MARK: - Return
+
+    /// The caret's Return key, as the text view reports it.
+    private func pressReturn() -> Bool {
+        controller.textView(textView, shouldChangeTextIn: textView.selectedRange, replacementText: "\n")
+    }
+
+    func testAStrongFirstMatchIsHighlightedAndReturnRunsIt() throws {
+        type("hello @bol")
+        waitUntil { self.actions.first == .applyFormat(.bold) }
+        XCTAssertEqual(controller.highlightedIndex, 0)
+        XCTAssertGreaterThanOrEqual(controller.rows[0].score, CommandPaletteController.returnThreshold)
+        XCTAssertFalse(pressReturn(), "Return is spent on the row, not typed")
+        XCTAssertEqual(textView.text, "hello ****")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testAWeakFirstMatchHighlightsNothingAndReturnTypesTheNewline() throws {
+        type("Title @h2")
+        waitUntil { self.actions.first == .applyFormat(.heading2) }
+        XCTAssertNil(controller.highlightedIndex)
+        XCTAssertFalse(controller.commitHighlighted())
+        XCTAssertTrue(pressReturn(), "the text view types its newline")
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(textView.text, "Title @h2", "nothing was applied or removed")
+    }
+
+    func testAnEmptyPaletteHighlightsNothing() throws {
+        type("@")
+        XCTAssertNil(controller.highlightedIndex)
+        XCTAssertTrue(pressReturn())
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testWordsMatchingNothingElseMakeNewNoteTheReturnRow() throws {
+        type("draft @a new idea")
+        waitUntil { self.actions == [.createNote] }
+        XCTAssertEqual(controller.highlightedIndex, 0)
+    }
+
+    func testAnArrowedChoiceStandsForTheSameQueryAndResetsWhenItChanges() throws {
+        type("@bold")
+        waitUntil { self.actions.first == .applyFormat(.bold) && self.actions.count > 1 }
+        controller.moveHighlight(by: 1)
+        XCTAssertEqual(controller.highlightedIndex, 1)
+        type("x")
+        waitUntil { self.actions == [.createNote] }
+        XCTAssertEqual(controller.highlightedIndex, 0, "a new query starts from its own default row")
+    }
+
+    func testTheFirstArrowPressLandsOnAnEndRow() throws {
+        type("@")
+        controller.moveHighlight(by: -1)
+        XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1)
+        controller.moveHighlight(by: 1)
+        XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1, "clamped at the end")
+        controller.dismiss()
+        type("@")
+        controller.moveHighlight(by: 1)
+        XCTAssertEqual(controller.highlightedIndex, 0)
     }
 
     func testNewChapterRemovesTheQueryClosesAndTellsTheDelegate() throws {

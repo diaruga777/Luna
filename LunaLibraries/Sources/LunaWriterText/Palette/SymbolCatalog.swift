@@ -34,9 +34,15 @@ public final class SymbolCatalog {
     /// The best `limit` matches for `query`, aliases counting the same as
     /// the name.
     public func search(_ query: String, limit: Int = 8) -> [UnicodeSymbol] {
+        matches(query, limit: limit).map(\.symbol)
+    }
+
+    /// The matches with the score each earned, so a caller can tell a sure
+    /// hit from a guess.
+    public func matches(_ query: String, limit: Int = 8) -> [(symbol: UnicodeSymbol, score: Double)] {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
         return FuzzyMatcher.rank(symbols, query: query, limit: limit) { $0.searchStrings }
-            .map(\.item)
+            .map { ($0.item, $0.score) }
     }
 
     // MARK: - Building

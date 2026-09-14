@@ -73,7 +73,15 @@ sentence's double space and stays text. `.atSign` opens on an "@" typed at a
 word boundary and keeps the "@" as a visible marker (`markerLength` 1 vs 0).
 Either way the query is typed straight into the sheet after the marker, six
 words at most, on one line. Backspace on an empty palette closes it and
-deletes nothing. Every row acts on the query and only the query: a note row
+deletes nothing. **Return** runs the highlighted row: the first row is
+highlighted (tinted, with a ↩ at its trailing edge) only when its match
+scores at least `CommandPaletteController.returnThreshold` (0.8 — a word or a
+prefix, "bol" → Bold; never a scattered subsequence, "h2" → Heading 2 stays
+unhighlighted), or when words typed match nothing but the New note row (Q5's
+"Return with no match creates a note"). The arrows or a tap pin another row
+for the same query. With nothing highlighted Return is the text view's own:
+the newline is typed and the palette closes — so Return on an accidental
+double space never runs a command. Every row acts on the query and only the query: a note row
 peeks (never inserts, Q5); the last row makes a note; a symbol or thesaurus
 row replaces the query with its word; a formatting row types the style's
 marks and puts the caret between them; "new chapter" cuts the text after the

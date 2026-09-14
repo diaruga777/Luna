@@ -92,12 +92,17 @@ public struct PaletteRow: Equatable {
     public var detail: String?
     public var symbolName: String
     public var action: PaletteAction
+    /// How well the row matches the query, `0...1`. A row at or above
+    /// `CommandPaletteController.returnThreshold` in first place is what
+    /// Return runs.
+    public var score: Double
 
-    public init(title: String, detail: String? = nil, symbolName: String, action: PaletteAction) {
+    public init(title: String, detail: String? = nil, symbolName: String, action: PaletteAction, score: Double = 0) {
         self.title = title
         self.detail = detail
         self.symbolName = symbolName
         self.action = action
+        self.score = score
     }
 }
 
@@ -139,6 +144,9 @@ public final class CommandPaletteController {
     /// enough that a sentence typed as a note never drags a style in by a
     /// scattered subsequence; low enough that "h2" still finds Heading 2.
     static let commandMatchFloor = 0.4
+    /// The score the first row needs for Return to run it unasked: a word or
+    /// a prefix of one ("bol" → Bold), never a scattered subsequence ("h2").
+    public static let returnThreshold = 0.8
 
     public weak var delegate: CommandPaletteControllerDelegate?
     public weak var textView: WriterTextView?
@@ -174,8 +182,14 @@ public final class CommandPaletteController {
     public private(set) var results: [NoteHit] = []
     public private(set) var rows: [PaletteRow] = []
 
-    /// The row Return commits.
-    public private(set) var highlightedIndex: Int = 0
+    /// The row Return commits: the first row when its match is strong, or
+    /// the one the arrow keys or a tap chose. nil means Return types a
+    /// newline and closes the palette.
+    public private(set) var highlightedIndex: Int?
+    /// True once the arrows or a tap chose a row, so a later delivery for
+    /// the same query keeps that choice instead of jumping back to the top.
+    private var highlightPinned = false
+    private var pinnedQuery = ""
 
     /// True while a note is shown over the text. The query stays put.
     public private(set) var isPeeking = false
@@ -226,6 +240,11 @@ public final class CommandPaletteController {
             // Deleting the "@" itself: the refresh after the edit sees it gone.
             return true
         }
+        if state.isActive, text == "\n", range.length == 0, !isPeeking, let index = highlightedIndex,
+           index < rows.count {
+            perform(rows[index].action)
+            return false
+        }
         if state.isActive, text.contains("\n") { end() }
         guard state == .idle else { return true }
 
@@ -262,7 +281,8 @@ public final class CommandPaletteController {
     private func arm(marker: Int, markerLength: Int) {
         results = []
         rows = []
-        highlightedIndex = 0
+        highlightedIndex = nil
+        highlightPinned = false
         isPeeking = false
         lastSpace = nil
         self.markerLength = markerLength
@@ -298,6 +318,7 @@ public final class CommandPaletteController {
             end()
             return
         }
+        if highlightPinned, query != pinnedQuery { highlightPinned = false }
         state = query.isEmpty ? .armed(marker: marker) : .querying(marker: marker, query: query)
         scheduleSearch(for: query)
     }
@@ -402,10 +423,10 @@ public final class CommandPaletteController {
         case .thesaurus: return thesaurusRows(for: parsed.argument)
         case .newChapter, nil: break
         }
-        guard !parsed.text.isEmpty else { return PaletteCommand.allCases.map(Self.row(for:)) }
+        guard !parsed.text.isEmpty else { return PaletteCommand.allCases.map { Self.row(for: $0) } }
         let commands = FuzzyMatcher.rank(
             PaletteCommand.allCases, query: parsed.text, minimum: Self.commandMatchFloor
-        ) { [$0.title] }.map { Self.row(for: $0.item) }
+        ) { [$0.title] }.map { Self.row(for: $0.item, score: $0.score) }
         let sample = L10n.string("WriterEditor_formatPreviewSample")
         // Each search word stands alone: joined into one string they made a
         // long haystack that random sentences matched by subsequence.
@@ -414,8 +435,8 @@ public final class CommandPaletteController {
             MarkdownFormatStyle.allCases, query: parsed.text, minimum: Self.commandMatchFloor
         ) { style in
             [Self.name(of: style), style.preview(sample: sample)] + searchWords
-        }.map { Self.row(for: $0.item, sample: sample) }
-        return Array((commands + styles).prefix(Self.commandRowLimit))
+        }.map { Self.row(for: $0.item, sample: sample, score: $0.score) }
+        return Array((commands + styles).sorted { $0.score > $1.score }.prefix(Self.commandRowLimit))
     }
 
     private func symbolRows(for argument: String) -> [PaletteRow] {
@@ -424,18 +445,19 @@ public final class CommandPaletteController {
                 title: L10n.string("WriterEditor_commandSymbolHint"), symbolName: PaletteCommand.symbol.symbolName,
                 action: .none)]
         }
-        let found = symbols.search(argument, limit: Self.symbolRowLimit)
+        let found = symbols.matches(argument, limit: Self.symbolRowLimit)
         guard !found.isEmpty else {
             return [PaletteRow(
                 title: L10n.string("WriterEditor_commandSymbolNoMatch", argument),
                 symbolName: PaletteCommand.symbol.symbolName, action: .none)]
         }
-        return found.map { symbol in
+        return found.map { symbol, score in
             PaletteRow(
                 title: symbol.character + "   " + symbol.name,
                 detail: symbol.aliases.isEmpty ? nil : symbol.aliases.prefix(3).joined(separator: " · "),
                 symbolName: PaletteCommand.symbol.symbolName,
-                action: .insertText(symbol.character))
+                action: .insertText(symbol.character),
+                score: score)
         }
     }
 
@@ -454,23 +476,26 @@ public final class CommandPaletteController {
                 title: L10n.string("WriterEditor_commandThesaurusNoMatch", argument), symbolName: icon,
                 action: .none)]
         }
-        return words.map { PaletteRow(title: $0, symbolName: icon, action: .insertText($0)) }
+        // The writer named the command and the word: every answer is a sure one.
+        return words.map { PaletteRow(title: $0, symbolName: icon, action: .insertText($0), score: 1) }
     }
 
-    static func row(for command: PaletteCommand) -> PaletteRow {
+    static func row(for command: PaletteCommand, score: Double = 0) -> PaletteRow {
         PaletteRow(
             title: command.takesArgument ? command.title + "…" : command.title,
             detail: command.detail,
             symbolName: command.symbolName,
-            action: command.takesArgument ? .completeCommand(command) : .startChapter)
+            action: command.takesArgument ? .completeCommand(command) : .startChapter,
+            score: score)
     }
 
-    static func row(for style: MarkdownFormatStyle, sample: String) -> PaletteRow {
+    static func row(for style: MarkdownFormatStyle, sample: String, score: Double = 0) -> PaletteRow {
         PaletteRow(
             title: name(of: style),
             detail: style.preview(sample: sample).replacingOccurrences(of: "\n", with: " ⏎ "),
             symbolName: "textformat",
-            action: .applyFormat(style))
+            action: .applyFormat(style),
+            score: score)
     }
 
     /// Literal keys, so `strings_sync.py` sees every one referenced.
@@ -507,52 +532,79 @@ public final class CommandPaletteController {
     private func deliver(hits: [NoteHit], for query: String, commandRows: [PaletteRow]? = nil) {
         results = hits
         let parsed = Self.parse(query)
-        var assembled = commandRows ?? (query.isEmpty ? PaletteCommand.allCases.map(Self.row(for:)) : [])
+        var assembled = commandRows ?? (query.isEmpty ? PaletteCommand.allCases.map { Self.row(for: $0) } : [])
         assembled.append(contentsOf: hits.map { hit in
             PaletteRow(
                 title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
                 detail: hit.documentIDs.contains(documentID)
                     ? nil : L10n.string("WriterEditor_paletteNoteFromAnotherSheet"),
                 symbolName: "note.text",
-                action: .peekNote(hit.noteID))
+                action: .peekNote(hit.noteID),
+                score: hit.score)
         })
         if parsed.command == nil {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            // With words typed and nothing else matching them, Return makes
+            // the note (Q5's "Return with no match creates a new note").
             assembled.append(PaletteRow(
                 title: trimmed.isEmpty
                     ? L10n.string("WriterEditor_paletteNewNote")
                     : L10n.string("WriterEditor_paletteNewNoteNamed", trimmed),
                 symbolName: "plus.circle",
-                action: .createNote))
+                action: .createNote,
+                score: assembled.isEmpty && !trimmed.isEmpty ? 1 : 0))
         }
         rows = assembled
-        highlightedIndex = min(highlightedIndex, max(0, rows.count - 1))
+        if highlightPinned, let pinned = highlightedIndex, pinned < rows.count {
+            // The writer's own choice stands for this query.
+        } else {
+            highlightPinned = false
+            highlightedIndex = Self.defaultRow(in: rows)
+        }
         delegate?.commandPalette(self, didUpdate: rows)
+    }
+
+    /// The first row, when its match is sure enough for Return to run it.
+    static func defaultRow(in rows: [PaletteRow]) -> Int? {
+        guard let first = rows.first, first.action != .none, first.score >= returnThreshold else { return nil }
+        return 0
     }
 
     // MARK: - Rows
 
     public var rowCount: Int { rows.count }
 
+    /// Steps the highlight. With none yet, down lands on the first row and
+    /// up on the last.
     public func moveHighlight(by delta: Int) {
         guard state.isActive, rowCount > 0 else { return }
-        let next = highlightedIndex + delta
-        highlightedIndex = min(max(0, next), rowCount - 1)
+        let next: Int
+        if let current = highlightedIndex {
+            next = current + delta
+        } else {
+            next = delta >= 0 ? 0 : rowCount - 1
+        }
+        pin(min(max(0, next), rowCount - 1))
     }
 
     public func highlightRow(_ index: Int) {
         guard index >= 0, index < rowCount else { return }
-        highlightedIndex = index
+        pin(index)
     }
 
-    /// Return: runs the highlighted row.
-    public func commitHighlighted() {
-        guard state.isActive else { return }
-        guard highlightedIndex < rows.count else {
-            createNoteFromQuery()
-            return
-        }
-        perform(rows[highlightedIndex].action)
+    private func pin(_ index: Int) {
+        highlightedIndex = index
+        highlightPinned = true
+        pinnedQuery = state.query
+    }
+
+    /// Return: runs the highlighted row. False when no row is highlighted,
+    /// so the caller lets Return type its newline.
+    @discardableResult
+    public func commitHighlighted() -> Bool {
+        guard state.isActive, let index = highlightedIndex, index < rows.count else { return false }
+        perform(rows[index].action)
+        return true
     }
 
     public func perform(_ action: PaletteAction) {
@@ -695,7 +747,8 @@ public final class CommandPaletteController {
         searchTimer = nil
         results = []
         rows = []
-        highlightedIndex = 0
+        highlightedIndex = nil
+        highlightPinned = false
         lastSpace = nil
         state = .idle
     }
@@ -751,7 +804,8 @@ public final class CommandPaletteController {
         textView.replaceText(in: queryRange, with: text)
         textView.selectedRange = NSRange(location: queryRange.location + (text as NSString).length, length: 0)
         isApplyingOwnEdit = false
-        highlightedIndex = 0
+        highlightedIndex = nil
+        highlightPinned = false
         refresh(textView)
     }
 }

@@ -30,7 +30,7 @@ public final class CommandPaletteOverlayView: UIView {
     private let panel = GlassStyle.focusPanel()
     private let stack = UIStackView()
     private var rows: [PaletteRow] = []
-    private var highlighted = 0
+    private var highlighted: Int?
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -70,7 +70,7 @@ public final class CommandPaletteOverlayView: UIView {
 
     public var rowCount: Int { rows.count }
 
-    public func update(rows: [PaletteRow], highlightedIndex: Int) {
+    public func update(rows: [PaletteRow], highlightedIndex: Int?) {
         if rows != self.rows {
             self.rows = rows
             rebuild()
@@ -78,12 +78,14 @@ public final class CommandPaletteOverlayView: UIView {
         highlight(highlightedIndex)
     }
 
-    public func highlight(_ index: Int) {
+    /// Tints the row Return will run and shows the return arrow on it. nil
+    /// clears both: Return types a newline.
+    public func highlight(_ index: Int?) {
         highlighted = index
         for (position, view) in stack.arrangedSubviews.enumerated() {
-            view.backgroundColor = position == index
-                ? EditorTheme.caret.withAlphaComponent(0.22)
-                : .clear
+            let isHighlighted = position == index
+            view.backgroundColor = isHighlighted ? EditorTheme.caret.withAlphaComponent(0.22) : .clear
+            (view as? PaletteRowView)?.returnIcon.isHidden = !isHighlighted
         }
     }
 
@@ -95,7 +97,8 @@ public final class CommandPaletteOverlayView: UIView {
     }
 
     private func makeRowView(_ row: PaletteRow, index: Int) -> UIView {
-        let button = UIButton(type: .system)
+        let view = PaletteRowView()
+        let button = view.button
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: row.symbolName)
         configuration.imagePadding = 8
@@ -125,7 +128,7 @@ public final class CommandPaletteOverlayView: UIView {
             button.isUserInteractionEnabled = false
             button.alpha = 0.7
         }
-        return button
+        return view
     }
 
     @objc private func rowTapped(_ sender: UIButton) {
@@ -149,4 +152,34 @@ public final class CommandPaletteOverlayView: UIView {
         let left = min(max(16, caret.minX - 8), max(16, container.bounds.width - column - 16))
         frame = CGRect(x: left, y: top, width: column, height: height)
     }
+}
+
+/// One row: the button carries the icon, title and detail; the return arrow
+/// at the trailing edge shows on the row Return runs.
+final class PaletteRowView: UIView {
+    let button = UIButton(type: .system)
+    let returnIcon = UIImageView(image: UIImage(systemName: "return"))
+
+    init() {
+        super.init(frame: .zero)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        returnIcon.translatesAutoresizingMaskIntoConstraints = false
+        returnIcon.tintColor = LunaColors.secondaryText
+        returnIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(textStyle: .footnote)
+        returnIcon.isHidden = true
+        addSubview(button)
+        addSubview(returnIcon)
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: leadingAnchor),
+            button.topAnchor.constraint(equalTo: topAnchor),
+            button.bottomAnchor.constraint(equalTo: bottomAnchor),
+            button.trailingAnchor.constraint(equalTo: returnIcon.leadingAnchor, constant: -4),
+            returnIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            returnIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            returnIcon.widthAnchor.constraint(equalToConstant: 18),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
 }

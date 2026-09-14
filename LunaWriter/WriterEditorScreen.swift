@@ -3,6 +3,7 @@ import LunaWriterEditor
 import LunaWriterLibraryUI
 import LunaWriterModels
 import LunaWriterStorage
+import LunaWriterText
 
 /// The organiser's `DocumentEditing` face over the real `EditorViewController`.
 /// Hosts the editor as its one child and forwards the two delegate events.
@@ -91,6 +92,10 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     func editorDidRequestChromeToggle(_ editor: EditorViewController) {
         editingDelegate?.editorDidRequestChromeToggle(self)
     }
+
+    func editor(_ editor: EditorViewController, didStartChapter chapter: WriterDocument) {
+        editingDelegate?.editor(self, requestsOpening: chapter)
+    }
 }
 
 /// Builds one `WriterEditorScreen` per opened sheet and keeps the session in
@@ -99,17 +104,22 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
     private let storage: WriterStorageStack
     private let registry: OpenSessionRegistry
     private let aiAssistant: AIWritingAssisting?
+    private let chapters: ChapterOrganizer
+    /// One embedding load for every sheet opened in this process.
+    private let thesaurus = EmbeddingThesaurus()
 
     init(storage: WriterStorageStack, registry: OpenSessionRegistry, aiAssistant: AIWritingAssisting?) {
         self.storage = storage
         self.registry = registry
         self.aiAssistant = aiAssistant
+        self.chapters = ChapterOrganizer(library: storage.library, textStore: storage.textStore)
     }
 
     func makeEditor(for document: WriterDocument) -> UIViewController & DocumentEditing {
         let environment = EditorEnvironment(
             noteIndex: storage.noteIndex, noteStore: storage.library,
-            marksStore: storage.library, settings: storage.settings, aiAssistant: aiAssistant)
+            marksStore: storage.library, settings: storage.settings, aiAssistant: aiAssistant,
+            chapters: chapters, thesaurus: thesaurus)
         do {
             let session = try DocumentSession(
                 document: document, textStore: storage.textStore, marksStore: storage.library,

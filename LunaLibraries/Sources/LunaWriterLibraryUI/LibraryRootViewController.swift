@@ -180,6 +180,7 @@ public final class LibraryRootViewController: UISplitViewController {
         }
         let container = EditorContainerViewController(environment: environment, document: document)
         container.editingStateObserver = self
+        container.documentOpener = self
         container.restoreEditingState(
             EditorEditingState(
                 caretLocation: snapshot.caretLocation ?? 0,
@@ -388,6 +389,7 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
         currentContainer?.editor.flushPendingSave()
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
         editorContainer.editingStateObserver = self
+        editorContainer.documentOpener = self
         currentContainer = editorContainer
         // A sheet opened before the first layout is the page to come back
         // to, so the restore pass has nothing left to do.
@@ -410,6 +412,12 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
             setViewController(editorContainer, for: .secondary)
             show(.secondary)
         }
+    }
+}
+
+extension LibraryRootViewController: DocumentOpening {
+    public func openDocument(_ document: WriterDocument) {
+        show(document: document)
     }
 }
 

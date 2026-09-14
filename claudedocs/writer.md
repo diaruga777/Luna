@@ -19,7 +19,7 @@ intents' "Document" parameter). Keep new strings on the user's word.
 | storage | `LunaWriterStorage` | `writer.sqlite` (FTS5 for notes and sheets, embeddings, marks, snapshots), the `.md` file layout with folder watcher and reconciler, the note index and router, settings, intent services |
 | voice | `LunaWriterVoice` | on-device transcription (`SFSpeechRecognizer` on iOS 18, `SpeechAnalyzer` on iOS 26), energy VAD, utterance segmentation, gazeread's command classifier |
 | gaze | `LunaGaze` | the ARKit tracker shared with the Reader's RSVP, plus filters, gate, affine calibration with pursuit sweeps, and the pure `ReadingTracker` |
-| editor | `LunaWriterEditor` | TextKit 2 editor: layout attributes in `MarkdownTextStorage`, rendering attributes composed per viewport from ordered layers (markup, syntax, authorship, focus, annotation, reading), Focus mode, Authorship, the "@" mention overlay, `DocumentSession` |
+| editor | `LunaWriterEditor` | TextKit 2 editor: layout attributes in `MarkdownTextStorage`, rendering attributes composed per viewport from ordered layers (markup, syntax, authorship, focus, annotation, reading), Focus mode, Authorship, the command palette, `DocumentSession` |
 | read-along | `LunaWriterReadAlong` | gaze + voice over an open sheet: coordinator, calibration screens, HUD, band/annotation layers |
 | organiser | `LunaWriterLibraryUI` | triple-column split view: groups sidebar, sheets list, editor container; notes panel; keyword/goal/snapshot editors; export; settings |
 | app | `LunaWriter/` | `WriterWiring` (composition root), the App Intents, deep links |
@@ -54,15 +54,55 @@ Anchors (`TextAnchor`) carry offsets plus the quoted text and 32 characters of
 context, so annotations and notes survive edits and external rewrites;
 `TextAnchorResolver` tries exact, nearby quote, unique quote, then fuzzy.
 
-## Notes and "@"
+## Notes and the command palette
 
 Notes belong to sheets through `note_documents`; one note may sit on several.
 `SQLiteNoteIndex` ranks with Pen's fusion (0.75 cosine over `NLEmbedding`
 sentence vectors + 0.25 bm25 through a logistic), and prefix-matches the last
-token for the "@" overlay. Typing `@` at a word boundary arms
-`MentionController`; the query is the text after the marker; the overlay peeks
-a note (never inserts it) or creates one from the query. `RelatedNotesRanker`
-watches the 400 characters before the caret and feeds the related-note strip.
+token for the palette. `RelatedNotesRanker` watches the 400 characters before
+the caret and feeds the related-note strip.
+
+The palette (`CommandPaletteController` + `CommandPaletteOverlayView`, in
+`LunaWriterEditor/CommandPalette/`) is one inline surface for notes and
+commands. **Trigger** is a setting, `WriterSettings.paletteTrigger`
+(Settings → Editor → Command Palette): the default `.doubleSpace` opens on two
+spaces typed within `CommandPaletteController.doubleSpaceInterval` (0.3 s) —
+the second space is swallowed, the palette anchors after the first, and iOS's
+own ". " shortcut for the same double space is refused; a slower pair is a
+sentence's double space and stays text. `.atSign` opens on an "@" typed at a
+word boundary and keeps the "@" as a visible marker (`markerLength` 1 vs 0).
+Either way the query is typed straight into the sheet after the marker, six
+words at most, on one line. Backspace on an empty palette closes it and
+deletes nothing. Every row acts on the query and only the query: a note row
+peeks (never inserts, Q5); the last row makes a note; a symbol or thesaurus
+row replaces the query with its word; a formatting row types the style's
+marks and puts the caret between them; "new chapter" cuts the text after the
+caret into the next chapter's sheet. Rows come from `FuzzyMatcher` over the
+command and style names plus the FTS note search, and a command word followed
+by a space (`symbol …`, `thesaurus …`) switches the rows to that command's
+results alone, with no note row.
+
+| Command | Source | Row action |
+| --- | --- | --- |
+| `symbol <name>` | `SymbolCatalog` (LunaWriterText): fixed Unicode ranges — punctuation, Greek, arrows, maths, currency, shapes, key glyphs — named from `Unicode.Scalar.Properties.name` plus a hand alias table (`emdash`, `epsilon`, `->`) | insert the character |
+| `thesaurus <word>` | `WordThesaurus` seam; `EmbeddingThesaurus` wraps the on-device `NLEmbedding.wordEmbedding(for: .english)` neighbours, dropping inflections of the word itself and matching its case. No network, no bundled dictionary; where the OS asset is absent the row says so | insert the word |
+| formatting (`bold`, `h2`, `quote`, `code block`, `format` …) | `MarkdownFormatStyle` (LunaWriterText): 22 styles with prefix/suffix and a placement — inline pairs open empty with the caret inside, line styles mark the caret's paragraph (replacing a list or quote marker already there; headings through `setHeading`), block styles stand on their own lines | apply the edits through the text view's undo manager |
+| `new chapter` | `ChapterOrganizing` seam (`EditorEnvironment.chapters`); `ChapterOrganizer` (LunaWriterStorage) | see below |
+
+**Chapters.** A project is a `WriterGroup` of kind `.project` (icon
+`book.closed`); its sheets are the chapters, in manual order. The first "new
+chapter" on a plain sheet creates the project — named after the sheet, inside
+the sheet's folder or at the top level for an Inbox sheet — and moves the
+sheet in as chapter one; every later one inserts a sheet right after the
+current chapter. The editor cuts everything after the caret, saves, and hands
+the text over; the new sheet gets a `# Chapter N` heading unless the moved text
+opens with a heading of its own. The new sheet then opens through
+`EditorViewControllerDelegate.editor(_:didStartChapter:)` →
+`DocumentEditingDelegate.editor(_:requestsOpening:)` →
+`EditorContainerViewController.documentOpener` (`DocumentOpening`, the root).
+`WriterGroup.Kind.isEditable` is what the sidebar, the group SQL and the
+renumbering treat as "a folder the writer owns"; an older build reads the
+unknown raw value as `.user`.
 
 `AddWriterNoteIntent` files a note the way Pen's server does: an explicit
 "new document:" prefix creates a sheet; otherwise every sheet scoring ≥ 0.45
@@ -224,7 +264,7 @@ what changed:
 
 Verified working and left alone: New Document from the sidebar and the list,
 heading/list/emphasis/code rendering, the notes panel save path and its
-count badge, "@" lookup and note creation, snapshots on close, export to the
+count badge, the palette's note lookup and creation, snapshots on close, export to the
 share sheet, Move, Keywords, Goal, group rename and context menus, Trash and
 Restore, the two- and three-column iPad layouts with the side notes panel.
 Read-along cannot run on a simulator (no TrueDepth camera, no on-device
@@ -406,7 +446,8 @@ xcodebuild test -scheme LunaWriter -destination "platform=iOS Simulator,id=$SIM"
 same ten static products the app links, so a suite reaches
 `LunaWriterText`/`Storage`/`Voice`/`Editor`/`ReadAlong`/`LibraryUI` while the
 central `Luna.app` links none of them. The suites are `Writer*`, `Note*`,
-`Library*`, `Voice*`, `Utterance*`, `EnergyVAD*`, `CommandPalette*`, `Rendering*`,
+`Library*`, `Voice*`, `Utterance*`, `EnergyVAD*`, `CommandPalette*`, `FuzzyMatcher*`,
+`SymbolCatalog*`, `MarkdownFormatStyle*`, `WordThesaurus*`, `ChapterOrganizer*`, `Rendering*`,
 `Focus*`, `SentenceGeometry*`, `SentenceEmbedding*`, `Groups*`, `Sheets*`,
 `Snapshots*`, `Editor*`, `LineTable*`, `MarkdownTextStorage*`, `LRUCache*`,
 `SyntaxColourLayer*`, `Speech*`, `GoalProgress*`, `SessionTrace*`, `MacSeam*`,

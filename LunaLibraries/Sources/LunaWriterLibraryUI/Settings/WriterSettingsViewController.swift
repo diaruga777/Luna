@@ -12,7 +12,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
     private enum Section: Int, CaseIterable { case editor, readAlong, library, appearance, about }
 
     private enum EditorRow: Int, CaseIterable {
-        case font, fontSize, lineWidth, focusMode, syntaxColouring, typewriter, authorship
+        case font, fontSize, lineWidth, focusMode, syntaxColouring, typewriter, authorship, palette
     }
 
     private enum ReadAlongRow { case gaze, voice, calibrate }
@@ -176,7 +176,31 @@ public final class WriterSettingsViewController: NavHeaderTableController {
                 title: L10n.string("WriterLibrary_settings_authorshipRow"),
                 isOn: environment.settings.showAuthorship
             ) { [weak self] isOn in self?.environment.settings.showAuthorship = isOn }
+        case .palette:
+            return menuCell(
+                title: L10n.string("WriterLibrary_settings_paletteRow"),
+                value: paletteTriggerDisplayName(environment.settings.paletteTrigger),
+                menu: paletteTriggerMenu())
         }
+    }
+
+    private func paletteTriggerDisplayName(_ value: PaletteTrigger) -> String {
+        switch value {
+        case .doubleSpace: return L10n.string("WriterLibrary_settings_paletteDoubleSpace")
+        case .atSign: return L10n.string("WriterLibrary_settings_paletteAtSign")
+        }
+    }
+
+    private func paletteTriggerMenu() -> UIMenu {
+        UIMenu(children: PaletteTrigger.allCases.map { value in
+            UIAction(
+                title: paletteTriggerDisplayName(value),
+                state: value == environment.settings.paletteTrigger ? .on : .off
+            ) { [weak self] _ in
+                self?.environment.settings.paletteTrigger = value
+                self?.tableView.reloadData()
+            }
+        })
     }
 
     private func lineWidthDisplayName(_ value: EditorLineWidth) -> String {

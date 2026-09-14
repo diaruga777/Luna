@@ -5,6 +5,7 @@
 
 import UIKit
 import LunaWriterStorage
+import LunaWriterText
 
 /// The witnesses one editor needs, gathered in one value so the organiser
 /// hands them over in a single argument.
@@ -16,18 +17,28 @@ public struct EditorEnvironment {
     public var settings: WriterSettings
     /// nil where no on-device model exists, which is most devices.
     public var aiAssistant: AIWritingAssisting?
+    /// Splits a sheet into chapters for the palette's "new chapter". nil
+    /// leaves the command with nothing to do.
+    public var chapters: ChapterOrganizing?
+    /// Answers the palette's "thesaurus". nil shows the command as unavailable.
+    public var thesaurus: WordThesaurus?
+
     public init(
         noteIndex: NoteIndexing,
         noteStore: NoteStoring,
         marksStore: DocumentMarksStoring,
         settings: WriterSettings,
-        aiAssistant: AIWritingAssisting? = nil
+        aiAssistant: AIWritingAssisting? = nil,
+        chapters: ChapterOrganizing? = nil,
+        thesaurus: WordThesaurus? = nil
     ) {
         self.noteIndex = noteIndex
         self.noteStore = noteStore
         self.marksStore = marksStore
         self.settings = settings
         self.aiAssistant = aiAssistant
+        self.chapters = chapters
+        self.thesaurus = thesaurus
     }
 }
 

@@ -6,6 +6,7 @@
 import UIKit
 import XCTest
 @testable import LunaWriterLibraryUI
+import LunaModels
 import LunaWriterModels
 import LunaWriterStorage
 
@@ -16,6 +17,23 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         static let lineWidth = 2
         static let focusMode = 3
         static let syntaxColouring = 4
+        static let palette = 7
+    }
+
+    @MainActor
+    func testTheCommandPaletteRowShowsTheTriggerFromSettingsAsAMenu() throws {
+        let stack = try makeWriterStack()
+        let environment = makeLibraryEnvironment(stack: stack)
+        environment.settings.paletteTrigger = .atSign
+        let controller = WriterSettingsViewController(environment: environment)
+        layoutWriterScreen(controller)
+
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 0), 8)
+        let cell = controller.tableView(
+            controller.tableView, cellForRowAt: IndexPath(row: EditorRowIndex.palette, section: 0))
+        let button = try XCTUnwrap(cell.accessoryView as? UIButton)
+        XCTAssertEqual(button.configuration?.title, L10n.string("WriterLibrary_settings_paletteAtSign"))
+        XCTAssertEqual(button.menu?.children.count, PaletteTrigger.allCases.count)
     }
 
     @MainActor

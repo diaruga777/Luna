@@ -54,6 +54,8 @@ public final class EditorContainerViewController: UIViewController {
     /// Told where the caret rests in this sheet, so the root can record the
     /// page for the next launch.
     public weak var editingStateObserver: EditorEditingStateObserving?
+    /// Opens the sheet a "new chapter" made. The root installs itself.
+    public weak var documentOpener: DocumentOpening?
 
     /// The header's current title — for tests, which cannot see `header`.
     var headerTitleForTesting: String? { header.title }
@@ -532,6 +534,10 @@ extension EditorContainerViewController: DocumentEditingDelegate {
 
     public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {
         setChromeHidden(!isChromeHidden, animated: true)
+    }
+
+    public func editor(_ editor: DocumentEditing, requestsOpening document: WriterDocument) {
+        documentOpener?.openDocument(document)
     }
 }
 

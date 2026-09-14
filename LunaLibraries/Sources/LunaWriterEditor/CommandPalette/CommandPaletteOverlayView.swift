@@ -8,27 +8,12 @@ import LunaDesignSystem
 import LunaModels
 import LunaWriterModels
 
-/// One row of the "@" overlay.
-public struct PaletteRow: Equatable {
-    public var noteID: NoteID?
-    public var title: String
-    public var detail: String?
-    public var symbolName: String
-
-    public init(noteID: NoteID?, title: String, detail: String? = nil, symbolName: String) {
-        self.noteID = noteID
-        self.title = title
-        self.detail = detail
-        self.symbolName = symbolName
-    }
-}
-
 public protocol CommandPaletteOverlayViewDelegate: AnyObject {
     func paletteOverlay(_ overlay: CommandPaletteOverlayView, didSelectRowAt index: Int)
     func paletteOverlayDidRequestDismiss(_ overlay: CommandPaletteOverlayView)
 }
 
-/// The panel that appears under the "@".
+/// The panel that appears under the palette's marker.
 ///
 /// It never becomes first responder: the writer keeps typing into the sheet
 /// while it is up, and every key it handles arrives through the editor's own
@@ -136,6 +121,10 @@ public final class CommandPaletteOverlayView: UIView {
         button.tag = index
         button.addTarget(self, action: #selector(rowTapped(_:)), for: .touchUpInside)
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.rowHeight).isActive = true
+        if row.action == .none {
+            button.isUserInteractionEnabled = false
+            button.alpha = 0.7
+        }
         return button
     }
 
@@ -145,7 +134,7 @@ public final class CommandPaletteOverlayView: UIView {
 
     // MARK: - Placement
 
-    /// Puts the panel under the "@", or above it when the keyboard would
+    /// Puts the panel under the marker, or above it when the keyboard would
     /// cover it. `caret` and `keyboard` are in `container` coordinates.
     public func place(anchoredTo caret: CGRect, in container: UIView, keyboardTop: CGFloat) {
         let column = min(Self.maximumWidth, container.bounds.width - 32)

@@ -46,12 +46,22 @@ public protocol DocumentEditingDelegate: AnyObject {
     func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool)
     /// A double tap on blank space: flip whatever the chrome is doing now.
     func editorDidRequestChromeToggle(_ editor: DocumentEditing)
+    /// The editor made another sheet the writer should now be in — the
+    /// next chapter — and asks its host to open it.
+    func editor(_ editor: DocumentEditing, requestsOpening document: WriterDocument)
 }
 
 extension DocumentEditingDelegate {
     public func editor(_ editor: DocumentEditing, didChangeEditingState state: EditorEditingState) {}
     public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {}
     public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {}
+    public func editor(_ editor: DocumentEditing, requestsOpening document: WriterDocument) {}
+}
+
+/// Opens a sheet in the editor column. The root implements it; an editor
+/// container asks it when its editor made a new chapter.
+public protocol DocumentOpening: AnyObject {
+    func openDocument(_ document: WriterDocument)
 }
 
 /// Builds the concrete editor screen for a sheet. One production witness in

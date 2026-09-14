@@ -21,12 +21,16 @@ public protocol EditorViewControllerDelegate: AnyObject {
     func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool)
     /// A double tap landed on blank space: flip the chrome's state.
     func editorDidRequestChromeToggle(_ editor: EditorViewController)
+    /// The palette's "new chapter" cut the text after the caret into
+    /// `chapter`, a new sheet in this sheet's project; open it.
+    func editor(_ editor: EditorViewController, didStartChapter chapter: WriterDocument)
 }
 
 extension EditorViewControllerDelegate {
     public func editorDidChangeEditingState(_ editor: EditorViewController, state: EditorEditingState) {}
     public func editor(_ editor: EditorViewController, wantsChromeHidden hidden: Bool) {}
     public func editorDidRequestChromeToggle(_ editor: EditorViewController) {}
+    public func editor(_ editor: EditorViewController, didStartChapter chapter: WriterDocument) {}
 }
 
 /// Told when the text re-wraps or the page scrolls, so anything drawing
@@ -76,7 +80,8 @@ public final class EditorViewController: UIViewController {
         metrics = EditorMetrics(settings: environment.settings)
         palette = CommandPaletteController(
             noteIndex: environment.noteIndex, noteStore: environment.noteStore,
-            documentID: session.document.id)
+            documentID: session.document.id, thesaurus: environment.thesaurus)
+        palette.trigger = environment.settings.paletteTrigger
         related = RelatedNotesRanker(
             noteIndex: environment.noteIndex, documentID: session.document.id)
         focus = FocusModeController(
@@ -423,6 +428,7 @@ public final class EditorViewController: UIViewController {
         }
         syntaxLayer.isEnabled = settings.syntaxColouring
         authorshipLayer.isEnabled = settings.showAuthorship
+        palette.trigger = settings.paletteTrigger
         seedTypingAttributesIfEmpty()
     }
 
@@ -484,7 +490,7 @@ public final class EditorViewController: UIViewController {
             overlay.isHidden = true
             return
         }
-        overlay.update(rows: paletteRows(), highlightedIndex: palette.highlightedIndex)
+        overlay.update(rows: palette.rows, highlightedIndex: palette.highlightedIndex)
         overlay.isHidden = false
         placeOverlay()
     }
@@ -493,27 +499,6 @@ public final class EditorViewController: UIViewController {
         let caret = view.convert(palette.markerRect(), from: textView)
         let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
-    }
-
-    /// Reads only `NoteHit` itself — no store read per row, per keystroke,
-    /// while the overlay is up.
-    private func paletteRows() -> [PaletteRow] {
-        var rows = palette.results.map { hit -> PaletteRow in
-            let elsewhere = !hit.documentIDs.contains(session.document.id)
-            return PaletteRow(
-                noteID: hit.noteID,
-                title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
-                detail: elsewhere ? L10n.string("WriterEditor_paletteNoteFromAnotherSheet") : nil,
-                symbolName: "note.text")
-        }
-        let query = palette.state.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        rows.append(PaletteRow(
-            noteID: nil,
-            title: query.isEmpty
-                ? L10n.string("WriterEditor_paletteNewNote")
-                : L10n.string("WriterEditor_paletteNewNoteNamed", query),
-            symbolName: "plus.circle"))
-        return rows
     }
 
     // MARK: - Key commands
@@ -858,8 +843,27 @@ extension EditorViewController: CommandPaletteControllerDelegate {
         updateOverlay()
     }
 
-    public func commandPalette(_ controller: CommandPaletteController, didUpdate results: [NoteHit], query: String) {
+    public func commandPalette(_ controller: CommandPaletteController, didUpdate rows: [PaletteRow]) {
         updateOverlay()
+    }
+
+    /// Cuts everything after the caret out of this sheet and hands it to the
+    /// chapter organizer, which makes the next chapter's sheet from it. The
+    /// cut is an ordinary edit here, so it saves and undoes like typing; the
+    /// save runs first so the file on disk matches before the new sheet is
+    /// written beside it.
+    public func commandPaletteDidRequestNewChapter(_ controller: CommandPaletteController) {
+        guard let chapters = environment.chapters else { return }
+        let text = session.storage.nsText
+        let caret = min(max(0, textView.selectedRange.location), text.length)
+        let tail = text.substring(from: caret)
+        if caret < text.length {
+            textView.replaceText(in: NSRange(location: caret, length: text.length - caret), with: "")
+            textView.selectedRange = NSRange(location: caret, length: 0)
+        }
+        session.saveNow()
+        guard let chapter = try? chapters.startNewChapter(after: session.document, text: tail) else { return }
+        delegate?.editor(self, didStartChapter: chapter)
     }
 
     public func commandPalette(_ controller: CommandPaletteController, didRequestPeek note: WriterNote) {

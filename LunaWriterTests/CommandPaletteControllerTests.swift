@@ -6,8 +6,10 @@
 import XCTest
 import UIKit
 @testable import LunaWriterEditor
+import LunaModels
 import LunaWriterModels
 import LunaWriterStorage
+import LunaWriterText
 
 /// Answers whatever the test scripted, and remembers what was asked.
 private final class FakeNoteIndex: NoteIndexing {
@@ -46,18 +48,29 @@ private final class FakeNoteStore: NoteStoring {
     func detach(_ id: NoteID, from document: DocumentID) throws {}
 }
 
+private final class ScriptedThesaurus: WordThesaurus {
+    var isAvailable = true
+    var answers: [String: [String]] = [:]
+    var asked: [String] = []
+    func synonyms(for word: String, limit: Int) -> [String] {
+        asked.append(word)
+        return Array((answers[word] ?? []).prefix(limit))
+    }
+}
+
 private final class PaletteRecorder: CommandPaletteControllerDelegate {
     var states: [PaletteState] = []
-    var results: [[NoteHit]] = []
+    var rowUpdates: [[PaletteRow]] = []
     var peeked: [WriterNote] = []
     var created: [WriterNote] = []
+    var chapterRequests = 0
     var ended = 0
 
     func commandPalette(_ controller: CommandPaletteController, didChange state: PaletteState) {
         states.append(state)
     }
-    func commandPalette(_ controller: CommandPaletteController, didUpdate results: [NoteHit], query: String) {
-        self.results.append(results)
+    func commandPalette(_ controller: CommandPaletteController, didUpdate rows: [PaletteRow]) {
+        rowUpdates.append(rows)
     }
     func commandPalette(_ controller: CommandPaletteController, didRequestPeek note: WriterNote) {
         peeked.append(note)
@@ -65,6 +78,7 @@ private final class PaletteRecorder: CommandPaletteControllerDelegate {
     func commandPalette(_ controller: CommandPaletteController, didCreate note: WriterNote, from markerRect: CGRect) {
         created.append(note)
     }
+    func commandPaletteDidRequestNewChapter(_ controller: CommandPaletteController) { chapterRequests += 1 }
     func commandPaletteDidEnd(_ controller: CommandPaletteController) { ended += 1 }
 }
 
@@ -73,9 +87,12 @@ final class CommandPaletteControllerTests: XCTestCase {
     private var textView: WriterTextView!
     private var index: FakeNoteIndex!
     private var store: FakeNoteStore!
+    private var thesaurus: ScriptedThesaurus!
     private var recorder: PaletteRecorder!
     private var controller: CommandPaletteController!
     private let documentID = DocumentID()
+    /// The clock the double-space trigger reads. Tests move it by hand.
+    private var clock: TimeInterval = 1000
 
     override func setUp() {
         super.setUp()
@@ -84,11 +101,19 @@ final class CommandPaletteControllerTests: XCTestCase {
         textView.frame = CGRect(x: 0, y: 0, width: 375, height: 600)
         index = FakeNoteIndex()
         store = FakeNoteStore()
+        thesaurus = ScriptedThesaurus()
         recorder = PaletteRecorder()
-        controller = CommandPaletteController(
-            noteIndex: index, noteStore: store, documentID: documentID, debounce: 0.01)
+        controller = makeController(thesaurus: thesaurus)
+    }
+
+    private func makeController(thesaurus: WordThesaurus?) -> CommandPaletteController {
+        let controller = CommandPaletteController(
+            noteIndex: index, noteStore: store, documentID: documentID, thesaurus: thesaurus,
+            debounce: 0.01, now: { [unowned self] in self.clock })
+        controller.trigger = .atSign
         controller.textView = textView
         controller.delegate = recorder
+        return controller
     }
 
     override func tearDown() {
@@ -108,6 +133,13 @@ final class CommandPaletteControllerTests: XCTestCase {
             controller.textViewDidChange(textView)
             controller.textViewDidChangeSelection(textView)
         }
+    }
+
+    /// A space, then another one `after` seconds later.
+    private func typeDoubleSpace(after interval: TimeInterval) {
+        type(" ")
+        clock += interval
+        type(" ")
     }
 
     private func moveCaret(to location: Int) {
@@ -132,12 +164,15 @@ final class CommandPaletteControllerTests: XCTestCase {
         return (note, NoteHit(noteID: note.id, score: 0.9, snippet: text))
     }
 
-    // MARK: - Arming
+    private var actions: [PaletteAction] { controller.rows.map(\.action) }
+
+    // MARK: - Arming with "@"
 
     func testAtTheStartOfTheSheetArmsAndKeepsTheCharacter() throws {
         type("@")
         XCTAssertEqual(textView.text, "@")
         XCTAssertEqual(controller.state, .armed(marker: 0))
+        XCTAssertEqual(controller.markerLength, 1)
     }
 
     func testAfterASpaceArms() throws {
@@ -154,6 +189,90 @@ final class CommandPaletteControllerTests: XCTestCase {
     func testAfterPunctuationArms() throws {
         type("(@")
         XCTAssertEqual(controller.state.marker, 1)
+    }
+
+    func testAnAtSignDoesNothingWhenDoubleSpaceIsTheTrigger() throws {
+        controller.trigger = .doubleSpace
+        type("hello @")
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(textView.text, "hello @")
+    }
+
+    // MARK: - Arming with a double space
+
+    func testAFastDoubleSpaceOpensAfterTheFirstSpaceAndSwallowsTheSecond() throws {
+        controller.trigger = .doubleSpace
+        type("hello")
+        typeDoubleSpace(after: 0.1)
+        XCTAssertEqual(textView.text, "hello ", "the second space is not typed")
+        XCTAssertEqual(controller.state, .armed(marker: 6))
+        XCTAssertEqual(controller.markerLength, 0)
+    }
+
+    func testASlowDoubleSpaceStaysText() throws {
+        controller.trigger = .doubleSpace
+        type("hello")
+        typeDoubleSpace(after: CommandPaletteController.doubleSpaceInterval + 0.5)
+        XCTAssertEqual(textView.text, "hello  ")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testAKeystrokeBetweenTheTwoSpacesResetsTheClock() throws {
+        controller.trigger = .doubleSpace
+        type("a b")
+        clock += 0.05
+        type(" ")
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(textView.text, "a b ")
+    }
+
+    func testTheSystemPeriodShortcutIsRefusedWhenItIsAFastDoubleSpace() throws {
+        controller.trigger = .doubleSpace
+        type("hello ")
+        clock += 0.1
+        let allowed = controller.textView(
+            textView, shouldChangeTextIn: NSRange(location: 5, length: 1), replacementText: ". ")
+        XCTAssertFalse(allowed, "no period is typed")
+        XCTAssertEqual(controller.state, .armed(marker: 6))
+    }
+
+    func testADoubleSpaceDoesNothingWhenTheAtSignIsTheTrigger() throws {
+        type("hello")
+        typeDoubleSpace(after: 0.1)
+        XCTAssertEqual(textView.text, "hello  ")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testTypingAfterADoubleSpaceIsTheQuery() throws {
+        controller.trigger = .doubleSpace
+        type("hello")
+        typeDoubleSpace(after: 0.1)
+        type("sym")
+        XCTAssertEqual(controller.state, .querying(marker: 6, query: "sym"))
+        XCTAssertEqual(textView.text, "hello sym")
+    }
+
+    func testBackspaceOnAnEmptyDoubleSpacePaletteClosesItAndDeletesNothing() throws {
+        controller.trigger = .doubleSpace
+        type("hello")
+        typeDoubleSpace(after: 0.1)
+        let allowed = controller.textView(
+            textView, shouldChangeTextIn: NSRange(location: 5, length: 1), replacementText: "")
+        XCTAssertFalse(allowed)
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(textView.text, "hello ")
+        XCTAssertEqual(recorder.ended, 1)
+    }
+
+    func testBackspaceOnTheAtSignIsAllowedAndEndsThePalette() throws {
+        type("@")
+        let allowed = controller.textView(
+            textView, shouldChangeTextIn: NSRange(location: 0, length: 1), replacementText: "")
+        XCTAssertTrue(allowed, "the @ itself is deleted like any character")
+        textView.textStorage.replaceCharacters(in: NSRange(location: 0, length: 1), with: "")
+        textView.selectedRange = NSRange(location: 0, length: 0)
+        controller.textViewDidChange(textView)
+        XCTAssertEqual(controller.state, .idle)
     }
 
     // MARK: - Query tracking
@@ -196,7 +315,7 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(textView.text, "@one two three four five six seven")
     }
 
-    func testADoubleSpaceEndsIt() throws {
+    func testADoubleSpaceInsideTheQueryEndsIt() throws {
         type("@note ")
         XCTAssertTrue(controller.state.isActive)
         type(" ")
@@ -218,7 +337,7 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(textView.text, "@note")
     }
 
-    // MARK: - Searching
+    // MARK: - Searching notes
 
     func testTheQueryIsSearchedInThisSheetFirstWithAPrefixOnTheLastToken() throws {
         let (_, hit) = makeHit("octopus tank")
@@ -233,12 +352,19 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertTrue(index.queries.contains { $0.scope == .all })
     }
 
-    func testTheRowsAreTheResultsPlusTheNewNoteRow() throws {
+    func testTheRowsAreTheNoteHitsPlusTheNewNoteRow() throws {
         let (_, hit) = makeHit("octopus tank")
         index.answers = [hit]
         type("@octo")
         waitUntil { self.controller.rowCount == 2 }
-        XCTAssertEqual(controller.rowCount, 2)
+        XCTAssertEqual(actions, [.peekNote(hit.noteID), .createNote])
+    }
+
+    func testAnEmptyPaletteListsTheCommandsThenNewNote() throws {
+        type("@")
+        XCTAssertEqual(actions, [
+            .completeCommand(.symbol), .completeCommand(.thesaurus), .startChapter, .createNote,
+        ])
     }
 
     // MARK: - Peek
@@ -291,7 +417,7 @@ final class CommandPaletteControllerTests: XCTestCase {
 
     func testReturnWithNoResultsMakesANoteFromTheQuery() throws {
         type("draft @a new idea")
-        waitUntil { self.recorder.results.count > 0 }
+        waitUntil { self.actions == [.createNote] }
         controller.commitHighlighted()
         // The store write runs off the keystroke's own thread now.
         waitUntil { self.recorder.created.count > 0 }
@@ -313,7 +439,7 @@ final class CommandPaletteControllerTests: XCTestCase {
         let (_, hit) = makeHit("octopus tank")
         index.answers = [hit]
         type("@octo")
-        waitUntil { !self.controller.results.isEmpty }
+        waitUntil { self.controller.rowCount == 2 }
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, 1)
         controller.commitHighlighted()
@@ -322,8 +448,9 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(recorder.peeked.count, 0)
     }
 
-    func testAnEmptyQueryMakesNothing() throws {
+    func testNewNoteWithAnEmptyQueryMakesNothing() throws {
         type("@")
+        controller.highlightRow(controller.rowCount - 1)
         controller.commitHighlighted()
         XCTAssertTrue(store.inserted.isEmpty)
         XCTAssertEqual(controller.state, .idle)
@@ -336,5 +463,96 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(controller.highlightedIndex, 0)
         controller.moveHighlight(by: 9)
         XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1)
+    }
+
+    // MARK: - Commands
+
+    func testTypingACommandWordListsItFirstAndCommittingCompletesIt() throws {
+        type("@sym")
+        waitUntil { self.actions.first == .completeCommand(.symbol) }
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "@symbol ")
+        XCTAssertEqual(controller.state, .querying(marker: 0, query: "symbol "))
+        waitUntil { self.actions == [.none] }
+        XCTAssertFalse(actions.contains(.createNote), "a command's argument is never a note")
+    }
+
+    func testASymbolArgumentListsMatchesAndCommittingInsertsTheCharacter() throws {
+        type("@symbol emd")
+        waitUntil { self.actions.contains(.insertText("—")) }
+        XCTAssertFalse(actions.contains(.createNote))
+        controller.highlightRow(try XCTUnwrap(actions.firstIndex(of: .insertText("—"))))
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "—", "the @ and the query go with the insertion")
+        XCTAssertEqual(textView.selectedRange, NSRange(location: 1, length: 0))
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testASymbolInsertedFromADoubleSpacePaletteFollowsTheFirstSpace() throws {
+        controller.trigger = .doubleSpace
+        type("hello")
+        typeDoubleSpace(after: 0.1)
+        type("symbol emdash")
+        waitUntil { self.actions.first == .insertText("—") }
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "hello —")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testAnUnknownSymbolShowsOneMessageRow() throws {
+        type("@symbol zzqxv")
+        waitUntil { self.actions == [.none] }
+    }
+
+    func testThesaurusAsksTheLookupAndInsertsTheChosenWord() throws {
+        thesaurus.answers["happy"] = ["glad", "cheerful", "joyful"]
+        type("@thesaurus happy")
+        waitUntil { self.actions.count == 3 }
+        XCTAssertEqual(thesaurus.asked.last, "happy")
+        XCTAssertEqual(controller.rows.map(\.title), ["glad", "cheerful", "joyful"])
+        controller.moveHighlight(by: 1)
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "cheerful")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testThesaurusWithoutALookupShowsItIsUnavailable() throws {
+        controller = makeController(thesaurus: nil)
+        type("@thesaurus happy")
+        waitUntil { self.actions == [.none] }
+        XCTAssertEqual(controller.rows.first?.title, L10n.string("WriterEditor_commandThesaurusUnavailable"))
+    }
+
+    func testAFormattingRowTypesTheMarksAndPutsTheCaretBetween() throws {
+        type("hello @bold")
+        waitUntil { self.actions.first == .applyFormat(.bold) }
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "hello ****")
+        XCTAssertEqual(textView.selectedRange, NSRange(location: 8, length: 0))
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testAHeadingRowMarksTheCaretsParagraph() throws {
+        type("Title @h2")
+        waitUntil { self.actions.first == .applyFormat(.heading2) }
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "## Title ")
+        XCTAssertEqual(textView.selectedRange, NSRange(location: 9, length: 0))
+    }
+
+    func testFormattingRowsAreFoundByTheWordFormat() throws {
+        type("@format")
+        waitUntil { self.actions.contains(.applyFormat(.bold)) }
+        XCTAssertEqual(actions.filter { if case .applyFormat = $0 { return true } else { return false } }.count,
+                       CommandPaletteController.commandRowLimit)
+    }
+
+    func testNewChapterRemovesTheQueryClosesAndTellsTheDelegate() throws {
+        type("one two @new chap")
+        waitUntil { self.actions.first == .startChapter }
+        controller.commitHighlighted()
+        XCTAssertEqual(textView.text, "one two ")
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(recorder.chapterRequests, 1)
     }
 }

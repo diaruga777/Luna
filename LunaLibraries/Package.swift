@@ -115,6 +115,7 @@ let package = Package(
         .library(name: "LunaBundledPlugins", targets: ["LunaBundledPlugins"]),
         .library(name: "LunaTranscribe", targets: ["LunaTranscribe"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
+        .library(name: "LunaVaultBEP", targets: ["LunaVaultBEP"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
         .library(name: "LunaVaultIndexExtraction", targets: ["LunaVaultIndexExtraction"]),
@@ -368,6 +369,14 @@ let package = Package(
         // dependency path to a backend or networking target, so their work can
         // remain provably on-device as later implementations land.
         .target(name: "LunaVaultModels"),
+        // Syncthing's Block Exchange Protocol (claudedocs/vault-bep-reference.md):
+        // hand-written protobuf, framing, LZ4 block decoding, device IDs,
+        // version vectors, block hashing, and the connection state machine.
+        // Foundation + CryptoKit only. The iPhone and the Mac companion both
+        // speak through it; the TLS transport underneath is the Go layer in
+        // the LunaVaultTailscale package, reached through the `VaultPeer*`
+        // protocol seams declared here.
+        .target(name: "LunaVaultBEP"),
         .target(name: "LunaVaultCrypto", dependencies: [
             "LunaVaultModels", "LunaAppConfig",
         ]),

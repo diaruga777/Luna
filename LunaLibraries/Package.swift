@@ -116,6 +116,7 @@ let package = Package(
         .library(name: "LunaTranscribe", targets: ["LunaTranscribe"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
         .library(name: "LunaVaultBEP", targets: ["LunaVaultBEP"]),
+        .library(name: "LunaVaultMacPeer", targets: ["LunaVaultMacPeer"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
         .library(name: "LunaVaultIndexExtraction", targets: ["LunaVaultIndexExtraction"]),
@@ -377,6 +378,12 @@ let package = Package(
         // the LunaVaultTailscale package, reached through the `VaultPeer*`
         // protocol seams declared here.
         .target(name: "LunaVaultBEP"),
+        // The Mac companion's peer logic: folder scanner, `companion.sqlite`
+        // index, BEP server sessions, pairing window, discovery announce loop.
+        // Depends on LunaVaultBEP alone so it runs against fake transports in
+        // LunaVaultTests; FSEvents is behind `#if os(macOS)`. The executable in
+        // the LunaVaultTailscale package wires the real listeners.
+        .target(name: "LunaVaultMacPeer", dependencies: ["LunaVaultBEP"]),
         .target(name: "LunaVaultCrypto", dependencies: [
             "LunaVaultModels", "LunaAppConfig",
         ]),

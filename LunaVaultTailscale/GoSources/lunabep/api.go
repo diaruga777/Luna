@@ -11,37 +11,37 @@ import (
 
 // The Go-typed operations behind the C exports. Tests drive these.
 
-var logger = log.New(os.Stderr, "lunabep: ", log.LstdFlags|log.LUTC)
+var lunabepLogger = log.New(os.Stderr, "lunabep: ", log.LstdFlags|log.LUTC)
 
 func logf(format string, args ...any) {
-	logger.Printf(format, args...)
+	lunabepLogger.Printf(format, args...)
 }
 
 // listeners is the registry lunabep_listen / lunabep_relay_join hand out
 // small integer ids from.
-var listeners struct {
+var lunabepListeners struct {
 	mu   sync.Mutex
 	next int
 	m    map[int]*bepListener
 }
 
 func registerListener(l *bepListener) int {
-	listeners.mu.Lock()
-	defer listeners.mu.Unlock()
-	if listeners.m == nil {
-		listeners.m = map[int]*bepListener{}
-		listeners.next = 1
+	lunabepListeners.mu.Lock()
+	defer lunabepListeners.mu.Unlock()
+	if lunabepListeners.m == nil {
+		lunabepListeners.m = map[int]*bepListener{}
+		lunabepListeners.next = 1
 	}
-	id := listeners.next
-	listeners.next++
-	listeners.m[id] = l
+	id := lunabepListeners.next
+	lunabepListeners.next++
+	lunabepListeners.m[id] = l
 	return id
 }
 
 func lookupListener(id int) (*bepListener, error) {
-	listeners.mu.Lock()
-	defer listeners.mu.Unlock()
-	l := listeners.m[id]
+	lunabepListeners.mu.Lock()
+	defer lunabepListeners.mu.Unlock()
+	l := lunabepListeners.m[id]
 	if l == nil {
 		return nil, withCode(codeErrBadHandle, errors.New("unknown listener"))
 	}
@@ -49,13 +49,13 @@ func lookupListener(id int) (*bepListener, error) {
 }
 
 func unregisterListener(id int) (*bepListener, error) {
-	listeners.mu.Lock()
-	defer listeners.mu.Unlock()
-	l := listeners.m[id]
+	lunabepListeners.mu.Lock()
+	defer lunabepListeners.mu.Unlock()
+	l := lunabepListeners.m[id]
 	if l == nil {
 		return nil, withCode(codeErrBadHandle, errors.New("unknown listener"))
 	}
-	delete(listeners.m, id)
+	delete(lunabepListeners.m, id)
 	return l, nil
 }
 

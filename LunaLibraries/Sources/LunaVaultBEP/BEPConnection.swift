@@ -1,0 +1,258 @@
+import Foundation
+
+/// What a connection owner handles. Requests run concurrently, one task each,
+/// as Syncthing does; everything else arrives in wire order.
+public protocol BEPConnectionDelegate: AnyObject, Sendable {
+    func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async
+    func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async
+    /// Returns the block bytes, or an error code the connection sends back.
+    func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode>
+    func connection(_ connection: BEPConnection, didCloseWith error: Error?) async
+}
+
+public struct BEPConnectionTiming: Sendable {
+    public var pingInterval: TimeInterval = 45
+    public var receiveTimeout: TimeInterval = 300
+    public var helloTimeout: TimeInterval = 20
+    public var timerTick: TimeInterval = 5
+    public init() {}
+}
+
+/// One BEP session over an authenticated stream (`§A.4`).
+///
+/// Call `start()` to exchange Hellos, then `send(clusterConfig:)` before any
+/// other message. The read loop enforces the same rule on the peer.
+public actor BEPConnection {
+    public let stream: any BEPByteStream
+    public let localHello: BEPHello
+    public let peerDevice: DeviceID
+    public private(set) var peerHello: BEPHello?
+    public private(set) var bytesSent: Int64 = 0
+    public private(set) var bytesReceived: Int64 = 0
+
+    private weak var delegate: (any BEPConnectionDelegate)?
+    private let timing: BEPConnectionTiming
+    private var clock: @Sendable () -> Date
+
+    private var readTask: Task<Void, Never>?
+    private var timerTask: Task<Void, Never>?
+    private var requestTasks: [Task<Void, Never>] = []
+    private var closed = false
+    private var closeError: Error?
+    private var sentClusterConfig = false
+    private var receivedClusterConfig = false
+    private var lastWrite: Date
+    private var lastRead: Date
+    private var nextRequestID: Int32 = 1
+    private var pending: [Int32: CheckedContinuation<BEPResponse, Error>] = [:]
+
+    public init(stream: any BEPByteStream, peerDevice: DeviceID, localHello: BEPHello,
+                delegate: any BEPConnectionDelegate, timing: BEPConnectionTiming = BEPConnectionTiming(),
+                clock: @escaping @Sendable () -> Date = { Date() }) {
+        self.stream = stream
+        self.peerDevice = peerDevice
+        self.localHello = localHello
+        self.delegate = delegate
+        self.timing = timing
+        self.clock = clock
+        lastWrite = clock()
+        lastRead = clock()
+    }
+
+    public var isClosed: Bool { closed }
+
+    /// Exchanges Hellos and starts the read loop and timers.
+    @discardableResult
+    public func start() async throws -> BEPHello {
+        let helloBytes = try BEPFraming.encodeHello(localHello)
+        try await stream.write(helloBytes)
+        bytesSent += Int64(helloBytes.count)
+        let peer = try await withTimeout(timing.helloTimeout) { [stream] in
+            try await BEPFraming.readHello(from: stream)
+        }
+        peerHello = peer
+        lastRead = clock()
+        lastWrite = clock()
+        readTask = Task { [weak self] in await self?.readLoop() }
+        timerTask = Task { [weak self] in await self?.timerLoop() }
+        return peer
+    }
+
+    // MARK: Sending
+
+    public func send(clusterConfig: BEPClusterConfig) async throws {
+        try await write(.clusterConfig(clusterConfig))
+        sentClusterConfig = true
+    }
+
+    public func send(index: BEPIndex) async throws {
+        for file in index.files { try file.validateForWire() }
+        try await write(.index(index))
+    }
+
+    /// Requests one block and waits for the peer's answer.
+    public func request(folder: String, name: String, block: BlockInfo, blockNo: Int32) async throws -> Data {
+        let request = BEPRequest(id: allocateRequestID(), folder: folder, name: name, offset: block.offset,
+                                 size: block.size, hash: block.hash, blockNo: blockNo)
+        try request.validateForWire()
+        let response: BEPResponse = try await withCheckedThrowingContinuation { continuation in
+            pending[request.id] = continuation
+            Task { [weak self] in
+                do {
+                    try await self?.write(.request(request))
+                } catch {
+                    await self?.failPending(id: request.id, error: error)
+                }
+            }
+        }
+        guard response.code == .noError else { throw BEPRequestError.peerCode(response.code) }
+        guard SHA256Digest.hash(response.data) == block.hash else { throw BEPRequestError.hashMismatch }
+        return response.data
+    }
+
+    public func sendPing() async throws {
+        try await write(.ping)
+    }
+
+    /// Sends Close and tears the connection down.
+    public func close(reason: String) async {
+        guard !closed else { return }
+        try? await write(.close(BEPClose(reason: reason)))
+        await tearDown(error: nil)
+    }
+
+    private func allocateRequestID() -> Int32 {
+        defer { nextRequestID = nextRequestID == Int32.max ? 1 : nextRequestID + 1 }
+        return nextRequestID
+    }
+
+    private func write(_ message: BEPMessage) async throws {
+        guard !closed else { throw BEPStreamError.closed }
+        if case .clusterConfig = message {} else if !sentClusterConfig, message.type != .close {
+            throw BEPProtocolError.clusterConfigExpected
+        }
+        let frame = BEPFraming.encodeMessage(message)
+        try await stream.write(frame)
+        bytesSent += Int64(frame.count)
+        lastWrite = clock()
+    }
+
+    private func failPending(id: Int32, error: Error) {
+        pending.removeValue(forKey: id)?.resume(throwing: error)
+    }
+
+    // MARK: Receiving
+
+    private func readLoop() async {
+        while !closed {
+            do {
+                let message = try await BEPFraming.readMessage(from: stream)
+                lastRead = clock()
+                try await dispatch(message)
+            } catch {
+                await tearDown(error: closed ? nil : error)
+                return
+            }
+        }
+    }
+
+    private func dispatch(_ message: BEPMessage) async throws {
+        if !receivedClusterConfig {
+            switch message {
+            case .clusterConfig: receivedClusterConfig = true
+            case .close(let close): throw BEPProtocolError.closedByPeer(close.reason)
+            case .unknown: return
+            default: throw BEPProtocolError.clusterConfigExpected
+            }
+        }
+        switch message {
+        case .clusterConfig(let config):
+            await delegate?.connection(self, didReceive: config)
+        case .index(let index):
+            await delegate?.connection(self, didReceive: index)
+        case .request(let request):
+            let task = Task { [weak self] in
+                guard let self else { return }
+                let result = await self.serve(request)
+                let response: BEPResponse
+                switch result {
+                case .success(let data): response = BEPResponse(id: request.id, data: data)
+                case .failure(let code): response = BEPResponse(id: request.id, data: Data(), code: code)
+                }
+                try? await self.write(.response(response))
+            }
+            requestTasks.append(task)
+            requestTasks.removeAll { $0.isCancelled }
+        case .response(let response):
+            pending.removeValue(forKey: response.id)?.resume(returning: response)
+        case .ping, .downloadProgress, .unknown:
+            break
+        case .close(let close):
+            throw BEPProtocolError.closedByPeer(close.reason)
+        }
+    }
+
+    private func serve(_ request: BEPRequest) async -> Result<Data, BEPErrorCode> {
+        guard let delegate else { return .failure(.generic) }
+        return await delegate.connection(self, serve: request)
+    }
+
+    // MARK: Timers
+
+    private func timerLoop() async {
+        while !closed {
+            try? await Task.sleep(nanoseconds: UInt64(timing.timerTick * 1_000_000_000))
+            if closed { return }
+            let now = clock()
+            if now.timeIntervalSince(lastRead) > timing.receiveTimeout {
+                await tearDown(error: BEPProtocolError.receiveTimeout)
+                return
+            }
+            if sentClusterConfig, now.timeIntervalSince(lastWrite) >= timing.pingInterval {
+                try? await write(.ping)
+            }
+        }
+    }
+
+    /// Runs one timer pass now. Tests drive time through this.
+    public func tickForTesting() async {
+        let now = clock()
+        if now.timeIntervalSince(lastRead) > timing.receiveTimeout {
+            await tearDown(error: BEPProtocolError.receiveTimeout)
+            return
+        }
+        if sentClusterConfig, now.timeIntervalSince(lastWrite) >= timing.pingInterval {
+            try? await write(.ping)
+        }
+    }
+
+    private func tearDown(error: Error?) async {
+        guard !closed else { return }
+        closed = true
+        closeError = error
+        stream.close()
+        timerTask?.cancel()
+        for (_, continuation) in pending { continuation.resume(throwing: error ?? BEPStreamError.closed) }
+        pending.removeAll()
+        await delegate?.connection(self, didCloseWith: error)
+    }
+}
+
+public enum BEPRequestError: Error, Equatable {
+    case peerCode(BEPErrorCode)
+    case hashMismatch
+}
+
+/// Fails after `seconds` with `BEPStreamError.timedOut`.
+func withTimeout<T: Sendable>(_ seconds: TimeInterval, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await body() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw BEPStreamError.timedOut
+        }
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}

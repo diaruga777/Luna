@@ -115,6 +115,9 @@ let package = Package(
         .library(name: "LunaBundledPlugins", targets: ["LunaBundledPlugins"]),
         .library(name: "LunaTranscribe", targets: ["LunaTranscribe"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
+        .library(name: "LunaVaultBEP", targets: ["LunaVaultBEP"]),
+        .library(name: "LunaVaultStore", targets: ["LunaVaultStore"]),
+        .library(name: "LunaVaultMacPeer", targets: ["LunaVaultMacPeer"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
         .library(name: "LunaVaultIndexExtraction", targets: ["LunaVaultIndexExtraction"]),
@@ -368,6 +371,26 @@ let package = Package(
         // dependency path to a backend or networking target, so their work can
         // remain provably on-device as later implementations land.
         .target(name: "LunaVaultModels"),
+        // Syncthing's Block Exchange Protocol (claudedocs/vault-bep-reference.md):
+        // hand-written protobuf, framing, LZ4 block decoding, device IDs,
+        // version vectors, block hashing, and the connection state machine.
+        // Foundation + CryptoKit only. The iPhone and the Mac companion both
+        // speak through it; the TLS transport underneath is the Go layer in
+        // the LunaVaultTailscale package, reached through the `VaultPeer*`
+        // protocol seams declared here.
+        .target(name: "LunaVaultBEP"),
+        // Syncthing-facing metadata mirror and bounded cache/index settings.
+        // UI and session layers depend on this store, never on each other.
+        .target(
+            name: "LunaVaultStore",
+            dependencies: ["LunaAppConfig", "LunaVaultBEP"],
+            linkerSettings: [.linkedLibrary("sqlite3")]),
+        // The Mac companion's peer logic: folder scanner, `companion.sqlite`
+        // index, BEP server sessions, pairing window, discovery announce loop.
+        // Depends on LunaVaultBEP alone so it runs against fake transports in
+        // LunaVaultTests; FSEvents is behind `#if os(macOS)`. The executable in
+        // the LunaVaultTailscale package wires the real listeners.
+        .target(name: "LunaVaultMacPeer", dependencies: ["LunaVaultBEP"]),
         .target(name: "LunaVaultCrypto", dependencies: [
             "LunaVaultModels", "LunaAppConfig",
         ]),
@@ -389,7 +412,8 @@ let package = Package(
         ]),
         .target(name: "LunaVaultSync", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
-            "LunaVaultBackend",
+            "LunaVaultBackend", "LunaVaultBEP", "LunaVaultStore",
+            "LunaVaultIndexExtraction", "LunaVaultEmbeddings", "LunaVaultSearch",
         ]),
         .target(name: "LunaVaultSetup", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto",
@@ -400,7 +424,7 @@ let package = Package(
             "LunaDesignSystem", "LunaAppConfig", "LunaVaultModels", "LunaVaultCrypto",
             "LunaVaultStorage", "LunaVaultIndexExtraction",
             "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
-            "LunaVaultSync", "LunaVaultSetup",
+            "LunaVaultSync", "LunaVaultSetup", "LunaVaultStore",
         ]),
         // The companion library is macOS-only by product usage. It is
         // Foundation/Network based and keeps all transport state behind the

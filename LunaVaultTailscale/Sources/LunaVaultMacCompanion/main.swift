@@ -1,187 +1,195 @@
+import AppKit
+import CoreImage
 import Foundation
-import LunaVaultBackend
-import LunaVaultCrypto
-import LunaVaultMac
+import LunaVaultBEP
+import LunaVaultMacPeer
 import LunaVaultTailscale
 
-// Line-buffer stdout so lifecycle prints survive redirection to a log file.
-setvbuf(stdout, nil, _IOLBF, 0)
+/// Luna Vault's companion is intentionally a menu-bar accessory rather than a
+/// document app. It owns one selected folder, one embedded tailnet identity,
+/// and one BEP listener; all details stay behind the status item.
+@main
+@MainActor
+final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private var statusItem: NSStatusItem!
+    private var controller: CompanionController!
 
-let arguments = Array(CommandLine.arguments.dropFirst())
-func value(after flag: String) -> String? {
-    guard let index = arguments.firstIndex(of: flag),
-          arguments.index(after: index) < arguments.endIndex else { return nil }
-    return arguments[arguments.index(after: index)]
-}
-func fail(_ message: String) -> Never {
-    fputs("\(message)\n", stderr); exit(2)
-}
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        controller = CompanionController()
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.title = "Luna Vault"
+        statusItem.menu = makeMenu()
+        controller.start()
+    }
 
-/// Reports a bind failure the LAN/system-Tailscale listener could not recover
-/// from (for example the configured port is already in use). Without this,
-/// the listener stayed silently dead while the companion kept printing
-/// "Listening on host:port".
-struct TCPListenerFailureReporter: VaultMacListenerFailureObserving {
-    func vaultMacListenerFailed(_ error: Error) {
-        fail("TCP listener failed: \(error)")
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        let status = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
+        status.tag = 100
+        menu.addItem(status)
+        menu.addItem(.separator())
+        menu.addItem(item: "Choose Folder…", action: #selector(chooseFolder))
+        menu.addItem(item: "Pair iPhone…", action: #selector(pairPhone))
+        menu.addItem(item: "Copy Device ID", action: #selector(copyDeviceID))
+        menu.addItem(.separator())
+        let network = NSMenuItem(title: "Announce on Syncthing discovery", action: #selector(toggleNetwork), keyEquivalent: "")
+        network.tag = 101
+        network.state = .on
+        menu.addItem(network)
+        menu.addItem(item: "Quit Luna Vault", action: #selector(quit), keyEquivalent: "q")
+        menu.delegate = self
+        return menu
+    }
+
+    @objc private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        controller.selectFolder(url)
+    }
+
+    @objc private func pairPhone() { controller.showPairing(on: statusItem.button?.window) }
+
+    @objc private func copyDeviceID() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(controller.deviceIDText, forType: .string)
+    }
+
+    @objc private func toggleNetwork(_ item: NSMenuItem) {
+        item.state = item.state == .on ? .off : .on
+        controller.setDiscoveryEnabled(item.state == .on)
+    }
+
+    @objc private func quit() { NSApplication.shared.terminate(nil) }
+
+    @MainActor
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.item(withTag: 100)?.title = controller.statusText
+        menu.item(withTag: 101)?.state = controller.discoveryEnabled ? .on : .off
     }
 }
 
-if arguments.contains("--help") || arguments.isEmpty {
-    print("Usage:")
-    print("  LunaVaultMacCompanion --initialize --root <directory> --endpoint-binding <binding>")
-    print("  LunaVaultMacCompanion --initialize --root <directory> --tailscale-state <directory>")
-    print("      [--tailscale-hostname <name>] [--tailscale-port <port>]")
-    print("  LunaVaultMacCompanion --root <directory> [--credential <file>]")
-    print("      --tailscale-state <directory> [--tailscale-hostname <name>] [--tailscale-port <port>]")
-    print("      [--bind-host <non-wildcard-address>] [--port <port>] [--bonjour-name <name>]")
-    print("")
-    print("Give at least one transport: --tailscale-state runs an embedded")
-    print("Tailscale node (first run opens browser login), --bind-host listens")
-    print("directly on a LAN or system-Tailscale address. Initializing with")
-    print("--tailscale-state logs the node in first and derives the endpoint")
-    print("binding from its MagicDNS name.")
-    exit(0)
+private extension NSMenu {
+    func addItem(item title: String, action: Selector, keyEquivalent: String = "") {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = NSApp.delegate
+        addItem(item)
+    }
 }
 
-guard let rootPath = value(after: "--root") else { fail("Missing --root. Use --help.") }
-let rootURL = URL(fileURLWithPath: rootPath)
-let defaultCredentialURL = rootURL.appendingPathComponent("pairing.credential")
+private final class CompanionController: NSObject, @unchecked Sendable {
+    private let lock = NSLock()
+    private let rootStateURL: URL
+    private var folderURL: URL
+    private var discovery = true
+    private var status = "Starting…"
+    private var identity: DeviceID?
+    private var transport: LunaVaultGoTransport!
+    private var tailnet: VaultTailnetNodeRunner!
+    private var index: CompanionIndex!
+    private var listener: LunaVaultGoListener?
+    private var listenerTask: Task<Void, Never>?
 
-func openInBrowser(_ url: URL) {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = [url.absoluteString]
-    try? process.run()
-}
+    var discoveryEnabled: Bool { lock.withLock { discovery } }
+    var statusText: String { lock.withLock { status } }
+    var deviceIDText: String { lock.withLock { identity?.description ?? "Unavailable until transport is built" } }
 
-func makeRunner(statePath: String) -> VaultTailnetNodeRunner {
-    VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
-        stateDirectory: URL(fileURLWithPath: statePath),
-        hostName: value(after: "--tailscale-hostname") ?? "luna-vault-mac"))
-}
+    override init() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Luna Vault", isDirectory: true)
+        rootStateURL = appSupport
+        folderURL = UserDefaults.standard.url(forKey: "LunaVaultCompanion.folder")
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Luna Vault")
+        super.init()
+        try? FileManager.default.createDirectory(at: rootStateURL, withIntermediateDirectories: true)
+        tailnet = VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
+            stateDirectory: rootStateURL.appendingPathComponent("Tailnet"), hostName: "luna-vault-mac"))
+        let tailnet = self.tailnet!
+        transport = LunaVaultGoTransport(configuration: .init(
+            stateDirectory: rootStateURL.appendingPathComponent("Identity"),
+            tailnetHandle: { try await tailnet.currentHandle() ?? 0 }))
+        index = try? CompanionIndex(databaseURL: rootStateURL.appendingPathComponent("companion.sqlite"))
+    }
 
-/// Logs the embedded node in (browser web auth on first run) and returns its
-/// running status.
-func connectTailnet(_ runner: VaultTailnetNodeRunner) async throws -> VaultTailnetStatusSummary {
-    if await runner.statusSummary()?.backend != .running {
-        print("Connecting the embedded Tailscale node…")
-        for try await event in await runner.interactiveLoginEvents() {
-            switch event {
-            case .browseToURL(let url):
-                print("Finish Tailscale login in your browser: \(url.absoluteString)")
-                openInBrowser(url)
-            case .loginFinished:
-                print("Tailscale login accepted; waiting for the node…")
-            case .running:
-                break
-            }
+    func start() { Task { await refresh() } }
+
+    func selectFolder(_ url: URL) {
+        lock.withLock { folderURL = url; status = "Scanning (url.lastPathComponent)…" }
+        UserDefaults.standard.set(url, forKey: "LunaVaultCompanion.folder")
+        Task { await refresh() }
+    }
+
+    func setDiscoveryEnabled(_ enabled: Bool) { lock.withLock { discovery = enabled } }
+
+    func showPairing(on window: NSWindow?) {
+        let id = deviceIDText
+        let payload = "luna-vault://pair?device=\(id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id)"
+        let alert = NSAlert()
+        alert.messageText = "Pair iPhone"
+        alert.informativeText = "Scan this pairing code on the iPhone, then keep Luna Vault open to accept the request.\n\n\(payload)"
+        if let image = Self.qrImage(for: payload) { alert.accessoryView = NSImageView(image: image) }
+        alert.addButton(withTitle: "Done")
+        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+    }
+
+    private func refresh() async {
+        do {
+            let localID = try transport.identity()
+            lock.withLock { identity = localID }
+            let scanner = CompanionFolderScanner(rootURL: folderURL, deviceShortID: localID.shortID)
+            let records = try scanner.scan()
+            try index.replace(with: records)
+            lock.withLock { status = "Ready · \(records.filter { $0.info.type == .file }.count) files" }
+            try await startListener(localID: localID)
+        } catch {
+            lock.withLock { status = "Transport unavailable · build libtailscale first" }
         }
     }
-    return try await runner.ensureRunningWithExistingLogin()
-}
 
-do {
-    if arguments.contains("--initialize") {
-        let writeCredential: (String) throws -> Void = { endpointBinding in
-            let random = SystemVaultRandomBytes()
-            let credential = try VaultMacPairingCredential(pairingID: UUID(),
-                secret: VaultMacPairingSecret(rawValue: random.bytes(count: 32)),
-                serverBinding: random.bytes(count: 32), endpointBinding: endpointBinding,
-                createdAt: Date())
-            try VaultMacPairedCredentialStore().save(credential, at: defaultCredentialURL)
-            print("Initialized owner-only pairing credential at \(defaultCredentialURL.path)")
-            print("Endpoint binding: \(endpointBinding)")
-            print("Server fingerprint: \(credential.fingerprint)")
-        }
-        if let endpointBinding = value(after: "--endpoint-binding"), !endpointBinding.isEmpty {
-            try writeCredential(endpointBinding)
-            exit(0)
-        }
-        guard let statePath = value(after: "--tailscale-state") else {
-            fail("Missing --endpoint-binding (or --tailscale-state to derive one).")
-        }
-        guard let port = UInt16(value(after: "--tailscale-port") ?? "49200") else {
-            fail("Invalid --tailscale-port.")
-        }
-        let runner = makeRunner(statePath: statePath)
-        Task {
-            do {
-                let summary = try await connectTailnet(runner)
-                guard let host = summary.dnsName ?? summary.ipv4 else {
-                    fail("The node is running but reported no MagicDNS name or address.")
+    private func startListener(localID: DeviceID) async throws {
+        guard listener == nil else { return }
+        let current = try await transport.listen(bindAddress: "0.0.0.0:22000")
+        listener = current
+        listenerTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                do {
+                    let accepted = try await current.accept()
+                    let delegate = CompanionBEPDelegate(rootURL: self.folderURL, index: self.index,
+                        localDevice: localID, folderID: "vault")
+                    let hello = BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac",
+                                         clientName: "Luna Vault", clientVersion: "1.0")
+                    let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
+                        localHello: hello, delegate: delegate)
+                    _ = try await connection.start()
+                    let config = BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",
+                        devices: [BEPDevice(id: localID, name: "Luna Mac")])])
+                    try await connection.send(clusterConfig: config)
+                    let files = try self.index.all()
+                    try await connection.send(index: BEPIndex(folder: "vault", files: files,
+                        lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
+                } catch {
+                    if !Task.isCancelled { self.lock.withLock { self.status = "Waiting for iPhone" } }
                 }
-                try writeCredential("tailscale:\(host):\(port)")
-                exit(0)
-            } catch {
-                fail("Unable to initialize over Tailscale: \(error)")
-            }
-        }
-        dispatchMain()
-    }
-
-    let bindHost = value(after: "--bind-host")
-    let tailscaleStatePath = value(after: "--tailscale-state")
-    guard bindHost != nil || tailscaleStatePath != nil else {
-        fail("Give --tailscale-state and/or --bind-host. Use --help.")
-    }
-    let credentialURL = value(after: "--credential").map(URL.init(fileURLWithPath:)) ?? defaultCredentialURL
-    let credential = try VaultMacPairedCredentialStore().load(from: credentialURL)
-    guard credential.revokedAt == nil else { fail("Pairing credential is revoked; re-pair before listening.") }
-    let store = try VaultMacCompanionStore(rootURL: rootURL, credential: credential)
-    let service = VaultMacCompanionService(store: store)
-    let authority = VaultMacSessionAuthority(credential: credential)
-    let limits = VaultMacListenerLimits()
-    // One gate across both transports so the connection and failure budgets
-    // hold for the companion as a whole.
-    let gate = VaultMacConnectionGate(limits: limits)
-
-#if canImport(Network)
-    if let bindHost {
-        guard let port = UInt16(value(after: "--port") ?? "49200") else {
-            fail("Invalid --port. Use --help.")
-        }
-        let listener = try VaultMacTCPListener(bindHost: bindHost, port: port,
-            advertiseName: value(after: "--bonjour-name"), service: service,
-            authority: authority, limits: limits, gate: gate,
-            failureObserver: TCPListenerFailureReporter())
-        listener.start()
-        print("Listening on \(bindHost):\(listener.port) (LAN or system-Tailscale route).")
-    }
-#else
-    if bindHost != nil { fail("Network.framework is unavailable on this platform.") }
-#endif
-
-    if let tailscaleStatePath {
-        guard let tailscalePort = UInt16(value(after: "--tailscale-port") ?? "49200") else {
-            fail("Invalid --tailscale-port. Use --help.")
-        }
-        let runner = makeRunner(statePath: tailscaleStatePath)
-        let server = VaultMacChannelServer(service: service, authority: authority,
-                                           limits: limits, gate: gate)
-        Task {
-            do {
-                let summary = try await connectTailnet(runner)
-                let host = summary.dnsName ?? summary.ipv4
-                print("Embedded Tailscale node is running as \(host ?? "<unknown>")"
-                      + (summary.tailnetName.map { " on tailnet \($0)" } ?? "") + ".")
-                if let host {
-                    print("Endpoint binding for pairing: tailscale:\(host):\(tailscalePort)")
-                }
-                let listener = try await runner.tailnetListener(port: tailscalePort)
-                print("Listening on the tailnet at port \(tailscalePort).")
-                for try await connection in listener.connections() {
-                    print("[\(ISO8601DateFormatter().string(from: Date()))] Tailnet connection from \(connection.peer).")
-                    Task { await server.run(connection.channel, peer: connection.peer) }
-                }
-                fail("The tailnet listener stopped.")
-            } catch {
-                fail("Unable to serve over Tailscale: \(error)")
             }
         }
     }
 
-    dispatchMain()
-} catch {
-    fail("Unable to start companion: \(error)")
+    private static func qrImage(for string: String) -> NSImage? {
+        guard let data = string.data(using: .utf8), let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("Q", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let rep = NSCIImageRep(ciImage: output.transformed(by: CGAffineTransform(scaleX: 5, y: 5)))
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T { lock(); defer { unlock() }; return body() }
 }

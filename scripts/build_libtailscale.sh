@@ -24,6 +24,14 @@ git clone https://github.com/tailscale/libtailscale.git "$WORK_DIR/libtailscale"
 cd "$WORK_DIR/libtailscale"
 git checkout --quiet "$LIBTAILSCALE_COMMIT"
 
+# Luna's BEP layer is intentionally compiled into the same c-archive as
+# libtailscale. Keeping the files beside the pinned clone for the duration of
+# the build lets the Go package stay stdlib-only and avoids adding Syncthing as
+# a Go module dependency. Test files and the standalone go.mod are ignored by
+# `go build`; only production Go sources are copied.
+LUNABEP_SOURCES="$REPO_ROOT/LunaVaultTailscale/GoSources/lunabep"
+cp "$LUNABEP_SOURCES"/*.go .
+
 echo "Building macOS arm64 archive…"
 MACOSX_DEPLOYMENT_TARGET=15.0 CGO_ENABLED=1 \
   CGO_CFLAGS="-mmacos-version-min=15.0" CGO_LDFLAGS="-mmacos-version-min=15.0" \
@@ -44,6 +52,7 @@ lipo -create -output libtailscale_ios_sim.a \
 for slice in ios sim macos; do
   mkdir -p "include-$slice"
   cp tailscale.h "include-$slice/"
+  cat "$LUNABEP_SOURCES/lunabep.h" >> "include-$slice/tailscale.h"
   printf 'module LibTailscale {\n    header "tailscale.h"\n    export *\n}\n' \
     > "include-$slice/module.modulemap"
 done

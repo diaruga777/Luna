@@ -231,7 +231,9 @@ public actor VaultTailnetNodeRunner {
         }
     }
 
-    func currentHandle() async throws -> TailscaleHandle? {
+    /// Supplies the live tsnet handle to the BEP bridge. The handle is opaque
+    /// to Swift; lunabep uses it to route tcp addresses through tsnet.
+    public func currentHandle() async throws -> TailscaleHandle? {
         try await runningNode().tailscale
     }
 

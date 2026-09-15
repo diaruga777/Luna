@@ -1,3 +1,5 @@
+//go:build lunabep_cgo_tests
+
 package main
 
 import "C"

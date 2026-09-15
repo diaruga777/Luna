@@ -31,13 +31,13 @@ let package = Package(
                 ]),
         .target(name: "LunaVaultTailscale", dependencies: [
             "TailscaleKit",
+            .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),
         ]),
         .executableTarget(name: "LunaVaultMacCompanion", dependencies: [
             "LunaVaultTailscale",
-            .product(name: "LunaVaultMac", package: "LunaLibraries"),
-            .product(name: "LunaVaultBackend", package: "LunaLibraries"),
-            .product(name: "LunaVaultCrypto", package: "LunaLibraries"),
+            .product(name: "LunaVaultBEP", package: "LunaLibraries"),
+            .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
         ]),
     ],
     // Swift 5 language mode to match LunaLibraries and the app targets.

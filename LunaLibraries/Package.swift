@@ -116,6 +116,7 @@ let package = Package(
         .library(name: "LunaTranscribe", targets: ["LunaTranscribe"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
         .library(name: "LunaVaultBEP", targets: ["LunaVaultBEP"]),
+        .library(name: "LunaVaultStore", targets: ["LunaVaultStore"]),
         .library(name: "LunaVaultMacPeer", targets: ["LunaVaultMacPeer"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
@@ -378,6 +379,14 @@ let package = Package(
         // the LunaVaultTailscale package, reached through the `VaultPeer*`
         // protocol seams declared here.
         .target(name: "LunaVaultBEP"),
+        // The Syncthing-era folder mirror and durable local-change/cache
+        // state. Kept separate from the legacy encrypted storage module so
+        // the migration can land without making the Vault share extension
+        // depend on the network runtime.
+        .target(
+            name: "LunaVaultStore",
+            dependencies: ["LunaAppConfig", "LunaVaultBEP"],
+            linkerSettings: [.linkedLibrary("sqlite3")]),
         // The Mac companion's peer logic: folder scanner, `companion.sqlite`
         // index, BEP server sessions, pairing window, discovery announce loop.
         // Depends on LunaVaultBEP alone so it runs against fake transports in
@@ -405,7 +414,7 @@ let package = Package(
         ]),
         .target(name: "LunaVaultSync", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
-            "LunaVaultBackend",
+            "LunaVaultBackend", "LunaVaultBEP", "LunaVaultStore",
         ]),
         .target(name: "LunaVaultSetup", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto",

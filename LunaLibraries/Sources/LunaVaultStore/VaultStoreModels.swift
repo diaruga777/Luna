@@ -184,6 +184,8 @@ public struct VaultStoreSettings: Equatable, Sendable {
 public struct VaultIndexApplyResult: Equatable, Sendable {
     /// Files whose content or metadata changed and are live.
     public var changed: [String] = []
+    /// Live files whose bytes changed and therefore need cache/index work.
+    public var contentChanged: [String] = []
     /// Files now deleted (or turned into non-files).
     public var removed: [String] = []
     /// Local changes the peer's index confirmed.

@@ -502,6 +502,12 @@ public final class VaultFolderStore: @unchecked Sendable {
         public var bytes: Int64
         public var count: Int
         public var pinnedBytes: Int64
+
+        public init(bytes: Int64, count: Int, pinnedBytes: Int64) {
+            self.bytes = bytes
+            self.count = count
+            self.pinnedBytes = pinnedBytes
+        }
     }
 
     public func cacheTotals() throws -> CacheTotals {

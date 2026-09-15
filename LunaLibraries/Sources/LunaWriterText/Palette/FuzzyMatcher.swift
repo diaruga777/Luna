@@ -18,12 +18,14 @@ public enum FuzzyMatcher {
         let target = normalize(candidate)
         guard !target.isEmpty else { return nil }
         if target == tokens.joined(separator: " ") { return 1 }
-        var total = 0.0
+        // The weakest token determines the match: a common word must not
+        // promote unrelated scattered letters in a longer symbol name.
+        var weakest = 1.0
         for token in tokens {
             guard let part = score(token: token, in: target) else { return nil }
-            total += part
+            weakest = min(weakest, part)
         }
-        return total / Double(tokens.count)
+        return weakest
     }
 
     /// Ranks `items` by the best score any of their search strings earns.

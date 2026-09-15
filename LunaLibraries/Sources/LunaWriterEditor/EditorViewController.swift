@@ -486,7 +486,7 @@ public final class EditorViewController: UIViewController {
     // MARK: - Command palette
 
     fileprivate func updateOverlay() {
-        guard palette.state.isActive, !palette.isPeeking else {
+        guard palette.state.isActive, !palette.isPeeking, !palette.rows.isEmpty else {
             overlay.isHidden = true
             return
         }

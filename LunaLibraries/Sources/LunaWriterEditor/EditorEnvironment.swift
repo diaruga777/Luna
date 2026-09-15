@@ -20,7 +20,7 @@ public struct EditorEnvironment {
     /// Splits a sheet into chapters for the palette's "new chapter". nil
     /// leaves the command with nothing to do.
     public var chapters: ChapterOrganizing?
-    /// Answers the palette's "thesaurus". nil shows the command as unavailable.
+    /// Finds synonyms for palette queries. nil omits synonym results.
     public var thesaurus: WordThesaurus?
 
     public init(

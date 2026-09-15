@@ -35,52 +35,12 @@ public enum PaletteState: Equatable {
     public var isActive: Bool { marker != nil }
 }
 
-/// The three named commands. Formatting styles are rows of their own, found
-/// by name, so they need no command word.
-public enum PaletteCommand: String, CaseIterable, Equatable, Sendable {
-    case symbol, thesaurus, newChapter
-
-    /// A command with an argument is typed as its word, a space, then the
-    /// argument; the palette shows that command's results alone.
-    public var takesArgument: Bool { self != .newChapter }
-
-    public var symbolName: String {
-        switch self {
-        case .symbol: return "character"
-        case .thesaurus: return "text.book.closed"
-        case .newChapter: return "book.pages"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .symbol: return L10n.string("WriterEditor_commandSymbol")
-        case .thesaurus: return L10n.string("WriterEditor_commandThesaurus")
-        case .newChapter: return L10n.string("WriterEditor_commandNewChapter")
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .symbol: return L10n.string("WriterEditor_commandSymbolDetail")
-        case .thesaurus: return L10n.string("WriterEditor_commandThesaurusDetail")
-        case .newChapter: return L10n.string("WriterEditor_commandNewChapterDetail")
-        }
-    }
-
-    /// The word typed to enter the command, lower-cased for matching.
-    var keyword: String { title.lowercased() }
-}
-
 /// What tapping a row does.
 public enum PaletteAction: Equatable {
     case peekNote(NoteID)
     case createNote
-    /// Fills the query with the command's word, so its argument can be typed.
-    case completeCommand(PaletteCommand)
     /// Replaces the typed query with `text`.
     case insertText(String)
-    case applyFormat(MarkdownFormatStyle)
     case startChapter
     /// A message row: nothing happens.
     case none
@@ -125,27 +85,23 @@ public protocol CommandPaletteControllerDelegate: AnyObject {
 /// query is typed straight into the sheet) or, by setting, on an "@" typed
 /// at a word boundary. The query is ordinary text until a row acts on it: a
 /// note row peeks (never inserts, Q5), the last row makes a note, a symbol
-/// or thesaurus row replaces the query with its word, a formatting row types
-/// the style's marks around the caret, and "new chapter" hands the caret to
+/// or thesaurus row replaces the query with its word, and "new chapter" hands the caret to
 /// the editor. Whatever the writer does, only the query text is ever taken
 /// out of the sheet.
 public final class CommandPaletteController {
 
     public static let maximumQueryWords = 6
     public static let resultLimit = 6
-    public static let commandRowLimit = 5
     public static let symbolRowLimit = 8
     public static let synonymRowLimit = 8
     public static let defaultDebounce: TimeInterval = 0.12
     /// Two spaces this close together open the palette; slower is a
     /// sentence's double space and stays text.
     public static let doubleSpaceInterval: TimeInterval = 0.3
-    /// The score a command or style row needs in a free-text query. High
-    /// enough that a sentence typed as a note never drags a style in by a
-    /// scattered subsequence; low enough that "h2" still finds Heading 2.
+    /// Drop accidental command and symbol matches from scattered letters.
     static let commandMatchFloor = 0.4
-    /// The score the first row needs for Return to run it unasked: a word or
-    /// a prefix of one ("bol" → Bold), never a scattered subsequence ("h2").
+    /// A direct word or prefix match can run on Return. Semantic alternatives
+    /// stay below this threshold until the writer chooses one.
     public static let returnThreshold = 0.8
 
     public weak var delegate: CommandPaletteControllerDelegate?
@@ -351,38 +307,22 @@ public final class CommandPaletteController {
             || CharacterSet.punctuationCharacters.contains(unicode)
     }
 
-    // MARK: - Parsing
-
-    /// How a query reads: a command word with its argument, or free text.
-    struct ParsedQuery: Equatable {
-        var command: PaletteCommand?
-        var argument: String
-        var text: String
-    }
-
-    static func parse(_ query: String) -> ParsedQuery {
-        let trimmed = String(query.drop { $0 == " " })
-        let lowered = trimmed.lowercased()
-        for command in PaletteCommand.allCases where command.takesArgument {
-            let keyword = command.keyword
-            if lowered.hasPrefix(keyword + " ") {
-                let argument = String(trimmed.dropFirst(keyword.count + 1))
-                    .trimmingCharacters(in: .whitespaces)
-                return ParsedQuery(command: command, argument: argument, text: trimmed)
-            }
-        }
-        return ParsedQuery(command: nil, argument: "", text: trimmed)
-    }
-
     // MARK: - Searching
 
     private func scheduleSearch(for query: String) {
         searchTimer?.invalidate()
-        guard !query.isEmpty else {
+        searchGeneration &+= 1
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             deliver(hits: [], for: query)
             return
         }
-        searchGeneration &+= 1
+        // A new query must not retain a Return action from the previous search.
+        if !highlightPinned {
+            rows = []
+            results = []
+            highlightedIndex = nil
+            delegate?.commandPalette(self, didUpdate: rows)
+        }
         let generation = searchGeneration
         searchTimer = Timer.scheduledTimer(withTimeInterval: debounce, repeats: false) { [weak self] _ in
             self?.runSearch(query, generation: generation)
@@ -390,19 +330,19 @@ public final class CommandPaletteController {
     }
 
     private func runSearch(_ query: String, generation: Int) {
-        let parsed = Self.parse(query)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searchQueue.async { [weak self] in
             guard let self else { return }
-            let hits = parsed.command == nil ? self.hits(for: parsed.text) : []
-            let found = self.commandResults(for: parsed)
+            let hits = self.hits(for: trimmed)
+            let found = self.searchRows(for: trimmed)
             DispatchQueue.main.async {
                 guard generation == self.searchGeneration, self.state.query == query else { return }
-                self.deliver(hits: hits, for: query, commandRows: found)
+                self.deliver(hits: hits, for: query, searchRows: found)
             }
         }
     }
 
-    /// The sheet's own notes first, then the rest of the library under them.
+    /// Search both scopes; the sheet only breaks ties, never outranks a stronger match.
     private func hits(for query: String) -> [NoteHit] {
         guard !query.isEmpty else { return [] }
         let local = (try? noteIndex.search(NoteQuery(
@@ -412,147 +352,62 @@ public final class CommandPaletteController {
         let everywhere = (try? noteIndex.search(NoteQuery(
             text: query, scope: .all,
             prefixMatchesLastToken: true, limit: Self.resultLimit))) ?? []
-        return Array((local + everywhere.filter { !seen.contains($0.noteID) }).prefix(Self.resultLimit))
+        return (local + everywhere.filter { !seen.contains($0.noteID) })
+            .enumerated().sorted {
+                let lhs = Self.noteScore($0.element, for: query)
+                let rhs = Self.noteScore($1.element, for: query)
+                return lhs == rhs ? $0.offset < $1.offset : lhs > rhs
+            }.prefix(Self.resultLimit).map(\.element)
     }
 
-    /// The rows a command's argument produces, or the command and style rows
-    /// a free-text query matches. Runs off the main thread.
-    private func commandResults(for parsed: ParsedQuery) -> [PaletteRow] {
-        switch parsed.command {
-        case .symbol: return symbolRows(for: parsed.argument)
-        case .thesaurus: return thesaurusRows(for: parsed.argument)
-        case .newChapter, nil: break
+    /// Every nonempty query searches every domain. Runs off the main thread.
+    private func searchRows(for query: String) -> [PaletteRow] {
+        var found = symbols.matches(query, limit: Self.symbolRowLimit)
+            .filter { $0.score >= Self.commandMatchFloor }
+            .map { symbol, score in
+                PaletteRow(
+                    title: symbol.character + "   " + symbol.name,
+                    detail: symbol.aliases.isEmpty ? nil : symbol.aliases.prefix(3).joined(separator: " · "),
+                    symbolName: "character", action: .insertText(symbol.character), score: score)
+            }
+        if let thesaurus, thesaurus.isAvailable {
+            found.append(contentsOf: thesaurus.matches(for: query, limit: Self.synonymRowLimit).map {
+                PaletteRow(title: $0.word, symbolName: "text.book.closed",
+                           action: .insertText($0.word), score: $0.score)
+            })
         }
-        guard !parsed.text.isEmpty else { return PaletteCommand.allCases.map { Self.row(for: $0) } }
-        let commands = FuzzyMatcher.rank(
-            PaletteCommand.allCases, query: parsed.text, minimum: Self.commandMatchFloor
-        ) { [$0.title] }.map { Self.row(for: $0.item, score: $0.score) }
-        let sample = L10n.string("WriterEditor_formatPreviewSample")
-        // Each search word stands alone: joined into one string they made a
-        // long haystack that random sentences matched by subsequence.
-        let searchWords = L10n.string("WriterEditor_formatSearchWords").split(separator: " ").map(String.init)
-        let styles = FuzzyMatcher.rank(
-            MarkdownFormatStyle.allCases, query: parsed.text, minimum: Self.commandMatchFloor
-        ) { style in
-            [Self.name(of: style), style.preview(sample: sample)] + searchWords
-        }.map { Self.row(for: $0.item, sample: sample, score: $0.score) }
-        return Array((commands + styles).sorted { $0.score > $1.score }.prefix(Self.commandRowLimit))
+        let chapterTitle = L10n.string("WriterEditor_commandNewChapter")
+        if let score = FuzzyMatcher.score(query: query, candidate: chapterTitle), score >= Self.commandMatchFloor {
+            found.append(PaletteRow(
+                title: chapterTitle, detail: L10n.string("WriterEditor_commandNewChapterDetail"),
+                symbolName: "book.pages", action: .startChapter, score: score))
+        }
+        return found
     }
 
-    private func symbolRows(for argument: String) -> [PaletteRow] {
-        guard !argument.isEmpty else {
-            return [PaletteRow(
-                title: L10n.string("WriterEditor_commandSymbolHint"), symbolName: PaletteCommand.symbol.symbolName,
-                action: .none)]
-        }
-        let found = symbols.matches(argument, limit: Self.symbolRowLimit)
-        guard !found.isEmpty else {
-            return [PaletteRow(
-                title: L10n.string("WriterEditor_commandSymbolNoMatch", argument),
-                symbolName: PaletteCommand.symbol.symbolName, action: .none)]
-        }
-        return found.map { symbol, score in
-            PaletteRow(
-                title: symbol.character + "   " + symbol.name,
-                detail: symbol.aliases.isEmpty ? nil : symbol.aliases.prefix(3).joined(separator: " · "),
-                symbolName: PaletteCommand.symbol.symbolName,
-                action: .insertText(symbol.character),
-                score: score)
-        }
-    }
-
-    private func thesaurusRows(for argument: String) -> [PaletteRow] {
-        let icon = PaletteCommand.thesaurus.symbolName
-        guard let thesaurus, thesaurus.isAvailable else {
-            return [PaletteRow(
-                title: L10n.string("WriterEditor_commandThesaurusUnavailable"), symbolName: icon, action: .none)]
-        }
-        guard !argument.isEmpty else {
-            return [PaletteRow(title: L10n.string("WriterEditor_commandThesaurusHint"), symbolName: icon, action: .none)]
-        }
-        let words = thesaurus.synonyms(for: argument, limit: Self.synonymRowLimit)
-        guard !words.isEmpty else {
-            return [PaletteRow(
-                title: L10n.string("WriterEditor_commandThesaurusNoMatch", argument), symbolName: icon,
-                action: .none)]
-        }
-        // The writer named the command and the word: every answer is a sure one.
-        return words.map { PaletteRow(title: $0, symbolName: icon, action: .insertText($0), score: 1) }
-    }
-
-    static func row(for command: PaletteCommand, score: Double = 0) -> PaletteRow {
-        PaletteRow(
-            title: command.takesArgument ? command.title + "…" : command.title,
-            detail: command.detail,
-            symbolName: command.symbolName,
-            action: command.takesArgument ? .completeCommand(command) : .startChapter,
-            score: score)
-    }
-
-    static func row(for style: MarkdownFormatStyle, sample: String, score: Double = 0) -> PaletteRow {
-        PaletteRow(
-            title: name(of: style),
-            detail: style.preview(sample: sample).replacingOccurrences(of: "\n", with: " ⏎ "),
-            symbolName: "textformat",
-            action: .applyFormat(style),
-            score: score)
-    }
-
-    /// Literal keys, so `strings_sync.py` sees every one referenced.
-    static func name(of style: MarkdownFormatStyle) -> String {
-        switch style {
-        case .bold: return L10n.string("WriterEditor_format_bold")
-        case .italic: return L10n.string("WriterEditor_format_italic")
-        case .boldItalic: return L10n.string("WriterEditor_format_boldItalic")
-        case .strikethrough: return L10n.string("WriterEditor_format_strikethrough")
-        case .highlight: return L10n.string("WriterEditor_format_highlight")
-        case .underline: return L10n.string("WriterEditor_format_underline")
-        case .inlineCode: return L10n.string("WriterEditor_format_inlineCode")
-        case .link: return L10n.string("WriterEditor_format_link")
-        case .image: return L10n.string("WriterEditor_format_image")
-        case .footnote: return L10n.string("WriterEditor_format_footnote")
-        case .heading1: return L10n.string("WriterEditor_format_heading1")
-        case .heading2: return L10n.string("WriterEditor_format_heading2")
-        case .heading3: return L10n.string("WriterEditor_format_heading3")
-        case .heading4: return L10n.string("WriterEditor_format_heading4")
-        case .heading5: return L10n.string("WriterEditor_format_heading5")
-        case .heading6: return L10n.string("WriterEditor_format_heading6")
-        case .quote: return L10n.string("WriterEditor_format_quote")
-        case .bulletList: return L10n.string("WriterEditor_format_bulletList")
-        case .numberedList: return L10n.string("WriterEditor_format_numberedList")
-        case .taskList: return L10n.string("WriterEditor_format_taskList")
-        case .codeBlock: return L10n.string("WriterEditor_format_codeBlock")
-        case .divider: return L10n.string("WriterEditor_format_divider")
-        }
-    }
-
-    /// Assembles the rows: command and style rows, note rows, then the "New
-    /// note" row — which a command with an argument does without, since its
-    /// argument is not a note.
-    private func deliver(hits: [NoteHit], for query: String, commandRows: [PaletteRow]? = nil) {
-        results = hits
-        let parsed = Self.parse(query)
-        var assembled = commandRows ?? (query.isEmpty ? PaletteCommand.allCases.map { Self.row(for: $0) } : [])
-        assembled.append(contentsOf: hits.map { hit in
+    /// Merge every domain by match strength, keeping ties stable. Note capture
+    /// stays at the end and is available only for a nonempty query.
+    private func deliver(hits: [NoteHit], for query: String, searchRows: [PaletteRow] = []) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        results = trimmed.isEmpty ? [] : hits
+        var assembled = trimmed.isEmpty ? [] : searchRows
+        assembled.append(contentsOf: results.map { hit in
             PaletteRow(
                 title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
                 detail: hit.documentIDs.contains(documentID)
                     ? nil : L10n.string("WriterEditor_paletteNoteFromAnotherSheet"),
-                symbolName: "note.text",
-                action: .peekNote(hit.noteID),
-                score: hit.score)
+                symbolName: "note.text", action: .peekNote(hit.noteID),
+                score: Self.noteScore(hit, for: trimmed))
         })
-        if parsed.command == nil {
-            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            // With words typed and nothing else matching them, Return makes
-            // the note (Q5's "Return with no match creates a new note").
+        assembled = assembled.enumerated().sorted {
+            $0.element.score == $1.element.score
+                ? $0.offset < $1.offset : $0.element.score > $1.element.score
+        }.prefix(Self.resultLimit).map(\.element)
+        if !trimmed.isEmpty {
             assembled.append(PaletteRow(
-                title: trimmed.isEmpty
-                    ? L10n.string("WriterEditor_paletteNewNote")
-                    : L10n.string("WriterEditor_paletteNewNoteNamed", trimmed),
-                symbolName: "plus.circle",
-                action: .createNote,
-                score: assembled.isEmpty && !trimmed.isEmpty ? 1 : 0))
+                title: L10n.string("WriterEditor_paletteNewNoteNamed", trimmed),
+                symbolName: "plus.circle", action: .createNote,
+                score: assembled.isEmpty ? 1 : 0))
         }
         rows = assembled
         if highlightPinned, let pinned = highlightedIndex, pinned < rows.count {
@@ -562,6 +417,13 @@ public final class CommandPaletteController {
             highlightedIndex = Self.defaultRow(in: rows)
         }
         delegate?.commandPalette(self, didUpdate: rows)
+    }
+
+    /// Match note text on the same scale as symbol names and commands,
+    /// retaining the index's semantic score when stronger.
+    private static func noteScore(_ hit: NoteHit, for query: String) -> Double {
+        max(hit.score, FuzzyMatcher.score(
+            query: query, candidate: hit.noteText.isEmpty ? hit.snippet : hit.noteText) ?? 0)
     }
 
     /// The first row, when its match is sure enough for Return to run it.
@@ -612,9 +474,7 @@ public final class CommandPaletteController {
         switch action {
         case .peekNote(let id): peek(id)
         case .createNote: createNoteFromQuery()
-        case .completeCommand(let command): completeQuery(with: command.keyword + " ")
         case .insertText(let text): replaceQuery(with: text)
-        case .applyFormat(let style): applyFormat(style)
         case .startChapter:
             removeQueryText()
             end()
@@ -714,27 +574,6 @@ public final class CommandPaletteController {
         end()
     }
 
-    /// Types the style's marks where the query was and leaves the caret
-    /// between them. A line style marks the caret's paragraph instead.
-    private func applyFormat(_ style: MarkdownFormatStyle) {
-        guard let textView, let marker = state.marker else {
-            end()
-            return
-        }
-        removeQueryText()
-        let application = style.application(at: marker, in: textView.text as NSString)
-        isApplyingOwnEdit = true
-        let undoManager = textView.undoManager
-        undoManager?.beginUndoGrouping()
-        for edit in application.edits {
-            textView.replaceText(in: edit.range, with: edit.replacement)
-        }
-        undoManager?.endUndoGrouping()
-        textView.selectedRange = NSRange(location: application.caret, length: 0)
-        isApplyingOwnEdit = false
-        end()
-    }
-
     /// Esc, a tap outside, or a rule that cancelled the query. The typed text
     /// stays exactly as it is.
     public func dismiss() {
@@ -794,18 +633,4 @@ public final class CommandPaletteController {
         end()
     }
 
-    /// Replaces the query with `text`, keeping the marker, caret after it.
-    /// The palette stays open and re-reads what is now there, so completing
-    /// a command word leaves the palette in that command.
-    private func completeQuery(with text: String) {
-        guard let textView, let span = querySpan(), let marker = state.marker else { return }
-        let queryRange = NSRange(location: marker + markerLength, length: span.length - markerLength)
-        isApplyingOwnEdit = true
-        textView.replaceText(in: queryRange, with: text)
-        textView.selectedRange = NSRange(location: queryRange.location + (text as NSString).length, length: 0)
-        isApplyingOwnEdit = false
-        highlightedIndex = nil
-        highlightPinned = false
-        refresh(textView)
-    }
 }

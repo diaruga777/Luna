@@ -1,13 +1,19 @@
 import Foundation
 import NaturalLanguage
 
-/// Answers the palette's "thesaurus" command: words close in meaning to the
+/// Finds words close in meaning to the
 /// one typed.
 public protocol WordThesaurus: AnyObject {
     /// True when a lookup can answer at all on this device.
     var isAvailable: Bool { get }
     /// Up to `limit` words, nearest first. Empty for a word it does not know.
-    func synonyms(for word: String, limit: Int) -> [String]
+    func matches(for word: String, limit: Int) -> [(word: String, score: Double)]
+}
+
+public extension WordThesaurus {
+    func synonyms(for word: String, limit: Int) -> [String] {
+        matches(for: word, limit: limit).map(\.word)
+    }
 }
 
 /// A thesaurus over the system's on-device English word embedding, so the
@@ -27,19 +33,23 @@ public final class EmbeddingThesaurus: WordThesaurus {
 
     public var isAvailable: Bool { embedding != nil }
 
-    public func synonyms(for word: String, limit: Int) -> [String] {
+    public func matches(for word: String, limit: Int) -> [(word: String, score: Double)] {
         guard let embedding, limit > 0 else { return [] }
         let needle = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty, !needle.contains(" ") else { return [] }
         let neighbours = embedding.neighbors(for: needle, maximumCount: limit * 3)
-        var out: [String] = []
+        var out: [(word: String, score: Double)] = []
         var seen: Set<String> = [needle]
-        for (candidate, _) in neighbours {
+        for (candidate, distance) in neighbours {
             let lower = candidate.lowercased()
             guard !seen.contains(lower), Self.isWordLike(lower), !Self.isInflection(lower, of: needle)
             else { continue }
             seen.insert(lower)
-            out.append(Self.matchCase(of: word, to: candidate))
+            // Cosine distance becomes similarity. Semantic alternatives sit
+            // below direct word/prefix matches and never auto-replace prose.
+            let score = min(0.79, max(0, 1 - distance))
+            guard score > 0 else { continue }
+            out.append((Self.matchCase(of: word, to: candidate), score))
             if out.count == limit { break }
         }
         return out

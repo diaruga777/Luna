@@ -28,10 +28,16 @@ final class FuzzyMatcherTests: XCTestCase {
         XCTAssertNil(FuzzyMatcher.score(query: "", candidate: "Bullet List"))
     }
 
-    func testEveryQueryTokenMustMatchAndTheScoreIsTheirMean() throws {
+    func testEveryQueryTokenMustMatchAndTheWeakestDeterminesStrength() throws {
         let both = try XCTUnwrap(FuzzyMatcher.score(query: "new chap", candidate: "New chapter"))
-        XCTAssertEqual(both, (0.95 + 0.8) / 2, accuracy: 0.001)
+        XCTAssertEqual(both, 0.8, accuracy: 0.001)
         XCTAssertNil(FuzzyMatcher.score(query: "new idea", candidate: "New chapter"))
+    }
+
+    func testCommonWordsCannotPromoteScatteredLettersIntoAStrongMatch() throws {
+        let score = try XCTUnwrap(FuzzyMatcher.score(
+            query: "a new idea", candidate: "Upwards White Arrow On Pedestal With Horizontal Bar"))
+        XCTAssertLessThan(score, 0.4)
     }
 
     func testDiacriticsCaseAndPunctuationAreIgnored() {

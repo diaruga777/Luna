@@ -76,26 +76,28 @@ words at most, on one line. Backspace on an empty palette closes it and
 deletes nothing. **Return** runs the highlighted row: the first row is
 highlighted (tinted, with a ↩ at its trailing edge) only when its match
 scores at least `CommandPaletteController.returnThreshold` (0.8 — a word or a
-prefix, "bol" → Bold; never a scattered subsequence, "h2" → Heading 2 stays
-unhighlighted), or when words typed match nothing but the New note row (Q5's
-"Return with no match creates a note"). The arrows or a tap pin another row
-for the same query. With nothing highlighted Return is the text view's own:
-the newline is typed and the palette closes — so Return on an accidental
-double space never runs a command. Every row acts on the query and only the query: a note row
-peeks (never inserts, Q5); the last row makes a note; a symbol or thesaurus
-row replaces the query with its word; a formatting row types the style's
-marks and puts the caret between them; "new chapter" cuts the text after the
-caret into the next chapter's sheet. Rows come from `FuzzyMatcher` over the
-command and style names plus the FTS note search, and a command word followed
-by a space (`symbol …`, `thesaurus …`) switches the rows to that command's
-results alone, with no note row.
+prefix, "emd" → Em Dash; scattered subsequences stay unhighlighted), or
+when words typed match nothing but the New note row (Q5's "Return with no
+match creates a note"). The arrows or a tap pin another row for the same
+query. With nothing highlighted Return types a newline and closes the palette.
+An empty or whitespace-only query has no rows and the panel stays hidden.
+Changing the query clears old results and their Return action while the next
+search is pending.
 
-| Command | Source | Row action |
+Every nonempty query searches **all domains**, with no command prefixes or
+exclusive modes: `epsilon` finds ε directly; `happy` finds related words as
+well as any matching notes and symbols. The six strongest results are merged by descending
+match score, with stable ties; local notes only take precedence over other
+notes on a tie. Note text also uses the same lexical matcher as symbol names
+and commands. The New note action stays last for nonempty queries.
+Formatting commands and their Markdown insertion helpers have been removed.
+
+| Domain | Source | Row action |
 | --- | --- | --- |
-| `symbol <name>` | `SymbolCatalog` (LunaWriterText): fixed Unicode ranges — punctuation, Greek, arrows, maths, currency, shapes, key glyphs — named from `Unicode.Scalar.Properties.name` plus a hand alias table (`emdash`, `epsilon`, `->`) | insert the character |
-| `thesaurus <word>` | `WordThesaurus` seam; `EmbeddingThesaurus` wraps the on-device `NLEmbedding.wordEmbedding(for: .english)` neighbours, dropping inflections of the word itself and matching its case. No network, no bundled dictionary; where the OS asset is absent the row says so | insert the word |
-| formatting (`bold`, `h2`, `quote`, `code block`, `format` …) | `MarkdownFormatStyle` (LunaWriterText): 22 styles with prefix/suffix and a placement — inline pairs open empty with the caret inside, line styles mark the caret's paragraph (replacing a list or quote marker already there; headings through `setHeading`), block styles stand on their own lines | apply the edits through the text view's undo manager |
-| `new chapter` | `ChapterOrganizing` seam (`EditorEnvironment.chapters`); `ChapterOrganizer` (LunaWriterStorage) | see below |
+| Symbols (`epsilon`, `emdash`, …) | `SymbolCatalog` (LunaWriterText): fixed Unicode ranges and a hand alias table, ranked with `FuzzyMatcher` | insert the character |
+| Related words (`happy`, …) | `WordThesaurus`; `EmbeddingThesaurus` uses on-device English word neighbours and their cosine similarity, capped below direct word/prefix matches (0.79). Inflections are dropped and case is preserved. An unavailable lookup contributes no rows | insert the chosen word |
+| Notes | FTS note search across the current sheet and library, merged without duplicates | peek at the note; closing removes the query |
+| `new chapter` | `ChapterOrganizing` seam (`EditorEnvironment.chapters`); `ChapterOrganizer` (LunaWriterStorage) | cut the text after the caret into the next chapter's sheet |
 
 **Chapters.** A project is a `WriterGroup` of kind `.project` (icon
 `book.closed`); its sheets are the chapters, in manual order. The first "new

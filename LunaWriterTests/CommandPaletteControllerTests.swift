@@ -14,6 +14,7 @@ import LunaWriterText
 /// Answers whatever the test scripted, and remembers what was asked.
 private final class FakeNoteIndex: NoteIndexing {
     var answers: [NoteHit] = []
+    var globalAnswers: [NoteHit] = []
     var queries: [NoteQuery] = []
     var indexed: [WriterNote] = []
 
@@ -21,7 +22,7 @@ private final class FakeNoteIndex: NoteIndexing {
     func remove(_ id: NoteID) throws {}
     func search(_ query: NoteQuery) throws -> [NoteHit] {
         queries.append(query)
-        if case .all = query.scope { return [] }
+        if case .all = query.scope { return globalAnswers }
         return answers
     }
     func related(to windowText: String, in document: DocumentID, limit: Int) throws -> [NoteHit] { [] }
@@ -52,9 +53,11 @@ private final class ScriptedThesaurus: WordThesaurus {
     var isAvailable = true
     var answers: [String: [String]] = [:]
     var asked: [String] = []
-    func synonyms(for word: String, limit: Int) -> [String] {
+    func matches(for word: String, limit: Int) -> [(word: String, score: Double)] {
         asked.append(word)
-        return Array((answers[word] ?? []).prefix(limit))
+        return (answers[word] ?? []).prefix(limit).enumerated().map {
+            ($0.element, 0.75 - Double($0.offset) * 0.05)
+        }
     }
 }
 
@@ -360,11 +363,25 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(actions, [.peekNote(hit.noteID), .createNote])
     }
 
-    func testAnEmptyPaletteListsTheCommandsThenNewNote() throws {
+    func testAnEmptyPaletteHasNoSuggestions() throws {
         type("@")
-        XCTAssertEqual(actions, [
-            .completeCommand(.symbol), .completeCommand(.thesaurus), .startChapter, .createNote,
-        ])
+        XCTAssertTrue(actions.isEmpty)
+        XCTAssertNil(controller.highlightedIndex)
+        XCTAssertTrue(index.queries.isEmpty)
+        XCTAssertTrue(thesaurus.asked.isEmpty)
+    }
+
+    func testClearingAQueryImmediatelyRemovesItsRows() throws {
+        type("@epsilon")
+        waitUntil { self.actions.contains(.insertText("ε")) }
+        textView.textStorage.replaceCharacters(in: NSRange(location: 1, length: 7), with: "")
+        textView.selectedRange = NSRange(location: 1, length: 0)
+        controller.textViewDidChange(textView)
+        XCTAssertTrue(actions.isEmpty)
+        XCTAssertTrue(controller.results.isEmpty)
+        XCTAssertNil(controller.highlightedIndex)
+        type(" ")
+        XCTAssertTrue(actions.isEmpty, "whitespace also has no suggestions")
     }
 
     // MARK: - Peek
@@ -453,12 +470,14 @@ final class CommandPaletteControllerTests: XCTestCase {
         controller.highlightRow(controller.rowCount - 1)
         controller.commitHighlighted()
         XCTAssertTrue(store.inserted.isEmpty)
-        XCTAssertEqual(controller.state, .idle)
+        XCTAssertEqual(controller.state, .armed(marker: 0))
+        XCTAssertNil(controller.highlightedIndex)
         XCTAssertEqual(textView.text, "@")
     }
 
     func testTheHighlightNeverLeavesTheRows() throws {
-        type("@idea")
+        type("@a new idea")
+        waitUntil { self.actions == [.createNote] }
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, 0, "the first press lands on the first row")
         controller.moveHighlight(by: 9)
@@ -469,25 +488,14 @@ final class CommandPaletteControllerTests: XCTestCase {
 
     // MARK: - Commands
 
-    func testTypingACommandWordListsItFirstAndCommittingCompletesIt() throws {
-        type("@sym")
-        // The empty palette already lists Symbol first; the search's own
-        // delivery is what scores it and highlights it.
-        waitUntil { self.controller.highlightedIndex == 0 && self.actions.first == .completeCommand(.symbol) }
+    func testPlainSymbolQueryInsertsTheCharacter() throws {
+        type("@epsilon")
+        waitUntil { self.actions.first == .insertText("ε") }
+        XCTAssertEqual(index.queries.last?.text, "epsilon")
+        XCTAssertEqual(thesaurus.asked.last, "epsilon")
+        XCTAssertEqual(actions.last, .createNote)
         controller.commitHighlighted()
-        XCTAssertEqual(textView.text, "@symbol ")
-        XCTAssertEqual(controller.state, .querying(marker: 0, query: "symbol "))
-        waitUntil { self.actions == [.none] }
-        XCTAssertFalse(actions.contains(.createNote), "a command's argument is never a note")
-    }
-
-    func testASymbolArgumentListsMatchesAndCommittingInsertsTheCharacter() throws {
-        type("@symbol emd")
-        waitUntil { self.actions.contains(.insertText("—")) }
-        XCTAssertFalse(actions.contains(.createNote))
-        controller.highlightRow(try XCTUnwrap(actions.firstIndex(of: .insertText("—"))))
-        controller.commitHighlighted()
-        XCTAssertEqual(textView.text, "—", "the @ and the query go with the insertion")
+        XCTAssertEqual(textView.text, "ε")
         XCTAssertEqual(textView.selectedRange, NSRange(location: 1, length: 0))
         XCTAssertEqual(controller.state, .idle)
     }
@@ -496,60 +504,110 @@ final class CommandPaletteControllerTests: XCTestCase {
         controller.trigger = .doubleSpace
         type("hello")
         typeDoubleSpace(after: 0.1)
-        type("symbol emdash")
+        XCTAssertTrue(actions.isEmpty)
+        type("emdash")
         waitUntil { self.actions.first == .insertText("—") }
         controller.commitHighlighted()
         XCTAssertEqual(textView.text, "hello —")
         XCTAssertEqual(controller.state, .idle)
     }
 
-    func testAnUnknownSymbolShowsOneMessageRow() throws {
-        type("@symbol zzqxv")
-        waitUntil { self.actions == [.none] }
+    func testUnknownQueryOffersOnlyNoteCapture() throws {
+        type("@zzqxv")
+        waitUntil { self.actions == [.createNote] }
     }
 
-    func testThesaurusAsksTheLookupAndInsertsTheChosenWord() throws {
+    func testFormerPrefixIsOrdinaryTextAndStillSearchesNotesAndSynonyms() throws {
+        let (_, hit) = makeHit("symbol epsilon")
+        index.answers = [hit]
+        thesaurus.answers["symbol epsilon"] = ["alternative"]
+        type("@symbol epsilon")
+        waitUntil { self.actions.contains(.peekNote(hit.noteID)) }
+        XCTAssertEqual(index.queries.last?.text, "symbol epsilon")
+        XCTAssertEqual(thesaurus.asked.last, "symbol epsilon")
+        XCTAssertTrue(actions.contains(.insertText("alternative")))
+        XCTAssertEqual(actions.last, .createNote)
+    }
+
+    func testThesaurusUsesPlainQueryAndInsertsTheChosenWord() throws {
         thesaurus.answers["happy"] = ["glad", "cheerful", "joyful"]
-        type("@thesaurus happy")
-        waitUntil { self.actions.count == 3 }
+        type("@happy")
+        waitUntil { self.actions.contains(.insertText("cheerful")) }
         XCTAssertEqual(thesaurus.asked.last, "happy")
-        XCTAssertEqual(controller.rows.map(\.title), ["glad", "cheerful", "joyful"])
-        controller.moveHighlight(by: 1)
+        XCTAssertEqual(index.queries.last?.text, "happy")
+        controller.highlightRow(try XCTUnwrap(actions.firstIndex(of: .insertText("cheerful"))))
         controller.commitHighlighted()
         XCTAssertEqual(textView.text, "cheerful")
         XCTAssertEqual(controller.state, .idle)
     }
 
-    func testThesaurusWithoutALookupShowsItIsUnavailable() throws {
+    func testMissingThesaurusDoesNotAddMessageRows() throws {
         controller = makeController(thesaurus: nil)
-        type("@thesaurus happy")
-        waitUntil { self.actions == [.none] }
-        XCTAssertEqual(controller.rows.first?.title, L10n.string("WriterEditor_commandThesaurusUnavailable"))
+        type("@epsilon")
+        waitUntil { self.actions.first == .insertText("ε") }
+        XCTAssertFalse(actions.contains(.none))
+        XCTAssertEqual(actions.last, .createNote)
     }
 
-    func testAFormattingRowTypesTheMarksAndPutsTheCaretBetween() throws {
-        type("hello @bold")
-        waitUntil { self.actions.first == .applyFormat(.bold) }
-        controller.commitHighlighted()
-        XCTAssertEqual(textView.text, "hello ****")
-        XCTAssertEqual(textView.selectedRange, NSRange(location: 8, length: 0))
-        XCTAssertEqual(controller.state, .idle)
+    func testEveryDomainIsMergedByScore() throws {
+        let local = NoteHit(noteID: NoteID(), score: 0.45, snippet: "loosely related")
+        let global = NoteHit(noteID: NoteID(), score: 0.97, snippet: "strongly related")
+        index.answers = [local]
+        index.globalAnswers = [global, local]
+        thesaurus.answers["epsilon"] = ["alternative", "another"]
+        type("@epsilon")
+        waitUntil { self.actions.contains(.insertText("alternative")) }
+        let scores = controller.rows.dropLast().map(\.score)
+        XCTAssertEqual(scores, scores.sorted(by: >))
+        XCTAssertEqual(actions.first, .insertText("ε"), "exact symbol outranks weaker notes and synonyms")
+        XCTAssertLessThan(try XCTUnwrap(actions.firstIndex(of: .peekNote(global.noteID))),
+                          try XCTUnwrap(actions.firstIndex(of: .insertText("alternative"))))
+        XCTAssertLessThan(try XCTUnwrap(actions.firstIndex(of: .insertText("alternative"))),
+                          try XCTUnwrap(actions.firstIndex(of: .peekNote(local.noteID))))
+        XCTAssertEqual(actions.filter { $0 == .peekNote(local.noteID) }.count, 1)
     }
 
-    func testAHeadingRowMarksTheCaretsParagraph() throws {
-        type("Title @h2")
-        waitUntil { self.actions.first == .applyFormat(.heading2) }
-        controller.highlightRow(0)
-        controller.commitHighlighted()
-        XCTAssertEqual(textView.text, "## Title ")
-        XCTAssertEqual(textView.selectedRange, NSRange(location: 9, length: 0))
+    func testStrongerNoteOutranksPartialCommandMatch() throws {
+        let (_, hit) = makeHit("new chap")
+        index.answers = [hit]
+        type("@new chap")
+        waitUntil { self.actions.contains(.startChapter) }
+        XCTAssertEqual(actions.first, .peekNote(hit.noteID))
     }
 
-    func testFormattingRowsAreFoundByTheWordFormat() throws {
-        type("@format")
-        waitUntil { self.actions.contains(.applyFormat(.bold)) }
-        XCTAssertEqual(actions.filter { if case .applyFormat = $0 { return true } else { return false } }.count,
-                       CommandPaletteController.commandRowLimit)
+    func testResultLimitIsAppliedAfterMergingDomainsByStrength() throws {
+        index.answers = (0..<6).map {
+            NoteHit(noteID: NoteID(), score: 0.2 + Double($0) * 0.01, snippet: "related note")
+        }
+        thesaurus.answers["arrow"] = ["direction", "pointer", "dart"]
+        type("@arrow")
+        waitUntil { self.actions.last == .createNote }
+        XCTAssertEqual(controller.rowCount, CommandPaletteController.resultLimit + 1)
+        XCTAssertEqual(actions.last, .createNote)
+        XCTAssertFalse(actions.contains { if case .peekNote = $0 { return true }; return false })
+        let scores = controller.rows.dropLast().map(\.score)
+        XCTAssertEqual(scores, scores.sorted(by: >))
+    }
+
+    func testChangingTheQueryClearsThePreviousReturnActionBeforeSearchCompletes() throws {
+        type("@epsilon")
+        waitUntil { self.actions.first == .insertText("ε") }
+        type("x")
+        XCTAssertTrue(actions.isEmpty)
+        XCTAssertNil(controller.highlightedIndex)
+        XCTAssertTrue(pressReturn())
+        XCTAssertEqual(textView.text, "@epsilonx")
+    }
+
+    func testFormattingWordsHaveNoFormattingActions() throws {
+        for query in ["bold", "h2", "format", "code block", "italic"] {
+            controller.dismiss()
+            type(" @" + query)
+            waitUntil { self.actions.last == .createNote }
+            XCTAssertTrue(controller.rows.allSatisfy {
+                ["character", "text.book.closed", "note.text", "plus.circle"].contains($0.symbolName)
+            }, query)
+        }
     }
 
     // MARK: - Return
@@ -560,23 +618,23 @@ final class CommandPaletteControllerTests: XCTestCase {
     }
 
     func testAStrongFirstMatchIsHighlightedAndReturnRunsIt() throws {
-        type("hello @bol")
-        waitUntil { self.actions.first == .applyFormat(.bold) }
+        type("hello @emd")
+        waitUntil { self.actions.first == .insertText("—") }
         XCTAssertEqual(controller.highlightedIndex, 0)
         XCTAssertGreaterThanOrEqual(controller.rows[0].score, CommandPaletteController.returnThreshold)
         XCTAssertFalse(pressReturn(), "Return is spent on the row, not typed")
-        XCTAssertEqual(textView.text, "hello ****")
+        XCTAssertEqual(textView.text, "hello —")
         XCTAssertEqual(controller.state, .idle)
     }
 
     func testAWeakFirstMatchHighlightsNothingAndReturnTypesTheNewline() throws {
-        type("Title @h2")
-        waitUntil { self.actions.first == .applyFormat(.heading2) }
+        type("Title @emdsh")
+        waitUntil { self.actions.contains(.insertText("—")) }
         XCTAssertNil(controller.highlightedIndex)
         XCTAssertFalse(controller.commitHighlighted())
         XCTAssertTrue(pressReturn(), "the text view types its newline")
         XCTAssertEqual(controller.state, .idle)
-        XCTAssertEqual(textView.text, "Title @h2", "nothing was applied or removed")
+        XCTAssertEqual(textView.text, "Title @emdsh", "nothing was applied or removed")
     }
 
     func testAnEmptyPaletteHighlightsNothing() throws {
@@ -593,8 +651,8 @@ final class CommandPaletteControllerTests: XCTestCase {
     }
 
     func testAnArrowedChoiceStandsForTheSameQueryAndResetsWhenItChanges() throws {
-        type("@bold")
-        waitUntil { self.actions.first == .applyFormat(.bold) && self.actions.count > 1 }
+        type("@emdash")
+        waitUntil { self.actions.first == .insertText("—") && self.actions.count > 1 }
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, 1)
         type("x")
@@ -603,13 +661,15 @@ final class CommandPaletteControllerTests: XCTestCase {
     }
 
     func testTheFirstArrowPressLandsOnAnEndRow() throws {
-        type("@")
+        type("@emdsh")
+        waitUntil { self.actions.contains(.insertText("—")) }
         controller.moveHighlight(by: -1)
         XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1)
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, controller.rowCount - 1, "clamped at the end")
         controller.dismiss()
-        type("@")
+        type(" @emdsh")
+        waitUntil { self.actions.contains(.insertText("—")) }
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, 0)
     }

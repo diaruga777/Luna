@@ -1,6 +1,6 @@
 import Foundation
 
-/// One character the palette's "symbol" command can insert.
+/// One character the palette can insert.
 public struct UnicodeSymbol: Equatable, Sendable {
     public let character: String
     /// Title-cased from the Unicode name, e.g. "Em Dash".
@@ -17,7 +17,7 @@ public struct UnicodeSymbol: Equatable, Sendable {
     var searchStrings: [String] { [name] + aliases }
 }
 
-/// The symbols the "symbol" command searches: punctuation, Greek, arrows,
+/// The symbols the palette searches: punctuation, Greek, arrows,
 /// mathematics, currency, typographic and technical marks. Built once from
 /// the Unicode names of fixed code-point ranges plus a hand-written alias
 /// table for the names writers actually use.

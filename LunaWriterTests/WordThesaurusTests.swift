@@ -23,13 +23,16 @@ final class WordThesaurusTests: XCTestCase {
         XCTAssertEqual(EmbeddingThesaurus.matchCase(of: "happy", to: "glad"), "glad")
     }
 
-    /// The word embedding is an OS asset; where it is absent the command
-    /// reports itself unavailable and there is nothing to look up.
+    /// The word embedding is an OS asset; where it is absent there are no
+    /// synonym rows to show.
     func testTheEmbeddingAnswersOtherWordsForACommonOne() throws {
         let thesaurus = EmbeddingThesaurus()
         try XCTSkipUnless(thesaurus.isAvailable, "no English word embedding on this device")
-        let words = thesaurus.synonyms(for: "happy", limit: 5)
+        let matches = thesaurus.matches(for: "happy", limit: 5)
+        let words = matches.map(\.word)
         XCTAssertEqual(words.count, 5, "\(words)")
+        XCTAssertEqual(matches.map(\.score), matches.map(\.score).sorted(by: >))
+        XCTAssertTrue(matches.allSatisfy { $0.score > 0 && $0.score < 0.8 })
         XCTAssertFalse(words.contains { $0.lowercased().hasPrefix("happ") }, "\(words)")
         XCTAssertTrue(thesaurus.synonyms(for: "two words", limit: 5).isEmpty)
         XCTAssertTrue(thesaurus.synonyms(for: "", limit: 5).isEmpty)

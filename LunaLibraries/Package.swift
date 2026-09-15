@@ -379,10 +379,8 @@ let package = Package(
         // the LunaVaultTailscale package, reached through the `VaultPeer*`
         // protocol seams declared here.
         .target(name: "LunaVaultBEP"),
-        // The Syncthing-era folder mirror and durable local-change/cache
-        // state. Kept separate from the legacy encrypted storage module so
-        // the migration can land without making the Vault share extension
-        // depend on the network runtime.
+        // Syncthing-facing metadata mirror and bounded cache/index settings.
+        // UI and session layers depend on this store, never on each other.
         .target(
             name: "LunaVaultStore",
             dependencies: ["LunaAppConfig", "LunaVaultBEP"],
@@ -425,7 +423,7 @@ let package = Package(
             "LunaDesignSystem", "LunaAppConfig", "LunaVaultModels", "LunaVaultCrypto",
             "LunaVaultStorage", "LunaVaultIndexExtraction",
             "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
-            "LunaVaultSync", "LunaVaultSetup",
+            "LunaVaultSync", "LunaVaultSetup", "LunaVaultStore",
         ]),
         // The companion library is macOS-only by product usage. It is
         // Foundation/Network based and keeps all transport state behind the

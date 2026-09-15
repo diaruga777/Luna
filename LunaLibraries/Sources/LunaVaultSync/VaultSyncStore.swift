@@ -27,6 +27,9 @@ public protocol VaultSyncStoring: AnyObject, Sendable {
     func pendingLocalChanges() throws -> [VaultLocalChange]
     func announcedIndexEntries() throws -> [BEPFileInfo]
     func file(named name: String) throws -> VaultFileRecord?
+    func filesNeedingIndex(limit: Int) throws -> [VaultFileRecord]
+    func markIndexed(name: String, blocksHash: Data) throws
+    func markThumbnail(name: String, blocksHash: Data) throws
 
     func recordCacheInstall(name: String, blocksHash: Data, bytes: Int64, pinned: Bool, now: Date) throws
     func markCacheAccess(name: String, now: Date) throws
@@ -39,4 +42,3 @@ public protocol VaultSyncStoring: AnyObject, Sendable {
 }
 
 extension VaultFolderStore: VaultSyncStoring {}
-

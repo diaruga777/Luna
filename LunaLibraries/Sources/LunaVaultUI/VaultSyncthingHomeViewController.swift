@@ -204,7 +204,9 @@ public final class VaultSyncthingHomeViewController: UIViewController, UITextFie
             async let status = runtime.connectionStatus()
             async let recents = runtime.recentFiles(limit: 12)
             let currentStatus = await status
-            let recentResult = await Result { try await recents }
+            let recentResult: Result<[VaultPresentedFile], Error>
+            do { recentResult = .success(try await recents) }
+            catch { recentResult = .failure(error) }
             guard generation == self.loadGeneration else { return }
             statusLabel.text = currentStatus.rawValue
             statusLabel.accessibilityLabel = "Vault connection: \(currentStatus.rawValue)"
@@ -228,7 +230,7 @@ public final class VaultSyncthingHomeViewController: UIViewController, UITextFie
         searchTask = Task { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             guard let self, !Task.isCancelled else { return }
-            let result = await Result { try await runtime.search(query, limit: 40) }
+            let result = await vaultAsyncResult { [self] in try await self.runtime.search(query, limit: 40) }
             guard !Task.isCancelled else { return }
             switch result {
             case .success(let items): renderResults(items)
@@ -337,7 +339,7 @@ public final class VaultBrowseViewController: UITableViewController {
     private func loadChildren() {
         Task { [weak self] in
             guard let self else { return }
-            let result = await Result { try await runtime.children(of: path) }
+            let result = await vaultAsyncResult { [self] in try await self.runtime.children(of: self.path) }
             guard case .success(let loaded) = result else {
                 refreshControl?.endRefreshing()
                 return
@@ -378,6 +380,11 @@ public final class VaultBrowseViewController: UITableViewController {
             openHandler?(item.id)
         }
     }
+}
+
+private func vaultAsyncResult<T>(_ operation: @escaping () async throws -> T) async -> Result<T, Error> {
+    do { return .success(try await operation()) }
+    catch { return .failure(error) }
 }
 
 private final class VaultFileCard: UIControl {

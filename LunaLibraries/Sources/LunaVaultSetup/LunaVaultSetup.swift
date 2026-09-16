@@ -144,7 +144,17 @@ public final class VaultSetupCoordinator: @unchecked Sendable {
                     current = .unavailable(.keychainUnavailable); return current
                 }
                 _ = try manager.loadRequired()
-                current = .ready(policy: record.policy)
+                // iCloud-backed Vault storage was removed from the product
+                // surface. Treat records written by older builds as the
+                // on-device policy and persist the migration so the retired
+                // provider cannot reappear on the next launch.
+                let policy = record.policy.location == .iCloud
+                    ? VaultStoragePolicy(location: .device)
+                    : record.policy
+                if policy != record.policy {
+                    try store.save(VaultSetupRecord(policy: policy, completedAt: record.completedAt))
+                }
+                current = .ready(policy: policy)
             } catch let failure as VaultSetupFailure {
                 current = .error(failure)
             } catch is VaultCryptoError {

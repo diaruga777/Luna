@@ -26,7 +26,7 @@ final class VaultStage5SetupTests: XCTestCase {
         let coordinator = VaultSetupCoordinator(store: store, rootKeyManager: manager)
         XCTAssertEqual(coordinator.completeFirstRun(policy: policy), .ready(policy: policy))
         let recovered = VaultSetupCoordinator(store: store, rootKeyManager: manager)
-        XCTAssertEqual(recovered.load(), .ready(policy: policy))
+        XCTAssertEqual(recovered.load(), .ready(policy: VaultStoragePolicy(location: .device)))
     }
 
     @MainActor
@@ -57,7 +57,7 @@ final class VaultStage5SetupTests: XCTestCase {
 
         let continueButton = try XCTUnwrap(root.view.viewWithAccessibilityIdentifier(VaultAccessibilityID.setupContinue) as? UIButton)
         continueButton.sendActions(for: .touchUpInside)
-        XCTAssertEqual(coordinator.state, .ready(policy: VaultStoragePolicy(location: .iCloud)))
+        XCTAssertEqual(coordinator.state, .ready(policy: VaultStoragePolicy(location: .mac)))
         XCTAssertTrue(root.view.viewWithAccessibilityIdentifier(VaultAccessibilityID.setup)?.isHidden == true)
         XCTAssertTrue(root.view.viewWithAccessibilityIdentifier(VaultAccessibilityID.content)?.isHidden == false)
     }
@@ -135,7 +135,7 @@ final class VaultStage5SetupTests: XCTestCase {
         let control = try XCTUnwrap(storage.view.viewWithAccessibilityIdentifier("vault.storage.location") as? UISegmentedControl)
         control.selectedSegmentIndex = 1
         control.sendActions(for: .valueChanged)
-        XCTAssertEqual(selected, VaultStoragePolicy(location: .iCloud))
+        XCTAssertEqual(selected, VaultStoragePolicy(location: .mac))
         XCTAssertTrue(reconfigured)
     }
 

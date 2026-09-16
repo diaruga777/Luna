@@ -59,7 +59,7 @@ public final class VaultRootViewController: UIViewController {
     private let recentStack = UIStackView()
     private let groupsStack = UIStackView()
     private let resultsStack = UIStackView()
-    private let policyControl = UISegmentedControl(items: ["iPhone", "iCloud", "Mac"])
+    private let policyControl = UISegmentedControl(items: ["iPhone", "Mac"])
     private let setupButton = UIButton(type: .system)
     private var didAutofocus = false
     private var setupPolicy = VaultStoragePolicy(location: .device)
@@ -103,7 +103,9 @@ public final class VaultRootViewController: UIViewController {
         self.settingsActions = settingsActions
         self.membershipModelVersionProvider = membershipModelVersionProvider
         if let configuredPolicy = setupCoordinator?.configuration.storagePolicy {
-            self.setupPolicy = configuredPolicy
+            self.setupPolicy = configuredPolicy.location == .iCloud
+                ? VaultStoragePolicy(location: .device)
+                : configuredPolicy
         }
         super.init(nibName: nil, bundle: nil)
     }
@@ -340,8 +342,8 @@ public final class VaultRootViewController: UIViewController {
     }
 
     @objc private func policyChanged() {
-        let locations: [VaultStorageLocation] = [.device, .iCloud, .mac]
-        setupPolicy = VaultStoragePolicy(location: locations[max(0, min(2, policyControl.selectedSegmentIndex))])
+        let locations: [VaultStorageLocation] = [.device, .mac]
+        setupPolicy = VaultStoragePolicy(location: locations[max(0, min(1, policyControl.selectedSegmentIndex))])
     }
 
     @objc private func completeSetup() {
@@ -409,9 +411,7 @@ public final class VaultRootViewController: UIViewController {
             }
             updateReadyContent()
             if services?.isReady != true {
-                let message = policy.location == .iCloud
-                    ? "iCloud is unavailable. Check your Apple ID and iCloud Drive."
-                    : policy.location == .mac
+                let message = policy.location == .mac
                     ? "Mac storage is unavailable. Pair or reconnect your Mac in Settings."
                     : "Vault storage needs attention."
                 showContentStatus(message) { [weak self] in
@@ -796,16 +796,15 @@ public final class VaultRootViewController: UIViewController {
         switch reason {
         case .keychainUnavailable: return "Vault Keychain access is unavailable. Unlock this iPhone and try again."
         case .storageUnavailable: return "Vault storage is unavailable. Check device storage and try again."
-        case .iCloudUnavailable: return "iCloud is unavailable. Check your Apple ID and iCloud Drive, then try again."
+        case .iCloudUnavailable: return "Vault storage is unavailable. Check device storage and try again."
         case .macNotPaired: return "Your Mac is not paired. Pair it in Settings, then try again."
         }
     }
 
     private func storageLocationIndex(_ location: VaultStorageLocation) -> Int {
         switch location {
-        case .device: return 0
-        case .iCloud: return 1
-        case .mac: return 2
+        case .device, .iCloud: return 0
+        case .mac: return 1
         }
     }
 

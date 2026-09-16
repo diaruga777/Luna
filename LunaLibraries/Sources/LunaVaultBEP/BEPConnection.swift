@@ -67,7 +67,7 @@ public actor BEPConnection {
         let helloBytes = try BEPFraming.encodeHello(localHello)
         try await stream.write(helloBytes)
         bytesSent += Int64(helloBytes.count)
-        let peer = try await withTimeout(timing.helloTimeout) { [stream] in
+        let peer = try await withTimeout(timing.helloTimeout, onTimeout: { [stream] in stream.close() }) { [stream] in
             try await BEPFraming.readHello(from: stream)
         }
         peerHello = peer
@@ -244,11 +244,12 @@ public enum BEPRequestError: Error, Equatable {
 }
 
 /// Fails after `seconds` with `BEPStreamError.timedOut`.
-func withTimeout<T: Sendable>(_ seconds: TimeInterval, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
+func withTimeout<T: Sendable>(_ seconds: TimeInterval, onTimeout: @escaping @Sendable () -> Void = {}, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await body() }
         group.addTask {
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            onTimeout()
             throw BEPStreamError.timedOut
         }
         let result = try await group.next()!

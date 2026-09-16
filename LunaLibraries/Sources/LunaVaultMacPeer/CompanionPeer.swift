@@ -141,6 +141,10 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private let index: CompanionIndex
     private let localDevice: DeviceID
     private let folderID: String
+    private let transferLock = NSLock()
+    private var authorized = false
+    private var pending: [BEPIndex] = []
+    private var transferTask: Task<Void, Never>?
 
     public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String) {
         self.rootURL = rootURL.standardizedFileURL
@@ -154,20 +158,94 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
         // accepted so the protocol state machine can advance normally.
     }
 
+    /// Called only after the Mac user has approved this device and the
+    /// initial ClusterConfig/Index have been sent. No file access before it.
+    public func startServing(_ connection: BEPConnection) {
+        let queued = transferLock.withLock { () -> [BEPIndex] in
+            authorized = true
+            defer { pending.removeAll() }
+            return pending
+        }
+        for incoming in queued { enqueue(incoming, connection: connection) }
+    }
+
     public func connection(_ connection: BEPConnection, didReceive incoming: BEPIndex) async {
         guard incoming.folder == folderID else { return }
-        for file in incoming.files where !file.deleted {
-            try? self.index.upsert(CompanionFileRecord(info: file))
+        let ready = transferLock.withLock { () -> Bool in
+            if !authorized { pending.append(incoming); return false }
+            return true
+        }
+        if ready { enqueue(incoming, connection: connection) }
+    }
+
+    private func enqueue(_ incoming: BEPIndex, connection: BEPConnection) {
+        transferLock.withLock {
+            let previous = transferTask
+            transferTask = Task { [self] in
+                await previous?.value
+                guard !Task.isCancelled else { return }
+                do {
+                    for file in incoming.files where file.type == .file && !file.invalid {
+                        try await receive(file, from: connection)
+                    }
+                    guard !incoming.files.isEmpty else { return }
+                    let files = try index.all()
+                    try await connection.send(index: BEPIndex(folder: folderID, files: files,
+                        lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
+                } catch { await connection.close(reason: "Could not save iPhone changes: \(error)") }
+            }
         }
     }
 
+    private func safeURL(_ name: String) throws -> URL {
+        try BEPFileInfo.validateName(name)
+        let root = rootURL.resolvingSymlinksInPath()
+        let url = root.appendingPathComponent(name).resolvingSymlinksInPath()
+        guard url.path.hasPrefix(root.path + "/") else { throw BEPStreamError.closed }
+        return url
+    }
+
+    private func receive(_ file: BEPFileInfo, from connection: BEPConnection) async throws {
+        try file.validateForWire()
+        let destination = try safeURL(file.name)
+        // Deletions require conflict/tombstone handling; never silently remove
+        // an unrelated or newer Mac file from a stale phone announcement.
+        if file.deleted { throw BEPStreamError.closed }
+        if let current = try index.file(named: file.name), current.blocksHash == file.blocksHash,
+           FileManager.default.fileExists(atPath: destination.path) { return }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            throw VaultTransportError.internalError("A different Mac file already has this name: \(file.name)")
+        }
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".luna-upload-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: temporary.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let output = try FileHandle(forWritingTo: temporary)
+        defer { try? output.close() }
+        var written: Int64 = 0
+        for (offset, block) in file.blocks.enumerated() {
+            try Task.checkCancellation()
+            let bytes = try await connection.request(folder: folderID, name: file.name, block: block, blockNo: Int32(offset))
+            guard bytes.count == Int(block.size) else { throw BEPStreamError.closed }
+            try output.write(contentsOf: bytes); written += Int64(bytes.count)
+        }
+        guard written == file.size else { throw BEPStreamError.closed }
+        try output.synchronize()
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(file.modifiedS))], ofItemAtPath: destination.path)
+        var saved = file; saved.sequence = try index.maxSequence() + 1
+        try index.upsert(CompanionFileRecord(info: saved))
+    }
+
     public func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
-        guard request.folder == folderID,
+        guard transferLock.withLock({ authorized }), request.folder == folderID,
               let record = try? index.file(named: request.name),
               record.blocks.indices.contains(Int(request.blockNo)),
-              record.blocks[Int(request.blockNo)].hash == request.hash else { return .failure(.noSuchFile) }
-        let url = rootURL.appendingPathComponent(request.name)
+              record.blocks[Int(request.blockNo)].hash == request.hash,
+              record.blocks[Int(request.blockNo)].offset == request.offset,
+              record.blocks[Int(request.blockNo)].size == request.size else { return .failure(.noSuchFile) }
         do {
+            let url = try safeURL(request.name)
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
             try handle.seek(toOffset: UInt64(request.offset))
@@ -177,7 +255,9 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
         } catch { return .failure(.noSuchFile) }
     }
 
-    public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {}
+    public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {
+        transferLock.withLock { authorized = false; pending.removeAll(); transferTask?.cancel(); transferTask = nil }
+    }
 }
 
 /// A small pairing gate shared by the status-item UI and the listener.

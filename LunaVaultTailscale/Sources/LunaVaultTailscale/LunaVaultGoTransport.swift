@@ -69,7 +69,9 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
             var seen: Date?
             var addresses: [String]
         }
-        let response = try JSONDecoder().decode(Response.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let response = try decoder.decode(Response.self, from: data)
         let addresses = response.addresses.compactMap(VaultPeerAddress.init(syncthingURL:))
         return VaultDiscoveryResult(addresses: addresses, seen: response.seen)
     }
@@ -78,9 +80,8 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
         let payload = try JSONSerialization.data(withJSONObject: ["addresses": addresses])
         var seconds: Int32 = 0
         let result = configuration.stateDirectory.path.withCString { directory in
-            payload.withUnsafeBytes { raw in
-                let pointer = raw.bindMemory(to: CChar.self).baseAddress!
-                return api.announce(directory, pointer, &seconds)
+            String(decoding: payload, as: UTF8.self).withCString { pointer in
+                api.announce(directory, pointer, &seconds)
             }
         }
         try check(result, operation: "announce")
@@ -151,18 +152,24 @@ public final class LunaVaultGoListener: VaultPeerListening, @unchecked Sendable 
     }
 
     public func accept() async throws -> VaultAcceptedPeer {
-        var descriptor: Int32 = -1
-        var deviceBuffer = [CChar](repeating: 0, count: 128)
-        var remoteBuffer = [CChar](repeating: 0, count: 512)
-        let result = api.accept(handle, &descriptor, &deviceBuffer, deviceBuffer.count,
-                                &remoteBuffer, remoteBuffer.count)
-        guard result == 0 else {
-            throw VaultTransportError.internalError(api.message())
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async { [self] in
+                do {
+                    var descriptor: Int32 = -1
+                    var deviceBuffer = [CChar](repeating: 0, count: 128)
+                    var remoteBuffer = [CChar](repeating: 0, count: 512)
+                    let result = api.accept(handle, &descriptor, &deviceBuffer, deviceBuffer.count,
+                                            &remoteBuffer, remoteBuffer.count)
+                    guard result == 0 else { throw VaultTransportError.internalError(api.message()) }
+                    let stream = FileDescriptorByteStream(fileDescriptor: descriptor)
+                    do {
+                        let device = try DeviceID(string: String(cString: deviceBuffer))
+                        continuation.resume(returning: VaultAcceptedPeer(stream: stream, device: device,
+                            remoteDescription: String(cString: remoteBuffer)))
+                    } catch { stream.close(); throw error }
+                } catch { continuation.resume(throwing: error) }
+            }
         }
-        let device = try DeviceID(string: String(cString: deviceBuffer))
-        return VaultAcceptedPeer(stream: FileDescriptorByteStream(fileDescriptor: descriptor),
-                                 device: device,
-                                 remoteDescription: String(cString: remoteBuffer))
     }
 
     public var announcedAddresses: [String] {

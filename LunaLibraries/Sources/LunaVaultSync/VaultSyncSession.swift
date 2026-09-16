@@ -107,7 +107,12 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         receivedInitialIndex = false
         _ = try store.purgeStaleGenerations()
         await setState(.resolving)
-        let addresses = try await resolver.addresses(for: peer, forceRefresh: forceLookup)
+        let addresses: [VaultPeerAddress]
+        do { addresses = try await resolver.addresses(for: peer, forceRefresh: forceLookup) }
+        catch {
+            await setState(.offline(String(describing: error)))
+            throw error
+        }
         var failures: [String] = []
         for address in addresses {
             if Task.isCancelled { throw CancellationError() }
@@ -117,19 +122,17 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 let candidate = BEPConnection(stream: stream, peerDevice: peer.deviceID,
                                               localHello: hello, delegate: self)
                 connection = candidate
+                await setState(peer.isFolderAccepted ? .syncing : .awaitingFolder)
                 _ = try await candidate.start()
                 let entries = try store.announcedIndexEntries()
                 try await candidate.send(clusterConfig: clusterConfig(peer: peer, entries: entries))
                 if peer.isFolderAccepted {
-                    await setState(.syncing)
                     try await candidate.send(index: BEPIndex(
                         folder: peer.folderID, files: entries,
                         lastSequence: entries.map(\.sequence).max() ?? 0, isUpdate: false))
-                } else {
-                    await setState(.awaitingFolder)
                 }
-                try store.recordConnected(at: clock())
-                if peer.isFolderAccepted { await setState(.connected) }
+                // A successful write is not an acknowledgement from the Mac.
+                // The first accepted index below establishes connection readiness.
                 return
             } catch {
                 failures.append("\(address): \(String(describing: error))")
@@ -155,7 +158,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         peer.folderID = id
         peer.folderLabel = label ?? offered.label
         try store.savePeer(peer)
-        try await start(forceLookup: false)
+        try await start(forceLookup: true)
     }
 
     @discardableResult
@@ -235,8 +238,12 @@ public actor VaultSyncSession: BEPConnectionDelegate {
             .map { VaultRemoteFolder(id: $0.id, label: $0.label) }
         offeredFolders = folders
         await callbacks.foldersChanged(folders)
-        guard peer.isFolderAccepted,
-              let folder = clusterConfig.folders.first(where: { $0.id == peer.folderID }),
+        guard peer.isFolderAccepted else { return }
+        guard folders.contains(where: { $0.id == peer.folderID }) else {
+            await connection.close(reason: "The Mac has not shared this folder with this iPhone")
+            return
+        }
+        guard let folder = clusterConfig.folders.first(where: { $0.id == peer.folderID }),
               let peerState = folder.devices.first(where: { $0.id == peer.deviceID }) else { return }
         if peerState.indexID != 0, peerState.indexID != peer.theirIndexID {
             try? store.forgetTheirIndex()
@@ -254,7 +261,11 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 invalidatedCacheNames.insert(name)
             }
             for name in result.confirmed { try? cache.setPinned(false, name: name) }
-            receivedInitialIndex = true
+            if !index.isUpdate {
+                receivedInitialIndex = true
+                try store.recordConnected(at: clock())
+                await setState(.connected)
+            }
             await callbacks.indexApplied(result)
         } catch {
             await connection.close(reason: "Invalid index")

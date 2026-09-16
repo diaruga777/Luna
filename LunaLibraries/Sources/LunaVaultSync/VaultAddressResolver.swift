@@ -34,7 +34,7 @@ public actor VaultAddressResolver {
 
     public func addresses(for peer: VaultPeerRecord, forceRefresh: Bool = false) async throws -> [VaultPeerAddress] {
         var result = Self.unique(peer.manualAddresses)
-        guard peer.networkMode == .syncthingPublic else {
+        guard peer.networkMode == .syncthingPublic, result.isEmpty else {
             guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
             return result
         }

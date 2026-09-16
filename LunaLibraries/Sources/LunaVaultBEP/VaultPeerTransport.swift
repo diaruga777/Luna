@@ -16,8 +16,9 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
         guard let url = URL(string: string), let scheme = url.scheme?.lowercased() else { return nil }
         switch scheme {
         case "tcp", "tcp4", "tcp6":
-            guard let host = url.host, !host.isEmpty else { return nil }
-            self = .tcp(host: host, port: UInt16(url.port ?? 22000))
+            guard let host = url.host, !host.isEmpty,
+                  let port = UInt16(exactly: url.port ?? 22000), port > 0 else { return nil }
+            self = .tcp(host: host, port: port)
         case "relay":
             guard url.host != nil else { return nil }
             self = .relay(url: url)

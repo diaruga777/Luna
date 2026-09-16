@@ -52,17 +52,32 @@ public struct PaletteRow: Equatable {
     public var detail: String?
     public var symbolName: String
     public var action: PaletteAction
+    /// A symbol is displayed as a tile; its name remains available to VoiceOver.
+    public var symbolCharacter: String?
     /// How well the row matches the query, `0...1`. A row at or above
     /// `CommandPaletteController.returnThreshold` in first place is what
     /// Return runs.
     public var score: Double
 
-    public init(title: String, detail: String? = nil, symbolName: String, action: PaletteAction, score: Double = 0) {
+    public init(title: String, detail: String? = nil, symbolName: String, action: PaletteAction, score: Double = 0, symbolCharacter: String? = nil) {
         self.title = title
         self.detail = detail
         self.symbolName = symbolName
         self.action = action
         self.score = score
+        self.symbolCharacter = symbolCharacter
+    }
+}
+
+extension PaletteRow {
+    /// Symbols share a row at the strongest symbol's position. Keep the
+    /// underlying ranked indices so taps and Return still resolve identically.
+    static func displayGroups(in rows: [PaletteRow]) -> [[Int]] {
+        let symbols = rows.indices.filter { rows[$0].symbolCharacter != nil }
+        return rows.indices.compactMap { index in
+            if rows[index].symbolCharacter == nil { return [index] }
+            return index == symbols.first ? symbols : nil
+        }
     }
 }
 
@@ -366,9 +381,9 @@ public final class CommandPaletteController {
             .filter { $0.score >= Self.commandMatchFloor }
             .map { symbol, score in
                 PaletteRow(
-                    title: symbol.character + "   " + symbol.name,
-                    detail: symbol.aliases.isEmpty ? nil : symbol.aliases.prefix(3).joined(separator: " · "),
-                    symbolName: "character", action: .insertText(symbol.character), score: score)
+                    title: symbol.name,
+                    symbolName: "character", action: .insertText(symbol.character), score: score,
+                    symbolCharacter: symbol.character)
             }
         if let thesaurus, thesaurus.isAvailable {
             found.append(contentsOf: thesaurus.matches(for: query, limit: Self.synonymRowLimit).map {
@@ -379,7 +394,7 @@ public final class CommandPaletteController {
         let chapterTitle = L10n.string("WriterEditor_commandNewChapter")
         if let score = FuzzyMatcher.score(query: query, candidate: chapterTitle), score >= Self.commandMatchFloor {
             found.append(PaletteRow(
-                title: chapterTitle, detail: L10n.string("WriterEditor_commandNewChapterDetail"),
+                title: chapterTitle,
                 symbolName: "book.pages", action: .startChapter, score: score))
         }
         return found
@@ -402,7 +417,17 @@ public final class CommandPaletteController {
         assembled = assembled.enumerated().sorted {
             $0.element.score == $1.element.score
                 ? $0.offset < $1.offset : $0.element.score > $1.element.score
-        }.prefix(Self.resultLimit).map(\.element)
+        }.map(\.element)
+        // A strip of symbols uses only one of the six visible result rows.
+        var usedRows = 0
+        var hasSymbols = false
+        assembled = assembled.filter { row in
+            if row.symbolCharacter != nil, hasSymbols { return true }
+            guard usedRows < Self.resultLimit else { return false }
+            usedRows += 1
+            if row.symbolCharacter != nil { hasSymbols = true }
+            return true
+        }
         if !trimmed.isEmpty {
             assembled.append(PaletteRow(
                 title: L10n.string("WriterEditor_paletteNewNoteNamed", trimmed),
@@ -440,13 +465,14 @@ public final class CommandPaletteController {
     /// up on the last.
     public func moveHighlight(by delta: Int) {
         guard state.isActive, rowCount > 0 else { return }
+        let order = PaletteRow.displayGroups(in: rows).flatMap { $0 }
         let next: Int
-        if let current = highlightedIndex {
-            next = current + delta
+        if let current = highlightedIndex, let position = order.firstIndex(of: current) {
+            next = position + delta
         } else {
-            next = delta >= 0 ? 0 : rowCount - 1
+            next = delta >= 0 ? 0 : order.count - 1
         }
-        pin(min(max(0, next), rowCount - 1))
+        pin(order[min(max(0, next), order.count - 1)])
     }
 
     public func highlightRow(_ index: Int) {

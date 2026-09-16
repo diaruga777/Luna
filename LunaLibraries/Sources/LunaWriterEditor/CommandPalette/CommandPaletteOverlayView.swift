@@ -29,8 +29,15 @@ public final class CommandPaletteOverlayView: UIView {
 
     private let panel = GlassStyle.focusPanel()
     private let stack = UIStackView()
+    private let scrollView = UIScrollView()
+    private var resultViews: [Int: UIView] = [:]
+    private var placement: (viewport: CGRect, origin: CGPoint)?
+    private var reservedHeight: CGFloat = 0
+    public private(set) var isBelowAnchor = false
+    private static let headerHeight: CGFloat = 32
     private var rows: [PaletteRow] = []
     private var highlighted: Int?
+    private var needsHighlightReveal = false
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -52,18 +59,28 @@ public final class CommandPaletteOverlayView: UIView {
         stack.axis = .vertical
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
-        panel.contentView.addSubview(stack)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        panel.contentView.addSubview(scrollView)
+        scrollView.addSubview(stack)
 
         NSLayoutConstraint.activate([
             panel.leadingAnchor.constraint(equalTo: leadingAnchor),
             panel.trailingAnchor.constraint(equalTo: trailingAnchor),
             panel.topAnchor.constraint(equalTo: topAnchor),
             panel.bottomAnchor.constraint(equalTo: bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 4),
-            stack.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor, constant: -4),
+            scrollView.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: panel.contentView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -4),
+            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
         ])
+        accessibilityIdentifier = "writer.commandPalette"
+        rebuild()
     }
 
     // MARK: - Content
@@ -81,19 +98,99 @@ public final class CommandPaletteOverlayView: UIView {
     /// Tints the row Return will run and shows the return arrow on it. nil
     /// clears both: Return types a newline.
     public func highlight(_ index: Int?) {
+        needsHighlightReveal = needsHighlightReveal || highlighted != index
         highlighted = index
-        for (position, view) in stack.arrangedSubviews.enumerated() {
+        for (position, view) in resultViews {
             let isHighlighted = position == index
             view.backgroundColor = isHighlighted ? EditorTheme.caret.withAlphaComponent(0.22) : .clear
             (view as? PaletteRowView)?.returnIcon.isHidden = !isHighlighted
+            let button = (view as? PaletteRowView)?.button ?? (view as? UIButton)
+            button?.accessibilityTraits = isHighlighted ? [.button, .selected] : [.button]
+        }
+    }
+
+    private func revealHighlightIfNeeded() {
+        guard needsHighlightReveal else { return }
+        needsHighlightReveal = false
+        guard let highlighted, let selected = resultViews[highlighted] else { return }
+        layoutIfNeeded()
+        if let strip = selected.superview?.superview as? UIScrollView, strip !== scrollView {
+            strip.scrollRectToVisible(selected.convert(selected.bounds, to: strip), animated: false)
+        }
+        if highlighted == 0 {
+            // Keep the cue visible with the best result, including when an
+            // arrow key returns to it from further down the list.
+            scrollView.setContentOffset(.zero, animated: false)
+        } else {
+            scrollView.scrollRectToVisible(selected.convert(selected.bounds, to: scrollView), animated: false)
         }
     }
 
     private func rebuild() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for (index, row) in rows.enumerated() {
-            stack.addArrangedSubview(makeRowView(row, index: index))
+        resultViews.removeAll()
+        needsHighlightReveal = true
+        scrollView.setContentOffset(.zero, animated: false)
+
+        let cue = UILabel()
+        cue.text = L10n.string("WriterLibrary_settings_paletteRow")
+        cue.font = UIFont.preferredFont(forTextStyle: .caption1)
+        cue.textColor = EditorTheme.caret
+        cue.accessibilityIdentifier = "writer.commandPalette.indicator"
+        let header = UIView()
+        header.addSubview(cue)
+        cue.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            header.heightAnchor.constraint(equalToConstant: Self.headerHeight),
+            cue.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
+            cue.trailingAnchor.constraint(lessThanOrEqualTo: header.trailingAnchor, constant: -12),
+            cue.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+        ])
+        stack.addArrangedSubview(header)
+        for group in PaletteRow.displayGroups(in: rows) {
+            if rows[group[0]].symbolCharacter != nil {
+                stack.addArrangedSubview(makeSymbolStrip(indices: group))
+            } else {
+                let index = group[0]
+                let view = makeRowView(rows[index], index: index)
+                resultViews[index] = view
+                stack.addArrangedSubview(view)
+            }
         }
+    }
+
+    private func makeSymbolStrip(indices: [Int]) -> UIView {
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.heightAnchor.constraint(equalToConstant: Self.rowHeight).isActive = true
+        let tiles = UIStackView()
+        tiles.axis = .horizontal
+        tiles.spacing = 4
+        tiles.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(tiles)
+        NSLayoutConstraint.activate([
+            tiles.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 8),
+            tiles.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -8),
+            tiles.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            tiles.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            tiles.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+        ])
+        for index in indices {
+            let button = UIButton(type: .system)
+            button.setTitle(rows[index].symbolCharacter, for: .normal)
+            button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .title2)
+            button.setTitleColor(LunaColors.primaryText, for: .normal)
+            button.accessibilityLabel = rows[index].title
+            button.accessibilityIdentifier = "writer.commandPalette.result.\(index)"
+            button.tag = index
+            button.layer.cornerRadius = 8
+            button.addTarget(self, action: #selector(rowTapped(_:)), for: .touchUpInside)
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.rowHeight).isActive = true
+            tiles.addArrangedSubview(button)
+            resultViews[index] = button
+        }
+        return scroll
     }
 
     private func makeRowView(_ row: PaletteRow, index: Int) -> UIView {
@@ -104,21 +201,16 @@ public final class CommandPaletteOverlayView: UIView {
         configuration.imagePadding = 8
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
         configuration.attributedTitle = AttributedString(
-            row.title,
+            row.title.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " "),
             attributes: AttributeContainer([
                 .font: UIFont.preferredFont(forTextStyle: .subheadline),
                 .foregroundColor: LunaColors.primaryText,
             ]))
-        if let detail = row.detail {
-            configuration.attributedSubtitle = AttributedString(
-                detail,
-                attributes: AttributeContainer([
-                    .font: UIFont.preferredFont(forTextStyle: .caption1),
-                    .foregroundColor: LunaColors.tertiaryText,
-                ]))
-        }
         configuration.titleAlignment = .leading
+        configuration.titleLineBreakMode = .byTruncatingTail
         button.configuration = configuration
+        button.titleLabel?.numberOfLines = 1
+        button.accessibilityIdentifier = "writer.commandPalette.result.\(index)"
         button.contentHorizontalAlignment = .leading
         button.tintColor = EditorTheme.caret
         button.tag = index
@@ -137,24 +229,48 @@ public final class CommandPaletteOverlayView: UIView {
 
     // MARK: - Placement
 
-    /// Puts the panel under the marker, or above it when the keyboard would
-    /// cover it. `caret` and `keyboard` are in `container` coordinates.
+    /// Only a new palette session or a viewport/keyboard change relocates
+    /// the panel. Text reflow and typewriter scrolling cannot move its origin.
+    public func resetPlacement() {
+        placement = nil
+        reservedHeight = 0
+    }
+
     public func place(anchoredTo caret: CGRect, in container: UIView, keyboardTop: CGFloat) {
-        let column = min(Self.maximumWidth, container.bounds.width - 32)
-        let height = max(Self.rowHeight, systemLayoutSizeFitting(
+        let safe = container.bounds.inset(by: container.safeAreaInsets)
+        let limit = min(safe.maxY, keyboardTop > 0 ? keyboardTop : safe.maxY) - Self.anchorGap
+        let viewport = CGRect(x: safe.minX + 16, y: safe.minY,
+                              width: max(1, safe.width - 32), height: max(1, limit - safe.minY))
+        let column = min(Self.maximumWidth, viewport.width)
+        if placement?.viewport != viewport {
+            // Reserve room for the full set before results arrive, so changing
+            // row counts never flips the panel across the query or keyboard.
+            let maximumHeight = Self.headerHeight + 8 +
+                CGFloat(CommandPaletteController.resultLimit + 1) * Self.rowHeight
+            let above = max(0, caret.minY - Self.anchorGap - viewport.minY)
+            let below = max(viewport.minY, caret.maxY + Self.anchorGap)
+            let belowSpace = max(0, viewport.maxY - below)
+            // Prefer above when it fits at least a result: wrapped query text
+            // then grows away from the panel instead of underneath it.
+            let useAbove = above >= Self.headerHeight + Self.rowHeight + 8 || above > belowSpace
+            isBelowAnchor = !useAbove
+            reservedHeight = max(1, min(maximumHeight, useAbove ? above : belowSpace))
+            let top = useAbove ? max(viewport.minY, caret.minY - Self.anchorGap - reservedHeight) : below
+            let left = min(max(viewport.minX, caret.minX - 8), viewport.maxX - column)
+            placement = (viewport, CGPoint(x: left, y: top))
+        }
+        let contentHeight = stack.systemLayoutSizeFitting(
             CGSize(width: column, height: UIView.layoutFittingCompressedSize.height),
             withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel).height)
-
-        let below = caret.maxY + Self.anchorGap
-        let limit = keyboardTop > 0 ? keyboardTop : container.bounds.maxY
-        let top = (below + height <= limit) ? below : max(0, caret.minY - Self.anchorGap - height)
-        let left = min(max(16, caret.minX - 8), max(16, container.bounds.width - column - 16))
-        frame = CGRect(x: left, y: top, width: column, height: height)
+            verticalFittingPriority: .fittingSizeLevel).height + 8
+        frame = CGRect(origin: placement!.origin,
+                       size: CGSize(width: column, height: min(contentHeight, reservedHeight)))
+        revealHighlightIfNeeded()
     }
+
 }
 
-/// One row: the button carries the icon, title and detail; the return arrow
+/// One concise row: the button carries an icon and title; the return arrow
 /// at the trailing edge shows on the row Return runs.
 final class PaletteRowView: UIView {
     let button = UIButton(type: .system)

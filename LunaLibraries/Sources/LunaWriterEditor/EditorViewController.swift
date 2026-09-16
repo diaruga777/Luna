@@ -463,6 +463,10 @@ public final class EditorViewController: UIViewController {
     // MARK: - Typewriter
 
     fileprivate func scrollCaretToTypewriterLine() {
+        if palette.state.isActive {
+            keepPaletteQueryVisible()
+            return
+        }
         // A programmatic scroll fighting the user's own finger reads as the
         // page fighting back; wait for the gesture to settle.
         guard !textView.isDragging, !textView.isDecelerating else { return }
@@ -486,13 +490,26 @@ public final class EditorViewController: UIViewController {
     // MARK: - Command palette
 
     fileprivate func updateOverlay() {
-        guard palette.state.isActive, !palette.isPeeking, !palette.rows.isEmpty else {
+        guard palette.state.isActive, !palette.isPeeking else {
             overlay.isHidden = true
             return
         }
         overlay.update(rows: palette.rows, highlightedIndex: palette.highlightedIndex)
         overlay.isHidden = false
         placeOverlay()
+        keepPaletteQueryVisible()
+    }
+
+    /// A panel below the initial line stays fixed when the query wraps. Move
+    /// the sheet just enough to keep its insertion point above that panel.
+    private func keepPaletteQueryVisible() {
+        guard !overlay.isHidden, overlay.isBelowAnchor,
+              !textView.isDragging, !textView.isDecelerating,
+              let selection = textView.selectedTextRange else { return }
+        let caret = view.convert(textView.caretRect(for: selection.end), from: textView)
+        let overlap = caret.maxY + CommandPaletteOverlayView.anchorGap - overlay.frame.minY
+        guard overlap > 1 else { return }
+        textView.contentOffset.y += overlap
     }
 
     private func placeOverlay() {
@@ -895,6 +912,7 @@ extension EditorViewController: CommandPaletteControllerDelegate {
     }
 
     public func commandPaletteDidEnd(_ controller: CommandPaletteController) {
+        overlay.resetPlacement()
         overlay.isHidden = true
         peekCard?.removeFromSuperview()
         peekCard = nil

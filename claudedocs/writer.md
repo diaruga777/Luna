@@ -80,14 +80,26 @@ prefix, "emd" → Em Dash; scattered subsequences stay unhighlighted), or
 when words typed match nothing but the New note row (Q5's "Return with no
 match creates a note"). The arrows or a tap pin another row for the same
 query. With nothing highlighted Return types a newline and closes the palette.
-An empty or whitespace-only query has no rows and the panel stays hidden.
+An empty or whitespace-only query has no commands: a small Command Palette
+label remains visible so the writer can distinguish query input from body text.
+The panel keeps its screen origin for the entire palette session, including
+soft line wrapping, typewriter scrolling, and pending searches. Only a new
+session or a changed keyboard/viewport resets placement. Results scroll within
+available space rather than flipping above/below the query as their count changes.
+When the panel is below the initial line, the sheet scrolls enough to keep a
+wrapped query’s insertion point above it.
 Changing the query clears old results and their Return action while the next
 search is pending.
 
 Every nonempty query searches **all domains**, with no command prefixes or
 exclusive modes: `epsilon` finds ε directly; `happy` finds related words as
-well as any matching notes and symbols. The six strongest results are merged by descending
-match score, with stable ties; local notes only take precedence over other
+well as any matching notes and symbols. Results are merged by descending
+match score, with stable ties, into six result rows. Symbols occupy a single
+horizontal strip at the strongest symbol's position, ordered best-first; each
+tile displays only the character, with its name available to VoiceOver. The
+strip counts as one row, leaving room for notes and words. Other results use
+one concise title with no explanatory subtitle. Keyboard selection follows
+the visible order and highlights the actual symbol tile or result; local notes only take precedence over other
 notes on a tie. Note text also uses the same lexical matcher as symbol names
 and commands. The New note action stays last for nonempty queries.
 Formatting commands and their Markdown insertion helpers have been removed.

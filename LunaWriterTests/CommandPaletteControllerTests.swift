@@ -582,9 +582,11 @@ final class CommandPaletteControllerTests: XCTestCase {
         thesaurus.answers["arrow"] = ["direction", "pointer", "dart"]
         type("@arrow")
         waitUntil { self.actions.last == .createNote }
-        XCTAssertEqual(controller.rowCount, CommandPaletteController.resultLimit + 1)
+        XCTAssertEqual(PaletteRow.displayGroups(in: controller.rows).count, CommandPaletteController.resultLimit + 1)
+        XCTAssertGreaterThan(controller.rowCount, CommandPaletteController.resultLimit + 1)
         XCTAssertEqual(actions.last, .createNote)
-        XCTAssertFalse(actions.contains { if case .peekNote = $0 { return true }; return false })
+        XCTAssertTrue(actions.contains { if case .peekNote = $0 { return true }; return false },
+                      "symbol tiles leave room for other result types")
         let scores = controller.rows.dropLast().map(\.score)
         XCTAssertEqual(scores, scores.sorted(by: >))
     }

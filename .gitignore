@@ -26,3 +26,5 @@ build/
 *.DS_Store
 .DS_Store
 LunaVaultTailscale/.build/
+
+.build-vault-mac/

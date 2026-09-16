@@ -13,7 +13,8 @@ unauthenticated stream.
 ## v1 policy
 
 - One paired Mac and one folder.
-- iOS may add and delete files; it does not rename, move, or edit them.
+- The active iOS UI imports and previews files; it does not expose delete,
+  rename, move, or edit.
 - The iPhone announces only local files that it created and still retains.
 - File dates are the BEP modification time. Creation or embedded content dates
   are intentionally ignored.
@@ -38,11 +39,15 @@ certificate live below the Vault App Group directory and use
 
 ## Pairing and networking
 
-The companion is a SwiftPM menu-bar accessory. Pairing is a Mac QR/text device
-ID plus one Accept click on the Mac; typing the ID is the fallback on either
-side. The companion owns an embedded tsnet node. The iPhone can use Syncthing
-public discovery/relay, Tailscale, or manually entered addresses. The existing
-Vault share extension remains unchanged.
+The companion is a SwiftPM app with a window and menu-bar item. Copy its
+pairing code into iPhone Settings, then Accept on the Mac. The code includes
+the Mac's certificate identity and direct addresses. The iPhone reports
+success only after authentication and a real initial-index exchange. Both
+home and Settings use the same durable peer. A separately installed Tailscale
+client can provide routing; the active runtime does not start embedded tsnet.
+Public discovery/relay publication and the legacy share extension are not
+wired into this runtime. See [the pairing repair](vault-pairing-repair.md) for
+current behavior, test commands, and remaining boundaries.
 
 ## Module boundaries
 

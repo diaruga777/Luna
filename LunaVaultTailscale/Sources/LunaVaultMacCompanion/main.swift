@@ -1,192 +1,194 @@
 import AppKit
-import CoreImage
 import Foundation
 import LunaVaultBEP
 import LunaVaultMacPeer
 import LunaVaultTailscale
 
-/// Luna Vault's companion is intentionally a menu-bar accessory rather than a
-/// document app. It owns one selected folder, one embedded tailnet identity,
-/// and one BEP listener; all details stay behind the status item.
-@main
-@MainActor
-final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
+@main @MainActor
+final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
+    private var window: NSWindow!
     private var statusItem: NSStatusItem!
     private var controller: CompanionController!
+    private let codeField = NSTextField(wrappingLabelWithString: "Starting…")
+    private let statusField = NSTextField(wrappingLabelWithString: "Starting…")
+    private var timer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
         controller = CompanionController()
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "Luna Vault"; window.isReleasedWhenClosed = false
+        let heading = NSTextField(labelWithString: "Luna Vault on Mac")
+        heading.font = .systemFont(ofSize: 24, weight: .semibold)
+        let instructions = NSTextField(wrappingLabelWithString: "Choose a folder, copy the pairing code, and paste it in Vault Settings on your iPhone. Accept the request here to share this folder.")
+        codeField.isSelectable = true; codeField.maximumNumberOfLines = 4
+        codeField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        let copy = NSButton(title: "Copy pairing code", target: self, action: #selector(copyCode))
+        let choose = NSButton(title: "Choose folder…", target: self, action: #selector(chooseFolder))
+        let stack = NSStackView(views: [heading, instructions, choose, codeField, copy, statusField])
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 18
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView!.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 28),
+            instructions.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            codeField.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            statusField.widthAnchor.constraint(equalTo: stack.widthAnchor),
+        ])
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "Luna Vault"
-        statusItem.menu = makeMenu()
-        controller.start()
-    }
-
-    private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        let status = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
-        status.tag = 100
-        menu.addItem(status)
-        menu.addItem(.separator())
-        menu.addItem(item: "Choose Folder…", action: #selector(chooseFolder))
-        menu.addItem(item: "Pair iPhone…", action: #selector(pairPhone))
-        menu.addItem(item: "Copy Device ID", action: #selector(copyDeviceID))
-        menu.addItem(.separator())
-        let network = NSMenuItem(title: "Announce on Syncthing discovery", action: #selector(toggleNetwork), keyEquivalent: "")
-        network.tag = 101
-        network.state = .on
-        menu.addItem(network)
-        menu.addItem(item: "Quit Luna Vault", action: #selector(quit), keyEquivalent: "q")
-        menu.delegate = self
-        return menu
-    }
-
-    @objc private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use Folder"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        controller.selectFolder(url)
-    }
-
-    @objc private func pairPhone() { controller.showPairing(on: statusItem.button?.window) }
-
-    @objc private func copyDeviceID() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(controller.deviceIDText, forType: .string)
-    }
-
-    @objc private func toggleNetwork(_ item: NSMenuItem) {
-        item.state = item.state == .on ? .off : .on
-        controller.setDiscoveryEnabled(item.state == .on)
-    }
-
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
-
-    @MainActor
-    func menuWillOpen(_ menu: NSMenu) {
-        menu.item(withTag: 100)?.title = controller.statusText
-        menu.item(withTag: 101)?.state = controller.discoveryEnabled ? .on : .off
-    }
-}
-
-private extension NSMenu {
-    func addItem(item title: String, action: Selector, keyEquivalent: String = "") {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        item.target = NSApp.delegate
-        addItem(item)
-    }
-}
-
-private final class CompanionController: NSObject, @unchecked Sendable {
-    private let lock = NSLock()
-    private let rootStateURL: URL
-    private var folderURL: URL
-    private var discovery = true
-    private var status = "Starting…"
-    private var identity: DeviceID?
-    private var transport: LunaVaultGoTransport!
-    private var tailnet: VaultTailnetNodeRunner!
-    private var index: CompanionIndex!
-    private var listener: LunaVaultGoListener?
-    private var listenerTask: Task<Void, Never>?
-
-    var discoveryEnabled: Bool { lock.withLock { discovery } }
-    var statusText: String { lock.withLock { status } }
-    var deviceIDText: String { lock.withLock { identity?.description ?? "Unavailable until transport is built" } }
-
-    override init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Luna Vault", isDirectory: true)
-        rootStateURL = appSupport
-        folderURL = UserDefaults.standard.url(forKey: "LunaVaultCompanion.folder")
-            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Luna Vault")
-        super.init()
-        try? FileManager.default.createDirectory(at: rootStateURL, withIntermediateDirectories: true)
-        tailnet = VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
-            stateDirectory: rootStateURL.appendingPathComponent("Tailnet"), hostName: "luna-vault-mac"))
-        let tailnet = self.tailnet!
-        transport = LunaVaultGoTransport(configuration: .init(
-            stateDirectory: rootStateURL.appendingPathComponent("Identity"),
-            tailnetHandle: { try await tailnet.currentHandle() ?? 0 }))
-        index = try? CompanionIndex(databaseURL: rootStateURL.appendingPathComponent("companion.sqlite"))
-    }
-
-    func start() { Task { await refresh() } }
-
-    func selectFolder(_ url: URL) {
-        lock.withLock { folderURL = url; status = "Scanning (url.lastPathComponent)…" }
-        UserDefaults.standard.set(url, forKey: "LunaVaultCompanion.folder")
-        Task { await refresh() }
-    }
-
-    func setDiscoveryEnabled(_ enabled: Bool) { lock.withLock { discovery = enabled } }
-
-    func showPairing(on window: NSWindow?) {
-        let id = deviceIDText
-        let payload = "luna-vault://pair?device=\(id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id)"
-        let alert = NSAlert()
-        alert.messageText = "Pair iPhone"
-        alert.informativeText = "Scan this pairing code on the iPhone, then keep Luna Vault open to accept the request.\n\n\(payload)"
-        if let image = Self.qrImage(for: payload) { alert.accessoryView = NSImageView(image: image) }
-        alert.addButton(withTitle: "Done")
-        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
-    }
-
-    private func refresh() async {
-        do {
-            let localID = try transport.identity()
-            lock.withLock { identity = localID }
-            let scanner = CompanionFolderScanner(rootURL: folderURL, deviceShortID: localID.shortID)
-            let records = try scanner.scan()
-            try index.replace(with: records)
-            lock.withLock { status = "Ready · \(records.filter { $0.info.type == .file }.count) files" }
-            try await startListener(localID: localID)
-        } catch {
-            lock.withLock { status = "Transport unavailable · build libtailscale first" }
+        for (title, selector) in [("Open Luna Vault", #selector(showWindow)),
+                                   ("Copy pairing code", #selector(copyCode)),
+                                   ("Choose folder…", #selector(chooseFolder)),
+                                   ("Quit Luna Vault", #selector(quit))] {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
-    }
-
-    private func startListener(localID: DeviceID) async throws {
-        guard listener == nil else { return }
-        let current = try await transport.listen(bindAddress: "0.0.0.0:22000")
-        listener = current
-        listenerTask = Task { [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                do {
-                    let accepted = try await current.accept()
-                    let delegate = CompanionBEPDelegate(rootURL: self.folderURL, index: self.index,
-                        localDevice: localID, folderID: "vault")
-                    let hello = BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac",
-                                         clientName: "Luna Vault", clientVersion: "1.0")
-                    let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
-                        localHello: hello, delegate: delegate)
-                    _ = try await connection.start()
-                    let config = BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",
-                        devices: [BEPDevice(id: localID, name: "Luna Mac")])])
-                    try await connection.send(clusterConfig: config)
-                    let files = try self.index.all()
-                    try await connection.send(index: BEPIndex(folder: "vault", files: files,
-                        lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
-                } catch {
-                    if !Task.isCancelled { self.lock.withLock { self.status = "Waiting for iPhone" } }
-                }
+        statusItem.menu = menu
+        window.center(); showWindow()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.codeField.stringValue = self.controller.pairingCode ?? "Starting…"
+                self.statusField.stringValue = self.controller.statusText
             }
         }
+        controller.start()
+    }
+    @objc private func showWindow() { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    @objc private func copyCode() {
+        guard let code = controller.pairingCode else { return }
+        controller.openPairingWindow()
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code, forType: .string)
+        statusField.stringValue = "Code copied. Paste it on the iPhone, then accept its request here."
+    }
+    @objc private func chooseFolder() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false; panel.prompt = "Share folder"
+        if panel.runModal() == .OK, let url = panel.url { controller.selectFolder(url) }
+    }
+    @objc private func quit() { NSApp.terminate(nil) }
+}
+
+private final class CompanionController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let stateURL: URL
+    private let transport: LunaVaultGoTransport
+    private var folderURL: URL
+    private var status = "Starting…"
+    private var code: String?
+    private var pairingUntil = Date.distantPast
+    private var listener: LunaVaultGoListener?
+    private var active: (BEPConnection, CompanionBEPDelegate)?
+    private var trustedID: String?
+    private var selectedGeneration = 0
+
+    var pairingCode: String? { lock.withLock { code } }
+    var statusText: String { lock.withLock { status } }
+    init() {
+        stateURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Luna Vault", isDirectory: true)
+        folderURL = UserDefaults.standard.url(forKey: "LunaVaultCompanion.folder")
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Luna Vault")
+        trustedID = UserDefaults.standard.string(forKey: "LunaVaultCompanion.trustedDevice")
+        transport = LunaVaultGoTransport(configuration: .init(stateDirectory: stateURL.appendingPathComponent("Identity")))
+    }
+    func openPairingWindow() { lock.withLock { pairingUntil = Date().addingTimeInterval(300) } }
+    func selectFolder(_ url: URL) {
+        lock.withLock { folderURL = url; selectedGeneration += 1; status = "Folder selected: \(url.lastPathComponent). Reconnect the iPhone to refresh." }
+        UserDefaults.standard.set(url, forKey: "LunaVaultCompanion.folder")
+        Task {
+            let old = lock.withLock { () -> (BEPConnection, CompanionBEPDelegate)? in defer { active = nil }; return active }
+            if let old { await old.0.close(reason: "Shared folder changed") }
+        }
+    }
+    func start() {
+        Task {
+            do {
+                try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+                let folder = lock.withLock { folderURL }
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let localID = try transport.identity()
+                let listener = try await transport.listen(bindAddress: "0.0.0.0:22000")
+                let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
+                lock.withLock {
+                    self.listener = listener
+                    code = VaultPairingCode(deviceID: localID, addresses: addresses).text
+                    status = "Ready · \(folder.path)"
+                    pairingUntil = Date().addingTimeInterval(300)
+                }
+                while !Task.isCancelled {
+                    let accepted = try await listener.accept()
+                    // Approval and BEP work must not block the next TLS accept.
+                    Task { await self.handle(accepted, localID: localID) }
+                }
+            } catch { lock.withLock { status = "Could not start Vault: \(error)" } }
+        }
     }
 
-    private static func qrImage(for string: String) -> NSImage? {
-        guard let data = string.data(using: .utf8), let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
-        filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("Q", forKey: "inputCorrectionLevel")
-        guard let output = filter.outputImage else { return nil }
-        let rep = NSCIImageRep(ciImage: output.transformed(by: CGAffineTransform(scaleX: 5, y: 5)))
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        return image
+    private func handle(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {
+        let allowed = lock.withLock { trustedID == accepted.device.description || Date() < pairingUntil }
+        guard allowed else { accepted.stream.close(); return }
+        do {
+            let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
+            // A fresh scan each connection guarantees reconnect sees changed files.
+            let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
+            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault")
+            let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
+                localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Vault", clientVersion: "1.0"),
+                delegate: delegate)
+            let hello = try await connection.start()
+            if !lock.withLock({ trustedID == accepted.device.description }) {
+                let approved = await MainActor.run {
+                    NSApp.activate(ignoringOtherApps: true)
+                    let alert = NSAlert()
+                    alert.messageText = "Share your Vault folder with this iPhone?"
+                    alert.informativeText = "\(hello.deviceName) wants access to \(folder.path).\n\nDevice: \(accepted.device.description)"
+                    alert.addButton(withTitle: "Accept"); alert.addButton(withTitle: "Reject")
+                    return alert.runModal() == .alertFirstButtonReturn
+                }
+                guard approved else { await connection.close(reason: "Pairing rejected on Mac"); return }
+                lock.withLock { trustedID = accepted.device.description; pairingUntil = .distantPast }
+                UserDefaults.standard.set(accepted.device.description, forKey: "LunaVaultCompanion.trustedDevice")
+            }
+            guard lock.withLock({ generation == selectedGeneration }) else {
+                await connection.close(reason: "Shared folder changed"); return
+            }
+            let old = lock.withLock { () -> (BEPConnection, CompanionBEPDelegate)? in
+                let old = active; active = (connection, delegate); return old
+            }
+            if let old { await old.0.close(reason: "iPhone reconnected") }
+            try index.replace(with: CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan())
+            try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: folder.lastPathComponent,
+                devices: [BEPDevice(id: localID, name: "Luna Mac"), BEPDevice(id: accepted.device, name: hello.deviceName)])]))
+            let files = try index.all()
+            try await connection.send(index: BEPIndex(folder: "vault", files: files,
+                lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
+            delegate.startServing(connection)
+            lock.withLock { status = "Connected · \(files.filter { $0.type == .file }.count) files · \(folder.path)" }
+            var lastScan = try CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan()
+            while !(await connection.isClosed) {
+                try await Task.sleep(for: .seconds(5))
+                guard lock.withLock({ active?.0 === connection && generation == selectedGeneration }) else { return }
+                let scan = try CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan()
+                if scan != lastScan {
+                    try index.replace(with: scan)
+                    let updated = try index.all()
+                    try await connection.send(index: BEPIndex(folder: "vault", files: updated,
+                        lastSequence: updated.map(\.sequence).max() ?? 0, isUpdate: false))
+                    lastScan = scan
+                }
+            }
+            lock.withLock {
+                if active?.0 === connection { active = nil; status = "iPhone offline · \(folder.path)" }
+            }
+        } catch {
+            accepted.stream.close()
+            lock.withLock { status = "Connection failed: \(error)" }
+        }
     }
 }
 

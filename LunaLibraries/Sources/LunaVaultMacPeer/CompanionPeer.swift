@@ -108,7 +108,7 @@ public struct CompanionFolderScanner: Sendable {
     }
 
     public func scan() throws -> [CompanionFileRecord] {
-        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
         guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { return [] }
         var records: [CompanionFileRecord] = []
         for case let url as URL in enumerator {
@@ -116,6 +116,7 @@ public struct CompanionFolderScanner: Sendable {
             if relative == ".stfolder" || relative.hasPrefix(".stfolder/") || relative.hasPrefix(".stversions/") { enumerator.skipDescendants(); continue }
             do { try BEPFileInfo.validateName(relative) } catch { continue }
             let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
             let modified = values.contentModificationDate ?? Date(timeIntervalSince1970: 0)
             let modifiedS = Int64(modified.timeIntervalSince1970.rounded(.down))
             let modifiedNs = Int32((modified.timeIntervalSince1970 - TimeInterval(modifiedS)) * 1_000_000_000)

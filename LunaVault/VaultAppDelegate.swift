@@ -8,8 +8,12 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        registerBackgroundTasks()
-        VaultWiring.install()
+        // Unit tests inject isolated stores/transports. Never reconnect the
+        // user's real paired Mac just because the app is their test host.
+        if NSClassFromString("XCTestCase") == nil {
+            registerBackgroundTasks()
+            VaultConnectedWiring.install()
+        }
         // Vault is independent from the shared link-save `saves.sqlite` store;
         // its repository and optional paired-Mac backend are built by the
         // scene's VaultWiring composition seam.
@@ -32,7 +36,7 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: bundleID + ".sync", using: nil
         ) { task in
-            Task { @MainActor in VaultWiring.handleSyncBackgroundTask(task) }
+            Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
         }
         let maintenanceKinds: [VaultBackgroundTaskKind] = [.importRepair, .index, .thumbnailMaintenance]
         for kind in maintenanceKinds {
@@ -40,17 +44,17 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
             BGTaskScheduler.shared.register(
                 forTaskWithIdentifier: identifier, using: nil
             ) { task in
-                Task { @MainActor in VaultWiring.handleMaintenanceBackgroundTask(task, kind: kind) }
+                Task { @MainActor in VaultConnectedWiring.handleMaintenanceBackgroundTask(task, kind: kind) }
             }
         }
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        VaultWiring.applicationDidEnterBackground()
+        VaultConnectedWiring.applicationDidEnterBackground()
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
-        VaultWiring.applicationWillEnterForeground()
+        VaultConnectedWiring.applicationWillEnterForeground()
     }
 
     func application(

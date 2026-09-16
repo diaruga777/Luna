@@ -7,6 +7,7 @@ public final class VaultConnectedSettingsViewController: UIViewController, UITex
     private let status = UILabel()
     private let pairButton = UIButton(type: .system)
     private let removeButton = UIButton(type: .system)
+    private let networkSettingsButton = UIButton(type: .system)
     private var operation: Task<Void, Never>?
 
     public init(runtime: VaultConnectedRuntime, prefilledCode: String? = nil) {
@@ -48,7 +49,10 @@ public final class VaultConnectedSettingsViewController: UIViewController, UITex
         let index = UIButton(type: .system)
         index.setTitle("Rebuild search index", for: .normal)
         index.addTarget(self, action: #selector(rebuild), for: .touchUpInside)
-        let stack = UIStackView(arrangedSubviews: [instructions, code, pairButton, status, removeButton, cache, index])
+        networkSettingsButton.setTitle("Open iPhone Settings", for: .normal)
+        networkSettingsButton.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        networkSettingsButton.isHidden = true
+        let stack = UIStackView(arrangedSubviews: [instructions, code, pairButton, status, networkSettingsButton, removeButton, cache, index])
         stack.axis = .vertical; stack.spacing = 20; stack.translatesAutoresizingMaskIntoConstraints = false
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.keyboardDismissMode = .interactive
@@ -82,17 +86,23 @@ public final class VaultConnectedSettingsViewController: UIViewController, UITex
         dismissKeyboard()
         let input = code.text ?? ""
         pairButton.isEnabled = false; removeButton.isEnabled = false
-        status.text = "Connecting to your Mac… Accept the request on the Mac to share its folder."
+        status.text = "Connecting to your Mac… Allow Local Network access if asked, then accept the request on the Mac."
+        networkSettingsButton.isHidden = true
         operation = Task {
             do {
                 try await runtime.pair(code: input)
                 status.text = "Paired and connected. The Mac's file index has been received."
                 removeButton.isHidden = false
             } catch {
-                status.text = "Pairing did not complete. Keep Luna Vault open on the Mac, copy a fresh code, and accept the request.\n\n\(error)"
+                status.text = error.localizedDescription
+                networkSettingsButton.isHidden = false
             }
             pairButton.isEnabled = true; removeButton.isEnabled = true; operation = nil
         }
+    }
+    @objc private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
     @objc private func remove() {
         Task {

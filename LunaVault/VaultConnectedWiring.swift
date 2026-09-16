@@ -18,7 +18,7 @@ import LunaVaultUI
         do {
             let store = try VaultFolderStore.production()
             // System networking also reaches a separately installed Tailscale client.
-            let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+            let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
             runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: transport, localID: transport.identity())
         } catch { initializationError = error }
     }

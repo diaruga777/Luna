@@ -6,6 +6,15 @@ import LunaVaultTailscale
 
 @main @MainActor
 final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
+    // This SwiftPM app has no nib to instantiate and retain its delegate.
+    // NSApplicationMain alone leaves a running process with no UI or listener.
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = LunaVaultCompanionApp()
+        app.delegate = delegate
+        withExtendedLifetime(delegate) { app.run() }
+    }
+
     private var window: NSWindow!
     private var statusItem: NSStatusItem!
     private var controller: CompanionController!
@@ -112,7 +121,15 @@ private final class CompanionController: @unchecked Sendable {
                 let folder = lock.withLock { folderURL }
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let localID = try transport.identity()
-                let listener = try await transport.listen(bindAddress: "0.0.0.0:22000")
+                let listener: LunaVaultGoListener
+                do {
+                    // Syncthing commonly already owns 22000 on the user's Mac.
+                    listener = try await transport.listen(bindAddress: "0.0.0.0:49200")
+                } catch {
+                    // The pairing code carries the actual bound port, so an
+                    // available system-assigned port remains fully usable.
+                    listener = try await transport.listen(bindAddress: "0.0.0.0:0")
+                }
                 let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
                 lock.withLock {
                     self.listener = listener

@@ -12,13 +12,23 @@ public enum VaultSyncSessionState: Equatable, Sendable {
     case offline(String)
 }
 
-public enum VaultSyncSessionError: Error, Equatable, Sendable {
+public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
     case notPaired
     case folderNotAccepted
     case folderNotOffered(String)
     case noConnection
     case allAddressesFailed([String])
     case initialIndexTimedOut
+
+    public var errorDescription: String? {
+        switch self {
+        case .notPaired: return "Pair your Mac first."
+        case .folderNotAccepted, .folderNotOffered: return "The Mac has not shared this folder with your iPhone. Accept the request in Luna Vault on the Mac."
+        case .noConnection: return "The Mac closed the connection. Keep Luna Vault open on the Mac and accept the pairing request."
+        case .allAddressesFailed: return "Your iPhone could not reach the Mac. Connect both devices to the same Wi-Fi, allow Local Network access for Luna Vault in iPhone Settings, and copy a fresh code. For a Tailscale address, connect Tailscale on both devices."
+        case .initialIndexTimedOut: return "The Mac did not send its file list. Accept the pairing request on the Mac, then try again."
+        }
+    }
 }
 
 public struct VaultRemoteFolder: Equatable, Sendable {
@@ -135,6 +145,10 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 // The first accepted index below establishes connection readiness.
                 return
             } catch {
+                if let transportError = error as? VaultTransportError, transportError == .localNetworkDenied {
+                    await setState(.offline(transportError.localizedDescription))
+                    throw transportError
+                }
                 failures.append("\(address): \(String(describing: error))")
                 if let candidate = connection { await candidate.close(reason: "Dial failed") }
                 connection = nil

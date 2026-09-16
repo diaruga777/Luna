@@ -15,11 +15,13 @@ public typealias LunaVaultNet = LunaVaultGoTransport
 public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, VaultPeerAnnouncing, @unchecked Sendable {
     public struct Configuration: Sendable {
         public let stateDirectory: URL
+        public let requestLocalNetworkAccess: Bool
         public let tailnetHandle: (@Sendable () async throws -> Int32)?
 
-        public init(stateDirectory: URL,
+        public init(stateDirectory: URL, requestLocalNetworkAccess: Bool = false,
                     tailnetHandle: (@Sendable () async throws -> Int32)? = nil) {
             self.stateDirectory = stateDirectory
+            self.requestLocalNetworkAccess = requestLocalNetworkAccess
             self.tailnetHandle = tailnetHandle
         }
     }
@@ -42,6 +44,9 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
     }
 
     public func dial(_ address: VaultPeerAddress, expecting expected: DeviceID) async throws -> any BEPByteStream {
+        if configuration.requestLocalNetworkAccess, case .tcp(let host, let port) = address {
+            try await VaultLocalNetworkAccess(host: host, port: port).check()
+        }
         let handle = try await configuration.tailnetHandle?() ?? 0
         var descriptor: Int32 = -1
         let result = configuration.stateDirectory.path.withCString { directory in

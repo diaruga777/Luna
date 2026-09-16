@@ -59,7 +59,7 @@ final class VaultConnectedPairingTests: XCTestCase {
         let server = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
         defer { server.close() }
         let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
-        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
         let local = try transport.identity()
         let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil, localID: local)
         try await runtime.pair(code: server.code.text)

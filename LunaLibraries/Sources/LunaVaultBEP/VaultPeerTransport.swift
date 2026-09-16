@@ -57,7 +57,8 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
     }
 }
 
-public enum VaultTransportError: Error, Equatable {
+public enum VaultTransportError: Error, Equatable, LocalizedError {
+    case localNetworkDenied
     case unreachable(String)
     case identityMismatch(expected: String, actual: String)
     case handshakeFailed(String)
@@ -66,6 +67,20 @@ public enum VaultTransportError: Error, Equatable {
     case needsLogin
     case notSupported
     case internalError(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .localNetworkDenied:
+            return "Local Network access is off for Luna Vault. Open iPhone Settings → Privacy & Security → Local Network, enable Luna Vault, then return and tap Pair this Mac."
+        case .unreachable(let message): return message
+        case .identityMismatch: return "The responding Mac does not match this pairing code. Copy a fresh code from your Mac."
+        case .handshakeFailed: return "The secure connection to the Mac could not be established."
+        case .lookupFailed, .notFound: return "The Mac could not be found. Copy a fresh pairing code that includes its current address."
+        case .needsLogin: return "Connect Tailscale on both devices first."
+        case .notSupported: return "This connection type is unavailable."
+        case .internalError(let message): return message
+        }
+    }
 }
 
 /// Opens an authenticated plaintext stream to `expected` at `address`.

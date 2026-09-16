@@ -1,5 +1,11 @@
 # Luna — three weblink apps over one shared store (experiment)
 
+## Device automation rule
+
+- Never install, launch, or use `WebDriverAgentRunner` / WebDriverAgent on a
+  user's iPhone. This prohibition is absolute and applies to build, test,
+  debugging, and UI-inspection workflows.
+
 Luna is a family of **three standalone link apps plus Luna Vault** (UIKit, deployment target iOS 26)
 that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
 

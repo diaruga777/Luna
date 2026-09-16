@@ -185,9 +185,7 @@ public final class VaultStorageSettingsViewController: UIViewController {
         didSet { if isViewLoaded { renderState() } }
     }
     private let setupCoordinator: VaultSetupCoordinator?
-    private let locationControl = UISegmentedControl(items: ["iPhone", "iCloud", "Mac"])
-    private let keepLocal = UISwitch()
-    private let evictionButton = UIButton(type: .system)
+    private let locationControl = UISegmentedControl(items: ["iPhone", "Mac"])
     private let status = UILabel()
     private var policy = VaultStoragePolicy(location: .device)
 
@@ -203,25 +201,21 @@ public final class VaultStorageSettingsViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        if let saved = setupCoordinator?.state.policy { policy = saved }
-        locationControl.selectedSegmentIndex = [.device, .iCloud, .mac].firstIndex(of: policy.location) ?? 0
+        if let saved = setupCoordinator?.state.policy {
+            policy = saved.location == .iCloud
+                ? VaultStoragePolicy(location: .device)
+                : saved
+            if saved.location == .iCloud { _ = setupCoordinator?.updateStoragePolicy(policy) }
+        }
+        locationControl.selectedSegmentIndex = policy.location == .mac ? 1 : 0
         locationControl.addTarget(self, action: #selector(locationChanged), for: .valueChanged)
         locationControl.accessibilityIdentifier = "vault.storage.location"
         locationControl.accessibilityLabel = "Storage location"
-        keepLocal.isOn = policy.keepLocalCopy
-        keepLocal.addTarget(self, action: #selector(keepLocalChanged), for: .valueChanged)
-        keepLocal.accessibilityIdentifier = "vault.storage.keep-local"
-        keepLocal.accessibilityLabel = "Keep a local iCloud copy"
-        evictionButton.setTitle("Request local eviction", for: .normal)
-        evictionButton.addTarget(self, action: #selector(requestEviction), for: .touchUpInside)
-        evictionButton.accessibilityIdentifier = "vault.storage.evict"
-        evictionButton.accessibilityLabel = "Request local iCloud eviction"
         status.numberOfLines = 0
         status.textColor = .secondaryLabel
         status.accessibilityIdentifier = "vault.storage.status"
         let stack = settingsStack([
-            heading("Where should Vault store encrypted files?"), locationControl,
-            labeled("Keep a local iCloud copy", keepLocal), evictionButton, status,
+            heading("Where should Vault store encrypted files?"), locationControl, status,
         ])
         view.addSubview(stack)
         pin(stack)
@@ -229,29 +223,9 @@ public final class VaultStorageSettingsViewController: UIViewController {
     }
 
     @objc private func locationChanged() {
-        let locations: [VaultStorageLocation] = [.device, .iCloud, .mac]
-        policy = VaultStoragePolicy(location: locations[max(0, min(2, locationControl.selectedSegmentIndex))],
-                                    keepLocalCopy: keepLocal.isOn)
+        let locations: [VaultStorageLocation] = [.device, .mac]
+        policy = VaultStoragePolicy(location: locations[max(0, min(1, locationControl.selectedSegmentIndex))])
         persist()
-    }
-
-    @objc private func keepLocalChanged() {
-        policy = VaultStoragePolicy(location: policy.location, keepLocalCopy: keepLocal.isOn)
-        persist()
-    }
-
-    @objc private func requestEviction() {
-        guard policy.location == .iCloud else { return }
-        guard let onICloudEvictionRequested else { icloudState = .unavailable; return }
-        icloudState = .evicting
-        evictionButton.isEnabled = false
-        Task { [weak self] in
-            let state = await onICloudEvictionRequested()
-            await MainActor.run {
-                self?.evictionButton.isEnabled = true
-                self?.icloudState = state
-            }
-        }
     }
 
     private func persist() {
@@ -261,24 +235,9 @@ public final class VaultStorageSettingsViewController: UIViewController {
     }
 
     private func renderState() {
-        let iCloud = policy.location == .iCloud
-        keepLocal.isEnabled = iCloud
-        evictionButton.isHidden = !iCloud
-        status.text = iCloud ? icloudMessage()
-            : policy.location == .mac ? "Mac storage requires a paired, user-owned Mac."
+        status.text = policy.location == .mac ? "Mac storage requires a paired, user-owned Mac."
             : "Files remain on this iPhone."
         status.accessibilityLabel = status.text
-    }
-
-    private func icloudMessage() -> String {
-        switch icloudState {
-        case .keptLocal: return keepLocal.isOn ? "iCloud is configured; this device keeps a working copy." : "iCloud is configured; local eviction may be requested."
-        case .evictionRequested: return "Eviction requested. Waiting for iCloud to confirm it."
-        case .evicting: return "Requesting local eviction from iCloud…"
-        case .evicted: return "The local working copy is evicted; iCloud remains canonical."
-        case .unavailable: return "iCloud eviction is unavailable. The local copy was not changed."
-        case .failed: return "iCloud could not evict the local copy. The local state is unchanged."
-        }
     }
 
     private func heading(_ text: String) -> UILabel {
@@ -287,11 +246,6 @@ public final class VaultStorageSettingsViewController: UIViewController {
         return label
     }
 
-    private func labeled(_ text: String, _ control: UIView) -> UIView {
-        let row = UIStackView(arrangedSubviews: [heading(text), UIView(), control])
-        row.axis = .horizontal; row.alignment = .center
-        return row
-    }
 }
 
 public final class VaultCacheSettingsViewController: UIViewController {

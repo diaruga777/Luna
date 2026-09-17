@@ -13,6 +13,81 @@ final class ArticleExtractorTests: XCTestCase {
     private let extractor = ArticleExtractor()
     private let baseURL = URL(string: "https://example.com/article")! // valid constant URL
 
+    /// A long chapter is most of the prose, but is not the entire article.
+    /// Vary which chapter dominates and how deeply the CMS wraps each section.
+    func testUnevenChaptersKeepTheWholeArticleInOrder() throws {
+        for longestChapter in 1...3 {
+            for depth in [0, 3, 6] {
+                let chapters = (1...3).map { chapter in
+                    let paragraphs = (1...(chapter == longestChapter ? 30 : 2)).map {
+                        "<p>Chapter \(chapter) paragraph \($0). "
+                        + String(repeating: "The residents gathered to discuss the garden and shared observations about the changing seasons. ", count: 3)
+                        + "</p>"
+                    }.joined()
+                    return String(repeating: "<div>", count: depth)
+                        + "<section><h2>Chapter \(chapter)</h2>\(paragraphs)</section>"
+                        + String(repeating: "</div>", count: depth)
+                }.joined()
+                let html = """
+                <html><body><nav><p>Unrelated navigation.</p></nav>
+                <article><h1>The neighborhood garden</h1>\(chapters)
+                <section class="comments"><p>Unrelated reader comment.</p></section>
+                <aside><p>Unrelated sidebar.</p></aside></article>
+                <footer><p>Unrelated footer.</p></footer></body></html>
+                """
+                let content = try extractor.extract(html: html, baseURL: baseURL)
+                XCTAssertEqual(content.blocks.filter { $0.kind == .heading }.map(\.text),
+                               ["The neighborhood garden", "Chapter 1", "Chapter 2", "Chapter 3"],
+                               "longest chapter \(longestChapter), wrapper depth \(depth)")
+                let paragraphs = content.blocks.filter { $0.kind == .paragraph }
+                XCTAssertEqual(paragraphs.count, 34)
+                XCTAssertTrue(paragraphs.first?.text.hasPrefix("Chapter 1 paragraph 1.") == true)
+                XCTAssertTrue(paragraphs.last?.text.hasPrefix("Chapter 3 paragraph \(longestChapter == 3 ? 30 : 2).") == true)
+                XCTAssertFalse(content.wholeText.contains("Unrelated"))
+            }
+        }
+    }
+
+    func testArticleBoundaryDoesNotExpandIntoAdjacentStories() throws {
+        let prose = String(repeating: "The residents gathered to discuss the garden and shared observations about the changing seasons. ", count: 4)
+        let html = """
+        <html><body><main>
+        <article><h2>Earlier story</h2>\(String(repeating: "<p>Earlier story. \(prose)</p>", count: 7))</article>
+        <article><div><h1>Selected story</h1>\(String(repeating: "<p>Selected story. \(prose)</p>", count: 10))</div></article>
+        <article><h2>Later story</h2>\(String(repeating: "<p>Later story. \(prose)</p>", count: 7))</article>
+        </main></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Selected story"))
+        XCTAssertFalse(content.wholeText.contains("Earlier story"))
+        XCTAssertFalse(content.wholeText.contains("Later story"))
+    }
+
+    func testExplicitBodyStillExcludesOtherProseInsideArticle() throws {
+        let prose = String(repeating: "The residents gathered to discuss the garden and shared observations about the changing seasons. ", count: 4)
+        let html = """
+        <html><body><article><div itemprop="articleBody">
+        \(String(repeating: "<p>Selected body. \(prose)</p>", count: 5))
+        </div><div>\(String(repeating: "<p>Unrelated discussion. \(prose)</p>", count: 25))</div>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Selected body"))
+        XCTAssertFalse(content.wholeText.contains("Unrelated discussion"))
+    }
+
+    func testNestedArticleUsesNearestBoundary() throws {
+        let prose = String(repeating: "The residents gathered to discuss the garden and shared observations about the changing seasons. ", count: 4)
+        let html = """
+        <html><body><article><p>Outer article summary.</p>
+        <article><div><h1>Inner story</h1>\(String(repeating: "<p>Inner story. \(prose)</p>", count: 10))</div></article>
+        <p>Outer article closing remarks.</p></article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Inner story"))
+        XCTAssertFalse(content.wholeText.contains("Outer article"))
+    }
+
     /// Body markers can annotate individual paragraphs, not just a container.
     /// Keep the whole story, including its last paragraph and intervening media.
     func testRepeatedBodyMarkersDoNotTruncateToOneParagraph() throws {

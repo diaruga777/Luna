@@ -667,6 +667,16 @@ Layered readability: **refined** (aggressive junk-by-class stripping — footers
 
 Within each selector it chooses the richest container, skipping markers on individual `<p>` or paragraph-like `<div>`/`<section>` leaves. Publishers can annotate every paragraph as `articleBody`; those leaves must go through ancestor scoring so the whole story, intervening headings, and images survive. Taking the first marked paragraph previously produced a short stub and sent a fully available article through needless unlock attempts into archive.today. This shared extraction fix applies to normal saves, silent bypass responses, and browser unlock DOM extraction; readability thresholds and strategy ordering are unchanged. Regression coverage: `ArticleExtractorTests.testRepeatedBodyMarkersDoNotTruncateToOneParagraph` and `testBodyContainerAfterMarkedTeaserWinsWithoutRecirculation`.
 
+When paragraph scoring wins, the nearest enclosing `<article>` defines the selection
+boundary. A single long chapter can contain over 60% of a page's prose; treating that
+coverage as completeness dropped the opening chapters and conclusion of the MIT AI
+and Education report. Selecting the enclosing article preserves all its sections in
+order, while the existing cleanup still removes comments and page furniture. Explicit
+article-body markers retain priority, and the nearest article boundary excludes
+adjacent stories and enclosing articles. Pages without an article boundary retain the
+existing coverage fallback. `ArticleExtractorTests` covers uneven chapter lengths at
+multiple wrapper depths, adjacent stories, nested articles, and explicit-body priority.
+
 **A structural line break is worth a space.** `makeBlock`'s walk concatenates the text
 nodes it finds, so any element that ends its line without carrying a whitespace
 character used to be a zero-width join: `<br>` contributed nothing, and a `<p>` nested

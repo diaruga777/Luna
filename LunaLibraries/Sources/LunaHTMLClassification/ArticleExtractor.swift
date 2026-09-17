@@ -794,6 +794,18 @@ public struct ArticleExtractor {
             return document.body() ?? document
         }
 
+        // Scoring locates the story; it does not establish where the story ends.
+        // One long chapter can exceed the coverage threshold by itself, dropping
+        // the introduction and conclusion. When the publisher supplies an article
+        // boundary, keep that whole article. Use the nearest boundary so nested
+        // articles and adjacent stories are not swept into the selection. Explicit
+        // articleBody containers above remain more precise and still take priority.
+        var ancestor: Element? = container
+        while let current = ancestor {
+            if current.tagName() == "article" { return current }
+            ancestor = current.parent()
+        }
+
         // Some CMSs split the article body across sibling containers, so the
         // top-scoring one holds only a fraction of the text. Widen upward
         // until the container covers most of the document's paragraph text.

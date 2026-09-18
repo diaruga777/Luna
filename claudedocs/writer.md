@@ -80,8 +80,12 @@ prefix, "emd" → Em Dash; scattered subsequences stay unhighlighted), or
 when words typed match nothing but the New note row (Q5's "Return with no
 match creates a note"). The arrows or a tap pin another row for the same
 query. With nothing highlighted Return types a newline and closes the palette.
-An empty or whitespace-only query has no commands: a small Command Palette
-label remains visible so the writer can distinguish query input from body text.
+An empty or whitespace-only query has no result controls or heading. A native
+Liquid Glass outline surrounds the real insertion caret and expands behind the
+query's live glyphs (`PaletteQueryDecoration`). Wrapped input gets one glass
+segment per visual line; the decoration never changes document attributes,
+steals touches, or substitutes its own text input. It follows scroll and layout
+changes and disappears when the session ends or a note peek opens.
 The panel keeps its screen origin for the entire palette session, including
 soft line wrapping, typewriter scrolling, and pending searches. Only a new
 session or a changed keyboard/viewport resets placement. Results scroll within
@@ -98,7 +102,10 @@ match score, with stable ties, into six result rows. Symbols occupy a single
 horizontal strip at the strongest symbol's position, ordered best-first; each
 tile displays only the character, with its name available to VoiceOver. The
 strip counts as one row, leaving room for notes and words. Other results use
-one concise title with no explanatory subtitle. Keyboard selection follows
+one concise title with no explanatory subtitle. Each result is a native glass
+button, grouped in a `UIGlassContainerEffect`, with consistent 48-point minimum
+hit targets, quiet SF Symbols, and a Return indicator on the selected result.
+Results enter with a short, damped movement; Reduce Motion suppresses it. Keyboard selection follows
 the visible order and highlights the actual symbol tile or result; local notes only take precedence over other
 notes on a tie. Note text also uses the same lexical matcher as symbol names
 and commands. The New note action stays last for nonempty queries.
@@ -125,6 +132,14 @@ opens with a heading of its own. The new sheet then opens through
 `WriterGroup.Kind.isEditable` is what the sidebar, the group SQL and the
 renumbering treat as "a folder the writer owns"; an older build reads the
 unknown raw value as `.user`.
+
+Project lists open in manual chapter order. Their inset rows show a glass
+number badge, title, one-line excerpt and word count; dates and keyword chips
+stay in the ordinary document list. Numbers follow the full project's manual
+order, including while searching or viewing an alternative sort. Reordering
+updates those numbers with native list animations (respecting Reduce Motion).
+Leaving a project restores the ordinary list's previous sort. The existing
+search, sort, drag, swipe, move, and multi-select actions remain available.
 
 `AddWriterNoteIntent` files a note the way Pen's server does: an explicit
 "new document:" prefix creates a sheet; otherwise every sheet scoring ≥ 0.45

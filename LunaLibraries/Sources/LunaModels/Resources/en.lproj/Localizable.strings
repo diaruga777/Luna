@@ -1503,3 +1503,5 @@
 "Transcription_noSpeech_Luna" = "No speech was found in this recording";
 "Transcription_fileTooLarge_Luna" = "The recording is too large to transcribe";
 "Transcription_failed_Luna" = "The recording could not be transcribed";
+
+"WriterLibrary_chapter_wordCount_Luna" = "%lld words";

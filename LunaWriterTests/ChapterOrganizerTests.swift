@@ -73,6 +73,25 @@ final class ChapterOrganizerTests: XCTestCase {
     }
 
     @MainActor
+    func testProjectListOpensInChapterOrderAndReorders() throws {
+        let stack = try makeWriterStack()
+        let first = try makeSheet("# Voyage", stack: stack)
+        let organizer = ChapterOrganizer(library: stack.library, textStore: stack.textStore)
+        let second = try organizer.startNewChapter(after: first, text: "# Storm")
+        let third = try organizer.startNewChapter(after: second, text: "# Home")
+        let project = try XCTUnwrap(stack.library.groups().first { $0.kind == .project })
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        layoutWriterScreen(controller)
+        controller.select(.group(project.id))
+        XCTAssertEqual(controller.currentSortForTesting, .manual)
+        XCTAssertEqual(controller.visibleRowsForTesting, [first, second, third].map { .document($0.id) })
+        XCTAssertTrue(controller.reorderDocument(third.id, toIndex: 1))
+        XCTAssertEqual(controller.visibleRowsForTesting, [first, third, second].map { .document($0.id) })
+        controller.select(.inbox)
+        XCTAssertEqual(controller.currentSortForTesting, .modifiedDescending)
+    }
+
+    @MainActor
     func testTheSidebarListsAProjectLikeAFolder() throws {
         let stack = try makeWriterStack()
         let sheet = try makeSheet("# Voyage", stack: stack)

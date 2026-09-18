@@ -37,6 +37,9 @@ public final class SheetsViewController: UICollectionViewController {
         }
     }
     private var currentSort: DocumentSort = .modifiedDescending
+    private var isChapterList = false
+    private var nonChapterSort: DocumentSort = .modifiedDescending
+    private var chapterOrdinals: [DocumentID: Int] = [:]
     private var searchQuery: String?
     private var pendingResort: DispatchWorkItem?
     /// How long a `.document` change (typing autosave) waits before the list
@@ -110,7 +113,8 @@ public final class SheetsViewController: UICollectionViewController {
     /// the providers on `UICollectionLayoutListConfiguration` are the only
     /// place they can live (organiser #18).
     private func configureSwipeActionsLayout() {
-        var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        var configuration = UICollectionLayoutListConfiguration(appearance: isChapterList ? .insetGrouped : .plain)
+        configuration.backgroundColor = LunaColors.background
         configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
             guard let self, case .document(let id) = self.dataSource.itemIdentifier(for: indexPath)
             else { return nil }
@@ -128,7 +132,20 @@ public final class SheetsViewController: UICollectionViewController {
     // MARK: - Selection
 
     public func select(_ selection: LibrarySelection) {
+        let wasChapterList = isChapterList
+        let changedScope = currentSelection != selection
         currentSelection = selection
+        if case .group(let id) = selection {
+            isChapterList = (try? library.groups())?.first { $0.id == id }?.kind == .project
+        } else { isChapterList = false }
+        if !wasChapterList && isChapterList { nonChapterSort = currentSort }
+        if isChapterList && (changedScope || !wasChapterList) { currentSort = .manual }
+        if wasChapterList && !isChapterList { currentSort = nonChapterSort }
+        if isViewLoaded && wasChapterList != isChapterList { configureSwipeActionsLayout() }
+        navigationItem.largeTitleDisplayMode = isChapterList ? .always : .never
+        if navigationController?.topViewController === self {
+            navigationController?.navigationBar.prefersLargeTitles = isChapterList
+        }
         title = titleText(for: selection)
         navigationItem.rightBarButtonItems = trailingBarButtons()
         reload()
@@ -139,6 +156,7 @@ public final class SheetsViewController: UICollectionViewController {
     /// collapsed, where the list is what the writer came back to.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        navigationController?.navigationBar.prefersLargeTitles = isChapterList
         clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
         reselectOpenDocument()
     }
@@ -176,6 +194,10 @@ public final class SheetsViewController: UICollectionViewController {
     /// is kept and `viewDidLoad` applies it (organiser #29).
     public func reload() {
         guard isViewLoaded else { return }
+        if isChapterList, case .group(let id) = currentSelection {
+            let chapters = (try? library.documents(in: id, sort: .manual)) ?? []
+            chapterOrdinals = Dictionary(uniqueKeysWithValues: chapters.enumerated().map { ($1.id, $0 + 1) })
+        } else { chapterOrdinals.removeAll() }
         let documents = loadDocuments()
         documentsByID = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
 
@@ -191,7 +213,10 @@ public final class SheetsViewController: UICollectionViewController {
         // `apply` updates asynchronously even with no animation, so the
         // reselect waits for its completion rather than running against a
         // collection view that has not caught up yet.
-        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+        let existing = Set(dataSource.snapshot().itemIdentifiers)
+        snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { existing.contains($0) })
+        dataSource.apply(snapshot, animatingDifferences: isChapterList && collectionView.window != nil
+                         && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
             self?.reselectOpenDocument()
         }
         updateEmptyState(rowCount: snapshot.numberOfItems)
@@ -260,7 +285,7 @@ public final class SheetsViewController: UICollectionViewController {
         let documentCellRegistration = UICollectionView.CellRegistration<SheetCell, SheetsRow> {
             [weak self] cell, _, row in
             guard case .document(let id) = row, let document = self?.documentsByID[id] else { return }
-            cell.configure(with: document)
+            cell.configure(with: document, chapterOrdinal: self?.chapterOrdinals[id])
         }
         let noteCellRegistration = UICollectionView.CellRegistration<UnattachedNoteCell, SheetsRow> {
             [weak self] cell, _, row in

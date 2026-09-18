@@ -10,6 +10,11 @@ public final class SheetCell: UICollectionViewListCell {
     public static let reuseIdentifier = "SheetCell"
 
     private let titleLabel = UILabel()
+    private let chapterNumber = UILabel()
+    private let chapterBadge: UIVisualEffectView = {
+        if #available(iOS 26, *) { return UIVisualEffectView(effect: UIGlassEffect()) }
+        return UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    }()
     private let favoriteGlyph = UIImageView()
     private let snippetLabel = UILabel()
     private let dateLabel = UILabel()
@@ -47,18 +52,41 @@ public final class SheetCell: UICollectionViewListCell {
     public required init?(coder: NSCoder) { nil }
 
     private func configureViews() {
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        chapterNumber.font = .monospacedDigitSystemFont(ofSize: 15, weight: .medium)
+        chapterNumber.textColor = LunaColors.secondaryText
+        chapterNumber.textAlignment = .center
+        chapterNumber.adjustsFontSizeToFitWidth = true
+        chapterNumber.minimumScaleFactor = 0.65
+        chapterNumber.translatesAutoresizingMaskIntoConstraints = false
+        if #available(iOS 26, *) { chapterBadge.cornerConfiguration = .capsule() }
+        else { chapterBadge.layer.cornerRadius = 18; chapterBadge.clipsToBounds = true }
+        chapterBadge.isUserInteractionEnabled = false
+        chapterBadge.contentView.addSubview(chapterNumber)
+        chapterBadge.isHidden = true
+        let badgeWidth = chapterBadge.widthAnchor.constraint(equalToConstant: 36)
+        badgeWidth.priority = UILayoutPriority(999)
+        NSLayoutConstraint.activate([
+            badgeWidth,
+            chapterBadge.heightAnchor.constraint(equalToConstant: 36),
+            chapterNumber.leadingAnchor.constraint(equalTo: chapterBadge.contentView.leadingAnchor, constant: 8),
+            chapterNumber.trailingAnchor.constraint(equalTo: chapterBadge.contentView.trailingAnchor, constant: -8),
+            chapterNumber.centerYAnchor.constraint(equalTo: chapterBadge.contentView.centerYAnchor),
+        ])
         titleLabel.textColor = LunaColors.primaryText
 
         favoriteGlyph.image = UIImage(systemName: "star.fill")
         favoriteGlyph.tintColor = LunaColors.primaryText
         favoriteGlyph.setContentHuggingPriority(.required, for: .horizontal)
 
-        snippetLabel.font = .systemFont(ofSize: 13)
+        snippetLabel.font = .preferredFont(forTextStyle: .subheadline)
+        snippetLabel.adjustsFontForContentSizeCategory = true
         snippetLabel.textColor = LunaColors.secondaryText
         snippetLabel.numberOfLines = 2
 
-        dateLabel.font = .systemFont(ofSize: 12)
+        dateLabel.font = .preferredFont(forTextStyle: .caption1)
+        dateLabel.adjustsFontForContentSizeCategory = true
         dateLabel.textColor = LunaColors.tertiaryText
 
         goalBar.showsActivityPulse = false
@@ -81,26 +109,36 @@ public final class SheetCell: UICollectionViewListCell {
         let stack = UIStackView(arrangedSubviews: [titleRow, snippetLabel, metaRow, chipsStack])
         stack.axis = .vertical
         stack.spacing = 4
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(stack)
+        let row = UIStackView(arrangedSubviews: [chapterBadge, stack])
+        row.axis = .horizontal
+        row.spacing = 14
+        row.alignment = .center
+        row.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(row)
 
         goalBar.widthAnchor.constraint(equalToConstant: 60).isActive = true
         goalBar.heightAnchor.constraint(equalToConstant: 6).isActive = true
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
+            row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
+            row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
         ])
     }
 
-    public func configure(with document: WriterDocument) {
+    public func configure(with document: WriterDocument, chapterOrdinal: Int? = nil) {
+        chapterBadge.isHidden = chapterOrdinal == nil
+        chapterNumber.text = chapterOrdinal.map { String($0) }
+        chapterNumber.accessibilityLabel = chapterOrdinal.map { L10n.string("WriterStorage_chapterTitle", Int64($0)) }
+        snippetLabel.numberOfLines = chapterOrdinal == nil ? 2 : 1
         titleLabel.text = document.title.isEmpty ? L10n.string("Common_untitled") : document.title
         favoriteGlyph.isHidden = !document.isFavorite
         snippetLabel.text = document.snippet
         snippetLabel.isHidden = document.snippet.isEmpty
-        dateLabel.text = Self.relativeDateText(for: document.updatedAt)
+        dateLabel.text = chapterOrdinal == nil
+            ? Self.relativeDateText(for: document.updatedAt)
+            : L10n.string("WriterLibrary_chapter_wordCount", Int64(document.wordCount))
 
         if let goal = document.goal {
             goalBar.isHidden = false
@@ -117,6 +155,7 @@ public final class SheetCell: UICollectionViewListCell {
         for keyword in visible {
             chipsStack.addArrangedSubview(Self.chip(for: keyword))
         }
+        chipsStack.isHidden = chapterOrdinal != nil || document.keywords.isEmpty
         let overflow = document.keywords.count - visible.count
         if overflow > 0 {
             chipsStack.addArrangedSubview(Self.chip(for: "+\(overflow)"))

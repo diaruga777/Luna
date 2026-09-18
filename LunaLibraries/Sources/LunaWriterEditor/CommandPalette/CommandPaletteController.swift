@@ -629,7 +629,7 @@ public final class CommandPaletteController {
     }
 
     /// The marker and the query as they stand in the text right now.
-    private func querySpan() -> NSRange? {
+    func querySpan() -> NSRange? {
         guard let textView, let marker = state.marker else { return nil }
         let length = markerLength + (state.query as NSString).length
         let end = min(marker + length, (textView.text as NSString).length)

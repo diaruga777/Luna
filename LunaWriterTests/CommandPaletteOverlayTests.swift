@@ -9,12 +9,35 @@ final class CommandPaletteOverlayTests: XCTestCase {
         view.subviews.flatMap { [$0] + descendants($0) }
     }
 
-    func testEmptyPaletteShowsAnIndicatorWithoutCommands() {
+    func testEmptyPaletteHasNoHeadingOrCommands() {
         let overlay = CommandPaletteOverlayView()
         overlay.update(rows: [], highlightedIndex: nil)
         XCTAssertEqual(overlay.rowCount, 0)
-        XCTAssertTrue(descendants(overlay).contains { $0.accessibilityIdentifier == "writer.commandPalette.indicator" })
+        XCTAssertFalse(descendants(overlay).contains { $0 is UILabel })
         XCTAssertFalse(descendants(overlay).contains { $0 is UIButton })
+    }
+
+    func testQueryGlassFollowsWrappedInputWithoutEditingTextOrTakingTouches() throws {
+        let textView = WriterTextView()
+        textView.frame = CGRect(x: 0, y: 0, width: 280, height: 500)
+        textView.text = "Prose @a long command that wraps to the next line"
+        textView.layoutIfNeeded()
+        let original = textView.text
+        let decoration = PaletteQueryDecoration()
+        let marker = 6
+        decoration.update(range: NSRange(location: marker, length: 0), in: textView)
+        let empty = try XCTUnwrap(descendants(textView).first {
+            $0.accessibilityIdentifier == "writer.commandPalette.queryGlass"
+        })
+        let start = try XCTUnwrap(textView.position(from: textView.beginningOfDocument, offset: marker))
+        XCTAssertTrue(empty.frame.contains(textView.caretRect(for: start)))
+        decoration.update(range: NSRange(location: marker, length: (original! as NSString).length - marker), in: textView)
+        let segments = descendants(textView).filter { $0.accessibilityIdentifier == "writer.commandPalette.queryGlass" }
+        XCTAssertGreaterThan(segments.count, 1)
+        XCTAssertTrue(segments.allSatisfy { !$0.isUserInteractionEnabled })
+        XCTAssertEqual(textView.text, original)
+        decoration.update(range: nil, in: textView)
+        XCTAssertFalse(descendants(textView).contains { $0.accessibilityIdentifier == "writer.commandPalette.queryGlass" })
     }
 
     func testOriginStaysFixedAcrossPendingSearchResultsAndWrappedCaret() {
@@ -48,8 +71,8 @@ final class CommandPaletteOverlayTests: XCTestCase {
         let right = try XCTUnwrap(buttons.first { $0.tag == 0 })
         let left = try XCTUnwrap(buttons.first { $0.tag == 2 })
         XCTAssertTrue(left.superview === right.superview)
-        XCTAssertEqual(right.title(for: .normal), "→")
-        XCTAssertEqual(left.title(for: .normal), "←")
+        XCTAssertEqual(right.configuration?.title, "→")
+        XCTAssertEqual(left.configuration?.title, "←")
         XCTAssertTrue(left.accessibilityTraits.contains(.selected))
         XCTAssertFalse(right.accessibilityTraits.contains(.selected))
         XCTAssertEqual(PaletteRow.displayGroups(in: rows), [[0, 2], [1]])

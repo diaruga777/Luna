@@ -106,6 +106,7 @@ public final class EditorViewController: UIViewController {
     /// Shown above the keyboard only while a save keeps failing.
     private let saveFailureLabel = UILabel()
     private let overlay = CommandPaletteOverlayView()
+    private let queryDecoration = PaletteQueryDecoration()
     private var peekCard: NotePeekCardView?
 
     private lazy var composer = RenderingAttributeComposer(
@@ -188,7 +189,10 @@ public final class EditorViewController: UIViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         relayoutIfNeeded()
-        if !overlay.isHidden { placeOverlay() }
+        if !overlay.isHidden {
+            placeOverlay()
+            queryDecoration.update(range: palette.querySpan(), in: textView)
+        }
     }
 
     public override func viewWillTransition(
@@ -492,12 +496,14 @@ public final class EditorViewController: UIViewController {
     fileprivate func updateOverlay() {
         guard palette.state.isActive, !palette.isPeeking else {
             overlay.isHidden = true
+            queryDecoration.update(range: nil, in: textView)
             return
         }
         overlay.update(rows: palette.rows, highlightedIndex: palette.highlightedIndex)
         overlay.isHidden = false
         placeOverlay()
         keepPaletteQueryVisible()
+        queryDecoration.update(range: palette.querySpan(), in: textView)
     }
 
     /// A panel below the initial line stays fixed when the query wraps. Move
@@ -677,6 +683,7 @@ extension EditorViewController: UITextViewDelegate {
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if !overlay.isHidden {
             placeOverlay()
+            queryDecoration.update(range: palette.querySpan(), in: textView)
         }
         layoutObserver?.editorDidScroll(self)
         let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1

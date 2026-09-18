@@ -79,45 +79,119 @@ import LunaVaultUI
     }
 }
 
-@MainActor private final class VaultConnectedFilePresenter: NSObject, UIDocumentPickerDelegate, QLPreviewControllerDataSource {
+@MainActor private final class VaultConnectedFilePresenter: NSObject, UIDocumentPickerDelegate, QLPreviewControllerDataSource, @preconcurrency QLPreviewControllerDelegate {
     let runtime: VaultConnectedRuntime
     weak var presenter: VaultSyncthingHomeViewController?
     private var previewURL: URL?
+    private var work: Task<Void, Never>?
+    private var progressTask: Task<Void, Never>?
+    private weak var progress: UIViewController?
+    private var visiblePresenter: UIViewController? { presenter?.navigationController?.topViewController ?? presenter }
     init(runtime: VaultConnectedRuntime) { self.runtime = runtime }
+
     func importFile() {
+        guard work == nil else { return }
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
         picker.delegate = self
-        presenter?.present(picker, animated: true)
+        visiblePresenter?.present(picker, animated: true)
     }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-        Task {
+        // Dismiss the picker before presenting progress or an error.
+        controller.dismiss(animated: true) { [weak self] in self?.startImport(url) }
+    }
+    private func startImport(_ url: URL) {
+        guard work == nil else { return }
+        showProgress(title: "Importing File", filename: url.lastPathComponent)
+        work = Task {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
-            do { try await runtime.importFile(at: url); presenter?.refresh() }
-            catch { show(error) }
+            do {
+                try await runtime.importFile(at: url)
+                await hideProgress()
+                presenter?.refresh()
+                UIAccessibility.post(notification: .announcement, argument: "File imported")
+            } catch {
+                await hideProgress()
+                if !Task.isCancelled { show(error, title: "Couldn’t Import File") }
+            }
+            work = nil
         }
     }
     func open(_ name: String) {
-        Task {
+        guard work == nil else { return }
+        showProgress(title: "Opening File", filename: (name as NSString).lastPathComponent)
+        work = Task {
+            var prepared: URL?
             do {
                 let source = try await runtime.fileURL(named: name)
-                // Quick Look needs the original extension; the cache uses hashed names.
-                let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VaultPreview-\(UUID().uuidString)")
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let target = directory.appendingPathComponent((name as NSString).lastPathComponent)
-                try FileManager.default.copyItem(at: source, to: target)
-                if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
+                try Task.checkCancellation()
+                // Copy potentially large files away from the main actor. Quick Look needs
+                // the original extension; the durable cache uses hashed filenames.
+                let target = try await Task.detached(priority: .userInitiated) {
+                    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VaultPreview-\(UUID().uuidString)")
+                    do {
+                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                        let target = directory.appendingPathComponent((name as NSString).lastPathComponent)
+                        try FileManager.default.copyItem(at: source, to: target)
+                        return target
+                    } catch { try? FileManager.default.removeItem(at: directory); throw error }
+                }.value
+                prepared = target
+                try Task.checkCancellation()
+                await hideProgress()
+                try Task.checkCancellation()
+                removePreview()
                 previewURL = target
-                let preview = QLPreviewController(); preview.dataSource = self
-                presenter?.present(preview, animated: true)
-            } catch { show(error) }
+                let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
+                visiblePresenter?.present(preview, animated: true)
+            } catch {
+                if let prepared { try? FileManager.default.removeItem(at: prepared.deletingLastPathComponent()) }
+                await hideProgress()
+                if !Task.isCancelled { show(error, title: "Couldn’t Open File") }
+            }
+            work = nil
         }
     }
+    private func showProgress(title: String, filename: String) {
+        progressTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self, !Task.isCancelled else { return }
+            let controller = UIViewController()
+            controller.title = title
+            controller.view.backgroundColor = .systemBackground
+            var loading = UIContentUnavailableConfiguration.loading()
+            loading.text = filename
+            loading.secondaryText = "Keep Vault open while your file is prepared."
+            controller.contentUnavailableConfiguration = loading
+            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in
+                self?.work?.cancel()
+                self?.progress?.dismiss(animated: true)
+                self?.progress = nil
+            })
+            let navigation = UINavigationController(rootViewController: controller)
+            navigation.isModalInPresentation = true
+            navigation.sheetPresentationController?.detents = [.medium()]
+            progress = navigation
+            visiblePresenter?.present(navigation, animated: true)
+        }
+    }
+    private func hideProgress() async {
+        progressTask?.cancel(); progressTask = nil
+        guard let progress, progress.presentingViewController != nil else { return }
+        await withCheckedContinuation { continuation in progress.dismiss(animated: true) { continuation.resume() } }
+        self.progress = nil
+    }
+    private func removePreview() {
+        if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
+        previewURL = nil
+    }
+    func previewControllerDidDismiss(_ controller: QLPreviewController) { removePreview() }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { previewURL == nil ? 0 : 1 }
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> any QLPreviewItem { previewURL! as NSURL }
-    private func show(_ error: Error) {
-        let alert = UIAlertController(title: "Vault", message: String(describing: error), preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default)); presenter?.present(alert, animated: true)
+    private func show(_ error: Error, title: String) {
+        let alert = UIAlertController(title: title, message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        visiblePresenter?.present(alert, animated: true)
     }
 }

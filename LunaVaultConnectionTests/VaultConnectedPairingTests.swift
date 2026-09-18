@@ -14,6 +14,51 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
 
+    func testDisconnectCannotForgetFilesWaitingToUpload() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let local = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 2, count: 32)),
+            name: "My Mac", folderID: "vault", lastConnectedAt: Date())
+        try store.savePeer(peer)
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil, localID: local)
+        let source = directory.appendingPathComponent("Unsynced.txt")
+        try Data("Must survive disconnect".utf8).write(to: source)
+        try await runtime.importFile(at: source)
+        do { try await runtime.removePairing(); XCTFail("Pending uploads must prevent disconnect") } catch { }
+        XCTAssertEqual(try store.peer()?.deviceID, peer.deviceID)
+        XCTAssertEqual(try store.pendingLocalChanges().count, 1)
+    }
+
+    func testChangingMacCannotForgetFilesWaitingToUpload() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 2, count: 32)),
+            name: "My Mac", folderID: "vault", lastConnectedAt: Date())
+        try store.savePeer(peer)
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil,
+            localID: DeviceID(bytes: Data(repeating: 1, count: 32)))
+        let source = directory.appendingPathComponent("Unsynced.txt")
+        try Data("Must survive changing Mac".utf8).write(to: source)
+        try await runtime.importFile(at: source)
+        let replacement = try DeviceID(bytes: Data(repeating: 3, count: 32))
+        do {
+            try await runtime.pair(code: VaultPairingCode(deviceID: replacement, addresses: []).text)
+            XCTFail("Pending uploads must prevent changing Mac")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("uploads finish"))
+        }
+        XCTAssertEqual(try store.peer()?.deviceID, peer.deviceID)
+        XCTAssertEqual(try store.pendingLocalChanges().count, 1)
+    }
+
+    func testInvalidPairingCodeExplainsHowToRecover() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil,
+            localID: DeviceID(bytes: Data(repeating: 1, count: 32)))
+        do { try await runtime.pair(code: "invalid-code"); XCTFail("Invalid code must fail") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("Copy a fresh code")) }
+        XCTAssertNil(try store.peer())
+    }
+
     func testCodeRoundTripCarriesDirectRouteAndRejectsBadPorts() throws {
         let id = try DeviceID(bytes: Data(repeating: 7, count: 32))
         let code = VaultPairingCode(deviceID: id, addresses: [.tcp(host: "192.168.1.8", port: 22000)])

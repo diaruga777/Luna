@@ -42,7 +42,7 @@ Before the Go TLS dial, production iPhone TCP connections use a bounded
 Network.framework check. This participates in iOS Local Network consent,
 waits for the user to allow access, and reports `localNetworkDenied` distinctly
 instead of reducing it to BSD's “no route to host”. Settings presents a link
-to iPhone Settings on failure. Permission denial stops the attempt; it does
+to iPhone Settings for permission failures. Permission denial stops the attempt; it does
 not erase the previous pairing. Other unreachable routes still receive a
 clear Wi-Fi/Tailscale diagnostic. The pinned TLS handshake remains mandatory
 after this reachability check.
@@ -85,3 +85,5 @@ and bounded Hello timeout.
 xcodebuild test -project Luna.xcodeproj -scheme LunaVaultConnectionTests \
   -destination 'platform=iOS Simulator,id=<simulator UDID>'
 ```
+
+The active UI flows and icon sources are documented in [vault-ui.md](vault-ui.md).

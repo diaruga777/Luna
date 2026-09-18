@@ -1,0 +1,131 @@
+{
+  "features": [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill": {
+    "automatic-gradient": "srgb:0.00000,0.03500,0.08171,1.00000"
+  },
+  "groups": [
+    {
+      "blend-mode": "hard-light",
+      "blur-material": 0.5,
+      "hidden": false,
+      "layers": [
+        {
+          "fill": {
+            "linear-gradient": [
+              "srgb:0.72,0.93,1.0,1.0",
+              "srgb:0.16,0.59,0.98,1.0"
+            ],
+            "orientation": {
+              "start": {
+                "x": 0.5,
+                "y": 0
+              },
+              "stop": {
+                "x": 0.5000000000000001,
+                "y": 1
+              }
+            }
+          },
+          "image-name": "Vault.svg",
+          "name": "Vault",
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              100
+            ]
+          }
+        }
+      ],
+      "lighting": "combined",
+      "refractivity": {
+        "depth": 0,
+        "enabled": false,
+        "strength": -1
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.6
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.2
+      }
+    },
+    {
+      "blur-material": 1,
+      "layers": [
+        {
+          "fill": {
+            "linear-gradient": [
+              "srgb:0.06,0.39,0.69,1.0",
+              "srgb:0.015,0.12,0.29,1.0"
+            ],
+            "orientation": {
+              "start": {
+                "x": 0.5,
+                "y": 0
+              },
+              "stop": {
+                "x": 0.5,
+                "y": 0.283957788321349
+              }
+            }
+          },
+          "glass": true,
+          "hidden": false,
+          "image-name": "Polygon 1.svg",
+          "name": "Polygon 1",
+          "position": {
+            "scale": 1.1,
+            "translation-in-points": [
+              0,
+              170
+            ]
+          }
+        }
+      ],
+      "refractivity": {
+        "depth": 0,
+        "enabled": true,
+        "strength": 1
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 4
+      },
+      "specular": "outside",
+      "translucency": {
+        "enabled": false,
+        "value": 0.2
+      }
+    },
+    {
+      "layers": [
+        {
+          "hidden": false,
+          "image-name": "Group 9.svg",
+          "name": "Group 9"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.6
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

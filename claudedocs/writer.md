@@ -525,3 +525,13 @@ with the first frame instead of sliding up after it (`viewDidAppear` stays
 as the fallback for a view that had no window yet). iOS offers no way to
 disable the keyboard's own slide; requesting focus before the first render
 is what makes it instant.
+
+## App icon
+
+Writer uses the Luna family's moon background and curved Liquid Glass composition,
+with a rose tint and a fountain-pen nib. The editable source is
+`Design/IconComposer/Luna Writer.icon`; the app master is
+`Luna/Assets.xcassets/AppIconWriter.appiconset/AppIconWriter-1024.png`. The
+96/192/288-pixel `LunaAppIconWriter` resources show the same artwork in every
+Luna app. Export instructions are in `Design/IconComposer/README.md`. The old
+placeholder generator has been retired.

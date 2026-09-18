@@ -73,7 +73,8 @@ guard and not a link edge. `LunaPluginKit` and `LunaBundledPlugins` are in
 way. `content.js`'s pill decision runs a plugin walk FIRST, evaluating a
 matched plugin's `classify`/`ingest` in the page's own isolated world via
 `plugin_host.js`, and falls back to the Swift-parity heuristics below only
-when no plugin claims the page.
+when no plugin claims the page. X first applies its status-owned content gate;
+a broad plugin claim cannot override feed, short-text, or photo-only suppression.
 
 **What genuinely has to be JavaScript**, and why:
 
@@ -625,7 +626,24 @@ Downloader-platform flow:
    Instagram publishes no server-side video signal at all, a VIDEO under `/p/`
    remains suppressed — the only way to tell would be to re-check the DOM after
    hydration, which only Reddit does today.
-5. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
+5. **X requires an individual status and evidence from that status itself.**
+   `handleXPage` gates both plugin and built-in decisions before any pill or
+   player can appear. Home, search, profiles, notifications and malformed status
+   paths get neither control, with no article/product fallback. The opened
+   `article[data-testid="tweet"]` is identified by its own timestamp permalink;
+   quoted posts, replies, recommendations and page-wide metadata cannot provide
+   its video or text evidence. Its own video/player earns the media pill and
+   auto-opens the player (unless disabled). Text over 280 Unicode code points,
+   numbered threads, expanded-text controls and X Article bodies earn a reader
+   pill, which opens Luna without presenting a player. Ordinary short text and
+   photo-only tweets earn neither. Text handoffs use the thread resolver instead
+   of capturing the surrounding conversation as article HTML.
+   A 500ms X-only check handles delayed hydration and SPA navigation, removes
+   stale controls, cleans up the old player and rejects late plugin callbacks.
+   Dismissal holds for the current URL; the pill can reopen its video. Existing
+   app capability and suggestion/player settings still apply.
+   `SafariXEligibilityTests` exercises these paths through the complete decision.
+6. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
    now `recognizes:` only a post). The pill appears ONLY on an individual post permalink
    (`/comments/<id>`, `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, a
    `redd.it/<id>` short link, or Reddit's own app-native share link `/r/<sub>/s/<token>`,
@@ -670,7 +688,7 @@ The pill stays where it was: tapping it re-opens a player the user dismissed, an
 on a page that never earns an auto-open it does what it always did.
 
 Auto-open asks a NARROWER question than pill eligibility, and the two are not the
-same question. A bare platform host recognizes (`x.com/home`, `tiktok.com`) and a
+same question. Outside X, a bare platform host recognizes (`tiktok.com`) and a
 feed that slips past the static-image suppression can earn a pill — but covering
 someone's feed with a panel they did not ask for is a different act from offering
 them a button beside it. It takes the same two authorities the pill takes, in the

@@ -23,7 +23,7 @@ final class SafariMediaPillTests: XCTestCase {
     nonisolated private static let videoPost = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <meta property="og:video" content="https://cdn.example.com/v.mp4">
-        </head><body style="margin:0"><p>fixture</p></body></html>
+        </head><body style="margin:0"><article data-testid="tweet"><a href="/someone/status/1234567890"><time>Today</time></a><video></video></article></body></html>
         """
 
     /// A reel as Instagram actually serves it: `og:type` "article", a JPG as the
@@ -162,7 +162,10 @@ final class SafariMediaPillTests: XCTestCase {
     func testAVideoThatHydratesAfterThePillStillOpensThePlayer() {
         offer(Self.noVideoSignal, at: "https://x.com/someone/status/1234567890")
         XCTAssertFalse(overlayExists(), "nothing to play yet — nothing should open")
-        _ = js.evaluate("document.body.appendChild(document.createElement(\"video\")); \"hydrated\"")
+        _ = js.evaluate("""
+            document.body.innerHTML = '<article data-testid="tweet"><a href="/someone/status/1234567890"><time>Today</time></a><video></video></article>';
+            "hydrated"
+            """)
         XCTAssertTrue(
             waitForOverlay(within: secondLook + 1),
             "a <video> that appears after the pill should still open the player")
@@ -175,11 +178,10 @@ final class SafariMediaPillTests: XCTestCase {
         js.number("window.__lunaAutoPlayerRetryDelays[1]") / 1000
     }
 
-    /// A bare platform host or a feed shell earns a pill, but a panel over
-    /// someone's feed is a different thing from a button offered beside it.
-    func testAPageWithNoVideoSignalOffersThePillWithoutOpeningThePlayer() {
+    /// X feeds never earn a pill or player, even before they hydrate.
+    func testAnXFeedOffersNeitherPillNorPlayer() {
         offer(Self.noVideoSignal, at: "https://x.com/home")
-        XCTAssertTrue(pillExists(), "the pill's own gate is unchanged")
+        XCTAssertFalse(pillExists(), "an X feed is not an individual tweet")
         XCTAssertFalse(waitForOverlay(within: 0.5), "no video on the page, no panel over it")
     }
 

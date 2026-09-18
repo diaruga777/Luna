@@ -732,9 +732,11 @@
     }
 
     /// The gate every pill decision passes through: a plugin claim wins
-    /// outright (§2 decision 8 — plugins run first); no claim falls back to
+    /// outright (§2 decision 8 — plugins run first), after X content eligibility;
+    /// no claim falls back to
     /// the fixed Swift-parity heuristics in `offerLunaButton` below.
     function startPillDecision(resp) {
+        if (isXHost()) { handleXPage(resp); return; }
         if (!(resp && resp.supportsPlugins)) {
             offerLunaButton(resp);
             return;
@@ -747,6 +749,7 @@
 
     /// Decides which pill (if any) this page earns, from the native context.
     function offerLunaButton(resp) {
+        if (isXHost()) { handleXPage(resp); return; }
         var mode = (resp && resp.mode) || "all";
         // "Never" silences PILLS, not the passive product snapshot: extraction
         // is local, non-refreshing product data, never a save -- and the
@@ -803,6 +806,7 @@
     // (which target a page earns, and what happens once it lands) rather than a
     // hand-built target handed straight to an injector.
     window.__lunaOfferLunaButton = offerLunaButton;
+    window.__lunaStartPillDecision = startPillDecision;
 
     // The snapshot HALF of `handleProductPage`, with no pill work at all: used
     // when the suggestion mode is "never", so a silenced pill does not also
@@ -3166,11 +3170,12 @@
     /// subject IS a video — the pill is then how the user gets back to it.
     ///
     /// This asks a NARROWER question than pill eligibility, and deliberately: a
-    /// bare platform host recognizes (`x.com/home`, `tiktok.com`), and a feed
+    /// bare platform host recognizes (`tiktok.com`), and a feed
     /// that slips past the static-image suppression may earn a pill, but covering
     /// someone's feed with a panel they did not ask for is a different thing from
     /// offering them a button beside it. It takes the same two authorities
-    /// `shouldShowDownloadPillForPlatform` takes, in the same order:
+    /// `shouldShowDownloadPillForPlatform` takes, in the same order. X uses
+    /// its own status-owned gate in `handleXPage` before reaching any player:
     ///
     ///  1. the URL SHAPE, where a platform has video-only surfaces
     ///     (`pathIsInherentlyVideo`). This is load-bearing rather than an
@@ -3644,6 +3649,7 @@
     // URL still happens in the app when the user adds it manually; this only decides
     // whether Safari should proactively show the "Open in Luna" pill.
     function shouldShowDownloadPillForPlatform(platform) {
+        if (platform === "x") { return xPageContentKind() === "media"; }
         if (platform === "reddit") { return redditPostHasMedia(); }
         // A host match identifies the resolver, not a saveable item. Instagram's
         // account/password/report pages often have no image metadata, so the
@@ -3753,6 +3759,131 @@
         if (!raw) { return false; }
         var url = raw.toLowerCase().split("#")[0].split("?")[0];
         return /\.(gif|gifv|webm|mp4|m4v|mov|m3u8)$/.test(url);
+    }
+
+    // MARK: - X: only the opened status can earn controls
+
+    function isXHost() {
+        return hostMatches((location.hostname || "").toLowerCase(), platformHosts("x"));
+    }
+
+    function xStatusID(path) {
+        var match = /^\/(?:[^/]+\/(?:status|statuses)|i\/web\/status)\/([0-9]+)(?:\/(?:video|photo)\/[0-9]+)?\/?$/.exec(path);
+        return match ? match[1] : null;
+    }
+
+    // A reply or quoted status can link to the opened tweet too. Only the
+    // tweet's own timestamp permalink establishes ownership of its container.
+    function xPrimaryPost() {
+        var id = xStatusID(location.pathname);
+        if (!id) { return null; }
+        var posts = document.querySelectorAll('article[data-testid="tweet"]');
+        for (var i = 0; i < posts.length; i++) {
+            var times = posts[i].querySelectorAll('a[href] time');
+            for (var j = 0; j < times.length; j++) {
+                if (!xNodeBelongsToPost(times[j], posts[i])) { continue; }
+                var link = times[j].closest('a[href]');
+                try {
+                    var url = new URL(link.getAttribute("href"), location.href);
+                    if (hostMatches(url.hostname, platformHosts("x")) && xStatusID(url.pathname) === id) {
+                        return posts[i];
+                    }
+                } catch (e) {}
+            }
+        }
+        return null;
+    }
+
+    function xNodeBelongsToPost(node, post) {
+        return node.closest('article[data-testid="tweet"]') === post
+            && !node.closest('[data-testid="quoteTweet"], [role="link"]');
+    }
+
+    function xOwnedNodes(post, selector) {
+        return Array.prototype.filter.call(post.querySelectorAll(selector), function (node) {
+            return xNodeBelongsToPost(node, post);
+        });
+    }
+
+    function xPageContentKind() {
+        var post = xPrimaryPost();
+        if (!post) { return null; }
+        // Never use page-wide og:video, a reply's player, or our own overlay.
+        if (xOwnedNodes(post, 'video, source[type^="video/"], [data-testid="videoPlayer"]').length) {
+            return "media";
+        }
+        var textNodes = xOwnedNodes(post, '[data-testid="tweetText"]');
+        var text = textNodes.map(function (node) { return node.textContent || ""; }).join("\n").trim();
+        var counter = /(?:^|\s)(\d{1,3})\/(\d{1,3}|[nN])(?:\s|$|[.)])/.exec(text);
+        var thread = counter && (counter[2].toLowerCase() === "n" || Number(counter[2]) > 1);
+        if (Array.from(text).length > 280 || thread || xOwnedNodes(post,
+            '[data-testid="tweet-text-show-more-link"], [data-testid="twitterArticleRichTextView"], '
+            + '[data-testid="longformRichTextComponent"]').length) {
+            return "article";
+        }
+        return null;
+    }
+
+    var xPageContext = null;
+    var xPageWatcherStarted = false;
+    var xPageSignature = null;
+    var xPageGeneration = 0;
+
+    function handleXPage(resp) {
+        xPageContext = resp;
+        if (!xPageWatcherStarted) {
+            xPageWatcherStarted = true;
+            // X hydrates and navigates without reloading the content script.
+            // Recheck both the URL and the owned content, including late video.
+            setInterval(evaluateXPage, 500);
+            window.addEventListener("popstate", evaluateXPage);
+        }
+        evaluateXPage();
+    }
+
+    function evaluateXPage() {
+        var resp = xPageContext;
+        var kind = resp && resp.mode !== "never" ? xPageContentKind() : null;
+        var signature = location.href + "|" + kind + "|" + JSON.stringify(resp);
+        if (signature === xPageSignature) { return; }
+        var previousURL = xPageSignature && xPageSignature.split("|")[0];
+        xPageSignature = signature;
+        var generation = ++xPageGeneration;
+        removeLunaButton();
+        var overlay = document.getElementById(VIDEO_OVERLAY_ID);
+        if (overlay) { overlay.click(); } // run normal player/listener cleanup
+        if (previousURL !== location.href) { videoOverlayDismissed = false; }
+        if (!kind || !(kind === "media" ? resp.supportsMedia : resp.supportsArticles)) { return; }
+        var sourceURL = location.href;
+        var install = function (walk) {
+            if (generation !== xPageGeneration || location.href !== sourceURL || xPageContentKind() !== kind) { return; }
+            var target;
+            if (walk && walk.claim && walk.claim.kind === kind) {
+                target = kind === "media" ? pluginVideoOverlayTargetFor(resp, walk) : pluginSaveTargetFor(resp, walk);
+            } else {
+                target = kind === "media" ? videoOverlayTargetFor(resp) : readTarget(resp);
+                // X text is fetched by the reader's thread resolver; don't hand
+                // it the surrounding replies/feed as an article DOM snapshot.
+                if (target && kind === "article") { target.captureContent = false; }
+            }
+            if (!target) { return; }
+            var present = target.present;
+            var url = target.url;
+            target.present = function () {
+                // A tap can race the next navigation poll. Never open the old
+                // player or hand the new feed URL to Luna in that gap.
+                if (location.href !== sourceURL || xPageContentKind() !== kind) { return; }
+                if (present) { present(); }
+                else { window.location.href = url(); }
+            };
+            injectLunaButton(target);
+            if (kind === "media" && present && !videoOverlayDismissed) { target.present(); }
+        };
+        // A plugin's broad media claim (which can include photos) is never
+        // permission to put a player over a feed or ordinary text-only tweet.
+        if (resp.supportsPlugins) {
+            runPluginWalkForPage().then(install, function () { install(null); });
+        } else { install(null); }
     }
 
     // MARK: - Reddit post-page + media gating

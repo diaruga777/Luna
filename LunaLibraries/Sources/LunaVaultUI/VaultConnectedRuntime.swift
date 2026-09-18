@@ -24,7 +24,11 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func pair(code: String) async throws {
-        let value = try VaultPairingCode(string: code)
+        let value: VaultPairingCode
+        do { value = try VaultPairingCode(string: code) }
+        catch {
+            throw VaultTransportError.internalError("This pairing code isn’t valid. Copy a fresh code from Luna Vault on your Mac and paste the whole code here.")
+        }
         try await savePairing(VaultPairingDraft(remoteDeviceID: value.deviceID.description,
             remoteName: "Luna Mac", folderID: "vault", folderLabel: "Vault",
             network: .syncthingPublic, manualAddresses: value.addresses.map(\.description)))
@@ -35,6 +39,9 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         busy = true
         defer { busy = false }
         let id = try DeviceID(string: draft.remoteDeviceID)
+        if let existing = try store.peer(), existing.deviceID != id, try !store.pendingLocalChanges().isEmpty {
+            throw VaultTransportError.internalError("Some files haven’t reached your current Mac yet. Let uploads finish before connecting a different Mac.")
+        }
         guard id != localID else { throw VaultTransportError.internalError("Enter the Mac's code, not this iPhone's code.") }
         let addresses = try draft.manualAddresses.map { value -> VaultPeerAddress in
             guard let address = VaultPeerAddress(syncthingURL: value) else {
@@ -72,6 +79,9 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
 
     public func removePairing() async throws {
         guard !busy else { throw VaultTransportError.internalError("Wait for pairing to finish before removing the Mac.") }
+        guard try store.pendingLocalChanges().isEmpty else {
+            throw VaultTransportError.internalError("Some files haven’t reached your Mac yet. Connect and let uploads finish before disconnecting.")
+        }
         await session.stop(reason: "Unpaired")
         try store.removePeer()
         try searchIndex.rebuild()

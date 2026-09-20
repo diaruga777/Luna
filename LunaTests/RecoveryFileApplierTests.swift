@@ -315,6 +315,24 @@ final class RecoveryFileApplierTests: XCTestCase {
         XCTAssertEqual(applier.lastFailure(forURL: pageURL.absoluteString), reason)
     }
 
+    /// A refusal for a hand-off the user started is filed ON the record, where
+    /// it outlives the process that read the file.
+    func testARefusalForARecordedHandoffIsFiledOnTheRecord() async {
+        PluginModelAdopters.article = nil
+        let item = failedItem()
+        handoffs.begin(
+            .recovery(itemID: item.id, urlString: pageURL.absoluteString), provider: .claude)
+
+        let applier = makeApplier()
+        let result = await applier.apply(file())
+
+        guard case .failed(let reason) = result else { return XCTFail("expected a failure") }
+        XCTAssertEqual(handoffs.record(forItemID: item.id)?.refusal, reason)
+        XCTAssertNil(
+            applier.lastFailure(forURL: pageURL.absoluteString),
+            "the record holds it, so the process does not")
+    }
+
     // MARK: - The hand-off record
 
     /// The card stops saying "waiting" the moment the reply is applied.

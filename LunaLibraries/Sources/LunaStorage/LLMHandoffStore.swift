@@ -27,17 +27,28 @@ public struct LLMHandoffRecord: Codable, Equatable, Sendable {
     public let provider: LLMProvider
     public let claudeTarget: LLMClaudeTarget
     public let startedAt: Date
+    /// Why the file that came back was refused, in one line for the card. A
+    /// record with one is no longer waiting: the round trip finished, badly.
+    public var refusal: String?
+    public var refusedAt: Date?
 
     public init(
         id: UUID = UUID(), kind: Kind, provider: LLMProvider,
-        claudeTarget: LLMClaudeTarget, startedAt: Date
+        claudeTarget: LLMClaudeTarget, startedAt: Date,
+        refusal: String? = nil, refusedAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
         self.provider = provider
         self.claudeTarget = claudeTarget
         self.startedAt = startedAt
+        self.refusal = refusal
+        self.refusedAt = refusedAt
     }
+
+    /// Whether the reply is still outstanding. A refused record stays on file so
+    /// the card can say WHY after a relaunch, but it is not a wait any more.
+    public var isWaiting: Bool { refusal == nil }
 
     /// The saved item this hand-off recovers, when it is a recovery.
     public var itemID: UUID? {
@@ -122,6 +133,23 @@ public final class LLMHandoffStore {
         live().first {
             if case .plugin = $0.kind { return true }
             return false
+        }
+    }
+
+    /// Files the reason a Luna file for this hand-off was refused. It survives a
+    /// relaunch, so the card explains itself on the next launch instead of
+    /// quietly going back to the plain offer. The next provider tap replaces the
+    /// record, and a successful apply clears it.
+    public func markRefused(id: UUID, reason: String, now: Date? = nil) {
+        let moment = now ?? self.now()
+        file.mutateIfChanged { records in
+            guard var record = records[id.uuidString] else {
+                return (result: (), changed: false)
+            }
+            record.refusal = reason
+            record.refusedAt = moment
+            records[id.uuidString] = record
+            return (result: (), changed: true)
         }
     }
 

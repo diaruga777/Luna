@@ -112,6 +112,15 @@ that comes back. Asking a second provider about the same page replaces the first
 record rather than queueing behind it — the card shows one answer's worth of
 waiting.
 
+**A refused reply is written to the record too** (`refusal`, `refusedAt`,
+`markRefused`). A record carrying one is no longer a wait (`isWaiting`): the
+surface goes back to the offer and shows the reason under the row, and it still
+does after a relaunch. The next provider tap replaces the record and a
+successful apply clears it. A file that arrived with NO record behind it — the
+user shared one Luna never asked for — leaves its reason in
+`RecoveryFileApplier.lastFailure(forURL:)` instead, which lasts as long as the
+process that read it.
+
 ## When the extension cannot open a provider
 
 An extension may only ASK its host to open a URL (`extensionContext.open`), and
@@ -136,7 +145,7 @@ too — the card will offer the hand-off again.
 `LunaTests/LLMDeepLinkTests.swift` — delimiter round-trips, the URL ceiling, the
 Claude target switch, and which providers have a fallback.
 `LunaTests/LLMHandoffStoreTests.swift` — lookup by item and by URL, replacement,
-expiry, and two live stores over one file.
+expiry, two live stores over one file, and a refusal surviving both.
 `LunaTests/FailedSaveTests.swift` — that a recorded hand-off puts the card in the
 waiting state. `LunaTests/URLRescueTests.swift` — that a refused provider open
 falls back to the containing app. `LunaTests/ArticleCardsChromeTests.swift` —

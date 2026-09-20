@@ -70,8 +70,9 @@ public final class RecoveryFileApplier {
     /// The apply in flight, and how far along it is. Process-local: the card
     /// reading it is in this process, and an apply never outlives it.
     private var progressByItemID: [UUID: Double] = [:]
-    /// The last refusal per page, so the card can say why instead of silently
-    /// going back to the offer.
+    /// The last refusal for a page NO hand-off was recorded for — a file that
+    /// arrived unprompted. A recorded hand-off carries its own refusal instead,
+    /// which survives a relaunch; this one only has to outlive the card.
     private var failureByURLString: [String: String] = [:]
 
     public init(
@@ -95,7 +96,9 @@ public final class RecoveryFileApplier {
     /// 0…1 while a file is being applied for this item, else nil.
     public func applyProgress(_ itemID: UUID) -> Double? { progressByItemID[itemID] }
 
-    /// Why the last file for this page was refused, or nil.
+    /// Why the last UNPROMPTED file for this page was refused, or nil. A file
+    /// answering a recorded hand-off files its reason on the record
+    /// (`LLMHandoffStore.markRefused`), where it survives a relaunch.
     public func lastFailure(forURL urlString: String) -> String? {
         failureByURLString[urlString]
     }
@@ -128,7 +131,7 @@ public final class RecoveryFileApplier {
                     SharedDiagnosticLog.record(
                         "recovery file: recipe replayed host=\(file.url.host ?? "?")",
                         category: "rescue")
-                    return succeed(itemID: itemID, pageURLString: pageURLString)
+                    return succeed(itemID: itemID, pageURL: file.url)
                 }
             } else {
                 // No engine in this process. The save is about to be recovered
@@ -141,32 +144,52 @@ public final class RecoveryFileApplier {
 
         report(itemID, progress: 0.6)
         guard let outcome = await RecoveryContentAdoption.outcome(for: file) else {
-            let reason = L10n.string("LunaFile_recoveryNotAdoptedMessage")
-            failureByURLString[pageURLString] = reason
             SharedDiagnosticLog.record(
                 "recovery file: content not adopted for \(pageURLString)", category: "rescue")
-            return .failed(reason: reason)
+            return refuse(L10n.string("LunaFile_recoveryNotAdoptedMessage"), for: file.url)
         }
 
         report(itemID, progress: 0.85)
         let applied = await ingestor.applyRescued(
             IngestResult(url: file.url, outcome: outcome), forItemID: itemID, interactive: false)
         guard applied else {
-            let reason = L10n.string("LunaFile_recoveryNotSavedMessage")
-            failureByURLString[pageURLString] = reason
-            return .failed(reason: reason)
+            return refuse(L10n.string("LunaFile_recoveryNotSavedMessage"), for: file.url)
         }
-        return succeed(itemID: itemID, pageURLString: pageURLString)
+        return succeed(itemID: itemID, pageURL: file.url)
     }
 
     // MARK: - Private
 
-    private func succeed(itemID: UUID, pageURLString: String) -> Result {
-        if let record = handoffs.record(forURL: pageURLString) {
-            handoffs.clear(id: record.id)
-        }
+    private func succeed(itemID: UUID, pageURL: URL) -> Result {
+        if let record = recordedHandoff(for: pageURL) { handoffs.clear(id: record.id) }
         NotificationCenter.default.post(name: .savesChanged, object: nil)
         return .recovered(itemID: itemID)
+    }
+
+    /// Files one line saying why the file was refused, where the card that
+    /// asked for it will look. A recorded hand-off keeps it on disk; a file
+    /// that arrived unprompted keeps it in this process, which is long enough
+    /// for the card to explain itself once.
+    private func refuse(_ reason: String, for url: URL) -> Result {
+        if let record = recordedHandoff(for: url) {
+            handoffs.markRefused(id: record.id, reason: reason, now: now())
+        } else {
+            failureByURLString[url.absoluteString] = reason
+        }
+        return .failed(reason: reason)
+    }
+
+    /// The hand-off this page was handed over under, matched the way a save is
+    /// matched rather than by the exact URL text the record holds.
+    private func recordedHandoff(for url: URL) -> LLMHandoffRecord? {
+        let target = Self.matchKey(url)
+        return handoffs.recoveryRecords().first { record in
+            guard let urlString = record.urlString else { return false }
+            guard let recordURL = URL(string: urlString) else {
+                return urlString == url.absoluteString
+            }
+            return Self.matchKey(recordURL) == target
+        }
     }
 
     /// The save this file is about, when Luna already has one.
@@ -181,14 +204,8 @@ public final class RecoveryFileApplier {
     private func existingItemID(for url: URL) -> UUID? {
         let target = Self.matchKey(url)
         let items = store.items()
-        let recorded = handoffs.recoveryRecords().first { record in
-            guard let urlString = record.urlString else { return false }
-            guard let recordURL = URL(string: urlString) else {
-                return urlString == url.absoluteString
-            }
-            return Self.matchKey(recordURL) == target
-        }
-        if let itemID = recorded?.itemID, items.contains(where: { $0.id == itemID }) {
+        if let itemID = recordedHandoff(for: url)?.itemID,
+           items.contains(where: { $0.id == itemID }) {
             return itemID
         }
         return items.first { item in

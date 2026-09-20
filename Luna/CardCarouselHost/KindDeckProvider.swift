@@ -397,7 +397,7 @@ final class KindDeckProvider: CardDeckProviding {
         else { return nil }
 
         var children: [UIMenuElement] = []
-        if LLMHandoffStore.shared.record(forItemID: item.id) != nil {
+        if LLMHandoffStore.shared.record(forItemID: item.id)?.isWaiting == true {
             let waiting = UIAction(title: L10n.string("CardDeck_recoverWithAIWaiting")) { _ in }
             waiting.attributes = .disabled
             children.append(waiting)

@@ -22,6 +22,10 @@ enum KindWiring {
 
     @MainActor
     static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.handler = UnsupportedLunaFileIntake()
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs, for this app's kinds only
@@ -118,6 +122,11 @@ enum KindWiring {
 
     /// Central Luna only; Price Tracker's Safari extension never creates this handoff.
     static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+
+    /// The extension's LLM hand-off, arriving as `<scheme>://llm?item=…` when
+    /// the extension's own open was refused. WP2 opens the recorded provider
+    /// URL from here; the route exists now so every app answers it.
+    static func openLLMHandoff(itemID: UUID) {}
 
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the

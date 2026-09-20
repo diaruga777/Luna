@@ -17,6 +17,7 @@
 //
 
 import LunaMediaDownload
+import LunaModels
 import LunaShareSurface
 import UIKit
 
@@ -24,6 +25,10 @@ import UIKit
 final class ShareEntry: ShareViewController {
     override init(nibName: String?, bundle: Bundle?) {
         MediaKindComposition.install()
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.handler = UnsupportedLunaFileIntake()
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

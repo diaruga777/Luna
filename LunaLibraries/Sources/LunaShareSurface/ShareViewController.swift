@@ -172,6 +172,8 @@ open class ShareViewController: UIViewController {
             handleURL(providers[index])
         case let .document(index, type):
             handleDocument(providers[index], type: type)
+        case let .lunaFile(index, typeIdentifier):
+            handleLunaFile(providers[index], typeIdentifier: typeIdentifier)
         case let .text(index):
             // Some apps share the link as text, not a URL. Pull the first
             // link out of it.
@@ -507,6 +509,13 @@ open class ShareViewController: UIViewController {
                 self.failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
                 return
             }
+            // A provider that can only show the file as a code block leaves
+            // the user "long-press → Share" on the text. It is a Luna file
+            // before it is a caption, so this runs before link extraction.
+            if LunaFileIntake.looksLikeLunaFile(text: text),
+               self.dispatchLunaFile(text: text, sourceURL: nil) {
+                return
+            }
             // A Facebook deep link (`fbrpc://…&target_url=…`) shared as
             // text is not a link `NSDataDetector` can detect, so this
             // unwraps it to its real http article first, falling back to
@@ -672,6 +681,14 @@ open class ShareViewController: UIViewController {
                 self.failOrComplete(L10n.string("ShareExtension_share_missingFileMessage"))
                 return
             }
+            // The router matches a Luna file by identifier, so this only
+            // catches one the host advertised as plain text.
+            if type.conforms(to: .text),
+               case .success(let text) = LunaFileReader.readText(at: url),
+               LunaFileIntake.looksLikeLunaFile(text: text),
+               self.dispatchLunaFile(text: text, sourceURL: url) {
+                return
+            }
             // A text file that is essentially just a link imports as the
             // link, not the file, dropping the surrounding text.
             if type.conforms(to: .text),
@@ -686,6 +703,79 @@ open class ShareViewController: UIViewController {
                 return
             }
             self.saveDocumentDirectly(sourceURL: url)
+        }
+    }
+
+    // MARK: - Luna files
+
+    /// A Luna file shared as a file (`claudedocs/luna-file.md`). The system
+    /// deletes the provider's copy when this callback returns, so the text is
+    /// read here rather than later.
+    private func handleLunaFile(_ provider: NSItemProvider, typeIdentifier: String) {
+        provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] url, _ in
+            guard let self else { return }
+            self.cancelLoadWatchdog()
+            guard let url else {
+                self.failOrComplete(L10n.string("ShareExtension_share_missingFileMessage"))
+                return
+            }
+            switch LunaFileReader.readText(at: url) {
+            case .success(let text):
+                if self.dispatchLunaFile(text: text, sourceURL: url) { return }
+                self.failOrComplete(L10n.string("LunaFile_notALunaFileMessage"))
+            case .failure(let error):
+                self.failOrComplete(error.message)
+            }
+        }
+    }
+
+    /// Hands a Luna file to this surface's intake witness, or refuses it on the
+    /// card the extensions already show for a foreign save. False means `text`
+    /// is not a Luna file at all, and the caller carries on with its own route.
+    @discardableResult
+    private func dispatchLunaFile(text: String, sourceURL: URL?) -> Bool {
+        guard let outcome = LunaFileIntake.classify(text: text) else { return false }
+        switch outcome {
+        case .success(.recovery(let file)):
+            switch SurfaceSupport.evaluateForCurrentProcess(owner: file.kind.owningApp) {
+            case .supported:
+                SharedDiagnosticLog.record(
+                    "luna file: recovery \(file.kind.rawValue) for \(file.url.absoluteString)",
+                    category: "share")
+                DispatchQueue.main.async {
+                    LunaFileIntake.handler?.handleRecovery(file, sourceURL: sourceURL)
+                }
+            case .unsupported(let owner):
+                SharedDiagnosticLog.record("luna file: dropped foreign-kind recovery", category: "share")
+                presentUnsupportedLunaFile(owner: owner, message: nil)
+            }
+        case let .success(.plugin(headerJSON, source)):
+            // Only the central Luna app runs plugins; a sibling app links none
+            // of the platform, so it can only say so.
+            guard LunaApp.current == .luna else {
+                SharedDiagnosticLog.record("luna file: dropped plugin draft", category: "share")
+                presentUnsupportedLunaFile(
+                    owner: .luna, message: L10n.string("UnsupportedSave_pluginFileMessage"))
+                break
+            }
+            SharedDiagnosticLog.record("luna file: plugin draft", category: "share")
+            DispatchQueue.main.async {
+                LunaFileIntake.handler?.handlePlugin(source: source, headerJSON: headerJSON)
+            }
+        case .failure(let error):
+            SharedDiagnosticLog.record("luna file refused: \(error)", category: "share")
+            failOrComplete(error.message)
+        }
+        return true
+    }
+
+    private func presentUnsupportedLunaFile(owner: LunaApp, message: String?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let card = UnsupportedSaveCardViewController(
+                owner: owner, currentApp: .current, ownerMessage: message)
+            card.delegate = self
+            self.presentModally(card)
         }
     }
 

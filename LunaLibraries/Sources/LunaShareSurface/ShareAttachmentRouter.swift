@@ -3,6 +3,7 @@
 //  LunaShareSurface
 //
 
+import LunaModels
 import UniformTypeIdentifiers
 
 /// Which incoming attachment a share/action extension consumes, and how.
@@ -11,6 +12,16 @@ public enum ShareAttachmentRoute: Equatable {
     case webURL(index: Int)
     /// A shared FILE at `index`, imported as a document of `type`.
     case document(index: Int, type: UTType)
+    /// A Luna file at `index`, advertised as `typeIdentifier`
+    /// (`claudedocs/luna-file.md`): read as text and dispatched through
+    /// `LunaFileIntake`, never stored as a document.
+    ///
+    /// The identifier is carried as a STRING because it is also what
+    /// `loadFileRepresentation` takes, and because a `UTType` exists only
+    /// while an app that declares it is installed — the match below is by
+    /// identifier, so a file still routes here on a device whose type
+    /// database has not caught up.
+    case lunaFile(index: Int, typeIdentifier: String)
     /// An in-memory TEXT payload at `index` (text the host typed out rather than
     /// a text FILE): a link inside it is the share, and wins over importing the
     /// text itself.
@@ -23,6 +34,7 @@ public enum ShareAttachmentRoute: Equatable {
         switch self {
         case let .webURL(index): return "url@\(index)"
         case let .document(index, type): return "document@\(index)(\(type.identifier))"
+        case let .lunaFile(index, identifier): return "lunafile@\(index)(\(identifier))"
         case let .text(index): return "text@\(index)"
         case .unsupported: return "unsupported"
         }
@@ -39,6 +51,12 @@ public enum ShareAttachmentRouter {
 
     /// Word Open XML — the `.docx` Luna itself exports. No `UTType` constant.
     public static let docx = UTType("org.openxmlformats.wordprocessingml.document")
+
+    /// The Luna file types this app opens, most specific first
+    /// (`LunaApp.acceptedFileTypeIdentifiers`).
+    public static var lunaFileTypeIdentifiers: [String] {
+        LunaApp.current.acceptedFileTypeIdentifiers
+    }
 
     /// Document file types accepted from the share sheet, most specific
     /// first. The first match wins, and `.html` conforms to `.text`, so
@@ -75,6 +93,13 @@ public enum ShareAttachmentRouter {
     /// a file routes to `.text`, where a link inside it wins over the text
     /// itself.
     public static func route(providerTypes: [[String]]) -> ShareAttachmentRoute {
+        // A Luna file is matched FIRST and by identifier. It conforms to
+        // `public.plain-text`, so every later branch would claim it — the text
+        // branch would hunt for a link in it, the document branch would store
+        // it as a file.
+        if let match = firstLunaFile(in: providerTypes) {
+            return .lunaFile(index: match.index, typeIdentifier: match.identifier)
+        }
         if let index = providerTypes.firstIndex(where: isWebLink) {
             return .webURL(index: index)
         }
@@ -92,6 +117,23 @@ public enum ShareAttachmentRouter {
             return .webURL(index: index)
         }
         return .unsupported
+    }
+
+    /// The first provider advertising a Luna file type this app opens, and
+    /// which type it is. Identifiers are compared as strings rather than
+    /// resolved to `UTType`s: a type resolves only while an app that EXPORTS
+    /// it is installed, and a Luna file must route here either way.
+    private static func firstLunaFile(
+        in providerTypes: [[String]]
+    ) -> (index: Int, identifier: String)? {
+        let accepted = lunaFileTypeIdentifiers
+        for (index, types) in providerTypes.enumerated() {
+            for identifier in accepted
+            where types.contains(where: { $0.caseInsensitiveCompare(identifier) == .orderedSame }) {
+                return (index, identifier)
+            }
+        }
+        return nil
     }
 
     /// The identifier a `.text` payload should be loaded with: the text type

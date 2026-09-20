@@ -963,6 +963,9 @@
 "Downloader_media_retention_threeDays_Luna" = "3 days";
 "Downloader_media_retention_twoWeeks_Luna" = "2 weeks";
 
+/* ===== LunaFile — SceneDelegate.swift + ShareViewController.swift (what a surface says about an arriving .luna file) ===== */
+"LunaFile_notALunaFileMessage_Luna" = "This is not a Luna file.";
+
 /* ===== LunaFileError — LunaFileError.swift (why a .luna / .lunar / .lunad / .lunas file was refused), in reading order ===== */
 "LunaFileError_noHeader_Luna" = "This is not a Luna file. A Luna file starts with a block comment whose first line is luna-plugin or luna-recovery.";
 "LunaFileError_headerNotJSON_Luna" = "The Luna file's header on line %lld is not a JSON object: %@";

@@ -92,6 +92,29 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// affordances read this before they show.
     public var transcribesMedia: Bool { self == .luna }
 
+    /// The file extension a Luna file addressed to this app carries
+    /// (`claudedocs/plans/ai-flows.md` §3). An LLM is asked to name its reply
+    /// `<title>.<fileExtension>`, and the matching UTI is what the app's
+    /// document type claims. Vault and Writer take no Luna file.
+    public var fileExtension: String? {
+        switch self {
+        case .luna: return "luna"
+        case .reader: return "lunar"
+        case .downloader: return "lunad"
+        case .priceTracker: return "lunas"
+        case .vault, .writer: return nil
+        }
+    }
+
+    /// Every extension this app opens: the central app opens the whole
+    /// family's files, a single-content app only its own.
+    public var acceptedFileExtensions: [String] {
+        switch self {
+        case .luna: return LunaApp.allCases.compactMap { $0.fileExtension }
+        default: return fileExtension.map { [$0] } ?? []
+        }
+    }
+
     /// App-Group marker key recording that this app has run on this device.
     /// The Safari extensions' native handlers read these raw strings (they
     /// don't share a framework), so the format is part of the App-Group

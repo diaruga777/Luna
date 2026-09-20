@@ -234,6 +234,48 @@ final class KindCompositionRootTests: XCTestCase {
             """)
     }
 
+    // MARK: - The Luna file intake seam
+
+    /// A `.luna` file can land on ANY surface, so every root installs both
+    /// witnesses: the recovery half every app runs, and the plugin half only
+    /// central Luna answers for real. A root that installs neither leaves an
+    /// arriving file silently dropped on that one surface, which is the same
+    /// split the kind packs exist to prevent.
+    func testEveryCompositionRootInstallsALunaFileIntakeWitness() throws {
+        for path in Self.expected.keys.sorted() {
+            let source = try self.source(path)
+            for seam in ["LunaFileIntake.recoveryHandler =", "LunaFileIntake.pluginHandler ="] {
+                XCTAssertTrue(
+                    source.contains(seam), "\(path) does not write `\(seam)`")
+            }
+        }
+    }
+
+    /// And nothing else writes either seam. One witness per process, installed
+    /// by that process's root — a second write anywhere else is a surface
+    /// quietly taking the seam away from the one that owns it.
+    func testOnlyAListedCompositionRootWritesTheIntakeHandler() throws {
+        let allowed = Set(Self.expected.keys)
+        var offenders: [String] = []
+        for (path, source) in try allRootSources() where !allowed.contains(path) {
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                if text.contains("LunaFileIntake.recoveryHandler =")
+                    || text.contains("LunaFileIntake.pluginHandler =") {
+                    offenders.append("\(path): \(text)")
+                }
+            }
+        }
+        XCTAssertTrue(
+            offenders.isEmpty,
+            """
+            Something other than a composition root installed the Luna file \
+            intake witness:
+            \(offenders.joined(separator: "\n"))
+            """)
+    }
+
     // MARK: - The CARD half of a kind
 
     /// The card presenters, and the app roots allowed to install them. A card's

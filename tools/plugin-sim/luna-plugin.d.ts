@@ -317,10 +317,53 @@ export interface HTMLDocument extends HTMLElement {
   readonly head: HTMLElement | null;
 }
 
+/// What the page says about itself, read out of OpenGraph, Twitter cards,
+/// plain `<meta name>`, `<link rel=canonical>`, `<title>`, `<html lang>` and
+/// JSON-LD, in that order per key. A key no source states is absent.
+/// `image` and `canonical` are already absolute.
+export interface PageMetadata {
+  title?: string; description?: string; canonical?: string; image?: string;
+  author?: string; published?: string; siteName?: string; language?: string;
+  type?: string;
+}
+
+/// Luna's own main-content extraction. `html` carries only the tags an
+/// `ArticleModel` keeps.
+export interface ExtractedArticle {
+  title: string; html: string; text: string;
+  author?: string; publishedAt?: string; leadImageURL?: string; excerpt?: string;
+}
+
 export interface LunaHTML {
   parse(html: string, baseURL?: string): HTMLDocument;
   text(html: string): string;
   jsonScripts(doc: HTMLDocument, type?: string): unknown[];
+  /// Every `<script type="application/ld+json">`, `@graph` flattened one
+  /// level and bad JSON skipped. Always an array.
+  jsonLD(doc: HTMLDocument): Record<string, unknown>[];
+  meta(doc: HTMLDocument): PageMetadata;
+  /// A Promise in EVERY process: Safari has no readability pass of its own
+  /// and relays the call to Luna, so the shape cannot be synchronous there.
+  /// `null` when the page has no article body.
+  article(html: string, baseURL?: string): Promise<ExtractedArticle | null>;
+}
+
+// ---- luna.text (rides on the `html` capability) ----
+
+export interface ParsedPrice {
+  /// Digits and at most one dot, keeping the fraction digits the page wrote.
+  amount: string;
+  /// ISO 4217, when a symbol or a code touches the number.
+  currency?: string;
+}
+
+export interface LunaText {
+  price(s: string): ParsedPrice | null;
+  /// An absolute date as ISO 8601 — `2024-03-04T09:30:00Z` when the string
+  /// carried a time, `2024-03-04` when it did not. A relative phrase is null.
+  date(s: string): string | null;
+  /// Entities decoded, tags dropped, whitespace collapsed, trimmed.
+  clean(s: string): string;
 }
 
 // ---- luna.fetch (§6.2) ----
@@ -358,6 +401,20 @@ export interface FetchResponse {
   ok: boolean; status: number; url: string; redirected: boolean;
   headers: Record<string, string>; text?: string; base64?: string; file?: FileHandle;
   truncated: boolean; bytes: number;
+}
+
+/// `luna.fetch` is a function that also carries three helpers. Each is a GET
+/// whose `opts` are the ordinary request minus `url`, and each rejects
+/// `fetch-failed` — with the status in the message — on a non-2xx answer.
+export interface LunaFetch {
+  (request: string | FetchRequest): Promise<FetchResponse>;
+  text(url: string, opts?: Omit<FetchRequest, "url">): Promise<string>;
+  /// A body that is not JSON rejects `fetch-failed` too.
+  json(url: string, opts?: Omit<FetchRequest, "url">): Promise<unknown>;
+  /// `luna.html.parse` over the body, with the base set to the FINAL URL.
+  /// Needs the `html` capability as well; without it, rejects
+  /// `capability-not-declared`.
+  doc(url: string, opts?: Omit<FetchRequest, "url">): Promise<HTMLDocument>;
 }
 
 // ---- luna.storage (§6.5) ----
@@ -558,8 +615,10 @@ export interface Luna {
   /// string passes through unchanged.
   localize(table: LocalizedText): string;
 
-  fetch?(request: string | FetchRequest): Promise<FetchResponse>;
+  fetch?: LunaFetch;
   html?: LunaHTML;
+  /// Installed with `html`; it declares no capability of its own.
+  text?: LunaText;
   page?: Page;
   storage?: Storage;
   secrets?: { get(key: string): Promise<string | undefined>; set(key: string, value: string): Promise<void>; delete(key: string): Promise<void> };

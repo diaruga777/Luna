@@ -620,7 +620,17 @@ HEADERS = """/*
 
 /assets/*
   Cache-Control: public, max-age=3600
+
+/p1
+  Content-Type: text/markdown; charset=utf-8
+  Cache-Control: public, max-age=600
 """
+
+# The plugin API reference an LLM fetches when Luna hands it a plugin request
+# (`LLMHandoffPrompts.pluginAPIReferenceURL`). Served as Markdown at a short
+# path because the link travels inside a deep-link prompt.
+PLUGIN_API_SOURCE = REPO / "docs/plugins/llm-api.md"
+PLUGIN_API_PATH = "p1"
 
 
 # MARK: - Build
@@ -668,6 +678,9 @@ def build(out: Path) -> None:
     (out / "index.html").write_text(render_index(entries, css_href), encoding="utf-8")
     (out / "setup/index.html").write_text(render_index(entries, css_href), encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
+    (out / PLUGIN_API_PATH).write_text(
+        PLUGIN_API_SOURCE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     redirects = "".join(
         f"/setup/{alias} /setup/{slug}/ 301\n"
@@ -676,7 +689,7 @@ def build(out: Path) -> None:
     )
     (out / "_redirects").write_text(redirects, encoding="utf-8")
 
-    print(f"built {len(APPS)} setup pages → {out.relative_to(REPO)}")
+    print(f"built {len(APPS)} setup pages + /{PLUGIN_API_PATH} → {out.relative_to(REPO)}")
 
 
 def main() -> None:

@@ -32,6 +32,10 @@ public enum PluginPlatformComposition {
     /// sharing the store.
     private static var runtime: PluginRuntime?
 
+    /// The store this process is holding, and the change token it last loaded.
+    private static var store: PluginStore?
+    private static var loadedChangeToken: String?
+
     /// Builds the platform and installs the ingest stage and the media and price
     /// seams for `processKind`.
     ///
@@ -61,13 +65,14 @@ public enum PluginPlatformComposition {
             store: store, bundled: bundled, capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind), scratch: scratch)
         Self.runtime = runtime
+        Self.store = store
 
         let fetcher = PluginFetchService()
         fetcher.idle = runtime
         fetcher.fileWriter = scratch
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime, files: scratch))
-        capabilities.register(PluginHTMLBridge())
+        capabilities.register(PluginHTMLBridge(scheduler: runtime))
         capabilities.register(PluginStorageBridge(store: keyValueStore, scheduler: runtime))
         capabilities.register(PluginSecretsBridge(
             scheduler: runtime, processKind: processKind))
@@ -85,6 +90,7 @@ public enum PluginPlatformComposition {
         PluginPlatformServices.scratch = scratch
 
         let reports = runtime.loadAll()
+        Self.loadedChangeToken = store.changeToken
 
         IngestPipeline.pluginStage = PluginIngestStage(
             invoker: runtime, processKind: processKind)
@@ -97,5 +103,18 @@ public enum PluginPlatformComposition {
             invoker: runtime, processKind: processKind)
         PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()
         return reports
+    }
+
+    /// Reloads this process's runtime when the App-Group store has changed
+    /// since it last loaded. A share or action extension can install a plugin
+    /// while the app is suspended, and the app's runtime would otherwise keep
+    /// serving the set it read at launch.
+    @MainActor
+    public static func reloadIfStoreChanged() {
+        guard let runtime, let store else { return }
+        let token = store.changeToken
+        guard token != loadedChangeToken else { return }
+        loadedChangeToken = token
+        runtime.reloadAll()
     }
 }

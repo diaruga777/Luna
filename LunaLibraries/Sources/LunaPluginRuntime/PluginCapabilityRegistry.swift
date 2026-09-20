@@ -117,6 +117,13 @@ public final class PluginCapabilityRegistry: @unchecked Sendable {
 enum PluginUnavailableNamespace {
 
     static func install(_ name: PluginCapabilityName, into namespace: PluginCapabilityNamespace) {
+        install(as: name.rawValue, into: namespace)
+    }
+
+    /// `as` names the property to write: a capability's own name, or a
+    /// companion namespace riding on it (`luna.text` under `html`). The
+    /// refusal names that property, which is what the plugin called.
+    static func install(as property: String, into namespace: PluginCapabilityNamespace) {
         let context = namespace.context
         guard let factory = context.evaluateScript(
             """
@@ -140,7 +147,7 @@ enum PluginUnavailableNamespace {
             })
             """)
         else { return }
-        let object = factory.call(withArguments: [name.rawValue])
-        namespace.install(object ?? JSValue(undefinedIn: context) as Any, as: name.rawValue)
+        let object = factory.call(withArguments: [property])
+        namespace.install(object ?? JSValue(undefinedIn: context) as Any, as: property)
     }
 }

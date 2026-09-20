@@ -32,9 +32,7 @@ public protocol UnsupportedSavePresenting {
 /// shell (`URLRescueWiring`); uninstalled in extensions / tests (rescue is
 /// main-app-only), where a failure just stays failed.
 public protocol IngestRescueTriggering {
-    /// `interactive` marks a foreground, user-initiated save.
-    func itemFailedIngest(
-        itemID: UUID, url: URL, source: CaptureSource, interactive: Bool)
+    func itemFailedIngest(itemID: UUID, url: URL, source: CaptureSource)
 }
 
 /// Starts an alternative-seller fan-out for a re-saved product URL. Installed by
@@ -205,19 +203,17 @@ public final class SavesIngestor: PluginLockedSaveResuming {
 
         // URL Rescue hook: a genuine `.failed` first pass is the one place a
         // rescue may help. `itemJustFailed` re-reads the item from the store
-        // and no-ops unless it is still `.failed` and rescue is eligible, so
-        // a surface-dropped or already-existing item never triggers one. The
-        // rescue engine re-enters the raw pipeline, not this method, so it
-        // cannot recurse. `.notContent` is the one failure a rescue cannot
-        // help with — there is no article on a search-results or index page
-        // for the model to find, and the attempt is rationed per app version
+        // and no-ops unless rescue is still owed to it, so a surface-dropped or
+        // already-existing item never triggers one. The rescue engine re-enters
+        // the raw pipeline, not this method, so it cannot recurse. `.notContent`
+        // is the one failure a rescue cannot help with — there is no article on
+        // a search-results or index page for the model to find
         // (`claudedocs/failed-saves.md`).
         if case let .failed(reason) = result.outcome,
            reason?.isWorthRescuing ?? true {
-            let interactive = allowsInteractivePrompt && isInteractivePromptSource(item.effectiveCaptureSource)
             Self.rescueTrigger?.itemFailedIngest(
                 itemID: item.id, url: result.url,
-                source: item.effectiveCaptureSource, interactive: interactive)
+                source: item.effectiveCaptureSource)
         }
         return decision
     }

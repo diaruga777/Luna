@@ -6,6 +6,7 @@
 //  what the catalog actually reports, status included.
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
@@ -91,7 +92,26 @@ final class PluginsSettingsScreenTests: XCTestCase {
         let screen = PluginsSettingsScreen(
             catalog: FakeCatalog([]), importer: FakePluginImporter(), settingsStore: FakePluginSettingsStore(),
             invoker: nil)
-        XCTAssertFalse(screen.makeTrailingControls().isEmpty)
+        XCTAssertEqual(screen.makeTrailingControls().count, 1)
+    }
+
+    /// The wand needs somewhere to send the request. A surface that cannot open
+    /// a chat model offers import only.
+    func testTheCreateButtonAppearsOnlyWithALauncher() {
+        let withoutLauncher = PluginsSettingsScreen(
+            catalog: FakeCatalog([]), importer: FakePluginImporter(),
+            settingsStore: FakePluginSettingsStore(), invoker: nil)
+        let withLauncher = PluginsSettingsScreen(
+            catalog: FakeCatalog([]), importer: FakePluginImporter(),
+            settingsStore: FakePluginSettingsStore(), invoker: nil,
+            launcher: SilentLauncher())
+
+        XCTAssertEqual(
+            withoutLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
+            [L10n.string("Plugins_importTitle")])
+        XCTAssertEqual(
+            withLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
+            [L10n.string("Plugins_create1Title"), L10n.string("Plugins_importTitle")])
     }
 }
 
@@ -123,4 +143,10 @@ final class FakePluginImporter: PluginImporting {
         throw NSError(domain: "test", code: 0)
     }
     func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {}
+}
+
+/// A launcher that opens nothing, for a screen that only has to show its
+/// Create button.
+final class SilentLauncher: LLMLaunching {
+    func openLLM(_ url: URL, fallback: URL?) {}
 }

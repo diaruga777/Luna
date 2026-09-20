@@ -46,7 +46,6 @@
 "Common_cancel_Luna" = "Cancel";
 "Common_close_Luna" = "Close";
 "Common_contacts_Luna" = "Contacts";
-"Common_continue_Luna" = "Continue";
 "Common_copyLink_Luna" = "Copy link";
 "Common_couldntLoadThisArticle_Luna" = "Couldn't load this website.";
 "Common_couldntPromote_Luna" = "Couldn't Promote";
@@ -79,7 +78,6 @@
 "Common_promote_Luna" = "Promote";
 "Common_reader_Luna" = "Reader";
 "Common_remove_Luna" = "Remove";
-"Common_retryWithAI_Luna" = "Try using on-device AI";
 "Common_save_Luna" = "Save";
 "Common_saved_Luna" = "Saved";
 "Common_savedToLuna_Luna" = "Saved to Luna";
@@ -107,11 +105,22 @@
 "LunaApp_displayName_Vault" = "Luna Vault";
 "LunaApp_displayName_Writer" = "Luna Writer";
 
+/* ===================== LLMHandoff — the chat hand-off: the two providers,
+ * the Claude long-press menu, and the row the failed card and the extension
+ * card share (claudedocs/llm-handoff.md). ===================== */
+"LLMProvider_chatGPT_Luna" = "ChatGPT";
+"LLMProvider_claude_Luna" = "Claude";
+"LLMProvider_claudeChat_Luna" = "Use Claude chat";
+"LLMProvider_claudeCode_Luna" = "Use Claude Code";
+"LLMHandoff_rowCaption_Luna" = "Recover with";
+"LLMHandoff_waitingHint_Luna" = "Tap the .%@ file in the reply and choose Luna.";
+
 /* ===================== UnsupportedSave — "this app can't take this link",
  * shown by the in-app card, the share/action extensions' card, and the App
  * Intents' error dialog. ===================== */
 "UnsupportedSave_header_Luna" = "Unable to save this link in %@";
 "UnsupportedSave_upsell_Luna" = "Get the %@ app to save this link";
+"UnsupportedSave_pluginFileMessage_Luna" = "Plugins run in Luna.";
 
 /* ===================== Weekly — From the Luna team ===================== */
 "Weekly_subtitle_Luna" = "From the Luna team";
@@ -220,7 +229,6 @@
 /* ===================== SaveFailure — a failed save card's headline (what
  * went wrong) and, where there's something to do about it, the suggestion
  * line underneath. ===================== */
-"SaveFailure_genericTitle_Luna" = "Sorry, Luna was unable to save this page.";
 "SaveFailure_noInternet_Luna" = "No internet connection";
 "SaveFailure_timedOut_Luna" = "The site took too long to respond";
 "SaveFailure_refused_Luna" = "The site refused the request (%lld)";
@@ -610,7 +618,6 @@
 "Settings_linkImport_savingStatus_Luna" = "Saving links…";
 "Settings_linkImport_downloadingStatus_Luna" = "Fetching content…";
 "Settings_linkImport_unlockingStatus_Luna" = "Extracting website text…";
-"Settings_linkImport_rescuingStatus_Luna" = "Retrying with Apple Intelligence…";
 "Settings_linkImport_doneStatus_Luna" = "Finishing up…";
 "Settings_linkImport_finishingStartedStatus_Luna" = "Finishing a few links…";
 
@@ -907,7 +914,6 @@
 "Downloader_mediaCard_photosAccess_saveMessage_Luna" = "Allow photo library access in Settings to save media.";
 "Downloader_mediaCard_photosAccess_title_Luna" = "Photos Access Needed";
 "Downloader_mediaCard_photosBadgeAccessibilityLabel_Luna" = "Open in Photos";
-"Downloader_mediaCard_rescueInProgressLabel_Luna" = "Trying harder with Apple Intelligence…";
 "Downloader_mediaCard_saveFailedAlert_message_Luna" = "Couldn't save to Photos.";
 "Downloader_mediaCard_saveFailedAlert_title_Luna" = "Save Failed";
 "Downloader_mediaCard_savedToPhotosAlert_message_Luna" = "The media was added to your Photos library.";
@@ -962,6 +968,22 @@
 "Downloader_media_retention_threeDays_Luna" = "3 days";
 "Downloader_media_retention_twoWeeks_Luna" = "2 weeks";
 
+/* ===== LunaFile — SceneDelegate.swift + ShareViewController.swift + RecoveryFileApplier.swift (what a surface says about an arriving .luna file) ===== */
+"LunaFile_notALunaFileMessage_Luna" = "This is not a Luna file.";
+"LunaFile_recoveryNotAdoptedMessage_Luna" = "Luna could not read the content in this file.";
+"LunaFile_recoveryNotSavedMessage_Luna" = "Luna read the file but could not save it.";
+
+/* ===== LunaFileError — LunaFileError.swift (why a .luna / .lunar / .lunad / .lunas file was refused), in reading order ===== */
+"LunaFileError_noHeader_Luna" = "This is not a Luna file. A Luna file starts with a block comment whose first line is luna-plugin or luna-recovery.";
+"LunaFileError_headerNotJSON_Luna" = "The Luna file's header on line %lld is not a JSON object: %@";
+"LunaFileError_missingField_Luna" = "The Luna file needs a \"%@\" field (line %lld).";
+"LunaFileError_invalidField_Luna" = "The Luna file's \"%@\" on line %lld is not usable: %@";
+"LunaFileError_unsupportedAPIVersion_Luna" = "This Luna file is written for format %lld. This build reads format %lld.";
+"LunaFileError_kindMismatch_Luna" = "The Luna file's header says %@ but its content is %@.";
+"LunaFileError_bodyNotJSON_Luna" = "The Luna file's content did not read: %@";
+"LunaFileError_fileTooLarge_Luna" = "A Luna file may be at most %lld KB.";
+"LunaFileError_notText_Luna" = "That file is not UTF-8 text, so it is not a Luna file.";
+
 /* ===== PluginImportError — PluginManifestError.swift + PluginStoreError.swift (what the import screen shows when a plugin file is refused), in reading order ===== */
 "PluginImportError_noHeader_Luna" = "This file has no plugin header. A plugin starts with a block comment whose first line is luna-plugin, holding its manifest JSON.";
 "PluginImportError_headerNotJSON_Luna" = "The plugin header on line %lld is not a JSON object: %@";
@@ -1013,14 +1035,11 @@
 "PriceTracker_tracking_noPriceFoundTitle_Luna" = "No price found";
 "PriceTracker_tracking_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
 "PriceTracker_tracking_pasteLinkActionTitle_Luna" = "Paste a link";
-"PriceTracker_tracking_noPriceRescueMessage_Luna" = "Unable to read a price. Apple Intelligence can try to find it.";
 "PriceTracker_tracking_notYetRefreshed_Luna" = "Not yet refreshed";
 "PriceTracker_tracking_refreshedFormat_Luna" = "Refreshed %@";
 "PriceTracker_tracking_screenTitle_Luna" = "Price Tracker";
 "PriceTracker_tracking_searchActionTitle_Luna" = "Search";
 "PriceTracker_tracking_sellersHeaderTitle_Luna" = "Sellers";
-"PriceTracker_tracking_stillNoPriceMessage_Luna" = "Apple Intelligence couldn't find a price on this page.";
-"PriceTracker_tracking_stillNoPriceTitle_Luna" = "Still no price";
 "PriceTracker_tracking_urlFieldPlaceholder_Luna" = "https://…";
 
 /* ===== PriceTracker_search — ProductSearchOverlayViewController.swift (the in-app web search/browse overlay) ===== */
@@ -1100,7 +1119,6 @@
 /* ===== CardDeck_failedSave — the failed-save error card, shared between the in-app card
    (FailedSaveCardFactory.swift / FailedSaveCardViewController.swift) and its extension-side
    twin (RescueFailureViewController.swift) ===== */
-"CardDeck_failedSave_attemptFooter_Luna" = "Tried %lld times · last %@";
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
 
@@ -1180,6 +1198,12 @@
 "Plugins_consentVersionLine_Luna" = "Version %@";
 "Plugins_containmentDisclosure_Luna" = "Luna limits what a plugin can reach, but cannot stop a plugin that does not finish.";
 "Plugins_countDetail_Luna" = "%lld plugins";
+"Plugins_create1Title_Luna" = "Create with AI";
+"Plugins_create2Placeholder_Luna" = "Describe the site or the kind of link, and paste an example URL";
+"Plugins_create3RowCaption_Luna" = "Write it with";
+"Plugins_create4Waiting_Luna" = "Waiting for a .luna file from %@ — tap it in the reply and choose Luna.";
+"Plugins_create5PrefillFailure_Luna" = "Luna could not save this page: %@";
+"Plugins_create6PrefillPlugins_Luna" = "Plugins that already matched it: %@";
 "Plugins_deleteConfirmMessage_Luna" = "This removes %@ and everything it stored.";
 "Plugins_deleteConfirmTitle_Luna" = "Delete Plugin?";
 "Plugins_deleteRow_Luna" = "Delete Plugin";
@@ -1197,26 +1221,25 @@
 "Plugins_pairedDeviceNotPaired_Luna" = "Not paired";
 "Plugins_pasteImportButton_Luna" = "Import";
 "Plugins_pasteTitle_Luna" = "Paste Plugin Source";
-"Plugins_recoveryCopyFix_Luna" = "Copy Fix Prompt";
-"Plugins_recoveryCopyPrompt_Luna" = "Copy Prompt";
-"Plugins_recoveryCreateForWebsite_Luna" = "Create for Website";
 "Plugins_recoveryCreatePlugin_Luna" = "Create Plugin…";
-"Plugins_recoveryInstall_Luna" = "Install Plugin";
-"Plugins_recoveryInstalled_Luna" = "Plugin installed and activated.";
-"Plugins_recoveryIntro_Luna" = "Luna captured what it tried for %@. Copy the prompt into any LLM chat, then paste the complete JavaScript reply below.";
-"Plugins_recoveryInvalidURL_Luna" = "Enter a complete http or https URL.";
-"Plugins_recoveryPassed_Luna" = "Validation passed: a valid %@ was produced for this URL.";
-"Plugins_recoveryPasteLabel_Luna" = "Paste the plugin reply";
-"Plugins_recoveryPrivacyMessage_Luna" = "Luna redacts known credentials and limits page evidence. Review the prompt before sharing it because website text and URLs may still be private.";
-"Plugins_recoveryPrivacyTitle_Luna" = "Before You Share";
-"Plugins_recoveryProbing_Luna" = "Checking What Luna Tries…";
-"Plugins_recoveryRevalidate_Luna" = "The source changed after validation. Validate this version again before installing.";
-"Plugins_recoverySharePrompt_Luna" = "Share Prompt";
-"Plugins_recoveryTitle_Luna" = "Create a Website Plugin";
-"Plugins_recoveryURLMessage_Luna" = "Luna will try the URL without saving it, then prepare a prompt describing what a plugin needs to fix.";
-"Plugins_recoveryURLTitle_Luna" = "Website URL";
-"Plugins_recoveryValidate_Luna" = "Test This Plugin";
-"Plugins_recoveryValidating_Luna" = "Testing the draft in an isolated temporary runtime…";
+"Plugins_review01Title_Luna" = "Review Plugin";
+"Plugins_review02Matches_Luna" = "Runs on: %@";
+"Plugins_review03AnyWebsite_Luna" = "any website";
+"Plugins_review04Priority_Luna" = "Priority %lld";
+"Plugins_review05Hooks_Luna" = "Hooks: %@";
+"Plugins_review06HookMissing_Luna" = "%@ (not registered)";
+"Plugins_review07CapabilityNotTested_Luna" = "%@ (not tested)";
+"Plugins_review08Settings_Luna" = "Asks you to fill in: %@";
+"Plugins_review09ResultHeader_Luna" = "Test result";
+"Plugins_review10Testing_Luna" = "Testing the draft in an isolated temporary runtime…";
+"Plugins_review11Passed_Luna" = "Passed: it produced a valid %@.";
+"Plugins_review12Loaded_Luna" = "Loaded. It was not run against a page.";
+"Plugins_review13Save_Luna" = "Save Plugin";
+"Plugins_review14SaveAnyway_Luna" = "Save Anyway";
+"Plugins_review15Discard_Luna" = "Discard";
+"Plugins_review16GenerateAgain_Luna" = "Generate again with";
+"Plugins_review17Installed_Luna" = "Plugin installed and activated.";
+"Plugins_review18Unreadable_Luna" = "Luna cannot read this file as a plugin: %@";
 "Plugins_reenableRow_Luna" = "Re-enable";
 "Plugins_rowVersionAndSummary_Luna" = "Version %@ · %@";
 "Plugins_runsInBackgroundLine_Luna" = "Runs in the background.";

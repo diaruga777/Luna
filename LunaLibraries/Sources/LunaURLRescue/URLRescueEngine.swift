@@ -95,7 +95,7 @@ public final class URLRescueEngine {
         // model's log excerpt has to be the state of the world before this
         // attempt, not a mirror.
         let trace = request.itemID.flatMap { traceStore.contents(for: $0) }
-        log("start host=\(host) hint=\(request.hintKey)", request)
+        log("start host=\(host)", request)
         onProgress(.queued)
         stats.recordAttempt()
 
@@ -118,7 +118,7 @@ public final class URLRescueEngine {
         session.beginAttempt()
 
         // (1) Learned rule — deterministic, before any LLM.
-        if let cached = ruleStore.rule(forHost: host, hint: request.hint) {
+        if let cached = ruleStore.rule(forHost: host) {
             log("cachedRule hit host=\(host)", request)
             if let directive = directiveFromRule(cached, request: request) {
                 onProgress(.replayingRule)
@@ -129,7 +129,7 @@ public final class URLRescueEngine {
                     log("cachedRule success host=\(host)", request)
                     return Self.relabel(outcome, as: .cachedRule)
                 }
-                ruleStore.recordFailure(forHost: host, hint: request.hint)
+                ruleStore.recordFailure(forHost: host)
                 log("cachedRule fail host=\(host)", request)
             }
         }
@@ -180,7 +180,7 @@ public final class URLRescueEngine {
         var budget: RescueDigestBudget = supportsArticle ? .privateCloud : .onDevice
 
         // (5) Plan call, with one digest-halving retry on context overflow.
-        let instructions = RescuePrompts.planInstructions(hint: request.hint, allowsArticlePayload: supportsArticle)
+        let instructions = RescuePrompts.planInstructions(allowsArticlePayload: supportsArticle)
         session.prewarm(instructions: instructions)
 
         var plan: RescuePlanResponse?
@@ -190,14 +190,14 @@ public final class URLRescueEngine {
             let split = Self.split(budget: budget, hasEvidence: trace != nil)
             digest = pageHTML.map {
                 digestBuilder.buildDigest(
-                    url: request.url, html: $0, hint: request.hint, budget: split.digest)
+                    url: request.url, html: $0, budget: split.digest)
             } ?? RescuePrompts.unavailableDigest(reason: fetchFailure ?? "empty response")
             let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: split.evidence)
             log("digest chars=\(digest.count) evidence chars=\(evidence?.count ?? 0) "
                 + "est-tokens=\(RescueDigestBudget.estimatedTokens(forCharacters: digest.count + (evidence?.count ?? 0))) attempt=\(attempt)",
                 request)
             let prompt = RescuePrompts.planPrompt(
-                url: request.url, hint: request.hint,
+                url: request.url,
                 failureKind: request.failureKind, failureReason: request.failureReason,
                 digest: digest, evidence: evidence)
             do {
@@ -328,13 +328,13 @@ public final class URLRescueEngine {
         onProgress(.digesting)
         let split = Self.split(budget: budget.halved, hasEvidence: trace != nil)
         let digest = digestBuilder.buildDigest(
-            url: inspectURL, html: html, hint: request.hint, budget: split.digest)
+            url: inspectURL, html: html, budget: split.digest)
         let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: split.evidence)
         let prompt = RescuePrompts.inspectPrompt(
             originalURL: request.url, inspectedURL: inspectURL,
             digest: digest, evidence: evidence)
         let instructions = RescuePrompts.inspectInstructions(
-            hint: request.hint, allowsArticlePayload: supportsArticle)
+            allowsArticlePayload: supportsArticle)
         onProgress(.thinking)
         let plan: RescuePlanResponse
         do {
@@ -439,7 +439,7 @@ public final class URLRescueEngine {
         case let .reroute(reroute):
             guard let rewrite = Self.rewrite(from: request.url, to: reroute.url) else { return nil }
             return RescueLearnedRule(
-                host: host, hint: request.hintKey, rewrite: rewrite,
+                host: host, rewrite: rewrite,
                 refererString: reroute.headers.referer?.absoluteString,
                 acceptLanguage: reroute.headers.acceptLanguage,
                 xForwardedFor: reroute.headers.xForwardedFor,
@@ -447,7 +447,7 @@ public final class URLRescueEngine {
         case let .webJS(script):
             let rewrite = Self.rewrite(from: request.url, to: script.pageURL) ?? .none
             return RescueLearnedRule(
-                host: host, hint: request.hintKey, rewrite: rewrite,
+                host: host, rewrite: rewrite,
                 refererString: script.headers.referer?.absoluteString,
                 acceptLanguage: script.headers.acceptLanguage,
                 xForwardedFor: script.headers.xForwardedFor,
@@ -613,34 +613,6 @@ public final class URLRescueEngine {
         case .unavailable: return "unavailable"
         case .quotaExhausted: return "quotaExhausted"
         case .failed: return "failed"
-        }
-    }
-
-    /// Races `work` against `seconds` on UNSTRUCTURED tasks, resuming on
-    /// whichever finishes first; nil means the timeout won.
-    ///
-    /// Deliberately NOT a task group. A group does not return until every child
-    /// has finished, and `cancelAll()` only REQUESTS cancellation — so a single
-    /// cancellation-deaf child hangs the group and, with it, the very timeout
-    /// meant to bound it. A `LanguageModelSession.respond` that never comes back
-    /// is exactly such a child, which is what left the failed-save card stuck on
-    /// "Asking Apple Intelligence" forever instead of giving up after 90 s. Same
-    /// reasoning and the same shape as `IntentIngestHelper.savePressRacingTimeout`,
-    /// which carries this warning for the same reason.
-    private func raceAgainstTimeout<T>(
-        seconds: TimeInterval, _ work: @escaping () async -> T
-    ) async -> T? {
-        let resumeLatch = OneShotLatch()
-        return await withCheckedContinuation { continuation in
-            @Sendable func finish(_ value: T?) {
-                if resumeLatch.claim() { continuation.resume(returning: value) }
-            }
-            Task { finish(await work()) }
-            Task {
-                try? await Task.sleep(
-                    nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-                finish(nil)
-            }
         }
     }
 

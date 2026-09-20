@@ -10,9 +10,8 @@ import LunaModels
 final class URLRescueDirectiveTests: XCTestCase {
     private let validator = RescueDirectiveValidator()
 
-    private func request(_ urlString: String = "https://www.example.com/story",
-                         hint: RescueHint? = .article) -> RescueRequest {
-        RescueRequest(url: URL(string: urlString)!, source: .manual, failureKind: .articleFailed, hint: hint)
+    private func request(_ urlString: String = "https://www.example.com/story") -> RescueRequest {
+        RescueRequest(url: URL(string: urlString)!, source: .manual, failureKind: .articleFailed)
     }
 
     private func validate(_ plan: RescuePlanResponse, request req: RescueRequest? = nil,
@@ -25,7 +24,7 @@ final class URLRescueDirectiveTests: XCTestCase {
 
     func testRerouteSameDomainAccepted() {
         let plan = RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story")
-        guard case .success(.directive(.reroute(let r))) = validate(plan, request: request(hint: .article)) else {
+        guard case .success(.directive(.reroute(let r))) = validate(plan, request: request()) else {
             return XCTFail("expected reroute")
         }
         XCTAssertEqual(r.url.host, "amp.example.com")
@@ -42,7 +41,7 @@ final class URLRescueDirectiveTests: XCTestCase {
     }
 
     func testRerouteCoUkRegistrableDomain() {
-        let req = request("https://www.bbc.co.uk/news/story", hint: .article)
+        let req = request("https://www.bbc.co.uk/news/story")
         let plan = RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.bbc.co.uk/news/story")
         guard case .success(.directive(.reroute)) = validate(plan, request: req) else {
             return XCTFail("co.uk subdomain should match")
@@ -115,7 +114,7 @@ final class URLRescueDirectiveTests: XCTestCase {
     func testProductVerbatimPriceAccepted() {
         let plan = RescuePlanResponse(kind: "product", productName: "Widget",
                                       productPriceAmount: "129.99", productCurrency: "usd")
-        let result = validate(plan, request: request(hint: .product), digest: "price is 129.99 today")
+        let result = validate(plan, request: request(), digest: "price is 129.99 today")
         guard case .success(.directive(.productPayload(let info))) = result else { return XCTFail("expected product") }
         XCTAssertEqual(info.priceCurrency, "USD")
         XCTAssertEqual(info.priceAmount, Decimal(string: "129.99"))
@@ -124,21 +123,21 @@ final class URLRescueDirectiveTests: XCTestCase {
     func testProductPriceNotInDigestRejected() {
         let plan = RescuePlanResponse(kind: "product", productName: "Widget",
                                       productPriceAmount: "42.00", productCurrency: "USD")
-        let result = validate(plan, request: request(hint: .product), digest: "nothing priced here")
+        let result = validate(plan, request: request(), digest: "nothing priced here")
         guard case .failure(.priceNotEvidenced) = result else { return XCTFail("hallucinated price must reject") }
     }
 
     func testProductCommaDecimalVariantAccepted() {
         let plan = RescuePlanResponse(kind: "product", productName: "Widget",
                                       productPriceAmount: "19.95", productCurrency: "EUR")
-        let result = validate(plan, request: request(hint: .product), digest: "Preis: 19,95 €")
+        let result = validate(plan, request: request(), digest: "Preis: 19,95 €")
         guard case .success(.directive(.productPayload)) = result else { return XCTFail("comma variant") }
     }
 
     func testProductBadCurrencyRejected() {
         let plan = RescuePlanResponse(kind: "product", productName: "Widget",
                                       productPriceAmount: "10.00", productCurrency: "dollars")
-        let result = validate(plan, request: request(hint: .product), digest: "10.00")
+        let result = validate(plan, request: request(), digest: "10.00")
         guard case .failure(.badCurrency) = result else { return XCTFail() }
     }
 
@@ -146,18 +145,18 @@ final class URLRescueDirectiveTests: XCTestCase {
 
     func testMediaURLByExtensionAccepted() {
         let plan = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.somewhere.net/v/clip.mp4")
-        let result = validate(plan, request: request(hint: .media), digest: "")
+        let result = validate(plan, request: request(), digest: "")
         guard case .success(.directive(.mediaURL(let u))) = result else { return XCTFail() }
         XCTAssertEqual(u.pathExtension, "mp4")
     }
 
     func testMediaURLNoExtensionNeedsEvidence() {
         let unproven = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.net/stream/abc")
-        guard case .failure(.badMediaURL) = validate(unproven, request: request(hint: .media), digest: "") else {
+        guard case .failure(.badMediaURL) = validate(unproven, request: request(), digest: "") else {
             return XCTFail("unevidenced non-extension URL must reject")
         }
         let proven = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.net/stream/abc")
-        guard case .success(.directive(.mediaURL)) = validate(proven, request: request(hint: .media),
+        guard case .success(.directive(.mediaURL)) = validate(proven, request: request(),
                                                                digest: "src: https://cdn.net/stream/abc") else {
             return XCTFail("verbatim-evidenced URL should pass")
         }
@@ -168,21 +167,21 @@ final class URLRescueDirectiveTests: XCTestCase {
     func testOnDeviceArticleKindRejectedButSalvagedToReroute() {
         let plan = RescuePlanResponse(kind: "article", rerouteURLString: "https://amp.example.com/story")
         // supportsArticle=false → salvage to the reroute it also carries.
-        guard case .success(.directive(.reroute)) = validate(plan, request: request(hint: .article), supportsArticle: false) else {
+        guard case .success(.directive(.reroute)) = validate(plan, request: request(), supportsArticle: false) else {
             return XCTFail("should salvage to reroute")
         }
     }
 
     func testOnDeviceArticleKindNoSalvageRejected() {
         let plan = RescuePlanResponse(kind: "article")
-        guard case .failure(.articleNotAllowedOnDevice) = validate(plan, request: request(hint: .article), supportsArticle: false) else {
+        guard case .failure(.articleNotAllowedOnDevice) = validate(plan, request: request(), supportsArticle: false) else {
             return XCTFail("no salvage fields → reject")
         }
     }
 
     func testArticleKindOnPCCNeedsPayload() {
         let plan = RescuePlanResponse(kind: "article")
-        guard case .success(.needsArticlePayload) = validate(plan, request: request(hint: .article), supportsArticle: true) else {
+        guard case .success(.needsArticlePayload) = validate(plan, request: request(), supportsArticle: true) else {
             return XCTFail("PCC article should request payload")
         }
     }
@@ -272,7 +271,7 @@ final class URLRescueDirectiveTests: XCTestCase {
             kind: "product", productName: "Widget",
             productPriceAmount: "129.99", productCurrency: "USD")
         guard case .failure(.priceNotEvidenced) = validator.validate(
-            plan: plan, request: request(hint: .product), digest: "no price here",
+            plan: plan, request: request(), digest: "no price here",
             supportsArticlePayload: false, candidates: ["https://syndicated.test/story"])
         else { return XCTFail("an unevidenced price stays rejected") }
     }
@@ -319,67 +318,58 @@ final class URLRescueDirectiveTests: XCTestCase {
         }
     }
 
-    // MARK: - Auto (model-chosen) content type
+    // MARK: - Model-chosen content type
 
-    /// a nil hint is what the failed-save card sends: the model decides the content
-    /// type, so a product payload must be ACCEPTED rather than downgraded, even
-    /// though the failing pass was the article branch.
-    func testAutoHintAcceptsAProductPayload() {
+    /// The model decides the content type, so a product payload is ACCEPTED
+    /// rather than downgraded, even though the failing pass was the article
+    /// branch.
+    func testValidatorAcceptsAProductPayload() {
         let plan = RescuePlanResponse(
             kind: "product", productName: "Widget",
             productPriceAmount: "129.99", productCurrency: "USD")
         guard case .success(.directive(.productPayload(let info))) = validate(
-            plan, request: request(hint: nil), digest: "price 129.99 USD") else {
-            return XCTFail("auto must let the model choose product")
+            plan, request: request(), digest: "price 129.99 USD") else {
+            return XCTFail("the model must be free to choose product")
         }
         XCTAssertEqual(info.name, "Widget")
     }
 
-    func testAutoHintAcceptsAMediaPayload() {
+    func testValidatorAcceptsAMediaPayload() {
         let plan = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.example.com/v.mp4")
         guard case .success(.directive(.mediaURL(let url))) = validate(
-            plan, request: request(hint: nil)) else {
-            return XCTFail("auto must let the model choose media")
+            plan, request: request()) else {
+            return XCTFail("the model must be free to choose media")
         }
         XCTAssertEqual(url.lastPathComponent, "v.mp4")
     }
 
-    func testAutoHintAcceptsAnArticlePayloadOnPCC() {
+    func testValidatorAcceptsAnArticlePayloadOnPCC() {
         let plan = RescuePlanResponse(kind: "article")
         guard case .success(.needsArticlePayload) = validate(
-            plan, request: request(hint: nil), supportsArticle: true) else {
-            return XCTFail("auto must let the model choose article")
+            plan, request: request(), supportsArticle: true) else {
+            return XCTFail("the model must be free to choose article")
         }
     }
 
-    /// A CONCRETE hint still constrains the answer — the price editor's "Ask Apple
-    /// Intelligence" shouldn't come back with a video.
-    func testAConcreteHintStillRejectsAForeignPayload() {
-        let plan = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.example.com/v.mp4")
-        guard case .failure(.illegalKind) = validate(plan, request: request(hint: .product)) else {
-            return XCTFail("a product-hinted rescue must not accept media")
-        }
-    }
-
-    /// a nil hint widens which payloads are legal; it does not weaken any evidence
-    /// rule. A price the digest never mentions is still a fabrication.
-    func testAutoHintDoesNotRelaxTheEvidenceRules() {
+    /// Letting the model classify does not weaken any evidence rule. A price
+    /// the digest never mentions is still a fabrication.
+    func testModelChosenKindDoesNotRelaxTheEvidenceRules() {
         let plan = RescuePlanResponse(
             kind: "product", productName: "Widget",
             productPriceAmount: "8888.00", productCurrency: "USD")
         guard case .failure(.priceNotEvidenced) = validate(
-            plan, request: request(hint: nil), digest: "nothing numeric here") else {
-            return XCTFail("auto must still require a verbatim price")
+            plan, request: request(), digest: "nothing numeric here") else {
+            return XCTFail("a verbatim price is still required")
         }
     }
 
-    // MARK: - Prompt auto classification (model-chosen content type)
+    // MARK: - Prompt classification
 
-    /// Under a nil hint every payload option is on the table AND the model is told
-    /// the classification is its job — without that, the options read as a menu
-    /// and it picks whatever the digest mentions first.
-    func testAutoInstructionsOfferEveryOptionAndAskForClassification() {
-        let instructions = RescuePrompts.planInstructions(hint: nil, allowsArticlePayload: true)
+    /// Every payload option is on the table AND the model is told the
+    /// classification is its job — without that, the options read as a menu and
+    /// it picks whatever the digest mentions first.
+    func testInstructionsOfferEveryOptionAndAskForClassification() {
+        let instructions = RescuePrompts.planInstructions(allowsArticlePayload: true)
         XCTAssertTrue(instructions.contains("FIRST decide what kind of content"))
         XCTAssertTrue(instructions.contains("\"article\""))
         XCTAssertTrue(instructions.contains("\"product\""))
@@ -387,74 +377,23 @@ final class URLRescueDirectiveTests: XCTestCase {
     }
 
     /// On-device can't reproduce a whole article, so the article option stays
-    /// gated by tier even under a nil hint.
-    func testAutoInstructionsStillGateArticleByTier() {
-        let onDevice = RescuePrompts.planInstructions(hint: nil, allowsArticlePayload: false)
+    /// gated by tier.
+    func testInstructionsStillGateArticleByTier() {
+        let onDevice = RescuePrompts.planInstructions(allowsArticlePayload: false)
         XCTAssertFalse(onDevice.contains("you will be asked for the full text next"))
         XCTAssertTrue(onDevice.contains("\"product\""), "the other options remain")
     }
 
-    /// A concrete hint gets the single-option form; only an absent hint
-    /// offers every option.
-    func testAConcreteHintOffersOnlyItsOwnOption() {
-        let product = RescuePrompts.planInstructions(hint: .product, allowsArticlePayload: true)
-        XCTAssertTrue(product.contains("\"product\""))
-        XCTAssertFalse(product.contains("\"media_url\""))
-        XCTAssertFalse(product.contains("FIRST decide what kind of content"))
-    }
-
-    /// The prompt must not name a content type under a nil hint — that would undo
-    /// the classification the instructions just asked for. What it names instead
-    /// is the failure that already happened.
-    func testAutoPromptStatesTheFailureRatherThanAHint() {
+    /// The prompt must not name a content type — that would undo the
+    /// classification the instructions just asked for. What it names instead is
+    /// the failure that already happened.
+    func testPromptStatesTheFailureRatherThanAContentType() {
         let prompt = RescuePrompts.planPrompt(
-            url: URL(string: "https://example.com/x")!, hint: nil,
+            url: URL(string: "https://example.com/x")!,
             failureKind: .articleFailed, failureReason: nil,
             digest: "digest", evidence: nil)
         XCTAssertFalse(prompt.contains("Content hint:"))
         XCTAssertTrue(prompt.contains("What already failed:"))
         XCTAssertTrue(prompt.contains("no usable text"))
-    }
-
-    func testConcretePromptStillCarriesTheHint() {
-        let prompt = RescuePrompts.planPrompt(
-            url: URL(string: "https://example.com/x")!, hint: .media,
-            failureKind: .mediaNoAssets, failureReason: nil,
-            digest: "digest", evidence: nil)
-        XCTAssertTrue(prompt.contains("Content hint: media"))
-    }
-
-    /// No hint at all means a nil hint, not "guess from the failure kind" — this is
-    /// the default every automatic path and the card take. It is a plain nil
-    /// rather than a sentinel case, so there is only one spelling of "no hint"
-    /// rather than a second one via a mirrored `ContentHint.auto`.
-    func testAnAbsentHintStaysNilAndAllowsEveryPayload() {
-        let request = RescueRequest(
-            url: URL(string: "https://example.com/x")!, source: .manual,
-            failureKind: .productNoPrice)
-        XCTAssertNil(request.hint)
-        for kind in RescueHint.allCases {
-            XCTAssertTrue(request.allows(kind), "no hint must allow \(kind)")
-        }
-    }
-
-    /// A concrete hint allows only its own payload.
-    func testAConcreteHintAllowsOnlyItsOwnPayload() {
-        let product = RescueRequest(
-            url: URL(string: "https://example.com/x")!, source: .manual,
-            failureKind: .productNoPrice, hint: .product)
-        XCTAssertTrue(product.allows(.product))
-        XCTAssertFalse(product.allows(.article))
-        XCTAssertFalse(product.allows(.media))
-    }
-
-    /// Learned rules are keyed per (host, hint), so a model-classified rescue must
-    /// not replay a rule learned under a pinned kind.
-    func testHintKeyDistinguishesNoHintFromAPinnedKind() {
-        let base = URL(string: "https://example.com/x")!
-        let auto = RescueRequest(url: base, source: .manual, failureKind: .articleFailed)
-        let pinned = RescueRequest(url: base, source: .manual, failureKind: .articleFailed, hint: .article)
-        XCTAssertEqual(auto.hintKey, "auto")
-        XCTAssertEqual(pinned.hintKey, "article")
     }
 }

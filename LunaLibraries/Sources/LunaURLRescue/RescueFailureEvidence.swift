@@ -163,66 +163,25 @@ enum RescueFailureEvidence {
 
     // MARK: - The failure sentence
 
-    /// One or two lines naming what already went wrong, built from the RECORDED
-    /// reason. The evidence excerpt holds the detail; this is the headline the
-    /// model reads even when no trace exists.
+    /// One line naming what already went wrong, built from the RECORDED reason.
+    /// The evidence excerpt holds the detail; this is the headline the model
+    /// reads even when no trace exists.
+    ///
+    /// The sentences live in LunaModels so the failed card's chat prompt says
+    /// exactly what this prompt says.
     static func failureSentence(
         kind: RescueRequest.FailureKind, reason: SaveFailureReason?
     ) -> String {
-        guard let reason else { return fallbackSentence(kind) }
-        switch reason {
-        case .offline:
-            return "the device had no network connection when the save ran"
-        case .timedOut:
-            return "the fetch timed out"
-        case let .httpStatus(code):
-            switch code {
-            case 401, 403:
-                return "the server refused the app's request with HTTP \(code) — a browser identity or a different route may get through"
-            case 404, 410:
-                return "the server answered HTTP \(code): this exact URL is gone, so any rescue has to find the content elsewhere"
-            case 429:
-                return "the server answered HTTP 429 (rate limited / bot challenge)"
-            case 500...599:
-                return "the server answered HTTP \(code) — its own fault, not the request's"
-            default:
-                return "the server answered HTTP \(code)"
-            }
-        case let .network(detail):
-            return "the connection failed: \(detail)"
-        case .notReadable:
-            return "the page loaded but carried no article text"
-        case .notContent:
-            return "the page is a listing or index, not a single piece of content"
-        case .notHTML:
-            return "the response was not decodable as HTML"
-        case .tooLarge:
-            return "the response body was too large to hold"
-        case .noMediaFound:
-            return "no video/image/audio file could be found on the page"
-        case .couldNotSave:
-            return "the content was read but could not be stored"
-        case .subscribeRedirect:
-            return "the site redirected the article request to its own subscribe/sign-in page, so the article was never served"
-        case .noTranscriptSource:
-            return "a transcript was asked for, but no plugin found captions or a recording to transcribe"
-        case let .transcriptionFailed(detail):
-            return "the recording could not be transcribed: \(detail)"
-        case .unknown:
-            return fallbackSentence(kind)
-        }
+        SaveFailureReason.rescueSentence(reason, attempted: kind.attemptKind)
     }
+}
 
-    /// A generic sentence for the reason-less case: an older failure recorded
-    /// before the sidecar carried a `SaveFailureReason`.
-    private static func fallbackSentence(_ kind: RescueRequest.FailureKind) -> String {
-        switch kind {
-        case .articleFailed:
-            return "reading the page as an article produced no usable text"
-        case .productNoPrice:
-            return "no price could be extracted from the page"
-        case .mediaNoAssets:
-            return "no video/image/audio file could be found on the page"
+extension RescueRequest.FailureKind {
+    var attemptKind: SaveFailureAttemptKind {
+        switch self {
+        case .articleFailed: return .article
+        case .productNoPrice: return .product
+        case .mediaNoAssets: return .media
         }
     }
 }

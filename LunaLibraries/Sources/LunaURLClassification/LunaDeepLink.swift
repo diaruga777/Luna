@@ -108,27 +108,39 @@ public enum LunaDeepLink {
         return value
     }
 
-    /// `<scheme>://rescue` — the extension→app URL-rescue hand-off. No query
-    /// payload: the URL + hint + one-shot consent travel in
-    /// `PendingRescueRequestStore` (App Group), and a bare route works even when
-    /// the responder-chain open silently fails (the foreground drain still finds
-    /// the record). The extension targets its CONTAINING app's scheme.
-    public static func rescueLink(scheme: String = ownScheme) -> URL? {
+    /// `<scheme>://llm?item=<uuid>` — the extension's LLM hand-off falling
+    /// back to the app. An extension may only ask its host to open a URL, and
+    /// the host may refuse; when it does, the extension opens this instead and
+    /// the app opens the provider from a process that is always allowed to.
+    /// The item id is all it carries — the prompt and the chosen provider are
+    /// already in the shared hand-off record.
+    public static let llmHandoffHost = "llm"
+
+    public static func llmHandoffLink(scheme: String = ownScheme, itemID: UUID) -> URL? {
         var components = URLComponents()
         components.scheme = scheme
-        components.host = "rescue"
+        components.host = llmHandoffHost
+        components.queryItems = [URLQueryItem(name: "item", value: itemID.uuidString)]
         return components.url
     }
 
-    /// True for `<any Luna scheme>://rescue` — any app drains its own queue, so
-    /// the broad check is correct here.
-    public static func isRescueLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
-        return url.host == "rescue"
+    /// True for `<any Luna scheme>://llm?item=…`. Every app runs the recovery
+    /// hand-off, so the broad scheme check is correct here.
+    public static func isLLMHandoffLink(_ url: URL) -> Bool {
+        llmHandoffItemID(from: url) != nil
+    }
+
+    public static func llmHandoffItemID(from url: URL) -> UUID? {
+        guard let scheme = url.scheme, allSchemes.contains(scheme),
+              url.host == llmHandoffHost,
+              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "item" })?.value
+        else { return nil }
+        return UUID(uuidString: value)
     }
 
     /// `<scheme>://resolvedmedia` — the Safari in-page player's download
-    /// hand-off. Payload-free for the same reason `rescueLink` is: the resolved
+    /// hand-off. Payload-free on purpose: the resolved
     /// assets travel in `PendingResolvedMediaStore` (App Group), so a link this
     /// short can't truncate them and a foreground drain still finds them if the
     /// open silently fails. The `resolvedMediaHost` constant is mirrored in
@@ -148,7 +160,7 @@ public enum LunaDeepLink {
     /// `PendingPluginModelStore` (App Group). Mirrored in `content.js`.
     public static let pluginModelHost = "pluginmodel"
 
-    /// The central Luna workshop's Safari recovery hand-off. The recovery case
+    /// Safari's plugin-recovery hand-off to central Luna. The recovery case
     /// itself lives in the App Group; this route carries only its stable id.
     public static let pluginRecoveryHost = "pluginrecovery"
 
@@ -164,7 +176,7 @@ public enum LunaDeepLink {
         return components.url
     }
 
-    /// True for a central-Luna recovery workshop hand-off. Unlike model/save
+    /// True for a central-Luna plugin-recovery hand-off. Unlike model/save
     /// routes this must never target a facet app: only central Luna owns the
     /// plugin authoring UI.
     public static func isPluginRecoveryLink(_ url: URL) -> Bool {

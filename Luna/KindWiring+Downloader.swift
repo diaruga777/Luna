@@ -22,6 +22,11 @@ enum KindWiring {
 
     @MainActor
     static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
+        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs, for this app's kinds only
@@ -83,7 +88,14 @@ enum KindWiring {
     static func drainPendingPluginModels(returningToSource: Bool) {}
 
     /// Central Luna only; Downloader's Safari extension never creates this handoff.
-    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+    static func openPendingPluginRecoveryCase(caseID: UUID) {}
+
+    /// The extension's LLM hand-off, arriving as `<scheme>://llm?item=…` when
+    /// the extension's own open was refused.
+    @MainActor
+    static func openLLMHandoff(itemID: UUID) {
+        LLMHandoffResume.open(itemID: itemID)
+    }
 
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()

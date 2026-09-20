@@ -47,7 +47,7 @@ final class PluginHTMLParityTests: XCTestCase {
                     try {
                         var doc = LunaPluginHost.html.parse(c.html, c.baseURL || defaultBase);
                         var run = new Function("doc", "luna", c.script);
-                        var answer = run(doc, { html: LunaPluginHost.html });
+                        var answer = run(doc, { html: LunaPluginHost.html, text: LunaPluginHost.text });
                         var got = JSON.stringify(answer === undefined ? null : answer);
                         var want = JSON.stringify(c.expected === undefined ? null : c.expected);
                         results.push({ name: c.name, ok: got === want, detail: got + " vs " + want });
@@ -75,7 +75,7 @@ final class PluginHTMLParityTests: XCTestCase {
     }
 
     func testTheSubsetSpecHasEnoughCasesToBeASpecification() {
-        XCTAssertGreaterThanOrEqual(runSpec().count, 40)
+        XCTAssertGreaterThanOrEqual(runSpec().count, 100)
     }
 
     func testEverySpecCaseAgreesWithTheDOMParserBacking() {

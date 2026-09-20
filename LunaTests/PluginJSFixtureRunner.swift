@@ -66,7 +66,7 @@ final class PluginJSFixtureRunner {
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime, files: scratch,
             diagnostics: diagnostics))
-        capabilities.register(PluginHTMLBridge())
+        capabilities.register(PluginHTMLBridge(scheduler: runtime))
         capabilities.register(PluginStorageBridge(store: kv, scheduler: runtime))
         capabilities.register(PluginCryptoBridge(scheduler: runtime))
         capabilities.register(PluginFilesBridge(scratch: scratch, scheduler: runtime))

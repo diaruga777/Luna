@@ -201,6 +201,69 @@ try {
   assert.equal(badExportResult.report.ok, false);
   assert.match(badExportResult.report.errors[0], /export.text/);
 
+  // The manifest rules come from PluginManifestRules.json, so a limit the
+  // parser enforces is enforced here too rather than only in Swift.
+  const longName = path.join(temp, "long-name.js");
+  writeFileSync(
+    longName,
+    `/* luna-plugin\n{"id":"test.longname","name":"${"n".repeat(41)}","version":"1.0.0","api":1}\n*/\n` +
+      "luna.register({});",
+  );
+  const longNameResult = invoke(["validate", longName]);
+  assert.equal(longNameResult.report.ok, false);
+  assert.match(longNameResult.report.errors[0], /at most 40 characters/);
+
+  // `luna.fetch.json` is the sugar over `luna.fetch`: a GET whose body is
+  // parsed, and a non-2xx rejecting `fetch-failed` with the status.
+  const jsonFixture = path.join(temp, "json-fixture");
+  mkdirSync(jsonFixture);
+  writeFileSync(
+    path.join(jsonFixture, "clip.response.json"),
+    JSON.stringify({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mp4: "https://cdn.test/a.mp4", title: "Clip" }),
+    }),
+  );
+  const sugar = path.join(temp, "sugar.js");
+  writeFileSync(
+    sugar,
+    header(
+      "test.sugar",
+      `"produces":["media"],"match":{"hosts":["example.com"]},"capabilities":["fetch"]`,
+    ) +
+      `luna.register({ classify: () => ({kind:"media"}), ingest: async ({url}) => { const info = await luna.fetch.json(url); return {kind:"media", title: info.title, assets:[{url: info.mp4, type:"video"}]}; } });`,
+  );
+  const sugarResult = invoke([
+    "test",
+    sugar,
+    "https://example.com/clip",
+    "--fixture",
+    jsonFixture,
+  ]);
+  assert.equal(sugarResult.report.ok, true);
+  assert.equal(sugarResult.report.result.ingest.title, "Clip");
+
+  const sugarFail = path.join(temp, "sugar-fail.js");
+  writeFileSync(
+    sugarFail,
+    header(
+      "test.sugarfail",
+      `"produces":["article"],"match":{"hosts":["example.com"]},"capabilities":["fetch"]`,
+    ) +
+      `luna.register({ classify: () => ({kind:"article"}), ingest: async ({url}) => { try { await luna.fetch.text(url); } catch (e) { return {kind:"article", title:e.code, html:"<p>"+e.message+"</p>"}; } return null; } });`,
+  );
+  const sugarFailResult = invoke([
+    "test",
+    sugarFail,
+    "https://example.com/",
+    "--fixture",
+    fixture,
+  ]);
+  assert.equal(sugarFailResult.report.ok, true);
+  assert.equal(sugarFailResult.report.result.ingest.title, "fetch-failed");
+  assert.match(sugarFailResult.report.result.ingest.html, /403/);
+
   const badMarker = path.join(temp, "bad.js");
   writeFileSync(
     badMarker,

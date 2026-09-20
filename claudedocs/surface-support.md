@@ -46,6 +46,11 @@ it's installed.
    holds: **dropped means nothing remains** — the placeholder row (and any copied
    document file) is deleted before any store write.
 
+A **Luna file** (`.luna` / `.lunar` / `.lunad` / `.lunas`) meets the same gate
+by its header's `kind`, and a plugin draft outside central Luna is refused the
+same way — the format, the exported types and all four intake routes are in
+`claudedocs/luna-file.md`.
+
 ## Drop presentation — ONE card, everywhere
 
 Every surface that can draw shows the SAME screen,

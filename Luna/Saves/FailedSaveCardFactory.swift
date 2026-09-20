@@ -15,17 +15,16 @@ import UIKit
 
 /// Assembles the shared failed-save error card for whichever carousel root asks
 /// for it. Universal (compiled into every app target): it names no kind-specific
-/// symbol, and it passes NO rescue hint — the model classifies the page itself,
-/// which is why the card has no content-type picker in any app, central one
-/// included.
+/// symbol.
 ///
-/// This is the ONE place the card's copy, action wiring, and terminal-state
-/// policy live, so the Reader and Downloader roots can't drift.
+/// This is the ONE place the card's copy and action wiring live, so the Reader
+/// and Downloader roots can't drift.
+@MainActor
 enum FailedSaveCardFactory {
 
     /// The card for `item`, with its actions bound to `host`.
-    /// - Parameter onChanged: called after an action that mutates the store
-    ///   (delete, rescue start), so the host can reload its carousel.
+    /// - Parameter onChanged: called after an action that mutates the store, so
+    ///   the host can reload its carousel.
     static func makeCard(
         for item: SavedItem,
         host: UIViewController,
@@ -52,33 +51,50 @@ enum FailedSaveCardFactory {
             itemID: item.id,
             url: item.url,
             urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
-            rescueState: rescueState(for: item))
+            rescueState: rescueState(for: item),
+            note: RecoveryFileApplier.shared.lastFailure(forURL: item.urlString))
     }
 
-    /// A running rescue takes precedence over the terminal states — there is
-    /// nothing useful to show alongside a bar that's already moving.
+    /// Where this save is in its recovery. Work in flight outranks a hand-off
+    /// the user started, which outranks the plain offer — there is nothing
+    /// useful to show beside a bar that is already moving.
+    @MainActor
     private static func rescueState(for item: SavedItem) -> FailedSaveCardModel.RescueState {
         if URLRescueCoordinator.shared.isRescuing(item.id) {
             return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
         }
-        // A guardrailed item is terminal for good, not just for this version: the
-        // prompt is derived from the page, so the same page trips the same safety
-        // guardrail on every future build too. `.unavailable` rather than
-        // `.spent` because `.spent` promises the button comes back after an
-        // update, and this one never does. (The two render identically — no
-        // button, the apology, Delete — so this is a promise, not a pixel.)
-        if RescueLedgerStore.shared.isGuardrailed(item.id) {
-            return .unavailable
+        if RecoveryFileApplier.shared.isApplying(item.id) {
+            return .applying(progress: RecoveryFileApplier.shared.applyProgress(item.id) ?? 0)
         }
-        if SaveFailureStore.shared.hasSpentAIAttempt(item.id) {
-            return .spent
+        if let record = LLMHandoffStore.shared.record(forItemID: item.id) {
+            return .waiting(record.provider)
         }
-        // A `.notContent` failure has no article for the model to find, so the
-        // card shows the terminal apology rather than offering an attempt it
-        // would only spend proving that.
-        let canRescue = URLRescueCoordinator.engine?.isRescueAvailable == true
-            && (SaveFailureStore.shared.record(for: item.id)?.reason?.isWorthRescuing ?? true)
-        return canRescue ? .idle : .unavailable
+        return .offer
+    }
+
+    /// Hands the failed page to a chat model: the prompt names the page and
+    /// what went wrong, the hand-off is recorded so the card can wait on it,
+    /// and the provider opens.
+    ///
+    /// Two callers: the card's row, and `KindWiring.openLLMHandoff` when an
+    /// extension's own open was refused and the app has to finish it.
+    static func startHandoff(for item: SavedItem, to provider: LLMProvider) {
+        guard let url = item.url else { return }
+        let reason = SaveFailureStore.shared.record(for: item.id)?.reason
+        let prompt = LLMHandoffPrompts.recovery(
+            url: url, app: LunaApp.current,
+            failure: SaveFailureReason.rescueSentence(
+                reason, attempted: SaveFailureReason.attemptKind(for: item, reason: reason)))
+        let target = LLMProviderPreferences.claudeTarget
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
+        else { return }
+        LLMHandoffStore.shared.begin(
+            .recovery(itemID: item.id, urlString: item.urlString),
+            provider: provider, claudeTarget: target)
+        LLMLauncher.shared.openLLM(
+            link,
+            fallback: LLMDeepLink.fallbackURL(
+                for: provider, prompt: prompt, claudeTarget: target))
     }
 
     /// The deck's title for a failed card. The card body shows the live page
@@ -180,24 +196,9 @@ enum FailedSaveCardFactory {
             lines.append("Attempts: \(record.failureCount)")
             lines.append(
                 "Last failed: \(ISO8601DateFormatter().string(from: record.lastFailureDate))")
-            if let version = record.aiAttemptVersion {
-                lines.append("AI rescue spent under: \(version)")
-            }
         }
         return lines.joined(separator: "\n") + "\n"
             + String(repeating: "-", count: 40) + "\n\n"
-    }
-
-    /// "Tried 3 times · 2 days ago" — provenance that makes a stubborn failure
-    /// legible. Suppressed for a single fresh attempt, which needs no history.
-    /// No longer on the card (the page itself is the explanation now), but the
-    /// list rows still show it.
-    static func attemptFooter(_ record: SaveFailureRecord?, now: Date = Date()) -> String? {
-        guard let record, record.failureCount > 1 else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        let when = formatter.localizedString(for: record.lastFailureDate, relativeTo: now)
-        return L10n.string("CardDeck_failedSave_attemptFooter", record.failureCount, when)
     }
 
     // MARK: - Actions
@@ -212,10 +213,8 @@ enum FailedSaveCardFactory {
             createPlugin = nil
         }
         return FailedSaveCardActions(
-            rescue: {
-                // No hint: `RescueRequest.ContentHint.auto`, so the model decides
-                // whether this page is an article, a product, or media.
-                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: nil)
+            chooseProvider: { provider in
+                startHandoff(for: item, to: provider)
                 onChanged()
             },
             share: { sourceView in

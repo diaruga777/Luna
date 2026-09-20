@@ -376,8 +376,7 @@ savesDidChange/wifiBecameAvailable/retryPendingArticleSends/
 resumeUnfinishedMediaDownloads/attachBackgroundURLSessionHandler/priceRefreshRunner`), so
 the universal shell never names a foreign kind's symbols. The Action Button intents' media handoff goes through
 `ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), and URL
-Rescue's kind legs via
-`URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
+Rescue's media leg via `URLRescueWiring.mediaRescueStarter`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
 media: the media deck provider, auto-download settings, intent handoff, the bulk
 import's download watcher) are excluded from foreign targets via the same
@@ -403,7 +402,7 @@ seams are named protocol witnesses installed in AppDelegate, a ShellWiring leg, 
 a kind pack (`*Providing` / `*Presenting` / `*Handling` / `*Making`; strong
 references — e.g. `AudioPlaybackCenter.dataSource`,
 `SavesIngestor.unsupportedSavePresenter`, `DiagnosticLog.exportIdentityProvider`,
-`ProductPriceRescue.resolver`). Component boundaries inside the UI use `*Delegate`
+`LunaFileIntake.recoveryHandler`). Component boundaries inside the UI use `*Delegate`
 / `*DataSource` protocols with weak references (e.g. `RabbitHoleLayerDelegate`,
 `ReaderCompletionDelegate`, `CarouselScrubberViewDelegate`). Closures remain ONLY
 as call arguments: one-shot completions, async continuations, per-operation
@@ -505,6 +504,25 @@ moved into LunaIntents (URL search is kind-neutral), while `DuckDuckGoSearch`
 itself sits one tier lower in **LunaFetch**; `BlueskyLink` moved to
 LunaURLClassification. Correctness never depended on the link graph — it comes
 from the `SurfaceSupport` ingest gate plus `LunaApp.includes`.
+
+## AI flows: one automatic rescue, then a chat hand-off (2026-09)
+
+Apple Intelligence (URL Rescue, `LunaURLRescue`) runs ONCE per failed save,
+automatically and silently — `RescueLedgerStore.maxAutoAttempts = 1`, no retry
+on an app update, and **no surface offers it as a button**. What the user sees
+on a failed card is the **LLM row** (`LLMHandoffRowView`): ChatGPT and Claude
+buttons that open the provider with a prompt already filled in
+(`LLMHandoffPrompts`, `LLMDeepLink`, ≤ 3,600 chars because it travels in the
+URL). The model replies with a **Luna file** — `<title>.luna` / `.lunar` /
+`.lunad` / `.lunas` per app, header `/* luna-recovery … */` (a replayable
+recipe plus the full content, applied by `RecoveryFileApplier`) or
+`/* luna-plugin … */` (a plugin draft, reviewed on `PluginDraftReviewViewController`
+before anything is written) — which reaches Luna through Open In, the share
+sheet, or shared text, in the app or an extension (`LunaFileIntake`, one
+witness per half installed by every composition root). The prompts and the
+hosted plugin API reference (`docs/plugins/llm-api.md`, live at
+`https://luna-site-bm6.pages.dev/p1`) are owned by the lead of that work; see
+`claudedocs/plans/ai-flows.md`, `claudedocs/luna-file.md`, `claudedocs/llm-handoff.md`.
 
 ## Plugins (central Luna only)
 

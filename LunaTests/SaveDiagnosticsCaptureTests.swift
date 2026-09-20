@@ -298,7 +298,7 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
             itemID: UUID(), url: URL(string: "https://example.com/broken"),
             urlText: "example.com/broken")
         let actions = FailedSaveCardActions(
-            rescue: {}, share: { _ in },
+            share: { _ in },
             shareDiagnostics: withDiagnostics ? { _ in } : nil,
             delete: {})
         return FailedSaveCardViewController(model: model, actions: actions)
@@ -326,7 +326,7 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
         let card = FailedSaveCardViewController(
             model: model,
             actions: FailedSaveCardActions(
-                rescue: {}, share: { _ in }, createPlugin: {}, delete: {}))
+                share: { _ in }, createPlugin: {}, delete: {}))
 
         let titles = (card.shareMenu()?.children as? [UIAction])?.map(\.title) ?? []
         XCTAssertEqual(titles, [
@@ -363,7 +363,7 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
         let record = SaveFailureRecord(
             reason: .httpStatus(403),
             lastFailureDate: Date(timeIntervalSince1970: 1_700_000_000),
-            failureCount: 3, aiAttemptVersion: "1.4")
+            failureCount: 3)
 
         let header = FailedSaveCardFactory.diagnosticsHeader(for: item, record: record)
 
@@ -371,7 +371,6 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
         XCTAssertTrue(header.contains(item.id.uuidString), header)
         XCTAssertTrue(header.contains(SaveFailureReason.httpStatus(403).headline), header)
         XCTAssertTrue(header.contains("Attempts: 3"), header)
-        XCTAssertTrue(header.contains("AI rescue spent under: 1.4"), header)
         XCTAssertTrue(header.hasSuffix("\n\n"), "the trace starts on its own line")
     }
 }

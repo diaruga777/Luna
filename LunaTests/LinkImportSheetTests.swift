@@ -64,8 +64,7 @@ final class LinkImportSheetTests: XCTestCase {
                         for: item)
                 }
                 return .supported
-            },
-            rescue: { _ in false }, rescueFraction: { _ in nil })
+            })
         let sheet = LinkImportSheetViewController(document: document, runner: runner)
         window = UITestSupport.host(sheet)
         return sheet

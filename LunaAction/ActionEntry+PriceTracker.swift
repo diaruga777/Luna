@@ -16,6 +16,7 @@
 //  others; `KindCompositionRootTests` fails the build if this file does that.
 //
 
+import LunaModels
 import LunaPriceUI
 import LunaShareSurface
 import UIKit
@@ -24,6 +25,11 @@ import UIKit
 final class ActionEntry: ShareViewController {
     override init(nibName: String?, bundle: Bundle?) {
         ProductKindComposition.install()
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.recoveryHandler = ExtensionRecoveryFileIntake()
+        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

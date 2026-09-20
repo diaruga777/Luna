@@ -7,19 +7,21 @@ import Foundation
 import LunaAppConfig
 import LunaModels
 
-/// One pending extension→app rescue hand-off: the user tapped "Finish in Luna"
-/// on a failed share, so the main app should rescue this URL (with this hint)
-/// next time it's foregrounded.
+/// One pending extension→app rescue hand-off: a share or action save failed, so
+/// the main app runs that URL's one automatic rescue next time it is
+/// foregrounded. The extension queues one for every failure it sees; the user
+/// is asked nothing.
+///
+/// A row written by an older build also carries `hint`, the content kind a
+/// surface used to pin. The synthesized decoder drops it.
 public struct PendingRescueRequest: Codable, Equatable {
     public let urlString: String
-    public let hint: RescueHint?
     public let dateWritten: Date
     /// The originating surface's storage identifier, for diagnostics.
     public let sourceSurface: String?
 
-    public init(urlString: String, hint: RescueHint?, dateWritten: Date, sourceSurface: String? = nil) {
+    public init(urlString: String, dateWritten: Date, sourceSurface: String? = nil) {
         self.urlString = urlString
-        self.hint = hint
         self.dateWritten = dateWritten
         self.sourceSurface = sourceSurface
     }
@@ -48,7 +50,7 @@ public final class PendingRescueRequestStore {
     }
 
     /// Appends a request, replacing any existing one for the same URL (keeping
-    /// the newest hint/date). Drops expired entries in passing.
+    /// the newest date). Drops expired entries in passing.
     public func append(_ request: PendingRescueRequest) {
         lock.lock(); defer { lock.unlock() }
         var current = loadLocked().filter { $0.urlString != request.urlString }

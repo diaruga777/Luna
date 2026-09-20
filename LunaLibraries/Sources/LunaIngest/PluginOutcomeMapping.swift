@@ -15,8 +15,6 @@ import LunaModels
 /// answer the same thing for the same adoption. It lives here because LunaIngest
 /// owns `Outcome` and both callers already link it.
 ///
-/// `ProductInfo` is built by a call argument rather than read from a seam: the
-/// builder lives in the plugin-only tier, which this module sits below.
 public enum PluginOutcomeMapping {
 
     /// The outcome to save, or nil when the adopter kept nothing.
@@ -26,7 +24,7 @@ public enum PluginOutcomeMapping {
     /// plugin's Model must never fail a save Swift could still make.
     public static func outcome(
         from adopted: PluginAdoptedOutcome,
-        productInfo: (ProductModel, URL?) -> ProductInfo
+        productInfo: (ProductModel, URL?) -> ProductInfo = PluginProductInfoBuilder.make(from:imageURL:)
     ) -> Outcome? {
         switch adopted {
         case .declined, .failed:

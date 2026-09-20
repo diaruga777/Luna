@@ -96,19 +96,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader.
     private func route(_ url: URL) {
+        if url.isFileURL {
+            openLunaFile(at: url)
+            return
+        }
+        if let itemID = LunaDeepLink.llmHandoffItemID(from: url) {
+            // The extension's hand-off could not open the provider itself.
+            mainNavigationController?.popToRootViewController(animated: false)
+            KindWiring.openLLMHandoff(itemID: itemID)
+            return
+        }
         if let itemID = LunaDeepLink.priceTrackerAddSellerItemID(from: url) {
             if let nav = mainNavigationController {
                 KindWiring.openPriceTrackerAddSeller(itemID: itemID, navigationController: nav)
             }
-            return
-        }
-        if LunaDeepLink.isRescueLink(url) {
-            // The extension handoff wrote the URL + hint + consent into the shared
-            // store; just drain it (pop to root first so the list is visible when a
-            // rescued item flips ready). The coordinator also drains on foreground,
-            // so this works even if the responder-chain open silently failed.
-            mainNavigationController?.popToRootViewController(animated: false)
-            URLRescueCoordinator.shared.drainPendingRequests()
             return
         }
         if LunaDeepLink.isResolvedMediaLink(url) {
@@ -140,9 +141,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let caseID = LunaDeepLink.pluginRecoveryCaseID(from: url) {
             // Safari persisted the bounded case in the shared App Group; the
             // route carries only its id so nested page URLs cannot be damaged
-            // by URL-query encoding. Only central Luna installs the workshop.
+            // by URL-query encoding. Only central Luna authors plugins.
             mainNavigationController?.popToRootViewController(animated: false)
-            KindWiring.openPendingPluginRecoveryWorkshop(caseID: caseID)
+            KindWiring.openPendingPluginRecoveryCase(caseID: caseID)
             return
         }
         if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),
@@ -169,6 +170,43 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // Safari. Reader and Price Tracker cards are their destinations.
             openReader(articleURL: articleURL, returnsToSource: LunaDeepLink.requestsReturnToSource(url))
         }
+    }
+
+    /// Open In, Files, or a provider's "Open in Luna": a Luna file
+    /// (`claudedocs/luna-file.md`). The inbox copy is deleted as soon as it is
+    /// read — `LSSupportsOpeningDocumentsInPlace` is false, so nothing else
+    /// will ever look at it — and the surface's own intake witness decides what
+    /// the user sees. A file that is not a Luna file at all says so in one
+    /// line; Luna claims only its own document types, so this is rare.
+    private func openLunaFile(at url: URL) {
+        let text: String
+        switch LunaFileReader.readText(at: url) {
+        case .success(let value):
+            text = value
+        case .failure(let error):
+            _ = LunaFileReader.deleteInboxCopy(at: url)
+            presentLunaFileAlert(error.message)
+            return
+        }
+        _ = LunaFileReader.deleteInboxCopy(at: url)
+
+        switch LunaFileIntake.classify(text: text) {
+        case .success(.recovery(let file)):
+            LunaFileIntake.recoveryHandler?.handleRecovery(file, sourceURL: url)
+        case let .success(.plugin(headerJSON, source)):
+            LunaFileIntake.pluginHandler?.handlePlugin(source: source, headerJSON: headerJSON)
+        case .failure(let error):
+            presentLunaFileAlert(error.message)
+        case .none:
+            presentLunaFileAlert(L10n.string("LunaFile_notALunaFileMessage"))
+        }
+    }
+
+    private func presentLunaFileAlert(_ message: String) {
+        guard let root = window?.rootViewController else { return }
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
+        (root.presentedViewController ?? root).present(alert, animated: true)
     }
 
     /// The download Live Activity's tap-to-view link: centers the deck on the

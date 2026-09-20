@@ -48,6 +48,9 @@ public final class UnsupportedSaveCardViewController: UIViewController {
     /// belongs to no sibling app (header only).
     private let owner: LunaApp?
     private let currentApp: LunaApp
+    /// Replaces the line under the owner's icon. A plugin file in a sibling app
+    /// is refused for a reason the generic upsell does not name.
+    private let ownerMessage: String?
 
     private let cardView = CardSurfaceView()
     private let contentStack = UIStackView()
@@ -61,9 +64,10 @@ public final class UnsupportedSaveCardViewController: UIViewController {
     private static let contentInset: CGFloat = 26
     private static let iconSide: CGFloat = 96
 
-    public init(owner: LunaApp?, currentApp: LunaApp = .current) {
+    public init(owner: LunaApp?, currentApp: LunaApp = .current, ownerMessage: String? = nil) {
         self.owner = owner
         self.currentApp = currentApp
+        self.ownerMessage = ownerMessage
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -123,7 +127,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
             iconRow.addSubview(icon)
 
             let upsell = UILabel()
-            upsell.text = UnsupportedSaveCopy.upsell(owner: owner)
+            upsell.text = ownerMessage ?? UnsupportedSaveCopy.upsell(owner: owner)
             upsell.textColor = LunaColors.secondaryText
             upsell.font = .preferredFont(forTextStyle: .subheadline)
             upsell.adjustsFontForContentSizeCategory = true

@@ -20,7 +20,8 @@ platform's internal design, see `claudedocs/plugins.md`.
 | --- | --- | --- | --- |
 | (none — `register`/`parseURL`/`log`/`bytes`/`env`/`LunaError`/`localize`) | yes | yes | yes |
 | `fetch` | yes | yes | relayed |
-| `html` | yes (SwiftSoup) | yes (SwiftSoup) | yes (DOMParser) |
+| `html` | yes (SwiftSoup) | yes (SwiftSoup) | yes (DOMParser); `article` relayed |
+| `text` (installed with `html`, never declared) | yes | yes | yes |
 | `page` | no | no | yes |
 | `storage` | yes | yes | relayed |
 | `secrets` | get/set/delete | get only | no |
@@ -35,6 +36,11 @@ platform's internal design, see `claudedocs/plugins.md`.
 | `bluetooth` | yes | no | no |
 | `wifi` | yes | no | no |
 | `exports` | yes | no | no |
+
+`luna.text` is the one namespace with no capability of its own: declaring
+`html` installs both, because it is three pure string helpers with nothing to
+grant. Declaring `"text"` in `capabilities` is an error — the manifest will not
+parse.
 
 A namespace your manifest didn't declare a capability for is `undefined` —
 `typeof luna.mail === "undefined"`, not a stub. A namespace you DID declare,
@@ -179,6 +185,11 @@ interface FetchResponse {
   headers: Record<string, string>; text?: string; base64?: string; file?: FileHandle;
   truncated: boolean; bytes: number;
 }
+
+// The same call with the three answers you nearly always want:
+luna.fetch.text(url, opts?): Promise<string>;
+luna.fetch.json(url, opts?): Promise<unknown>;
+luna.fetch.doc(url, opts?): Promise<HTMLDocument>;
 interface MultipartPart {
   name: string; filename?: string; mime?: string;
   text?: string; base64?: string; file?: FileHandle;         // one of the three
@@ -191,6 +202,15 @@ or exported file uploads without a base64 round trip through your plugin.
 capability, so it works in the app and the share/action extensions and never
 in Safari; a handle whose generation is gone rejects `not-found` and one over
 8 MB rejects `too-large`, both before the request leaves.
+
+`luna.fetch` is a function that also carries `text`, `json` and `doc`. Each is
+a GET — `opts` is the ordinary request minus `url`, and `as` is forced to
+`"text"` — and each rejects `fetch-failed` on a non-2xx status, with the method,
+the URL and the status in the message. `json` rejects `fetch-failed` again when
+the body does not parse. `doc` runs `luna.html.parse` over the body with the
+base set to the FINAL url, so a relative link on a redirected page resolves
+where the page actually came from; it needs the `html` capability as well and
+rejects `capability-not-declared` without it.
 
 The `shared` cookie jar persists for this plugin only; another plugin cannot
 observe or reuse it. `ephemeral` creates a fresh, non-persistent jar for each
@@ -207,6 +227,17 @@ diagnostics category and to the save's own trace.
 luna.html.parse(html: string, baseURL?: string): HTMLDocument;
 luna.html.text(html: string): string;                          // strips tags, decodes entities, skips <script>/<style>
 luna.html.jsonScripts(doc: HTMLDocument, type?: string): unknown[];
+luna.html.jsonLD(doc: HTMLDocument): object[];                 // ld+json only, @graph flattened, bad JSON skipped
+luna.html.meta(doc: HTMLDocument): PageMetadata;
+luna.html.article(html: string, baseURL?: string): Promise<ExtractedArticle | null>;
+interface PageMetadata {
+  title?: string; description?: string; canonical?: string; image?: string;
+  author?: string; published?: string; siteName?: string; language?: string; type?: string;
+}
+interface ExtractedArticle {
+  title: string; html: string; text: string;
+  author?: string; publishedAt?: string; leadImageURL?: string; excerpt?: string;
+}
 interface HTMLElement {
   querySelector(css: string): HTMLElement | null;
   querySelectorAll(css: string): HTMLElement[];                 // a real Array
@@ -233,10 +264,79 @@ interface HTMLDocument extends HTMLElement {
 Selectors are limited to what SwiftSoup supports: type, class, id, attribute
 (`=`, `^=`, `$=`, `*=`), descendant/child combinators, `:not()`,
 `:first-child`, `:nth-child`. `LunaTests/Fixtures/Plugins/html-subset.spec.js`
-(60 cases) is the exact specification — it is run against all three backings
+(108 cases) is the exact specification — it is run against all three backings
 (SwiftSoup, `plugin_host.js`'s DOMParser, and the node harness's `linkedom`)
 and any disagreement is a bug in one of the three, never something you need
 to special-case.
+
+`jsonLD` reads only `application/ld+json` (use `jsonScripts` for a page's other
+JSON blocks). A top-level array is spread, one `@graph` array inside an object
+is spread, a block that does not parse is skipped, and the answer is always an
+array.
+
+`meta` reads the page's own account of itself and omits a key nothing states.
+Per key, the first source that says anything wins:
+
+| Key | Sources, in order |
+| --- | --- |
+| `title` | `og:title`, `twitter:title`, `<title>`, JSON-LD `headline`, JSON-LD `name` |
+| `description` | `og:description`, `twitter:description`, `<meta name=description>` |
+| `canonical` | `og:url`, `<link rel=canonical>` |
+| `image` | `og:image`, `og:image:url`, `twitter:image`, `twitter:image:src`, JSON-LD `image` |
+| `author` | `<meta name=author>`, `article:author`, JSON-LD `author` |
+| `published` | `article:published_time`, `<meta name=date>`, `<meta name=pubdate>`, `itemprop=datePublished`, JSON-LD `datePublished` |
+| `siteName` | `og:site_name`, `<meta name=application-name>` |
+| `language` | `<html lang>`, `<meta http-equiv=content-language>`, JSON-LD `inLanguage` |
+| `type` | `og:type` |
+
+Only JSON-LD objects whose `@type` is `Article`, `NewsArticle`, `BlogPosting`
+or `Product` answer for the document. A JSON-LD `author` may be a string, an
+object with a `name`, or a list of either; an `image` may be a string, an
+`ImageObject` with a `url`, or a list (the first entry wins). Every value is
+whitespace-collapsed and trimmed, and `image`/`canonical` are resolved against
+the document's base. `<meta property=X>` and `<meta name=X>` are both read for
+the same key, because pages write OpenGraph and Twitter cards either way.
+
+`article` runs Luna's own main-content extraction — the same pass Luna's
+article ingest runs — and answers `null` when the page has no article body,
+which is your cue to `return null` and let Luna continue. `html` carries only
+the tags an `ArticleModel` keeps; `publishedAt` is already normalized through
+`luna.text.date`. **It answers a Promise in every process**, including the app:
+Safari has no readability pass of its own and relays the call to Luna, so a
+synchronous shape could not hold everywhere. `await` it. A page over ~1.5 MB
+rejects `too-large` in Safari, where the HTML has to cross the native message
+channel.
+
+## `luna.text` (installed with the `html` capability)
+
+```ts
+luna.text.price(s: string): { amount: string; currency?: string } | null;
+luna.text.date(s: string): string | null;
+luna.text.clean(s: string): string;
+```
+
+`price` reads the first run of digits in the string with Luna's own separator
+rules: when both `.` and `,` appear the LATER one is the decimal point
+(`"1.299,00"` → `1299.00`), and a lone comma is a decimal point only before one
+or two digits (`"23,50"` → `23.50`, `"1,234"` → `1234`). `amount` keeps the
+fraction digits the page wrote, which is what `price.amount` on a `ProductModel`
+wants. `currency` is filled only from what TOUCHES the number — one of `$` `£`
+`€` `¥`, or a three upper-case letter code immediately before or after it — so
+a sentence full of capitals does not name a currency. A string with no digits
+answers `null`.
+
+`date` answers ISO 8601: `2024-03-04T09:30:00Z` when the string carried a time
+(converted to UTC; a time with no zone is read as UTC), and `2024-03-04` when it
+did not — the day the page named, not a guess at its hour. It reads ISO 8601,
+`YYYY-MM-DD HH:mm`, `YYYY/MM/DD`, `Month D, YYYY`, `D Month YYYY` and RFC 2822.
+A relative phrase ("2 hours ago") and a day that does not exist answer `null`.
+
+`clean` decodes entities, drops tags the way `luna.html.text` does, collapses
+every whitespace run — a `&nbsp;` run included — to one space, and trims.
+
+`luna.html`'s and `luna.text`'s exact answers are specified case by case in
+`LunaTests/Fixtures/Plugins/html-subset.spec.js` and run against all three
+backings.
 
 ## `luna.page` (capability `page`, Safari only)
 

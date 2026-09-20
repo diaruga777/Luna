@@ -7,7 +7,7 @@ import Foundation
 
 /// The three kinds a plugin may return. Render is not pluggable: each kind maps
 /// onto a renderer Luna already ships.
-public enum PluginModelKind: String, Codable, Sendable {
+public enum PluginModelKind: String, Codable, Sendable, CaseIterable {
     case article
     case media
     case product
@@ -50,6 +50,19 @@ public enum PluginModel: Decodable, Equatable, Sendable {
         case .media: return .media
         case .article: return .article
         case .product: return .product
+        }
+    }
+}
+
+public extension PluginModelKind {
+    /// Which standalone Luna app owns content of this kind — the same split
+    /// `Outcome.owningApp` makes for a classified URL, so a Model arriving in a
+    /// Luna file meets the same surface gate a saved link does.
+    var owningApp: LunaApp {
+        switch self {
+        case .article: return .reader
+        case .media: return .downloader
+        case .product: return .priceTracker
         }
     }
 }

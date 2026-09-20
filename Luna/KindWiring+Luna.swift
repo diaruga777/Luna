@@ -11,6 +11,7 @@
 
 import LunaBundledPlugins
 import LunaAppConfig
+import LunaDesignSystem
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
@@ -37,6 +38,12 @@ enum KindWiring {
 
     @MainActor
     static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces each install their own half.
+        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
+        LunaFileIntake.pluginHandler = PluginDraftFileIntake(
+            presenter: AppPluginDraftReviewRoute(), launcher: LLMLauncher.shared)
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs follow the same rule as the kind packs: a
@@ -116,37 +123,50 @@ enum KindWiring {
             recipientPicker: PluginMailRecipientPrompt())
     }
 
-    /// Failed saves reuse their durable attempt trace; unlike the Settings
-    /// entry point this route does not refetch the page just to make a prompt.
+    /// The failed card's "Create Plugin…". The request starts from what this
+    /// save already knows — the URL, why it failed, and which plugins claim the
+    /// host — so the user describes the site rather than retyping it.
     @MainActor
     private static func installPluginRecoveryRoute() {
         FailedSavePluginRecovery.present = { itemID, url, presenter in
-            guard let importer = PluginPlatformServices.importer else { return }
-            let traceText = SaveDiagnosticsStore.shared.contents(for: itemID) ?? ""
-            let trace = PluginRecoveryTraceParser.parse(
-                traceText.components(separatedBy: .newlines))
-            let summaries = PluginPlatformServices.invoker?
-                .matchedPlugins(forHost: url.host ?? "") ?? []
-            let plugins = summaries.map {
-                PluginRecoveryPlugin(
-                    id: $0.id, version: $0.version, status: "enabled",
-                    hooks: $0.hooks.map(\.rawValue).sorted())
-            }
-            let reason = SaveFailureStore.shared.record(for: itemID)?.reason?.headline
-            let recoveryCase = PluginRecoveryCase(
-                caseID: itemID, originalURL: url.absoluteString, source: .manual,
-                appVersion: AppConfig.appVersion, locale: Locale.current.identifier,
-                languages: Locale.preferredLanguages, outcome: "failed",
-                failureReason: reason, attempts: trace.attempts,
-                attemptsDropped: trace.dropped, matchingPlugins: plugins,
-                pageDigest: nil, redactions: ["live page snapshot unavailable"])
-            let screen = PluginRecoveryWorkshopViewController(
-                recoveryCase: recoveryCase, validationURL: url, importer: importer)
+            let matched = PluginPlatformServices.invoker?
+                .matchedPlugins(forHost: url.host ?? "").map(\.id) ?? []
+            let failure = SaveFailureReason.rescueSentence(
+                SaveFailureStore.shared.record(for: itemID)?.reason, attempted: .article)
+            let screen = PluginCreateViewController(
+                prefill: PluginCreateViewController.prefill(
+                    url: url, failure: failure, matchedPluginIDs: matched),
+                launcher: LLMLauncher.shared)
             if let navigation = presenter.navigationController {
                 navigation.pushViewController(screen, animated: true)
             } else {
                 presenter.present(
                     UINavigationController(rootViewController: screen), animated: true)
+            }
+        }
+    }
+
+    /// Where an arriving plugin draft is read: the deck's own navigation stack
+    /// when there is one, else a modal over whatever is frontmost.
+    private final class AppPluginDraftReviewRoute: PluginDraftReviewPresenting {
+        @MainActor
+        func presentPluginDraftReview(_ screen: PluginDraftReviewViewController) {
+            guard let presenter = PluginExportTopPresenter.current() else { return }
+            if let navigation = presenter.navigationController {
+                navigation.pushViewController(screen, animated: true)
+            } else {
+                presenter.present(
+                    UINavigationController(rootViewController: screen), animated: true)
+            }
+        }
+
+        @MainActor
+        func dismissPluginDraftReview(_ screen: PluginDraftReviewViewController) {
+            if let navigation = screen.navigationController,
+               navigation.viewControllers.first !== screen {
+                navigation.popViewController(animated: true)
+            } else {
+                screen.dismiss(animated: true)
             }
         }
     }
@@ -306,24 +326,33 @@ enum KindWiring {
             productInfoBuilder: PluginProductInfoBuilder.make(from:imageURL:))
     }
 
-    /// Drains Safari's bounded plugin-recovery case and presents the central
-    /// copy/paste workshop. The App-Group row is consumed only after this app
-    /// route lands; if opening Luna fails, Safari keeps its ordinary save path
-    /// and the case remains available for a later launch.
+    /// Drains Safari's bounded plugin-recovery case and opens the create
+    /// screen on it. The App-Group row is consumed only after this app route
+    /// lands; if opening Luna fails, Safari keeps its ordinary save path and
+    /// the case remains available for a later launch.
     @MainActor
-    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {
+    static func openPendingPluginRecoveryCase(caseID: UUID) {
         guard let handoff = PluginRecoveryHandoffStore.shared.take(caseID: caseID),
-              let importer = PluginPlatformServices.importer,
+              let url = URL(string: handoff.validationURL),
               let presenter = PluginExportTopPresenter.current()
         else { return }
-        let screen = PluginRecoveryWorkshopViewController(
-            recoveryCase: handoff.recoveryCase,
-            validationURL: URL(string: handoff.validationURL), importer: importer)
+        let screen = PluginCreateViewController(
+            prefill: PluginCreateViewController.prefill(
+                url: url, failure: handoff.recoveryCase.failureReason,
+                matchedPluginIDs: handoff.recoveryCase.matchingPlugins.map(\.id)),
+            launcher: LLMLauncher.shared)
         if let navigation = presenter.navigationController {
             navigation.pushViewController(screen, animated: true)
         } else {
             presenter.present(UINavigationController(rootViewController: screen), animated: true)
         }
+    }
+
+    /// The extension's LLM hand-off, arriving as `<scheme>://llm?item=…` when
+    /// the extension's own open was refused.
+    @MainActor
+    static func openLLMHandoff(itemID: UUID) {
+        LLMHandoffResume.open(itemID: itemID)
     }
 
     static func appDidLaunch() {
@@ -349,6 +378,9 @@ enum KindWiring {
     }
 
     static func sceneDidForeground() {
+        // An extension can install a plugin while this app is suspended, so the
+        // runtime re-reads the App-Group store when its change token moved.
+        Task { @MainActor in PluginPlatformComposition.reloadIfStoreChanged() }
         MediaShellWiring.sceneDidForeground()
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ArticleShellWiring.sceneDidForeground()

@@ -32,11 +32,11 @@ app targets), top to bottom:
    (`claudedocs/save-diagnostics.md`). It appears only when
    `SaveDiagnosticsStore.hasDiagnostics(for:)`, so an item that failed before
    per-save capture shipped keeps the plain button.
-3. **The chin** — a full-width prominent glass capsule, **"Retry with AI"** with
-   the Apple Intelligence glyph trailing the words as a sigil rather than leading
-   as an icon. `apple.intelligence` arrived in SF Symbols 6.2 (iOS 18.4) and the
-   deployment target is 18.0, so `sparkles` is a real fallback, not
-   belt-and-braces.
+3. **The chin** — the chat hand-off row (`LLMHandoffRowView`): a caption, a glass
+   button per provider, and a hint line under them. It is the one thing the user
+   can still do about the failure, and it is the same row the extension failure
+   card and the Downloader's no-media card show
+   (`claudedocs/llm-handoff.md`). Delete sits under it.
 4. **A red glass border.** `CardSurfaceView.setEdgeGlow` (tint
    `LunaColors.errorAccent`), supplied per card through the
    `CardCarouselDataSource.edgeGlowColorForCardAt` hook. The rim STROKE takes the
@@ -44,27 +44,30 @@ app targets), top to bottom:
    `layer.shadow` would be swallowed. A failed card reads as a card with a red
    border, not a white-bordered card lit red from inside.
 
-There is **no hint picker in any app**, central Luna included: the model
-classifies the page itself (see below). There is no title, favicon, failure
-sentence, suggestion, or attempt count on the card either — the live page says
-more than any of them did. `FailedSaveNaming.displayTitle` still feeds the
+There is **no content-type picker in any app**, central Luna included, and no
+Apple Intelligence button anywhere: the automatic attempt is already spent or
+running by the time anyone reads the card. There is no title, favicon, failure
+sentence, suggestion, or attempt count either — the live page says more than any
+of them did. `FailedSaveNaming.displayTitle` still feeds the
 carousel's chrome and scrub preview through `FailedSaveCardFactory.displayTitle`,
 so a light head-only metadata read is still worth doing.
 
-## Retrying: overlay, progress, terminal state
+## The four states
 
-Tapping **Retry with AI** immediately covers the web view with a 40%-opacity black
-overlay carrying a `MoonHorizonProgressBar` — on the tap, not on the first progress
-report, because the coordinator's work starts on a background executor and the
-press has to land visibly. Under the overlay:
+`FailedSaveCardModel.RescueState` is where the save is in its recovery, and
+`FailedSaveCardFactory.rescueState` reads it from three places in that order:
 
-- the **URL bar stays uncovered and live** (the overlay is a subview of the web
-  container only), so share still works;
-- **reload is disabled** — reloading the page under a running extraction would
-  pull the ground out from under it;
-- the AI button stays in place, disabled and dimmed, rather than disappearing.
-  Hiding it would collapse the chin and resize the web view mid-rescue, which
-  reads as the card breaking rather than working.
+| State | When | What the card does |
+| --- | --- | --- |
+| `.running(progress:)` | `URLRescueCoordinator.isRescuing` | The automatic Apple Intelligence attempt is in flight: the page goes under a 40% black overlay with a `MoonHorizonProgressBar`, and the row stands down. |
+| `.applying(progress:)` | `RecoveryFileApplier.isApplying` | A Luna file is being applied. The same overlay and bar, because it is the same recovery finishing. |
+| `.waiting(provider)` | `LLMHandoffStore` has a live record | The user opened a provider and the reply has not come back. The row stays, with the line naming the file to tap. |
+| `.offer` | otherwise | The row, and nothing else. |
+
+Under the overlay the **URL bar stays uncovered and live** (the overlay is a
+subview of the web container only), so share still works, and **reload is
+disabled** — reloading the page under a running extraction would pull the ground
+out from under it.
 
 **Progress is real**, not a timer. `URLRescueEngine.rescue` takes an `onProgress`
 callback and reports a `RescueStage` as it crosses each of its own boundaries
@@ -73,49 +76,26 @@ finished`); the app shell's engine bridge forwards each one to
 `URLRescueCoordinator.reportProgress`. The stage fractions are deliberately NOT
 evenly spaced — the model call dominates a 90-second budget — and
 `rescueProgress(_:)` interpolates within a stage (ease-out, capped short of the
-next stage's fraction) so a 22-second model call creeps instead of freezing. The
-card watches `.rescueProgressChanged` filtered on its own item id, plus a 0.3s
-ticker to render the interpolation; that notification is separate from
-`.savesChanged` because progress fires many times per rescue and
+next stage's fraction) so a 22-second model call creeps instead of freezing. An
+apply posts on the same notification, so the card animates both without knowing
+which is running. The card watches `.rescueProgressChanged` filtered on its own
+item id, plus a 0.3s ticker to render the interpolation; that notification is
+separate from `.savesChanged` because progress fires many times per rescue and
 `.savesChanged` reloads every deck and list.
 
-On completion the card either becomes an ordinary card (the item advanced) or
-returns to the error state — and that state is **terminal**: the AI button is
-replaced by "Sorry, Luna was unable to save this page." and a **Delete** button.
-
-**Terminal is scoped to the app version**, one attempt per shipped build.
-`SaveFailureRecord.aiAttemptVersion` records `AppConfig.appVersion` (short version
-*and* build — a TestFlight bump carries new extraction code too) when a
-user-initiated rescue finishes without recovering the item. While that equals the
-running version the card is terminal; after an update it doesn't match, so the
-item is eligible again, and `URLRescueCoordinator.reopenStaleVersionAttempts()`
-clears its ledger budget at install so the launch sweep retries it automatically.
-`SavesIngestor.ingestAllPending` already re-runs ordinary ingestion for
-every `.failed` item on launch, so an update gets **both** paths with no extra
-scheduling. Storing the version rather than a bool is what makes that automatic —
-no migration, no "clear all" pass to remember to run.
-
-Only **user-initiated** rescues spend the attempt (`requestManualRescue`). The
-background sweep must not burn the one thing the card has left to offer. An
-unavailable engine (`canRescue == false`) shows the same terminal chin, since
-there is genuinely nothing to offer.
-
-**And only a real verdict spends it.** `Engine.perform` returns a
-`URLRescueCoordinator.RescueRunResult`, not a Bool, precisely because three
-different not-recovered endings used to be one: `.notRecovered` (the model looked
-and couldn't) spends the attempt; `.transient` (assets unavailable, another
-request holding the session, no model at all, a quota wall — the model never saw
-the page) and `.surfaceDropped` (it DID recover the content and this app doesn't
-show that kind) spend nothing.
+**There is no terminal state and no apology.** The card used to end at "Sorry,
+Luna was unable to save this page." plus Delete, because the one thing it could
+offer was spent. It now always has something to offer — the hand-off row — so a
+Luna file that will not apply simply brings `.offer` back with one line under the
+row saying why (`RecoveryFileApplier.lastFailure(forURL:)`), and the file is not
+retried.
 
 **A guardrail is not a budget.** When a content-safety guardrail or a flat
 refusal rejects the prompt, that is a verdict on the PAGE — the prompt is derived
-from it — so it holds forever, not for a version. `RescueLedgerEntry
-.guardrailedAt` records it, `shouldAutoRescue` refuses first, `requestManualRescue`
-and `rescueAndWait` return immediately, and it deliberately survives
-`resetAttempts(for:)`: an app update changes Luna's extraction code, not Apple's
-safety model. The card shows `.unavailable` rather than `.spent`, which renders
-identically but promises nothing about the next update.
+from it — so it holds forever. `RescueLedgerEntry.guardrailedAt` records it and
+`shouldAutoRescue` refuses first, so no sweep and no queued extension hand-off
+reaches the item again. It changes nothing the user sees: the card offers the
+chat hand-off either way, which is the route a guardrail does not block.
 
 ## The third ending: hand it to the browser
 
@@ -148,53 +128,32 @@ The gate is `LinkImportRunner.articleUnlocker != nil` — the seam the two
 article-handling `KindWiring`s already install for exactly this question, rather
 than a second one that could disagree with it.
 
-Neither route spends the version attempt: the item left `.failed` for somewhere
-the user can still act.
+Either way the item leaves `.failed` for somewhere the user can still act.
 
 **No Archive.** Filing an empty shell away where the user can't act on it is worse
 than nothing, so the card menus on both roots offer only **Share Link**,
 **Share Diagnostics…** when a trace exists, and destructive **Delete**.
 
-## The rescue hint: there isn't one, anywhere
-
-Every app used to imply a hint (Reader → `.article`, Downloader → `.media`, Price
-Tracker → `.product`), the central Luna app showed a segmented picker on the card,
-the list row's tap opened a three-way action sheet, the row's long-press menu
-opened a three-child submenu, and the extension's failure card had its own
-segmented control. **All four are gone.** `RescueRequest.ContentHint.auto` is what
-an **absent** hint means, and every user-facing surface sends nil: the plan
-instructions offer every payload option and open by telling the model that
-classifying the page is its job, while the prompt states what already failed as a
-*diagnostic fact* instead of naming a content type. See
-`claudedocs/url-rescue.md`.
-
-`RescueHint` survives, but is **never user-facing** — no `displayName` exists,
-because nothing displays it. It remains for the two PROGRAMMATIC callers that
-genuinely know the kind from where the user pressed: the price editor's no-price
-retry (`.product`) and the media card's no-assets retry (`.media`). A concrete
-hint still constrains the validator.
-
 ## One design across every error surface
 
-The offer used to appear under three labels ("Try with Apple Intelligence", "Try
-Apple Intelligence", "Ask Apple Intelligence") and two icons. A user who meets it
-twice shouldn't have to work out whether it's the same offer, so there is now ONE
-definition — `GlassStyle.retryWithAIConfiguration` (label "Retry with AI", the
-`apple.intelligence` glyph trailing as a sigil) — and one place for the shared
-words, `FailedSaveCopy` in LunaModels.
+Apple Intelligence used to be offered under three labels ("Try with Apple
+Intelligence", "Try Apple Intelligence", "Ask Apple Intelligence") and two icons,
+on five surfaces. All five are gone, and so is the shared styling that held them
+together (`GlassStyle.retryWithAIConfiguration`). What every error surface shares
+now is the chat hand-off row, and the shared words in `FailedSaveCopy`
+(LunaModels).
 
 | Surface | What it shows |
 | --- | --- |
-| **In-app card** (`FailedSaveCardViewController`) | The full design: red rim, web view, URL bar, Retry with AI, eclipse overlay, terminal apology + Delete. |
-| **Extension failure card** (`RescueFailureViewController`) | The SAME card — red rim, web view, URL bar, Retry with AI. One honest difference: an extension links no rescue engine, so the button queues a `PendingRescueRequest` (hint nil) and opens the app, and there is no progress overlay to show. |
-| **Downloader's failed-download card** | Now carries the red rim too (it didn't, so two failures in one deck looked unrelated), and its rescue button takes the shared styling. |
-| **Failed list row** | Tap → a single "Retry with AI" confirm; long-press → one flat action + Delete. Once the version's attempt is spent, both become the card's terminal state: the apology and Delete. It stays a *confirm* rather than rescuing on the bare tap because the attempt is rationed — a mis-tap would spend the only thing the item has left. |
-| **Price editor's no-price alert** | An alert can't carry card chrome, but it calls the same thing the same name. |
+| **In-app card** (`FailedSaveCardViewController`) | The full design: red rim, web view, URL bar, the hand-off row, the eclipse overlay while anything runs. |
+| **Extension failure card** (`RescueFailureViewController`) | The SAME card — red rim, web view, URL bar, the same row. One honest difference: an extension may only ASK its host to open a provider, so a refused open falls back to the containing app (`claudedocs/llm-handoff.md`), and there is no progress overlay to show. |
+| **Downloader's failed-download card** | Carries the red rim too, and shows the same row for the one failure a model can answer: `.noMedia`. |
+| **Price editor's no-price alert** | Just the alert now. A page with no price is a page the user can hand to a chat model from its own card. |
 
 ## Why the reason exists at all
 
-The card no longer prints a failure sentence, but the reason still drives the retry
-policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
+The card no longer prints a failure sentence, but the reason still drives the
+retry policy and both prompts' diagnostic line, so the plumbing stands:
 
 - **`SaveFailureReason`** (`LunaModels`) — coarse and actionable, one case per
   sentence a reader can do something about: `offline`, `timedOut`,
@@ -207,10 +166,9 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   `claudedocs/url-pipeline.md`). It is the **one reason the AI rescue stands down
   for**, via `isWorthRescuing`: every other failure means "we couldn't GET the
   article", which a model reading the page can sometimes fix, whereas a search
-  page has no article to find and a rescue would spend the version's single
-  attempt proving it. Both the trigger (`SavesIngestor`) and the card's
-  chin (`FailedSaveCardFactory`'s `canRescue`) consult it, so the card shows the
-  terminal apology instead of an offer it can't keep.
+  page has no article to find and a rescue would spend the item's one attempt
+  proving it. `SavesIngestor`'s trigger consults it, so the automatic attempt
+  never runs for one.
   `subscribeRedirect` is the site answering an article request
   with its own subscribe page (`ArticleFetcher.FetchError.subscribeRedirect` — see
   `claudedocs/url-pipeline.md`); it is not worth retrying, and a hard-paywall host
@@ -225,12 +183,14 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   stale transport error; only a page that never came back carries the fetch's own
   reason.
 - **`SaveFailureStore`** (`saveFailures.json`, App Group) — reason, failure count,
-  last failure date, the recovered title/site name, and the AI-attempt version. A
-  **sidecar**, never new `SavedItem` fields: a new field on the shared save is a
-  schema change four independently-updated apps have to agree on, where a
-  sidecar is one writer's own file (the same reasoning as `RescueLedgerStore`
-  and the preloads sidecar). Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a
-  later failure starts from a clean count *and* a fresh AI attempt.
+  last failure date, and the recovered title/site name. A **sidecar**, never new
+  `SavedItem` fields: a new field on the shared save is a schema change four
+  independently-updated apps have to agree on, where a sidecar is one writer's
+  own file (the same reasoning as `RescueLedgerStore` and the preloads sidecar).
+  Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a later
+  failure starts from a clean count. A record written by an older build also
+  carries `aiAttemptVersion`, the one-attempt-per-app-version gate the card used
+  to read; the decoder drops it.
 - **`SaveDiagnosticsStore`** (`saveDiagnostics/<UUID>.log`, App Group) — the
   second sidecar, and the one with the DETAIL the reason above only summarizes:
   the complete timestamped trace of every attempt this item has made. Written
@@ -252,14 +212,14 @@ surface gate never drops it. It was nonetheless only *visible* in the Reader,
 because `rendersAsReader` is true for anything with no platform and no tracker.
 So a Downloader link that failed was stored and invisible.
 
-`SavesSectioning.ListFilter.includes` short-circuits on `isFailedSave(_:)`
-and every filter shows it. The app the user saved the link in is where they expect
-to see it break, and any app can offer the rescue that gives it a kind — after
-which it classifies and settles into its own app. On the Downloader root, failed
-saves occupy the carousel slots after the media cards
-(`failedIndex(forCarouselIndex:)`); a `.failed` platform item is excluded, since it
-kept its kind and has its own download-failure UI (a separate card, untouched by
-this design — see `claudedocs/media-download.md`).
+`LunaApp.includes` short-circuits on `SavesSectioning.isFailedSave(_:)`, so every
+app's deck shows it. The app the user saved the link in is where they expect to
+see it break, and any app can run the recovery that gives it a kind — after which
+it classifies and settles into its own app. On the Downloader root, failed saves
+occupy the carousel slots after the media cards
+(`failedIndex(forCarouselIndex:)`); a `.failed` platform item is excluded, since
+it kept its kind and has its own download-failure UI (a separate card — see
+`claudedocs/media-download.md`).
 
 ## Cost of a web view per card
 
@@ -275,12 +235,12 @@ card's own Share/Delete menu stays on its chrome.
 ## Tests
 
 `LunaTests/FailedSaveTests.swift` — the naming chain, `<head>` metadata parsing,
-the sidecar's accumulation rules, surface inclusion, the version-scoped terminal
-state, and the ledger reset. `LunaTests/URLRescueCoordinatorTests.swift` — stage
-progress, its notification, the monotonic fraction table, and which rescues spend
-the version's attempt. `LunaTests/URLRescueEngineTests.swift` — that progress
-always opens `.queued` and closes `.finished`, and never claims a fetch it didn't
-perform. `LunaTests/RescueDirectiveValidatorTests.swift` — the `.auto` payload
-policy. `LunaTests/ShareSurfaceDriverRescueTests.swift` — that the queued extension
-request carries no hint. The `.unreadable` reason rule is pinned in
+the sidecar's accumulation rules, surface inclusion, and the card's state table.
+`LunaTests/URLRescueCoordinatorTests.swift` — that a failure runs exactly one
+automatic attempt and no more, that a queued extension hand-off runs without a
+tap, the guardrail's permanence, and the stage-progress notification.
+`LunaTests/URLRescueTests.swift` — that the failure leg queues the hand-off with
+no tap on either extension, and that a refused provider open falls back to the
+containing app. `LunaTests/RecoveryFileApplierTests.swift` — what an arriving
+Luna file becomes. The `.unreadable` reason rule is pinned in
 `ArticleResolverTests`.

@@ -94,8 +94,104 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
             }
             return promise
         }
-        namespace.install(fetch, as: capabilityName.rawValue)
+        // `luna.fetch` is a function that also carries `text`/`json`/`doc`.
+        // The sugar is written in JavaScript rather than bridged three more
+        // times, so one implementation serves all three shapes and the
+        // callable stays callable. `Object.freeze` reaches it with `luna`.
+        guard let factory = outerContext.evaluateScript(Self.sugarFactory),
+              let wrapped = factory.call(withArguments: [fetch])
+        else {
+            namespace.install(fetch, as: capabilityName.rawValue)
+            return
+        }
+        namespace.install(wrapped, as: capabilityName.rawValue)
     }
+
+    /// The member names installed on `luna.fetch` itself.
+    /// `PluginAPISurfaceTests` builds the expected `.d.ts` surface from it.
+    public static let installedMembers = ["text", "json", "doc"]
+
+    /// Wraps the native fetch so `luna.fetch(…)` still calls it and
+    /// `luna.fetch.text/json/doc` read off it. `plugin_host.js` and
+    /// `tools/plugin-sim/bridge.mjs` carry the same three; `PluginFetchSugarTests`
+    /// and the harness's own suite pin them to each other.
+    static let sugarFactory = #"""
+    (function (rawFetch) {
+        "use strict";
+
+        function fetch(request) { return rawFetch(request); }
+
+        /// One GET whose status must be a success. `opts` is the ordinary
+        /// request object minus `url`; the response form is forced to text,
+        /// because all three helpers read `response.text`.
+        function get(url, opts) {
+            var request = {};
+            var source = opts || {};
+            for (var key in source) {
+                if (Object.prototype.hasOwnProperty.call(source, key)) {
+                    request[key] = source[key];
+                }
+            }
+            request.url = String(url);
+            request.method = request.method || "GET";
+            request.as = "text";
+            return rawFetch(request).then(function (response) {
+                if (!response || !response.ok) {
+                    throw new luna.LunaError(
+                        "fetch-failed",
+                        request.method + " " + request.url + " answered "
+                            + ((response && response.status) || 0));
+                }
+                return response;
+            });
+        }
+
+        fetch.text = function (url, opts) {
+            return get(url, opts).then(function (response) {
+                return typeof response.text === "string" ? response.text : "";
+            });
+        };
+
+        fetch.json = function (url, opts) {
+            return get(url, opts).then(function (response) {
+                try {
+                    return JSON.parse(
+                        typeof response.text === "string" ? response.text : "");
+                } catch (error) {
+                    throw new luna.LunaError(
+                        "fetch-failed",
+                        String(url) + " did not answer JSON: " + error.message);
+                }
+            });
+        };
+
+        // `luna.html` is installed after `luna.fetch` (capabilities install in
+        // name order), so the namespace is read at CALL time, never captured.
+        fetch.doc = function (url, opts) {
+            return get(url, opts).then(function (response) {
+                var html = globalThis.luna && globalThis.luna.html;
+                if (!html || typeof html.parse !== "function") {
+                    throw new luna.LunaError(
+                        "capability-not-declared",
+                        "luna.fetch.doc parses the page, so the manifest must "
+                            + "declare the 'html' capability too");
+                }
+                var parsed = html.parse(response.text || "", response.url || String(url));
+                // The stand-in for a capability this process cannot serve
+                // answers a rejecting Promise from every member. Reading a
+                // document off one would hand the plugin a thenable.
+                if (parsed && typeof parsed.then === "function") {
+                    parsed.then(function () {}, function () {});
+                    throw new luna.LunaError(
+                        "unavailable-here", "luna.html is not available in this process");
+                }
+                return parsed;
+            });
+        };
+
+        return fetch;
+    })
+    """#
 }
 
 /// Reads the request a plugin wrote (§6.2).

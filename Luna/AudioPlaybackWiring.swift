@@ -21,7 +21,7 @@ import Foundation
 ///
 /// This is the injected-composition pattern the app shell already uses
 /// elsewhere (`SendToFriendSheet.accountSetupPresenter`,
-/// `DiagnosticLog.exportIdentityProvider`, `ProductPriceRescue.resolver`):
+/// `DiagnosticLog.exportIdentityProvider`):
 /// `LunaAudioPlayback` cannot know about `SavesSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {

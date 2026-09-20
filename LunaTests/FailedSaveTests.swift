@@ -310,16 +310,16 @@ final class SaveFailureStoreTests: XCTestCase {
         {"\(id.uuidString)":{"failureCount":3,"lastFailureDate":"2026-08-13T04:05:06Z",\
         "resolvedTitle":"From another process","siteName":"Example","aiAttemptVersion":"1.4 (208)"}}
         """
+        // `aiAttemptVersion` is an older build's key, and reading past it is the
+        // point: the sidecar is shared by four independently-updated apps.
         try Data(json.utf8).write(to: directory.appendingPathComponent("saveFailures.json"))
         let reopened = SaveFailureStore(containerURL: directory)
         let record = try XCTUnwrap(reopened.record(for: id))
         XCTAssertEqual(record.failureCount, 3)
         XCTAssertEqual(record.resolvedTitle, "From another process")
         XCTAssertEqual(record.siteName, "Example")
-        XCTAssertEqual(record.aiAttemptVersion, "1.4 (208)")
         XCTAssertEqual(record.lastFailureDate,
                        Date(timeIntervalSince1970: 1_786_593_906))
-        XCTAssertTrue(reopened.hasSpentAIAttempt(id, version: "1.4 (208)"))
     }
 }
 
@@ -361,104 +361,50 @@ final class FailedSaveSurfacingTests: XCTestCase {
     }
 }
 
+@MainActor
 final class FailedSaveCardFactoryTests: XCTestCase {
 
-    /// No app asks which kind this is: the model classifies the page, so the
-    /// card's rescue action carries no hint in any surface, the central Luna
-    /// app included.
-    func testTheCardNeverPicksAContentHint() {
+    /// Every app builds the same card for the same failure.
+    func testEverySurfaceBuildsTheSameCard() {
         for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
-            let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
-            XCTAssertEqual(model.urlText, "example.com/broken")
-            // Not checking canRescue or hasSpentAIAttempt: canRescue depends
-            // on the shared, test-order-sensitive URLRescueCoordinator.engine,
-            // so asserting it here would make this test's outcome depend on
-            // run order.
-            XCTAssertFalse(model.rescueState.isRunning)
+            let item = failedItem()
+            let model = FailedSaveCardFactory.makeModel(for: item, surface: surface)
+            XCTAssertEqual(
+                model.urlText, FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString))
+            XCTAssertEqual(model.rescueState, .offer, "nothing is running for a fresh item")
         }
     }
 
-    /// A card is terminal only while the version that spent its attempt is the
-    /// one running; an update reopens it.
-    func testTerminalStateIsScopedToTheAppVersionThatSpentTheAttempt() {
-        let store = SaveFailureStore(containerURL: temporaryDirectory())
-        let id = UUID()
-        XCTAssertFalse(store.hasSpentAIAttempt(id, version: "1.0 (1)"))
+    /// The offer is what a failure without a hand-off shows; a recorded
+    /// hand-off replaces it with the wait, naming the provider the user chose.
+    func testARecordedHandoffPutsTheCardInTheWaitingState() throws {
+        let item = failedItem()
+        let store = LLMHandoffStore.shared
+        store.begin(
+            .recovery(itemID: item.id, urlString: item.urlString), provider: .chatGPT)
+        defer {
+            if let record = store.record(forItemID: item.id) { store.clear(id: record.id) }
+        }
 
-        store.recordAIAttempt(id, version: "1.0 (1)")
-        XCTAssertTrue(store.hasSpentAIAttempt(id, version: "1.0 (1)"))
-        XCTAssertFalse(
-            store.hasSpentAIAttempt(id, version: "1.1 (2)"),
-            "a shipped update must offer the AI button again")
-        XCTAssertEqual(store.idsWithStaleAIAttempt(version: "1.1 (2)"), [id])
-        XCTAssertTrue(
-            store.idsWithStaleAIAttempt(version: "1.0 (1)").isEmpty,
-            "an attempt spent under the RUNNING version is not stale")
+        XCTAssertEqual(
+            FailedSaveCardFactory.makeModel(for: item).rescueState, .waiting(.chatGPT))
     }
 
-    /// The ledger's 2-per-24h budget must not outlive the version that earned it,
-    /// or the automatic half of the post-update retry never runs.
-    func testResettingAttemptsReopensTheAutomaticBudget() {
-        let ledger = RescueLedgerStore(containerURL: temporaryDirectory())
-        let id = UUID()
-        ledger.recordAttempt(id, hint: nil)
-        ledger.recordAttempt(id, hint: nil)
-        XCTAssertFalse(ledger.shouldAutoRescue(id))
-
-        ledger.resetAttempts(for: [id])
-        XCTAssertTrue(ledger.shouldAutoRescue(id))
+    /// Only the two busy states dim the page. The offer and the wait leave the
+    /// card usable — the user's next move is in the row, not behind it.
+    func testOnlyWorkInFlightDimsTheCard() {
+        XCTAssertTrue(FailedSaveCardModel.RescueState.running(progress: 0.2).isRunning)
+        XCTAssertTrue(FailedSaveCardModel.RescueState.applying(progress: 0.2).isRunning)
+        XCTAssertFalse(FailedSaveCardModel.RescueState.offer.isRunning)
+        XCTAssertFalse(FailedSaveCardModel.RescueState.waiting(.claude).isRunning)
     }
 
-    /// A succeeded item is not reopened — it's no longer failed, and clearing its
-    /// history would make the sweep re-rescue something already ready.
-    func testResettingAttemptsSkipsSucceededItems() {
-        let ledger = RescueLedgerStore(containerURL: temporaryDirectory())
-        let id = UUID()
-        ledger.recordAttempt(id, hint: nil)
-        ledger.recordSuccess(id, hint: nil)
-        ledger.resetAttempts(for: [id])
-        XCTAssertEqual(ledger.entry(id)?.attemptCount, 1)
-    }
-
-    /// A guardrailed item's card must stop offering a button that cannot work —
-    /// and must NOT claim the `.spent` state, which promises the button comes
-    /// back after an update. This one never does.
-    ///
-    /// Writes to the shared ledger (the factory reads the singleton), so it uses
-    /// a fresh id and never clears anything another test could be watching.
-    func testAGuardrailedCardGoesTerminalRatherThanOfferingARetry() {
-        var item = SavedItem(urlString: "https://example.com/guardrailed-\(UUID().uuidString)")
-        item.state = .failed
-        RescueLedgerStore.shared.recordGuardrail(item.id)
-        let model = FailedSaveCardFactory.makeModel(for: item)
-        XCTAssertEqual(model.rescueState, .unavailable)
-    }
-
-    private func temporaryDirectory() -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
+    /// A fresh id per test: the factory reads the shared hand-off store, and a
+    /// row left behind would follow the next test's card.
     private func failedItem() -> SavedItem {
-        var item = SavedItem(urlString: "https://example.com/broken")
+        var item = SavedItem(urlString: "https://example.com/broken-\(UUID().uuidString)")
         item.state = .failed
         return item
     }
 
-    func testASingleFreshFailureShowsNoAttemptHistory() {
-        let record = SaveFailureRecord(reason: .offline, failureCount: 1)
-        XCTAssertNil(FailedSaveCardFactory.attemptFooter(record))
-        XCTAssertNil(FailedSaveCardFactory.attemptFooter(nil))
-    }
-
-    func testARepeatedFailureReportsItsCount() {
-        let now = Date(timeIntervalSince1970: 1_000_000_000)
-        let record = SaveFailureRecord(
-            reason: .timedOut, lastFailureDate: now.addingTimeInterval(-7200), failureCount: 3)
-        let footer = FailedSaveCardFactory.attemptFooter(record, now: now)
-        XCTAssertNotNil(footer)
-        XCTAssertTrue(footer?.contains("3 times") == true, "got \(footer ?? "nil")")
-    }
 }

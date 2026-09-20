@@ -113,6 +113,8 @@
 "LLMProvider_claude_Luna" = "Claude";
 "LLMProvider_claudeChat_Luna" = "Use Claude chat";
 "LLMProvider_claudeCode_Luna" = "Use Claude Code";
+"LLMHandoff_rowCaption_Luna" = "Recover with";
+"LLMHandoff_waitingHint_Luna" = "Tap the .%@ file in the reply and choose Luna.";
 
 /* ===================== UnsupportedSave — "this app can't take this link",
  * shown by the in-app card, the share/action extensions' card, and the App

@@ -30,6 +30,102 @@
 	<string>Luna saves photos, GIFs, and videos from social posts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Luna loads media you saved to Photos so it remains available in Luna Video.</string>
+	<!-- The Luna file family (claudedocs/luna-file.md). All four apps export
+	     the same four declarations: an exporter set that agrees is harmless,
+	     and it means each app knows the family's types whether or not its
+	     siblings are installed. The three sibling types CONFORM to the central
+	     one, so the central app's single document type below opens all four. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
+			<key>UTTypeDescription</key>
+			<string>Luna file</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>luna</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(PRODUCT_BUNDLE_PREFIX).reader.file</string>
+			<key>UTTypeDescription</key>
+			<string>Luna Reader file</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lunar</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(PRODUCT_BUNDLE_PREFIX).downloader.file</string>
+			<key>UTTypeDescription</key>
+			<string>Luna Video file</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lunad</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(PRODUCT_BUNDLE_PREFIX).pricetracker.file</string>
+			<key>UTTypeDescription</key>
+			<string>Luna Price Tracker file</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lunas</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<!-- $(LUNA_DOC_UTI) is set per app target in project.pbxproj beside
+	     $(LUNA_URL_SCHEME), so each app claims only the files addressed to it. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Luna file</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>$(LUNA_DOC_UTI)</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+	</array>
+	<!-- Luna copies the file out of its inbox and deletes it, so there is
+	     nothing to edit in place. -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<!-- $(LUNA_URL_SCHEME) is set per app target (lunareader / lunadownloader /
@@ -65,6 +161,10 @@
 		<string>snssdk1233</string>
 		<string>instagram</string>
 		<string>fb</string>
+		<!-- The two LLM hand-off targets (claudedocs/luna-file.md). Queried so
+		     the recovery row can pick the app link over the web form. -->
+		<string>chatgpt</string>
+		<string>claude</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>

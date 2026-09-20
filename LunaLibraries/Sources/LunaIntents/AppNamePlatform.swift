@@ -102,11 +102,11 @@ public enum AppNamePlatform {
         guard let platform = platform(forAppName: app) else { return nil }
         switch platform {
         case .bluesky:
-            return "Respond with a single line for the Bluesky post on screen, in the exact form \"handle ; phrase\" (the author handle, then \" ; \", then a distinctive phrase from the post). If nothing identifiable is on screen, respond with exactly \"none\"."
+            return "Look at the Bluesky post on screen. Answer with ONE line in exactly this form: handle ; phrase. handle is the author's @handle as shown. phrase is 5 to 10 words copied verbatim from the post's text, chosen to be distinctive. Use \" ; \" (space, semicolon, space) as the only separator. No quotes, no labels, no other text. If no post is identifiable, answer exactly: none"
         case .reddit:
-            return "Respond with a single line for the Reddit post on screen, in the exact form \"subreddit ; title ; author\" (the subreddit, then \" ; \", then the post title, then \" ; \", then the author). If nothing identifiable is on screen, respond with exactly \"none\"."
+            return "Look at the Reddit post on screen. Answer with ONE line in exactly this form: subreddit ; title ; author. subreddit is the community name without r/. title is the post title copied verbatim. author is the poster's username without u/. Use \" ; \" (space, semicolon, space) as the only separator. No quotes, no labels, no other text. If no post is identifiable, answer exactly: none"
         case .x, .tiktok, .instagram, .facebook:
-            return "Respond with a single line for the post on screen as \"handle ; phrase\" — the author handle, then \" ; \", then a short EXACT quote (5–10 words copied verbatim) from the post's text. If the post's date or time is visible, append \" ; \" and that date (e.g. \"Jun 14, 2026\"). If nothing identifiable is on screen, respond with exactly \"none\"."
+            return "Look at the social post on screen. Answer with ONE line in exactly this form: handle ; phrase. handle is the author's @handle or username as shown. phrase is 5 to 10 words copied verbatim from the post's own text, not from a reply or a quoted post. If the post's date is visible, append \" ; \" and that date as shown (for example Jun 14, 2026). Use \" ; \" (space, semicolon, space) as the only separator. No quotes, no labels, no other text. If no post is identifiable, answer exactly: none"
         case .youtube, .web:
             return nil
         }
@@ -114,5 +114,5 @@ public enum AppNamePlatform {
 
     /// The screen-extraction prompt for a Safari webpage: no platform-specific
     /// fields, just the page's title and site/publication name.
-    public static let safariScreenPrompt = "Respond with a single line for the webpage on screen, in the exact form \"title ; site\" — the page's title, then \" ; \", then the site or publication name if visible, else the domain. If no webpage is identifiable, respond with exactly \"none\"."
+    public static let safariScreenPrompt = "Look at the web page on screen. Answer with ONE line in exactly this form: title ; site. title is the page's headline or title copied verbatim. site is the publication or site name if shown, else the domain from the address bar. Use \" ; \" (space, semicolon, space) as the only separator. No quotes, no labels, no other text. If no web page is identifiable, answer exactly: none"
 }

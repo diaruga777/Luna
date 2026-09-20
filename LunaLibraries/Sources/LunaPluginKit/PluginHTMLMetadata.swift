@@ -132,25 +132,25 @@ public enum PluginHTMLMetadata {
         /// cards are written both ways in the wild and a page that picked the
         /// other spelling is not a page without metadata.
         private func property(_ name: String) -> String? {
-            attribute("meta[property=\(name)]", "content")
-                ?? attribute("meta[name=\(name)]", "content")
+            attribute("meta[property=\"\(name)\"]", "content")
+                ?? attribute("meta[name=\"\(name)\"]", "content")
         }
 
         private func named(_ name: String) -> String? {
-            attribute("meta[name=\(name)]", "content")
+            attribute("meta[name=\"\(name)\"]", "content")
         }
 
         private func httpEquiv(_ name: String) -> String? {
-            attribute("meta[http-equiv=\(name)]", "content")
+            attribute("meta[http-equiv=\"\(name)\"]", "content")
         }
 
         private func itemprop(_ name: String) -> String? {
-            attribute("meta[itemprop=\(name)]", "content")
-                ?? attribute("[itemprop=\(name)]", "datetime")
+            attribute("meta[itemprop=\"\(name)\"]", "content")
+                ?? attribute("[itemprop=\"\(name)\"]", "datetime")
         }
 
         private func link(rel: String) -> String? {
-            attribute("link[rel=\(rel)]", "href")
+            attribute("link[rel=\"\(rel)\"]", "href")
         }
 
         private func attribute(_ selector: String, _ name: String) -> String? {

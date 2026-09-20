@@ -20,6 +20,7 @@
 
 import { fetch as undiciFetch } from "undici";
 import { parseHTML } from "linkedom";
+import { Readability, isProbablyReaderable } from "@mozilla/readability";
 import crypto from "node:crypto";
 
 /// `(code, message, details)`, the same order `PluginBootstrapScript.swift`
@@ -165,7 +166,316 @@ function jsonScripts(doc, type) {
   return out;
 }
 
-export const html = { parse: htmlParse, text: htmlToText, jsonScripts };
+/// Every `<script type="application/ld+json">` body, parse errors skipped and
+/// a `@graph` array flattened one level — `PluginHTMLMetadata.jsonLD`
+/// (SwiftSoup) and `plugin_host.js` (DOMParser) answer the same list.
+function jsonLD(doc) {
+  const out = [];
+  const append = (value) => {
+    if (value && typeof value === "object" && Array.isArray(value["@graph"])) {
+      out.push(...value["@graph"]);
+      return;
+    }
+    out.push(value);
+  };
+  for (const value of jsonScripts(doc, "application/ld+json")) {
+    if (Array.isArray(value)) value.forEach(append);
+    else append(value);
+  }
+  return out;
+}
+
+const LD_DOCUMENT_TYPES = ["Article", "NewsArticle", "BlogPosting", "Product"];
+
+/// `luna.html.meta`, rule for rule as `PluginHTMLMetadata.swift` and
+/// `plugin_host.js` read it.
+function htmlMeta(doc) {
+  const linked = jsonLD(doc).filter((object) => {
+    if (!object || typeof object !== "object") return false;
+    const raw = object["@type"];
+    const names =
+      typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [];
+    return names.some((name) => LD_DOCUMENT_TYPES.includes(name));
+  });
+  const attribute = (selector, name) => {
+    const node = doc.querySelector(selector);
+    return node ? cleanOrNull(node.getAttribute(name)) : null;
+  };
+  const property = (name) =>
+    attribute(`meta[property="${name}"]`, "content") ||
+    attribute(`meta[name="${name}"]`, "content");
+  const named = (name) => attribute(`meta[name="${name}"]`, "content");
+  const linkedField = (field) => {
+    for (const object of linked) {
+      const value = cleanOrNull(object[field]);
+      if (value) return value;
+    }
+    return null;
+  };
+  const namedValue = (value) => {
+    if (typeof value === "string") return cleanOrNull(value);
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const found = namedValue(entry);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (value && typeof value === "object") return cleanOrNull(value.name);
+    return null;
+  };
+  const linkedImage = () => {
+    for (const object of linked) {
+      let value = object.image;
+      if (typeof value === "string") return cleanOrNull(value);
+      if (Array.isArray(value)) value = value[0];
+      if (typeof value === "string") return cleanOrNull(value);
+      if (value && typeof value === "object" && cleanOrNull(value.url))
+        return cleanOrNull(value.url);
+    }
+    return null;
+  };
+  const absolute = (value) => {
+    if (!value) return null;
+    try {
+      return new URL(value, doc.baseURI).href;
+    } catch {
+      return value;
+    }
+  };
+  const found = {
+    title:
+      property("og:title") ||
+      property("twitter:title") ||
+      cleanOrNull(doc.title) ||
+      linkedField("headline") ||
+      linkedField("name"),
+    description:
+      property("og:description") ||
+      property("twitter:description") ||
+      named("description"),
+    canonical: absolute(
+      property("og:url") || attribute('link[rel="canonical"]', "href"),
+    ),
+    image: absolute(
+      property("og:image") ||
+        property("og:image:url") ||
+        property("twitter:image") ||
+        property("twitter:image:src") ||
+        linkedImage(),
+    ),
+    author: named("author") || property("article:author") || namedValue(
+      linked.map((object) => object.author).find((value) => value !== undefined),
+    ),
+    published:
+      property("article:published_time") ||
+      named("date") ||
+      named("pubdate") ||
+      attribute('meta[itemprop="datePublished"]', "content") ||
+      attribute('[itemprop="datePublished"]', "datetime") ||
+      linkedField("datePublished"),
+    siteName: property("og:site_name") || named("application-name"),
+    language:
+      cleanOrNull(
+        doc.documentElement && doc.documentElement.getAttribute("lang"),
+      ) ||
+      attribute('meta[http-equiv="content-language"]', "content") ||
+      linkedField("inLanguage"),
+    type: property("og:type"),
+  };
+  const result = {};
+  for (const [key, value] of Object.entries(found)) if (value) result[key] = value;
+  return result;
+}
+
+/// APPROXIMATE. The app runs Luna's own `ArticleExtractor` (SwiftSoup) and
+/// Safari relays to it; there is no port of that pass to Node, so the harness
+/// substitutes `@mozilla/readability`. Expect a different `html` and a
+/// different `excerpt` from the same page — use it to check that your plugin
+/// CALLS the helper correctly, never to compare its output to the app's.
+async function htmlArticle(htmlText, baseURL) {
+  const base = baseURL || "https://example.com/";
+  const { document } = parseHTML(wrapFragmentIfNeeded(htmlText));
+  const meta = htmlMeta(wrapDocument(document, base));
+  let parsed = null;
+  try {
+    if (isProbablyReaderable(document)) {
+      parsed = new Readability(document).parse();
+    }
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || !parsed.content) return null;
+  const absolute = (value) => {
+    if (!value) return undefined;
+    try {
+      return new URL(value, base).href;
+    } catch {
+      return value;
+    }
+  };
+  const article = {
+    title: parsed.title || meta.title || "",
+    html: parsed.content,
+    text: (parsed.textContent || "").trim(),
+  };
+  const author = parsed.byline || meta.author;
+  if (author) article.author = author;
+  const published = parsed.publishedTime || meta.published;
+  if (published) article.publishedAt = textDate(published) || published;
+  const image = meta.image || absolute(parsed.lead_image_url);
+  if (image) article.leadImageURL = image;
+  const excerpt = meta.description || parsed.excerpt;
+  if (excerpt) article.excerpt = excerpt.slice(0, 1000);
+  return article;
+}
+
+export const html = {
+  parse: htmlParse,
+  text: htmlToText,
+  jsonScripts,
+  jsonLD,
+  meta: htmlMeta,
+  article: htmlArticle,
+};
+
+// --------------------------------------------------------------- luna.text
+
+/// The currency symbols `PriceParsing.normalizeCurrency` knows.
+const CURRENCY_SYMBOLS = { $: "USD", "£": "GBP", "€": "EUR", "¥": "JPY" };
+
+const MONTHS = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+function collapseWhitespace(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function cleanOrNull(value) {
+  if (value === undefined || value === null) return null;
+  const text = collapseWhitespace(value);
+  return text === "" ? null : text;
+}
+
+/// `"$1,299.00"` -> `{amount:"1299.00",currency:"USD"}`, the separator rule
+/// `PriceParsing` applies in Swift.
+function textPrice(raw) {
+  const source = String(raw ?? "");
+  const match = source.match(/[0-9][0-9.,]*/);
+  if (!match) return null;
+  const run = match[0].replace(/[.,]+$/, "");
+  if (!run) return null;
+  const lastDot = run.lastIndexOf(".");
+  const lastComma = run.lastIndexOf(",");
+  let amount;
+  if (lastDot >= 0 && lastComma >= 0) {
+    amount =
+      lastDot > lastComma
+        ? run.replace(/,/g, "")
+        : run.replace(/\./g, "").replace(/,/g, ".");
+  } else if (lastComma >= 0) {
+    const afterComma = run.length - lastComma - 1;
+    amount =
+      afterComma === 1 || afterComma === 2
+        ? run.replace(/,/g, ".")
+        : run.replace(/,/g, "");
+  } else {
+    amount = run;
+  }
+  const start = source.indexOf(match[0]);
+  const before = source.slice(0, start).replace(/\s+$/, "");
+  const after = source.slice(start + run.length).replace(/^\s+/, "");
+  let currency = null;
+  for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
+    if (before.endsWith(symbol) || after.startsWith(symbol)) {
+      currency = code;
+      break;
+    }
+  }
+  if (!currency) {
+    const trailing = before.match(/([A-Za-z]+)$/);
+    const leading = after.match(/^([A-Za-z]+)/);
+    const code = (trailing && trailing[1]) || (leading && leading[1]) || "";
+    if (code.length === 3 && code === code.toUpperCase()) currency = code;
+  }
+  const price = { amount };
+  if (currency) price.currency = currency;
+  return price;
+}
+
+function monthNumber(name) {
+  const lower = String(name).toLowerCase();
+  for (let i = 0; i < MONTHS.length; i++) {
+    if (MONTHS[i] === lower || (lower.length === 3 && MONTHS[i].startsWith(lower)))
+      return i + 1;
+  }
+  return 0;
+}
+
+function isRealDay(year, month, day) {
+  if (!(year >= 1000 && year <= 9999) || month < 1 || month > 12 || day < 1)
+    return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= lengths[month - 1];
+}
+
+const pad = (value, width) => String(value).padStart(width, "0");
+
+function plainDate(year, month, day) {
+  if (!isRealDay(year, month, day)) return null;
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
+function instant(year, month, day, hour, minute, second, zone) {
+  if (!isRealDay(year, month, day) || hour > 23 || minute > 59 || second > 59)
+    return null;
+  let offset = 0;
+  const m = String(zone || "").trim().match(/^([+-])(\d{2}):?(\d{2})$/);
+  if (m) offset = (m[1] === "-" ? -1 : 1) * (+m[2] * 3600 + +m[3] * 60);
+  const moment = new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second) - offset * 1000,
+  );
+  return (
+    `${pad(moment.getUTCFullYear(), 4)}-${pad(moment.getUTCMonth() + 1, 2)}-` +
+    `${pad(moment.getUTCDate(), 2)}T${pad(moment.getUTCHours(), 2)}:` +
+    `${pad(moment.getUTCMinutes(), 2)}:${pad(moment.getUTCSeconds(), 2)}Z`
+  );
+}
+
+/// An absolute date as ISO 8601, or null. A relative phrase answers null.
+function textDate(raw) {
+  const source = String(raw ?? "").trim();
+  if (!source) return null;
+  let m = source.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*(Z|z|[+-]\d{2}:?\d{2})?)?$/,
+  );
+  if (m)
+    return m[4] === undefined
+      ? plainDate(+m[1], +m[2], +m[3])
+      : instant(+m[1], +m[2], +m[3], +m[4], +m[5], +(m[6] || 0), m[7]);
+  m = source.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m) return plainDate(+m[1], +m[2], +m[3]);
+  m = source.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/);
+  if (m && monthNumber(m[1])) return plainDate(+m[3], monthNumber(m[1]), +m[2]);
+  m = source.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/);
+  if (m && monthNumber(m[2])) return plainDate(+m[3], monthNumber(m[2]), +m[1]);
+  m = source.match(
+    /^(?:[A-Za-z]{3},\s*)?(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?\s*(GMT|UTC|Z|[+-]\d{4})?$/,
+  );
+  if (m && monthNumber(m[2]))
+    return instant(+m[3], monthNumber(m[2]), +m[1], +m[4], +m[5], +(m[6] || 0), m[7]);
+  return null;
+}
+
+/// Entities decoded, tags dropped, whitespace collapsed, trimmed.
+function textClean(raw) {
+  return collapseWhitespace(htmlToText(String(raw ?? "")));
+}
+
+export const text = { price: textPrice, date: textDate, clean: textClean };
 
 // ------------------------------------------------------------- luna.bytes
 
@@ -643,7 +953,12 @@ export function createBridge(config = {}) {
   luna.localize = (table) => resolveLocalized(table, luna.env.languages);
   luna.LunaError = LunaError;
 
-  if (capabilities.has("html")) luna.html = html;
+  if (capabilities.has("html")) {
+    luna.html = html;
+    // `luna.text` rides on the `html` grant, as it does in the app
+    // (`PluginCapabilityName.companionNamespaces`).
+    luna.text = text;
+  }
 
   if (capabilities.has("crypto")) {
     luna.crypto = {
@@ -668,7 +983,49 @@ export function createBridge(config = {}) {
   if (files) luna.files = files.api;
 
   if (capabilities.has("fetch")) {
-    luna.fetch = fetchFactory(config.fetchImpl || undiciFetch, files);
+    const raw = fetchFactory(config.fetchImpl || undiciFetch, files);
+    // The `text`/`json`/`doc` sugar, the same contract
+    // `PluginFetchBridge.sugarFactory` and `plugin_host.js` install: a non-2xx
+    // rejects `fetch-failed` with the status, and `doc` needs `html` too.
+    const lunaFetch = (request) => raw(request);
+    const get = async (url, opts) => {
+      const response = await raw({
+        ...(opts || {}),
+        url: String(url),
+        method: (opts && opts.method) || "GET",
+        as: "text",
+      });
+      if (!response || !response.ok) {
+        throw new LunaError(
+          "fetch-failed",
+          `${(opts && opts.method) || "GET"} ${url} answered ${(response && response.status) || 0}`,
+        );
+      }
+      return response;
+    };
+    lunaFetch.text = async (url, opts) => (await get(url, opts)).text ?? "";
+    lunaFetch.json = async (url, opts) => {
+      const response = await get(url, opts);
+      try {
+        return JSON.parse(response.text ?? "");
+      } catch (error) {
+        throw new LunaError(
+          "fetch-failed",
+          `${url} did not answer JSON: ${error.message}`,
+        );
+      }
+    };
+    lunaFetch.doc = async (url, opts) => {
+      const response = await get(url, opts);
+      if (!luna.html || typeof luna.html.parse !== "function") {
+        throw new LunaError(
+          "capability-not-declared",
+          'luna.fetch.doc parses the page, so the manifest must declare the "html" capability too',
+        );
+      }
+      return luna.html.parse(response.text ?? "", response.url || String(url));
+    };
+    luna.fetch = lunaFetch;
   }
 
   // In-memory, fed from `config.downloads` (a `DownloadJob[]`) — the harness

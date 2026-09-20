@@ -361,19 +361,48 @@ final class FailedSaveSurfacingTests: XCTestCase {
     }
 }
 
+@MainActor
 final class FailedSaveCardFactoryTests: XCTestCase {
 
     /// Every app builds the same card for the same failure.
     func testEverySurfaceBuildsTheSameCard() {
         for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
-            let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
-            XCTAssertEqual(model.urlText, "example.com/broken")
-            XCTAssertFalse(model.rescueState.isRunning, "nothing is running for a fresh item")
+            let item = failedItem()
+            let model = FailedSaveCardFactory.makeModel(for: item, surface: surface)
+            XCTAssertEqual(
+                model.urlText, FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString))
+            XCTAssertEqual(model.rescueState, .offer, "nothing is running for a fresh item")
         }
     }
 
+    /// The offer is what a failure without a hand-off shows; a recorded
+    /// hand-off replaces it with the wait, naming the provider the user chose.
+    func testARecordedHandoffPutsTheCardInTheWaitingState() throws {
+        let item = failedItem()
+        let store = LLMHandoffStore.shared
+        store.begin(
+            .recovery(itemID: item.id, urlString: item.urlString), provider: .chatGPT)
+        defer {
+            if let record = store.record(forItemID: item.id) { store.clear(id: record.id) }
+        }
+
+        XCTAssertEqual(
+            FailedSaveCardFactory.makeModel(for: item).rescueState, .waiting(.chatGPT))
+    }
+
+    /// Only the two busy states dim the page. The offer and the wait leave the
+    /// card usable — the user's next move is in the row, not behind it.
+    func testOnlyWorkInFlightDimsTheCard() {
+        XCTAssertTrue(FailedSaveCardModel.RescueState.running(progress: 0.2).isRunning)
+        XCTAssertTrue(FailedSaveCardModel.RescueState.applying(progress: 0.2).isRunning)
+        XCTAssertFalse(FailedSaveCardModel.RescueState.offer.isRunning)
+        XCTAssertFalse(FailedSaveCardModel.RescueState.waiting(.claude).isRunning)
+    }
+
+    /// A fresh id per test: the factory reads the shared hand-off store, and a
+    /// row left behind would follow the next test's card.
     private func failedItem() -> SavedItem {
-        var item = SavedItem(urlString: "https://example.com/broken")
+        var item = SavedItem(urlString: "https://example.com/broken-\(UUID().uuidString)")
         item.state = .failed
         return item
     }

@@ -400,16 +400,41 @@ enum SharedStageCatalog {
         [
             StageDescriptor(
                 id: "card.failed-save.error", screen: "Failed save card", variant: "error",
-                summary: "The default failed save: the page in a web view and its URL.",
+                summary: "The default failed save: the page in a web view, its URL, and the "
+                    + "chat hand-off row.",
                 kind: .shared,
                 make: { failedSaveCard() }),
             StageDescriptor(
                 id: "card.failed-save.rescuing", screen: "Failed save card",
                 variant: "rescue in progress",
-                summary: "A rescue running: the page dimmed under a progress bar. Frozen "
-                    + "mid-run — the card polls its state provider and this one never moves.",
+                summary: "The automatic Apple Intelligence attempt running: the page dimmed "
+                    + "under a progress bar. Frozen mid-run — the card polls its state "
+                    + "provider and this one never moves.",
                 kind: .shared,
                 make: { failedSaveCard(.running(progress: 0.45)) }),
+            StageDescriptor(
+                id: "card.failed-save.waiting", screen: "Failed save card",
+                variant: "waiting for the reply",
+                summary: "A provider was opened and the reply has not come back: the row "
+                    + "stays, with the line naming the file to tap.",
+                kind: .shared,
+                make: { failedSaveCard(.waiting(.claude)) }),
+            StageDescriptor(
+                id: "card.failed-save.applying", screen: "Failed save card",
+                variant: "applying a Luna file",
+                summary: "A Luna file arriving: the same dimmed page and bar the automatic "
+                    + "attempt shows, because it is the same recovery finishing.",
+                kind: .shared,
+                make: { failedSaveCard(.applying(progress: 0.6)) }),
+            StageDescriptor(
+                id: "card.failed-save.refused", screen: "Failed save card",
+                variant: "the file was refused",
+                summary: "A Luna file that could not be read: the offer comes back with one "
+                    + "line saying why.",
+                kind: .shared,
+                make: {
+                    failedSaveCard(.offer, note: "Luna could not read the content in this file.")
+                }),
             StageDescriptor(
                 id: "card.unsupported-save", screen: "Unsupported save card",
                 variant: "another app's kind",
@@ -440,12 +465,12 @@ enum SharedStageCatalog {
 
     @MainActor
     private static func failedSaveCard(
-        _ rescueState: FailedSaveCardModel.RescueState = .idle
+        _ rescueState: FailedSaveCardModel.RescueState = .offer, note: String? = nil
     ) -> UIViewController {
         let itemID = SavedItem.deterministicUUID(from: "stage-failed")
         let model = FailedSaveCardModel(
             itemID: itemID, url: URL(string: "https://example.com/broken"),
-            urlText: "example.com/broken", rescueState: rescueState)
+            urlText: "example.com/broken", rescueState: rescueState, note: note)
         let card = FailedSaveCardViewController(
             model: model,
             actions: FailedSaveCardActions(share: { _ in }, delete: {}),

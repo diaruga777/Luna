@@ -14,18 +14,33 @@ import WebKit
 /// app draws the SAME error card instead of each inventing one.
 public struct FailedSaveCardModel {
 
-    /// The card's one rescue-related state.
+    /// Where this save is in its recovery (`claudedocs/llm-handoff.md`).
     public enum RescueState: Equatable {
-        /// Nothing is running: the card's chin offers what the user can do.
-        case idle
-        /// The item's one automatic rescue is running right now — the web view
-        /// goes under a dimming overlay with the eclipse progress bar
-        /// (fraction 0…1) over it.
+        /// The item's one automatic Apple Intelligence attempt is in flight —
+        /// the web view goes under a dimming overlay with the eclipse progress
+        /// bar (fraction 0…1) over it.
         case running(progress: Double)
+        /// Nothing is running: the chin offers the chat hand-off.
+        case offer
+        /// The user picked a provider and the reply has not come back yet.
+        case waiting(LLMProvider)
+        /// A Luna file is being applied for this save.
+        case applying(progress: Double)
 
+        /// Whether the card is busy: the page goes under the overlay and the
+        /// row stands down, whichever of the two is working.
         public var isRunning: Bool {
-            if case .running = self { return true }
-            return false
+            switch self {
+            case .running, .applying: return true
+            case .offer, .waiting: return false
+            }
+        }
+
+        var progress: Double? {
+            switch self {
+            case let .running(progress), let .applying(progress): return progress
+            case .offer, .waiting: return nil
+            }
         }
     }
 
@@ -42,14 +57,19 @@ public struct FailedSaveCardModel {
     /// stripped. Shown in full: which link broke is the point.
     public var urlText: String
     public var rescueState: RescueState
+    /// One line under the row: why the last Luna file was refused. Nil unless
+    /// a file for this page has just failed to apply.
+    public var note: String?
 
     public init(
-        itemID: UUID, url: URL?, urlText: String, rescueState: RescueState = .idle
+        itemID: UUID, url: URL?, urlText: String,
+        rescueState: RescueState = .offer, note: String? = nil
     ) {
         self.itemID = itemID
         self.url = url
         self.urlText = urlText
         self.rescueState = rescueState
+        self.note = note
     }
 }
 
@@ -57,6 +77,9 @@ public struct FailedSaveCardModel {
 /// them to its own store/share/rescue plumbing and the view stays free of every
 /// tier above LunaDesignSystem.
 public struct FailedSaveCardActions {
+    /// Hand this save to a chat model: build the prompt, record the hand-off,
+    /// open the provider.
+    public var chooseProvider: (LLMProvider) -> Void
     /// Share the raw URL (a failed save has nothing else to share).
     public var share: (UIView) -> Void
     /// Share the save's diagnostic trace — every request, decision and strategy
@@ -71,11 +94,13 @@ public struct FailedSaveCardActions {
     public var delete: () -> Void
 
     public init(
+        chooseProvider: @escaping (LLMProvider) -> Void = { _ in },
         share: @escaping (UIView) -> Void,
         shareDiagnostics: ((UIView) -> Void)? = nil,
         createPlugin: (() -> Void)? = nil,
         delete: @escaping () -> Void
     ) {
+        self.chooseProvider = chooseProvider
         self.share = share
         self.shareDiagnostics = shareDiagnostics
         self.createPlugin = createPlugin
@@ -85,7 +110,7 @@ public struct FailedSaveCardActions {
 
 /// The error state of a saved link, as a carousel card: the page itself in a
 /// near-full-bleed web view, a URL bar with reload and share under it, and the
-/// chin under that.
+/// chat hand-off row in the chin.
 ///
 /// The card accepts taps only on its own controls, so the carousel's tap and
 /// scrub gestures never fire over it. A link tap inside the web view opens full
@@ -131,7 +156,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
     private let urlLabel = UILabel()
     private let shareButton = UIButton(type: .system)
 
+    /// The chin: the hand-off row, and Delete under it.
     private let chinStack = UIStackView()
+    private lazy var handoffRow = LLMHandoffRowView()
     private let deleteButton = UIButton(type: .system)
 
     private var hasStartedLoad = false
@@ -309,6 +336,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     }
 
     private func buildChin() {
+        handoffRow.delegate = self
         deleteButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Common_delete"), symbol: "trash", compact: true)
         deleteButton.tintColor = LunaColors.errorAccent
@@ -320,6 +348,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         chinStack.axis = .vertical
         chinStack.spacing = 8
         chinStack.alignment = .fill
+        chinStack.addArrangedSubview(handoffRow)
         chinStack.addArrangedSubview(deleteButton)
     }
 
@@ -434,10 +463,21 @@ public final class FailedSaveCardViewController: CardContentViewController {
         // under it. Share stays live: the URL is valid either way.
         reloadButton.isEnabled = !rescuing
         reloadButton.alpha = rescuing ? 0.4 : 1
-        if case .running(let progress) = model.rescueState {
+        if let progress = model.rescueState.progress {
             progressBar.setProgress(Float(progress), animated: true)
         }
         updateProgressTicker(rescuing: rescuing)
+
+        handoffRow.setEnabled(!rescuing)
+        handoffRow.setHint(hintLine())
+    }
+
+    /// What the row says under its buttons: why the last file was refused, the
+    /// waiting instruction, or nothing.
+    private func hintLine() -> String? {
+        if let note = model.note { return note }
+        if case .waiting = model.rescueState { return LLMHandoffRowView.waitingHint() }
+        return nil
     }
 }
 
@@ -461,5 +501,21 @@ extension FailedSaveCardViewController: WKNavigationDelegate {
         }
         decisionHandler(.cancel)
         WebPageViewController.present(url: url, from: self)
+    }
+}
+
+// MARK: - The chat hand-off row
+
+extension FailedSaveCardViewController: LLMHandoffRowDelegate {
+
+    /// The card flips to `.waiting` on the TAP, not when the store is next
+    /// read: the provider's app takes a moment to come up and the press has to
+    /// land immediately.
+    public func row(_ row: LLMHandoffRowView, didChoose provider: LLMProvider) {
+        guard !model.rescueState.isRunning else { return }
+        model.rescueState = .waiting(provider)
+        model.note = nil
+        apply(model)
+        actions.chooseProvider(provider)
     }
 }

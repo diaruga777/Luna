@@ -19,6 +19,7 @@ import UIKit
 ///
 /// This is the ONE place the card's copy and action wiring live, so the Reader
 /// and Downloader roots can't drift.
+@MainActor
 enum FailedSaveCardFactory {
 
     /// The card for `item`, with its actions bound to `host`.
@@ -50,14 +51,48 @@ enum FailedSaveCardFactory {
             itemID: item.id,
             url: item.url,
             urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
-            rescueState: rescueState(for: item))
+            rescueState: rescueState(for: item),
+            note: RecoveryFileApplier.shared.lastFailure(forURL: item.urlString))
     }
 
-    /// The card's rescue state: the automatic attempt is either in flight or it
-    /// is not.
+    /// Where this save is in its recovery. Work in flight outranks a hand-off
+    /// the user started, which outranks the plain offer — there is nothing
+    /// useful to show beside a bar that is already moving.
+    @MainActor
     private static func rescueState(for item: SavedItem) -> FailedSaveCardModel.RescueState {
-        guard URLRescueCoordinator.shared.isRescuing(item.id) else { return .idle }
-        return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
+        if URLRescueCoordinator.shared.isRescuing(item.id) {
+            return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
+        }
+        if RecoveryFileApplier.shared.isApplying(item.id) {
+            return .applying(progress: RecoveryFileApplier.shared.applyProgress(item.id) ?? 0)
+        }
+        if let record = LLMHandoffStore.shared.record(forItemID: item.id) {
+            return .waiting(record.provider)
+        }
+        return .offer
+    }
+
+    /// Hands the failed page to a chat model: the prompt names the page and
+    /// what went wrong, the hand-off is recorded so the card can wait on it,
+    /// and the provider opens.
+    @MainActor
+    private static func handOff(_ item: SavedItem, to provider: LLMProvider) {
+        guard let url = item.url else { return }
+        let reason = SaveFailureStore.shared.record(for: item.id)?.reason
+        let prompt = LLMHandoffPrompts.recovery(
+            url: url, app: LunaApp.current,
+            failure: SaveFailureReason.rescueSentence(
+                reason, attempted: SaveFailureReason.attemptKind(for: item, reason: reason)))
+        let target = LLMProviderPreferences.claudeTarget
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
+        else { return }
+        LLMHandoffStore.shared.begin(
+            .recovery(itemID: item.id, urlString: item.urlString),
+            provider: provider, claudeTarget: target)
+        LLMLauncher.shared.openLLM(
+            link,
+            fallback: LLMDeepLink.fallbackURL(
+                for: provider, prompt: prompt, claudeTarget: target))
     }
 
     /// The deck's title for a failed card. The card body shows the live page
@@ -188,6 +223,10 @@ enum FailedSaveCardFactory {
             createPlugin = nil
         }
         return FailedSaveCardActions(
+            chooseProvider: { provider in
+                handOff(item, to: provider)
+                onChanged()
+            },
             share: { sourceView in
                 // A failed save has no content, no eBook, no media — the raw URL is
                 // the only thing there is to share, so this goes straight to the

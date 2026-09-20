@@ -201,9 +201,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         switch LunaFileIntake.classify(text: text) {
         case .success(.recovery(let file)):
-            LunaFileIntake.handler?.handleRecovery(file, sourceURL: url)
+            LunaFileIntake.recoveryHandler?.handleRecovery(file, sourceURL: url)
         case let .success(.plugin(headerJSON, source)):
-            LunaFileIntake.handler?.handlePlugin(source: source, headerJSON: headerJSON)
+            LunaFileIntake.pluginHandler?.handlePlugin(source: source, headerJSON: headerJSON)
         case .failure(let error):
             presentLunaFileAlert(error.message)
         case .none:

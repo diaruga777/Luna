@@ -236,23 +236,24 @@ final class KindCompositionRootTests: XCTestCase {
 
     // MARK: - The Luna file intake seam
 
-    /// A `.luna` file can land on ANY surface, so every root installs a
-    /// `LunaFileIntakeHandling` witness — the stub until the recovery and
-    /// plugin screens replace it. A root that installs none leaves an arriving
-    /// file silently dropped on that one surface, which is the same split the
-    /// kind packs exist to prevent.
+    /// A `.luna` file can land on ANY surface, so every root installs both
+    /// witnesses: the recovery half every app runs, and the plugin half only
+    /// central Luna answers for real. A root that installs neither leaves an
+    /// arriving file silently dropped on that one surface, which is the same
+    /// split the kind packs exist to prevent.
     func testEveryCompositionRootInstallsALunaFileIntakeWitness() throws {
         for path in Self.expected.keys.sorted() {
             let source = try self.source(path)
-            XCTAssertTrue(
-                source.contains("LunaFileIntake.handler ="),
-                "\(path) installs no Luna file intake witness")
+            for seam in ["LunaFileIntake.recoveryHandler =", "LunaFileIntake.pluginHandler ="] {
+                XCTAssertTrue(
+                    source.contains(seam), "\(path) does not write `\(seam)`")
+            }
         }
     }
 
-    /// And nothing else writes the seam. One witness per process, installed by
-    /// that process's root — a second write anywhere else is a surface quietly
-    /// taking the seam away from the one that owns it.
+    /// And nothing else writes either seam. One witness per process, installed
+    /// by that process's root — a second write anywhere else is a surface
+    /// quietly taking the seam away from the one that owns it.
     func testOnlyAListedCompositionRootWritesTheIntakeHandler() throws {
         let allowed = Set(Self.expected.keys)
         var offenders: [String] = []
@@ -260,7 +261,10 @@ final class KindCompositionRootTests: XCTestCase {
             for line in source.split(separator: "\n") {
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
-                if text.contains("LunaFileIntake.handler =") { offenders.append("\(path): \(text)") }
+                if text.contains("LunaFileIntake.recoveryHandler =")
+                    || text.contains("LunaFileIntake.pluginHandler =") {
+                    offenders.append("\(path): \(text)")
+                }
             }
         }
         XCTAssertTrue(

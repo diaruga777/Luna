@@ -40,7 +40,8 @@ enum KindWiring {
         // The Luna file intake seam. Every root installs a witness, so a
         // `.luna` file reaching a surface is always accounted for; the
         // recovery and plugin surfaces replace it with their own.
-        LunaFileIntake.handler = UnsupportedLunaFileIntake()
+        LunaFileIntake.recoveryHandler = UnsupportedLunaFileIntake()
+        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs follow the same rule as the kind packs: a

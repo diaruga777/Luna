@@ -743,7 +743,7 @@ open class ShareViewController: UIViewController {
                     "luna file: recovery \(file.kind.rawValue) for \(file.url.absoluteString)",
                     category: "share")
                 DispatchQueue.main.async {
-                    LunaFileIntake.handler?.handleRecovery(file, sourceURL: sourceURL)
+                    LunaFileIntake.recoveryHandler?.handleRecovery(file, sourceURL: sourceURL)
                 }
             case .unsupported(let owner):
                 SharedDiagnosticLog.record("luna file: dropped foreign-kind recovery", category: "share")
@@ -760,7 +760,7 @@ open class ShareViewController: UIViewController {
             }
             SharedDiagnosticLog.record("luna file: plugin draft", category: "share")
             DispatchQueue.main.async {
-                LunaFileIntake.handler?.handlePlugin(source: source, headerJSON: headerJSON)
+                LunaFileIntake.pluginHandler?.handlePlugin(source: source, headerJSON: headerJSON)
             }
         case .failure(let error):
             SharedDiagnosticLog.record("luna file refused: \(error)", category: "share")

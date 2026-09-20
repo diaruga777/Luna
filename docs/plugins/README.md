@@ -303,6 +303,26 @@ plugin author never has to think about which one is running underneath.
 `luna.html.jsonScripts(doc)` parses every embedded
 `<script type="application/ld+json">`/`"application/json">` block for you.
 
+Four helpers save you the parts most hand-written extractors get wrong:
+
+```js
+const meta = luna.html.meta(doc);          // title/description/canonical/image/author/published/…
+const ld = luna.html.jsonLD(doc);          // ld+json only, @graph flattened, bad JSON skipped
+const article = await luna.html.article(html, url);   // Luna's own readability pass, or null
+const price = luna.text.price("1.299,00 €");          // { amount: "1299.00", currency: "EUR" }
+```
+
+`meta` reads OpenGraph, Twitter cards, plain `<meta>`, `<link rel=canonical>`,
+`<title>`, `<html lang>` and JSON-LD in one fixed order and omits what the page
+never says. `article` answers a Promise in EVERY process — in Safari it is
+relayed to Luna, which has the extractor — and `null` when the page has no
+article body, which is your cue to `return null`. `luna.text.price/date/clean`
+come with the `html` capability and need no declaration of their own:
+`price` applies Luna's separator rules, `date` turns the common absolute
+formats into ISO 8601 (and a relative phrase into `null`), and `clean` decodes
+entities, drops tags and collapses whitespace.
+[`api.md`](./api.md) has the exact rules.
+
 ## 4. `luna.fetch` — reaching the network
 
 ```js

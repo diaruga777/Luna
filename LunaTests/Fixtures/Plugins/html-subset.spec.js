@@ -534,8 +534,8 @@
     name: "a JSON-LD type Luna does not read answers for nothing",
     html: "<script type='application/ld+json'>" +
       "{\"@type\":\"BreadcrumbList\",\"name\":\"Crumbs\"}</script>",
-    script: "return luna.html.meta(doc).title;",
-    expected: null
+    script: "return Object.keys(luna.html.meta(doc)).length;",
+    expected: 0
   },
   {
     name: "a page meta always outranks JSON-LD",

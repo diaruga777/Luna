@@ -3,7 +3,9 @@
 A Node harness for iterating on a Luna plugin outside Xcode
 (`claudedocs/plans/plugin-platform.md` §13.4). It implements the `luna.*`
 bridge (`bridge.mjs`) with `undici` for `luna.fetch`, `linkedom` for
-`luna.html`, in-memory maps for `luna.storage`/`luna.settings`/`luna.files`
+`luna.html` and `luna.text`, `@mozilla/readability` for
+`luna.html.article` (APPROXIMATE — see below), in-memory maps for
+`luna.storage`/`luna.settings`/`luna.files`
 (so a multipart `file` part and `as: "file"` behave the same as the app),
 `luna.downloads` fed from a fixture's own job list. A declared `luna.browser`
 namespace is present but always rejects `unavailable-here` (there is no page to
@@ -59,7 +61,20 @@ The descriptor may also set `url`, `redirected`, or `error` (a transport
 failure). `ok` is always derived from the HTTP status (200–299), matching
 `Response.ok`. Record a page once, then iterate on the plugin offline.
 
-## `luna.html` parity
+## `luna.html.article` is APPROXIMATE here
+
+The app runs Luna's own `ArticleExtractor` (SwiftSoup) behind
+`luna.html.article`, and the Safari content world relays the call to that same
+native code. There is no port of that pass to Node, so this harness substitutes
+`@mozilla/readability`. Expect a different `html` string, a different
+`excerpt`, and sometimes a different verdict on a borderline page. Use the
+harness to check that your plugin CALLS the helper and handles `null`
+correctly; never compare its output to the app's.
+
+`luna.html.article` answers a `Promise` in every process, here included: Safari
+has to relay it, so a synchronous shape could not hold everywhere.
+
+## `luna.html` / `luna.text` parity
 
 ```sh
 node spec.mjs
@@ -67,9 +82,20 @@ node spec.mjs
 
 Runs `LunaTests/Fixtures/Plugins/html-subset.spec.js` — the same file
 `PluginHTMLSubsetTests` (SwiftSoup) and `PluginHTMLParityTests` (`plugin_host
-.js`'s `DOMParser`) run — against this package's `linkedom` backing. A
-disagreement is a defect in one of the three backings, never a reason to
-special-case a plugin.
+.js`'s `DOMParser`) run — against this package's `linkedom` backing. It
+specifies `luna.html` and `luna.text` together, because `luna.text` rides on
+the `html` capability and the same three backings answer it. A disagreement is
+a defect in one of the three backings, never a reason to special-case a plugin.
+`luna.html.article` is the one member NOT in the file: it is native everywhere,
+so there is no page-side backing to compare.
+
+## Manifest rules
+
+`run.mjs` does not carry its own copy of the manifest limits. It reads
+`LunaLibraries/Sources/LunaPluginKit/Resources/PluginManifestRules.json`, the
+same file the app bundles, and `PluginManifestRulesParityTests` pins that file
+to `PluginManifestParser`'s own constants. So a name this harness accepts is a
+name the app accepts.
 
 ## Typings
 

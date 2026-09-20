@@ -174,7 +174,7 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
                     throw new luna.LunaError(
                         "capability-not-declared",
                         "luna.fetch.doc parses the page, so the manifest must "
-                            + "declare the "html" capability too");
+                            + "declare the 'html' capability too");
                 }
                 var parsed = html.parse(response.text || "", response.url || String(url));
                 // The stand-in for a capability this process cannot serve

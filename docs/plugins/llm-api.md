@@ -159,7 +159,7 @@ No `:has()`, no `:contains()`.
 ```ts
 luna.text.price(s): { amount: string; currency?: string } | null   // "$1,299.00" → {amount:"1299.00",currency:"USD"}; "1.299,00 €" → {amount:"1299.00",currency:"EUR"}
 luna.text.date(s): string | null                                    // common absolute dates → ISO 8601; relative dates → null
-luna.text.clean(s): string                                          // entities decoded, whitespace collapsed, trimmed
+luna.text.clean(s): string                                          // tags dropped, entities decoded, whitespace collapsed, trimmed
 ```
 
 ## 8. Other namespaces (declare only if used)
@@ -175,7 +175,9 @@ luna.text.clean(s): string                                          // entities 
 
 Every rejection is a `luna.LunaError` with `.code`: `bad-argument`,
 `fetch-failed`, `network-refused` (blocked host), `too-large`,
-`unavailable-here` (a namespace this process cannot serve), `cancelled`.
+`capability-not-declared` (the manifest did not declare the namespace a
+helper needs, such as `html` for `luna.fetch.doc`), `unavailable-here` (a
+namespace this process cannot serve), `cancelled`.
 Catch what you can recover from; otherwise return `null` from `ingest`.
 
 ## 10. Complete examples

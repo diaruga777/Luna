@@ -59,6 +59,12 @@ public final class LLMHandoffRowView: UIView {
         }
     }
 
+    #if DEBUG
+    /// The hint line, so a card's test can assert what the row says without a
+    /// tap. DEBUG-only.
+    public var hintForTesting: String? { hintLabel.isHidden ? nil : hintLabel.text }
+    #endif
+
     // MARK: - Hierarchy
 
     private func build(caption: String) {

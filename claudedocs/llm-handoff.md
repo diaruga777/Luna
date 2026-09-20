@@ -64,6 +64,13 @@ colour, need no asset catalogue, and carry no trademarked artwork.
 | The extension's failure card | `RescueFailureViewController`'s chin |
 | The Downloader's no-media card | over the status bar, only for `.noMedia` |
 
+The no-media card reads its hint from the store on every apply and on
+`.savesChanged`, never from the tap that started the hand-off: the card is torn
+down two slots out and rebuilt on the way back, and the file is applied in
+whichever process the user tapped it in. So a live record shows the waiting
+line, a refused one shows the reason, and neither needs the card to have been
+there when it happened.
+
 ## A save that worked, and is still wrong
 
 A save can land `.ready` holding the wrong thing: the teaser behind a consent
@@ -153,4 +160,5 @@ that a ready card's menu carries the submenu above Archive and a document's does
 not. `LunaTests/RecoveryFileApplierTests.swift` — that the record wins over a
 same-URL failed save and that a ready article is replaced in place.
 `LunaTests/SaveContentReplacementTests.swift` — the tracker's history and the
-media save's stale file.
+media save's stale file. `LunaTests/UndownloadedMediaCardTests.swift` — that a
+recorded hand-off renders its hint with no tap, and a refusal replaces it.

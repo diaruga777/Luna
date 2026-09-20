@@ -39,9 +39,10 @@ enum KindWiring {
     static func install() {
         // The Luna file intake seam. Every root installs a witness, so a
         // `.luna` file reaching a surface is always accounted for; the
-        // recovery and plugin surfaces replace it with their own.
+        // recovery and plugin surfaces each install their own half.
         LunaFileIntake.recoveryHandler = RecoveryFileIntake()
-        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
+        LunaFileIntake.pluginHandler = PluginDraftFileIntake(
+            presenter: AppPluginDraftReviewRoute(), launcher: SystemLLMLauncher())
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs follow the same rule as the kind packs: a
@@ -139,6 +140,31 @@ enum KindWiring {
             } else {
                 presenter.present(
                     UINavigationController(rootViewController: screen), animated: true)
+            }
+        }
+    }
+
+    /// Where an arriving plugin draft is read: the deck's own navigation stack
+    /// when there is one, else a modal over whatever is frontmost.
+    private final class AppPluginDraftReviewRoute: PluginDraftReviewPresenting {
+        @MainActor
+        func presentPluginDraftReview(_ screen: PluginDraftReviewViewController) {
+            guard let presenter = PluginExportTopPresenter.current() else { return }
+            if let navigation = presenter.navigationController {
+                navigation.pushViewController(screen, animated: true)
+            } else {
+                presenter.present(
+                    UINavigationController(rootViewController: screen), animated: true)
+            }
+        }
+
+        @MainActor
+        func dismissPluginDraftReview(_ screen: PluginDraftReviewViewController) {
+            if let navigation = screen.navigationController,
+               navigation.viewControllers.first !== screen {
+                navigation.popViewController(animated: true)
+            } else {
+                screen.dismiss(animated: true)
             }
         }
     }

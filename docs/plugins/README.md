@@ -691,9 +691,12 @@ node tools/plugin-sim/run.mjs test ./my-plugin.js https://example.com/article --
 
 ## 11. Importing into Luna
 
+This is the path for a file you wrote yourself. A `.luna` file you TAPPED goes
+to the review screen in §10 instead, and Save there is the consent.
+
 Open Luna → Settings → Plugins → **Add** → either **Import from Files…**
-(pick a `.js` file) or **Paste source** (paste the whole file into a text
-box). Luna parses the header, shows a consent screen — your plugin's name,
+(pick a `.js` or `.luna` file) or **Paste source** (paste the whole file into
+a text box). Luna parses the header, shows a consent screen — your plugin's name,
 version, what kinds it produces, its export declaration if any, and every
 capability you declared in one plain-language sentence each ("Read pages you
 save," "Send email on your behalf," and so on) — and installs only after the

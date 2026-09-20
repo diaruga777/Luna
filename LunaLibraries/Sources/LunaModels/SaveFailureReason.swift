@@ -284,6 +284,27 @@ extension SaveFailureReason {
         return .article
     }
 
+    /// The sentence for a save that SUCCEEDED but captured the wrong thing: the
+    /// user asks a chat model to redo it from the card's long-press menu
+    /// (`claudedocs/llm-handoff.md`). Luna recorded no failure, so the sentence
+    /// names the ways a "successful" capture is usually wrong for that kind.
+    public static func wrongContentSentence(_ attempted: SaveFailureAttemptKind) -> String {
+        switch attempted {
+        case .article:
+            return "Luna saved this page, but the text it kept is not the real article: "
+                + "a teaser or excerpt, a cookie, consent or login wall, a comments or related-links "
+                + "section, or a different page. Capture the complete article the page is about"
+        case .product:
+            return "Luna saved this page, but the product it kept is wrong: a different item, a "
+                + "wrong or stale price, a bundle or accessory instead of the product, or a page "
+                + "of several products. Capture the one product this page sells, at its current price"
+        case .media:
+            return "Luna saved this page, but the file it kept is wrong: a preview, a thumbnail, "
+                + "an advertisement, a related clip, or a lower quality than the page offers. "
+                + "Capture the media this page is actually about, at its best quality"
+        }
+    }
+
     private static func fallbackSentence(_ attempted: SaveFailureAttemptKind) -> String {
         switch attempted {
         case .article: return "reading the page as an article produced no usable text"

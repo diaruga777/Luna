@@ -64,7 +64,7 @@ public final class PluginRecoveryHandoffStore: @unchecked Sendable {
     }
 
     /// Reads without consuming. Expired handoffs are discarded so an old page
-    /// can never become the subject of a later workshop launch.
+    /// can never become the subject of a later plugin request.
     public func peek(now: Date = Date()) -> PluginRecoveryHandoff? {
         lock.lock()
         defer { lock.unlock() }

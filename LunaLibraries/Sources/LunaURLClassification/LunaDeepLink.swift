@@ -160,7 +160,7 @@ public enum LunaDeepLink {
     /// `PendingPluginModelStore` (App Group). Mirrored in `content.js`.
     public static let pluginModelHost = "pluginmodel"
 
-    /// The central Luna workshop's Safari recovery hand-off. The recovery case
+    /// Safari's plugin-recovery hand-off to central Luna. The recovery case
     /// itself lives in the App Group; this route carries only its stable id.
     public static let pluginRecoveryHost = "pluginrecovery"
 
@@ -176,7 +176,7 @@ public enum LunaDeepLink {
         return components.url
     }
 
-    /// True for a central-Luna recovery workshop hand-off. Unlike model/save
+    /// True for a central-Luna plugin-recovery hand-off. Unlike model/save
     /// routes this must never target a facet app: only central Luna owns the
     /// plugin authoring UI.
     public static func isPluginRecoveryLink(_ url: URL) -> Bool {

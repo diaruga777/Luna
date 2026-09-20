@@ -141,9 +141,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let caseID = LunaDeepLink.pluginRecoveryCaseID(from: url) {
             // Safari persisted the bounded case in the shared App Group; the
             // route carries only its id so nested page URLs cannot be damaged
-            // by URL-query encoding. Only central Luna installs the workshop.
+            // by URL-query encoding. Only central Luna authors plugins.
             mainNavigationController?.popToRootViewController(animated: false)
-            KindWiring.openPendingPluginRecoveryWorkshop(caseID: caseID)
+            KindWiring.openPendingPluginRecoveryCase(caseID: caseID)
             return
         }
         if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),

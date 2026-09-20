@@ -88,7 +88,7 @@ enum KindWiring {
     static func drainPendingPluginModels(returningToSource: Bool) {}
 
     /// Central Luna only; Downloader's Safari extension never creates this handoff.
-    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+    static func openPendingPluginRecoveryCase(caseID: UUID) {}
 
     /// The extension's LLM hand-off, arriving as `<scheme>://llm?item=…` when
     /// the extension's own open was refused.

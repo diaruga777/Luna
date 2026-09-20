@@ -330,7 +330,7 @@ enum KindWiring {
     /// lands; if opening Luna fails, Safari keeps its ordinary save path and
     /// the case remains available for a later launch.
     @MainActor
-    static func openPendingPluginRecoveryWorkshop(caseID: UUID) {
+    static func openPendingPluginRecoveryCase(caseID: UUID) {
         guard let handoff = PluginRecoveryHandoffStore.shared.take(caseID: caseID),
               let url = URL(string: handoff.validationURL),
               let presenter = PluginExportTopPresenter.current()

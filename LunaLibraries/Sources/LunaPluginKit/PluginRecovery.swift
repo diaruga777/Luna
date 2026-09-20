@@ -265,11 +265,16 @@ public struct PluginValidationReport: Codable, Equatable, Sendable {
     public let attempts: [PluginRecoveryAttempt]
     public let attemptsDropped: Int
     public let modelKind: String?
+    /// The hooks the draft actually registered, as the load step saw them. The
+    /// review screen shows these beside the manifest's required hooks, which is
+    /// the only way to tell a declared hook from a present one.
+    public let registeredHooks: [PluginHook]
 
     public init(
         passed: Bool, errors: [String] = [], warnings: [String] = [],
         errorsDropped: Int = 0, warningsDropped: Int = 0,
-        attempts: [PluginRecoveryAttempt] = [], attemptsDropped: Int = 0, modelKind: String? = nil
+        attempts: [PluginRecoveryAttempt] = [], attemptsDropped: Int = 0,
+        modelKind: String? = nil, registeredHooks: [PluginHook] = []
     ) {
         self.passed = passed
         self.errors = errors.prefix(Self.maxMessages).map {
@@ -284,6 +289,7 @@ public struct PluginValidationReport: Codable, Equatable, Sendable {
         self.attemptsDropped = max(0, attemptsDropped)
             + max(0, attempts.count - PluginRecoveryCase.maxAttempts)
         self.modelKind = modelKind
+        self.registeredHooks = registeredHooks
     }
 }
 

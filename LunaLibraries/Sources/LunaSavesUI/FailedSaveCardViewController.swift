@@ -87,7 +87,7 @@ public struct FailedSaveCardActions {
     /// and then the share control stays the plain button it always was rather
     /// than growing a one-item menu.
     public var shareDiagnostics: ((UIView) -> Void)?
-    /// Open the provider-neutral plugin workshop for this failure. Nil on the
+    /// Ask a chat model for a plugin that handles this failure. Nil on the
     /// standalone app surfaces and when the platform is unavailable.
     public var createPlugin: (() -> Void)?
     /// Delete the item.

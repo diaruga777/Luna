@@ -2,6 +2,10 @@
 
 ## Status
 
+SUPERSEDED by `claudedocs/plans/ai-flows.md` (2026-09-20): the copy/paste
+workshop this plan built is deleted, and a plugin now arrives as a Luna file
+the user taps.
+
 COMPLETE FOR THE PLUGIN SCOPE (2026-09-04). This plan reviews the
 plugin-platform commits from `5003896e3` (Wave 0) through `f6936331a` and adds
 the missing nontechnical authoring loop:

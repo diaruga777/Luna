@@ -69,6 +69,44 @@ final class PluginDraftValidatorTests: XCTestCase {
         XCTAssertTrue(report.errors.joined().contains("collector.invalid"))
     }
 
+    func testADraftDeclaringAnUnservedCapabilityStillPassesAndSaysItWasNotTested() async {
+        let draft = """
+        /* luna-plugin
+        {"id":"user.test.recovery","name":"Recovery","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["example.com"]},"capabilities":["html","storage"]}
+        */
+        luna.register({
+          classify() { return { kind: "article" }; },
+          async ingest() { return { kind: "article", title: "Recovered", html: "<p>Body</p>" }; }
+        });
+        """
+
+        let report = await PluginDraftValidator.validate(
+            sourceText: draft, recoveryCase: recoveryCase())
+
+        XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
+        XCTAssertTrue(report.warnings.joined().contains("Not tested: storage."))
+    }
+
+    func testWithNoTargetTheDraftIsOnlyLoadedAndSaysSo() async {
+        let report = await PluginDraftValidator.validate(
+            sourceText: source(classify: "false", ingest: "null"))
+
+        XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
+        XCTAssertNil(report.modelKind)
+        XCTAssertTrue(report.warnings.joined().contains("not run against a page"))
+        XCTAssertEqual(Set(report.registeredHooks), [.classify, .ingest])
+    }
+
+    func testAPassingRunReportsTheHooksTheDraftRegistered() async {
+        let report = await PluginDraftValidator.validate(
+            sourceText: source(classify: "{ kind: 'article' }", ingest: """
+            { kind: 'article', title: 'Recovered', html: '<p>Readable body</p>' }
+            """),
+            recoveryCase: recoveryCase())
+
+        XCTAssertEqual(Set(report.registeredHooks), [.classify, .ingest])
+    }
+
     private func recoveryCase() -> PluginRecoveryCase {
         PluginRecoveryCase(
             originalURL: "https://example.com/story", outcome: "failed")

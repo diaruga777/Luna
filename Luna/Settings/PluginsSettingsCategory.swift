@@ -6,6 +6,7 @@
 //  only — `KindWiring+Luna.settingsCategories()` is the one caller.
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
@@ -25,7 +26,10 @@ enum PluginsSettingsCategory {
                 catalog: PluginPlatformServices.catalog ?? NullPluginCatalog(),
                 importer: PluginPlatformServices.importer,
                 settingsStore: PluginPlatformServices.settings ?? NullPluginSettingsStore(),
-                invoker: PluginPlatformServices.invoker)
+                invoker: PluginPlatformServices.invoker,
+                // The category's factory runs when Settings pushes the screen,
+                // which is on the main thread; the launcher is main-actor bound.
+                launcher: MainActor.assumeIsolated { LLMLauncher.shared })
         }
     }
 }

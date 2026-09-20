@@ -27,28 +27,49 @@ The three sibling apps (Reader, Downloader, Price Tracker) and their
 extensions run no plugin code at all: the plugin tier is in `LunaKit` and in no
 other kit, so their binaries never reach it.
 
-### 1.2 Generated-plugin recovery
+### 1.2 Creating a plugin with a chat model
 
-Central Luna supports a provider-neutral authoring loop that requires no API
-key or paid LLM account. A user can choose **Create Plugin…** on a failed-save
-card, or **Create for Website…** in Settings -> Plugins. Luna builds a bounded,
-credential-redacted prompt containing the URL, matching plugins and the ordered
-attempt trace. The user copies or shares that text into any chat app, pastes the
-returned JavaScript into Luna, and taps **Validate**.
+Central Luna asks an external chat model for a plugin and reads the answer
+back as a file. No API key, no account, no in-app call to any model.
 
-Validation parses the manifest, allows only the conservative `fetch` and `html`
-capabilities, activates the draft in a temporary plugin store, and runs its
-`classify` and `ingest` hooks against the target URL. It never writes the draft
-to the installed-plugin tree, saves database, Keychain or user files. A passing
-draft enters the ordinary preview, consent and transactional import path. A
-failure produces a deterministic **Copy Fix Prompt** for another blind
-copy/paste iteration. JavaScriptCore cannot forcibly terminate arbitrary
-top-level JavaScript; activation therefore preflights on a disposable off-main
-runtime and abandons a timed-out sandbox rather than reusing it.
+The user opens **Create with AI** — the wand in Settings → Plugins, or
+**Create Plugin…** on a failed save's card, which prefills the URL, the
+failure sentence and the plugins that already matched the host. They describe
+what they want, tap ChatGPT or Claude, and Luna opens that provider with
+`LLMHandoffPrompts.pluginCreation` already in the composer
+(`claudedocs/plans/ai-flows.md` §5.1). The request is recorded in
+`LLMHandoffStore`, so the screen shows it again on a later visit and the
+review screen knows which page to test against.
 
-Raw **Share Diagnostics…** remains a separate support artifact. It is not the
-LLM prompt and may contain more operational context; the workshop always shows
-a privacy warning before copying or sharing its redacted prompt.
+The model answers with a `{name}.luna` file. Tapping it — from Files, from a
+chat's share sheet, in the app or in an extension — reaches
+`LunaFileIntake.pluginHandler` (`claudedocs/luna-file.md`), which opens
+`PluginDraftReviewViewController`: the nutrition label. It shows what the
+header declares (name, version, what it replaces, produces, hosts, priority,
+hooks, capabilities in plain language, settings fields, background, export)
+and then what Luna's own test made of the draft. **Save is the consent** on
+this route, so `PluginConsentViewController` is not presented after it; the
+consent screen still serves the manual `+` import, where the user chose the
+file themselves.
+
+`PluginDraftValidator` stages the draft in a temporary store, activates it on
+a disposable off-main runtime, and runs `classify` and `ingest` against the
+recorded page. It serves `fetch` and `html` only
+(`PluginDraftValidator.servedCapabilities`); every other declared namespace is
+the standard unavailable proxy, so a manifest asking for `storage` passes with
+a "not tested" warning rather than being refused for a grant it will hold once
+installed. With no page to try, the draft is only loaded and the report says
+so. Nothing is written to the installed-plugin tree, the saves database, the
+Keychain or user files. A failing draft offers **Generate again**, which opens
+a new chat with `LLMHandoffPrompts.pluginCorrection` carrying the original
+request and the findings.
+
+Saving from an extension writes the App-Group `PluginStore`, which stamps a
+change token; the app compares it on foreground
+(`PluginPlatformComposition.reloadIfStoreChanged`) and reloads its runtime.
+
+Raw **Share Diagnostics…** remains a separate support artifact. It is not a
+prompt and may carry more operational context.
 
 ### 1.3 Module map (`LunaLibraries/`)
 
@@ -966,6 +987,16 @@ closing the "not reached" gap the Wave 3B plan notes originally recorded.
 
 ## 10. Settings, storage, secrets, storage layout
 
+### 10.0 Settings → Plugins
+
+The screen lists every installed plugin, bundled or imported, with its
+status, and carries two header buttons: the **wand** (Create with AI, §1.2 —
+present only where the screen was given a launcher, which is the app) and
+**+** (Add a Plugin: Import from Files… or Paste Source, through
+`PluginImportCoordinator` and `PluginConsentViewController`). A `.luna`
+plugin file the user TAPPED never comes this way; it opens the review screen
+instead, and Save there is the consent.
+
 ### 10.1 Settings schema and screen
 
 `PluginSettingField` types render in `PluginDetailScreen`
@@ -982,12 +1013,20 @@ BARE key (no `settings.` prefix anywhere in the store).
 
 ```
 <AppGroup>/Plugins/
+  changed                           the change token, stamped on every
+                                    install and delete
   user/<id>/<version>/plugin.js     installed verbatim
   user/<id>/state.json              { enabled, installedAt, origin, consentedCapabilities }
   state/<bundledId>.json            { enabled }  (absent = enabled)
   scratch/<id>/<generation>/        luna.files, reaped when the plugin's
                                     last in-flight call ends
 ```
+
+`PluginStore.changeToken` is that marker file's contents, opaque to its
+readers. A share or action extension can install a plugin while the app is
+suspended, so `PluginPlatformComposition` remembers the token it loaded and
+`reloadIfStoreChanged()` — called from `KindWiring+Luna.sceneDidForeground` —
+reloads the runtime when it moved.
 
 One `PluginScratchStore` serves the process, keyed by (plugin id,
 generation). A generation opens when the first holder arrives and its
@@ -1169,7 +1208,12 @@ nothing useful back because native refuses to serve it.
 to `PluginPlatformServices`/`IngestPipeline.pluginStage` from anywhere but
 `PluginPlatformComposition.install`; a root that installs plugin composition
 without calling the three required central roots; and a new, unlisted
-composition root.
+composition root. It also pins the Luna file intake seam: every root writes
+`LunaFileIntake.recoveryHandler` and `LunaFileIntake.pluginHandler`, and
+nothing else does. The three central roots install `PluginDraftFileIntake`
+for the plugin half, each with its own way of presenting the review screen —
+the app pushes it on the deck's stack, an extension hosts it in its own view
+hierarchy.
 
 ### 13.2 Testing layers
 
@@ -1204,9 +1248,11 @@ See `tools/plugin-sim/README.md`.
 own header comment still describes a runtime `LunaApp.current` gate that was
 superseded by that exception and was never actually written into the file's
 body; treat the pbxproj as authoritative). Stage ids: `plugins.settings.empty`,
-`plugins.settings.list`, `plugins.settings.detail`, `plugins.consent`,
-`plugins.import.paste`, `plugins.browser.lock`, `plugins.locked.card` — see
-`claudedocs/staging.md` for the general mechanism.
+`plugins.settings.list`, `plugins.settings.detail`, `plugins.create.empty`,
+`plugins.create.prefilled`, `plugins.review.pass`, `plugins.review.fail`,
+`plugins.review.update`, `plugins.consent`, `plugins.import.paste`,
+`plugins.browser.lock`, `plugins.locked.card` — see `claudedocs/staging.md`
+for the general mechanism.
 
 ## 14. Known gaps
 

@@ -3,11 +3,13 @@
 //  LunaTests
 //
 
+import LunaDesignSystem
 import LunaFetch
 import LunaIngest
 import LunaModels
 import LunaShareSurface
 import LunaStorage
+import LunaURLClassification
 import UIKit
 import XCTest
 @testable import Luna
@@ -803,6 +805,35 @@ final class URLRescueTests: XCTestCase {
         func autoDownloadThenComplete(urlString: String) {}
         func failOrComplete(_ message: String) {}
         func openURL(_ url: URL) { openedURLs.append(url) }
+    }
+
+    /// An extension may only ASK its host to open a provider, and the host may
+    /// refuse. The record is written first either way, so the fallback — the
+    /// containing app at `<scheme>://llm?item=…` — can finish the hand-off from
+    /// a process that is always allowed to open one.
+    @MainActor
+    func testARefusedProviderOpenFallsBackToTheContainingApp() throws {
+        let host = FakeHost(isActionExtension: true)
+        let driver = ShareSurfaceDriver(
+            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
+        let url = URL(string: "https://example.com/handoff-\(UUID().uuidString)")!
+        _ = store.add(urlString: url.absoluteString)
+        driver.present(.failed(nil), url: url)
+
+        guard let card = host.presented.compactMap({ $0 as? RescueFailureViewController }).first
+        else { return XCTFail("expected the failure card") }
+        card.row(LLMHandoffRowView(), didChoose: .claude)
+        defer {
+            if let record = LLMHandoffStore.shared.record(forURL: url.absoluteString) {
+                LLMHandoffStore.shared.clear(id: record.id)
+            }
+        }
+
+        let record = try XCTUnwrap(LLMHandoffStore.shared.record(forURL: url.absoluteString))
+        XCTAssertEqual(record.provider, .claude)
+        XCTAssertEqual(host.openedURLs.count, 2, "the provider, then the app")
+        XCTAssertEqual(host.openedURLs.first?.host, "claude.ai")
+        XCTAssertEqual(host.openedURLs.last?.host, LunaDeepLink.llmHandoffHost)
     }
 
     /// The failure leg queues the app's automatic rescue itself. No tap is

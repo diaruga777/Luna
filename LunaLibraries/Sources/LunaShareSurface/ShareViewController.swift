@@ -861,6 +861,16 @@ open class ShareViewController: UIViewController {
         extensionContext?.open(url, completionHandler: nil)
     }
 
+    public func openURL(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let extensionContext else {
+            completion(false)
+            return
+        }
+        extensionContext.open(url) { accepted in
+            DispatchQueue.main.async { completion(accepted) }
+        }
+    }
+
     /// Opening the URL and completing must be sequenced through the extension
     /// context. Completing immediately after `open` can tear down the request
     /// before the source app (notably YouTube opening YouTube) handles it.

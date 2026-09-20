@@ -75,8 +75,10 @@ enum FailedSaveCardFactory {
     /// Hands the failed page to a chat model: the prompt names the page and
     /// what went wrong, the hand-off is recorded so the card can wait on it,
     /// and the provider opens.
-    @MainActor
-    private static func handOff(_ item: SavedItem, to provider: LLMProvider) {
+    ///
+    /// Two callers: the card's row, and `KindWiring.openLLMHandoff` when an
+    /// extension's own open was refused and the app has to finish it.
+    static func startHandoff(for item: SavedItem, to provider: LLMProvider) {
         guard let url = item.url else { return }
         let reason = SaveFailureStore.shared.record(for: item.id)?.reason
         let prompt = LLMHandoffPrompts.recovery(
@@ -224,7 +226,7 @@ enum FailedSaveCardFactory {
         }
         return FailedSaveCardActions(
             chooseProvider: { provider in
-                handOff(item, to: provider)
+                startHandoff(for: item, to: provider)
                 onChanged()
             },
             share: { sourceView in

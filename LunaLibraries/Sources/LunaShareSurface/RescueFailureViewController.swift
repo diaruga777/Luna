@@ -8,9 +8,13 @@ import LunaModels
 import UIKit
 import WebKit
 
-/// The one host leg the extension's failure card needs.
+/// The two host legs the extension's failure card needs.
 @MainActor
 public protocol RescueFailureCardDelegate: AnyObject {
+    /// The user picked a chat model: record the hand-off and leave for it.
+    func rescueFailureCard(
+        _ card: RescueFailureViewController, didChoose provider: LLMProvider)
+
     /// The user is done with the card.
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController)
 }
@@ -27,7 +31,8 @@ public protocol RescueFailureCardDelegate: AnyObject {
 /// The one real difference: an extension links no rescue engine, so nothing
 /// runs here. The failure leg has already queued the save's one automatic
 /// rescue for the app to run on its next foreground, so this card shows no
-/// progress overlay — only the page, and a line saying where the rest happens.
+/// progress overlay — only the page, and the chat hand-off row, which is the
+/// same offer and the same row the in-app card shows.
 public final class RescueFailureViewController: UIViewController {
     private let url: URL?
     /// Held strongly, on purpose. The conformer is a small coordinator the
@@ -47,6 +52,7 @@ public final class RescueFailureViewController: UIViewController {
     private let urlLabel = UILabel()
     private let reloadButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
+    private lazy var handoffRow = LLMHandoffRowView()
     private let manualLabel = UILabel()
     private lazy var doneButton = UIButton(type: .system)
     private let chinStack = UIStackView()
@@ -162,6 +168,8 @@ public final class RescueFailureViewController: UIViewController {
     }
 
     private func buildChin() {
+        handoffRow.delegate = self
+
         manualLabel.text = L10n.string("ShareExtension_rescueFailure_manualInstructionMessage")
         manualLabel.textColor = LunaColors.secondaryText
         manualLabel.font = .preferredFont(forTextStyle: .footnote)
@@ -176,7 +184,7 @@ public final class RescueFailureViewController: UIViewController {
         chinStack.axis = .vertical
         chinStack.spacing = 8
         chinStack.alignment = .fill
-        for subview in [manualLabel, doneButton] {
+        for subview in [handoffRow, manualLabel, doneButton] {
             chinStack.addArrangedSubview(subview)
         }
     }
@@ -251,5 +259,17 @@ extension RescueFailureViewController: WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         decisionHandler(navigationAction.navigationType == .linkActivated ? .cancel : .allow)
+    }
+}
+
+// MARK: - The chat hand-off row
+
+extension RescueFailureViewController: LLMHandoffRowDelegate {
+
+    /// The hint replaces the "open Luna" line: the user is leaving for the
+    /// provider now, and what matters next is what to do with its reply.
+    public func row(_ row: LLMHandoffRowView, didChoose provider: LLMProvider) {
+        delegate?.rescueFailureCard(self, didChoose: provider)
+        row.setHint(LLMHandoffRowView.waitingHint())
     }
 }

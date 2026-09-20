@@ -85,12 +85,15 @@ public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
     /// "Saved" checkmark on a failure.
     func failOrComplete(_ message: String)
 
-    /// Best-effort deep link into the containing app, through
-    /// `extensionContext.open` on the real host (extensions have no
-    /// `UIApplication.shared`). Used by the rescue-failure card's "Finish in
-    /// Luna" step. A silent failure here is fine, because the card always
-    /// shows manual fallback instructions too.
+    /// Best-effort open, through `extensionContext.open` on the real host
+    /// (extensions have no `UIApplication.shared`). A silent failure here is
+    /// fine wherever the surface shows manual fallback instructions too.
     func openURL(_ url: URL)
+
+    /// The same open, reporting whether the system accepted it. The chat
+    /// hand-off needs the answer: a host that refuses to open a provider gets
+    /// the containing app opened instead, which is always allowed to.
+    func openURL(_ url: URL, completion: @escaping (Bool) -> Void)
 
     /// Attempts to leave the extension for `url`, then completes the extension
     /// request whether the system accepted the launch or not. Media previews use
@@ -100,6 +103,13 @@ public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
 }
 
 public extension ExtensionHost {
+    /// A host with no extension context (a test, an in-app surface) opens
+    /// nothing and says so.
+    func openURL(_ url: URL, completion: @escaping (Bool) -> Void) {
+        openURL(url)
+        completion(false)
+    }
+
     /// Test and non-extension hosts have no asynchronous `NSExtensionContext`
     /// handoff to await. The real host overrides this and completes from the
     /// context's callback.

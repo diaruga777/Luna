@@ -316,7 +316,11 @@ public final class ShareSurfaceDriver {
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
         host.presentModally(RescueFailureViewController(
-            url: url, delegate: RescueFailureCardLegs(host: host)))
+            url: url,
+            delegate: RescueFailureCardLegs(
+                host: host, url: url,
+                itemID: store.item(forURLString: url.absoluteString)?.id,
+                app: currentApp)))
     }
 
     // MARK: - Diagnostics
@@ -471,8 +475,43 @@ public final class ShareSurfaceDriver {
 @MainActor
 private final class RescueFailureCardLegs: RescueFailureCardDelegate {
     private weak var host: (any ExtensionHost)?
+    private let url: URL
+    private let itemID: UUID?
+    private let app: LunaApp
 
-    init(host: any ExtensionHost) { self.host = host }
+    init(host: any ExtensionHost, url: URL, itemID: UUID?, app: LunaApp) {
+        self.host = host
+        self.url = url
+        self.itemID = itemID
+        self.app = app
+    }
+
+    /// Records the hand-off first, so the app can finish it however the open
+    /// goes, then asks the host to leave for the provider. An extension may
+    /// only ask, and the host may refuse — so a refusal opens the containing
+    /// app at `<scheme>://llm?item=…`, which reads the same record and opens
+    /// the provider from a process that is always allowed to.
+    func rescueFailureCard(
+        _ card: RescueFailureViewController, didChoose provider: LLMProvider
+    ) {
+        guard let itemID else { return }
+        let prompt = LLMHandoffPrompts.recovery(
+            url: url, app: app,
+            failure: SaveFailureReason.rescueSentence(
+                SaveFailureStore.shared.record(for: itemID)?.reason, attempted: .article))
+        let target = LLMProviderPreferences.claudeTarget
+        LLMHandoffStore.shared.begin(
+            .recovery(itemID: itemID, urlString: url.absoluteString),
+            provider: provider, claudeTarget: target)
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
+        else { return }
+        host?.openURL(link) { [weak self] accepted in
+            guard let self, !accepted else { return }
+            guard let fallback = LunaDeepLink.llmHandoffLink(
+                scheme: self.app.deepLinkScheme, itemID: itemID) else { return }
+            self.host?.openURL(fallback)
+        }
+    }
 
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController) {
         host?.completeSilently()

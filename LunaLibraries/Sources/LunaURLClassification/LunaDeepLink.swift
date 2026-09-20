@@ -108,25 +108,6 @@ public enum LunaDeepLink {
         return value
     }
 
-    /// `<scheme>://rescue` — the extension→app URL-rescue hand-off. No query
-    /// payload: the URL + hint + one-shot consent travel in
-    /// `PendingRescueRequestStore` (App Group), and a bare route works even when
-    /// the responder-chain open silently fails (the foreground drain still finds
-    /// the record). The extension targets its CONTAINING app's scheme.
-    public static func rescueLink(scheme: String = ownScheme) -> URL? {
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = "rescue"
-        return components.url
-    }
-
-    /// True for `<any Luna scheme>://rescue` — any app drains its own queue, so
-    /// the broad check is correct here.
-    public static func isRescueLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
-        return url.host == "rescue"
-    }
-
     /// `<scheme>://llm?item=<uuid>` — the extension's LLM hand-off falling
     /// back to the app. An extension may only ask its host to open a URL, and
     /// the host may refuse; when it does, the extension opens this instead and
@@ -144,8 +125,7 @@ public enum LunaDeepLink {
     }
 
     /// True for `<any Luna scheme>://llm?item=…`. Every app runs the recovery
-    /// hand-off, so the broad scheme check is correct here, the same way
-    /// `isRescueLink` is.
+    /// hand-off, so the broad scheme check is correct here.
     public static func isLLMHandoffLink(_ url: URL) -> Bool {
         llmHandoffItemID(from: url) != nil
     }
@@ -160,7 +140,7 @@ public enum LunaDeepLink {
     }
 
     /// `<scheme>://resolvedmedia` — the Safari in-page player's download
-    /// hand-off. Payload-free for the same reason `rescueLink` is: the resolved
+    /// hand-off. Payload-free on purpose: the resolved
     /// assets travel in `PendingResolvedMediaStore` (App Group), so a link this
     /// short can't truncate them and a foreground drain still finds them if the
     /// open silently fails. The `resolvedMediaHost` constant is mirrored in

@@ -11,36 +11,6 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
-/// A price resolved by the URL-rescue engine (`claudedocs/url-rescue.md`), and
-/// the seam the main app installs it through.
-///
-/// It is a free-standing enum rather than a static on a screen because BOTH
-/// product surfaces are that screen now, and the app's `KindWiring` should not
-/// have to know which class happens to host the add-seller flow this week.
-public enum ProductPriceRescue {
-
-    public struct ResolvedPrice {
-        public let amount: Decimal
-        public let currency: String
-        public init(amount: Decimal, currency: String) {
-            self.amount = amount
-            self.currency = currency
-        }
-    }
-
-    /// The main app's "Ask Apple Intelligence to find the price" behavior for a
-    /// no-price page, installed once at launch (nil in extensions → the offer is
-    /// not made and behavior is unchanged).
-    public static var resolver: (any ProductPriceResolving)?
-}
-
-/// Resolves a price for a page that declares none. The one conformer is the
-/// app's URL-rescue leg; an extension installs nothing, and the offer is not
-/// made at all.
-public protocol ProductPriceResolving {
-    func resolvePrice(forURLString urlString: String) async -> ProductPriceRescue.ResolvedPrice?
-}
-
 /// Hands an item back to the containing app because an appex cannot keep a web
 /// session alive for the add-seller flow. Only the extension installs one; in the
 /// app the button opens the seller menu in place.
@@ -670,8 +640,6 @@ public final class ProductDetailViewController: UIViewController {
                 guard let price else {
                     if let report {
                         report(.noPrice)
-                    } else if ProductPriceRescue.resolver != nil {
-                        self.presentNoPriceWithRescueOption(urlString: urlString)
                     } else {
                         self.presentPriceMessage(
                             title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
@@ -689,46 +657,6 @@ public final class ProductDetailViewController: UIViewController {
                 self.reload()
                 report?(.added)
             }
-        }
-    }
-
-    /// The no-price alert, plus a "Retry with AI" action (only shown when the
-    /// resolver is installed — i.e. the main app, never extensions). The label
-    /// matches every other error surface's offer
-    /// (`GlassStyle.retryWithAIConfiguration`).
-    private func presentNoPriceWithRescueOption(urlString: String) {
-        let alert = UIAlertController(
-            title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
-            message: L10n.string("PriceTracker_tracking_noPriceRescueMessage"),
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(
-            title: L10n.string("Common_retryWithAI"), style: .default
-        ) { [weak self] _ in
-            self?.askIntelligenceForPrice(urlString: urlString)
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
-        present(alert, animated: true)
-    }
-
-    /// Runs the injected URL-rescue price resolver and, on success, adds the
-    /// seller through the same upsert tail the normal add path uses.
-    private func askIntelligenceForPrice(urlString: String) {
-        guard let resolver = ProductPriceRescue.resolver else { return }
-        Task { @MainActor [weak self] in
-            let resolved = await resolver.resolvePrice(forURLString: urlString)
-            guard let self, var current = self.tracker else { return }
-            guard let resolved else {
-                self.presentPriceMessage(
-                    title: L10n.string("PriceTracker_tracking_stillNoPriceTitle"),
-                    message: L10n.string("PriceTracker_tracking_stillNoPriceMessage"))
-                return
-            }
-            current.clearSellerRejection(urlString: urlString)
-            current.upsertStore(PriceTrackerStore(
-                urlString: urlString, lastPrice: resolved.amount,
-                currency: resolved.currency, lastRefreshed: Date()))
-            self.store.updatePriceTracker(current, for: self.itemID)
-            self.reload()
         }
     }
 

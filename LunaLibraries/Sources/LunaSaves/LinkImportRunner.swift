@@ -55,8 +55,10 @@ public protocol LinkImportArticleUnlocking: Sendable {
 }
 
 /// Runs a reviewed batch of imported links through the ordinary save pipeline —
-/// one shared ingest per link, the per-app content gate, then the LLM rescue for
-/// anything that failed — while reporting one honest overall fraction.
+/// one shared ingest per link, the per-app content gate, then a browser pass
+/// over the locked ones — while reporting one honest overall fraction. A link
+/// that fails ends the run as a recoverable failure; its own `.failed` fires
+/// the ordinary automatic rescue, the same as any other save.
 ///
 /// See `claudedocs/import-export.md`. Deliberately kind-neutral: a media
 /// download is observed through an installed protocol witness (`media`), so this
@@ -134,8 +136,6 @@ public final class LinkImportRunner {
             case fetching
             /// Opening the locked articles in a real browser, out of sight.
             case unlocking
-            /// Retrying failures with Apple Intelligence.
-            case rescuing
             case done
         }
 
@@ -182,9 +182,9 @@ public final class LinkImportRunner {
     // MARK: - Tunables
 
     /// The share of an item's slice its ingest owns; the rest belongs to whatever
-    /// follows — a media download, or a rescue.
+    /// follows — a media download, or a browser unlock.
     static let ingestShare = 0.55
-    /// Where a download's or rescue's share ends. Not 1.0: the last sliver lands
+    /// Where a download's or an unlock's share ends. Not 1.0: the last sliver lands
     /// when the item is scored, so a finished slice always looks finished.
     static let followUpShare = 0.95
     /// How long an item's own download is waited on before the run moves on and
@@ -228,8 +228,6 @@ public final class LinkImportRunner {
     /// cancellation — is testable without a network or a language model,
     /// which is where this type's real risk lives.
     private let ingest: (SavedItem) async -> SurfaceSupport.Decision
-    private let rescue: (UUID) async -> Bool
-    private let rescueFraction: (UUID) -> Double?
     private let concurrency: Int
     private let clock: () -> Date
     private let idleTimeout: TimeInterval
@@ -250,9 +248,6 @@ public final class LinkImportRunner {
     }
     /// The in-flight clock-estimated leg per slice, if any.
     private var creeps: [Int: Creep] = [:]
-    /// The slice whose rescue is running, so its fraction can come from the
-    /// rescue's own reported stage.
-    private var rescuingSlice: (index: Int, itemID: UUID)?
     private var finishedCount = 0
     private var phase: Progress.Phase = .saving
     private var cancelled = false
@@ -262,21 +257,11 @@ public final class LinkImportRunner {
         concurrency: Int = LinkImportRunner.defaultConcurrency(),
         clock: @escaping () -> Date = Date.init,
         idleTimeout: TimeInterval = LinkImportRunner.perLinkIdleTimeout,
-        // `allowsInteractivePrompt: false` does two things here. It suppresses the
-        // unsupported-kind modal — `.manual` is an interactive source, so a batch
-        // of foreign links would otherwise stack one alert per dropped link on top
-        // of the progress sheet. And it makes the ingestor's own `rescueTrigger`
-        // non-interactive, so a failure is left for the debounced background sweep
-        // instead of starting an inline rescue that would race phase three's
-        // awaited one over the same item.
+        // `allowsInteractivePrompt: false` suppresses the unsupported-kind modal
+        // — `.manual` is an interactive source, so a batch of foreign links would
+        // otherwise stack one alert per dropped link on top of the progress sheet.
         ingest: @escaping (SavedItem) async -> SurfaceSupport.Decision = {
             await SavesIngestor.shared.ingest($0, allowsInteractivePrompt: false)
-        },
-        rescue: @escaping (UUID) async -> Bool = {
-            await URLRescueCoordinator.shared.rescueAndWait(itemID: $0)
-        },
-        rescueFraction: @escaping (UUID) -> Double? = {
-            URLRescueCoordinator.shared.rescueProgress($0)
         }
     ) {
         self.store = store
@@ -284,8 +269,6 @@ public final class LinkImportRunner {
         self.clock = clock
         self.idleTimeout = max(0, idleTimeout)
         self.ingest = ingest
-        self.rescue = rescue
-        self.rescueFraction = rescueFraction
     }
 
     // MARK: - Progress readout
@@ -305,18 +288,7 @@ public final class LinkImportRunner {
         for (index, value) in slices.enumerated() {
             sum += max(value, estimate(forSlice: index, floor: value))
         }
-        let rescuing = rescuingSlice
         lock.unlock()
-
-        // Asked outside the lock: the coordinator takes its own.
-        if let rescuing, let fraction = rescueFraction(rescuing.itemID) {
-            let span = Self.followUpShare - Self.ingestShare
-            let mapped = Self.ingestShare + span * min(1, max(0, fraction))
-            lock.lock()
-            let floor = slices.indices.contains(rescuing.index) ? slices[rescuing.index] : 0
-            lock.unlock()
-            sum += max(0, mapped - max(floor, Self.ingestShare))
-        }
 
         guard total > 0 else {
             return Progress(fraction: phase == .done ? 1 : 0, finished: 0, total: 0, phase: phase)
@@ -355,14 +327,13 @@ public final class LinkImportRunner {
     // MARK: - Run
 
     /// Saves every candidate in order, ingests them `concurrency` at a time,
-    /// then retries the failures with Apple Intelligence one at a time.
+    /// then opens the hard-paywalled ones in a real browser, one at a time.
     ///
-    /// The two phases are separate on purpose. Ingests are IO-bound and run
-    /// in parallel. A rescue is a model call — the one resource on the device
-    /// that gains nothing from being asked twice at once, which is also why
-    /// the coordinator's own background sweep serializes. Splitting the
-    /// phases also keeps the arithmetic honest: a link that never failed is
-    /// simply finished at the end of phase one.
+    /// The two phases are separate on purpose. Ingests are IO-bound and run in
+    /// parallel; an unlock is a whole `WKWebView` and two of them racing
+    /// archive.today is the fastest way to be rate-limited. Splitting them also
+    /// keeps the arithmetic honest: a link that never locked is simply finished
+    /// at the end of phase one.
     public func run(_ candidates: [Candidate]) async -> Summary {
         var summary = Summary()
         guard !candidates.isEmpty else {
@@ -419,7 +390,6 @@ public final class LinkImportRunner {
         guard !work.isEmpty else { return summary }
 
         // 2. Ingest, `concurrency` at a time, in order.
-        var failures: [Unit] = []
         var locked: [Unit] = []
         var scoredUnits = 0
         await withTaskGroup(of: (Int, ItemFate).self) { group in
@@ -455,9 +425,10 @@ public final class LinkImportRunner {
                     locked.append(work[slice])
                     setSlice(slice, to: Self.ingestShare)
                 case .failed:
-                    // Held open — its slice is finished by the rescue phase.
-                    failures.append(work[slice])
-                    setSlice(slice, to: Self.ingestShare)
+                    // The save's own `.failed` fires the automatic rescue, which
+                    // runs on its own clock; the import does not wait for it.
+                    summary.recoverableFailures += 1
+                    complete(slice: slice)
                 case .abandoned:
                     summary.recoverableFailures += 1
                     complete(slice: slice)
@@ -470,7 +441,7 @@ public final class LinkImportRunner {
         if isCancelled {
             summary.wasCancelled = true
             summary.imported += locked.count
-            summary.recoverableFailures += failures.count + (work.count - scoredUnits)
+            summary.recoverableFailures += work.count - scoredUnits
             for slice in 0..<work.count { complete(slice: slice) }
             setPhase(.done)
             return summary
@@ -509,35 +480,6 @@ public final class LinkImportRunner {
                 summary.imported += 1
                 complete(slice: unit.slice)
             }
-        }
-
-        // 4. The LLM rescue, one at a time, before anything is called a failure.
-        if !failures.isEmpty { setPhase(.rescuing) }
-        for failure in failures {
-            guard !isCancelled else {
-                summary.recoverableFailures += 1
-                complete(slice: failure.slice)
-                continue
-            }
-            beginRescue(slice: failure.slice, itemID: failure.item.id)
-            let recovered = await rescueWithIdleTimeout(itemID: failure.item.id)
-            endRescue()
-            if let fresh = store.item(withID: failure.item.id) {
-                if recovered, fate(of: fresh).isSaved {
-                    summary.imported += 1
-                } else {
-                    summary.recoverableFailures += 1
-                }
-            } else {
-                // Gone: the rescue landed a kind this app doesn't handle and
-                // `applyRescued`'s gate discarded it. The owner isn't reported
-                // back through that path, so the summary says only that much.
-                summary.rejected.append(
-                    RejectedLink(
-                        urlString: failure.candidate.urlString,
-                        reason: .foreignKind(owner: nil)))
-            }
-            complete(slice: failure.slice)
         }
 
         summary.wasCancelled = isCancelled
@@ -653,39 +595,6 @@ public final class LinkImportRunner {
         }
     }
 
-    /// Gives the model leg the same silence rule as fetching and WebKit. Its
-    /// coordinator exposes stage progress rather than bytes, so poll that stage
-    /// into the shared idle heartbeat while the operation runs.
-    private func rescueWithIdleTimeout(itemID: UUID) async -> Bool {
-        let activity = IdleTimeLimit.Activity()
-        let progressPoller = Task {
-            var previous = rescueFraction(itemID)
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: 250_000_000)
-                } catch {
-                    return
-                }
-                let current = rescueFraction(itemID)
-                if current != previous {
-                    previous = current
-                    activity.touch()
-                }
-            }
-        }
-        defer { progressPoller.cancel() }
-
-        let recovered = await IdleTimeLimit.run(idleTimeout, activity: activity) {
-            await self.rescue(itemID)
-        }
-        if recovered == nil {
-            SharedDiagnosticLog.record(
-                "bulk import: \(Int(idleTimeout))s idle timeout rescuing \(itemID)",
-                category: "rescue")
-        }
-        return recovered ?? false
-    }
-
     // MARK: - Slice bookkeeping
 
     private func sliceIndex(forItem item: SavedItem) -> Int {
@@ -701,7 +610,7 @@ public final class LinkImportRunner {
         lock.unlock()
     }
 
-    /// The web-unlock leg takes the same stretch a download or a rescue would, and
+    /// The web-unlock leg takes the same stretch a download would, and
     /// reports nothing while it runs — a page load, an archive round trip, a DOM
     /// probe — so it is estimated on the clock like an ingest.
     private func beginUnlock(slice: Int) {
@@ -709,19 +618,6 @@ public final class LinkImportRunner {
         creeps[slice] = Creep(
             started: clock(), from: Self.ingestShare, to: Self.followUpShare,
             expected: Self.expectedUnlockDuration)
-        lock.unlock()
-    }
-
-    private func beginRescue(slice: Int, itemID: UUID) {
-        lock.lock()
-        creeps[slice] = nil
-        rescuingSlice = (slice, itemID)
-        lock.unlock()
-    }
-
-    private func endRescue() {
-        lock.lock()
-        rescuingSlice = nil
         lock.unlock()
     }
 

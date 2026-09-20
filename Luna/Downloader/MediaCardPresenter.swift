@@ -191,8 +191,7 @@ final class MediaCardPresenter: CardKindPresenting {
         return MediaCardFactory.makeCard(
             for: media,
             scale: host.displayScale,
-            download: { MediaItemActions.startManualDownload(media) },
-            rescue: MediaCardRescue.starter(forSourceURLString: media.sourceURLString))
+            download: { MediaItemActions.startManualDownload(media) })
     }
 
     func topLeadingAccessory(for item: SavedItem) -> UIView? {

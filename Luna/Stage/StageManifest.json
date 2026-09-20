@@ -2,18 +2,26 @@
   "app": "luna",
   "stages": [
     {
-      "id": "card.failed-save.error",
+      "id": "card.failed-save.applying",
       "screen": "Failed save card",
-      "variant": "error",
-      "summary": "The default failed save: the page in a web view, its URL, and the retry-with-AI affordance.",
+      "variant": "applying a Luna file",
+      "summary": "A Luna file arriving: the same dimmed page and bar the automatic attempt shows, because it is the same recovery finishing.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
-      "id": "card.failed-save.no-rescue",
+      "id": "card.failed-save.error",
       "screen": "Failed save card",
-      "variant": "no rescue offered",
-      "summary": "A failure not worth an LLM pass (or no engine available): the button is absent rather than disabled.",
+      "variant": "error",
+      "summary": "The default failed save: the page in a web view, its URL, and the chat hand-off row.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.failed-save.refused",
+      "screen": "Failed save card",
+      "variant": "the file was refused",
+      "summary": "A Luna file that could not be read: the offer comes back with one line saying why.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
@@ -21,15 +29,15 @@
       "id": "card.failed-save.rescuing",
       "screen": "Failed save card",
       "variant": "rescue in progress",
-      "summary": "A rescue running: the page dimmed under a progress bar. Frozen mid-run — the card polls its state provider and this one never moves.",
+      "summary": "The automatic Apple Intelligence attempt running: the page dimmed under a progress bar. Frozen mid-run — the card polls its state provider and this one never moves.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
-      "id": "card.failed-save.terminal",
+      "id": "card.failed-save.waiting",
       "screen": "Failed save card",
-      "variant": "attempt spent",
-      "summary": "The rescue was already spent under this app version: an apology and Delete, until an update makes it eligible again.",
+      "variant": "waiting for the reply",
+      "summary": "A provider was opened and the reply has not come back: the row stays, with the line naming the file to tap.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
@@ -61,7 +69,7 @@
       "id": "card.media.no-media",
       "screen": "Media card",
       "variant": "nothing to download",
-      "summary": "The one failure that offers the AI rescue: the page held no media this app could recognise.",
+      "summary": "The one failure a model can answer: the page held no media this app could recognise, so the card offers the chat hand-off.",
       "kind": "media",
       "apps": ["luna", "downloader"]
     },

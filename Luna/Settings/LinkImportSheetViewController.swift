@@ -342,7 +342,6 @@ final class LinkImportSheetViewController: UIViewController {
         case .saving: return L10n.string("Settings_linkImport_savingStatus")
         case .fetching: return L10n.string("Settings_linkImport_downloadingStatus")
         case .unlocking: return L10n.string("Settings_linkImport_unlockingStatus")
-        case .rescuing: return L10n.string("Settings_linkImport_rescuingStatus")
         case .done: return L10n.string("Settings_linkImport_doneStatus")
         }
     }

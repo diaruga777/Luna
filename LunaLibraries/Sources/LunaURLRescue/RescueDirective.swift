@@ -168,31 +168,8 @@ public enum RescueOutcome {
         }
     }
 
-    /// Whether this outcome should spend the item's once-per-app-version manual
-    /// attempt. False whenever the model never really got to answer — no model
-    /// at all, a quota wall, a transient model error, or a browser handoff that
-    /// moved the item somewhere it can still be acted on. The user's one visible
-    /// attempt is for a real verdict on the page.
-    public var spendsVersionAttempt: Bool {
-        switch self {
-        case .rescued, .rescuedMedia, .needsBrowser, .unavailable, .quotaExhausted:
-            return false
-        case .failed(let error):
-            switch error {
-            case .transientModel, .modelUnavailable, .rateLimited, .networkFailure,
-                 .serviceUnavailable, .quotaLimitReached:
-                return false
-            case .guardrailViolation, .exceededContextWindowSize, .timedOut,
-                 .invalidDirective, .other:
-                return true
-            }
-        case .unrescuable:
-            return true
-        }
-    }
-
     /// Whether the failure is PERMANENT for this URL, so no automatic sweep and
-    /// no manual tap should ever try it again. A content-safety guardrail (or a
+    /// no queued hand-off should ever try it again. A content-safety guardrail (or a
     /// flat refusal) is a verdict on the prompt, and the prompt is derived from
     /// the page — the same page will trip it every time.
     public var isPermanentlyBlocked: Bool {

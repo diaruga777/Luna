@@ -67,7 +67,7 @@ public enum PluginRecoveryProbe {
         let digest: String?
         if let html {
             digest = RescueDigestBuilder().buildDigest(
-                url: result.url, html: html, hint: nil, budget: digestBudget)
+                url: result.url, html: html, budget: digestBudget)
         } else {
             digest = nil
         }

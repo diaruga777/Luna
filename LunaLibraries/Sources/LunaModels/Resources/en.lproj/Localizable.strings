@@ -79,7 +79,6 @@
 "Common_promote_Luna" = "Promote";
 "Common_reader_Luna" = "Reader";
 "Common_remove_Luna" = "Remove";
-"Common_retryWithAI_Luna" = "Try using on-device AI";
 "Common_save_Luna" = "Save";
 "Common_saved_Luna" = "Saved";
 "Common_savedToLuna_Luna" = "Saved to Luna";
@@ -106,6 +105,16 @@
 "LunaApp_displayName_PriceTracker" = "Luna Price Tracker";
 "LunaApp_displayName_Vault" = "Luna Vault";
 "LunaApp_displayName_Writer" = "Luna Writer";
+
+/* ===================== LLMHandoff — the chat hand-off: the two providers,
+ * the Claude long-press menu, and the row the failed card and the extension
+ * card share (claudedocs/llm-handoff.md). ===================== */
+"LLMProvider_chatGPT_Luna" = "ChatGPT";
+"LLMProvider_claude_Luna" = "Claude";
+"LLMProvider_claudeChat_Luna" = "Use Claude chat";
+"LLMProvider_claudeCode_Luna" = "Use Claude Code";
+"LLMHandoff_rowCaption_Luna" = "Recover with";
+"LLMHandoff_waitingHint_Luna" = "Tap the .%@ file in the reply and choose Luna.";
 
 /* ===================== UnsupportedSave — "this app can't take this link",
  * shown by the in-app card, the share/action extensions' card, and the App
@@ -221,7 +230,6 @@
 /* ===================== SaveFailure — a failed save card's headline (what
  * went wrong) and, where there's something to do about it, the suggestion
  * line underneath. ===================== */
-"SaveFailure_genericTitle_Luna" = "Sorry, Luna was unable to save this page.";
 "SaveFailure_noInternet_Luna" = "No internet connection";
 "SaveFailure_timedOut_Luna" = "The site took too long to respond";
 "SaveFailure_refused_Luna" = "The site refused the request (%lld)";
@@ -611,7 +619,6 @@
 "Settings_linkImport_savingStatus_Luna" = "Saving links…";
 "Settings_linkImport_downloadingStatus_Luna" = "Fetching content…";
 "Settings_linkImport_unlockingStatus_Luna" = "Extracting website text…";
-"Settings_linkImport_rescuingStatus_Luna" = "Retrying with Apple Intelligence…";
 "Settings_linkImport_doneStatus_Luna" = "Finishing up…";
 "Settings_linkImport_finishingStartedStatus_Luna" = "Finishing a few links…";
 
@@ -908,7 +915,6 @@
 "Downloader_mediaCard_photosAccess_saveMessage_Luna" = "Allow photo library access in Settings to save media.";
 "Downloader_mediaCard_photosAccess_title_Luna" = "Photos Access Needed";
 "Downloader_mediaCard_photosBadgeAccessibilityLabel_Luna" = "Open in Photos";
-"Downloader_mediaCard_rescueInProgressLabel_Luna" = "Trying harder with Apple Intelligence…";
 "Downloader_mediaCard_saveFailedAlert_message_Luna" = "Couldn't save to Photos.";
 "Downloader_mediaCard_saveFailedAlert_title_Luna" = "Save Failed";
 "Downloader_mediaCard_savedToPhotosAlert_message_Luna" = "The media was added to your Photos library.";
@@ -963,8 +969,10 @@
 "Downloader_media_retention_threeDays_Luna" = "3 days";
 "Downloader_media_retention_twoWeeks_Luna" = "2 weeks";
 
-/* ===== LunaFile — SceneDelegate.swift + ShareViewController.swift (what a surface says about an arriving .luna file) ===== */
+/* ===== LunaFile — SceneDelegate.swift + ShareViewController.swift + RecoveryFileApplier.swift (what a surface says about an arriving .luna file) ===== */
 "LunaFile_notALunaFileMessage_Luna" = "This is not a Luna file.";
+"LunaFile_recoveryNotAdoptedMessage_Luna" = "Luna could not read the content in this file.";
+"LunaFile_recoveryNotSavedMessage_Luna" = "Luna read the file but could not save it.";
 
 /* ===== LunaFileError — LunaFileError.swift (why a .luna / .lunar / .lunad / .lunas file was refused), in reading order ===== */
 "LunaFileError_noHeader_Luna" = "This is not a Luna file. A Luna file starts with a block comment whose first line is luna-plugin or luna-recovery.";
@@ -1028,14 +1036,11 @@
 "PriceTracker_tracking_noPriceFoundTitle_Luna" = "No price found";
 "PriceTracker_tracking_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
 "PriceTracker_tracking_pasteLinkActionTitle_Luna" = "Paste a link";
-"PriceTracker_tracking_noPriceRescueMessage_Luna" = "Unable to read a price. Apple Intelligence can try to find it.";
 "PriceTracker_tracking_notYetRefreshed_Luna" = "Not yet refreshed";
 "PriceTracker_tracking_refreshedFormat_Luna" = "Refreshed %@";
 "PriceTracker_tracking_screenTitle_Luna" = "Price Tracker";
 "PriceTracker_tracking_searchActionTitle_Luna" = "Search";
 "PriceTracker_tracking_sellersHeaderTitle_Luna" = "Sellers";
-"PriceTracker_tracking_stillNoPriceMessage_Luna" = "Apple Intelligence couldn't find a price on this page.";
-"PriceTracker_tracking_stillNoPriceTitle_Luna" = "Still no price";
 "PriceTracker_tracking_urlFieldPlaceholder_Luna" = "https://…";
 
 /* ===== PriceTracker_search — ProductSearchOverlayViewController.swift (the in-app web search/browse overlay) ===== */
@@ -1115,7 +1120,6 @@
 /* ===== CardDeck_failedSave — the failed-save error card, shared between the in-app card
    (FailedSaveCardFactory.swift / FailedSaveCardViewController.swift) and its extension-side
    twin (RescueFailureViewController.swift) ===== */
-"CardDeck_failedSave_attemptFooter_Luna" = "Tried %lld times · last %@";
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
 

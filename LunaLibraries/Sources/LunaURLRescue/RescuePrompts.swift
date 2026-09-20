@@ -40,12 +40,6 @@ enum RescuePrompts {
     a person's browser session would; the app opens its unlock screen instead of failing.
     """
 
-    /// The rules that hold under every hint.
-    private static let planRules = """
-    Rules: a reroute URL is https on the same website. Never invent a price, a URL \
-    or text the digest does not show. If nothing here can work, answer "give_up".
-    """
-
     /// Why the log excerpt is worth its tokens: an attempt that repeats what the
     /// excerpt shows failing is an attempt spent for nothing.
     private static let evidenceRule = """
@@ -72,9 +66,9 @@ enum RescuePrompts {
     video, image or audio asset.
     """
 
-    /// With no hint the model owns the classification, and has to be told so;
-    /// otherwise the payload options read as a menu and it picks whichever the
-    /// digest mentions first.
+    /// The model owns the classification and has to be told so; otherwise the
+    /// payload options read as a menu and it picks whichever the digest mentions
+    /// first.
     private static let classifyInstruction = """
     FIRST decide what kind of content this page is, from the URL and the digest: \
     a readable article, a product listing with a current price, or a page whose \
@@ -83,37 +77,23 @@ enum RescuePrompts {
     media URL for an article.
     """
 
-    private static let planRulesAuto = """
+    private static let planRules = """
     Rules: a reroute URL is https on the same website. Never invent a price, a URL \
     or text the digest does not show. Never guess a kind the digest does not \
     support: a page with no price is not a product, a page with no media file is \
     not media. If nothing here can work, answer "give_up".
     """
 
-    /// The plan-call instructions for a hint and tier. `allowsArticlePayload`
-    /// gates the "article" option (on-device can't emit a full article).
+    /// The plan-call instructions for a tier. `allowsArticlePayload` gates the
+    /// "article" option (on-device can't emit a full article).
     ///
-    /// No hint — what every automatic path sends — offers every payload option
-    /// and hands the classification to the model. A concrete hint keeps the
-    /// single-option form.
-    static func planInstructions(hint: RescueHint?, allowsArticlePayload: Bool) -> String {
-        var parts = [planPreamble]
-        switch hint {
-        case .none:
-            parts.append(classifyInstruction)
-            if allowsArticlePayload { parts.append(articleOption) }
-            parts.append(productOption)
-            parts.append(mediaOption)
-            parts.append(evidenceRule)
-            parts.append(planRulesAuto)
-            return parts.joined(separator: "\n")
-        case .article:
-            if allowsArticlePayload { parts.append(articleOption) }
-        case .product:
-            parts.append(productOption)
-        case .media:
-            parts.append(mediaOption)
-        }
+    /// Every payload option is offered and the model classifies the page: no
+    /// surface pins a content kind any more.
+    static func planInstructions(allowsArticlePayload: Bool) -> String {
+        var parts = [planPreamble, classifyInstruction]
+        if allowsArticlePayload { parts.append(articleOption) }
+        parts.append(productOption)
+        parts.append(mediaOption)
         parts.append(evidenceRule)
         parts.append(planRules)
         return parts.joined(separator: "\n")
@@ -122,21 +102,20 @@ enum RescuePrompts {
     /// The plan-call prompt: URL + what already failed + the fenced untrusted
     /// log excerpt (when one exists) + the fenced untrusted digest.
     ///
-    /// With no hint the hint line is replaced by the failure fact, because
-    /// naming a content type here would undo the classification the instructions
-    /// just asked for.
+    /// The failure fact stands where a content hint used to: naming a content
+    /// type here would undo the classification the instructions just asked for.
     static func planPrompt(
-        url: URL, hint: RescueHint?,
+        url: URL,
         failureKind: RescueRequest.FailureKind,
         failureReason: SaveFailureReason?,
         digest: String,
         evidence: String?
     ) -> String {
         let failure = RescueFailureEvidence.failureSentence(kind: failureKind, reason: failureReason)
-        let context = hint == nil
-            ? "What already failed: \(failure)"
-            : "Content hint: \(hint?.rawValue ?? "")\nWhat already failed: \(failure)"
-        var parts = ["URL: \(url.absoluteString)", context]
+        var parts = [
+            "URL: \(url.absoluteString)",
+            "What already failed: \(failure)",
+        ]
         if let evidence, !evidence.isEmpty {
             parts.append(evidenceFence(evidence))
         }
@@ -200,8 +179,8 @@ enum RescuePrompts {
     /// The follow-up call after an "inspect_url" plan. Same task contract as the
     /// plan call — the model is choosing a FINAL strategy now — with the extra
     /// fact that this is its last look.
-    static func inspectInstructions(hint: RescueHint?, allowsArticlePayload: Bool) -> String {
-        planInstructions(hint: hint, allowsArticlePayload: allowsArticlePayload)
+    static func inspectInstructions(allowsArticlePayload: Bool) -> String {
+        planInstructions(allowsArticlePayload: allowsArticlePayload)
             + "\nThis is the page you asked to inspect and your LAST look: "
             + "answer with a final strategy now. \"inspect_url\" is no longer available."
     }

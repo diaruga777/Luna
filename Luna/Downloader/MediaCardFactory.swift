@@ -23,38 +23,49 @@ import LunaStorage
 import Photos
 import UIKit
 
-/// The "Try Apple Intelligence" leg of an undownloaded card: offered only when
-/// a model is installed, and always against the saved item that owns the
-/// source URL (created on the spot if the media was saved without one).
-enum MediaCardRescue {
-    static func starter(forSourceURLString sourceURLString: String) -> (() -> Void)? {
-        guard URLRescueCoordinator.engine?.isRescueAvailable == true else { return nil }
-        return {
-            let store = SavesStore.shared
-            let itemID = store.item(forURLString: sourceURLString)?.id
-                ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
-            if let itemID {
-                URLRescueCoordinator.shared.requestManualRescue(itemID: itemID, hint: .media)
-            }
-        }
+/// The chat hand-off for a download that found nothing to download. The page
+/// is the same kind of dead end the failed-save card offers the row for, so it
+/// offers the same row (`claudedocs/llm-handoff.md`).
+@MainActor
+enum MediaCardHandoff {
+
+    /// Records the hand-off against the save that owns `sourceURLString` —
+    /// creating one if the media was saved without a row — and opens the
+    /// provider.
+    static func begin(provider: LLMProvider, sourceURLString: String) {
+        guard let url = URL(string: sourceURLString) else { return }
+        let store = SavesStore.shared
+        guard let itemID = store.item(forURLString: sourceURLString)?.id
+            ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
+        else { return }
+        let prompt = LLMHandoffPrompts.recovery(
+            url: url, app: LunaApp.current,
+            failure: SaveFailureReason.rescueSentence(.noMediaFound, attempted: .media))
+        let target = LLMProviderPreferences.claudeTarget
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
+        else { return }
+        LLMHandoffStore.shared.begin(
+            .recovery(itemID: itemID, urlString: sourceURLString),
+            provider: provider, claudeTarget: target)
+        LLMLauncher.shared.openLLM(
+            link,
+            fallback: LLMDeepLink.fallbackURL(
+                for: provider, prompt: prompt, claudeTarget: target))
     }
 }
 
 enum MediaCardFactory {
 
     /// The card content for one saved media item. `download` is invoked by the
-    /// undownloaded card's button; `rescue`, when non-nil, offers the Apple
-    /// Intelligence fallback after a no-media failure.
+    /// undownloaded card's button.
     static func makeCard(
         for item: SavedMediaItem,
         scale: CGFloat,
-        download: @escaping () -> Void,
-        rescue: (() -> Void)? = nil
+        download: @escaping () -> Void
     ) -> CardContentViewController {
         switch item.storageState {
         case .undownloaded:
-            return UndownloadedMediaCardContentViewController(
-                item: item, download: download, rescue: rescue)
+            return UndownloadedMediaCardContentViewController(item: item, download: download)
         case .localFile:
             guard let fileURL = item.fileURL else { return CardContentViewController() }
             switch item.kind {
@@ -477,9 +488,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
 
     private let sourceURLString: String
     private let download: () -> Void
-    private let rescue: (() -> Void)?
     private let button = UIButton(configuration: .plain())
-    private let rescueButton = UIButton(configuration: .plain())
     private let poster = UIImageView()
     private let posterDim = UIView()
     private let statusLabel = UILabel()
@@ -489,12 +498,14 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
     /// status on the leading side and percent-complete on the trailing side,
     /// with the horizon bar spanning beneath them.
     private let statusBar = UIVisualEffectView(effect: GlassStyle.barEffect())
+    /// The chat hand-off, shown for the one failure a model can answer: the
+    /// page held no media this app could recognise.
+    private lazy var handoffRow = LLMHandoffRowView()
     private var loadedThumbnailFileName: String?
 
-    init(item: SavedMediaItem, download: @escaping () -> Void, rescue: (() -> Void)? = nil) {
+    init(item: SavedMediaItem, download: @escaping () -> Void) {
         self.sourceURLString = item.sourceURLString
         self.download = download
-        self.rescue = rescue
         super.init()
     }
 
@@ -525,19 +536,10 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
 
-        // "Retry with AI ✦" — shown only on a no-media failure when a model is
-        // available. Styled by the one shared definition
-        // (`GlassStyle.retryWithAIConfiguration`), so this card's offer is
-        // visibly the same offer as the failed-save card's.
-        rescueButton.configuration = GlassStyle.retryWithAIConfiguration(compact: true)
-        rescueButton.isHidden = true
-        rescueButton.addAction(UIAction { [weak self] _ in
-            self?.rescueButton.isHidden = true
-            self?.statusLabel.text = L10n.string("Downloader_mediaCard_rescueInProgressLabel")
-            self?.rescue?()
-        }, for: .touchUpInside)
-        rescueButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(rescueButton)
+        handoffRow.delegate = self
+        handoffRow.isHidden = true
+        handoffRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(handoffRow)
 
         statusLabel.text = L10n.string("Common_downloading")
         statusLabel.textColor = LunaColors.primaryText
@@ -587,6 +589,9 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             posterDim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            handoffRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            handoffRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            handoffRow.bottomAnchor.constraint(equalTo: statusBar.topAnchor, constant: -16),
             statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             statusBar.bottomAnchor.constraint(
@@ -599,8 +604,6 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             column.bottomAnchor.constraint(
                 equalTo: statusBar.contentView.bottomAnchor, constant: -10),
             progress.heightAnchor.constraint(equalToConstant: 20),
-            rescueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            rescueButton.bottomAnchor.constraint(equalTo: statusBar.topAnchor, constant: -16),
         ])
 
         NotificationCenter.default.addObserver(
@@ -640,7 +643,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             statusBar.isHidden = true
             posterDim.isHidden = true
             button.isHidden = false
-            rescueButton.isHidden = true
+            handoffRow.isHidden = true
             return
         }
 
@@ -655,9 +658,9 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         progress.setProgress(Float(snapshot.progress), animated: true)
         statusBar.isHidden = false
         button.isHidden = snapshot.phase != .failed
-        // Offer the AI rescue only on a genuine no-media failure, when installed.
-        rescueButton.isHidden = !(snapshot.phase == .failed
-            && snapshot.failureKind == .noMedia && rescue != nil)
+        // Only a no-media failure has a page a model could read. Every other
+        // failure is a transfer that can simply be tried again.
+        handoffRow.isHidden = !(snapshot.phase == .failed && snapshot.failureKind == .noMedia)
 
         guard let fileName = snapshot.thumbnailFileName,
               fileName != loadedThumbnailFileName
@@ -720,5 +723,15 @@ enum MediaCardDeck {
             return KindDeckProvider(host: host, configuration: configuration)
         }
         return deck
+    }
+}
+
+// MARK: - The chat hand-off row
+
+extension UndownloadedMediaCardContentViewController: LLMHandoffRowDelegate {
+
+    func row(_ row: LLMHandoffRowView, didChoose provider: LLMProvider) {
+        MediaCardHandoff.begin(provider: provider, sourceURLString: sourceURLString)
+        row.setHint(LLMHandoffRowView.waitingHint())
     }
 }

@@ -81,24 +81,6 @@ final class LunaDeepLinkTests: XCTestCase {
         XCTAssertTrue(LunaDeepLink.allSchemes.contains(LunaDeepLink.vaultScheme))
     }
 
-    // MARK: - Rescue
-
-    func testRescueLinkConstruction() {
-        // `nil` = the default, which targets the host bundle's own scheme (luna://
-        // in the test host).
-        var cases: [(scheme: String?, expected: String)] =
-            LunaDeepLink.allSchemes.map { ($0, "\($0)://rescue") }
-        cases.append((nil, "luna://rescue"))
-
-        for testCase in cases {
-            let link = testCase.scheme.map { LunaDeepLink.rescueLink(scheme: $0) }
-                ?? LunaDeepLink.rescueLink()
-            XCTAssertEqual(
-                link?.absoluteString, testCase.expected,
-                "rescueLink(scheme: \(testCase.scheme ?? "own"))")
-        }
-    }
-
     // MARK: - Bounce-back flag (Feature 2)
 
     func testRequestsReturnToSourceReadsTheRetQueryItem() {
@@ -273,20 +255,4 @@ final class LunaDeepLinkTests: XCTestCase {
         }
     }
 
-    func testIsRescueLink() {
-        var cases: [(url: String, isRescue: Bool)] =
-            LunaDeepLink.allSchemes.map { ("\($0)://rescue", true) }
-        cases += [
-            ("lunareader://read", false),
-            ("https://example.com/rescue", false),
-        ]
-
-        for testCase in cases {
-            guard let url = URL(string: testCase.url) else {
-                XCTFail("unparseable test URL \(testCase.url)")
-                continue
-            }
-            XCTAssertEqual(LunaDeepLink.isRescueLink(url), testCase.isRescue, testCase.url)
-        }
-    }
 }

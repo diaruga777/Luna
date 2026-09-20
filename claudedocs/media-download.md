@@ -469,8 +469,9 @@ adopted whichever job started first — is deleted.
 - An **`.undownloaded` carousel card** carries its own progress: poster + dim +
   an embedded glass status bar inside the card's bottom edge (status line,
   percentage while `.downloading`, moon-horizon bar). Failure keeps the bar up
-  with the reason in red, the retry glyph, and — for a `.noMedia` failure with a
-  model available — "Try Apple Intelligence" (see `claudedocs/url-rescue.md`).
+  with the reason in red, the retry glyph, and — for a `.noMedia` failure — the
+  chat hand-off row, the same one the failed-save card shows (see
+  `claudedocs/llm-handoff.md`).
 - An **archived row re-downloading in place** (tapping an unavailable archive
   cell) draws its bar on that cell. `ArchiveTrayController.setDownloadProgress`
   applies ticks to visible cells directly — a `reloadData` per tick would restart

@@ -51,7 +51,6 @@ final class LinkImportRunnerTests: XCTestCase {
         outcomes: [String: SavedItem.State] = [:],
         unsupported: Set<String> = [],
         concurrency: Int = 4,
-        rescueSucceeds: @escaping (String) -> Bool = { _ in false },
         onIngest: (@Sendable (SavedItem) -> Void)? = nil
     ) -> LinkImportRunner {
         let store = store!
@@ -74,14 +73,7 @@ final class LinkImportRunnerTests: XCTestCase {
                     break
                 }
                 return .supported
-            },
-            rescue: { itemID in
-                guard let item = store.item(withID: itemID),
-                      rescueSucceeds(item.urlString) else { return false }
-                Self.markReady(item, in: store)
-                return true
-            },
-            rescueFraction: { _ in nil })
+            })
     }
 
     /// The store has no bare "set ready" — readiness always accompanies real
@@ -332,21 +324,12 @@ final class LinkImportRunnerTests: XCTestCase {
         XCTAssertEqual(summary.total, 4)
     }
 
-    // MARK: - Rescue
+    // MARK: - Failures
 
-    func testAFailureIsRetriedWithTheModelBeforeBeingCalledAFailure() async {
-        let summary = await makeRunner(
-            outcomes: ["https://example.com/hard": .failed],
-            rescueSucceeds: { $0 == "https://example.com/hard" }
-        ).run(candidates(["https://example.com/hard"]))
-
-        XCTAssertEqual(summary.imported, 1)
-        XCTAssertEqual(summary.recoverableFailures, 0)
-    }
-
-    func testAFailureTheModelCannotRecoverIsRecoverableNotRejected() async {
-        // Still a real save that Luna's own launch sweep keeps retrying, so it
-        // must not be reported as a rejected link.
+    func testAFailureIsRecoverableNotRejected() async {
+        // Still a real save — its own `.failed` fires the automatic rescue and
+        // Luna's launch sweep keeps re-ingesting it — so it must not be
+        // reported as a rejected link.
         let summary = await makeRunner(
             outcomes: ["https://example.com/hard": .failed]
         ).run(candidates(["https://example.com/hard"]))
@@ -355,29 +338,6 @@ final class LinkImportRunnerTests: XCTestCase {
         XCTAssertEqual(summary.recoverableFailures, 1)
         XCTAssertTrue(summary.rejected.isEmpty)
         XCTAssertNotNil(store.item(forURLString: "https://example.com/hard"))
-    }
-
-    func testAnItemDiscardedDuringRescueIsReportedAsAnUnnamedForeignKind() async {
-        let store = store!
-        let runner = LinkImportRunner(
-            store: store, concurrency: 1,
-            ingest: { item -> SurfaceSupport.Decision in
-                store.markFailed(item.id)
-                return .supported
-            },
-            rescue: { itemID in
-                // What `applyRescued`'s gate does when a rescue lands a kind this
-                // app doesn't handle: the item is gone, and the owner isn't
-                // reported back through that path.
-                if let item = store.item(withID: itemID) { store.delete(item) }
-                return false
-            },
-            rescueFraction: { _ in nil })
-
-        let summary = await runner.run(candidates(["https://example.com/1"]))
-        XCTAssertEqual(summary.rejected.count, 1)
-        XCTAssertEqual(summary.rejected.first?.reason, .foreignKind(owner: nil))
-        XCTAssertEqual(summary.recoverableFailures, 0)
     }
 
     // MARK: - Progress
@@ -431,8 +391,7 @@ final class LinkImportRunnerTests: XCTestCase {
                 if item.urlString == "https://example.com/2" { box.runner?.cancel() }
                 Self.markReady(item, in: store)
                 return .supported
-            },
-            rescue: { _ in false }, rescueFraction: { _ in nil })
+            })
         box.runner = runner
 
         let summary = await runner.run(candidates(urls))
@@ -471,8 +430,7 @@ final class LinkImportRunnerTests: XCTestCase {
                     Self.markReady(item, in: store)
                 }
                 return .supported
-            },
-            rescue: { _ in false }, rescueFraction: { _ in nil })
+            })
 
         let started = Date()
         let summary = await runner.run(candidates([
@@ -510,8 +468,7 @@ final class LinkImportRunnerTests: XCTestCase {
             ingest: { item in
                 store.markNeedsCaptcha(item.id, title: "Locked")
                 return .supported
-            },
-            rescue: { _ in false }, rescueFraction: { _ in nil })
+            })
 
         let started = Date()
         let summary = await timedRunner.run(candidates(urls))

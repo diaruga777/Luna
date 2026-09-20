@@ -4,8 +4,16 @@ When Luna's primary URL handling fails — an article ends `.failed`, a Price
 Tracker page yields no price, or a Downloader link resolves no media — the item
 is otherwise a dead end. URL Rescue invokes Apple's **FoundationModels** LLM
 (on-device iOS 26 baseline; **Private Cloud Compute** opportunistically on iOS 27
-builds) with the URL, a token-budgeted digest of the fetched HTML, and a content
-hint, and applies ONE validated directive to recover the save.
+builds) with the URL and a token-budgeted digest of the fetched HTML, and applies
+ONE validated directive to recover the save.
+
+**It runs once, automatically, and nothing offers it.** A save that fails gets
+exactly one attempt in its lifetime, started by the code that noticed the
+failure; no surface has a button, and no tap can ask for a second. A page that
+defeated the model once defeats it again, and what the USER can do about a
+failure is the chat hand-off the failed card offers instead
+(`claudedocs/llm-handoff.md`). The model classifies the page itself: no surface
+supplies a content kind.
 
 ## The directive kinds
 
@@ -64,9 +72,15 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   allowlist + token→UA map, JS ≤8 KiB, article relaxed-threshold + anti-
   hallucination spot-check (≥50% of block prefixes must appear in the digest),
   product price verbatim-in-digest, media URL by extension or verbatim evidence.
-  Which PAYLOAD kinds are legal comes from `ContentHint.allows` — `.auto` accepts
-  all three, a concrete hint only its own. Widening the legal set does not relax
-  any evidence rule.
+  Every payload kind is legal, because the model is the one classifying the page;
+  that relaxes no evidence rule.
+- **`RescueRecipeValidator`** — the same rules, applied to the recipe a recovery
+  Luna file carries (`claudedocs/luna-file.md`). A chat model's recipe is exactly
+  as untrusted as a plan, so it meets the same host policy, the same header
+  allowlist and UA token map, and the same 8 KiB script cap.
+- **`RecoveryRecipeRunner`** — replays that recipe through the same directive
+  applier and stores the host rule it proves. It runs no model at all: the whole
+  point is that a route written down once becomes a deterministic replay.
 - **`RescueDirectiveApplier`** — applies a directive; re-enters the pipeline via an
   injected `runPipeline` closure defaulting to the RAW
   `IngestPipeline.processResolved`. **This is the structural "no second LLM pass"
@@ -149,12 +163,11 @@ reroute-host rule for exactly those strings. Which results reach the list is
 `RescueSearchCandidates`:
 
 - **Same registrable domain** — always allowed.
-- **Cross-domain** — only for an article rescue (nil or `.article` hint) whose
-  result title strongly matches the title Luna recovered for the failed page
-  (≥60% word overlap on the shorter title, stop words removed). A syndicated
-  copy or a canonical home is the same article; a different seller's listing or
-  a different creator's post is a different THING, so `product` and `media`
-  never cross a domain however good the title looks.
+- **Cross-domain** — only when the result title strongly matches the title Luna
+  recovered for the failed page (≥60% word overlap on the shorter title, stop
+  words removed). A syndicated copy or a canonical home is the same article; a
+  title that does not match is a different THING — another seller's listing,
+  another creator's post — and never crosses a domain.
 
 Widening the ACTION space relaxes no EVIDENCE rule: a product price still has to
 appear verbatim in the digest, an article payload still has to pass the
@@ -168,14 +181,17 @@ SDK has always had); the rest are matched on the case NAME via
 `String(describing:)`, because Luna compiles against two SDKs and naming a case
 the archiving SDK lacks would fail the BUILD, not a rescue.
 
-| Model error | Verdict | Spends the version attempt? |
-| --- | --- | --- |
-| guardrailViolation, refusal | permanent for this URL | no — the ledger blocks it forever instead |
-| assetsUnavailable, concurrentRequests | transient | no |
-| rateLimited, networkFailure, serviceUnavailable | transient | no |
-| quotaLimitReached | `.quotaExhausted` | no |
-| decodingFailure, unsupportedGuide/Locale | `.unrescuable` | no (distinct log line) |
-| exceededContextWindowSize (after the halving retry) | failed | yes |
+| Model error | Verdict |
+| --- | --- |
+| guardrailViolation, refusal | permanent for this URL — the ledger closes it |
+| assetsUnavailable, concurrentRequests | transient |
+| rateLimited, networkFailure, serviceUnavailable | transient |
+| quotaLimitReached | `.quotaExhausted` |
+| decodingFailure, unsupportedGuide/Locale | `.unrescuable` (distinct log line) |
+| exceededContextWindowSize (after the halving retry) | failed |
+
+The attempt is spent either way. Only the guardrail changes what happens NEXT:
+it closes the item for good, so even a queued extension hand-off skips it.
 
 ## Measurement
 
@@ -190,61 +206,49 @@ refutable.
 
 ## Integration + UX
 
-- **`URLRescueCoordinator`** (`LunaSaves`, `AudioScriptPipeline`-style):
-  inline rescue on an interactive foreground `.failed`; a debounced background
-  sweep of `.failed` items (batch 3, serialized, ledger-budgeted); manual one-shot
-  rescues (bypass toggle + budget); and the extension→app pending-request drain.
-  The engine is injected as a closure by the app shell — the module never links
+- **`URLRescueCoordinator`** (`LunaSaves`, `AudioScriptPipeline`-style) is the
+  ONE funnel. Three triggers reach it and all three run the same budgeted
+  attempt: a `.failed` first pass (`SavesIngestor.rescueTrigger`), the debounced
+  background sweep of `.failed` items (batch 3, serialized), and the
+  extension→app queue drained on launch and on every foreground. There is no
+  manual entry point to reach — `requestManualRescue` and `rescueAndWait` are
+  gone, and so is the bulk import's per-item rescue pass: an imported link that
+  fails fires the ordinary trigger like any other save. The engine is injected
+  as a protocol witness by the app shell, so the module links no
   `LunaURLRescue`.
 - **Trigger** — `SavesIngestor.applyResult` is the shared persistence tail
   (surface gate + repoint + presenter) for both a first-pass save and a rescued
   result; a `.failed` outcome fires `SavesIngestor.rescueTrigger`.
 - **Bookkeeping** — sidecars in `LunaStorage`, never new `SavedItem` fields
   (a sibling app's re-encode would drop unknown keys): `RescueLedgerStore`
-  (`rescueLedger.json`, 2 auto-attempts / 24h + success provenance;
-  `resetAttempts(for:)` reopens the budget once per app update) and
-  `PendingRescueRequestStore` (App-Group queue, dedupe-by-URL, take-once, 3-day
-  expiry).
-- **The hint is usually `.auto`** — `RescueRequest.ContentHint` gained `.auto`,
-  and it is what an ABSENT hint now means (it used to be filled in from the
-  failure kind, which laundered a guess into an instruction). Under `.auto` the
-  plan instructions offer every payload option and open by telling the model that
-  classifying the page is ITS job; the prompt drops the hint line and states what
-  already failed as a diagnostic fact instead. The failed-save card and every
-  automatic path send nil, so **no surface asks the user for a content type any
-  more**: the card's segmented picker, the failed row's three-way action sheet,
-  its long-press submenu, and the extension card's segmented control are all gone
-  (`claudedocs/failed-saves.md`). `RescueHint` is no longer user-facing at all —
-  it has no `displayName` — and remains only for the two programmatic callers
-  that know the kind from where the user pressed: the price editor and the media
-  card.
+  (`rescueLedger.json`, ONE lifetime auto-attempt, the guardrail mark, the
+  browser-handoff mark, and success provenance) and `PendingRescueRequestStore`
+  (App-Group queue, dedupe-by-URL, take-once, 3-day expiry).
 - **Progress** — `rescue(_:onProgress:)` reports a `RescueStage` (LunaModels) at
   each internal boundary, always opening `.queued` and closing `.finished`.
   `URLRescueCoordinator.reportProgress`/`rescueProgress` turn that into a
   fraction (interpolated within a stage) and post `.rescueProgressChanged`, which
   drives the failed card's `MoonHorizonProgressBar`.
-- **Consent** — automatic rescue is always on (there is no setting; the former
-  Settings ▸ "Failed Saves" toggle and `RescueSettings` store are gone). Its real
-  gates are an available engine, an interactive failure, and the 2-attempts/24h
-  ledger budget. Every failed item also offers a one-shot rescue, which bypasses
-  the budget — that tap IS its own consent.
-- **In-app** — a failed save row tap opens a hint-picker rescue sheet; the
-  long-press menu gains a "Try with Apple Intelligence" submenu; the row subtitle
-  reads "trying harder…" while a rescue is in flight. On the CARD roots the
-  rescue button ("Retry with AI") lives on the failed-save error card, sends no
-  hint, and is limited to ONE attempt per app version — see
-  `claudedocs/failed-saves.md`.
-- **Extension handoff** — the action extension's `.failed` presents
-  `RescueFailureViewController`, now the same red-rimmed web-view card as the
-  in-app failed save (no hint picker; "Retry with AI"), which
-  writes a hint-less `PendingRescueRequest` and best-effort opens the containing app via
-  `<scheme>://rescue` (`host.openURL`); the main app drains it on launch /
-  foreground / the deep link. Extensions link NO rescue engine.
-- **Price / media** — `PriceTrackingViewController.intelligentPriceResolver` powers
-  a "Retry with AI" action on the no-price alert;
-  `DownloaderJobSnapshot.failureKind == .noMedia` gates a "Retry with AI"
-  button on a failed download card, applied via
-  `LiveMediaDownloadManager.startWithResolvedAssets`.
+- **Consent** — there is nothing to consent to and nothing to set. The attempt is
+  automatic, silent, and once per item; its only gates are an available engine,
+  a failure worth rescuing (`SaveFailureReason.isWorthRescuing`), and the
+  one-attempt ledger. A guardrailed item is never attempted again by any route.
+- **In-app** — the failed card shows the automatic attempt running (the page
+  dimmed under the eclipse bar) and, the rest of the time, the chat hand-off row.
+  No surface in any app offers Apple Intelligence as a button:
+  `GlassStyle.retryWithAIConfiguration` and the copy behind it are deleted. See
+  `claudedocs/failed-saves.md` and `claudedocs/llm-handoff.md`.
+- **Extension hand-off** — the share and action extensions' `.failed` leg always
+  writes a `PendingRescueRequest`, with no tap involved, so the save that failed
+  while the app was closed gets its attempt on the app's next foreground. The
+  action extension also shows `RescueFailureViewController` — the same
+  red-rimmed web-view card as the in-app failed save, carrying the same chat
+  hand-off row. Extensions link NO rescue engine.
+- **Recovery files** — a `luna-recovery` file's recipe is replayed through
+  `RecoveryRecipeRunner`, which learns a `RescueRuleStore` rule from it, so a
+  route a chat model found once fixes that host deterministically afterwards.
+  An extension cannot replay one and parks it in `PendingRecoveryRecipeStore`;
+  `URLRescueWiring` drains that on foreground, purely to learn the rule.
 
 ## Toolchain / eligibility caveat
 

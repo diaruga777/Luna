@@ -5,6 +5,7 @@
 
 import XCTest
 import LunaHTMLClassification
+import LunaIngest
 import LunaMediaDownload
 import LunaModels
 import LunaPluginIngest

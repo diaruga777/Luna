@@ -112,15 +112,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             return
         }
-        if LunaDeepLink.isRescueLink(url) {
-            // The extension handoff wrote the URL + hint + consent into the shared
-            // store; just drain it (pop to root first so the list is visible when a
-            // rescued item flips ready). The coordinator also drains on foreground,
-            // so this works even if the responder-chain open silently failed.
-            mainNavigationController?.popToRootViewController(animated: false)
-            URLRescueCoordinator.shared.drainPendingRequests()
-            return
-        }
         if LunaDeepLink.isResolvedMediaLink(url) {
             // Safari's in-page player already resolved the video and wrote the
             // assets to the App Group; this link carries no payload, it just
@@ -201,9 +192,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         switch LunaFileIntake.classify(text: text) {
         case .success(.recovery(let file)):
-            LunaFileIntake.handler?.handleRecovery(file, sourceURL: url)
+            LunaFileIntake.recoveryHandler?.handleRecovery(file, sourceURL: url)
         case let .success(.plugin(headerJSON, source)):
-            LunaFileIntake.handler?.handlePlugin(source: source, headerJSON: headerJSON)
+            LunaFileIntake.pluginHandler?.handlePlugin(source: source, headerJSON: headerJSON)
         case .failure(let error):
             presentLunaFileAlert(error.message)
         case .none:

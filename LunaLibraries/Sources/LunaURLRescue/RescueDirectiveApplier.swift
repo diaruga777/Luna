@@ -85,18 +85,15 @@ struct RescueDirectiveApplier {
     // MARK: - Reroute
 
     private func applyReroute(_ reroute: RescueReroute, request: RescueRequest, method: RescueMethod) async -> RescueOutcome {
-        let forceArticle = request.hint == .article
         if reroute.headers.isEmpty {
-            let input = IngestInput(url: reroute.url, source: request.source, forceArticle: forceArticle)
+            let input = IngestInput(url: reroute.url, source: request.source)
             return classify(await runPipeline.reprocess(input), request: request, method: method)
         }
         // Custom headers → fetch ourselves and hand the pipeline the HTML. Use the
         // existing HTMLFetching variants when they fit, else the header fetch.
         let html = await fetchWithHeaders(url: reroute.url, headers: reroute.headers)
         guard let html else { return .unrescuable }
-        let input = IngestInput(
-            url: reroute.url, source: request.source, page: .fetched(html),
-            forceArticle: forceArticle)
+        let input = IngestInput(url: reroute.url, source: request.source, page: .fetched(html))
         return classify(await runPipeline.reprocess(input), request: request, method: method)
     }
 
@@ -117,15 +114,9 @@ struct RescueDirectiveApplier {
         guard let result = await scriptRunner.run(script) else { return .unrescuable }
         switch script.resultKind {
         case .html, .json:
-            if request.hint == .media {
-                let assets = await mediaAssets(fromHTML: result, pageURL: script.pageURL)
-                return assets.isEmpty ? .unrescuable : .rescuedMedia(assets, method: .webJS)
-            }
             let html = script.resultKind == .json ? Self.wrapJSONAsHTML(result) : result
-            let forceArticle = request.hint == .article
             let input = IngestInput(
-                url: script.pageURL, source: request.source, page: .fetched(html),
-                forceArticle: forceArticle)
+                url: script.pageURL, source: request.source, page: .fetched(html))
             return classify(await runPipeline.reprocess(input), request: request, method: .webJS)
         case .mediaURL:
             guard let url = URL(string: result.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -154,33 +145,6 @@ struct RescueDirectiveApplier {
         return assets.isEmpty ? .unrescuable : .rescuedMedia(assets, method: method)
     }
 
-    private func mediaAssets(fromHTML html: String, pageURL: URL) async -> [MediaAsset] {
-        // Try Open Graph video/image first, then fall back to the resolver on the page URL.
-        for property in ["og:video:url", "og:video", "og:image"] {
-            if let raw = Self.openGraphContent(named: property, in: html),
-               let url = URL(string: raw), let asset = Self.directAsset(from: url) {
-                return [asset]
-            }
-        }
-        return await mediaResolver.resolveAssets(for: pageURL)
-    }
-
-    /// Minimal Open Graph `content` extractor (the module's own parser is
-    /// private). Attribute order isn't stable, so inspect each `<meta>` tag.
-    static func openGraphContent(named name: String, in html: String) -> String? {
-        for tag in html.components(separatedBy: "<meta") {
-            let lower = tag.lowercased()
-            guard lower.contains("property=\"\(name)\"") || lower.contains("property='\(name)'")
-                    || lower.contains("name=\"\(name)\"") || lower.contains("name='\(name)'") else { continue }
-            for quote in ["\"", "'"] {
-                let marker = "content=\(quote)"
-                guard let start = tag.range(of: marker, options: [.caseInsensitive])?.upperBound,
-                      let end = tag[start...].firstIndex(of: Character(quote)) else { continue }
-                return String(tag[start..<end]).replacingOccurrences(of: "&amp;", with: "&")
-            }
-        }
-        return nil
-    }
 
     /// The same URL-extension table the download pipeline recognizes
     /// (`DirectMediaURL`), so a rescued direct-media URL is never accepted or

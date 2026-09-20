@@ -18,28 +18,17 @@ final class URLRescueStorageTests: XCTestCase {
         return RescueLedgerStore(containerURL: dir, now: now)
     }
 
-    func testBudgetCapAtTwoAttempts() {
+    /// One attempt, ever — no second chance and no waiting window that would
+    /// bring one back.
+    func testTheBudgetIsOneAttemptForever() {
         var clock = Date(timeIntervalSince1970: 1_000_000)
         let store = makeLedgerStore(now: { clock })
         let id = UUID()
         XCTAssertTrue(store.shouldAutoRescue(id))
-        store.recordAttempt(id, hint: .article)
-        clock = clock.addingTimeInterval(RescueLedgerStore.autoRetrySpacing + 1)
-        XCTAssertTrue(store.shouldAutoRescue(id))
-        store.recordAttempt(id, hint: .article)
-        clock = clock.addingTimeInterval(RescueLedgerStore.autoRetrySpacing + 1)
-        XCTAssertFalse(store.shouldAutoRescue(id), "third auto-attempt is over budget")
-    }
-
-    func testSpacingWindowBlocksRapidRetry() {
-        var clock = Date(timeIntervalSince1970: 1_000_000)
-        let store = makeLedgerStore(now: { clock })
-        let id = UUID()
-        store.recordAttempt(id, hint: .article)
-        clock = clock.addingTimeInterval(60) // < 24h
+        store.recordAttempt(id)
         XCTAssertFalse(store.shouldAutoRescue(id))
-        clock = clock.addingTimeInterval(RescueLedgerStore.autoRetrySpacing)
-        XCTAssertTrue(store.shouldAutoRescue(id))
+        clock = clock.addingTimeInterval(365 * 24 * 60 * 60)
+        XCTAssertFalse(store.shouldAutoRescue(id), "time alone never reopens the budget")
     }
 
     func testProvenanceMarker() {
@@ -47,17 +36,16 @@ final class URLRescueStorageTests: XCTestCase {
         let store = makeLedgerStore(now: { now })
         let id = UUID()
         XCTAssertFalse(store.wasRescued(id))
-        store.recordSuccess(id, hint: .product)
+        store.recordSuccess(id)
         XCTAssertTrue(store.wasRescued(id))
-        XCTAssertEqual(store.entry(id)?.lastHint, .product)
     }
 
     func testPruneDropsMissingItems() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let store = makeLedgerStore(now: { now })
         let keep = UUID(); let drop = UUID()
-        store.recordAttempt(keep, hint: nil)
-        store.recordAttempt(drop, hint: nil)
+        store.recordAttempt(keep)
+        store.recordAttempt(drop)
         store.prune(keeping: [keep])
         XCTAssertNotNil(store.entry(keep))
         XCTAssertNil(store.entry(drop))
@@ -69,7 +57,7 @@ final class URLRescueStorageTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let id = UUID()
         let a = RescueLedgerStore(containerURL: dir, now: { now })
-        a.recordSuccess(id, hint: .media)
+        a.recordSuccess(id)
         let b = RescueLedgerStore(containerURL: dir, now: { now })
         XCTAssertTrue(b.wasRescued(id))
     }
@@ -85,11 +73,11 @@ final class URLRescueStorageTests: XCTestCase {
         let b = RescueLedgerStore(containerURL: dir, now: { now })
         let fromA = UUID()
         let fromB = UUID()
-        a.recordAttempt(fromA, hint: .article)
+        a.recordAttempt(fromA)
         b.recordGuardrail(fromB)
 
         XCTAssertTrue(a.isGuardrailed(fromB))
-        a.recordAttempt(fromA, hint: .article)
+        a.recordAttempt(fromA)
         XCTAssertTrue(b.isGuardrailed(fromB), "A's attempt must not drop B's guardrail")
         XCTAssertEqual(b.entry(fromA)?.attemptCount, 2)
     }
@@ -123,45 +111,47 @@ final class URLRescueStorageTests: XCTestCase {
     func testAppendAndTakeAll() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let (store, _) = makePendingStore(now: { now })
-        store.append(PendingRescueRequest(urlString: "https://a", hint: .article, dateWritten: now))
-        store.append(PendingRescueRequest(urlString: "https://b", hint: .product, dateWritten: now))
+        store.append(PendingRescueRequest(urlString: "https://a", dateWritten: now))
+        store.append(PendingRescueRequest(urlString: "https://b", dateWritten: now))
         let taken = store.takeAll()
         XCTAssertEqual(taken.count, 2)
         XCTAssertTrue(store.takeAll().isEmpty, "takeAll should clear the queue")
     }
 
-    func testDedupeByURLReplacesHint() {
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        let (store, _) = makePendingStore(now: { now })
-        store.append(PendingRescueRequest(urlString: "https://a", hint: .article, dateWritten: now))
-        store.append(PendingRescueRequest(urlString: "https://a", hint: .media, dateWritten: now))
+    func testDedupeByURLKeepsTheNewestRequest() {
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let (store, _) = makePendingStore(now: { clock })
+        store.append(PendingRescueRequest(urlString: "https://a", dateWritten: clock))
+        clock = clock.addingTimeInterval(60)
+        store.append(PendingRescueRequest(
+            urlString: "https://a", dateWritten: clock, sourceSurface: "reader"))
         let taken = store.takeAll()
         XCTAssertEqual(taken.count, 1)
-        XCTAssertEqual(taken.first?.hint, .media)
+        XCTAssertEqual(taken.first?.sourceSurface, "reader")
     }
 
     func testExpiryDropsStale() {
         var clock = Date(timeIntervalSince1970: 1_000_000)
         let (store, _) = makePendingStore(now: { clock })
-        store.append(PendingRescueRequest(urlString: "https://a", hint: .article, dateWritten: clock))
+        store.append(PendingRescueRequest(urlString: "https://a", dateWritten: clock))
         clock = clock.addingTimeInterval(PendingRescueRequestStore.lifetime + 1)
         XCTAssertTrue(store.takeAll().isEmpty, "stale requests should be dropped")
     }
 
     // MARK: - RescueRuleStore
 
-    private func rule(host: String = "example.com", hint: String = "article",
+    private func rule(host: String = "example.com",
                       rewrite: RescueLearnedRule.URLRewrite = .pathSuffix("/amp"),
                       at date: Date) -> RescueLearnedRule {
-        RescueLearnedRule(host: host, hint: hint, rewrite: rewrite, createdAt: date, lastSuccessAt: date)
+        RescueLearnedRule(host: host, rewrite: rewrite, createdAt: date, lastSuccessAt: date)
     }
 
     func testRoundTripStoreAndFetch() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let store = InMemoryRescueRuleStore(now: { now })
         store.store(rule(at: now))
-        XCTAssertNotNil(store.rule(forHost: "www.example.com", hint: .article))
-        XCTAssertNil(store.rule(forHost: "example.com", hint: .product))
+        XCTAssertNotNil(store.rule(forHost: "www.example.com"))
+        XCTAssertNil(store.rule(forHost: "other.example"))
     }
 
     func testExpiryAfter30Days() {
@@ -169,18 +159,18 @@ final class URLRescueStorageTests: XCTestCase {
         let store = InMemoryRescueRuleStore(now: { clock })
         store.store(rule(at: clock))
         clock = clock.addingTimeInterval(RescueRuleStore.expiry + 1)
-        XCTAssertNil(store.rule(forHost: "example.com", hint: .article))
+        XCTAssertNil(store.rule(forHost: "example.com"))
     }
 
     func testThreeFailuresEvicts() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let store = InMemoryRescueRuleStore(now: { now })
         store.store(rule(at: now))
-        store.recordFailure(forHost: "example.com", hint: .article)
-        store.recordFailure(forHost: "example.com", hint: .article)
-        XCTAssertNotNil(store.rule(forHost: "example.com", hint: .article))
-        store.recordFailure(forHost: "example.com", hint: .article)
-        XCTAssertNil(store.rule(forHost: "example.com", hint: .article))
+        store.recordFailure(forHost: "example.com")
+        store.recordFailure(forHost: "example.com")
+        XCTAssertNotNil(store.rule(forHost: "example.com"))
+        store.recordFailure(forHost: "example.com")
+        XCTAssertNil(store.rule(forHost: "example.com"))
     }
 
     func testRecordSuccessResetsFailures() {
@@ -188,12 +178,12 @@ final class URLRescueStorageTests: XCTestCase {
         let store = InMemoryRescueRuleStore(now: { now })
         let r = rule(at: now)
         store.store(r)
-        store.recordFailure(forHost: "example.com", hint: .article)
-        store.recordFailure(forHost: "example.com", hint: .article)
+        store.recordFailure(forHost: "example.com")
+        store.recordFailure(forHost: "example.com")
         store.recordSuccess(r)
-        store.recordFailure(forHost: "example.com", hint: .article)
-        store.recordFailure(forHost: "example.com", hint: .article)
-        XCTAssertNotNil(store.rule(forHost: "example.com", hint: .article), "success should have reset the failure count")
+        store.recordFailure(forHost: "example.com")
+        store.recordFailure(forHost: "example.com")
+        XCTAssertNotNil(store.rule(forHost: "example.com"), "success should have reset the failure count")
     }
 
     func testFileStoreKillSwitch() {
@@ -203,29 +193,23 @@ final class URLRescueStorageTests: XCTestCase {
         let store = RescueRuleStore(containerURL: dir, now: { now })
         store.isEnabled = true
         store.store(rule(at: now))
-        XCTAssertNotNil(store.rule(forHost: "example.com", hint: .article))
+        XCTAssertNotNil(store.rule(forHost: "example.com"))
         store.isEnabled = false
-        XCTAssertNil(store.rule(forHost: "example.com", hint: .article), "kill switch should suppress lookups")
+        XCTAssertNil(store.rule(forHost: "example.com"), "kill switch should suppress lookups")
         store.isEnabled = true // reset shared defaults for other tests
     }
 
     // MARK: - Guardrail permanence
 
-    /// The budget's whole shape (2 attempts, 24h apart, reopened by an update)
-    /// is beside the point once a guardrail lands: it is not a budget, it is a
-    /// verdict.
-    func testAGuardrailOutranksTheAttemptBudgetAndSurvivesAnUpdate() {
-        var clock = Date(timeIntervalSince1970: 1_000_000)
-        let store = makeLedgerStore(now: { clock })
+    /// A guardrail closes an item that has spent nothing: it is a verdict on
+    /// the prompt, not a budget.
+    func testAGuardrailClosesAnItemThatStillHasItsAttempt() {
+        let store = makeLedgerStore(now: { Date(timeIntervalSince1970: 1_000_000) })
         let id = UUID()
+        XCTAssertTrue(store.shouldAutoRescue(id))
         store.recordGuardrail(id)
         XCTAssertTrue(store.isGuardrailed(id))
         XCTAssertFalse(store.shouldAutoRescue(id))
-
-        clock = clock.addingTimeInterval(RescueLedgerStore.autoRetrySpacing * 30)
-        store.resetAttempts(for: [id])
-        XCTAssertFalse(store.shouldAutoRescue(id),
-                       "an app update changes Luna's extraction code, not Apple's safety model")
     }
 
     func testTheBrowserHandoffIsRecordedOncePerItem() {
@@ -366,7 +350,7 @@ final class URLRescueStorageTests: XCTestCase {
         let trace = """
         2026-08-13T10:00:00.000Z [ingest] ingest: begin https://example.com/story source=manual
         2026-08-13T10:00:01.000Z [fetch] fetch: status=403 refused
-        2026-08-13T10:05:00.000Z [rescue] start host=example.com hint=auto
+        2026-08-13T10:05:00.000Z [rescue] start host=example.com
         2026-08-13T10:05:30.000Z [rescue] apply outcome=unrescuable host=example.com
         """
         let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""

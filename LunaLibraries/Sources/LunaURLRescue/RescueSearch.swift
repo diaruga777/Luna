@@ -48,11 +48,11 @@ public struct DuckDuckGoRescueSearch: RescueSearching {
 /// - **Same registrable domain**: always allowed. A different path on the same
 ///   site is the ordinary reroute case, arrived at by search instead of by
 ///   reading the digest.
-/// - **Cross-domain**: allowed only for an ARTICLE rescue whose result title
-///   strongly matches the title Luna recovered for the failed page. A syndicated
-///   copy or a canonical home is the same article; a different seller's listing
-///   or a different creator's post is a different THING, so `product` and
-///   `media` never cross a domain however good the title looks.
+/// - **Cross-domain**: allowed only when the result title strongly matches the
+///   title Luna recovered for the failed page. A syndicated copy or a canonical
+///   home is the same article; a title that does not match is a different
+///   THING — another seller's listing, another creator's post — and never
+///   crosses a domain.
 enum RescueSearchCandidates {
 
     /// At most this many results are shown to the model — the on-device window
@@ -64,7 +64,6 @@ enum RescueSearchCandidates {
         registrableDomain: (String) -> String
     ) -> [RescueSearchResult] {
         let originalDomain = registrableDomain(request.url.host?.lowercased() ?? "")
-        let allowsCrossDomain = request.hint == nil || request.hint == .article
         var kept: [RescueSearchResult] = []
         for result in results {
             guard result.url.scheme?.lowercased() == "https" else { continue }
@@ -72,8 +71,7 @@ enum RescueSearchCandidates {
             let domain = registrableDomain(result.url.host?.lowercased() ?? "")
             if !domain.isEmpty, domain == originalDomain {
                 kept.append(result)
-            } else if allowsCrossDomain,
-                      titlesMatch(result.title, request.pageTitle) {
+            } else if titlesMatch(result.title, request.pageTitle) {
                 kept.append(result)
             }
             if kept.count >= maxResults { break }

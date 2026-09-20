@@ -16,15 +16,25 @@ public enum LunaFileKind: Equatable, Sendable {
     case recovery(LunaRecoveryFile)
 }
 
-/// Whoever turns an arriving Luna file into something the user sees. One
+/// Whoever turns an arriving recovery file into a save the user sees. One
 /// witness per process, installed by that process's composition root, so the
 /// app, the share extension and the action extension each dispatch a file the
 /// way their own surface can.
+///
+/// The recovery half and the plugin half are separate seams because different
+/// tiers own them: recovery lives in every app, plugins only in central Luna.
 @MainActor
-public protocol LunaFileIntakeHandling: AnyObject {
+public protocol LunaRecoveryFileHandling: AnyObject {
     /// `sourceURL` is the file the user opened, when there was one — Open In
     /// and Files give one, a pasted code block does not.
     func handleRecovery(_ file: LunaRecoveryFile, sourceURL: URL?)
+}
+
+/// Whoever turns an arriving plugin draft into a review screen. Central Luna
+/// installs a real witness; the sibling apps link no plugin tier and keep the
+/// unsupported one.
+@MainActor
+public protocol LunaPluginFileHandling: AnyObject {
     func handlePlugin(source: String, headerJSON: String)
 }
 
@@ -34,10 +44,15 @@ public protocol LunaFileIntakeHandling: AnyObject {
 /// what is in it" the same way (`claudedocs/luna-file.md`).
 public enum LunaFileIntake {
 
-    /// This process's handler. A strong protocol witness rather than a stored
-    /// closure: it is a launch seam, installed once by the composition root.
+    /// This process's recovery handler. A strong protocol witness rather than a
+    /// stored closure: it is a launch seam, installed once by the composition
+    /// root.
     @MainActor
-    public static var handler: (any LunaFileIntakeHandling)?
+    public static var recoveryHandler: (any LunaRecoveryFileHandling)?
+
+    /// This process's plugin-draft handler, installed the same way.
+    @MainActor
+    public static var pluginHandler: (any LunaPluginFileHandling)?
 
     /// A cheap prefix test for the share sheet's plain-text route, which must
     /// not run a full parse over every shared caption. A true answer still
@@ -70,10 +85,10 @@ public enum LunaFileIntake {
     }
 }
 
-/// The handler a surface installs before it has a real one. It records the
-/// arrival in the log and shows nothing, so a Luna file reaching a surface
-/// that cannot yet present it is visible in diagnostics rather than silent.
-public final class UnsupportedLunaFileIntake: LunaFileIntakeHandling {
+/// The handler a surface installs when it has no real one. It records the
+/// arrival in the log and shows nothing, so a Luna file reaching a surface that
+/// cannot present it is visible in diagnostics rather than silent.
+public final class UnsupportedLunaFileIntake: LunaRecoveryFileHandling, LunaPluginFileHandling {
     private static let log = Logger(subsystem: LunaLogging.subsystem, category: "lunafile")
 
     public init() {}

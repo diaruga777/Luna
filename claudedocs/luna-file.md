@@ -92,19 +92,24 @@ xcconfig → Info.plist chain can be observed.
 `LunaFileIntake.classify(text:)` answers with the file's kind, the error that
 stopped a recognized file, or **nil when the text is not a Luna file at all**.
 It is pure, so every surface answers the same way. What HAPPENS next is the
-surface's own business, through one seam:
+surface's own business, through two seams:
 
 ```swift
-@MainActor public protocol LunaFileIntakeHandling: AnyObject {
+@MainActor public protocol LunaRecoveryFileHandling: AnyObject {
     func handleRecovery(_ file: LunaRecoveryFile, sourceURL: URL?)
+}
+
+@MainActor public protocol LunaPluginFileHandling: AnyObject {
     func handlePlugin(source: String, headerJSON: String)
 }
 ```
 
-Every composition root installs a witness — the twelve `KindWiring+*`,
-`ShareEntry+*` and `ActionEntry+*` files — so a Luna file reaching any surface
-is always accounted for. `KindCompositionRootTests` fails the build on a root
-that installs none, and on anything else that writes the seam.
+They are separate because different tiers own them: every app recovers a save,
+only central Luna reviews a plugin draft. Every composition root installs both
+— the twelve `KindWiring+*`, `ShareEntry+*` and `ActionEntry+*` files — so a
+Luna file reaching any surface is always accounted for.
+`KindCompositionRootTests` fails the build on a root that writes neither, and
+on anything else that writes either one.
 
 | Route | Where | What happens |
 | --- | --- | --- |

@@ -401,30 +401,40 @@ enum SharedStageCatalog {
             StageDescriptor(
                 id: "card.failed-save.error", screen: "Failed save card", variant: "error",
                 summary: "The default failed save: the page in a web view, its URL, and the "
-                    + "retry-with-AI affordance.",
+                    + "chat hand-off row.",
                 kind: .shared,
                 make: { failedSaveCard() }),
             StageDescriptor(
                 id: "card.failed-save.rescuing", screen: "Failed save card",
                 variant: "rescue in progress",
-                summary: "A rescue running: the page dimmed under a progress bar. Frozen "
-                    + "mid-run — the card polls its state provider and this one never moves.",
+                summary: "The automatic Apple Intelligence attempt running: the page dimmed "
+                    + "under a progress bar. Frozen mid-run — the card polls its state "
+                    + "provider and this one never moves.",
                 kind: .shared,
                 make: { failedSaveCard(.running(progress: 0.45)) }),
             StageDescriptor(
-                id: "card.failed-save.no-rescue", screen: "Failed save card",
-                variant: "no rescue offered",
-                summary: "A failure not worth an LLM pass (or no engine available): the "
-                    + "button is absent rather than disabled.",
+                id: "card.failed-save.waiting", screen: "Failed save card",
+                variant: "waiting for the reply",
+                summary: "A provider was opened and the reply has not come back: the row "
+                    + "stays, with the line naming the file to tap.",
                 kind: .shared,
-                make: { failedSaveCard(.unavailable) }),
+                make: { failedSaveCard(.waiting(.claude)) }),
             StageDescriptor(
-                id: "card.failed-save.terminal", screen: "Failed save card",
-                variant: "attempt spent",
-                summary: "The rescue was already spent under this app version: an apology "
-                    + "and Delete, until an update makes it eligible again.",
+                id: "card.failed-save.applying", screen: "Failed save card",
+                variant: "applying a Luna file",
+                summary: "A Luna file arriving: the same dimmed page and bar the automatic "
+                    + "attempt shows, because it is the same recovery finishing.",
                 kind: .shared,
-                make: { failedSaveCard(.spent) }),
+                make: { failedSaveCard(.applying(progress: 0.6)) }),
+            StageDescriptor(
+                id: "card.failed-save.refused", screen: "Failed save card",
+                variant: "the file was refused",
+                summary: "A Luna file that could not be read: the offer comes back with one "
+                    + "line saying why.",
+                kind: .shared,
+                make: {
+                    failedSaveCard(.offer, note: "Luna could not read the content in this file.")
+                }),
             StageDescriptor(
                 id: "card.unsupported-save", screen: "Unsupported save card",
                 variant: "another app's kind",
@@ -447,26 +457,23 @@ enum SharedStageCatalog {
                     guard let url = URL(string: "https://example.com/broken") else { return nil }
                     return UINavigationController(
                         rootViewController: RescueFailureViewController(
-                            // No delegate: a staged card records nothing, opens
-                            // nothing and completes nothing, exactly as the three
-                            // empty closures it replaces did.
-                            url: url, rescueURL: URL(string: "luna://rescue"),
-                            delegate: nil))
+                            // No delegate: a staged card completes nothing.
+                            url: url, delegate: nil))
                 }),
         ]
     }
 
     @MainActor
     private static func failedSaveCard(
-        _ rescueState: FailedSaveCardModel.RescueState = .idle
+        _ rescueState: FailedSaveCardModel.RescueState = .offer, note: String? = nil
     ) -> UIViewController {
         let itemID = SavedItem.deterministicUUID(from: "stage-failed")
         let model = FailedSaveCardModel(
             itemID: itemID, url: URL(string: "https://example.com/broken"),
-            urlText: "example.com/broken", rescueState: rescueState)
+            urlText: "example.com/broken", rescueState: rescueState, note: note)
         let card = FailedSaveCardViewController(
             model: model,
-            actions: FailedSaveCardActions(rescue: {}, share: { _ in }, delete: {}),
+            actions: FailedSaveCardActions(share: { _ in }, delete: {}),
             // A constant provider is what freezes the state: the card re-reads
             // this on a timer, and a live one would resolve the rescue away.
             stateProvider: { model })

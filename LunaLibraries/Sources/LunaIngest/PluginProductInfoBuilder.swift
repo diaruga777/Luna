@@ -1,6 +1,6 @@
 //
 //  PluginProductInfoBuilder.swift
-//  LunaPluginIngest
+//  LunaIngest
 //
 
 import Foundation
@@ -12,6 +12,11 @@ import LunaModels
 /// `ProductInfo` lives in LunaHTMLClassification, above LunaModels, so
 /// `ProductModelAdopting` answers with the Model plus a resolved image and this
 /// tier assembles the value (`PluginModelAdopting`'s `.product` case).
+///
+/// It sits in LunaIngest, beside `PluginOutcomeMapping`, because a product
+/// Model reaches Luna by two routes: a plugin, and the `product` content of a
+/// recovery Luna file, which every app adopts and only central Luna links any
+/// plugin tier for.
 public enum PluginProductInfoBuilder {
 
     public static func make(from model: ProductModel, imageURL: URL?) -> ProductInfo {

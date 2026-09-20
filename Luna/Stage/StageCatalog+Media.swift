@@ -149,15 +149,13 @@ enum MediaStageCatalog {
                 }),
             StageDescriptor(
                 id: "card.media.no-media", screen: "Media card", variant: "nothing to download",
-                summary: "The one failure that offers the AI rescue: the page held no media "
-                    + "this app could recognise.",
+                summary: "The one failure a model can answer: the page held no media this "
+                    + "app could recognise, so the card offers the chat hand-off.",
                 kind: .media,
                 make: {
-                    downloadCard(
-                        snapshot: snapshot(
-                            phase: .failed, progress: 0, message: "No media found",
-                            failureKind: .noMedia),
-                        offersRescue: true)
+                    downloadCard(snapshot: snapshot(
+                        phase: .failed, progress: 0, message: "No media found",
+                        failureKind: .noMedia))
                 }),
             StageDescriptor(
                 id: "card.media.finished", screen: "Media card", variant: "saved",
@@ -181,12 +179,9 @@ enum MediaStageCatalog {
     }
 
     @MainActor
-    private static func downloadCard(
-        snapshot: DownloaderJobSnapshot?, offersRescue: Bool = false
-    ) -> UIViewController {
+    private static func downloadCard(snapshot: DownloaderJobSnapshot?) -> UIViewController {
         let card = UndownloadedMediaCardContentViewController(
-            item: undownloadedVideo(), download: {},
-            rescue: offersRescue ? {} : nil)
+            item: undownloadedVideo(), download: {})
         card.stagedSnapshot = snapshot
         return StageCardHostViewController(card: card)
     }

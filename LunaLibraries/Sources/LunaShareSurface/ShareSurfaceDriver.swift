@@ -239,18 +239,22 @@ public final class ShareSurfaceDriver {
 
         case let .failed(reason):
             // Never shows a misleading "Saved". Marks the row failed so the
-            // main app's list shows it, records the failure reason and
-            // count so the card and the rescue's failure-kind mapping can
-            // read them, then offers the Apple-Intelligence rescue
-            // hand-off: the action extension (which has UI) presents the
-            // rescue card, while the zero-UI share extension completes
-            // quietly (the main app's background sweep still rescues it if
-            // auto-rescue is on).
+            // main app's list shows it, and records the failure reason and
+            // count so the card and the rescue's failure-kind mapping can read
+            // them. The rescue hand-off is queued here rather than on a tap:
+            // Apple Intelligence runs once, automatically, for every failure
+            // (`claudedocs/url-rescue.md`), and the app drains this queue on
+            // its next foreground. The action extension (which has UI) then
+            // shows the failure card, which offers the chat hand-off; the
+            // zero-UI share extension completes quietly.
             if let item = store.item(forURLString: url.absoluteString) {
                 store.markFailed(item.id)
                 SaveFailureStore.shared.recordFailure(item.id, reason: reason)
                 flushDiagnostics(itemID: item.id, reason: reason)
             }
+            PendingRescueRequestStore.shared.append(PendingRescueRequest(
+                urlString: url.absoluteString, dateWritten: Date(),
+                sourceSurface: currentApp.storageIdentifier))
             if host.readerMode != nil {
                 presentRescueFailure(url: url)
             } else {
@@ -306,21 +310,17 @@ public final class ShareSurfaceDriver {
             PluginLockedSaveViewController(delegate: PluginLockedCardLegs(host: host)))
     }
 
-    /// The action-extension failure card: shows the page, writes a
-    /// pending-rescue record, and best-effort opens the containing app. The
-    /// extension links no rescue engine — only the pending-record store
-    /// and the deep link.
-    ///
-    /// The record carries no hint. The model classifies the page when the
-    /// app drains the queue, so this card asks the user nothing.
+    /// The action-extension failure card: shows the page and best-effort opens
+    /// the containing app, which drains the rescue the failure leg already
+    /// queued. The extension links no rescue engine.
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
-        let app = currentApp
-        let card = RescueFailureViewController(
+        host.presentModally(RescueFailureViewController(
             url: url,
-            rescueURL: LunaDeepLink.rescueLink(scheme: app.deepLinkScheme),
-            delegate: RescueFailureCardLegs(host: host, url: url, app: app))
-        host.presentModally(card)
+            delegate: RescueFailureCardLegs(
+                host: host, url: url,
+                itemID: store.item(forURLString: url.absoluteString)?.id,
+                app: currentApp)))
     }
 
     // MARK: - Diagnostics
@@ -476,22 +476,41 @@ public final class ShareSurfaceDriver {
 private final class RescueFailureCardLegs: RescueFailureCardDelegate {
     private weak var host: (any ExtensionHost)?
     private let url: URL
+    private let itemID: UUID?
     private let app: LunaApp
 
-    init(host: any ExtensionHost, url: URL, app: LunaApp) {
+    init(host: any ExtensionHost, url: URL, itemID: UUID?, app: LunaApp) {
         self.host = host
         self.url = url
+        self.itemID = itemID
         self.app = app
     }
 
-    func rescueFailureCardDidRequestRescue(_ card: RescueFailureViewController) {
-        PendingRescueRequestStore.shared.append(PendingRescueRequest(
-            urlString: url.absoluteString, hint: nil, dateWritten: Date(),
-            sourceSurface: app.storageIdentifier))
-    }
-
-    func rescueFailureCard(_ card: RescueFailureViewController, openApp url: URL) {
-        host?.openURL(url)
+    /// Records the hand-off first, so the app can finish it however the open
+    /// goes, then asks the host to leave for the provider. An extension may
+    /// only ask, and the host may refuse — so a refusal opens the containing
+    /// app at `<scheme>://llm?item=…`, which reads the same record and opens
+    /// the provider from a process that is always allowed to.
+    func rescueFailureCard(
+        _ card: RescueFailureViewController, didChoose provider: LLMProvider
+    ) {
+        guard let itemID else { return }
+        let prompt = LLMHandoffPrompts.recovery(
+            url: url, app: app,
+            failure: SaveFailureReason.rescueSentence(
+                SaveFailureStore.shared.record(for: itemID)?.reason, attempted: .article))
+        let target = LLMProviderPreferences.claudeTarget
+        LLMHandoffStore.shared.begin(
+            .recovery(itemID: itemID, urlString: url.absoluteString),
+            provider: provider, claudeTarget: target)
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
+        else { return }
+        host?.openURL(link) { [weak self] accepted in
+            guard let self, !accepted else { return }
+            guard let fallback = LunaDeepLink.llmHandoffLink(
+                scheme: self.app.deepLinkScheme, itemID: itemID) else { return }
+            self.host?.openURL(fallback)
+        }
     }
 
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController) {

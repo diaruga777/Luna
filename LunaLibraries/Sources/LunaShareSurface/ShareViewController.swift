@@ -98,8 +98,14 @@ open class ShareViewController: UIViewController {
     private var loadWatchdog: DispatchWorkItem?
     private static let loadTimeout: TimeInterval = 15
 
+    /// The one surface this extension process shows. An extension has exactly
+    /// one view controller, and the intake witness the composition root
+    /// installs — before any controller exists — has to find it later.
+    static weak var activeSurface: ShareViewController?
+
     public override func viewDidLoad() {
         super.viewDidLoad()
+        Self.activeSurface = self
         // Extensions render in the host's window, so they pin their own
         // root: dark UIKit materials, with the user's chosen sky on top.
         AppearanceSettings.apply(to: self)
@@ -743,7 +749,7 @@ open class ShareViewController: UIViewController {
                     "luna file: recovery \(file.kind.rawValue) for \(file.url.absoluteString)",
                     category: "share")
                 DispatchQueue.main.async {
-                    LunaFileIntake.handler?.handleRecovery(file, sourceURL: sourceURL)
+                    LunaFileIntake.recoveryHandler?.handleRecovery(file, sourceURL: sourceURL)
                 }
             case .unsupported(let owner):
                 SharedDiagnosticLog.record("luna file: dropped foreign-kind recovery", category: "share")
@@ -760,7 +766,7 @@ open class ShareViewController: UIViewController {
             }
             SharedDiagnosticLog.record("luna file: plugin draft", category: "share")
             DispatchQueue.main.async {
-                LunaFileIntake.handler?.handlePlugin(source: source, headerJSON: headerJSON)
+                LunaFileIntake.pluginHandler?.handlePlugin(source: source, headerJSON: headerJSON)
             }
         case .failure(let error):
             SharedDiagnosticLog.record("luna file refused: \(error)", category: "share")
@@ -853,6 +859,16 @@ open class ShareViewController: UIViewController {
     /// manual fallback instructions too.
     public func openURL(_ url: URL) {
         extensionContext?.open(url, completionHandler: nil)
+    }
+
+    public func openURL(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let extensionContext else {
+            completion(false)
+            return
+        }
+        extensionContext.open(url) { accepted in
+            DispatchQueue.main.async { completion(accepted) }
+        }
     }
 
     /// Opening the URL and completing must be sequenced through the extension

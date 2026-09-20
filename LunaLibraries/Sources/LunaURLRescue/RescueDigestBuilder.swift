@@ -32,14 +32,14 @@ public struct RescueDigestBudget: Equatable {
 /// Section order + proportional budgets (unused budget rolls forward):
 ///   1. head metadata (10%)   — title, description, og/twitter, canonical, amp, alternate
 ///   2. JSON-LD (30%)         — Product/Article/VideoObject ranked first
-///   3. embedded app JSON (20%) — __NEXT_DATA__ / application/json; media hint — and no hint — also greps media URLs
+///   3. embedded app JSON (20%) — __NEXT_DATA__ / application/json, plus grepped media URLs
 ///   4. visible text (30%)    — body text minus script/style/nav/footer/header/aside/form
 ///   5. candidate URLs (10%)  — canonical/amp/og:video/iframe/video/source + same-host amp|print|embed|oembed links
 public struct RescueDigestBuilder {
     public init() {}
 
     public func buildDigest(
-        url: URL, html: String, hint: RescueHint?, budget: RescueDigestBudget
+        url: URL, html: String, budget: RescueDigestBudget
     ) -> String {
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else {
             return String(html.prefix(budget.maxCharacters))
@@ -51,7 +51,7 @@ public struct RescueDigestBuilder {
         let plan: [(title: String, body: String, share: Double)] = [
             ("METADATA", headMetadata(document), 0.10),
             ("STRUCTURED DATA (JSON-LD)", jsonLD(document), 0.30),
-            ("EMBEDDED JSON", embeddedJSON(document, html: html, hint: hint), 0.20),
+            ("EMBEDDED JSON", embeddedJSON(document, html: html), 0.20),
             ("VISIBLE TEXT", visibleText(document), 0.30),
             ("CANDIDATE URLS", candidateURLs(document, pageURL: url), 0.10),
         ]
@@ -125,21 +125,19 @@ public struct RescueDigestBuilder {
         return 3
     }
 
-    private func embeddedJSON(_ document: Document, html: String, hint: RescueHint?) -> String {
+    private func embeddedJSON(_ document: Document, html: String) -> String {
         var parts: [String] = []
-        if hint == .media || hint == nil {
-            // Surface likely media URLs first — grep the raw HTML for the tokens
-            // public downloaders key on. Included with no hint too: the model
-            // can't classify a page as media if the digest never shows it the
-            // media, and the lines are cheap (capped at 20).
-            let mediaLines = html.split(whereSeparator: { $0 == "\n" || $0 == "," })
-                .map { String($0) }
-                .filter { line in
-                    ["mp4", "m3u8", "playable_url", "video_url", "hd_src", "sd_src"].contains { line.contains($0) }
-                }
-                .prefix(20)
-            if !mediaLines.isEmpty { parts.append(mediaLines.joined(separator: "\n")) }
-        }
+        // Surface likely media URLs first — grep the raw HTML for the tokens
+        // public downloaders key on. The model cannot classify a page as media
+        // if the digest never shows it the media, and the lines are cheap
+        // (capped at 20).
+        let mediaLines = html.split(whereSeparator: { $0 == "\n" || $0 == "," })
+            .map { String($0) }
+            .filter { line in
+                ["mp4", "m3u8", "playable_url", "video_url", "hd_src", "sd_src"].contains { line.contains($0) }
+            }
+            .prefix(20)
+        if !mediaLines.isEmpty { parts.append(mediaLines.joined(separator: "\n")) }
         let blobs = EmbeddedJSONBlobs.nextDataAndJSONScripts(in: document)
             .map { collapseWhitespace($0) }
         parts.append(contentsOf: blobs)

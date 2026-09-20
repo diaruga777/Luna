@@ -22,7 +22,10 @@ public struct RescueLearnedRule: Codable, Equatable {
     }
 
     public let host: String          // HostMatching.normalizedHost
-    public let hint: String          // RescueHint.rawValue, or "auto"
+    /// The key segment a rule is filed under. Always "auto" now that the model
+    /// classifies every page itself; the field stays so a rule written by an
+    /// older build keeps its key.
+    public let hint: String
     public let rewrite: URLRewrite
     public let userAgentToken: String?
     public let refererString: String?
@@ -38,7 +41,7 @@ public struct RescueLearnedRule: Codable, Equatable {
     public static let schemaVersion = 1
 
     public init(
-        host: String, hint: String, rewrite: URLRewrite,
+        host: String, hint: String = "auto", rewrite: URLRewrite,
         userAgentToken: String? = nil, refererString: String? = nil,
         acceptLanguage: String? = nil, xForwardedFor: String? = nil,
         javascript: String? = nil, scriptResultKind: String? = nil,
@@ -62,9 +65,9 @@ public struct RescueLearnedRule: Codable, Equatable {
 
 public protocol RescueRuleStoring: AnyObject {
     var isEnabled: Bool { get set }
-    func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule?
+    func rule(forHost host: String) -> RescueLearnedRule?
     func recordSuccess(_ rule: RescueLearnedRule)
-    func recordFailure(forHost host: String, hint: RescueHint?)
+    func recordFailure(forHost host: String)
     func store(_ rule: RescueLearnedRule)
 }
 
@@ -82,9 +85,9 @@ public final class InMemoryRescueRuleStore: RescueRuleStoring {
 
     public static func key(host: String, hint: String) -> String { "\(host)|\(hint)" }
 
-    public func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule? {
+    public func rule(forHost host: String) -> RescueLearnedRule? {
         lock.lock(); defer { lock.unlock() }
-        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint?.rawValue ?? "auto")
+        let key = Self.key(host: HostMatching.normalizedHost(host), hint: "auto")
         guard let rule = rules[key] else { return nil }
         if now().timeIntervalSince(rule.lastSuccessAt) > RescueRuleStore.expiry {
             rules[key] = nil
@@ -102,9 +105,9 @@ public final class InMemoryRescueRuleStore: RescueRuleStoring {
         rules[Self.key(host: rule.host, hint: rule.hint)] = updated
     }
 
-    public func recordFailure(forHost host: String, hint: RescueHint?) {
+    public func recordFailure(forHost host: String) {
         lock.lock(); defer { lock.unlock() }
-        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint?.rawValue ?? "auto")
+        let key = Self.key(host: HostMatching.normalizedHost(host), hint: "auto")
         guard var rule = rules[key] else { return }
         rule.consecutiveFailures += 1
         if rule.consecutiveFailures >= RescueRuleStore.maxConsecutiveFailures {
@@ -171,9 +174,9 @@ public final class RescueRuleStore: RescueRuleStoring {
         set { defaults.set(newValue, forKey: Self.killSwitchKey) }
     }
 
-    public func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule? {
+    public func rule(forHost host: String) -> RescueLearnedRule? {
         guard isEnabled else { return nil }
-        return memory.rule(forHost: host, hint: hint)
+        return memory.rule(forHost: host)
     }
 
     public func recordSuccess(_ rule: RescueLearnedRule) {
@@ -181,8 +184,8 @@ public final class RescueRuleStore: RescueRuleStoring {
         persist()
     }
 
-    public func recordFailure(forHost host: String, hint: RescueHint?) {
-        memory.recordFailure(forHost: host, hint: hint)
+    public func recordFailure(forHost host: String) {
+        memory.recordFailure(forHost: host)
         persist()
     }
 

@@ -232,29 +232,25 @@ beats leaving two hundred locked saves to be tapped one at a time.
   task group would choose its deadline result and then wait forever while draining
   a WebKit continuation that ignores cancellation. Stopping the run skips the
   remaining unlocks and costs nothing.
-- Its slice takes the same `ingestShare`→`followUpShare` stretch a download or a
-  rescue would, eased on the clock (`expectedUnlockDuration`) because the flow
-  reports nothing while it runs.
+- Its slice takes the same `ingestShare`→`followUpShare` stretch a download
+  would, eased on the clock (`expectedUnlockDuration`) because the flow reports
+  nothing while it runs.
 
-**Three passes, in order.** The ingest runs `defaultConcurrency()` links at a
-time through the ordinary `SavesIngestor.ingest`, so an imported link is
-classified, gated, fetched and stored exactly like any other save. Then the
-web-unlock pass above, serially. Then the failures are retried with Apple
-Intelligence, ONE at a time — a model call is the one resource on the device that
-gains nothing from being asked twice at once, which is why
-`URLRescueCoordinator`'s own background sweep serializes too. Splitting them also
-keeps the arithmetic honest: a link that neither locked nor failed is simply
-finished at the end of the ingest.
+**Two passes, in order.** The ingest runs `defaultConcurrency()` links at a time
+through the ordinary `SavesIngestor.ingest`, so an imported link is classified,
+gated, fetched and stored exactly like any other save. Then the web-unlock pass
+above, serially. Splitting them keeps the arithmetic honest: a link that never
+locked is simply finished at the end of the ingest.
 
-`allowsInteractivePrompt: false` is load-bearing twice over. It suppresses the
-unsupported-kind modal — `.manual` is an interactive source, so a batch of
-foreign links would otherwise stack one alert per dropped link on top of the
-progress sheet — and it makes the ingestor's own `rescueTrigger`
-non-interactive, so a failure is left alone instead of starting an inline rescue
-that would race the model pass's awaited one over the same item.
-`URLRescueCoordinator.rescueAndWait` is the awaited form of the consented
-one-shot rescue; the import can't use the fire-and-forget one because it has to
-know each item's fate to score the run.
+**A failure is scored and left.** The import no longer waits on Apple
+Intelligence: the save's own `.failed` fires the ordinary automatic rescue, which
+runs once on its own clock (`claudedocs/url-rescue.md`), and the link is reported
+as a recoverable failure. It is still a real save that the launch sweep keeps
+re-ingesting, so it is never reported as rejected.
+
+`allowsInteractivePrompt: false` suppresses the unsupported-kind modal —
+`.manual` is an interactive source, so a batch of foreign links would otherwise
+stack one alert per dropped link on top of the progress sheet.
 
 **Permissions are asked for at the top, not mid-run.**
 `LinkImportRunner.mediaStoragePreflight` (installed by the media `KindWiring`s
@@ -309,8 +305,8 @@ two other call sites (the failed-save card's rescue bar, the carousel host's
 media loading shell) moved to the arc with it.
 
 Each link owns an equal `1/N` slice. Within a slice: the ingest owns up to 0.55,
-a media download or a rescue carries it to 0.95, and the last sliver lands when
-the item is scored — so a finished slice always looks finished. A slice never
+a media download or a browser unlock carries it to 0.95, and the last sliver
+lands when the item is scored — so a finished slice always looks finished. A slice never
 moves backward.
 
 Progress is **pulled**, not pushed: the sheet reads `currentProgress()` on a
@@ -321,8 +317,7 @@ clock-based estimate that eases toward the end of its share — a fetch reports
 nothing until it lands, and a frozen bar reads as a hung import. Easing, never
 linear: an overrunning fetch slows down instead of stalling at a wall.
 
-A rescue's fraction comes from the rescue's own reported stage
-(`URLRescueCoordinator.rescueProgress`), and a media download's from
+A media download's fraction comes from
 `MediaImportProgress` — which reads the transfer's **phase**, not its fraction: a
 failed transfer stops short and a saving one sits at 1 for a moment, so a
 fraction alone would either strand the slice open until its deadline or close it

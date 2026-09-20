@@ -407,18 +407,4 @@ final class FailedSaveCardFactoryTests: XCTestCase {
         return item
     }
 
-    func testASingleFreshFailureShowsNoAttemptHistory() {
-        let record = SaveFailureRecord(reason: .offline, failureCount: 1)
-        XCTAssertNil(FailedSaveCardFactory.attemptFooter(record))
-        XCTAssertNil(FailedSaveCardFactory.attemptFooter(nil))
-    }
-
-    func testARepeatedFailureReportsItsCount() {
-        let now = Date(timeIntervalSince1970: 1_000_000_000)
-        let record = SaveFailureRecord(
-            reason: .timedOut, lastFailureDate: now.addingTimeInterval(-7200), failureCount: 3)
-        let footer = FailedSaveCardFactory.attemptFooter(record, now: now)
-        XCTAssertNotNil(footer)
-        XCTAssertTrue(footer?.contains("3 times") == true, "got \(footer ?? "nil")")
-    }
 }

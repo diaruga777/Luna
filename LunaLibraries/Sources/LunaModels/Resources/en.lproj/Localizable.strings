@@ -1120,7 +1120,6 @@
 /* ===== CardDeck_failedSave — the failed-save error card, shared between the in-app card
    (FailedSaveCardFactory.swift / FailedSaveCardViewController.swift) and its extension-side
    twin (RescueFailureViewController.swift) ===== */
-"CardDeck_failedSave_attemptFooter_Luna" = "Tried %lld times · last %@";
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
 

@@ -538,25 +538,24 @@ extraction.
 
 Settings ▸ Import & Export shares every link as one `section,url` CSV (the
 archive as its own section) and reads one back through a review sheet, a bounded
-parallel ingest, and the LLM rescue for anything that failed. The import goes
+parallel ingest, and a browser pass over anything hard-paywalled. The import goes
 through `store.insertImported` + `SavesIngestor.ingest`, NOT `handleSavePress` —
 so it is not a save press and fires none of the new-save automation. Full design:
 `claudedocs/import-export.md`.
 
 ## Failed saves
 
-A `.failed` save shows a real error card on the Reader and Downloader card roots —
-favicon + recovered title, the URL that failed, why it failed, a red rim, and
-buttons for the LLM rescue / an in-app browser / sharing the link. It has no kind,
-so it surfaces in EVERY app, and its menu offers Share Link + Delete only (no
-Archive). Full design: `claudedocs/failed-saves.md`.
+A `.failed` save shows a real error card on every card root — the page itself in
+a web view, the URL that failed, a red rim, and the chat hand-off row. It has no
+kind, so it surfaces in EVERY app, and its menu offers Share Link + Delete only
+(no Archive). Full design: `claudedocs/failed-saves.md`.
 
-## Failed-save rescue (Apple Intelligence)
+## Failed-save recovery
 
-A `.failed` save is not a dead end: tapping it offers a one-shot LLM rescue with a
-hint picker (Article / Price Tracker / Media Download), and a background sweep
-retries failed items automatically (2 attempts, 24h apart, tracked in the
-`rescueLedger.json` sidecar). While a rescue runs, the card reads "trying
-harder…". Share/action extensions can't run the LLM, so a failed extension save
-shows a "Finish in Luna" card that hands off via `<scheme>://rescue` + the
-`PendingRescueRequestStore` queue. Full design: `claudedocs/url-rescue.md`.
+A `.failed` save is not a dead end, and it asks the user for nothing. Apple
+Intelligence gets ONE silent, automatic attempt per item, tracked in the
+`rescueLedger.json` sidecar; the extensions queue that attempt for the app in
+`PendingRescueRequestStore`, with no tap involved. What the user can do is the
+chat hand-off on the card: ChatGPT or Claude answers with a Luna file, and Luna
+imports it. Full designs: `claudedocs/url-rescue.md`,
+`claudedocs/llm-handoff.md`, `claudedocs/luna-file.md`.

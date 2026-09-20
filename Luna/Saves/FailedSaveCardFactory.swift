@@ -201,18 +201,6 @@ enum FailedSaveCardFactory {
             + String(repeating: "-", count: 40) + "\n\n"
     }
 
-    /// "Tried 3 times · 2 days ago" — provenance that makes a stubborn failure
-    /// legible. Suppressed for a single fresh attempt, which needs no history.
-    /// No longer on the card (the page itself is the explanation now), but the
-    /// list rows still show it.
-    static func attemptFooter(_ record: SaveFailureRecord?, now: Date = Date()) -> String? {
-        guard let record, record.failureCount > 1 else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        let when = formatter.localizedString(for: record.lastFailureDate, relativeTo: now)
-        return L10n.string("CardDeck_failedSave_attemptFooter", record.failureCount, when)
-    }
-
     // MARK: - Actions
 
     private static func makeActions(

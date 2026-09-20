@@ -32,24 +32,36 @@ final class URLRescueCoordinatorTests: XCTestCase {
     }
 
     /// A fake engine recording each perform call; returns a configurable result.
+    ///
+    /// A rescue starts on an unstructured `Task`, so every test here POLLS for
+    /// the call rather than pumping a fixed duration: under a full suite the
+    /// cooperative pool can take longer to pick the task up than any one number
+    /// would survive.
     private final class RecordingEngine: URLRescueEngineBridging {
         var result: URLRescueCoordinator.RescueRunResult
         var available: Bool
-        private(set) var performedIDs: [UUID] = []
-        let expectation: XCTestExpectation?
-        init(result: URLRescueCoordinator.RescueRunResult, available: Bool = true,
-             expectation: XCTestExpectation? = nil) {
-            self.result = result; self.available = available; self.expectation = expectation
+        private let lock = NSLock()
+        private var performed: [UUID] = []
+
+        init(result: URLRescueCoordinator.RescueRunResult, available: Bool = true) {
+            self.result = result
+            self.available = available
         }
-        convenience init(succeed: Bool, available: Bool = true, expectation: XCTestExpectation? = nil) {
-            self.init(result: succeed ? .advanced : .notRecovered,
-                      available: available, expectation: expectation)
+        convenience init(succeed: Bool, available: Bool = true) {
+            self.init(result: succeed ? .advanced : .notRecovered, available: available)
         }
+
+        var performedIDs: [UUID] {
+            lock.lock(); defer { lock.unlock() }
+            return performed
+        }
+
         var isRescueAvailable: Bool { available }
 
         func performRescue(for item: SavedItem) async -> URLRescueCoordinator.RescueRunResult {
-            performedIDs.append(item.id)
-            expectation?.fulfill()
+            lock.lock()
+            performed.append(item.id)
+            lock.unlock()
             return result
         }
     }
@@ -67,15 +79,13 @@ final class URLRescueCoordinatorTests: XCTestCase {
     /// Apple Intelligence looks once. A failure runs it; the item's next
     /// failure finds the budget spent and runs nothing.
     func testAFailureRunsExactlyOneAutomaticAttemptEver() {
-        let exp = expectation(description: "perform")
-        let fake = RecordingEngine(succeed: false, expectation: exp)
+        let fake = RecordingEngine(succeed: false)
         URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
         coordinator.itemJustFailed(item.id, source: .manual)
-        wait(for: [exp], timeout: 2)
-        XCTAssertEqual(fake.performedIDs, [item.id])
+        waitUntil { fake.performedIDs == [item.id] }
         XCTAssertFalse(ledger.shouldAutoRescue(item.id))
 
         coordinator.itemJustFailed(item.id, source: .manual)
@@ -87,16 +97,14 @@ final class URLRescueCoordinatorTests: XCTestCase {
     /// while the app was closed gets its attempt on the next foreground — with
     /// no tap anywhere.
     func testAQueuedExtensionFailureIsRescuedWithoutATap() {
-        let exp = expectation(description: "perform")
-        let fake = RecordingEngine(succeed: true, expectation: exp)
+        let fake = RecordingEngine(succeed: true)
         URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
 
         pending.append(PendingRescueRequest(
             urlString: "https://new.example.com/x", dateWritten: Date()))
         coordinator.drainPendingRequests()
-        wait(for: [exp], timeout: 2)
-        XCTAssertEqual(fake.performedIDs.count, 1)
+        waitUntil { fake.performedIDs.count == 1 }
         XCTAssertNotNil(store.item(forURLString: "https://new.example.com/x"),
                         "a pending URL not yet in the store should be added")
     }
@@ -128,15 +136,13 @@ final class URLRescueCoordinatorTests: XCTestCase {
     }
 
     func testASuccessfulRescueIsRecordedAsProvenance() {
-        let exp = expectation(description: "perform")
-        let fake = RecordingEngine(succeed: true, expectation: exp)
+        let fake = RecordingEngine(succeed: true)
         URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
         coordinator.itemJustFailed(item.id, source: .manual)
-        wait(for: [exp], timeout: 2)
-        XCTAssertTrueEventually { self.ledger.wasRescued(item.id) }
+        waitUntil { self.ledger.wasRescued(item.id) }
     }
 
     // MARK: - Stage progress
@@ -213,15 +219,13 @@ final class URLRescueCoordinatorTests: XCTestCase {
     /// page: the same page trips it every time. The ledger is what makes that
     /// permanent.
     func testAGuardrailedRescueMarksTheItemPermanentlyBlocked() {
-        let exp = expectation(description: "perform")
-        let fake = RecordingEngine(result: .guardrailed, expectation: exp)
+        let fake = RecordingEngine(result: .guardrailed)
         URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
         coordinator.itemJustFailed(item.id, source: .manual)
-        wait(for: [exp], timeout: 2)
-        XCTAssertTrueEventually { self.ledger.isGuardrailed(item.id) }
+        waitUntil { self.ledger.isGuardrailed(item.id) }
         XCTAssertFalse(ledger.shouldAutoRescue(item.id), "no automatic retry either")
     }
 
@@ -241,22 +245,23 @@ final class URLRescueCoordinatorTests: XCTestCase {
         XCTAssertTrue(fake.performedIDs.isEmpty)
     }
 
-    private func settle(_ interval: TimeInterval = 0.3) {
-        let waited = expectation(description: "settle")
-        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { waited.fulfill() }
-        wait(for: [waited], timeout: 2)
+    /// Pumps the run loop so anything already scheduled gets its turn. Used
+    /// only to assert that something does NOT happen.
+    private func settle(_ interval: TimeInterval = 0.5) {
+        RunLoop.current.run(until: Date().addingTimeInterval(interval))
     }
-}
 
-// MARK: - Test helpers
-
-private extension XCTestCase {
-    func XCTAssertTrueEventually(timeout: TimeInterval = 1, _ predicate: @escaping () -> Bool) {
+    /// Pumps until `predicate` holds, or fails the test at the deadline.
+    private func waitUntil(
+        timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line,
+        _ predicate: @escaping () -> Bool
+    ) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if predicate() { return }
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
-        XCTAssertTrue(predicate())
+        XCTFail("condition never held within \(timeout)s", file: file, line: line)
     }
 }
+

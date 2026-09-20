@@ -775,6 +775,47 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertNil(SavesStore.shared.content(for: item))
     }
 
+    /// A save can land ready with the wrong content, so every ready card's menu
+    /// carries the same chat hand-off the failed card offers
+    /// (`claudedocs/llm-handoff.md`) — above Archive, because it is about the
+    /// save rather than about filing it away.
+    @MainActor
+    func testReadyCardMenuOffersRecoverWithAIAboveArchive() throws {
+        let controller = makeArticleController(seed: "reader-recover-menu", title: "Recover menu")
+        let slot = try XCTUnwrap(
+            controller.slotIndex(forCarouselIndex: controller.carousel.currentIndex))
+        let menu = try XCTUnwrap(controller.deckProvider?.deckMenu(forSlot: slot))
+
+        let titles = menu.children.map(\.title)
+        let recoverIndex = try XCTUnwrap(titles.firstIndex(of: "Recover with AI"))
+        let archiveIndex = try XCTUnwrap(titles.firstIndex(of: "Archive"))
+        XCTAssertLessThan(recoverIndex, archiveIndex)
+
+        let recover = try XCTUnwrap(menu.children[recoverIndex] as? UIMenu)
+        XCTAssertEqual(
+            recover.children.map(\.title), ["ChatGPT", "Claude", "Use Claude Code"])
+    }
+
+    /// An imported document has no page for a model to read again, so it is not
+    /// offered the hand-off at all.
+    @MainActor
+    func testAnImportedDocumentCardIsNotOfferedTheHandoff() throws {
+        let item = SavedItem(
+            seed: "reader-recover-doc", urlString: "lunadoc://imported/notes.pdf",
+            title: "Notes", dateAdded: Date(), state: .ready, wordCount: 200,
+            documentType: "pdf")
+        SavesStore.shared.seedForTesting(
+            items: [item],
+            contents: [item.id: UITestFixtures.sampleArticleContent(title: "Notes")])
+        let controller = ArticleCardsViewController()
+        controller.loadViewIfNeeded()
+
+        let slot = try XCTUnwrap(
+            controller.slotIndex(forCarouselIndex: controller.carousel.currentIndex))
+        let menu = try XCTUnwrap(controller.deckProvider?.deckMenu(forSlot: slot))
+        XCTAssertFalse(menu.children.map(\.title).contains("Recover with AI"))
+    }
+
     func testReaderArchiveTrayOffersDeleteAndDeletesCompleteSave() throws {
         var item = SavedItem(
             seed: "reader-archive-delete",

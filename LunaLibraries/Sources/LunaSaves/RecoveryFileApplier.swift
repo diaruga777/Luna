@@ -169,11 +169,29 @@ public final class RecoveryFileApplier {
         return .recovered(itemID: itemID)
     }
 
-    /// The failed save this file is about, when Luna already has one. A save
-    /// that is ready is left alone — a recovery file is not an edit.
+    /// The save this file is about, when Luna already has one.
+    ///
+    /// The recorded hand-off wins, in ANY state: the user asked the model about
+    /// one particular save, and a save that landed READY with the wrong content
+    /// is recovered from its own long-press menu (`claudedocs/llm-handoff.md`).
+    /// Its file replaces that row's content in place rather than reserving a
+    /// second save for the same page. With no record, only a failed or
+    /// archive-parked save is adopted — an unprompted file about a page that is
+    /// already read is not an edit.
     private func existingItemID(for url: URL) -> UUID? {
         let target = Self.matchKey(url)
-        return store.items().first { item in
+        let items = store.items()
+        let recorded = handoffs.recoveryRecords().first { record in
+            guard let urlString = record.urlString else { return false }
+            guard let recordURL = URL(string: urlString) else {
+                return urlString == url.absoluteString
+            }
+            return Self.matchKey(recordURL) == target
+        }
+        if let itemID = recorded?.itemID, items.contains(where: { $0.id == itemID }) {
+            return itemID
+        }
+        return items.first { item in
             guard item.state == .failed || item.state == .needsCaptcha else { return false }
             guard let itemURL = item.url else { return item.urlString == url.absoluteString }
             return Self.matchKey(itemURL) == target

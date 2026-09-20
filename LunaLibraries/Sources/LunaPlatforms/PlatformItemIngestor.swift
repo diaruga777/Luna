@@ -25,6 +25,15 @@ public final class PlatformItemIngestor {
         _ item: SavedItem, platform: ContentPlatform, platformItemID: String?,
         store: SavesStore
     ) async {
+        // A row that is ALREADY ready is having its content replaced — a
+        // recovery file for a save that downloaded the wrong asset
+        // (`claudedocs/llm-handoff.md`). The library row and its file describe
+        // that asset, and the download gate below answers "already downloaded"
+        // while they stand, so they go first and a fresh transfer starts.
+        if item.state == .ready {
+            await MainActor.run { MediaSavedContents.discard(forURLString: item.urlString) }
+        }
+
         let match = PlatformMatch(platform: platform, itemID: platformItemID)
         let metadata = await platformMetadata(
             platform: platform, itemID: platformItemID, urlString: item.urlString)

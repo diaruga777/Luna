@@ -247,6 +247,46 @@ final class RecoveryFileApplierTests: XCTestCase {
         XCTAssertEqual(result, .recovered(itemID: item.id))
     }
 
+    // MARK: - Replacing a save that already worked
+
+    /// A save can land READY with the wrong content, and the user hands it to
+    /// a chat model from its own long-press menu. The file that comes back
+    /// replaces the content on that very row (`claudedocs/llm-handoff.md`).
+    func testAReadyArticleIsReplacedInPlace() async {
+        let existing = store.add(urlString: pageURL.absoluteString)
+        _ = store.saveContent(
+            ArticleContent(title: "The teaser", blocks: [
+                .init(kind: .paragraph, text: "Subscribe to read on.", links: []),
+            ]), for: existing)
+        handoffs.begin(
+            .recovery(itemID: existing.id, urlString: pageURL.absoluteString), provider: .chatGPT)
+
+        let result = await makeApplier().apply(file())
+
+        XCTAssertEqual(result, .recovered(itemID: existing.id))
+        XCTAssertEqual(store.items().count, 1)
+        XCTAssertEqual(store.content(for: store.item(withID: existing.id)!)?.title, "Recovered")
+    }
+
+    /// Two rows can answer to one page: the ready save the user asked about and
+    /// an older failed attempt at the same URL. The hand-off names which one.
+    func testTheRecordedHandoffWinsOverASameURLFailedSave() async {
+        let ready = store.add(urlString: "https://www.example.com/story/")
+        _ = store.saveContent(
+            ArticleContent(title: "The teaser", blocks: [
+                .init(kind: .paragraph, text: "Subscribe to read on.", links: []),
+            ]), for: ready)
+        let failed = failedItem("https://example.com/story")
+        handoffs.begin(
+            .recovery(itemID: ready.id, urlString: "https://www.example.com/story/"),
+            provider: .claude)
+
+        let result = await makeApplier().apply(file())
+
+        XCTAssertEqual(result, .recovered(itemID: ready.id))
+        XCTAssertEqual(store.item(withID: failed.id)?.state, .failed, "the failed row is untouched")
+    }
+
     // MARK: - The surface gate
 
     /// A Reader handed a product file stores nothing and says whose kind it is

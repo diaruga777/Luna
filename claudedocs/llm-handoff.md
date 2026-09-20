@@ -64,6 +64,41 @@ colour, need no asset catalogue, and carry no trademarked artwork.
 | The extension's failure card | `RescueFailureViewController`'s chin |
 | The Downloader's no-media card | over the status bar, only for `.noMedia` |
 
+## A save that worked, and is still wrong
+
+A save can land `.ready` holding the wrong thing: the teaser behind a consent
+wall, a different product, a preview clip. There is no failure to explain and no
+card chin to put a row in, so the offer is a submenu on the card's LONG PRESS —
+**Recover with AI**, one row per provider plus Claude Code — in every app
+(`KindDeckProvider.deckMenu`). It is offered for a `.ready` save with an http(s)
+page behind it; an imported `lunadoc://` document has no page to read again.
+
+The prompt is the recovery prompt with a different sentence:
+`SaveFailureReason.wrongContentSentence`, which names the ways a "successful"
+capture is usually wrong for that kind rather than a failure that never
+happened. `SaveFailureReason.attemptKind` answers the kind from the item's own
+shape, so a platform item asks for media whatever its state.
+
+`SaveRecoveryHandoff.begin` (`Luna/Saves/`) is the ONE place that records the
+hand-off and opens the provider — the failed card's row, the Downloader's
+no-media card and this menu all go through it. The menu then shows the waiting
+line as a toast, once, because there is no chin to hold it; open the menu again
+while the hand-off is live and its first row says so.
+
+**The file replaces the content in place.** `RecoveryFileApplier` honours the
+recorded hand-off first, in any state, so the reply lands on the row the user
+asked about instead of reserving a second save. Each kind's handler makes that
+true for what it already holds:
+
+| Kind | What the handler does with what is there |
+| --- | --- |
+| article | Overwrites the content file and the row's columns. The old images are released through the `file_holders` edges; the new cover takes the row's artwork, which a first save's "only if absent" rule would have kept. |
+| product | Updates the save's OWN tracker (`ProductTrackerIngestor.replaceOwnTracker`) — its sellers, their day-bucketed history, the `initialPrice` baseline and the alert threshold all stand, and it takes the new name, brand, identifiers, artwork and current price. The matcher deliberately excludes a save's own tracker, so without this branch the save would get a new tracker and lose its past. |
+| media | Drops the library row and the already-downloaded marker (`MediaSavedContents.discard`) before the download hand-off, which otherwise answers "already downloaded" and keeps the wrong file. |
+
+Each handler keys that on the row being `.ready` when it runs: a first save is
+`.pending`, a rescue's is `.failed`, a plugin's is `.needsCaptcha`.
+
 ## Recording it
 
 `LLMHandoffStore` (`llmHandoffs.json`, App Group) holds one record per hand-off
@@ -104,4 +139,9 @@ Claude target switch, and which providers have a fallback.
 expiry, and two live stores over one file.
 `LunaTests/FailedSaveTests.swift` — that a recorded hand-off puts the card in the
 waiting state. `LunaTests/URLRescueTests.swift` — that a refused provider open
-falls back to the containing app.
+falls back to the containing app. `LunaTests/ArticleCardsChromeTests.swift` —
+that a ready card's menu carries the submenu above Archive and a document's does
+not. `LunaTests/RecoveryFileApplierTests.swift` — that the record wins over a
+same-URL failed save and that a ready article is replaced in place.
+`LunaTests/SaveContentReplacementTests.swift` — the tracker's history and the
+media save's stale file.

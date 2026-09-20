@@ -40,6 +40,17 @@ public final class ProductTrackerIngestor {
     public func ingest(
         _ item: SavedItem, url: URL, product: ProductInfo, store: SavesStore
     ) async {
+        // This save already tracks a product, so this page is being read again
+        // to CORRECT it — a recovery file for a tracker that captured the wrong
+        // item or a stale price (`claudedocs/llm-handoff.md`). The matcher
+        // below excludes the item's own tracker, so without this branch the
+        // save would get a brand-new tracker and lose its stores, its price
+        // history and its alert.
+        if store.item(withID: item.id)?.priceTracker != nil {
+            await replaceOwnTracker(item, url: url, product: product, store: store)
+            return
+        }
+
         // The merge decision (and its snapshot seeding + identifier union) is
         // shared with the extension's immediate-editor path — see
         // `ProductTrackerMerge`. This instance's own `snapshotStore`
@@ -106,6 +117,54 @@ public final class ProductTrackerIngestor {
         PriceTrackerSaveAnnouncement.post(
             itemID: item.id, source: item.effectiveCaptureSource,
             isMerge: false, highlightedURL: nil)
+        reportReadiness(itemID: item.id, store: store)
+        finishSeeding(itemID: item.id)
+    }
+
+    /// Rewrites this save's OWN tracker from a fresh reading of the page: the
+    /// name, brand, identifiers, artwork and every seller's current price.
+    ///
+    /// The tracker is updated, never rebuilt. Its stores keep their day-bucketed
+    /// `priceHistory`, its `initialPrice` baseline and its alert threshold stand,
+    /// and a seller the page no longer lists stays — the user may have added it.
+    /// A price for a seller already on the tracker is recorded as a sample, the
+    /// same way a background refresh records one, so the graph gains a point
+    /// instead of losing its past.
+    private func replaceOwnTracker(
+        _ item: SavedItem, url: URL, product: ProductInfo, store: SavesStore
+    ) async {
+        guard var tracker = store.item(withID: item.id)?.priceTracker else { return }
+        let observedAt = Date()
+        tracker.productName = product.name
+        if let brand = product.brand { tracker.brand = brand }
+        if let productID = product.productID { tracker.productID = productID }
+        tracker.identifiers = tracker.identifiers.merging(
+            product.identifiers.merging(ProductIdentifiers(brand: product.brand)))
+
+        let listings = product.trackerStores(fallbackURL: url)
+        for listing in listings {
+            guard tracker.hasStore(urlString: listing.urlString) else {
+                tracker.upsertStore(listing)
+                continue
+            }
+            tracker.setPrice(
+                listing.lastPrice, currency: listing.currency,
+                urlString: listing.urlString, at: observedAt)
+            if let price = listing.lastPrice {
+                tracker.recordPriceSample(
+                    price, currency: listing.currency,
+                    urlString: listing.urlString, at: observedAt)
+            }
+        }
+
+        if let data = await artworkLoader.artworkData(
+            primaryURL: product.imageURL, pageURL: url) {
+            tracker.imageFileName = writeArtwork(data, for: item.id, store: store)
+        }
+        store.updatePriceTracker(tracker, for: item.id)
+        PriceTrackerSaveAnnouncement.post(
+            itemID: item.id, source: item.effectiveCaptureSource,
+            isMerge: false, highlightedURL: listings.first?.urlString)
         reportReadiness(itemID: item.id, store: store)
         finishSeeding(itemID: item.id)
     }

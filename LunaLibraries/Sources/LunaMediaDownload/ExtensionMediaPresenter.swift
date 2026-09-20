@@ -76,11 +76,6 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
     /// its fetch. The save row itself belongs to the caller — it is
     /// kind-neutral.
     public func deleteSavedContents(forURLString urlString: String) {
-        MediaPreloadCache.shared.discard(urlString: urlString)
-        if let item = SavedMediaStore.shared.existingDownloadedItem(
-            forURLString: urlString) {
-            SavedMediaStore.shared.delete(item)
-        }
-        AutoDownloadSettings.unmarkDownloaded(urlString)
+        MediaSavedContents.discard(forURLString: urlString)
     }
 }

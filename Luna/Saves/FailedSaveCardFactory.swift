@@ -79,22 +79,11 @@ enum FailedSaveCardFactory {
     /// Two callers: the card's row, and `KindWiring.openLLMHandoff` when an
     /// extension's own open was refused and the app has to finish it.
     static func startHandoff(for item: SavedItem, to provider: LLMProvider) {
-        guard let url = item.url else { return }
         let reason = SaveFailureStore.shared.record(for: item.id)?.reason
-        let prompt = LLMHandoffPrompts.recovery(
-            url: url, app: LunaApp.current,
+        SaveRecoveryHandoff.begin(
+            item: item, provider: provider,
             failure: SaveFailureReason.rescueSentence(
                 reason, attempted: SaveFailureReason.attemptKind(for: item, reason: reason)))
-        let target = LLMProviderPreferences.claudeTarget
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
-        else { return }
-        LLMHandoffStore.shared.begin(
-            .recovery(itemID: item.id, urlString: item.urlString),
-            provider: provider, claudeTarget: target)
-        LLMLauncher.shared.openLLM(
-            link,
-            fallback: LLMDeepLink.fallbackURL(
-                for: provider, prompt: prompt, claudeTarget: target))
     }
 
     /// The deck's title for a failed card. The card body shows the live page

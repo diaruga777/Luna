@@ -109,6 +109,13 @@ public final class LLMHandoffStore {
         live().first { $0.urlString == urlString }
     }
 
+    /// Every live recovery hand-off. The applier reads them all because it
+    /// matches a file's URL the way it matches a save's — host and path,
+    /// normalized — rather than by the exact text the record was written with.
+    public func recoveryRecords() -> [LLMHandoffRecord] {
+        live().filter { $0.urlString != nil }
+    }
+
     /// The live plugin hand-off — there is at most one, because a second
     /// request replaces the first.
     public func pluginRecord() -> LLMHandoffRecord? {

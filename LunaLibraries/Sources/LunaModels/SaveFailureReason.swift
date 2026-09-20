@@ -276,11 +276,16 @@ extension SaveFailureReason {
     /// Which branch of the pipeline gave up on this save, read off the item and
     /// its recorded reason. The prompts and the rescue engine's failure kind
     /// both derive from this, so they cannot disagree.
+    ///
+    /// A recovery started from a card that SUCCEEDED passes no reason, so the
+    /// item's own shape is the whole answer: a platform item is media whatever
+    /// its state.
     public static func attemptKind(
         for item: SavedItem, reason: SaveFailureReason?
     ) -> SaveFailureAttemptKind {
         if reason == .noMediaFound { return .media }
         if item.isPriceTracker { return .product }
+        if item.isPlatformItem { return .media }
         return .article
     }
 

@@ -33,24 +33,13 @@ enum MediaCardHandoff {
     /// creating one if the media was saved without a row — and opens the
     /// provider.
     static func begin(provider: LLMProvider, sourceURLString: String) {
-        guard let url = URL(string: sourceURLString) else { return }
         let store = SavesStore.shared
-        guard let itemID = store.item(forURLString: sourceURLString)?.id
-            ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
+        guard let item = store.item(forURLString: sourceURLString)
+            ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)
         else { return }
-        let prompt = LLMHandoffPrompts.recovery(
-            url: url, app: LunaApp.current,
+        SaveRecoveryHandoff.begin(
+            item: item, provider: provider,
             failure: SaveFailureReason.rescueSentence(.noMediaFound, attempted: .media))
-        let target = LLMProviderPreferences.claudeTarget
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
-        else { return }
-        LLMHandoffStore.shared.begin(
-            .recovery(itemID: itemID, urlString: sourceURLString),
-            provider: provider, claudeTarget: target)
-        LLMLauncher.shared.openLLM(
-            link,
-            fallback: LLMDeepLink.fallbackURL(
-                for: provider, prompt: prompt, claudeTarget: target))
     }
 }
 

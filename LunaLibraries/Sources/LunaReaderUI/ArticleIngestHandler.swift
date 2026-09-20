@@ -30,6 +30,11 @@ public final class ArticleIngestHandler {
         _ content: ArticleContent, html: String, for item: SavedItem,
         url: URL, store: SavesStore
     ) async {
+        // A row that is ALREADY ready is having its content replaced — a
+        // recovery file for a save that captured the wrong article
+        // (`claudedocs/llm-handoff.md`). Its artwork belongs to the text being
+        // replaced, so the new cover takes it over.
+        let replacesExistingContent = item.state == .ready
         let contentWithCachedImages = ArticleImageDownloader.resolveLocalImages(content, store: store)
         let initialContent = await ArticleImageDownloader.downloadInitialLayoutImages(
             contentWithCachedImages, itemID: item.id, store: store, refererURL: url)
@@ -47,7 +52,8 @@ public final class ArticleIngestHandler {
         }
         Task { [self] in
             await finishArticleArtifacts(
-                initialContent, html: html, for: item, url: url, store: store)
+                initialContent, html: html, for: item, url: url, store: store,
+                replacesExistingContent: replacesExistingContent)
         }
     }
 
@@ -56,14 +62,14 @@ public final class ArticleIngestHandler {
     /// and WebKit archive capture.
     private func finishArticleArtifacts(
         _ content: ArticleContent, html: String, for item: SavedItem,
-        url: URL, store: SavesStore
+        url: URL, store: SavesStore, replacesExistingContent: Bool = false
     ) async {
         async let downloadedContent = ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
         async let coverData = ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
 
         if let coverData = await coverData,
-           store.item(withID: item.id)?.thumbnailFileName == nil {
+           replacesExistingContent || store.item(withID: item.id)?.thumbnailFileName == nil {
             store.setThumbnail(coverData, for: item.id)
         }
 

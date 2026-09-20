@@ -373,12 +373,68 @@ final class KindDeckProvider: CardDeckProviding {
 
         let kindActions = presenter.menuActions(for: item, host: host)
         let weekly = WeeklyPromotionMenu.actions(for: item, presenter: host)
-        return UIMenu(children: kindActions + weekly + [
+        let recover: [UIMenuElement] = recoverWithAIMenu(for: item).map { [$0] } ?? []
+        return UIMenu(children: kindActions + weekly + recover + [
             UIAction(
                 title: L10n.string("CardDeck_host_archiveAction"), image: UIImage(systemName: "archivebox")
             ) { [weak self] _ in self?.archive(item) },
             delete,
         ])
+    }
+
+    /// "Recover with AI" — the same chat hand-off the failed card offers, for a
+    /// save that landed READY with the wrong content: a teaser behind a consent
+    /// wall, the wrong product, a preview clip
+    /// (`claudedocs/llm-handoff.md`).
+    ///
+    /// Offered for a ready save with an http(s) page behind it. A `lunadoc://`
+    /// imported document has no page for a model to re-read, and a save still
+    /// pending or failed is not this menu's business — a failed one has the
+    /// card's own row.
+    private func recoverWithAIMenu(for item: SavedItem) -> UIMenu? {
+        guard item.state == .ready, let scheme = item.url?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else { return nil }
+
+        var children: [UIMenuElement] = []
+        if LLMHandoffStore.shared.record(forItemID: item.id) != nil {
+            let waiting = UIAction(title: L10n.string("CardDeck_recoverWithAIWaiting")) { _ in }
+            waiting.attributes = .disabled
+            children.append(waiting)
+        }
+        for provider in LLMProvider.allCases {
+            children.append(UIAction(
+                title: provider.displayName, image: LLMProviderGlyph.image(for: provider)
+            ) { [weak self] _ in
+                self?.recover(item, with: provider, claudeTarget: LLMProviderPreferences.claudeTarget)
+            })
+        }
+        // Claude Code is a target of the same provider, and picking it here
+        // remembers it — the same bargain the row's long press makes.
+        children.append(UIAction(
+            title: LLMClaudeTarget.code.displayName,
+            image: LLMProviderGlyph.image(for: .claude)
+        ) { [weak self] _ in
+            LLMProviderPreferences.claudeTarget = .code
+            self?.recover(item, with: .claude, claudeTarget: .code)
+        })
+        return UIMenu(
+            title: L10n.string("CardDeck_recoverWithAI"),
+            image: UIImage(systemName: "sparkles"), children: children)
+    }
+
+    /// Opens the provider with the wrong-content prompt, then says once what to
+    /// do with the reply. A ready card has no chin to hold a waiting line, so
+    /// the toast is the whole of the instruction.
+    private func recover(
+        _ item: SavedItem, with provider: LLMProvider, claudeTarget: LLMClaudeTarget
+    ) {
+        let started = SaveRecoveryHandoff.begin(
+            item: item, provider: provider, claudeTarget: claudeTarget,
+            failure: SaveFailureReason.wrongContentSentence(
+                SaveFailureReason.attemptKind(for: item, reason: nil)))
+        guard started else { return }
+        LunaToast.show(LLMHandoffRowView.waitingHint(), from: host, duration: 3.5)
     }
 
     /// ONE archive per kind, writing every store that kind owns — so a save

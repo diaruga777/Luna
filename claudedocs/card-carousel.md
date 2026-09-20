@@ -742,7 +742,13 @@ The article kind's own answers:
   Archive: Share Link and destructive Delete only. Failed saves appear on the
   Downloader root too (in the slots after the media cards) — they belong to no
   app, so every app shows them.
-- **Long-press** on the centered Reader card offers Archive and destructive Delete.
+- **Long-press** on the centered Reader card offers Recover with AI, Archive and
+  destructive Delete. **Recover with AI** is a submenu — one row per chat
+  provider plus Claude Code — and it appears for any READY save with an http(s)
+  page behind it, in every app: a save can succeed and still hold the wrong
+  thing, and this is the same hand-off the failed card offers
+  (`claudedocs/llm-handoff.md`). It sits above Archive because it is about the
+  save rather than about filing it away.
   Archive persists immediately, then the old card drifts slightly upward while
   fading out before its next neighbor springs into the centered position. Archived
   article squares show favicon, title, and original save date; tapping opens the

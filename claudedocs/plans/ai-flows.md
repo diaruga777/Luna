@@ -19,9 +19,13 @@ present-tense references are `claudedocs/luna-file.md`,
 `claudedocs/llm-handoff.md`, `claudedocs/url-rescue.md`,
 `claudedocs/failed-saves.md`, `claudedocs/plugins.md` §10.
 
-Known small gaps left by the packages: a recovery file's refusal reason is
-process-local (the card falls back to the offer state after a relaunch); the
-Downloader's no-media card shows the row but keeps no waiting state of its own.
+Both small gaps the packages left are CLOSED (2026-09-20): a recovery file's
+refusal reason now rides the hand-off record in the App Group and survives a
+relaunch, and the Downloader's no-media card reads its hint from that record on
+every apply instead of only on the tap. The same wave added the chat hand-off to
+a READY save's long-press menu — a save can succeed and still hold the wrong
+content — and made each kind's handler replace that content in place
+(`claudedocs/llm-handoff.md`).
 
 ## 0. What changes, in one paragraph
 

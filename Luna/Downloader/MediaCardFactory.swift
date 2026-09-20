@@ -33,24 +33,13 @@ enum MediaCardHandoff {
     /// creating one if the media was saved without a row — and opens the
     /// provider.
     static func begin(provider: LLMProvider, sourceURLString: String) {
-        guard let url = URL(string: sourceURLString) else { return }
         let store = SavesStore.shared
-        guard let itemID = store.item(forURLString: sourceURLString)?.id
-            ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
+        guard let item = store.item(forURLString: sourceURLString)
+            ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)
         else { return }
-        let prompt = LLMHandoffPrompts.recovery(
-            url: url, app: LunaApp.current,
+        SaveRecoveryHandoff.begin(
+            item: item, provider: provider,
             failure: SaveFailureReason.rescueSentence(.noMediaFound, attempted: .media))
-        let target = LLMProviderPreferences.claudeTarget
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
-        else { return }
-        LLMHandoffStore.shared.begin(
-            .recovery(itemID: itemID, urlString: sourceURLString),
-            provider: provider, claudeTarget: target)
-        LLMLauncher.shared.openLLM(
-            link,
-            fallback: LLMDeepLink.fallbackURL(
-                for: provider, prompt: prompt, claudeTarget: target))
     }
 }
 
@@ -609,6 +598,12 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleJobProgressChanged(_:)),
             name: .downloaderJobProgressChanged, object: nil)
+        // The hand-off finishes in another process — the file is applied by
+        // whichever surface the user tapped it in — so the card learns the
+        // outcome from the saves change, not from its own job.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(updateHandoffHint),
+            name: .savesChanged, object: nil)
         #if DEBUG
         if let stagedSnapshot {
             apply(stagedSnapshot)
@@ -638,6 +633,18 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         }
     }
 
+    /// The line under the hand-off buttons, read from the store rather than
+    /// remembered from the tap: a card rebuilt two slots out and paged back to
+    /// must still say which file to look for, and a reply that would not apply
+    /// must say why (`claudedocs/llm-handoff.md`).
+    @objc private func updateHandoffHint() {
+        guard let record = LLMHandoffStore.shared.record(forURL: sourceURLString) else {
+            handoffRow.setHint(nil)
+            return
+        }
+        handoffRow.setHint(record.refusal ?? LLMHandoffRowView.waitingHint())
+    }
+
     private func apply(_ snapshot: DownloaderJobSnapshot?) {
         guard let snapshot else {
             statusBar.isHidden = true
@@ -661,6 +668,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         // Only a no-media failure has a page a model could read. Every other
         // failure is a transfer that can simply be tried again.
         handoffRow.isHidden = !(snapshot.phase == .failed && snapshot.failureKind == .noMedia)
+        updateHandoffHint()
 
         guard let fileName = snapshot.thumbnailFileName,
               fileName != loadedThumbnailFileName
@@ -691,6 +699,8 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
     var percentTextForTesting: String? { percentLabel.text }
     var progressForTesting: Float { progress.progress }
     var isRetryGlyphVisibleForTesting: Bool { !button.isHidden }
+    var isHandoffRowVisibleForTesting: Bool { !handoffRow.isHidden }
+    var handoffHintForTesting: String? { handoffRow.hintForTesting }
     #endif
 }
 
@@ -732,6 +742,6 @@ extension UndownloadedMediaCardContentViewController: LLMHandoffRowDelegate {
 
     func row(_ row: LLMHandoffRowView, didChoose provider: LLMProvider) {
         MediaCardHandoff.begin(provider: provider, sourceURLString: sourceURLString)
-        row.setHint(LLMHandoffRowView.waitingHint())
+        updateHandoffHint()
     }
 }

@@ -10,6 +10,8 @@ import LunaModels
 //  transfer, and a card recreated mid-transfer picks the bar back up).
 //
 
+import LunaDesignSystem
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -129,6 +131,45 @@ final class UndownloadedMediaCardTests: XCTestCase {
             urlString: "https://x.com/someone/status/999")
 
         XCTAssertFalse(card.isDownloadBarVisibleForTesting)
+    }
+
+    /// The hand-off's state belongs to the STORE, not to the tap that started
+    /// it: a card built while a reply is outstanding says which file to look
+    /// for, and one whose reply was refused says why
+    /// (`claudedocs/llm-handoff.md`).
+    @MainActor
+    func testARecordedHandoffRendersItsHintWithoutATap() {
+        let handoffs = LLMHandoffStore.shared
+        let record = handoffs.begin(
+            .recovery(itemID: UUID(), urlString: sourceURL), provider: .chatGPT)
+        defer { handoffs.clear(id: record.id) }
+
+        let card = makeCard()
+        post(makeSnapshot(
+            phase: .failed, progress: 0.3, errorMessage: "No media found",
+            errorKind: .noMedia))
+
+        XCTAssertTrue(card.isHandoffRowVisibleForTesting)
+        XCTAssertEqual(card.handoffHintForTesting, LLMHandoffRowView.waitingHint())
+
+        handoffs.markRefused(id: record.id, reason: "Luna could not read the content.")
+        post(makeSnapshot(
+            phase: .failed, progress: 0.3, errorMessage: "No media found",
+            errorKind: .noMedia))
+
+        XCTAssertEqual(card.handoffHintForTesting, "Luna could not read the content.")
+    }
+
+    /// No hand-off, no hint: the row is the offer and nothing else.
+    @MainActor
+    func testAFailureWithNoHandoffShowsNoHint() {
+        let card = makeCard()
+        post(makeSnapshot(
+            phase: .failed, progress: 0.3, errorMessage: "No media found",
+            errorKind: .noMedia))
+
+        XCTAssertTrue(card.isHandoffRowVisibleForTesting)
+        XCTAssertNil(card.handoffHintForTesting)
     }
 
     /// A job that ends with no result to show (a suspension reaped past its

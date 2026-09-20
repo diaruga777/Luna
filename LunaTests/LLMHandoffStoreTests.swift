@@ -100,6 +100,35 @@ final class LLMHandoffStoreTests: XCTestCase {
         XCTAssertEqual(String(data: data ?? Data(), encoding: .utf8), "{}")
     }
 
+    /// A refusal is written to the file, not held in a process, so the card
+    /// still says why the reply would not apply after the app is relaunched.
+    func testARefusalSurvivesANewStoreOverTheSameFile() {
+        let record = makeStore().begin(
+            .recovery(itemID: UUID(), urlString: "https://example.com/a"), provider: .chatGPT)
+        makeStore().markRefused(id: record.id, reason: "Luna could not read the content.")
+
+        let relaunched = makeStore().record(forURL: "https://example.com/a")
+        XCTAssertEqual(relaunched?.refusal, "Luna could not read the content.")
+        XCTAssertEqual(relaunched?.refusedAt, clock)
+        XCTAssertFalse(relaunched?.isWaiting ?? true, "a refused record is not a wait")
+    }
+
+    /// Asking again clears the last refusal: the record the new tap writes is a
+    /// fresh wait, not the old verdict.
+    func testAskingAgainClearsTheRefusal() {
+        let store = makeStore()
+        let first = store.begin(
+            .recovery(itemID: UUID(), urlString: "https://example.com/a"), provider: .chatGPT)
+        store.markRefused(id: first.id, reason: "Luna could not read the content.")
+
+        store.begin(
+            .recovery(itemID: UUID(), urlString: "https://example.com/a"), provider: .claude)
+
+        let current = store.record(forURL: "https://example.com/a")
+        XCTAssertNil(current?.refusal)
+        XCTAssertTrue(current?.isWaiting ?? false)
+    }
+
     /// The extension's card starts a hand-off and the app reads it: two live
     /// stores on one file, as two processes.
     func testEitherLiveStoreSeesTheOthersWrites() {

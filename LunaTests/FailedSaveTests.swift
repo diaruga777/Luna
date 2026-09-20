@@ -390,6 +390,22 @@ final class FailedSaveCardFactoryTests: XCTestCase {
             FailedSaveCardFactory.makeModel(for: item).rescueState, .waiting(.chatGPT))
     }
 
+    /// A refused reply ends the wait: the card goes back to the offer and says
+    /// why under the row, and it still does after a relaunch because the reason
+    /// lives on the record rather than in the applier's memory.
+    func testARefusedHandoffOffersAgainWithTheReason() throws {
+        let item = failedItem()
+        let store = LLMHandoffStore.shared
+        let record = store.begin(
+            .recovery(itemID: item.id, urlString: item.urlString), provider: .claude)
+        defer { store.clear(id: record.id) }
+        store.markRefused(id: record.id, reason: "Luna could not read the content in this file.")
+
+        let model = FailedSaveCardFactory.makeModel(for: item)
+        XCTAssertEqual(model.rescueState, .offer)
+        XCTAssertEqual(model.note, "Luna could not read the content in this file.")
+    }
+
     /// Only the two busy states dim the page. The offer and the wait leave the
     /// card usable — the user's next move is in the row, not behind it.
     func testOnlyWorkInFlightDimsTheCard() {

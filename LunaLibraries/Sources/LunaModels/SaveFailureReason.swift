@@ -276,12 +276,38 @@ extension SaveFailureReason {
     /// Which branch of the pipeline gave up on this save, read off the item and
     /// its recorded reason. The prompts and the rescue engine's failure kind
     /// both derive from this, so they cannot disagree.
+    ///
+    /// A recovery started from a card that SUCCEEDED passes no reason, so the
+    /// item's own shape is the whole answer: a platform item is media whatever
+    /// its state.
     public static func attemptKind(
         for item: SavedItem, reason: SaveFailureReason?
     ) -> SaveFailureAttemptKind {
         if reason == .noMediaFound { return .media }
         if item.isPriceTracker { return .product }
+        if item.isPlatformItem { return .media }
         return .article
+    }
+
+    /// The sentence for a save that SUCCEEDED but captured the wrong thing: the
+    /// user asks a chat model to redo it from the card's long-press menu
+    /// (`claudedocs/llm-handoff.md`). Luna recorded no failure, so the sentence
+    /// names the ways a "successful" capture is usually wrong for that kind.
+    public static func wrongContentSentence(_ attempted: SaveFailureAttemptKind) -> String {
+        switch attempted {
+        case .article:
+            return "Luna saved this page, but the text it kept is not the real article: "
+                + "a teaser or excerpt, a cookie, consent or login wall, a comments or related-links "
+                + "section, or a different page. Capture the complete article the page is about"
+        case .product:
+            return "Luna saved this page, but the product it kept is wrong: a different item, a "
+                + "wrong or stale price, a bundle or accessory instead of the product, or a page "
+                + "of several products. Capture the one product this page sells, at its current price"
+        case .media:
+            return "Luna saved this page, but the file it kept is wrong: a preview, a thumbnail, "
+                + "an advertisement, a related clip, or a lower quality than the page offers. "
+                + "Capture the media this page is actually about, at its best quality"
+        }
     }
 
     private static func fallbackSentence(_ attempted: SaveFailureAttemptKind) -> String {

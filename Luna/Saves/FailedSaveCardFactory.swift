@@ -52,7 +52,7 @@ enum FailedSaveCardFactory {
             url: item.url,
             urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
             rescueState: rescueState(for: item),
-            note: RecoveryFileApplier.shared.lastFailure(forURL: item.urlString))
+            note: refusalNote(for: item))
     }
 
     /// Where this save is in its recovery. Work in flight outranks a hand-off
@@ -66,10 +66,24 @@ enum FailedSaveCardFactory {
         if RecoveryFileApplier.shared.isApplying(item.id) {
             return .applying(progress: RecoveryFileApplier.shared.applyProgress(item.id) ?? 0)
         }
-        if let record = LLMHandoffStore.shared.record(forItemID: item.id) {
+        // A refused record is not a wait: the round trip finished and the card
+        // goes back to the offer, with the reason under it.
+        if let record = LLMHandoffStore.shared.record(forItemID: item.id), record.isWaiting {
             return .waiting(record.provider)
         }
         return .offer
+    }
+
+    /// Why the last file for this save was refused. The record carries it, so
+    /// the card still explains itself after a relaunch; a file that arrived
+    /// with no hand-off behind it falls back to the applier's own memory of
+    /// this process.
+    @MainActor
+    private static func refusalNote(for item: SavedItem) -> String? {
+        if let record = LLMHandoffStore.shared.record(forItemID: item.id) {
+            return record.refusal
+        }
+        return RecoveryFileApplier.shared.lastFailure(forURL: item.urlString)
     }
 
     /// Hands the failed page to a chat model: the prompt names the page and
@@ -79,22 +93,11 @@ enum FailedSaveCardFactory {
     /// Two callers: the card's row, and `KindWiring.openLLMHandoff` when an
     /// extension's own open was refused and the app has to finish it.
     static func startHandoff(for item: SavedItem, to provider: LLMProvider) {
-        guard let url = item.url else { return }
         let reason = SaveFailureStore.shared.record(for: item.id)?.reason
-        let prompt = LLMHandoffPrompts.recovery(
-            url: url, app: LunaApp.current,
+        SaveRecoveryHandoff.begin(
+            item: item, provider: provider,
             failure: SaveFailureReason.rescueSentence(
                 reason, attempted: SaveFailureReason.attemptKind(for: item, reason: reason)))
-        let target = LLMProviderPreferences.claudeTarget
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt, claudeTarget: target)
-        else { return }
-        LLMHandoffStore.shared.begin(
-            .recovery(itemID: item.id, urlString: item.urlString),
-            provider: provider, claudeTarget: target)
-        LLMLauncher.shared.openLLM(
-            link,
-            fallback: LLMDeepLink.fallbackURL(
-                for: provider, prompt: prompt, claudeTarget: target))
     }
 
     /// The deck's title for a failed card. The card body shows the live page

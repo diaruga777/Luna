@@ -61,8 +61,8 @@ so a light head-only metadata read is still worth doing.
 | --- | --- | --- |
 | `.running(progress:)` | `URLRescueCoordinator.isRescuing` | The automatic Apple Intelligence attempt is in flight: the page goes under a 40% black overlay with a `MoonHorizonProgressBar`, and the row stands down. |
 | `.applying(progress:)` | `RecoveryFileApplier.isApplying` | A Luna file is being applied. The same overlay and bar, because it is the same recovery finishing. |
-| `.waiting(provider)` | `LLMHandoffStore` has a live record | The user opened a provider and the reply has not come back. The row stays, with the line naming the file to tap. |
-| `.offer` | otherwise | The row, and nothing else. |
+| `.waiting(provider)` | `LLMHandoffStore` has a live record with no refusal on it | The user opened a provider and the reply has not come back. The row stays, with the line naming the file to tap. |
+| `.offer` | otherwise | The row, and — when a file for this save was refused — one line under it saying why. |
 
 Under the overlay the **URL bar stays uncovered and live** (the overlay is a
 subview of the web container only), so share still works, and **reload is
@@ -87,8 +87,15 @@ separate from `.savesChanged` because progress fires many times per rescue and
 Luna was unable to save this page." plus Delete, because the one thing it could
 offer was spent. It now always has something to offer — the hand-off row — so a
 Luna file that will not apply simply brings `.offer` back with one line under the
-row saying why (`RecoveryFileApplier.lastFailure(forURL:)`), and the file is not
-retried.
+row saying why, and the file is not retried.
+
+**The reason outlives the process.** A file that answers a recorded hand-off
+files its refusal on the RECORD (`LLMHandoffStore.markRefused`, App Group), so
+the card still explains itself on the next launch instead of quietly going back
+to the plain offer; the record is replaced on the next provider tap and cleared
+by a successful apply. Only a file that arrived with no hand-off behind it falls
+back to `RecoveryFileApplier.lastFailure(forURL:)`, which lives in the process
+that read it — long enough for the card to say it once.
 
 **A guardrail is not a budget.** When a content-safety guardrail or a flat
 refusal rejects the prompt, that is a verdict on the PAGE — the prompt is derived

@@ -1116,6 +1116,11 @@
 /* ===== CardDeck_host — the card deck's own long-press menu (KindDeckProvider.swift) ===== */
 "CardDeck_host_archiveAction_Luna" = "Archive";
 
+/* ===== CardDeck_recoverWithAI — the same long-press menu's chat hand-off submenu, for a save
+   that landed ready with the wrong content (KindDeckProvider.swift) ===== */
+"CardDeck_recoverWithAI_Luna" = "Recover with AI";
+"CardDeck_recoverWithAIWaiting_Luna" = "Recovering… (waiting for the file)";
+
 /* ===== CardDeck_failedSave — the failed-save error card, shared between the in-app card
    (FailedSaveCardFactory.swift / FailedSaveCardViewController.swift) and its extension-side
    twin (RescueFailureViewController.swift) ===== */

@@ -18,6 +18,19 @@ import LunaModels
 public enum PluginCapabilityName: String, CaseIterable, Codable, Sendable {
     case fetch, html, page, storage, secrets, files, crypto, browser, downloads
     case settings, ui, mail, notifications, bluetooth, wifi, exports
+
+    /// Extra `luna.<name>` objects this capability's bridge installs beside its
+    /// own. `luna.text` rides on `html`: it is three pure string helpers with
+    /// nothing of its own to grant, and a capability a manifest must declare
+    /// separately would be one more thing a generated manifest gets wrong.
+    /// `PluginContext.strayNamespaces` reads this, so an installer writing a
+    /// companion name is not mistaken for a bridge writing where it should not.
+    public var companionNamespaces: [String] {
+        self == .html ? ["text"] : []
+    }
+
+    /// Every companion name, across every capability.
+    public static let allCompanionNamespaces = Set(allCases.flatMap(\.companionNamespaces))
 }
 
 // MARK: - Hooks

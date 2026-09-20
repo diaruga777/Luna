@@ -317,9 +317,16 @@ let package = Package(
         // fetch / kv / secrets / browser-request / pending-model stores. The
         // central Safari appex runs it, so it carries no UIKit and no
         // JavaScriptCore.
+        // `LunaHTMLClassification` is here for `luna.html.article`: the
+        // extractor Luna's own article ingest runs is kind-neutral and already
+        // in every kit, and BOTH the JavaScriptCore bridge and the central
+        // Safari appex call it, so it lives in the one plugin module both
+        // reach. `PluginManifestRules.json` is the rule table
+        // `tools/plugin-sim/run.mjs` reads instead of re-implementing it.
         .target(name: "LunaPluginKit", dependencies: [
             "LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification",
-        ]),
+            "LunaHTMLClassification", .product(name: "SwiftSoup", package: "SwiftSoup"),
+        ], resources: [.process("Resources")]),
         // The JavaScriptCore host: one context per loaded plugin, hook invocation,
         // result decoding, and the bridges a hook may call. SwiftSoup backs
         // `luna.html`; JavaScriptCore is a system framework, so it is linked

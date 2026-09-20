@@ -17,7 +17,7 @@ public enum PluginManifestParser {
 
     /// Characters a plugin id may use. The id is also a DIRECTORY name in the
     /// shared container, so a separator or a dot-dot cannot appear in it.
-    static let idCharacters = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+    public static let idCharacters = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
 
     /// The largest plugin file the parser accepts. Safari's message channel
     /// caps a served source at 1.5 MB (§17), so a larger file could never run
@@ -27,6 +27,7 @@ public enum PluginManifestParser {
     public static let idMaxLength = 100
     public static let nameMaxLength = 40
     public static let descriptionMaxLength = 200
+    public static let versionMaxLength = 32
 
     // MARK: - Entry point
 
@@ -183,7 +184,8 @@ public enum PluginManifestParser {
     }
 
     private static func version(_ object: [String: Any], _ lines: Header) throws -> PluginVersion {
-        let text = try boundedString(object, "version", limit: 32, lines: lines, required: true)!
+        let text = try boundedString(
+            object, "version", limit: versionMaxLength, lines: lines, required: true)!
         guard let version = PluginVersion(text) else {
             throw PluginManifestError.invalidField(
                 field: "version", line: lines.line(of: "version"),

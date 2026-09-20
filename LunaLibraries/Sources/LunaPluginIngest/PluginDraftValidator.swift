@@ -77,7 +77,7 @@ public enum PluginDraftValidator {
         fetcher.idle = runtime
         fetcher.fileWriter = scratch
         registry.register(PluginFetchBridge(fetcher: fetcher, scheduler: runtime, files: scratch))
-        registry.register(PluginHTMLBridge())
+        registry.register(PluginHTMLBridge(scheduler: runtime))
 
         do {
             try await runtime.activateAsync(pluginID: manifest.id)

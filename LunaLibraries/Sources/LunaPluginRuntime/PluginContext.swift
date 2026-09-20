@@ -116,7 +116,12 @@ final class PluginContext {
                 // Declared, but not served here. The stand-in keeps the grant
                 // honest: the plugin sees the namespace it consented to, and
                 // every call on it rejects with `unavailable-here` (§7.2).
+                // A companion (`luna.text` under `html`) gets one too, so
+                // feature detection reads the same in every process.
                 PluginUnavailableNamespace.install(name, into: namespace)
+                for companion in name.companionNamespaces {
+                    PluginUnavailableNamespace.install(as: companion, into: namespace)
+                }
             }
         }
         // Freeze the complete host grant before untrusted top-level code runs.
@@ -171,6 +176,9 @@ final class PluginContext {
         return Set(names)
             .subtracting(Self.ungatedNames)
             .subtracting(PluginCapabilityName.allCases.map(\.rawValue))
+            // A companion rides on its capability's own grant
+            // (`luna.text` under `html`) and is not a namespace of its own.
+            .subtracting(PluginCapabilityName.allCompanionNamespaces)
     }
 
     var registrationFailure: PluginJSFailure? {

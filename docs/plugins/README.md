@@ -640,32 +640,46 @@ Reference the typings from your editor for autocomplete and type-checking:
 /// <reference path="../../tools/plugin-sim/luna-plugin.d.ts" />
 ```
 
-## 10. Creating a plugin from a failed website
+## 10. Creating a plugin with ChatGPT or Claude
 
-This path is designed for people who do not write code. In central Luna,
-choose **Create Plugin…** on a failed-save card, or open Settings → Plugins and
-choose **Create for Website…** for any `http`/`https` URL. Luna gathers the
-bounded attempt trace, removes known credentials, and creates a self-contained
-prompt. Copy or share that prompt into any free LLM chat; no provider account is
-connected to Luna and no API key is required.
+This path is for people who do not write code, and it needs no account and no
+API key. In central Luna, open Settings → Plugins and tap the wand
+(**Create with AI**), or choose **Create Plugin…** on a failed save's card,
+which fills the box in with the URL and what went wrong.
 
-Paste the chat's complete JavaScript answer back into the workshop and tap
-**Validate**. Luna accepts a plain source file or one outer `js` code fence,
-then checks the manifest, host match, capabilities, registration, `classify`
-claim and `ingest` Model in a temporary store. A passing draft can proceed to
-the normal consent/import screen. For a failing draft, **Copy Fix Prompt**
-packages the exact source and structured failures for the next chat turn. Keep
-iterating until validation passes.
+Describe the site, or the kind of link, and paste an example URL. Tap
+**ChatGPT** or **Claude**. Luna opens that app with the whole request already
+written: what a Luna plugin is, the file shape, the Model shapes, and a link to
+the API reference at <https://luna-site-bm6.pages.dev/p1>. Luna remembers the
+request, so leaving the screen and coming back shows it again.
 
-The recovery prompt is credential-redacted, but page routes and diagnostics can
-still be private. Luna shows a privacy reminder before copying or sharing. The
-separate **Share Diagnostics…** action is raw developer support data and should
-not be confused with the recovery prompt.
+Ask for the answer as a file. The model replies with `{name}.luna` — a plugin
+file, the same JavaScript as §1 with the `/* luna-plugin` header. Tap it in the
+reply and choose Luna. A code block works too: long-press it, share it as text,
+and pick Luna.
 
-Draft validation permits `luna.fetch` only to the recovery website's host and
-fails a draft that attempts another host, even if its JavaScript catches the
-denial. This keeps pasted, not-yet-consented code from turning the private test
-URL or captured evidence into an outbound payload.
+Luna opens the **review screen** on the draft. It reads the header and shows,
+in order: the plugin's name, version and the version it replaces; what it
+produces and which hosts it runs on; the hooks it declares and the hooks it
+actually registered; every capability as one plain sentence; the settings
+fields it asks for, whether it runs in the background, and what it exports.
+Then Luna tests the draft: it stages it in a temporary store, loads it on a
+disposable runtime, and runs `classify` and `ingest` against your example URL.
+Only `luna.fetch` and `luna.html` are served during the test, and `luna.fetch`
+may reach only that page's own site — every other namespace answers
+`unavailable-here`, so a plugin that declares `storage` still passes, marked
+"not tested". With no example URL the draft is loaded and nothing more, and the
+result says so.
+
+- **Save** installs it. On this screen, Save is the consent: nothing else is
+  asked afterwards. A draft that failed the test still offers Save (labelled
+  **Save Anyway**), because an author who knows better is not blocked.
+- **Discard** writes nothing.
+- **Generate again** opens a new chat with the original request plus the
+  problems Luna found, and asks for a corrected file.
+
+Everything works the same in the share and action extensions, so a file that
+arrives while you are inside another app is reviewed and saved there.
 
 Developers can run the same shape checks without the app using the bounded
 child-process harness:

@@ -98,8 +98,14 @@ open class ShareViewController: UIViewController {
     private var loadWatchdog: DispatchWorkItem?
     private static let loadTimeout: TimeInterval = 15
 
+    /// The one surface this extension process shows. An extension has exactly
+    /// one view controller, and the intake witness the composition root
+    /// installs — before any controller exists — has to find it later.
+    static weak var activeSurface: ShareViewController?
+
     public override func viewDidLoad() {
         super.viewDidLoad()
+        Self.activeSurface = self
         // Extensions render in the host's window, so they pin their own
         // root: dark UIKit materials, with the user's chosen sky on top.
         AppearanceSettings.apply(to: self)

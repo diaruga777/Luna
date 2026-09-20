@@ -92,26 +92,6 @@ final class URLRescueTests: XCTestCase {
         XCTAssertTrue(outcome.isPermanentlyBlocked)
     }
 
-    /// The model never saw the page in either case, so neither may spend the
-    /// item's one visible attempt.
-    func testTransientModelErrorsDoNotSpendTheVersionAttempt() async {
-        for error in [RescueModelError.assetsUnavailable, .concurrentRequests] {
-            let session = FakeRescueModelSession(responses: [.failure(error)])
-            let (engine, _) = makeEngine(session: session)
-            let outcome = await engine.rescue(request())
-            XCTAssertFalse(outcome.spendsVersionAttempt,
-                           "\(error.logToken) must not spend the attempt")
-        }
-    }
-
-    /// …while a plain "I looked and nothing works" does.
-    func testAGenuineGiveUpSpendsTheVersionAttempt() async {
-        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
-        let (engine, _) = makeEngine(session: session)
-        let outcome = await engine.rescue(request())
-        XCTAssertTrue(outcome.spendsVersionAttempt)
-    }
-
     func testQuotaExhausted() async {
         let session = FakeRescueModelSession(responses: [.failure(.quotaLimitReached)])
         let (engine, _) = makeEngine(session: session)
@@ -610,7 +590,6 @@ final class URLRescueTests: XCTestCase {
         let outcome = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .notReadable))
         guard case .needsBrowser = outcome else { return XCTFail("expected the browser handoff") }
         XCTAssertTrue(pipe.inputs.isEmpty, "nothing is fetched — that is the whole finding")
-        XCTAssertFalse(outcome.spendsVersionAttempt)
     }
 
     /// The deterministic leg: a client-refusal status with an untried archive

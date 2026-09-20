@@ -10,6 +10,7 @@ import LunaSaves
 import LunaSavesUI
 import LunaStorage
 import LunaURLRescue
+import UIKit
 
 /// Downloads the engine-resolved assets of a media rescue without re-running
 /// platform resolution (the source page already failed to resolve normally).
@@ -39,6 +40,7 @@ enum URLRescueWiring {
 
     static var mediaRescueStarter: (any MediaRescueStarting)?
 
+    @MainActor
     static func install() {
         let engine: URLRescueEngine
         if let mediaResolver {
@@ -54,6 +56,50 @@ enum URLRescueWiring {
         // (rescueTrigger). Extensions never install this, so a failure just stays
         // failed.
         SavesIngestor.rescueTrigger = CoordinatorRescueTrigger()
+
+        // A recovery Luna file's recipe is replayed through the same machinery
+        // below the model — the same host policy, the same directive applier,
+        // the same rule store. An extension links none of it and keeps
+        // `NoRecipeReplay`, which is why this is a witness.
+        RecoveryFileApplier.recipeReplay = RecoveryRecipeReplay()
+
+        // An extension adopted a recovery file's content and kept its recipe.
+        // Replaying it here teaches the host rule the extension could not, and
+        // the save it came with is already recovered — so the result is
+        // discarded on purpose.
+        drainPendingRecipes()
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in drainPendingRecipes() }
+    }
+
+    private static func drainPendingRecipes() {
+        let rows = PendingRecoveryRecipeStore.shared.takeAll()
+        guard !rows.isEmpty else { return }
+        let runner = RecoveryRecipeRunner()
+        Task {
+            for row in rows {
+                guard let recipe = row.recipe, let pageURL = row.pageURL else { continue }
+                _ = await runner.run(recipe, pageURL: pageURL)
+            }
+        }
+    }
+
+    /// Replays a recovery file's recipe and persists what it produced. Success
+    /// means the save is ready AND the host rule is learned, so the site's next
+    /// failure needs no model and no chat.
+    private final class RecoveryRecipeReplay: RecoveryRecipeReplaying {
+        private let runner = RecoveryRecipeRunner()
+
+        var canReplay: Bool { true }
+
+        func replay(
+            _ recipe: LunaRecoveryRecipe, pageURL: URL, itemID: UUID
+        ) async -> Bool {
+            guard let result = await runner.run(recipe, pageURL: pageURL) else { return false }
+            return await SavesIngestor.shared.applyRescued(
+                result, forItemID: itemID, interactive: false)
+        }
     }
 
     /// The coordinator's half of the bridge: the availability gate and one

@@ -241,7 +241,8 @@ final class PluginAPIHelpersTests: XCTestCase {
             const doc = await luna.fetch.doc("https://example.com/short");
             return { value: doc.querySelector("a").absoluteURL("href") };
             """)
-        XCTAssertEqual(found?.value, "https://example.com/dir/long.html")
+        // Against the REQUESTED url this would be `https://example.com/x.html`.
+        XCTAssertEqual(found?.value, "https://example.com/dir/x.html")
     }
 
     func testFetchDocRefusesWhenTheManifestDidNotDeclareHTML() async {

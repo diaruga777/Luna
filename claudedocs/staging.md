@@ -207,11 +207,15 @@ compile it.
 | `Stage/StageCatalog+Plugins.swift` | Luna only | `KindWiring+Luna` |
 
 `Stage/StageCatalog+Plugins.swift` covers Settings → Plugins (empty, a
-three-plugin list, and one plugin's full settings schema), plugin import and
-consent, the paste-source sheet, the browser lock modal frozen mid-challenge,
-and a plugin-locked card — stage ids `plugins.settings.empty`,
-`plugins.settings.list`, `plugins.settings.detail`, `plugins.consent`,
-`plugins.import.paste`, `plugins.browser.lock`, `plugins.locked.card`. It is
+three-plugin list, and one plugin's full settings schema), the Create with AI
+screen empty and prefilled from a failed save, the draft review screen passing,
+failing and replacing a version, plugin import and consent, the paste-source
+sheet, the browser lock modal frozen mid-challenge, and a plugin-locked card —
+stage ids `plugins.settings.empty`, `plugins.settings.list`,
+`plugins.settings.detail`, `plugins.create.empty`, `plugins.create.prefilled`,
+`plugins.review.pass`, `plugins.review.fail`, `plugins.review.update`,
+`plugins.consent`, `plugins.import.paste`, `plugins.browser.lock`,
+`plugins.locked.card`. It is
 excluded from the three sibling app targets by a `project.pbxproj`
 membership exception, same mechanism as every other per-kind catalog above —
 its own header comment describes a `LunaApp.current` runtime gate that

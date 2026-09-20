@@ -282,6 +282,22 @@
       "apps": ["luna"]
     },
     {
+      "id": "plugins.create.empty",
+      "screen": "Create with AI",
+      "variant": "nothing typed",
+      "summary": "The Create screen as Settings opens it: the placeholder, and the two providers to hand the request to.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.create.prefilled",
+      "screen": "Create with AI",
+      "variant": "from a failed save",
+      "summary": "The same screen reached from a failed card: the URL, the failure and the plugins that already matched are written in for the user.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
       "id": "plugins.import.paste",
       "screen": "Paste source",
       "variant": "empty",
@@ -294,6 +310,30 @@
       "screen": "Locked card",
       "variant": "plugin lock",
       "summary": "The card face of a save a plugin parked while it waits for a browser step — the same lock every kind wears.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.review.fail",
+      "screen": "Plugin review",
+      "variant": "failed the test",
+      "summary": "The same label for a draft whose ingest returned nothing: the error, Save Anyway, and the row that asks for a corrected file.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.review.pass",
+      "screen": "Plugin review",
+      "variant": "passed the test",
+      "summary": "The nutrition label for a draft that loaded and produced a valid article: what it declares, and the test that agreed.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.review.update",
+      "screen": "Plugin review",
+      "variant": "replaces a version",
+      "summary": "A draft replacing an installed plugin, with one capability tagged new and one it declares that the test does not serve.",
       "kind": "plugin",
       "apps": ["luna"]
     },

@@ -13,6 +13,7 @@ import LunaModels
 import LunaPluginKit
 import LunaPluginUI
 import LunaSavesUI
+import LunaStorage
 import UIKit
 import WebKit
 
@@ -20,7 +21,7 @@ enum PluginStageCatalog {
 
     @MainActor
     static func install() {
-        StageRegistry.register(settingsStages + flowStages + lockStages)
+        StageRegistry.register(settingsStages + authoringStages + flowStages + lockStages)
     }
 
     // MARK: - Settings → Plugins
@@ -103,6 +104,114 @@ enum PluginStageCatalog {
                 }),
         ]
     }
+
+    // MARK: - Create and review
+
+    @MainActor
+    private static var authoringStages: [StageDescriptor] {
+        [
+            StageDescriptor(
+                id: "plugins.create.empty", screen: "Create with AI", variant: "nothing typed",
+                summary: "The Create screen as Settings opens it: the placeholder, and the two "
+                    + "providers to hand the request to.",
+                kind: .plugin,
+                make: {
+                    UINavigationController(
+                        rootViewController: PluginCreateViewController(
+                            launcher: StageLLMLauncher()))
+                }),
+            StageDescriptor(
+                id: "plugins.create.prefilled", screen: "Create with AI",
+                variant: "from a failed save",
+                summary: "The same screen reached from a failed card: the URL, the failure and "
+                    + "the plugins that already matched are written in for the user.",
+                kind: .plugin,
+                make: {
+                    UINavigationController(
+                        rootViewController: PluginCreateViewController(
+                            prefill: PluginCreateViewController.prefill(
+                                url: URL(string: "https://recipes.example.com/slow-roast")!,
+                                failure: "Nothing readable was found on the page",
+                                matchedPluginIDs: ["stage.recipe-saver"]),
+                            launcher: StageLLMLauncher()))
+                }),
+            StageDescriptor(
+                id: "plugins.review.pass", screen: "Plugin review", variant: "passed the test",
+                summary: "The nutrition label for a draft that loaded and produced a valid "
+                    + "article: what it declares, and the test that agreed.",
+                kind: .plugin,
+                make: { reviewStage(source: passingDraft, importer: StagePluginImporter()) }),
+            StageDescriptor(
+                id: "plugins.review.fail", screen: "Plugin review", variant: "failed the test",
+                summary: "The same label for a draft whose ingest returned nothing: the error, "
+                    + "Save Anyway, and the row that asks for a corrected file.",
+                kind: .plugin,
+                make: { reviewStage(source: failingDraft, importer: StagePluginImporter()) }),
+            StageDescriptor(
+                id: "plugins.review.update", screen: "Plugin review", variant: "replaces a version",
+                summary: "A draft replacing an installed plugin, with one capability tagged new "
+                    + "and one it declares that the test does not serve.",
+                kind: .plugin,
+                make: {
+                    reviewStage(
+                        source: updatingDraft,
+                        importer: StagePluginImporter(
+                            replacesVersion: "1.0.0",
+                            capabilities: [.fetch, .html, .storage],
+                            addedCapabilities: [.storage]))
+                }),
+        ]
+    }
+
+    @MainActor
+    private static func reviewStage(
+        source: String, importer: PluginImporting
+    ) -> UIViewController {
+        UINavigationController(
+            rootViewController: PluginDraftReviewViewController(
+                sourceText: source,
+                origin: PluginDraftReviewViewController.Origin(
+                    description: "https://recipes.example.com/slow-roast — save the recipe",
+                    host: "recipes.example.com",
+                    targetURL: URL(string: "https://recipes.example.com/slow-roast"),
+                    recordID: nil),
+                importer: importer,
+                launcher: StageLLMLauncher()))
+    }
+
+    private static let passingDraft = """
+        /* luna-plugin
+        {"id":"stage.recipe-saver","name":"Recipe Saver","version":"2.0.0","api":1,        "description":"Saves recipe pages as clean, readable articles.",        "produces":["article"],"match":{"hosts":["recipes.example.com"]},        "capabilities":["fetch","html"]}
+        */
+        luna.register({
+          classify({ url }) { return { kind: "article" }; },
+          async ingest() {
+            return { kind: "article", title: "Slow-Roast Shoulder", html: "<p>Season it.</p>" };
+          }
+        });
+        """
+
+    private static let failingDraft = """
+        /* luna-plugin
+        {"id":"stage.recipe-saver","name":"Recipe Saver","version":"2.0.0","api":1,        "description":"Saves recipe pages as clean, readable articles.",        "produces":["article"],"match":{"hosts":["recipes.example.com"]},        "capabilities":["fetch","html"]}
+        */
+        luna.register({
+          classify({ url }) { return { kind: "article" }; },
+          async ingest() { return null; }
+        });
+        """
+
+    private static let updatingDraft = """
+        /* luna-plugin
+        {"id":"stage.recipe-saver","name":"Recipe Saver","version":"2.0.0","api":1,        "description":"Saves recipe pages as clean, readable articles.",        "produces":["article"],"match":{"hosts":["recipes.example.com"]},        "capabilities":["fetch","html","storage"],        "settings":[{"key":"servings","type":"number","label":"Default servings"}]}
+        */
+        luna.register({
+          classify({ url }) { return { kind: "article" }; },
+          async ingest() {
+            return { kind: "article", title: "Slow-Roast Shoulder", html: "<p>Season it.</p>" };
+          }
+        });
+        """
 
     // MARK: - Import and consent
 
@@ -269,21 +378,45 @@ private final class StagePluginSettingsStore: PluginSettingsStoring {
     }
 }
 
-/// Accepts any pasted or picked source as a first-install preview, so the Add
-/// button's flow is drivable from a stage with nothing behind it for real.
+/// Accepts any pasted or picked source as a preview, so the Add button's flow
+/// and the review screen are drivable from a stage with nothing behind them for
+/// real. The header is read where it parses, so a review stage shows the
+/// draft's own name and hosts rather than a fixture's.
 private final class StagePluginImporter: PluginImporting {
+    private let replacesVersion: String?
+    private let capabilities: [PluginCapabilityName]
+    private let addedCapabilities: [PluginCapabilityName]
+
+    init(
+        replacesVersion: String? = nil,
+        capabilities: [PluginCapabilityName] = [.fetch],
+        addedCapabilities: [PluginCapabilityName] = [.fetch]
+    ) {
+        self.replacesVersion = replacesVersion
+        self.capabilities = capabilities
+        self.addedCapabilities = addedCapabilities
+    }
+
     func preview(sourceText: String) throws -> PluginImportPreview {
-        PluginImportPreview(
-            summary: PluginSummary(
+        let parsed = try? PluginManifestParser.parse(source: sourceText).get()
+        let summary = parsed?.summary(hooks: [], isBundled: false)
+            ?? PluginSummary(
                 id: "stage.pasted", name: "Pasted Plugin", version: "1.0.0", priority: 0,
                 matchesAnyHost: true, hostPatterns: [], produces: [.article], hooks: [.classify],
-                export: nil, isBundled: false),
-            description: nil, capabilities: [.fetch], runsInBackground: false,
-            addedCapabilities: [.fetch], requiresConsent: true, replacesVersion: nil,
-            sourceText: sourceText)
+                export: nil, isBundled: false)
+        return PluginImportPreview(
+            summary: summary, description: parsed?.description,
+            capabilities: parsed?.capabilities ?? capabilities, runsInBackground: false,
+            addedCapabilities: addedCapabilities, requiresConsent: true,
+            replacesVersion: replacesVersion, sourceText: sourceText)
     }
 
     func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {}
+}
+
+/// A launcher that opens nothing: a stage is looked at, not handed to a chat.
+private final class StageLLMLauncher: LLMLaunching {
+    func launch(_ provider: LLMProvider, prompt: String) {}
 }
 
 /// A page that never loads anything: the stage answers one fixed probe result

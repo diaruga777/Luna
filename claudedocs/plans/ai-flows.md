@@ -2,9 +2,26 @@
 
 ## Status
 
-IN PROGRESS (2026-09-20). Integration branch `ai-flows`. Owner decisions
-recorded in §1 are final; everything else in this document is the
-implementation contract for the work packages in §9.
+LANDED on `main` (2026-09-20). All four work packages merged through the
+`ai-flows` integration branch. Final full suite from empty derived data on a
+fresh iOS 26.2 simulator: `Executed 2098 tests, with 8 tests skipped and 7
+failures` — the seven (`ArticleCoverThumbnailTests.testBackfillReusesDownloadedLeadImage`,
+`PluginDetailScreenTests.testTheSettingsHookReceivesAMapKeyedByTheSettingThatChanged`
+(load-flaky), `ProductHistoryPillRenderTests.testATrackedPageGetsTheSellerPillAloneInTheLowerSlot`,
+`SafariVideoOverlayContractTests.testTheOverlayIsOfferedFromExactlyOnePillDecision`,
+`ScrollDirectionImmersionTrackerTests.testUpwardTravelPastThresholdFiresImmersedFalse`,
+`UtilCardTests.testAnExpiredEntryIsNoEntry`, `WeeklySaveTests.testAnExpiredRecordClearsTheRow`)
+all fail identically on the `main` this work started from and none touches
+this work. The three sibling schemes build. The hosted API page is live at
+`https://luna-site-bm6.pages.dev/p1`. Owner decisions in §1 are final; the
+rest of this document is the contract the code now implements — the
+present-tense references are `claudedocs/luna-file.md`,
+`claudedocs/llm-handoff.md`, `claudedocs/url-rescue.md`,
+`claudedocs/failed-saves.md`, `claudedocs/plugins.md` §10.
+
+Known small gaps left by the packages: a recovery file's refusal reason is
+process-local (the card falls back to the offer state after a relaunch); the
+Downloader's no-media card shows the row but keeps no waiting state of its own.
 
 ## 0. What changes, in one paragraph
 

@@ -227,8 +227,8 @@ browser.runtime.onMessage.addListener(function (message) {
             })
             .catch(function () { return { found: false, failed: true }; });
     }
-    // Every plugin.* message (catalog/source/fetch/storage/collection/log/
-    // settings.get/browserDeferred/queueModel) carries everything the native
+    // Every plugin.* message (catalog/source/fetch/article/storage/collection/
+    // log/settings.get/browserDeferred/queueModel) carries everything the native
     // handler needs in its own body, so one relay forwards the message
     // verbatim and hands back whatever the handler answered — see
     // SafariWebExtensionHandler's "Plugins" section and content.js's plugin

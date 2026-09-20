@@ -361,6 +361,9 @@ enum KindWiring {
     }
 
     static func sceneDidForeground() {
+        // An extension can install a plugin while this app is suspended, so the
+        // runtime re-reads the App-Group store when its change token moved.
+        Task { @MainActor in PluginPlatformComposition.reloadIfStoreChanged() }
         MediaShellWiring.sceneDidForeground()
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ArticleShellWiring.sceneDidForeground()

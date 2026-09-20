@@ -130,6 +130,33 @@ public final class PluginStore {
     }
     public var scratchRootURL: URL { rootURL.appendingPathComponent("scratch", isDirectory: true) }
 
+    // MARK: - The change token
+
+    /// A marker file whose contents change on every install and delete. The
+    /// store is in the App Group, so an extension can install a plugin while
+    /// the app is suspended; the app compares this token on foreground and
+    /// reloads its runtime when it moved.
+    private var changeTokenURL: URL { rootURL.appendingPathComponent("changed") }
+
+    /// What the store looked like at the last write, or nil when nothing has
+    /// been written yet or the container is unavailable. Opaque: a caller only
+    /// compares it with the value it kept.
+    public var changeToken: String? {
+        guard storageAvailable,
+              let data = try? Data(contentsOf: changeTokenURL),
+              let value = String(data: data, encoding: .utf8), !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    /// Stamps a new token. Every install and delete calls this, so a process
+    /// that missed the write still sees that one happened.
+    private func markChanged(now: Date = Date()) {
+        guard storageAvailable else { return }
+        let value = "\(now.timeIntervalSince1970)-\(UUID().uuidString)"
+        try? Data(value.utf8).write(to: changeTokenURL, options: .atomic)
+    }
+
     // MARK: - Reading
 
     /// Every imported plugin whose file still parses, id order.
@@ -232,6 +259,7 @@ public final class PluginStore {
             }
             throw PluginStoreError.fileSystem(detail: error.localizedDescription)
         }
+        markChanged(now: now)
         let state = self.state(manifest.id)
         return InstalledPlugin(
             manifest: manifest, sourceURL: fileURL(id: manifest.id, version: manifest.version),
@@ -271,6 +299,7 @@ public final class PluginStore {
         }
         try? fileManager.removeItem(
             at: scratchRootURL.appendingPathComponent(pluginID, isDirectory: true))
+        markChanged()
     }
 
     // MARK: - State

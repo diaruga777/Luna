@@ -17,6 +17,7 @@
 //
 
 import LunaBundledPlugins
+import LunaDesignSystem
 import LunaMediaDownload
 import LunaModels
 import LunaPluginIngest
@@ -24,7 +25,6 @@ import LunaPluginKit
 import LunaPluginUI
 import LunaPriceUI
 import LunaReaderUI
-import LunaDesignSystem
 import LunaShareSurface
 import LunaStorage
 import UIKit

@@ -1,4 +1,5 @@
 import Foundation
+import LunaAppConfig
 
 /// Which standalone Luna app a running process belongs to — the central
 /// all-content **Luna** app or one of the four standalone apps. Derived
@@ -103,6 +104,30 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         case .downloader: return "lunad"
         case .priceTracker: return "lunas"
         case .vault, .writer: return nil
+        }
+    }
+
+    /// The exported UTI a Luna file addressed to this app carries, as the
+    /// shared `Luna/Info.plist` declares it: `<prefix>.file` for the central
+    /// app, `<prefix>.<storageIdentifier>.file` for a single-content app.
+    /// The central app's type is what the other three conform to, so one
+    /// document type covers the family (`claudedocs/luna-file.md`).
+    public var fileTypeIdentifier: String? {
+        guard fileExtension != nil else { return nil }
+        let prefix = AppConfig.productBundlePrefix
+        return self == .luna ? "\(prefix).file" : "\(prefix).\(storageIdentifier).file"
+    }
+
+    /// Every Luna file type this app opens — the mirror of
+    /// `acceptedFileExtensions`. The three sibling types come first because
+    /// they CONFORM to the central one, so a first-match search that met
+    /// `<prefix>.file` first would report every Luna file as the central kind.
+    public var acceptedFileTypeIdentifiers: [String] {
+        switch self {
+        case .luna:
+            return ([.reader, .downloader, .priceTracker, .luna] as [LunaApp])
+                .compactMap { $0.fileTypeIdentifier }
+        default: return fileTypeIdentifier.map { [$0] } ?? []
         }
     }
 

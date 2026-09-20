@@ -244,6 +244,35 @@ final class LunaDeepLinkTests: XCTestCase {
             URL(string: "lunadownloader://resolvedmedia")!))
     }
 
+    /// The extension's LLM hand-off round-trips through every app's scheme,
+    /// and only with a well-formed item id: the app opens the recorded
+    /// provider for THAT save, so a link with no usable id must not route.
+    func testLLMHandoffLinkCarriesTheItemIDForEveryScheme() throws {
+        let itemID = UUID()
+        for scheme in LunaDeepLink.allSchemes {
+            let url = try XCTUnwrap(
+                LunaDeepLink.llmHandoffLink(scheme: scheme, itemID: itemID), scheme)
+            XCTAssertTrue(LunaDeepLink.isLLMHandoffLink(url), scheme)
+            XCTAssertEqual(LunaDeepLink.llmHandoffItemID(from: url), itemID, scheme)
+        }
+    }
+
+    func testMalformedLLMHandoffLinksDoNotRoute() {
+        for raw in [
+            "luna://llm",
+            "luna://llm?item=not-a-uuid",
+            "luna://llmx?item=\(UUID().uuidString)",
+            "https://example.com/llm?item=\(UUID().uuidString)",
+        ] {
+            guard let url = URL(string: raw) else {
+                XCTFail("unparseable test URL \(raw)")
+                continue
+            }
+            XCTAssertFalse(LunaDeepLink.isLLMHandoffLink(url), raw)
+            XCTAssertNil(LunaDeepLink.llmHandoffItemID(from: url), raw)
+        }
+    }
+
     func testIsRescueLink() {
         var cases: [(url: String, isRescue: Bool)] =
             LunaDeepLink.allSchemes.map { ("\($0)://rescue", true) }

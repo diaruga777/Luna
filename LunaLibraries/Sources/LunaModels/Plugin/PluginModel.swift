@@ -54,6 +54,19 @@ public enum PluginModel: Decodable, Equatable, Sendable {
     }
 }
 
+public extension PluginModelKind {
+    /// Which standalone Luna app owns content of this kind — the same split
+    /// `Outcome.owningApp` makes for a classified URL, so a Model arriving in a
+    /// Luna file meets the same surface gate a saved link does.
+    var owningApp: LunaApp {
+        switch self {
+        case .article: return .reader
+        case .media: return .downloader
+        case .product: return .priceTracker
+        }
+    }
+}
+
 // MARK: - Media
 
 /// One downloadable asset a media plugin returned. The durable download engine

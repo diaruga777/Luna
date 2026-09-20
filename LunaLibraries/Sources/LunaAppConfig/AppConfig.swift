@@ -54,6 +54,22 @@ public enum AppConfig {
             forSecurityApplicationGroupIdentifier: provisionedAppGroupID)
     }
 
+    /// The product bundle prefix, e.g. `com.hsanabria.luna`.
+    ///
+    /// Recovered from the provisioned App Group id, which `Config/Luna.xcconfig`
+    /// defines as `group.$(PRODUCT_BUNDLE_PREFIX)`. Every process — app, appex,
+    /// widget — reads the same injected key, so an extension resolves the same
+    /// prefix its host app does, and a namespace rename still costs one
+    /// xcconfig line. Never the staged override: this names the PRODUCT, and
+    /// the exported document types built from it are baked into the bundle.
+    public static let productBundlePrefix: String = {
+        let group = provisionedAppGroupID
+        guard group.hasPrefix(appGroupPrefix) else { return group }
+        return String(group.dropFirst(appGroupPrefix.count))
+    }()
+
+    private static let appGroupPrefix = "group."
+
     /// Shared iCloud/CloudKit container identifier, e.g. `iCloud.com.hsanabria.luna`.
     ///
     /// Plumbed exactly like the App Group — `iCloud.$(PRODUCT_BUNDLE_PREFIX)`

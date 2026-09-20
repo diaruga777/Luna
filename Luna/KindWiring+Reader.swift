@@ -28,6 +28,10 @@ enum KindWiring {
 
     @MainActor
     static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.handler = UnsupportedLunaFileIntake()
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs, for this app's kinds only
@@ -186,6 +190,11 @@ enum KindWiring {
 
     /// Central Luna only; Reader's Safari extension never creates this handoff.
     static func openPendingPluginRecoveryWorkshop(caseID: UUID) {}
+
+    /// The extension's LLM hand-off, arriving as `<scheme>://llm?item=…` when
+    /// the extension's own open was refused. WP2 opens the recorded provider
+    /// URL from here; the route exists now so every app answers it.
+    static func openLLMHandoff(itemID: UUID) {}
 
     /// Reader handles no products, so there is no runner. AppDelegate never
     /// registers or schedules the price-refresh BGTask.

@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaModels
 import LunaShareSurface
 import LunaURLClassification
 import UniformTypeIdentifiers
@@ -177,6 +178,43 @@ final class ShareAttachmentRouterTests: XCTestCase {
         XCTAssertEqual(
             ShareAttachmentRouter.route(providerTypes: [["public.file-url"]]),
             .webURL(index: 0))
+    }
+
+    // MARK: - Luna files
+
+    /// A `.lunar` file conforms to `public.plain-text`, so every other branch
+    /// would claim it: the document leg would store it as a text file, the text
+    /// leg would hunt for a link inside it. It is matched first, and by
+    /// identifier rather than by `UTType` conformance, so it still routes on a
+    /// device whose type database has not registered the family yet.
+    func testALunaFileRoutesToTheIntakeLegNotADocument() {
+        let identifier = "com.hsanabria.luna.reader.file"
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(
+                providerTypes: [["public.file-url", identifier, "public.plain-text"]]),
+            .lunaFile(index: 0, typeIdentifier: identifier))
+    }
+
+    /// The central Luna app opens the whole family; the running host here IS
+    /// the central app, so all four types must route.
+    func testTheCentralAppRoutesEveryFamilyExtension() throws {
+        for app in LunaApp.legacyContentApps {
+            let identifier = try XCTUnwrap(app.fileTypeIdentifier)
+            XCTAssertEqual(
+                ShareAttachmentRouter.route(
+                    providerTypes: [["public.file-url", identifier]]),
+                .lunaFile(index: 0, typeIdentifier: identifier),
+                identifier)
+        }
+    }
+
+    /// A type belonging to no Luna app is an ordinary file and keeps its
+    /// document import.
+    func testAForeignDotFileTypeIsStillADocument() {
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(
+                providerTypes: [["public.file-url", "com.example.other.file", "public.plain-text"]]),
+            .document(index: 0, type: .plainText))
     }
 
     // MARK: - Text and nothing

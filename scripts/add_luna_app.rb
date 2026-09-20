@@ -129,6 +129,11 @@ app_settings = clone_settings(clip)
 app_settings.each_value do |s|
   s['PRODUCT_BUNDLE_IDENTIFIER'] = bundle.call(SUFFIX)
   s['INFOPLIST_KEY_CFBundleDisplayName'] = "$(DISPLAY_NAME_PREFIX) #{DISPLAY}"
+  # The shared Luna/Info.plist interpolates both of these, so a clone of the
+  # central app's settings would register the central app's URL scheme and
+  # claim the central app's Luna files. Each app registers only its own.
+  s['LUNA_URL_SCHEME'] = "luna#{SUFFIX}"
+  s['LUNA_DOC_UTI'] = "$(PRODUCT_BUNDLE_PREFIX).#{SUFFIX}.file"
 end
 app = make_target(proj, NAME, 'com.apple.product-type.application', app_settings)
 attach_sync_group(proj, app, sync['Luna'])

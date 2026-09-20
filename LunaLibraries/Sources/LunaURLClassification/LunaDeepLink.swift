@@ -127,6 +127,38 @@ public enum LunaDeepLink {
         return url.host == "rescue"
     }
 
+    /// `<scheme>://llm?item=<uuid>` — the extension's LLM hand-off falling
+    /// back to the app. An extension may only ask its host to open a URL, and
+    /// the host may refuse; when it does, the extension opens this instead and
+    /// the app opens the provider from a process that is always allowed to.
+    /// The item id is all it carries — the prompt and the chosen provider are
+    /// already in the shared hand-off record.
+    public static let llmHandoffHost = "llm"
+
+    public static func llmHandoffLink(scheme: String = ownScheme, itemID: UUID) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = llmHandoffHost
+        components.queryItems = [URLQueryItem(name: "item", value: itemID.uuidString)]
+        return components.url
+    }
+
+    /// True for `<any Luna scheme>://llm?item=…`. Every app runs the recovery
+    /// hand-off, so the broad scheme check is correct here, the same way
+    /// `isRescueLink` is.
+    public static func isLLMHandoffLink(_ url: URL) -> Bool {
+        llmHandoffItemID(from: url) != nil
+    }
+
+    public static func llmHandoffItemID(from url: URL) -> UUID? {
+        guard let scheme = url.scheme, allSchemes.contains(scheme),
+              url.host == llmHandoffHost,
+              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "item" })?.value
+        else { return nil }
+        return UUID(uuidString: value)
+    }
+
     /// `<scheme>://resolvedmedia` — the Safari in-page player's download
     /// hand-off. Payload-free for the same reason `rescueLink` is: the resolved
     /// assets travel in `PendingResolvedMediaStore` (App Group), so a link this

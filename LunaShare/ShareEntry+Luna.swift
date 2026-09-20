@@ -18,9 +18,10 @@
 
 import LunaBundledPlugins
 import LunaMediaDownload
+import LunaModels
 import LunaPluginIngest
-import LunaPluginUI
 import LunaPluginKit
+import LunaPluginUI
 import LunaPriceUI
 import LunaReaderUI
 import LunaShareSurface
@@ -36,6 +37,10 @@ final class ShareEntry: ShareViewController {
             processKind: .share,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
             additionalBridges: { PluginUIComposition.bridges(processKind: .share, scheduler: $0) })
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.handler = UnsupportedLunaFileIntake()
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

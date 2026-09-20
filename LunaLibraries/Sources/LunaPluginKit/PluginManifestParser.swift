@@ -19,10 +19,9 @@ public enum PluginManifestParser {
     /// shared container, so a separator or a dot-dot cannot appear in it.
     public static let idCharacters = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
 
-    /// The largest plugin file the parser accepts. Safari's message channel
-    /// caps a served source at 1.5 MB (§17), so a larger file could never run
-    /// in every process that is supposed to run it.
-    public static let maxSourceKB = 1024
+    /// The largest plugin file the parser accepts — the cap every Luna file
+    /// shares (`LunaFileLimits`).
+    public static let maxSourceKB = LunaFileLimits.maxSourceKB
 
     public static let idMaxLength = 100
     public static let nameMaxLength = 40
@@ -49,17 +48,9 @@ public enum PluginManifestParser {
         case .failure(let error): return .failure(error)
         }
         let object: [String: Any]
-        do {
-            let parsed = try JSONSerialization.jsonObject(
-                with: Data(header.json.utf8), options: [])
-            guard let dictionary = parsed as? [String: Any] else {
-                return .failure(.headerNotJSON(
-                    line: header.jsonStartLine, detail: "the header is not a { … } object"))
-            }
-            object = dictionary
-        } catch {
-            return .failure(.headerNotJSON(
-                line: header.jsonStartLine, detail: error.localizedDescription))
+        switch header.jsonObject() {
+        case .success(let dictionary): object = dictionary
+        case .failure(let error): return .failure(pluginError(error))
         }
         do {
             return .success(try manifest(from: object, lines: header, languages: languages))
@@ -73,57 +64,32 @@ public enum PluginManifestParser {
 
     // MARK: - The header comment
 
-    /// Where the header sits in the file, so an error can name a line.
-    struct Header {
-        let json: String
-        /// 1-based line of the header's opening `/*`.
-        let commentStartLine: Int
-        /// 1-based line the JSON object starts on.
-        let jsonStartLine: Int
-        /// Lines of the JSON text, for locating one field.
-        let jsonLines: [String]
+    /// The plugin file's header. `LunaFileHeader` reads the shape every Luna
+    /// file shares; this names the one marker a plugin may carry and speaks
+    /// `PluginManifestError` so an author reads one vocabulary.
+    typealias Header = LunaFileHeader
 
-        /// The line a field is written on, or the JSON's first line when the
-        /// field is absent.
-        func line(of field: String) -> Int {
-            let needle = "\"\(field)\""
-            for (offset, text) in jsonLines.enumerated() where text.contains(needle) {
-                return jsonStartLine + offset
-            }
-            return jsonStartLine
+    static func extractHeader(from source: String) -> Result<Header, PluginManifestError> {
+        switch LunaFileHeader.parse(source) {
+        case .success(let header):
+            // A `luna-recovery` file is a Luna file, but it is not a plugin.
+            guard header.marker == .plugin else { return .failure(.noHeader) }
+            return .success(header)
+        case .failure(let error):
+            return .failure(pluginError(error))
         }
     }
 
-    static func extractHeader(from source: String) -> Result<Header, PluginManifestError> {
-        var index = source.startIndex
-        var line = 1
-        while index < source.endIndex, source[index].isWhitespace {
-            if source[index] == "\n" { line += 1 }
-            index = source.index(after: index)
+    /// The plugin vocabulary for a shared-parser failure.
+    private static func pluginError(_ error: LunaFileError) -> PluginManifestError {
+        switch error {
+        case .headerNotJSON(let line, let detail):
+            return .headerNotJSON(line: line, detail: detail)
+        case .fileTooLarge(let limitKB):
+            return .sourceTooLarge(limitKB: limitKB)
+        default:
+            return .noHeader
         }
-        guard source[index...].hasPrefix("/*") else { return .failure(.noHeader) }
-        let commentStartLine = line
-        let bodyStart = source.index(index, offsetBy: 2)
-        guard let closeRange = source.range(of: "*/", range: bodyStart..<source.endIndex) else {
-            return .failure(.noHeader)
-        }
-        let body = String(source[bodyStart..<closeRange.lowerBound])
-        var bodyLines = body.components(separatedBy: "\n")
-        guard let first = bodyLines.first,
-              first.trimmingCharacters(in: .whitespacesAndNewlines) == "luna-plugin"
-        else { return .failure(.noHeader) }
-        bodyLines.removeFirst()
-        // The JSON is everything after the marker line. A leading `{` on the
-        // marker line itself is not supported: the marker names the format, and
-        // the object below it is what an author reads.
-        let jsonText = bodyLines.joined(separator: "\n")
-        guard jsonText.contains("{") else {
-            return .failure(.headerNotJSON(
-                line: commentStartLine + 1, detail: "the header holds no { … } object"))
-        }
-        return .success(Header(
-            json: jsonText, commentStartLine: commentStartLine,
-            jsonStartLine: commentStartLine + 1, jsonLines: bodyLines))
     }
 
     // MARK: - Fields

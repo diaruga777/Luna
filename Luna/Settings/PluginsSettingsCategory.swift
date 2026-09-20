@@ -9,10 +9,13 @@
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
+import LunaStorage
 
 enum PluginsSettingsCategory {
 
-    static func make() -> SettingsCategory {
+    /// `launcher` is how this app opens a chat model; the Create button is
+    /// absent without one.
+    static func make(launcher: (any LLMLaunching)? = nil) -> SettingsCategory {
         SettingsCategory(
             title: L10n.string("Common_plugins"),
             symbol: "puzzlepiece.extension",
@@ -25,7 +28,8 @@ enum PluginsSettingsCategory {
                 catalog: PluginPlatformServices.catalog ?? NullPluginCatalog(),
                 importer: PluginPlatformServices.importer,
                 settingsStore: PluginPlatformServices.settings ?? NullPluginSettingsStore(),
-                invoker: PluginPlatformServices.invoker)
+                invoker: PluginPlatformServices.invoker,
+                launcher: launcher)
         }
     }
 }

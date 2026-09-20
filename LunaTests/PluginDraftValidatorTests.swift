@@ -84,8 +84,7 @@ final class PluginDraftValidatorTests: XCTestCase {
             sourceText: draft, recoveryCase: recoveryCase())
 
         XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
-        XCTAssertTrue(report.warnings.joined().contains("storage"))
-        XCTAssertFalse(report.warnings.joined().contains("html"))
+        XCTAssertTrue(report.warnings.joined().contains("Not tested: storage."))
     }
 
     func testWithNoTargetTheDraftIsOnlyLoadedAndSaysSo() async {

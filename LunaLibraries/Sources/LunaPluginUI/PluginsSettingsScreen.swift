@@ -8,8 +8,8 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaPluginIngest
 import LunaPluginKit
+import LunaStorage
 import UIKit
 
 public final class PluginsSettingsScreen: NavHeaderTableController {
@@ -25,6 +25,9 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
         return coordinator
     }
     private let importer: PluginImporting?
+    /// How this process opens a chat model. Nil hides the Create button: a
+    /// surface that cannot open a provider has nothing to offer there.
+    private let launcher: (any LLMLaunching)?
 
     private var listings: [PluginListing] = []
 
@@ -32,12 +35,14 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
         catalog: PluginCatalogProviding,
         importer: PluginImporting?,
         settingsStore: PluginSettingsStoring,
-        invoker: PluginHookInvoking?
+        invoker: PluginHookInvoking?,
+        launcher: (any LLMLaunching)? = nil
     ) {
         self.catalog = catalog
         self.importer = importer
         self.settingsStore = settingsStore
         self.invoker = invoker
+        self.launcher = launcher
         super.init(style: .insetGrouped)
     }
 
@@ -58,14 +63,16 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
 
     public override func makeTrailingControls() -> [UIView] {
         guard importer != nil else { return [] }
-        return [
-            NavHeaderBar.imageButton(
+        var controls: [UIView] = []
+        if launcher != nil {
+            controls.append(NavHeaderBar.imageButton(
                 systemName: "wand.and.stars", target: self, action: #selector(createTapped),
-                accessibilityLabel: L10n.string("Plugins_recoveryCreateForWebsite")),
-            NavHeaderBar.imageButton(
-                systemName: "plus", target: self, action: #selector(addTapped),
-                accessibilityLabel: L10n.string("Plugins_importTitle")),
-        ]
+                accessibilityLabel: L10n.string("Plugins_create1Title")))
+        }
+        controls.append(NavHeaderBar.imageButton(
+            systemName: "plus", target: self, action: #selector(addTapped),
+            accessibilityLabel: L10n.string("Plugins_importTitle")))
+        return controls
     }
 
     private func reload() {
@@ -78,53 +85,9 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
     }
 
     @objc private func createTapped() {
-        let alert = UIAlertController(
-            title: L10n.string("Plugins_recoveryURLTitle"),
-            message: L10n.string("Plugins_recoveryURLMessage"), preferredStyle: .alert)
-        alert.addTextField {
-            $0.placeholder = "https://example.com/article"
-            $0.keyboardType = .URL
-            $0.autocapitalizationType = .none
-            $0.autocorrectionType = .no
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.string("Common_continue"), style: .default) {
-            [weak self, weak alert] _ in
-            self?.probe(alert?.textFields?.first?.text ?? "")
-        })
-        present(alert, animated: true)
-    }
-
-    private func probe(_ value: String) {
-        guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-              url.host != nil else {
-            reportRecoveryError(L10n.string("Plugins_recoveryInvalidURL"))
-            return
-        }
-        let progress = UIAlertController(
-            title: L10n.string("Plugins_recoveryProbing"), message: url.host,
-            preferredStyle: .alert)
-        present(progress, animated: true)
-        Task { @MainActor [weak self, weak progress] in
-            let result = await PluginRecoveryProbe.run(url: url)
-            progress?.dismiss(animated: true) {
-                guard let self, let importer = self.importer else { return }
-                self.navigationController?.pushViewController(
-                    PluginRecoveryWorkshopViewController(
-                        recoveryCase: result.recoveryCase,
-                        validationURL: result.ingestResult.url, importer: importer),
-                    animated: true)
-            }
-        }
-    }
-
-    private func reportRecoveryError(_ message: String) {
-        let alert = UIAlertController(
-            title: L10n.string("Plugins_recoveryURLTitle"), message: message,
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
-        present(alert, animated: true)
+        guard let launcher else { return }
+        navigationController?.pushViewController(
+            PluginCreateViewController(launcher: launcher), animated: true)
     }
 
     // MARK: - Table

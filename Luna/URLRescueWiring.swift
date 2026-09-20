@@ -162,10 +162,11 @@ enum URLRescueWiring {
     /// only true evidence of which branch of the pipeline gave up — and it is a
     /// FACT handed to the model, never a steer toward one content type.
     private static func failureKind(for item: SavedItem) -> RescueRequest.FailureKind {
-        if SaveFailureStore.shared.record(for: item.id)?.reason == .noMediaFound {
-            return .mediaNoAssets
+        let reason = SaveFailureStore.shared.record(for: item.id)?.reason
+        switch SaveFailureReason.attemptKind(for: item, reason: reason) {
+        case .article: return .articleFailed
+        case .product: return .productNoPrice
+        case .media: return .mediaNoAssets
         }
-        if item.isPriceTracker { return .productNoPrice }
-        return .articleFailed
     }
 }

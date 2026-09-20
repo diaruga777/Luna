@@ -207,3 +207,88 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
         }
     }
 }
+
+/// What a failing pass was trying to produce. It stands in for the recorded
+/// reason in the one case that has none: a failure saved before the sidecar
+/// carried a `SaveFailureReason`.
+public enum SaveFailureAttemptKind: Equatable, Sendable {
+    case article
+    case product
+    case media
+}
+
+extension SaveFailureReason {
+
+    /// One sentence naming what already went wrong, for a model being asked to
+    /// recover the page — Apple Intelligence through `RescuePrompts`, or
+    /// ChatGPT/Claude through `LLMHandoffPrompts`.
+    ///
+    /// It lives here rather than beside either prompt builder because both
+    /// prompts must say the same thing, and the card that builds the chat
+    /// prompt links no rescue engine.
+    public static func rescueSentence(
+        _ reason: SaveFailureReason?, attempted: SaveFailureAttemptKind
+    ) -> String {
+        guard let reason else { return fallbackSentence(attempted) }
+        switch reason {
+        case .offline:
+            return "the device had no network connection when the save ran"
+        case .timedOut:
+            return "the fetch timed out"
+        case let .httpStatus(code):
+            switch code {
+            case 401, 403:
+                return "the server refused the app's request with HTTP \(code) — a browser identity or a different route may get through"
+            case 404, 410:
+                return "the server answered HTTP \(code): this exact URL is gone, so any rescue has to find the content elsewhere"
+            case 429:
+                return "the server answered HTTP 429 (rate limited / bot challenge)"
+            case 500...599:
+                return "the server answered HTTP \(code) — its own fault, not the request's"
+            default:
+                return "the server answered HTTP \(code)"
+            }
+        case let .network(detail):
+            return "the connection failed: \(detail)"
+        case .notReadable:
+            return "the page loaded but carried no article text"
+        case .notContent:
+            return "the page is a listing or index, not a single piece of content"
+        case .notHTML:
+            return "the response was not decodable as HTML"
+        case .tooLarge:
+            return "the response body was too large to hold"
+        case .noMediaFound:
+            return "no video/image/audio file could be found on the page"
+        case .couldNotSave:
+            return "the content was read but could not be stored"
+        case .subscribeRedirect:
+            return "the site redirected the article request to its own subscribe/sign-in page, so the article was never served"
+        case .noTranscriptSource:
+            return "a transcript was asked for, but no plugin found captions or a recording to transcribe"
+        case let .transcriptionFailed(detail):
+            return "the recording could not be transcribed: \(detail)"
+        case .unknown:
+            return fallbackSentence(attempted)
+        }
+    }
+
+    /// Which branch of the pipeline gave up on this save, read off the item and
+    /// its recorded reason. The prompts and the rescue engine's failure kind
+    /// both derive from this, so they cannot disagree.
+    public static func attemptKind(
+        for item: SavedItem, reason: SaveFailureReason?
+    ) -> SaveFailureAttemptKind {
+        if reason == .noMediaFound { return .media }
+        if item.isPriceTracker { return .product }
+        return .article
+    }
+
+    private static func fallbackSentence(_ attempted: SaveFailureAttemptKind) -> String {
+        switch attempted {
+        case .article: return "reading the page as an article produced no usable text"
+        case .product: return "no price could be extracted from the page"
+        case .media: return "no video/image/audio file could be found on the page"
+        }
+    }
+}

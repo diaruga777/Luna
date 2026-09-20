@@ -9,7 +9,6 @@
 import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
-import LunaStorage
 import UIKit
 
 public final class PluginsSettingsScreen: NavHeaderTableController {

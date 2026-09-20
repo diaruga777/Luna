@@ -9,6 +9,7 @@
 
 #if DEBUG
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
@@ -416,7 +417,7 @@ private final class StagePluginImporter: PluginImporting {
 
 /// A launcher that opens nothing: a stage is looked at, not handed to a chat.
 private final class StageLLMLauncher: LLMLaunching {
-    func launch(_ provider: LLMProvider, prompt: String) {}
+    func openLLM(_ url: URL, fallback: URL?) {}
 }
 
 /// A page that never loads anything: the stage answers one fixed probe result

@@ -6,10 +6,10 @@
 //  what the catalog actually reports, status included.
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
-import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -107,10 +107,10 @@ final class PluginsSettingsScreenTests: XCTestCase {
             launcher: SilentLauncher())
 
         XCTAssertEqual(
-            withoutLauncher.makeTrailingControls().compactMap(\.accessibilityLabel),
+            withoutLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
             [L10n.string("Plugins_importTitle")])
         XCTAssertEqual(
-            withLauncher.makeTrailingControls().compactMap(\.accessibilityLabel),
+            withLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
             [L10n.string("Plugins_create1Title"), L10n.string("Plugins_importTitle")])
     }
 }
@@ -148,5 +148,5 @@ final class FakePluginImporter: PluginImporting {
 /// A launcher that opens nothing, for a screen that only has to show its
 /// Create button.
 final class SilentLauncher: LLMLaunching {
-    func launch(_ provider: LLMProvider, prompt: String) {}
+    func openLLM(_ url: URL, fallback: URL?) {}
 }

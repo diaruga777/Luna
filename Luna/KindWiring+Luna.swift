@@ -11,6 +11,7 @@
 
 import LunaBundledPlugins
 import LunaAppConfig
+import LunaDesignSystem
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
@@ -42,7 +43,7 @@ enum KindWiring {
         // recovery and plugin surfaces each install their own half.
         LunaFileIntake.recoveryHandler = RecoveryFileIntake()
         LunaFileIntake.pluginHandler = PluginDraftFileIntake(
-            presenter: AppPluginDraftReviewRoute(), launcher: SystemLLMLauncher())
+            presenter: AppPluginDraftReviewRoute(), launcher: LLMLauncher.shared)
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs follow the same rule as the kind packs: a
@@ -134,7 +135,7 @@ enum KindWiring {
             let screen = PluginCreateViewController(
                 prefill: PluginCreateViewController.prefill(
                     url: url, failure: failure, matchedPluginIDs: matched),
-                launcher: SystemLLMLauncher())
+                launcher: LLMLauncher.shared)
             if let navigation = presenter.navigationController {
                 navigation.pushViewController(screen, animated: true)
             } else {
@@ -306,7 +307,7 @@ enum KindWiring {
             SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
                 DownloadsSettingsScreen()
             },
-            PluginsSettingsCategory.make(launcher: SystemLLMLauncher()),
+            PluginsSettingsCategory.make(),
         ]
     }
 
@@ -338,7 +339,7 @@ enum KindWiring {
             prefill: PluginCreateViewController.prefill(
                 url: url, failure: handoff.recoveryCase.failureReason,
                 matchedPluginIDs: handoff.recoveryCase.matchingPlugins.map(\.id)),
-            launcher: SystemLLMLauncher())
+            launcher: LLMLauncher.shared)
         if let navigation = presenter.navigationController {
             navigation.pushViewController(screen, animated: true)
         } else {

@@ -63,7 +63,8 @@ public final class PluginDraftReviewViewController: UIViewController {
     private let resultLabel = UILabel()
     private let saveButton = UIButton(type: .system)
     private let discardButton = UIButton(type: .system)
-    private let correctionRow = LLMHandoffRowView()
+    private let correctionRow = LLMHandoffRowView(
+        caption: L10n.string("Plugins_review16GenerateAgain"))
 
     private var preview: PluginImportPreview?
     private var manifest: PluginManifest?
@@ -272,7 +273,6 @@ public final class PluginDraftReviewViewController: UIViewController {
         discardButton.addTarget(self, action: #selector(discardTapped), for: .touchUpInside)
         stack.addArrangedSubview(discardButton)
 
-        correctionRow.caption = L10n.string("Plugins_review16GenerateAgain")
         correctionRow.delegate = self
         correctionRow.isHidden = true
         stack.addArrangedSubview(correctionRow)
@@ -399,10 +399,10 @@ extension PluginDraftReviewViewController: LLMHandoffRowDelegate {
         guard let origin else { return }
         let prompt = LLMHandoffPrompts.pluginCorrection(
             description: origin.description, host: origin.host, errors: correctionErrors)
-        let record = handoffStore.begin(
-            kind: .plugin(description: origin.description, host: origin.host), provider: provider)
-        row.hint = L10n.string("Plugins_create4Waiting", provider.displayName)
-        _ = record
-        launcher.launch(provider, prompt: prompt)
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt) else { return }
+        handoffStore.begin(
+            .plugin(description: origin.description, host: origin.host), provider: provider)
+        row.setHint(L10n.string("Plugins_create4Waiting", provider.displayName))
+        launcher.openLLM(link, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: prompt))
     }
 }

@@ -6,16 +6,14 @@
 //  only — `KindWiring+Luna.settingsCategories()` is the one caller.
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
-import LunaStorage
 
 enum PluginsSettingsCategory {
 
-    /// `launcher` is how this app opens a chat model; the Create button is
-    /// absent without one.
-    static func make(launcher: (any LLMLaunching)? = nil) -> SettingsCategory {
+    static func make() -> SettingsCategory {
         SettingsCategory(
             title: L10n.string("Common_plugins"),
             symbol: "puzzlepiece.extension",
@@ -29,7 +27,9 @@ enum PluginsSettingsCategory {
                 importer: PluginPlatformServices.importer,
                 settingsStore: PluginPlatformServices.settings ?? NullPluginSettingsStore(),
                 invoker: PluginPlatformServices.invoker,
-                launcher: launcher)
+                // The category's factory runs when Settings pushes the screen,
+                // which is on the main thread; the launcher is main-actor bound.
+                launcher: MainActor.assumeIsolated { LLMLauncher.shared })
         }
     }
 }

@@ -21,7 +21,8 @@ public final class PluginCreateViewController: UIViewController {
 
     private let descriptionView = UITextView()
     private let placeholderLabel = UILabel()
-    private let handoffRow = LLMHandoffRowView()
+    private let handoffRow = LLMHandoffRowView(
+        caption: L10n.string("Plugins_create3RowCaption"))
     private let hintLabel = UILabel()
 
     /// `prefill` is the failed card's or Safari's account of what went wrong.
@@ -74,7 +75,6 @@ public final class PluginCreateViewController: UIViewController {
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
         descriptionView.addSubview(placeholderLabel)
 
-        handoffRow.caption = L10n.string("Plugins_create3RowCaption")
         handoffRow.delegate = self
         handoffRow.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(handoffRow)
@@ -119,8 +119,9 @@ public final class PluginCreateViewController: UIViewController {
     /// user typed, so coming back here — even from the share extension, which
     /// reads the same store — shows the request rather than an empty box.
     private func restoreRequestInFlight() {
-        guard let record = handoffStore.pluginRecord() else { return }
-        if descriptionView.text.isEmpty { descriptionView.text = record.description }
+        guard let record = handoffStore.pluginRecord(),
+              case .plugin(let description, _) = record.kind else { return }
+        if descriptionView.text.isEmpty { descriptionView.text = description }
         showWaiting(for: record.provider)
     }
 
@@ -189,9 +190,10 @@ extension PluginCreateViewController: LLMHandoffRowDelegate {
         }
         let host = Self.host(inDescription: description)
         let prompt = LLMHandoffPrompts.pluginCreation(description: description, host: host)
-        handoffStore.begin(kind: .plugin(description: description, host: host), provider: provider)
+        guard let link = LLMDeepLink.url(for: provider, prompt: prompt) else { return }
+        handoffStore.begin(.plugin(description: description, host: host), provider: provider)
         showWaiting(for: provider)
         descriptionView.resignFirstResponder()
-        launcher.launch(provider, prompt: prompt)
+        launcher.openLLM(link, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: prompt))
     }
 }

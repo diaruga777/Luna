@@ -24,6 +24,7 @@ import LunaPluginKit
 import LunaPluginUI
 import LunaPriceUI
 import LunaReaderUI
+import LunaDesignSystem
 import LunaShareSurface
 import LunaStorage
 import UIKit
@@ -45,7 +46,7 @@ final class ActionEntry: ShareViewController {
         LunaFileIntake.recoveryHandler = ExtensionRecoveryFileIntake()
         super.init(nibName: nibName, bundle: bundle)
         LunaFileIntake.pluginHandler = PluginDraftFileIntake(
-            presenter: DraftReviewRoute(host: self), launcher: ExtensionLLMLauncher(host: self))
+            presenter: DraftReviewRoute(host: self), launcher: HostLLMLauncher(host: self))
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 }
@@ -66,5 +67,19 @@ private final class DraftReviewRoute: PluginDraftReviewPresenting {
     @MainActor
     func dismissPluginDraftReview(_ screen: PluginDraftReviewViewController) {
         host?.completeSilently()
+    }
+}
+
+/// An extension may only ask its host to open a URL, and the host may refuse.
+/// The reply still comes back as a Luna file, so a refusal costs the user a
+/// tap rather than the flow.
+private final class HostLLMLauncher: LLMLaunching {
+    private weak var host: ShareViewController?
+
+    init(host: ShareViewController) { self.host = host }
+
+    @MainActor
+    func openLLM(_ url: URL, fallback: URL?) {
+        host?.openURL(url)
     }
 }

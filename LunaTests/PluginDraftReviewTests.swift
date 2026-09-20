@@ -86,6 +86,28 @@ final class PluginDraftReviewTests: XCTestCase {
         XCTAssertTrue(delegate.didInstall)
     }
 
+    func testSaveClearsTheHandOffSoNothingIsStillWaiting() async {
+        let store = temporaryHandoffStore()
+        let record = store.begin(
+            .plugin(description: "save recipes", host: "recipes.example.com"),
+            provider: .chatGPT)
+        let screen = PluginDraftReviewViewController(
+            sourceText: Self.passingDraft,
+            origin: PluginDraftReviewViewController.Origin(
+                description: "save recipes", host: "recipes.example.com",
+                targetURL: URL(string: "https://recipes.example.com/slow-roast"),
+                recordID: record.id),
+            importer: RecordingImporter(), handoffStore: store,
+            launcher: RecordingLauncher())
+        _ = UITestSupport.host(screen)
+        await settle(screen)
+
+        tap(L10n.string("Plugins_review13Save"), in: screen)
+        await pump(until: { store.pluginRecord() == nil })
+
+        XCTAssertNil(store.pluginRecord())
+    }
+
     func testDiscardWritesNothing() async {
         let importer = RecordingImporter()
         let delegate = RecordingReviewDelegate()
@@ -111,11 +133,12 @@ final class PluginDraftReviewTests: XCTestCase {
 
         screen.row(LLMHandoffRowView(), didChoose: .claude)
 
-        let prompt = try? XCTUnwrap(launcher.prompts.first)
-        XCTAssertEqual(launcher.providers, [.claude])
-        XCTAssertTrue(prompt?.contains("recipes.example.com") ?? false)
-        XCTAssertTrue(prompt?.contains("ingest returned null") ?? false)
-        XCTAssertTrue(prompt?.contains("PROBLEMS FOUND") ?? false)
+        let opened = try? XCTUnwrap(launcher.opened.first)
+        XCTAssertEqual(opened?.host, "claude.ai")
+        let prompt = opened.flatMap(LLMHandoffPromptReader.prompt(in:)) ?? ""
+        XCTAssertTrue(prompt.contains("recipes.example.com"), prompt)
+        XCTAssertTrue(prompt.contains("ingest returned null"), prompt)
+        XCTAssertTrue(prompt.contains("PROBLEMS FOUND"), prompt)
     }
 
     // MARK: - Fixtures
@@ -123,7 +146,7 @@ final class PluginDraftReviewTests: XCTestCase {
     private func makeScreen(
         source: String,
         importer: PluginImporting = RecordingImporter(),
-        launcher: any LLMLaunching = RecordingLauncher()
+        launcher: (any LLMLaunching)? = nil
     ) -> PluginDraftReviewViewController {
         PluginDraftReviewViewController(
             sourceText: source,
@@ -133,7 +156,7 @@ final class PluginDraftReviewTests: XCTestCase {
                 targetURL: URL(string: "https://recipes.example.com/slow-roast"),
                 recordID: nil),
             importer: importer,
-            launcher: launcher)
+            launcher: launcher ?? RecordingLauncher())
     }
 
     /// Validation runs a real disposable runtime, so the assertions wait for the
@@ -168,6 +191,14 @@ final class PluginDraftReviewTests: XCTestCase {
 
     private func views(in root: UIView) -> [UIView] {
         root.subviews + root.subviews.flatMap { views(in: $0) }
+    }
+
+    private func temporaryHandoffStore() -> LLMHandoffStore {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return LLMHandoffStore(containerURL: root)
     }
 
     private static func draft(capabilities: String, ingest: String) -> String {
@@ -215,14 +246,11 @@ private final class RecordingImporter: PluginImporting {
     }
 }
 
+@MainActor
 private final class RecordingLauncher: LLMLaunching {
-    private(set) var providers: [LLMProvider] = []
-    private(set) var prompts: [String] = []
+    private(set) var opened: [URL] = []
 
-    func launch(_ provider: LLMProvider, prompt: String) {
-        providers.append(provider)
-        prompts.append(prompt)
-    }
+    func openLLM(_ url: URL, fallback: URL?) { opened.append(url) }
 }
 
 @MainActor
@@ -236,5 +264,16 @@ private final class RecordingReviewDelegate: PluginDraftReviewDelegate {
 
     func pluginDraftReviewDidDiscard(_ controller: PluginDraftReviewViewController) {
         didDiscard = true
+    }
+}
+
+/// The prompt Luna wrote into a provider link, read back the way the provider
+/// would. `LLMDeepLink` keeps every delimiter encoded, so one decode is exact.
+enum LLMHandoffPromptReader {
+    static func prompt(in url: URL) -> String? {
+        guard let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .percentEncodedQuery else { return nil }
+        let value = query.drop { $0 != "=" }.dropFirst()
+        return String(value).removingPercentEncoding
     }
 }

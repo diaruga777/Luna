@@ -3,6 +3,7 @@
 //  LunaPluginUI
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaStorage
@@ -52,11 +53,12 @@ public final class PluginDraftFileIntake: LunaPluginFileHandling {
     }
 
     private func origin() -> PluginDraftReviewViewController.Origin? {
-        guard let record = handoffStore.pluginRecord() else { return nil }
+        guard let record = handoffStore.pluginRecord(),
+              case .plugin(let description, let host) = record.kind else { return nil }
         return PluginDraftReviewViewController.Origin(
-            description: record.description,
-            host: record.host ?? PluginCreateViewController.host(inDescription: record.description),
-            targetURL: PluginCreateViewController.firstLink(inDescription: record.description),
+            description: description,
+            host: host ?? PluginCreateViewController.host(inDescription: description),
+            targetURL: PluginCreateViewController.firstLink(inDescription: description),
             recordID: record.id)
     }
 }

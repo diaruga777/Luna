@@ -16,8 +16,8 @@
 //  others; `KindCompositionRootTests` fails the build if this file does that.
 //
 
-import LunaPriceUI
 import LunaModels
+import LunaPriceUI
 import LunaShareSurface
 import UIKit
 

@@ -111,7 +111,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaSaves can't present UI, so the app shell installs the
         // presenter. This is the same cross-tier protocol-witness pattern as
-        // `ProductPriceRescue.resolver`.
+        // `DiagnosticLog.exportIdentityProvider`.
         SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
 
         // A plugin-locked save is finished by re-running the pipeline for the

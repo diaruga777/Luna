@@ -5,15 +5,7 @@
       "id": "card.failed-save.error",
       "screen": "Failed save card",
       "variant": "error",
-      "summary": "The default failed save: the page in a web view, its URL, and the retry-with-AI affordance.",
-      "kind": "shared",
-      "apps": ["luna", "reader", "downloader", "pricetracker"]
-    },
-    {
-      "id": "card.failed-save.no-rescue",
-      "screen": "Failed save card",
-      "variant": "no rescue offered",
-      "summary": "A failure not worth an LLM pass (or no engine available): the button is absent rather than disabled.",
+      "summary": "The default failed save: the page in a web view and its URL.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
@@ -22,14 +14,6 @@
       "screen": "Failed save card",
       "variant": "rescue in progress",
       "summary": "A rescue running: the page dimmed under a progress bar. Frozen mid-run — the card polls its state provider and this one never moves.",
-      "kind": "shared",
-      "apps": ["luna", "reader", "downloader", "pricetracker"]
-    },
-    {
-      "id": "card.failed-save.terminal",
-      "screen": "Failed save card",
-      "variant": "attempt spent",
-      "summary": "The rescue was already spent under this app version: an apology and Delete, until an update makes it eligible again.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
@@ -61,7 +45,7 @@
       "id": "card.media.no-media",
       "screen": "Media card",
       "variant": "nothing to download",
-      "summary": "The one failure that offers the AI rescue: the page held no media this app could recognise.",
+      "summary": "The page held no media this app could recognise.",
       "kind": "media",
       "apps": ["luna", "downloader"]
     },

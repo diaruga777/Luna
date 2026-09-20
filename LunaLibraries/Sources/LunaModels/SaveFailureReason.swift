@@ -9,12 +9,6 @@ import Foundation
 /// failure card, the list row, and the Downloader's failed-download card can't
 /// drift into four different apologies for the same thing.
 public enum FailedSaveCopy {
-    /// The terminal line: the rescue is spent for this app version and there is
-    /// nothing left to offer but Delete.
-    public static var terminal: String {
-        L10n.string("SaveFailure_genericTitle")
-    }
-
     /// The headline a surface uses when it has to name the failure in words
     /// (the card doesn't — it shows the page).
     public static var couldNotLoad: String {

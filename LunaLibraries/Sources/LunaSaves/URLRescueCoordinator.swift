@@ -11,18 +11,19 @@ import LunaStorage
 /// Left uninstalled ⇒ rescue is inert (extensions, tests, or the engine
 /// unavailable).
 public protocol URLRescueEngineBridging {
-    /// Cheap "is a model usable" gate; drives whether affordances appear.
+    /// Cheap "is a model usable" gate; the sweep and the inline trigger both
+    /// stand down when it is false.
     var isRescueAvailable: Bool { get }
-    /// Runs a rescue for `item` with `hint`; `interactive` picks the budget. The
-    /// conformer itself applies the outcome and persists.
-    func performRescue(
-        for item: SavedItem, hint: RescueHint?, interactive: Bool
-    ) async -> URLRescueCoordinator.RescueRunResult
+    /// Runs the item's one rescue. The conformer itself applies the outcome and
+    /// persists.
+    func performRescue(for item: SavedItem) async -> URLRescueCoordinator.RescueRunResult
 }
 
-/// Drives URL rescue for the main app: an inline attempt when a foreground save
-/// fails, a debounced background sweep of `.failed` items, one-shot manual
-/// rescues, and the extension→app pending-request hand-off. The debounced
+/// Drives URL rescue for the main app: an inline attempt when a save fails, a
+/// debounced background sweep of `.failed` items, and the extension→app
+/// pending-request hand-off. Every route is the same budgeted funnel — one
+/// automatic attempt per item, and no surface offers a second
+/// (`claudedocs/url-rescue.md`). The debounced
 /// `.savesChanged` sweep + foreground tracking is `SavesSweepDriver`
 /// (shared with `AudioScriptPipeline`); this class keeps its own NSLock'd
 /// in-flight set.
@@ -35,10 +36,9 @@ public final class URLRescueCoordinator {
     public static let shared = URLRescueCoordinator()
 
     /// How one rescue attempt ended, as much as this module needs to know.
-    /// The three not-recovered endings are distinct, and only one should
-    /// spend the user's one visible attempt: a real verdict on the page
-    /// spends it, a model that never got to look should not, and a safety
-    /// guardrail should never be asked again.
+    /// The three not-recovered endings stay distinct because the ledger treats
+    /// them differently: a guardrail closes the item for good, while a model
+    /// that never got to look leaves the sweep free to try again.
     public enum RescueRunResult: Equatable {
         /// The item left `.failed` — content recovered, media downloading, or
         /// handed to the interactive unlock tier.
@@ -66,7 +66,6 @@ public final class URLRescueCoordinator {
     private let store: SavesStore
     private let ledger: RescueLedgerStore
     private let pending: PendingRescueRequestStore
-    private let failures: SaveFailureStore
     private let stats: RescueStatsStore
     private let debounceInterval: TimeInterval
     private let now: () -> Date
@@ -96,7 +95,6 @@ public final class URLRescueCoordinator {
         store: SavesStore = .shared,
         ledger: RescueLedgerStore = .shared,
         pending: PendingRescueRequestStore = .shared,
-        failures: SaveFailureStore = .shared,
         stats: RescueStatsStore = .shared,
         debounceInterval: TimeInterval = 1.5,
         now: @escaping () -> Date = Date.init
@@ -104,7 +102,6 @@ public final class URLRescueCoordinator {
         self.store = store
         self.ledger = ledger
         self.pending = pending
-        self.failures = failures
         self.stats = stats
         self.debounceInterval = debounceInterval
         self.now = now
@@ -119,84 +116,19 @@ public final class URLRescueCoordinator {
         guard !installed else { return }
         installed = true
         sweepDriver.install()
-        reopenStaleVersionAttempts()
         drainPendingRequests()
-    }
-
-    /// One free retry per shipped version. A failed save whose Apple
-    /// Intelligence attempt was spent under an earlier version has its
-    /// ledger budget cleared here, so this launch's sweep tries it again.
-    /// Because `SavesIngestor.ingestAllPending` already re-runs ordinary
-    /// ingestion for every `.failed` item on launch, the item gets both
-    /// paths without any extra scheduling.
-    ///
-    /// Nothing needs to clear `aiAttemptVersion` itself: the card compares it to
-    /// the running version, so an update makes every stale mark non-terminal at
-    /// once, and a fresh failure under this version overwrites it.
-    @discardableResult
-    public func reopenStaleVersionAttempts() -> Set<UUID> {
-        let stale = failures.idsWithStaleAIAttempt()
-        guard !stale.isEmpty else { return [] }
-        ledger.resetAttempts(for: stale)
-        return stale
     }
 
     // MARK: - Inline trigger (from SavesIngestor)
 
-    /// Called when a first-pass ingest ended `.failed`. Re-reads the item
-    /// and, if it is still `.failed` and eligible, runs an inline,
-    /// interactive rescue, or leaves it for the background sweep. Never
-    /// blocks the caller.
-    public func itemJustFailed(_ itemID: UUID, source: CaptureSource, interactive: Bool) {
+    /// Called when a first-pass ingest ended `.failed`. Runs the item's one
+    /// automatic rescue straight away, whoever the caller is: the sweep would
+    /// only pick the item up a moment later, and an item rescued here never
+    /// waits for it. Never blocks the caller.
+    public func itemJustFailed(_ itemID: UUID, source: CaptureSource) {
         guard let engine = Self.engine, engine.isRescueAvailable else { return }
-        guard interactive, ledger.shouldAutoRescue(itemID) else {
-            // Non-interactive failures (background sweeps, extension saves) are
-            // picked up by the debounced sweep, not rescued inline.
-            return
-        }
-        Task { [weak self] in await self?.runRescue(itemID: itemID, hint: nil, interactive: true, countsAgainstBudget: true) }
-    }
-
-    /// A user-consented one-shot rescue (the failed card's button, a
-    /// failed-row tap, the extension hand-off). Bypasses the auto-attempt
-    /// budget — the tap is itself consent — and spends the item's one Apple
-    /// Intelligence attempt for this app version, so a card that comes back
-    /// still failed goes terminal.
-    public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
-        guard let engine = Self.engine, engine.isRescueAvailable else { return }
-        // A guardrailed item is permanently out of reach; the tap must not spend
-        // 90 seconds re-proving it. The card doesn't offer the button either
-        // (`FailedSaveCardFactory.rescueState`), so this is belt-and-braces for
-        // the other entry points (the deep-link drain, a stale row menu).
-        guard !ledger.isGuardrailed(itemID) else { return }
-        Task { [weak self] in
-            await self?.runRescue(
-                itemID: itemID, hint: hint, interactive: true,
-                countsAgainstBudget: false, spendsVersionAttempt: true)
-        }
-    }
-
-    /// The same consented one-shot rescue as `requestManualRescue`, but
-    /// awaited, and reporting whether the item recovered.
-    ///
-    /// For the bulk file import (`claudedocs/import-export.md`), which cannot use
-    /// the fire-and-forget form: it has to know each item's fate before it can
-    /// score the run, and its progress bar has to hold the item's slice open
-    /// until the rescue is really finished. Consent is the Import button, so the
-    /// auto-attempt budget is bypassed exactly as it is for a tap on a failed
-    /// card, and the version attempt is spent the same way — a link the model
-    /// couldn't recover during an import doesn't get asked again until the next
-    /// app update.
-    ///
-    /// Returns false when rescue is unavailable, so the caller reports an
-    /// ordinary failure rather than pretending an attempt happened.
-    @discardableResult
-    public func rescueAndWait(itemID: UUID, hint: RescueHint? = nil) async -> Bool {
-        guard let engine = Self.engine, engine.isRescueAvailable else { return false }
-        guard !ledger.isGuardrailed(itemID) else { return false }
-        return await runRescue(
-            itemID: itemID, hint: hint, interactive: true,
-            countsAgainstBudget: false, spendsVersionAttempt: true) == .advanced
+        guard ledger.shouldAutoRescue(itemID) else { return }
+        Task { [weak self] in await self?.runRescue(itemID: itemID) }
     }
 
     /// Whether `itemID` is being rescued right now (for the "trying harder…" row).
@@ -254,9 +186,12 @@ public final class URLRescueCoordinator {
 
     // MARK: - Pending hand-off drain
 
-    /// Consumes queued extension→app rescue requests: finds (or re-adds) the item
-    /// and kicks a manual rescue with the requested hint. Idempotent; safe to call
-    /// from launch, foreground, and the `<scheme>://rescue` deep link.
+    /// Consumes queued extension→app rescue requests: finds (or re-adds) the
+    /// item and runs the same budgeted rescue every other trigger runs. The
+    /// extension queues one for every failure it sees, so this is the automatic
+    /// attempt for a save that failed while the app was not running. Idempotent;
+    /// safe to call from launch, foreground, and the `<scheme>://rescue` deep
+    /// link.
     public func drainPendingRequests() {
         let requests = pending.takeAll()
         guard !requests.isEmpty else { return }
@@ -269,7 +204,8 @@ public final class URLRescueCoordinator {
             } else {
                 continue
             }
-            requestManualRescue(itemID: itemID, hint: request.hint)
+            guard ledger.shouldAutoRescue(itemID) else { continue }
+            Task { [weak self] in await self?.runRescue(itemID: itemID) }
         }
     }
 
@@ -289,7 +225,7 @@ public final class URLRescueCoordinator {
             guard ledger.shouldAutoRescue(item.id), !isRescuing(item.id), !ingestor.isIngesting(item.id) else { continue }
             launched += 1
             let id = item.id
-            Task { [weak self] in await self?.runRescue(itemID: id, hint: nil, interactive: false, countsAgainstBudget: true) }
+            Task { [weak self] in await self?.runRescue(itemID: id) }
         }
         // Opportunistic cleanup of ledger rows for items no longer present.
         ledger.prune(keeping: Set(store.items().map(\.id)))
@@ -306,19 +242,15 @@ public final class URLRescueCoordinator {
 
     // MARK: - Run
 
-    /// Returns whether the item advanced. Every early return is a false: the
-    /// awaited caller (`rescueAndWait`) must not read "nothing to do" as success.
+    /// The one funnel every trigger runs through: it re-reads the item, spends
+    /// the ledger attempt, and records what the engine concluded.
     @discardableResult
-    private func runRescue(
-        itemID: UUID, hint: RescueHint?, interactive: Bool,
-        countsAgainstBudget: Bool, spendsVersionAttempt: Bool = false
-    ) async -> RescueRunResult {
+    private func runRescue(itemID: UUID) async -> RescueRunResult {
         guard let engine = Self.engine else { return .notRecovered }
         // Re-reads: the item may have advanced or been deleted since it was
-        // scheduled. This rescues anything not yet ready — the "only
-        // .failed" gating for automatic rescue is enforced at the call
-        // sites (itemJustFailed, the sweep) — since a manual or drained
-        // request may target a still-`.pending` item.
+        // scheduled. This rescues anything not yet ready — the "only .failed"
+        // gating is enforced at the call sites — since a drained hand-off may
+        // target a still-`.pending` item.
         guard let item = store.item(withID: itemID), item.state != .ready else { return .notRecovered }
         guard beginInFlight(itemID) else { return .notRecovered }
         defer {
@@ -326,30 +258,21 @@ public final class URLRescueCoordinator {
             postSavesChanged()
         }
 
-        if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
+        ledger.recordAttempt(itemID)
         postSavesChanged() // Flips the row to "trying harder…".
 
-        let result = await engine.performRescue(for: item, hint: hint, interactive: interactive)
+        let result = await engine.performRescue(for: item)
         switch result {
         case .advanced:
-            ledger.recordSuccess(itemID, hint: hint)
+            ledger.recordSuccess(itemID)
         case .guardrailed:
             // Permanent, and the ledger is what makes it permanent: no sweep
             // and no tap will reach this item again, so nothing is gained by
             // also marking the version attempt spent.
             ledger.recordGuardrail(itemID)
-        case .notRecovered:
-            if spendsVersionAttempt {
-                // The user asked for AI, and AI did not recover it. This
-                // records which version spent the attempt, so the card can
-                // say so plainly now and offer itself again after the next
-                // update.
-                failures.recordAIAttempt(itemID)
-            }
-        case .transient, .surfaceDropped:
-            // Either the model never saw the page, or it did recover the
-            // content and this app's surface dropped it. Neither is a
-            // verdict the user's one visible attempt should pay for.
+        case .notRecovered, .transient, .surfaceDropped:
+            // The attempt is spent either way. What the user does next is the
+            // chat hand-off the failed card offers, not another model call.
             break
         }
         return result

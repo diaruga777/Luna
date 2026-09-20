@@ -8,17 +8,9 @@ import LunaModels
 import UIKit
 import WebKit
 
-/// The three host legs the extension's failure card needs.
+/// The one host leg the extension's failure card needs.
 @MainActor
 public protocol RescueFailureCardDelegate: AnyObject {
-    /// Records the pending rescue, so the app's foreground drain picks it up.
-    func rescueFailureCardDidRequestRescue(_ card: RescueFailureViewController)
-
-    /// Best-effort deep-link open. An extension cannot observe whether it
-    /// succeeded, which is why the card always then leaves the manual "Open Luna
-    /// to finish saving" reassurance up.
-    func rescueFailureCard(_ card: RescueFailureViewController, openApp url: URL)
-
     /// The user is done with the card.
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController)
 }
@@ -27,19 +19,17 @@ public protocol RescueFailureCardDelegate: AnyObject {
 ///
 /// This is deliberately the same card as the in-app failed save
 /// (`FailedSaveCardViewController`, see `claudedocs/failed-saves.md`): a
-/// red-rimmed card surface, the page itself in a near-full-bleed web view, a
-/// URL bar under it, and "Retry with AI ✦" in the chin. A user who hits this
-/// in the share sheet and then opens Luna should recognise the same object,
-/// not meet a second, different apology for the same failure.
+/// red-rimmed card surface, the page itself in a near-full-bleed web view, and
+/// a URL bar under it. A user who hits this in the share sheet and then opens
+/// Luna should recognise the same object, not meet a second, different apology
+/// for the same failure.
 ///
-/// The one real difference: an extension links no rescue engine, so its
-/// button cannot run anything. It records a pending-rescue request instead
-/// and best-effort opens the containing app, so this card shows no progress
-/// overlay, only a reassurance line in place of a result. Neither card shows
-/// a content-type picker; the model classifies the page itself.
+/// The one real difference: an extension links no rescue engine, so nothing
+/// runs here. The failure leg has already queued the save's one automatic
+/// rescue for the app to run on its next foreground, so this card shows no
+/// progress overlay — only the page, and a line saying where the rest happens.
 public final class RescueFailureViewController: UIViewController {
     private let url: URL?
-    private let rescueURL: URL?
     /// Held strongly, on purpose. The conformer is a small coordinator the
     /// save flow makes for this card, not the card's owner, so nothing
     /// cycles — and it must outlive the driver that raised the card, which
@@ -57,23 +47,14 @@ public final class RescueFailureViewController: UIViewController {
     private let urlLabel = UILabel()
     private let reloadButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
-    private lazy var rescueButton = UIButton(type: .system)
     private let manualLabel = UILabel()
     private lazy var doneButton = UIButton(type: .system)
     private let chinStack = UIStackView()
 
     /// - url: the page that failed. Nil ⇒ the card shows its chrome with no page.
-    /// - rescueURL: this app's `<scheme>://rescue` deep link (built by the driver);
-    ///   nil ⇒ only the manual "Open Luna" instruction is shown.
-    /// - delegate: the host legs — the deep-link open, the pending-rescue record,
-    ///   and completion.
-    public init(
-        url: URL?,
-        rescueURL: URL?,
-        delegate: (any RescueFailureCardDelegate)?
-    ) {
+    /// - delegate: the one host leg, completion.
+    public init(url: URL?, delegate: (any RescueFailureCardDelegate)?) {
         self.url = url
-        self.rescueURL = rescueURL
         self.delegate = delegate
         super.init(nibName: nil, bundle: nil)
     }
@@ -181,28 +162,21 @@ public final class RescueFailureViewController: UIViewController {
     }
 
     private func buildChin() {
-        rescueButton.configuration = GlassStyle.retryWithAIConfiguration()
-        rescueButton.contentHorizontalAlignment = .center
-        rescueButton.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
-        rescueButton.isHidden = rescueURL == nil
-
         manualLabel.text = L10n.string("ShareExtension_rescueFailure_manualInstructionMessage")
         manualLabel.textColor = LunaColors.secondaryText
         manualLabel.font = .preferredFont(forTextStyle: .footnote)
         manualLabel.textAlignment = .center
         manualLabel.numberOfLines = 2
-        manualLabel.isHidden = true
 
         doneButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Common_done"), symbol: "checkmark", compact: true)
         doneButton.contentHorizontalAlignment = .center
         doneButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
-        doneButton.isHidden = true
 
         chinStack.axis = .vertical
         chinStack.spacing = 8
         chinStack.alignment = .fill
-        for subview in [rescueButton, manualLabel, doneButton] {
+        for subview in [manualLabel, doneButton] {
             chinStack.addArrangedSubview(subview)
         }
     }
@@ -258,29 +232,10 @@ public final class RescueFailureViewController: UIViewController {
         LunaShareSheet.present(items: [url], from: self, anchor: .view(shareButton))
     }
 
-    @objc private func finishTapped() {
-        // Records the pending request first, so the open never loses it.
-        delegate?.rescueFailureCardDidRequestRescue(self)
-        if let url = rescueURL { delegate?.rescueFailureCard(self, openApp: url) }
-        // An extension cannot observe whether the deep-link open succeeded,
-        // so this always leaves the manual instruction up. The app's
-        // foreground drain is the real guarantee.
-        rescueButton.isHidden = true
-        manualLabel.isHidden = false
-        doneButton.isHidden = false
-    }
-
     @objc private func cancelTapped() {
         delegate?.rescueFailureCardDidFinish(self)
     }
 
-    #if DEBUG
-    /// Test seam: fires the same record-the-request path the button does,
-    /// without synthesizing a touch on a card that was never put in a window.
-    public func recordPendingRescueForTesting() {
-        delegate?.rescueFailureCardDidRequestRescue(self)
-    }
-    #endif
 }
 
 // MARK: - WKNavigationDelegate

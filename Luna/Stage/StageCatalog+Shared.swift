@@ -400,8 +400,7 @@ enum SharedStageCatalog {
         [
             StageDescriptor(
                 id: "card.failed-save.error", screen: "Failed save card", variant: "error",
-                summary: "The default failed save: the page in a web view, its URL, and the "
-                    + "retry-with-AI affordance.",
+                summary: "The default failed save: the page in a web view and its URL.",
                 kind: .shared,
                 make: { failedSaveCard() }),
             StageDescriptor(
@@ -411,20 +410,6 @@ enum SharedStageCatalog {
                     + "mid-run — the card polls its state provider and this one never moves.",
                 kind: .shared,
                 make: { failedSaveCard(.running(progress: 0.45)) }),
-            StageDescriptor(
-                id: "card.failed-save.no-rescue", screen: "Failed save card",
-                variant: "no rescue offered",
-                summary: "A failure not worth an LLM pass (or no engine available): the "
-                    + "button is absent rather than disabled.",
-                kind: .shared,
-                make: { failedSaveCard(.unavailable) }),
-            StageDescriptor(
-                id: "card.failed-save.terminal", screen: "Failed save card",
-                variant: "attempt spent",
-                summary: "The rescue was already spent under this app version: an apology "
-                    + "and Delete, until an update makes it eligible again.",
-                kind: .shared,
-                make: { failedSaveCard(.spent) }),
             StageDescriptor(
                 id: "card.unsupported-save", screen: "Unsupported save card",
                 variant: "another app's kind",
@@ -447,11 +432,8 @@ enum SharedStageCatalog {
                     guard let url = URL(string: "https://example.com/broken") else { return nil }
                     return UINavigationController(
                         rootViewController: RescueFailureViewController(
-                            // No delegate: a staged card records nothing, opens
-                            // nothing and completes nothing, exactly as the three
-                            // empty closures it replaces did.
-                            url: url, rescueURL: URL(string: "luna://rescue"),
-                            delegate: nil))
+                            // No delegate: a staged card completes nothing.
+                            url: url, delegate: nil))
                 }),
         ]
     }
@@ -466,7 +448,7 @@ enum SharedStageCatalog {
             urlText: "example.com/broken", rescueState: rescueState)
         let card = FailedSaveCardViewController(
             model: model,
-            actions: FailedSaveCardActions(rescue: {}, share: { _ in }, delete: {}),
+            actions: FailedSaveCardActions(share: { _ in }, delete: {}),
             // A constant provider is what freezes the state: the card re-reads
             // this on a timer, and a live one would resolve the rescue away.
             stateProvider: { model })

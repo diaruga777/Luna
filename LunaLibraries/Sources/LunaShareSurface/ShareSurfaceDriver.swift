@@ -239,18 +239,22 @@ public final class ShareSurfaceDriver {
 
         case let .failed(reason):
             // Never shows a misleading "Saved". Marks the row failed so the
-            // main app's list shows it, records the failure reason and
-            // count so the card and the rescue's failure-kind mapping can
-            // read them, then offers the Apple-Intelligence rescue
-            // hand-off: the action extension (which has UI) presents the
-            // rescue card, while the zero-UI share extension completes
-            // quietly (the main app's background sweep still rescues it if
-            // auto-rescue is on).
+            // main app's list shows it, and records the failure reason and
+            // count so the card and the rescue's failure-kind mapping can read
+            // them. The rescue hand-off is queued here rather than on a tap:
+            // Apple Intelligence runs once, automatically, for every failure
+            // (`claudedocs/url-rescue.md`), and the app drains this queue on
+            // its next foreground. The action extension (which has UI) then
+            // shows the failure card, which offers the chat hand-off; the
+            // zero-UI share extension completes quietly.
             if let item = store.item(forURLString: url.absoluteString) {
                 store.markFailed(item.id)
                 SaveFailureStore.shared.recordFailure(item.id, reason: reason)
                 flushDiagnostics(itemID: item.id, reason: reason)
             }
+            PendingRescueRequestStore.shared.append(PendingRescueRequest(
+                urlString: url.absoluteString, dateWritten: Date(),
+                sourceSurface: currentApp.storageIdentifier))
             if host.readerMode != nil {
                 presentRescueFailure(url: url)
             } else {
@@ -306,21 +310,13 @@ public final class ShareSurfaceDriver {
             PluginLockedSaveViewController(delegate: PluginLockedCardLegs(host: host)))
     }
 
-    /// The action-extension failure card: shows the page, writes a
-    /// pending-rescue record, and best-effort opens the containing app. The
-    /// extension links no rescue engine — only the pending-record store
-    /// and the deep link.
-    ///
-    /// The record carries no hint. The model classifies the page when the
-    /// app drains the queue, so this card asks the user nothing.
+    /// The action-extension failure card: shows the page and best-effort opens
+    /// the containing app, which drains the rescue the failure leg already
+    /// queued. The extension links no rescue engine.
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
-        let app = currentApp
-        let card = RescueFailureViewController(
-            url: url,
-            rescueURL: LunaDeepLink.rescueLink(scheme: app.deepLinkScheme),
-            delegate: RescueFailureCardLegs(host: host, url: url, app: app))
-        host.presentModally(card)
+        host.presentModally(RescueFailureViewController(
+            url: url, delegate: RescueFailureCardLegs(host: host)))
     }
 
     // MARK: - Diagnostics
@@ -475,24 +471,8 @@ public final class ShareSurfaceDriver {
 @MainActor
 private final class RescueFailureCardLegs: RescueFailureCardDelegate {
     private weak var host: (any ExtensionHost)?
-    private let url: URL
-    private let app: LunaApp
 
-    init(host: any ExtensionHost, url: URL, app: LunaApp) {
-        self.host = host
-        self.url = url
-        self.app = app
-    }
-
-    func rescueFailureCardDidRequestRescue(_ card: RescueFailureViewController) {
-        PendingRescueRequestStore.shared.append(PendingRescueRequest(
-            urlString: url.absoluteString, hint: nil, dateWritten: Date(),
-            sourceSurface: app.storageIdentifier))
-    }
-
-    func rescueFailureCard(_ card: RescueFailureViewController, openApp url: URL) {
-        host?.openURL(url)
-    }
+    init(host: any ExtensionHost) { self.host = host }
 
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController) {
         host?.completeSilently()

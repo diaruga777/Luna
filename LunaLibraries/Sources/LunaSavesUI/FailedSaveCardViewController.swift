@@ -14,25 +14,14 @@ import WebKit
 /// app draws the SAME error card instead of each inventing one.
 public struct FailedSaveCardModel {
 
-    /// The card's one rescue-related state. The enum stops the UI from
-    /// claiming a running rescue and a spent/unavailable terminal state at
-    /// the same time.
+    /// The card's one rescue-related state.
     public enum RescueState: Equatable {
-        /// Nothing has been tried, or a previous attempt failed but the button
-        /// is still offered.
+        /// Nothing is running: the card's chin offers what the user can do.
         case idle
-        /// A rescue is running right now — the web view goes under a dimming
-        /// overlay with the eclipse progress bar (fraction 0…1) over it.
+        /// The item's one automatic rescue is running right now — the web view
+        /// goes under a dimming overlay with the eclipse progress bar
+        /// (fraction 0…1) over it.
         case running(progress: Double)
-        /// This item's one Apple Intelligence attempt for THIS app version is
-        /// already spent. Replaces the button with the apology and a Delete —
-        /// the card has nothing left to offer until Luna itself changes.
-        case spent
-        /// The LLM rescue path isn't available at all (Apple Intelligence
-        /// absent, engine not installed, or the failure isn't worth an attempt).
-        /// Renders identically to `.spent` — the button is hidden rather than
-        /// offering a no-op.
-        case unavailable
 
         public var isRunning: Bool {
             if case .running = self { return true }
@@ -68,9 +57,6 @@ public struct FailedSaveCardModel {
 /// them to its own store/share/rescue plumbing and the view stays free of every
 /// tier above LunaDesignSystem.
 public struct FailedSaveCardActions {
-    /// Run the LLM rescue. Takes no hint — the model classifies the page itself
-    /// (`RescueRequest.ContentHint.auto`), which is why the card has no picker.
-    public var rescue: () -> Void
     /// Share the raw URL (a failed save has nothing else to share).
     public var share: (UIView) -> Void
     /// Share the save's diagnostic trace — every request, decision and strategy
@@ -81,18 +67,15 @@ public struct FailedSaveCardActions {
     /// Open the provider-neutral plugin workshop for this failure. Nil on the
     /// standalone app surfaces and when the platform is unavailable.
     public var createPlugin: (() -> Void)?
-    /// Delete the item. Offered only in the terminal state, where it's the only
-    /// thing left to do.
+    /// Delete the item.
     public var delete: () -> Void
 
     public init(
-        rescue: @escaping () -> Void,
         share: @escaping (UIView) -> Void,
         shareDiagnostics: ((UIView) -> Void)? = nil,
         createPlugin: (() -> Void)? = nil,
         delete: @escaping () -> Void
     ) {
-        self.rescue = rescue
         self.share = share
         self.shareDiagnostics = shareDiagnostics
         self.createPlugin = createPlugin
@@ -101,8 +84,8 @@ public struct FailedSaveCardActions {
 }
 
 /// The error state of a saved link, as a carousel card: the page itself in a
-/// near-full-bleed web view, a URL bar with reload and share under it, and in the
-/// chin the one thing worth trying — "Retry with AI".
+/// near-full-bleed web view, a URL bar with reload and share under it, and the
+/// chin under that.
 ///
 /// The card accepts taps only on its own controls, so the carousel's tap and
 /// scrub gestures never fire over it. A link tap inside the web view opens full
@@ -133,15 +116,6 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// interpolates between them, so the bar needs its own tick to show that —
     /// and it's what notices the attempt ending.
     private var progressTicker: Timer?
-    /// Set on the tap that starts a rescue and cleared once the coordinator
-    /// confirms the attempt in flight. Between those two moments the provider
-    /// still reports "not rescuing" (the coordinator starts on a task hop), and
-    /// without this latch the next tick would tear the overlay straight back down.
-    private var pendingRescueStart: Date?
-    private var sawRescueInFlight = false
-    /// How long the latch waits for confirmation before concluding the rescue
-    /// never started (an unavailable engine declines synchronously and silently).
-    private static let rescueStartGrace: TimeInterval = 6
 
     /// Created lazily: a carousel mounts the centered card plus its two peeks, and
     /// a `WKWebView` per mounted card is the expensive part of this design.
@@ -157,10 +131,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     private let urlLabel = UILabel()
     private let shareButton = UIButton(type: .system)
 
-    /// The chin: either the AI button, or (terminally) the apology + Delete.
     private let chinStack = UIStackView()
-    private let rescueButton = UIButton(type: .system)
-    private let apologyLabel = UILabel()
     private let deleteButton = UIButton(type: .system)
 
     private var hasStartedLoad = false
@@ -338,19 +309,6 @@ public final class FailedSaveCardViewController: CardContentViewController {
     }
 
     private func buildChin() {
-        rescueButton.configuration = Self.rescueConfiguration()
-        rescueButton.contentHorizontalAlignment = .center
-        rescueButton.addAction(UIAction { [weak self] _ in
-            self?.beginRescue()
-        }, for: .touchUpInside)
-
-        apologyLabel.text = FailedSaveCopy.terminal
-        apologyLabel.font = .preferredFont(forTextStyle: .footnote)
-        apologyLabel.adjustsFontForContentSizeCategory = true
-        apologyLabel.textColor = LunaColors.secondaryText
-        apologyLabel.textAlignment = .center
-        apologyLabel.numberOfLines = 2
-
         deleteButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Common_delete"), symbol: "trash", compact: true)
         deleteButton.tintColor = LunaColors.errorAccent
@@ -362,9 +320,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         chinStack.axis = .vertical
         chinStack.spacing = 8
         chinStack.alignment = .fill
-        for subview in [rescueButton, apologyLabel, deleteButton] {
-            chinStack.addArrangedSubview(subview)
-        }
+        chinStack.addArrangedSubview(deleteButton)
     }
 
     /// A hairline-glass circular button for the URL bar's two ends.
@@ -379,12 +335,6 @@ public final class FailedSaveCardViewController: CardContentViewController {
         button.tintColor = LunaColors.secondaryText
         button.accessibilityLabel = label
         button.setContentHuggingPriority(.required, for: .horizontal)
-    }
-
-    /// "Retry with AI ✦", styled by the one shared definition every error surface
-    /// uses (`GlassStyle.retryWithAIConfiguration`).
-    private static func rescueConfiguration() -> UIButton.Configuration {
-        GlassStyle.retryWithAIConfiguration()
     }
 
     // MARK: - Web view
@@ -436,19 +386,6 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     // MARK: - Rescue
 
-    /// The overlay goes up on the TAP, not on the first progress report: the
-    /// coordinator's work starts on a background executor and the user needs to
-    /// see the press land immediately.
-    private func beginRescue() {
-        guard !model.rescueState.isRunning else { return }
-        pendingRescueStart = Date()
-        sawRescueInFlight = false
-        model.rescueState = .running(progress: RescueStage.queued.fraction)
-        progressBar.setProgress(Float(RescueStage.queued.fraction), animated: false)
-        apply(model)
-        actions.rescue()
-    }
-
     /// Stage reports are per-item, so the card filters on its own id. Cheap
     /// enough to leave installed for the card's whole life — the notification
     /// only fires while some rescue is actually running.
@@ -465,33 +402,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     /// Re-reads the item's state and re-renders. This is how the overlay comes
     /// DOWN as well as how the bar advances: when the attempt ends the provider
-    /// stops reporting a rescue, and the same read brings back whether the
-    /// version's AI attempt is now spent — which is the terminal chin.
+    /// stops reporting a rescue.
     private func refreshState() {
-        guard var latest = stateProvider() else { return }
-        if latest.rescueState.isRunning {
-            sawRescueInFlight = true
-            pendingRescueStart = nil
-        } else if let started = pendingRescueStart {
-            let gaveUp = sawRescueInFlight
-                || Date().timeIntervalSince(started) > Self.rescueStartGrace
-            if gaveUp {
-                pendingRescueStart = nil
-                sawRescueInFlight = false
-            } else {
-                // The coordinator has not picked up the attempt yet. Keep the
-                // overlay the tap raised instead of flickering it away for
-                // whatever terminal or idle state the fresh read just found.
-                let currentProgress: Double
-                if case .running(let progress) = model.rescueState {
-                    currentProgress = progress
-                } else {
-                    currentProgress = 0
-                }
-                latest.rescueState = .running(
-                    progress: max(currentProgress, RescueStage.queued.fraction))
-            }
-        }
+        guard let latest = stateProvider() else { return }
         model = latest
         apply(model)
     }
@@ -525,21 +438,6 @@ public final class FailedSaveCardViewController: CardContentViewController {
             progressBar.setProgress(Float(progress), animated: true)
         }
         updateProgressTicker(rescuing: rescuing)
-
-        // Two chin states: the offer, or (terminally) the apology + Delete.
-        // A running rescue keeps the offer's button in place and merely disables
-        // it — hiding it would collapse the chin and resize the web view under
-        // the overlay, which reads as the card breaking rather than working.
-        let terminal: Bool
-        switch model.rescueState {
-        case .spent, .unavailable: terminal = true
-        case .idle, .running: terminal = false
-        }
-        rescueButton.isHidden = terminal
-        rescueButton.isEnabled = !rescuing
-        rescueButton.alpha = rescuing ? 0.5 : 1
-        apologyLabel.isHidden = !terminal
-        deleteButton.isHidden = !terminal
     }
 }
 

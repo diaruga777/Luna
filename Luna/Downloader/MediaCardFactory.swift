@@ -23,38 +23,18 @@ import LunaStorage
 import Photos
 import UIKit
 
-/// The "Try Apple Intelligence" leg of an undownloaded card: offered only when
-/// a model is installed, and always against the saved item that owns the
-/// source URL (created on the spot if the media was saved without one).
-enum MediaCardRescue {
-    static func starter(forSourceURLString sourceURLString: String) -> (() -> Void)? {
-        guard URLRescueCoordinator.engine?.isRescueAvailable == true else { return nil }
-        return {
-            let store = SavesStore.shared
-            let itemID = store.item(forURLString: sourceURLString)?.id
-                ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
-            if let itemID {
-                URLRescueCoordinator.shared.requestManualRescue(itemID: itemID, hint: .media)
-            }
-        }
-    }
-}
-
 enum MediaCardFactory {
 
     /// The card content for one saved media item. `download` is invoked by the
-    /// undownloaded card's button; `rescue`, when non-nil, offers the Apple
-    /// Intelligence fallback after a no-media failure.
+    /// undownloaded card's button.
     static func makeCard(
         for item: SavedMediaItem,
         scale: CGFloat,
-        download: @escaping () -> Void,
-        rescue: (() -> Void)? = nil
+        download: @escaping () -> Void
     ) -> CardContentViewController {
         switch item.storageState {
         case .undownloaded:
-            return UndownloadedMediaCardContentViewController(
-                item: item, download: download, rescue: rescue)
+            return UndownloadedMediaCardContentViewController(item: item, download: download)
         case .localFile:
             guard let fileURL = item.fileURL else { return CardContentViewController() }
             switch item.kind {
@@ -477,9 +457,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
 
     private let sourceURLString: String
     private let download: () -> Void
-    private let rescue: (() -> Void)?
     private let button = UIButton(configuration: .plain())
-    private let rescueButton = UIButton(configuration: .plain())
     private let poster = UIImageView()
     private let posterDim = UIView()
     private let statusLabel = UILabel()
@@ -491,10 +469,9 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
     private let statusBar = UIVisualEffectView(effect: GlassStyle.barEffect())
     private var loadedThumbnailFileName: String?
 
-    init(item: SavedMediaItem, download: @escaping () -> Void, rescue: (() -> Void)? = nil) {
+    init(item: SavedMediaItem, download: @escaping () -> Void) {
         self.sourceURLString = item.sourceURLString
         self.download = download
-        self.rescue = rescue
         super.init()
     }
 
@@ -524,20 +501,6 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
-
-        // "Retry with AI ✦" — shown only on a no-media failure when a model is
-        // available. Styled by the one shared definition
-        // (`GlassStyle.retryWithAIConfiguration`), so this card's offer is
-        // visibly the same offer as the failed-save card's.
-        rescueButton.configuration = GlassStyle.retryWithAIConfiguration(compact: true)
-        rescueButton.isHidden = true
-        rescueButton.addAction(UIAction { [weak self] _ in
-            self?.rescueButton.isHidden = true
-            self?.statusLabel.text = L10n.string("Downloader_mediaCard_rescueInProgressLabel")
-            self?.rescue?()
-        }, for: .touchUpInside)
-        rescueButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(rescueButton)
 
         statusLabel.text = L10n.string("Common_downloading")
         statusLabel.textColor = LunaColors.primaryText
@@ -599,8 +562,6 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             column.bottomAnchor.constraint(
                 equalTo: statusBar.contentView.bottomAnchor, constant: -10),
             progress.heightAnchor.constraint(equalToConstant: 20),
-            rescueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            rescueButton.bottomAnchor.constraint(equalTo: statusBar.topAnchor, constant: -16),
         ])
 
         NotificationCenter.default.addObserver(
@@ -640,7 +601,6 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             statusBar.isHidden = true
             posterDim.isHidden = true
             button.isHidden = false
-            rescueButton.isHidden = true
             return
         }
 
@@ -655,9 +615,6 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         progress.setProgress(Float(snapshot.progress), animated: true)
         statusBar.isHidden = false
         button.isHidden = snapshot.phase != .failed
-        // Offer the AI rescue only on a genuine no-media failure, when installed.
-        rescueButton.isHidden = !(snapshot.phase == .failed
-            && snapshot.failureKind == .noMedia && rescue != nil)
 
         guard let fileName = snapshot.thumbnailFileName,
               fileName != loadedThumbnailFileName

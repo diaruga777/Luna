@@ -108,15 +108,12 @@ public struct RescueDirectiveValidator {
             return .success(.needsInspection(url: url))
 
         case "media_url":
-            guard request.allows(.media) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             return validateMediaURL(plan, digest: digest).map { .directive($0) }
 
         case "product":
-            guard request.allows(.product) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             return validateProduct(plan, digest: digest).map { .directive($0) }
 
         case "article":
-            guard request.allows(.article) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             guard supportsArticlePayload else {
                 // On-device can't produce a full article — try to salvage a
                 // reroute/JS from the same plan, else reject.
@@ -132,7 +129,7 @@ public struct RescueDirectiveValidator {
         }
     }
 
-    /// When a plan's kind is illegal for the hint but it still carries usable
+    /// When a plan's kind cannot be served but it still carries usable
     /// reroute/JS fields, downgrade to that rather than discarding the attempt.
     private func salvage(_ plan: RescuePlanResponse, request: RescueRequest, illegal: String) -> Result<RescueDirective, Rejection> {
         if plan.javascript != nil {

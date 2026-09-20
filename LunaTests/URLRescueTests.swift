@@ -38,10 +38,11 @@ final class URLRescueTests: XCTestCase {
 
     // MARK: - URLRescueEngine
 
-    private func request(hint: RescueHint? = .article,
-                         failure: RescueRequest.FailureKind = .articleFailed,
-                         html: String? = "<html><body>digest body content here for reroute example with 129.99 price</body></html>") -> RescueRequest {
-        RescueRequest(url: url, source: .manual, failureKind: failure, hint: hint, fetchedHTML: html)
+    private func request(
+        failure: RescueRequest.FailureKind = .articleFailed,
+        html: String? = "<html><body>digest body content here for reroute example with 129.99 price</body></html>"
+    ) -> RescueRequest {
+        RescueRequest(url: url, source: .manual, failureKind: failure, fetchedHTML: html)
     }
 
     private func makeEngine(
@@ -191,7 +192,7 @@ final class URLRescueTests: XCTestCase {
         XCTAssertEqual(session.beginAttemptCount, 2)
     }
 
-    func testRerouteReentersPipelineWithForceArticle() async {
+    func testRerouteReentersThePipelineOnceAndLetsItClassify() async {
         let good = IngestResult(url: URL(string: "https://amp.example.com/story")!,
                                 outcome: .article(ArticleContent(title: "T", blocks: [
                                     .init(kind: .paragraph, text: String(repeating: "word ", count: 300), links: [])
@@ -201,11 +202,13 @@ final class URLRescueTests: XCTestCase {
             .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story"))
         ])
         let (engine, pipe) = makeEngine(session: session, pipeline: pipeline)
-        let outcome = await engine.rescue(request(hint: .article))
+        let outcome = await engine.rescue(request())
         guard case .rescued(_, let method) = outcome else { return XCTFail("expected rescued") }
         XCTAssertEqual(method, .reroute)
         XCTAssertEqual(pipe.inputs.count, 1, "pipeline must be re-entered exactly once")
-        XCTAssertTrue(pipe.inputs.first?.forceArticle == true)
+        XCTAssertFalse(
+            pipe.inputs.first?.forceArticle == true,
+            "no surface pins the kind; the pipeline classifies the rerouted page")
         XCTAssertFalse(pipe.inputs.first?.page.isUnlockedCapture == true)
     }
 
@@ -215,7 +218,7 @@ final class URLRescueTests: XCTestCase {
         ])
         // Default pipeline returns .failed.
         let (engine, pipe) = makeEngine(session: session)
-        let outcome = await engine.rescue(request(hint: .article))
+        let outcome = await engine.rescue(request())
         guard case .unrescuable = outcome else { return XCTFail("failed second pass → unrescuable") }
         XCTAssertEqual(pipe.inputs.count, 1, "no loop — pipeline called at most once")
     }
@@ -230,7 +233,7 @@ final class URLRescueTests: XCTestCase {
             .plan(RescuePlanResponse(kind: "webjs", javascript: "return document.body.outerHTML;", scriptResultKind: "html"))
         ])
         let (engine, pipe) = makeEngine(session: session, scriptRunner: runner, pipeline: pipeline)
-        let outcome = await engine.rescue(request(hint: .article))
+        let outcome = await engine.rescue(request())
         guard case .rescued(_, .webJS) = outcome else { return XCTFail("expected webJS rescue") }
         XCTAssertEqual(pipe.inputs.first?.page.html, "<html><body>rendered</body></html>")
     }
@@ -242,7 +245,7 @@ final class URLRescueTests: XCTestCase {
             .plan(RescuePlanResponse(kind: "webjs", javascript: "return url;", scriptResultKind: "media_url"))
         ])
         let (engine, _) = makeEngine(session: session, scriptRunner: runner, media: media)
-        let outcome = await engine.rescue(request(hint: .media, failure: .mediaNoAssets))
+        let outcome = await engine.rescue(request(failure: .mediaNoAssets))
         guard case .rescuedMedia(let assets, .webJS) = outcome else { return XCTFail("expected media rescue") }
         XCTAssertEqual(assets.first?.url.absoluteString, "https://cdn.net/clip.mp4")
     }
@@ -258,8 +261,8 @@ final class URLRescueTests: XCTestCase {
         ])
         let (engine, _) = makeEngine(session: session, ruleStore: ruleStore,
                                      pipeline: RecordingPipeline(results: [good]))
-        _ = await engine.rescue(request(hint: .article))
-        XCTAssertNotNil(ruleStore.rule(forHost: "example.com", hint: .article), "a working reroute should be learned")
+        _ = await engine.rescue(request())
+        XCTAssertNotNil(ruleStore.rule(forHost: "example.com"), "a working reroute should be learned")
     }
 
     func testCachedRuleTriedBeforeLLM() async {
@@ -269,13 +272,13 @@ final class URLRescueTests: XCTestCase {
                                 ]), html: "h"))
         let ruleStore = InMemoryRescueRuleStore()
         let now = Date()
-        ruleStore.store(RescueLearnedRule(host: "example.com", hint: "article",
+        ruleStore.store(RescueLearnedRule(host: "example.com",
                                           rewrite: .hostReplace("amp.example.com"),
                                           createdAt: now, lastSuccessAt: now))
         let session = FakeRescueModelSession(responses: [])  // must never be called
         let (engine, _) = makeEngine(session: session, ruleStore: ruleStore,
                                      pipeline: RecordingPipeline(results: [good]))
-        let outcome = await engine.rescue(request(hint: .article))
+        let outcome = await engine.rescue(request())
         guard case .rescued(_, .cachedRule) = outcome else { return XCTFail("expected cached-rule rescue") }
         XCTAssertEqual(session.prewarmCount, 0, "cache hit must not touch the model")
     }
@@ -290,7 +293,7 @@ final class URLRescueTests: XCTestCase {
         ])
         let (engine, _) = makeEngine(session: session,
                                      pipeline: RecordingPipeline(results: [IngestResult(url: url, outcome: .article(article, html: "h"))]))
-        let outcome = await engine.rescue(request(hint: .article))
+        let outcome = await engine.rescue(request())
         // First call overflowed, second (halved) succeeded → rescued.
         guard case .rescued = outcome else { return XCTFail("expected retry to succeed") }
         XCTAssertEqual(session.planPrompts.count, 2, "exactly one retry after overflow")
@@ -310,7 +313,7 @@ final class URLRescueTests: XCTestCase {
         html: String? = "<html><body>page body</body></html>"
     ) -> RescueRequest {
         RescueRequest(
-            url: url, source: .manual, failureKind: .articleFailed, hint: nil,
+            url: url, source: .manual, failureKind: .articleFailed,
             fetchedHTML: html, itemID: itemID, failureReason: reason,
             pageTitle: "The Vanishing Middle Class of Rome")
     }
@@ -504,8 +507,7 @@ final class URLRescueTests: XCTestCase {
         XCTAssertTrue(pipe.inputs.isEmpty)
     }
 
-    /// A cross-domain result is a DIFFERENT thing unless the title says otherwise —
-    /// and for a product or a media post it is a different thing regardless.
+    /// A cross-domain result is a DIFFERENT thing unless the title says so.
     func testCrossDomainCandidatesNeedATitleMatch() {
         let request = RescueRequest(
             url: url, source: .manual, failureKind: .articleFailed,
@@ -516,18 +518,6 @@ final class URLRescueTests: XCTestCase {
             searchResult("https://unrelated.test/other", "Cheap Flights to Rome"),
         ], request: request, registrableDomain: { validator.registrableDomain($0) })
         XCTAssertEqual(kept.map(\.url.host), ["syndicated.test"])
-    }
-
-    func testAProductSearchNeverLeavesTheOriginalDomain() {
-        let request = RescueRequest(
-            url: url, source: .manual, failureKind: .productNoPrice, hint: .product,
-            pageTitle: "Acme Widget Pro 3000")
-        let validator = RescueDirectiveValidator()
-        let kept = RescueSearchCandidates.filter([
-            searchResult("https://otherseller.test/widget", "Acme Widget Pro 3000"),
-            searchResult("https://www.example.com/widget", "Acme Widget Pro 3000"),
-        ], request: request, registrableDomain: { validator.registrableDomain($0) })
-        XCTAssertEqual(kept.map(\.url.host), ["www.example.com"])
     }
 
     func testASearchThatFindsNothingIsUnrescuableRatherThanFreeform() async {
@@ -640,7 +630,7 @@ final class URLRescueTests: XCTestCase {
         let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
         let (engine, _) = makeEngine(session: session)
         let request = RescueRequest(
-            url: url, source: .manual, failureKind: .articleFailed, hint: nil,
+            url: url, source: .manual, failureKind: .articleFailed,
             fetchedHTML: "<html><body>x</body></html>", itemID: UUID(),
             failureReason: .httpStatus(403), browserHandoffTried: true)
         let outcome = await engine.rescue(request)
@@ -686,7 +676,7 @@ final class URLRescueTests: XCTestCase {
         ])
         let (engine, _) = makeEngine(session: session, stats: stats,
                                      pipeline: RecordingPipeline(results: [good]))
-        _ = await engine.rescue(request(hint: .article))
+        _ = await engine.rescue(request())
 
         XCTAssertEqual(stats.snapshot().outcome(.rescued), 1)
         XCTAssertEqual(stats.snapshot().methods["reroute"], 1)
@@ -698,7 +688,7 @@ final class URLRescueTests: XCTestCase {
     func testRespectsCharacterBudget() {
         let big = String(repeating: "<p>lorem ipsum dolor sit amet consectetur adipiscing elit </p>", count: 5000)
         let html = "<html><head><title>T</title></head><body>\(big)</body></html>"
-        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .onDevice)
+        let digest = builder.buildDigest(url: url, html: html, budget: .onDevice)
         XCTAssertLessThanOrEqual(digest.count, RescueDigestBudget.onDevice.maxCharacters)
     }
 
@@ -710,7 +700,7 @@ final class URLRescueTests: XCTestCase {
         <link rel="canonical" href="https://www.example.com/story">
         </head><body><p>Body text here.</p></body></html>
         """
-        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .privateCloud)
+        let digest = builder.buildDigest(url: url, html: html, budget: .privateCloud)
         XCTAssertTrue(digest.contains("Headline"))
         XCTAssertTrue(digest.contains("A great story"))
         XCTAssertTrue(digest.contains("canonical"))
@@ -723,7 +713,7 @@ final class URLRescueTests: XCTestCase {
         <script type="application/ld+json">{"@type":"Product","offers":{"price":"9.99"}}</script>
         </head><body></body></html>
         """
-        let digest = builder.buildDigest(url: url, html: html, hint: .product, budget: .privateCloud)
+        let digest = builder.buildDigest(url: url, html: html, budget: .privateCloud)
         let productIdx = digest.range(of: "\"Product\"")?.lowerBound
         let genericIdx = digest.range(of: "\"generic\"")?.lowerBound
         XCTAssertNotNil(productIdx)
@@ -731,11 +721,11 @@ final class URLRescueTests: XCTestCase {
         if let p = productIdx, let g = genericIdx { XCTAssertLessThan(p, g) }
     }
 
-    func testMediaHintGrepsMediaURLs() {
+    func testTheDigestGrepsMediaURLs() {
         let html = """
         <html><body><script>var x = {"playable_url":"https://cdn.net/v.mp4"};</script></body></html>
         """
-        let digest = builder.buildDigest(url: url, html: html, hint: .media, budget: .privateCloud)
+        let digest = builder.buildDigest(url: url, html: html, budget: .privateCloud)
         XCTAssertTrue(digest.contains("playable_url") || digest.contains("v.mp4"))
     }
 
@@ -743,14 +733,14 @@ final class URLRescueTests: XCTestCase {
         var links = ""
         for i in 0..<60 { links += "<a href=\"https://www.example.com/amp/\(i)\">l</a>" }
         let html = "<html><body>\(links)</body></html>"
-        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .privateCloud)
+        let digest = builder.buildDigest(url: url, html: html, budget: .privateCloud)
         let count = digest.components(separatedBy: "link: ").count - 1
         XCTAssertLessThanOrEqual(count, 30)
     }
 
     func testMalformedHTMLDegradesGracefully() {
         let html = "<<<not really html >>> plain text body content here for the digest"
-        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .onDevice)
+        let digest = builder.buildDigest(url: url, html: html, budget: .onDevice)
         XCTAssertFalse(digest.isEmpty)
     }
 
@@ -816,11 +806,6 @@ final class URLRescueTests: XCTestCase {
         }
     }
 
-    func testOpenGraphContentExtraction() {
-        let html = "<meta property=\"og:video\" content=\"https://cdn/v.mp4\">"
-        XCTAssertEqual(RescueDirectiveApplier.openGraphContent(named: "og:video", in: html), "https://cdn/v.mp4")
-    }
-
     // MARK: - ShareSurfaceDriverRescue
     //
     // The `.failed` rescue-handoff behavior of `ShareSurfaceDriver`: the action
@@ -841,27 +826,23 @@ final class URLRescueTests: XCTestCase {
         func openURL(_ url: URL) { openedURLs.append(url) }
     }
 
-    /// The extension never asks what the save should become — the model
-    /// classifies the page when the app drains the queue — so the queued
-    /// record must carry NO hint. A hint here would silently pin the answer
-    /// and undo the classification.
-    func testQueuedRescueRequestCarriesNoContentHint() {
-        _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
-        let host = FakeHost(isActionExtension: true)
-        let driver = ShareSurfaceDriver(
-            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
-        let url = URL(string: "https://example.com/broken")!
-        _ = store.add(urlString: url.absoluteString)
+    /// The failure leg queues the app's automatic rescue itself. No tap is
+    /// involved, so the zero-UI share extension queues one too.
+    func testAFailureQueuesTheRescueWithoutATap() {
+        for isAction in [true, false] {
+            _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
+            let host = FakeHost(isActionExtension: isAction)
+            let driver = ShareSurfaceDriver(
+                host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
+            let url = URL(string: "https://example.com/broken-\(isAction)")!
+            _ = store.add(urlString: url.absoluteString)
 
-        driver.present(.failed(nil), url: url)
-        guard let card = host.presented.compactMap({ $0 as? RescueFailureViewController }).first
-        else { return XCTFail("expected the rescue card") }
-        card.recordPendingRescueForTesting()
+            driver.present(.failed(nil), url: url)
 
-        let queued = PendingRescueRequestStore.shared.takeAll()
-        guard let request = queued.first(where: { $0.urlString == url.absoluteString }) else {
-            return XCTFail("expected a queued rescue request")
+            let queued = PendingRescueRequestStore.shared.takeAll()
+            XCTAssertNotNil(
+                queued.first(where: { $0.urlString == url.absoluteString }),
+                "no queued rescue request (action extension: \(isAction))")
         }
-        XCTAssertNil(request.hint)
     }
 }

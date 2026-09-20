@@ -24,11 +24,9 @@ protocol MediaRescueStarting {
 
 /// The ONLY place the app links `LunaURLRescue`. Installs the engine bridge
 /// into `URLRescueCoordinator`, plus the rescue trigger the ingestor calls.
-/// Runs in all four apps — rescue is universal. The model classifies the
-/// page itself; no surface supplies a content hint. The media and product
-/// legs are per-kind seams the `KindWiring` variants fill
-/// (`mediaRescueStarter`; `rescueProductInfo`, consumed by product wirings
-/// for the price editor's "Ask Apple Intelligence" resolver). See
+/// Runs in all four apps — rescue is universal, automatic and silent, and no
+/// surface asks for it or supplies a content kind. The media leg is a per-kind
+/// seam the `KindWiring` variants fill (`mediaRescueStarter`). See
 /// `claudedocs/url-rescue.md`.
 enum URLRescueWiring {
 
@@ -41,11 +39,6 @@ enum URLRescueWiring {
 
     static var mediaRescueStarter: (any MediaRescueStarting)?
 
-    /// The engine installed by `install()`, kept for the product-kind price
-    /// resolver below (KindWiring runs before `install()`, so product wirings
-    /// call through this accessor lazily rather than capturing the engine).
-    private static var engine: URLRescueEngine?
-
     static func install() {
         let engine: URLRescueEngine
         if let mediaResolver {
@@ -53,7 +46,6 @@ enum URLRescueWiring {
         } else {
             engine = URLRescueEngine()
         }
-        Self.engine = engine
 
         URLRescueCoordinator.engine = EngineBridge(engine: engine)
         URLRescueCoordinator.shared.install()
@@ -71,55 +63,33 @@ enum URLRescueWiring {
 
         var isRescueAvailable: Bool { engine.isAvailable }
 
-        func performRescue(
-            for item: SavedItem, hint: RescueHint?, interactive: Bool
-        ) async -> URLRescueCoordinator.RescueRunResult {
-            await URLRescueWiring.perform(
-                engine: engine, item: item, hint: hint, interactive: interactive)
+        func performRescue(for item: SavedItem) async -> URLRescueCoordinator.RescueRunResult {
+            await URLRescueWiring.perform(engine: engine, item: item)
         }
     }
 
     /// A failed first pass reaches the coordinator, which re-reads the item from
     /// the store by id.
     private struct CoordinatorRescueTrigger: IngestRescueTriggering {
-        func itemFailedIngest(
-            itemID: UUID, url: URL, source: CaptureSource, interactive: Bool
-        ) {
-            URLRescueCoordinator.shared.itemJustFailed(
-                itemID, source: source, interactive: interactive)
+        func itemFailedIngest(itemID: UUID, url: URL, source: CaptureSource) {
+            URLRescueCoordinator.shared.itemJustFailed(itemID, source: source)
         }
-    }
-
-    /// Product-kind "no price" → "Ask Apple Intelligence" resolution (Phase 6
-    /// UI). Product `KindWiring` variants wrap this into
-    /// `ProductPriceRescue.resolver`.
-    static func rescueProductInfo(urlString: String) async -> ProductInfo? {
-        guard let engine, let url = URL(string: urlString) else { return nil }
-        let request = RescueRequest(url: url, source: .manual, failureKind: .productNoPrice, hint: .product)
-        let outcome = await engine.rescue(request)
-        guard case .rescued(let result, _) = outcome, case .product(let info, _) = result.outcome else { return nil }
-        return info
     }
 
     // MARK: - Perform (coordinator bridge)
 
     private static func perform(
-        engine: URLRescueEngine, item: SavedItem, hint: RescueHint?, interactive: Bool
+        engine: URLRescueEngine, item: SavedItem
     ) async -> URLRescueCoordinator.RescueRunResult {
         guard let url = item.url else { return .notRecovered }
         let record = SaveFailureStore.shared.record(for: item.id)
-        // No hint means the MODEL classifies the page — the failed-save
-        // card sends nil, and so does every automatic path. Only a surface that
-        // genuinely knows the kind (the price editor, the media card) passes one.
-        //
-        // The rest of what travels here is EVIDENCE, not instruction: the item id
+        // Everything that travels here is EVIDENCE, not instruction: the item id
         // (the key into the per-save diagnostic trace), the recorded failure
         // reason, the best title Luna recovered, and whether the browser handoff
-        // has already been offered.
+        // has already been offered. The model classifies the page itself.
         let request = RescueRequest(
             url: url, source: item.effectiveCaptureSource,
-            failureKind: failureKind(for: item, hint: hint),
-            hint: hint,
+            failureKind: failureKind(for: item),
             itemID: item.id,
             failureReason: record?.reason,
             pageTitle: record?.resolvedTitle ?? item.title,
@@ -130,7 +100,7 @@ enum URLRescueWiring {
         switch outcome {
         case .rescued(let result, _):
             let applied = await SavesIngestor.shared.applyRescued(
-                result, forItemID: item.id, interactive: interactive)
+                result, forItemID: item.id, interactive: false)
             if applied { return .advanced }
             // The model DID recover the content and this app's surface dropped it
             // on the way in (a Reader rescuing a product page, say). That is not
@@ -185,23 +155,13 @@ enum URLRescueWiring {
         }
     }
 
-    // MARK: - Hint mapping
+    // MARK: - Failure kind
 
-    /// What already went wrong, for the prompt's diagnostic line. With an explicit
-    /// hint it follows the hint; otherwise it's read off the item — the recorded
-    /// failure reason and the item's own shape are the only true evidence of which
-    /// branch of the pipeline gave up, and under `.auto` this is a FACT handed to
-    /// the model, never a steer toward one content type.
-    private static func failureKind(
-        for item: SavedItem, hint: RescueHint?
-    ) -> RescueRequest.FailureKind {
-        if let hint {
-            switch hint {
-            case .article: return .articleFailed
-            case .product: return .productNoPrice
-            case .media: return .mediaNoAssets
-            }
-        }
+    /// What already went wrong, for the prompt's diagnostic line. It is read off
+    /// the item — the recorded failure reason and the item's own shape are the
+    /// only true evidence of which branch of the pipeline gave up — and it is a
+    /// FACT handed to the model, never a steer toward one content type.
+    private static func failureKind(for item: SavedItem) -> RescueRequest.FailureKind {
         if SaveFailureStore.shared.record(for: item.id)?.reason == .noMediaFound {
             return .mediaNoAssets
         }

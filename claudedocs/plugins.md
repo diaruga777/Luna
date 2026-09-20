@@ -987,6 +987,16 @@ closing the "not reached" gap the Wave 3B plan notes originally recorded.
 
 ## 10. Settings, storage, secrets, storage layout
 
+### 10.0 Settings → Plugins
+
+The screen lists every installed plugin, bundled or imported, with its
+status, and carries two header buttons: the **wand** (Create with AI, §1.2 —
+present only where the screen was given a launcher, which is the app) and
+**+** (Add a Plugin: Import from Files… or Paste Source, through
+`PluginImportCoordinator` and `PluginConsentViewController`). A `.luna`
+plugin file the user TAPPED never comes this way; it opens the review screen
+instead, and Save there is the consent.
+
 ### 10.1 Settings schema and screen
 
 `PluginSettingField` types render in `PluginDetailScreen`
@@ -1198,7 +1208,12 @@ nothing useful back because native refuses to serve it.
 to `PluginPlatformServices`/`IngestPipeline.pluginStage` from anywhere but
 `PluginPlatformComposition.install`; a root that installs plugin composition
 without calling the three required central roots; and a new, unlisted
-composition root.
+composition root. It also pins the Luna file intake seam: every root writes
+`LunaFileIntake.recoveryHandler` and `LunaFileIntake.pluginHandler`, and
+nothing else does. The three central roots install `PluginDraftFileIntake`
+for the plugin half, each with its own way of presenting the review screen —
+the app pushes it on the deck's stack, an extension hosts it in its own view
+hierarchy.
 
 ### 13.2 Testing layers
 

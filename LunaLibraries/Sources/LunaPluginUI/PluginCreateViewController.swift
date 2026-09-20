@@ -23,7 +23,6 @@ public final class PluginCreateViewController: UIViewController {
     private let placeholderLabel = UILabel()
     private let handoffRow = LLMHandoffRowView(
         caption: L10n.string("Plugins_create3RowCaption"))
-    private let hintLabel = UILabel()
 
     /// `prefill` is the failed card's or Safari's account of what went wrong.
     /// With none, a request already in flight fills the box instead.
@@ -79,13 +78,6 @@ public final class PluginCreateViewController: UIViewController {
         handoffRow.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(handoffRow)
 
-        hintLabel.font = .preferredFont(forTextStyle: .footnote)
-        hintLabel.textColor = LunaColors.secondaryText
-        hintLabel.numberOfLines = 0
-        hintLabel.isHidden = true
-        hintLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(hintLabel)
-
         let column = LunaLayout.readableWidth
         NSLayoutConstraint.activate([
             descriptionView.topAnchor.constraint(
@@ -106,11 +98,7 @@ public final class PluginCreateViewController: UIViewController {
 
             handoffRow.centerXAnchor.constraint(equalTo: descriptionView.centerXAnchor),
             handoffRow.widthAnchor.constraint(equalTo: descriptionView.widthAnchor),
-            handoffRow.bottomAnchor.constraint(equalTo: hintLabel.topAnchor, constant: -12),
-
-            hintLabel.centerXAnchor.constraint(equalTo: descriptionView.centerXAnchor),
-            hintLabel.widthAnchor.constraint(equalTo: descriptionView.widthAnchor),
-            hintLabel.bottomAnchor.constraint(
+            handoffRow.bottomAnchor.constraint(
                 equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16),
         ])
     }
@@ -126,8 +114,7 @@ public final class PluginCreateViewController: UIViewController {
     }
 
     private func showWaiting(for provider: LLMProvider) {
-        hintLabel.text = L10n.string("Plugins_create4Waiting", provider.displayName)
-        hintLabel.isHidden = false
+        handoffRow.setHint(L10n.string("Plugins_create4Waiting", provider.displayName))
     }
 
     private func updatePlaceholder() {

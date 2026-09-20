@@ -346,7 +346,7 @@ public final class PluginDraftReviewViewController: UIViewController {
                 delegate?.pluginDraftReviewDidInstall(self)
             } catch {
                 saveButton.isEnabled = true
-                report(error)
+                showImportFailure(error)
             }
         }
     }
@@ -355,7 +355,7 @@ public final class PluginDraftReviewViewController: UIViewController {
         delegate?.pluginDraftReviewDidDiscard(self)
     }
 
-    private func report(_ error: Error) {
+    private func showImportFailure(_ error: Error) {
         let alert = UIAlertController(
             title: L10n.string("Plugins_importFailedTitle"),
             message: error.localizedDescription, preferredStyle: .alert)
@@ -365,7 +365,7 @@ public final class PluginDraftReviewViewController: UIViewController {
 
     /// The findings the correction prompt carries: errors first, then warnings,
     /// bounded so the prompt keeps room for the request itself.
-    var correctionErrors: [String] {
+    private var correctionErrors: [String] {
         guard let report else { return [] }
         return Array((report.errors + report.warnings).prefix(8))
     }

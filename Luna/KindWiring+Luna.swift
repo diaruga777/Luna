@@ -131,7 +131,8 @@ enum KindWiring {
         FailedSavePluginRecovery.present = { itemID, url, presenter in
             let matched = PluginPlatformServices.invoker?
                 .matchedPlugins(forHost: url.host ?? "").map(\.id) ?? []
-            let failure = SaveFailureStore.shared.record(for: itemID)?.reason?.headline
+            let failure = SaveFailureReason.rescueSentence(
+                SaveFailureStore.shared.record(for: itemID)?.reason, attempted: .article)
             let screen = PluginCreateViewController(
                 prefill: PluginCreateViewController.prefill(
                     url: url, failure: failure, matchedPluginIDs: matched),

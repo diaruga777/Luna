@@ -2,7 +2,7 @@
   "name": "luna-plugin-sim",
   "private": true,
   "version": "1.0.0",
-  "description": "Node dev harness for Luna plugins (claudedocs/plans/plugin-platform.md §13.4). Not published, not a build gate.",
+  "description": "Node dev harness for Luna plugins (claudedocs/plans/plugin-platform.md \u00a713.4). Not published, not a build gate.",
   "type": "module",
   "scripts": {
     "run": "node run.mjs",
@@ -10,6 +10,7 @@
     "test": "node test.mjs"
   },
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
     "linkedom": "0.18.13",
     "undici": "8.10.1"
   }

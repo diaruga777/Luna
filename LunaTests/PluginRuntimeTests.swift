@@ -192,8 +192,10 @@ final class PluginRuntimeTests: XCTestCase {
         let model = await runner.invoke(
             .ingest, pluginID: "app.luna.test", as: Model.self)
 
+        // `text` is there without being declared: it is a COMPANION of `html`
+        // (`PluginCapabilityName.companionNamespaces`), not a capability.
         XCTAssertEqual(
-            model?.title, "LunaError,bytes,env,fetch,html,localize,log,parseURL,register")
+            model?.title, "LunaError,bytes,env,fetch,html,localize,log,parseURL,register,text")
     }
 
     func testACapabilityWithNoInstallerRejectsWithUnavailableHere() async throws {

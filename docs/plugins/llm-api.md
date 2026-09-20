@@ -137,8 +137,8 @@ luna.html.jsonScripts(doc, type?): unknown[]          // parsed <script type="ap
 luna.html.jsonLD(doc): object[]                       // same, with @graph flattened and bad JSON skipped
 luna.html.meta(doc): { title?, description?, canonical?, image?, author?, published?, siteName?, language?, type? }
                                                       // <title>, OpenGraph, Twitter cards, meta author, article:published_time, link canonical, html lang, JSON-LD
-luna.html.article(html, baseURL?): { title, html, text, author?, publishedAt?, leadImageURL?, excerpt? } | null
-                                                      // Luna's own main-content extraction; null when the page has no article body
+luna.html.article(html, baseURL?): Promise<{ title, html, text, author?, publishedAt?, leadImageURL?, excerpt? } | null>
+                                                      // Luna's own main-content extraction; await it; null when the page has no article body
 ```
 
 `HTMLDocument` / `HTMLElement`:
@@ -194,7 +194,7 @@ luna.register({
   async ingest({ url }) {
     const doc = await luna.fetch.doc(url);
     const meta = luna.html.meta(doc);
-    const article = luna.html.article(doc.outerHTML, url);
+    const article = await luna.html.article(doc.outerHTML, url);
     if (!article) return null;
     return {
       kind: "article",

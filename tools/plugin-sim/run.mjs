@@ -8,37 +8,32 @@ import { spawn } from "node:child_process";
 import { createBridge } from "./bridge.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
-const SOURCE_LIMIT = 1024 * 1024;
-const KINDS = new Set(["article", "media", "product"]);
-const FORMATS = new Set([
-  "url",
-  "epub",
-  "pdf",
-  "docx",
-  "markdown",
-  "text",
-  "html",
-  "json",
-  "file",
-]);
-const CAPS = new Set([
-  "fetch",
-  "html",
-  "page",
-  "storage",
-  "secrets",
-  "files",
-  "crypto",
-  "browser",
-  "downloads",
-  "settings",
-  "ui",
-  "mail",
-  "notifications",
-  "bluetooth",
-  "wifi",
-  "exports",
-]);
+
+// The manifest rules are DATA, read from the same file `PluginManifestParser`
+// ships as a resource. A hand-kept copy here drifted from the parser twice;
+// `PluginManifestRulesParityTests` now pins the file to the parser's own
+// constants, and this harness reads the file.
+const RULES = JSON.parse(
+  readFileSync(
+    path.join(
+      path.dirname(scriptPath),
+      "..",
+      "..",
+      "LunaLibraries",
+      "Sources",
+      "LunaPluginKit",
+      "Resources",
+      "PluginManifestRules.json",
+    ),
+    "utf8",
+  ),
+);
+const SOURCE_LIMIT = RULES.source.maxKB * 1024;
+const KINDS = new Set(RULES.kinds);
+const FORMATS = new Set(RULES.exportInputFormats);
+const CAPS = new Set(RULES.capabilities);
+const ID_PATTERN = new RegExp(`^[${RULES.id.characters.replace(/[.\-]/g, "\\$&")}]+$`);
+const VERSION_PATTERN = new RegExp(RULES.version.pattern);
 
 export function parseHeader(source) {
   if (Buffer.byteLength(source, "utf8") > SOURCE_LIMIT)
@@ -66,20 +61,38 @@ function manifestErrors(manifest) {
     if (manifest?.[key] === undefined) errors.push(`${key} is required`);
   if (
     typeof manifest?.id !== "string" ||
-    !/^[a-z0-9.-]+$/.test(manifest.id || "") ||
-    manifest.id.startsWith(".") ||
-    manifest.id.endsWith(".") ||
-    manifest.id.includes("..")
+    !ID_PATTERN.test(manifest.id || "") ||
+    (RULES.id.forbidsLeadingDot && manifest.id.startsWith(".")) ||
+    (RULES.id.forbidsTrailingDot && manifest.id.endsWith(".")) ||
+    (RULES.id.forbidsDoubleDot && manifest.id.includes(".."))
   )
     errors.push("id must use lower-case letters, digits, dots and hyphens");
-  if (typeof manifest?.name !== "string" && !manifest?.name?.en)
+  if (typeof manifest?.id === "string" && manifest.id.length > RULES.id.maxLength)
+    errors.push(`id must be at most ${RULES.id.maxLength} characters`);
+  const name =
+    typeof manifest?.name === "string" ? manifest.name : manifest?.name?.en;
+  if (typeof name !== "string")
     errors.push("name must be a string or localized object with en");
+  else if (name.length > RULES.name.maxLength)
+    errors.push(`name must be at most ${RULES.name.maxLength} characters`);
+  const description =
+    typeof manifest?.description === "string"
+      ? manifest.description
+      : manifest?.description?.en;
+  if (
+    typeof description === "string" &&
+    description.length > RULES.description.maxLength
+  )
+    errors.push(
+      `description must be at most ${RULES.description.maxLength} characters`,
+    );
   if (
     typeof manifest?.version !== "string" ||
-    !/^\d+\.\d+\.\d+$/.test(manifest.version || "")
+    !VERSION_PATTERN.test(manifest.version || "")
   )
     errors.push("version must look like 1.0.0");
-  if (manifest?.api !== 1) errors.push("api must be 1");
+  if (manifest?.api !== RULES.api.current)
+    errors.push(`api must be ${RULES.api.current}`);
   if (
     manifest?.capabilities &&
     (!Array.isArray(manifest.capabilities) ||

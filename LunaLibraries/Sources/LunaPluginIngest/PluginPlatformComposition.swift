@@ -67,7 +67,7 @@ public enum PluginPlatformComposition {
         fetcher.fileWriter = scratch
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime, files: scratch))
-        capabilities.register(PluginHTMLBridge())
+        capabilities.register(PluginHTMLBridge(scheduler: runtime))
         capabilities.register(PluginStorageBridge(store: keyValueStore, scheduler: runtime))
         capabilities.register(PluginSecretsBridge(
             scheduler: runtime, processKind: processKind))

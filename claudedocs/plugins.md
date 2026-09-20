@@ -360,7 +360,8 @@ same list, the identical rule the manifest parser applies to `name`/
 | --- | --- | --- | --- | --- | --- |
 | — | `register`,`parseURL`,`log`,`bytes`,`env`,`LunaError`,`localize` | yes | yes | yes | `PluginContext.swift` / `plugin_host.js` |
 | `fetch` | `luna.fetch` | yes | yes | relayed (`plugins.fetch`; no multipart `file` part, which needs `files`) | `PluginFetchBridge.swift` |
-| `html` | `luna.html` | SwiftSoup | SwiftSoup | DOMParser | `PluginHTMLBridge.swift` / `plugin_host.js` |
+| `html` | `luna.html` | SwiftSoup | SwiftSoup | DOMParser; `article` relayed (`plugins.article`) | `PluginHTMLBridge.swift` / `plugin_host.js` |
+| `html` (companion) | `luna.text` | yes | yes | yes | `PluginTextBridge.swift` / `plugin_host.js` |
 | `page` | `luna.page` | — | — | live DOM | `plugin_host.js` only |
 | `storage` | `luna.storage` | yes | yes | relayed | `PluginStorageBridge.swift` |
 | `secrets` | `luna.secrets` | get/set/delete | get only (`set`/`delete` reject `unavailable-here`) | — | `PluginSecretsBridge.swift` |
@@ -436,12 +437,91 @@ knowing:
 
 `PluginHTMLBridge` (SwiftSoup), `plugin_host.js` (DOMParser) and the node
 harness (`tools/plugin-sim/bridge.mjs`, `linkedom`) all implement the same
-60-case specification, `LunaTests/Fixtures/Plugins/html-subset.spec.js`, run
+108-case specification, `LunaTests/Fixtures/Plugins/html-subset.spec.js`, run
 respectively by `PluginHTMLSubsetTests`, `PluginHTMLParityTests` and
 `tools/plugin-sim/spec.mjs`. `textContent`/`luna.html.text` deliberately
 SKIP `<script>`/`<style>` subtrees on all three backings — matching
 SwiftSoup's `Element.text()` rather than the DOM's own `textContent`, which
 is why the file is the specification rather than "whatever SwiftSoup does."
+
+### 5.2.1 `jsonLD` and `meta` — the page's own account of itself
+
+`luna.html.jsonLD(doc)` is `jsonScripts` narrowed to `application/ld+json`,
+with a top-level array and one `@graph` array spread one level and a block
+that does not parse skipped. It is always an array.
+
+`luna.html.meta(doc)` answers `title`/`description`/`canonical`/`image`/
+`author`/`published`/`siteName`/`language`/`type`, omitting a key nothing
+states. Per key it reads OpenGraph, then Twitter cards, then plain
+`<meta name>`, then `<link rel=canonical>` / `<title>` / `<html lang>`, then
+JSON-LD — and only JSON-LD whose `@type` is `Article`, `NewsArticle`,
+`BlogPosting` or `Product` answers for the document. Values are
+whitespace-collapsed and trimmed; `image` and `canonical` are resolved against
+the document's base. The rules live once per backing:
+`LunaLibraries/Sources/LunaPluginKit/PluginHTMLMetadata.swift` (SwiftSoup),
+`htmlMeta` in `LunaSafari/Resources/plugin_host.js` (DOMParser) and
+`tools/plugin-sim/bridge.mjs` (linkedom); the spec file is what pins them
+together. `docs/plugins/api.md` prints the per-key source order for authors.
+
+### 5.2.2 `luna.html.article` — native everywhere, a Promise everywhere
+
+`luna.html.article(html, baseURL?)` runs Luna's own `ArticleExtractor`
+(`LunaHTMLClassification`) and renders the blocks it found back to the clean
+HTML an `ArticleModel` carries. The wrapper is
+`LunaLibraries/Sources/LunaPluginKit/PluginArticleExtraction.swift` — in
+LunaPluginKit, and not in the runtime, because TWO callers need it: the
+JavaScriptCore bridge (`PluginHTMLBridge`) in the app and the share/action
+extensions, and `SafariPluginMessages+Luna.swift`, which answers the
+`plugins.article` native message the content script sends. LunaPluginKit
+therefore depends on `LunaHTMLClassification`, which is kind-neutral and
+already in every kit, so no foreign-kind edge is created.
+
+It answers a **Promise in every process, the app included**. Safari cannot run
+the extractor in the page, and a member that is a value in one process and a
+Promise in another is a plugin that silently produces nothing in Safari. The
+page checks the HTML against the same ~1.5 MB native-message cap the served
+plugin source uses and rejects `too-large` before sending; the handler checks
+it again, because the page is not trusted to. `null` means "no article body",
+which is a plugin's cue to return `null` and let Luna's own extraction run.
+
+### 5.2.3 `luna.text` — a companion of the `html` grant
+
+`luna.text.price/date/clean` are pure string helpers with no state and no I/O,
+so there is no grant a user could give or withhold for them: they are
+installed by `PluginHTMLBridge` under the `html` capability rather than by a
+capability of their own, and a manifest that declares `"text"` does not parse.
+`PluginCapabilityName.companionNamespaces` is what makes that legible to
+`PluginRuntime.load`'s grant/stray check, which otherwise reads `luna.text` as
+a bridge writing where it should not; the same property gives a companion its
+`unavailable-here` stand-in when the capability is declared but unserved.
+The Swift rules are `PluginTextParsing` (LunaPluginKit), which calls
+`PriceParsing` for the amount — including its new
+`normalizedAmountText`, because `Decimal` normalizes "1299.00" to "1299" and a
+Model's `price.amount` is a STRING. `plugin_host.js` and `bridge.mjs` carry the
+same rules; the spec file pins the three.
+
+### 5.2.4 `luna.fetch.text/json/doc`
+
+`luna.fetch` is a callable that also carries three members
+(`PluginFetchBridge.sugarFactory`, written in JavaScript so one implementation
+serves the call and the sugar). Each is a GET with `as: "text"` forced, and
+each rejects `fetch-failed` with the status in the message on a non-2xx.
+`json` rejects `fetch-failed` on a body that does not parse. `doc` parses with
+the base set to the FINAL url, and needs the `html` capability as well —
+without it the rejection is `capability-not-declared`, the code Safari's
+native handler already uses for an undeclared grant. `luna.html` is read at
+CALL time, never captured: capabilities install in name order, so `fetch` is
+installed before `html` exists.
+
+### 5.2.5 The manifest rules are one file
+
+`LunaLibraries/Sources/LunaPluginKit/Resources/PluginManifestRules.json` holds
+the id charset and length, the name/description/version limits, the API
+version, the kinds, the capability names and the export input formats.
+`PluginManifestRules.bundled` reads it, `tools/plugin-sim/run.mjs` reads the
+same file by path instead of the hand-written validator it used to carry, and
+`PluginManifestRulesParityTests` compares every value to
+`PluginManifestParser`'s own constants.
 
 ### 5.3 `luna.browser` and the lock flow — §7
 

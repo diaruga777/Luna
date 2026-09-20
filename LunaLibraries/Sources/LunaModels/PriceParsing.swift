@@ -14,6 +14,15 @@ public enum PriceParsing {
     /// `Decimal`, inferring the decimal vs thousands separator. Returns nil when
     /// no numeric value is present.
     public static func parsePrice(_ raw: String) -> Decimal? {
+        guard let normalized = normalizedAmountText(raw) else { return nil }
+        return Decimal(string: normalized)
+    }
+
+    /// The same parse as `parsePrice`, stopping one step earlier: the amount as
+    /// plain digits with a dot, keeping the fraction digits the source wrote.
+    /// `Decimal` normalizes "1299.00" to "1299", so a caller that must render
+    /// the amount as text (a plugin Model's `price.amount`) reads this instead.
+    public static func normalizedAmountText(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         // Keep digits and separators only.
@@ -48,7 +57,7 @@ public enum PriceParsing {
         case (nil, nil):
             break
         }
-        return Decimal(string: normalized)
+        return normalized
     }
 
     /// Normalizes a currency code or symbol to an ISO code ("$"→"USD"), or nil.

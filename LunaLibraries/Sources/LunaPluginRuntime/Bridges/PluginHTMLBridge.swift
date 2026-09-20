@@ -5,6 +5,7 @@
 
 import Foundation
 import JavaScriptCore
+import LunaModels
 import LunaPluginKit
 import SwiftSoup
 
@@ -175,10 +176,19 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
 
     public let capabilityName = PluginCapabilityName.html
 
-    public init() {}
+    /// `luna.html.article` answers a Promise, so this bridge settles on the
+    /// runtime's own queue like every other asynchronous member.
+    private let scheduler: PluginCallbackScheduling
+
+    public init(scheduler: PluginCallbackScheduling) {
+        self.scheduler = scheduler
+    }
 
     public func install(into namespace: PluginCapabilityNamespace) {
         let outerContext = namespace.context
+        let pluginID = namespace.pluginID
+        let generationID = namespace.target.generationID
+        let scheduler = self.scheduler
         let html = namespace.makeNamespaceObject()
 
         let parse: @convention(block) (String?, JSValue?) -> PluginHTMLNodeHandle? = { source, base in
@@ -208,10 +218,70 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
                 in: handle.element, type: PluginBridgeValue.optionalString(type))
         }
 
+        let jsonLD: @convention(block) (JSValue?) -> [Any] = { value in
+            guard let handle = value?.toObject() as? PluginHTMLNodeHandle else { return [] }
+            return PluginHTMLMetadata.jsonLD(in: handle.element)
+        }
+
+        let meta: @convention(block) (JSValue?) -> [String: String] = { value in
+            guard let handle = value?.toObject() as? PluginHTMLNodeHandle,
+                  let document = handle.element as? Document
+            else { return [:] }
+            return PluginHTMLMetadata.read(from: document)
+        }
+
+        /// Luna's own readability pass. It answers a Promise in every backing
+        /// because Safari cannot run it in the page — there it is a native
+        /// message, like `luna.fetch` — and one shape a plugin can `await`
+        /// everywhere beats a value that is a document in one process and a
+        /// Promise in another.
+        let article: @convention(block) (JSValue?, JSValue?) -> JSValue? = { source, base in
+            let context = JSContext.current() ?? outerContext
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
+            guard let source = PluginBridgeValue.optionalString(source), !source.isEmpty else {
+                box.fail("luna.html.article needs HTML text", code: "bad-argument")
+                return promise
+            }
+            let baseURL = PluginBridgeValue.optionalString(base)
+                .flatMap(URL.init(string:)) ?? URL(string: "about:blank")!
+            guard let found = PluginArticleExtraction.extract(html: source, baseURL: baseURL) else {
+                box.fulfill(NSNull())
+                return promise
+            }
+            box.fulfill(PluginHTMLBridge.jsObject(found))
+            return promise
+        }
+
         html.setObject(parse, forKeyedSubscript: "parse" as NSString)
         html.setObject(text, forKeyedSubscript: "text" as NSString)
         html.setObject(jsonScripts, forKeyedSubscript: "jsonScripts" as NSString)
+        html.setObject(jsonLD, forKeyedSubscript: "jsonLD" as NSString)
+        html.setObject(meta, forKeyedSubscript: "meta" as NSString)
+        html.setObject(article, forKeyedSubscript: "article" as NSString)
         namespace.install(html, as: capabilityName.rawValue)
+        // `luna.text` has no capability of its own: it rides on `html`
+        // (`PluginCapabilityName.companionNamespaces`).
+        PluginTextBridge.install(into: namespace)
+    }
+
+    /// The member names this bridge installs at `luna.html`.
+    /// `PluginAPISurfaceTests` builds the expected `.d.ts` surface from it, so
+    /// a member added here without its typing fails the build.
+    public static let installedMembers = ["parse", "text", "jsonScripts", "jsonLD", "meta", "article"]
+
+    /// An extracted article as the plugin reads it. Absent optional fields are
+    /// omitted rather than sent as null, the same way a Model omits them.
+    private static func jsObject(_ article: PluginArticleExtraction.Article) -> [String: Any] {
+        var object: [String: Any] = [
+            "title": article.title, "html": article.html, "text": article.text,
+        ]
+        if let author = article.author { object["author"] = author }
+        if let publishedAt = article.publishedAt { object["publishedAt"] = publishedAt }
+        if let leadImageURL = article.leadImageURL { object["leadImageURL"] = leadImageURL }
+        if let excerpt = article.excerpt { object["excerpt"] = excerpt }
+        return object
     }
 
     /// The parsed bodies of the document's JSON script tags. Bad JSON is

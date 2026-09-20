@@ -1,0 +1,23 @@
+{
+  "comment": "The manifest rules PluginManifestParser enforces, as data. tools/plugin-sim/run.mjs reads this file instead of re-implementing them; PluginManifestRulesParityTests compares every value here to the parser's own constants.",
+  "api": { "current": 1 },
+  "source": { "maxKB": 1024 },
+  "id": {
+    "characters": "abcdefghijklmnopqrstuvwxyz0123456789.-",
+    "maxLength": 100,
+    "forbidsLeadingDot": true,
+    "forbidsTrailingDot": true,
+    "forbidsDoubleDot": true
+  },
+  "name": { "maxLength": 40 },
+  "description": { "maxLength": 200 },
+  "version": { "maxLength": 32, "pattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$" },
+  "kinds": ["article", "media", "product"],
+  "capabilities": [
+    "fetch", "html", "page", "storage", "secrets", "files", "crypto", "browser",
+    "downloads", "settings", "ui", "mail", "notifications", "bluetooth", "wifi", "exports"
+  ],
+  "exportInputFormats": [
+    "url", "epub", "pdf", "docx", "markdown", "text", "html", "json", "file"
+  ]
+}

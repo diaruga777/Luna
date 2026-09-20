@@ -14,6 +14,7 @@ their phone in Safari at the exact moment they're enabling the extension.
 /setup/reader           Luna Reader
 /setup/video            Luna Video
 /setup/price-tracker    Luna Price Tracker
+/p1                     the plugin API reference an LLM reads (docs/plugins/llm-api.md, served as text/markdown)
 ```
 
 `luna-reader`, `lunareader`, `downloader`, `luna-downloader`, `lunadownloader`,
@@ -81,5 +82,9 @@ One-time account setup is in the repo-level instructions; after that:
 ```sh
 npx wrangler pages deploy          # reads wrangler.toml at the repo root
 ```
+
+Pages ties the production URL to the `main` branch name. A deploy made from
+any other checkout (a worktree on a feature branch) lands on a preview alias
+(`<branch>.luna-site-bm6.pages.dev`) unless you pass `--branch main`.
 
 `wrangler.toml` names the project (`luna-site`) and points at `site/dist`.

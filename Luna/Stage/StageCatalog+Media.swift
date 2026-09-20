@@ -149,7 +149,8 @@ enum MediaStageCatalog {
                 }),
             StageDescriptor(
                 id: "card.media.no-media", screen: "Media card", variant: "nothing to download",
-                summary: "The page held no media this app could recognise.",
+                summary: "The one failure a model can answer: the page held no media this "
+                    + "app could recognise, so the card offers the chat hand-off.",
                 kind: .media,
                 make: {
                     downloadCard(snapshot: snapshot(

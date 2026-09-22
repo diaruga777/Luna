@@ -85,6 +85,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         return clock
     }()
     private var wpm: Double = ReaderSettings.baseWPM
+    /// Phrases have a minimum display floor, so their remaining time cannot be
+    /// derived by scaling one fixed weight. Rebuilt only when content or WPM
+    /// changes, then indexed in O(1) as playback advances.
+    private var phraseRemainingDurations: [TimeInterval] = []
 
     // Read-aloud pacing: when on, whole sentences are spoken (natural prosody,
     // normal pace) and the display flashes each word as it's voiced — the WPM
@@ -360,6 +364,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.chunks = ChunkPlanner.chunks(words: self.engine.words)
         super.init(nibName: nil, bundle: nil)
         currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
+        rebuildPhraseRemainingDurations()
     }
 
     /// Initial frame from the shared token-space resume sources, in priority
@@ -426,6 +431,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
         self.engine = RSVPEngine(content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         self.chunks = ChunkPlanner.chunks(words: engine.words)
+        rebuildPhraseRemainingDurations()
         self.currentIndex = 0
         self.currentChunkIndex = 0
         self.isPlaying = false
@@ -1416,6 +1422,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if currentIndex >= engine.words.count - 1 {
             currentIndex = 0
             currentChunkIndex = 0
+            refreshDisplay()
+            scrubber.value = 0
+            updateFinishedReadingState()
+            updateStatus()
         }
         // The silent reader's word timer is per-instance, so nothing else stops
         // it when the column beside this one starts playing.
@@ -1451,6 +1461,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if currentIndex >= engine.words.count - 1 {
             currentIndex = 0
             currentChunkIndex = 0
+            refreshDisplay()
+            scrubber.value = 0
+            updateFinishedReadingState()
+            updateStatus()
         }
         // Start (or switch) playback at the displayed focal word — this is
         // also the "explicit play switches playback to this article" path
@@ -1680,6 +1694,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Common end-of-article handling for both sub-modes.
     private func finish() {
         guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
+        updateStatus()
         pause()
         hideLinkPill()
         finishedBadge.present()
@@ -1786,8 +1801,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
         refreshDisplay()
         scrubber.value = Float(currentIndex)
-        updateStatus()
         updateFinishedReadingState()
+        updateStatus()
         // Reaching for the scrubber or a skip button means looking away from
         // the word on purpose; don't spend the away allowance on it.
         gazeCoordinator?.focalPositionDidJump()
@@ -1799,13 +1814,26 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func adjustWPM(by delta: Double) {
         wpm = min(max(wpm + delta, 100), 900)
         ReaderSettings.baseWPM = wpm
+        rebuildPhraseRemainingDurations()
         updateStatus()
     }
 
+    private func rebuildPhraseRemainingDurations() {
+        phraseRemainingDurations = ChunkPlanner.remainingDurations(for: chunks, wpm: wpm)
+    }
+
     private func updateStatus() {
-        let percent = engine.words.isEmpty
-            ? 0 : Int((Double(currentIndex + 1) / Double(engine.words.count)) * 100)
-        statusLabel.text = L10n.string("Reader_rsvp_statusPercentWpm", percent, Int(wpm))
+        let duration: TimeInterval
+        if finishedReadingTracker.isFinished {
+            duration = 0
+        } else if displayMode == .phrases,
+                  phraseRemainingDurations.indices.contains(currentChunkIndex) {
+            duration = phraseRemainingDurations[currentChunkIndex]
+        } else {
+            duration = engine.remainingDuration(from: currentIndex, wpm: wpm)
+        }
+        let time = RSVPTimeRemainingFormatter.string(from: duration)
+        statusLabel.text = L10n.string("Reader_rsvp_statusTimeRemainingWpm", time, Int(wpm))
     }
 
     /// Seeks the center to the currently displayed focal word — used after a

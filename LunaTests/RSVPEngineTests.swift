@@ -68,6 +68,27 @@ final class RSVPEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(long, medium)
     }
 
+    func testRemainingDurationTracksPositionAndWPMUsingWordTiming() {
+        let engine = RSVPEngine(content: makeContent(["one mediumword final."]))
+        let expectedFromStart = engine.words.indices.reduce(0.0) {
+            $0 + engine.duration(at: $1, wpm: 300)
+        }
+
+        XCTAssertEqual(
+            engine.remainingDuration(from: 0, wpm: 300),
+            expectedFromStart,
+            accuracy: 0.0001)
+        XCTAssertEqual(
+            engine.remainingDuration(from: 1, wpm: 300),
+            expectedFromStart - engine.duration(at: 0, wpm: 300),
+            accuracy: 0.0001)
+        XCTAssertEqual(
+            engine.remainingDuration(from: 0, wpm: 600),
+            expectedFromStart / 2,
+            accuracy: 0.0001)
+        XCTAssertEqual(engine.remainingDuration(from: engine.words.count, wpm: 300), 0)
+    }
+
     func testDefaultDoesNotSplitLongWords() {
         let engine = RSVPEngine(content: makeContent(["supercalifragilisticexpialidocious"]))
         XCTAssertEqual(engine.words.map(\.text), ["supercalifragilisticexpialidocious"])

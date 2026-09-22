@@ -44,6 +44,11 @@ public struct RSVPEngine {
     let sourceTokenIndices: [Int]
     /// First frame index for each source token.
     let firstFrameIndexByToken: [Int]
+    /// Sum of the word-timing weights from each frame through the end. The
+    /// WPM-dependent base interval is applied at lookup time, so the RSVP UI
+    /// can refresh its time-remaining label in O(1) as playback advances or
+    /// the user scrubs through a long article.
+    private let remainingDurationWeights: [Double]
 
     /// `maxCharactersPerWord` splits over-long words into multiple frames that
     /// fit the focal column (default `.max` = never split; used by tests).
@@ -75,6 +80,13 @@ public struct RSVPEngine {
         self.words = words
         self.sourceTokenIndices = sourceTokenIndices
         self.firstFrameIndexByToken = firstFrameIndexByToken
+        var remainingDurationWeights = Array(repeating: 0.0, count: words.count)
+        var totalWeight = 0.0
+        for index in words.indices.reversed() {
+            totalWeight += Self.durationWeight(for: words[index])
+            remainingDurationWeights[index] = totalWeight
+        }
+        self.remainingDurationWeights = remainingDurationWeights
     }
 
     /// Frame to start on for a position expressed in the shared token space.
@@ -143,8 +155,20 @@ public struct RSVPEngine {
     /// Longer words show longer; sentence and paragraph ends pause.
     public func duration(at index: Int, wpm: Double) -> TimeInterval {
         guard words.indices.contains(index), wpm > 0 else { return 0 }
-        let word = words[index]
-        let base = 60.0 / wpm
+        return (60.0 / wpm) * Self.durationWeight(for: words[index])
+    }
+
+    /// Estimated playback time from the displayed frame through the end at the
+    /// current Words-mode speed. Uses the exact same length and punctuation
+    /// weights as `duration(at:wpm:)`.
+    public func remainingDuration(from index: Int, wpm: Double) -> TimeInterval {
+        guard wpm > 0, !remainingDurationWeights.isEmpty else { return 0 }
+        let clamped = min(max(index, 0), remainingDurationWeights.count)
+        guard remainingDurationWeights.indices.contains(clamped) else { return 0 }
+        return (60.0 / wpm) * remainingDurationWeights[clamped]
+    }
+
+    private static func durationWeight(for word: RSVPWord) -> Double {
 
         let lengthFactor: Double
         switch word.text.count {
@@ -164,6 +188,6 @@ public struct RSVPEngine {
             pauseFactor = 1.0
         }
 
-        return base * lengthFactor * pauseFactor
+        return lengthFactor * pauseFactor
     }
 }

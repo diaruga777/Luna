@@ -127,7 +127,7 @@ public enum AudioWordEventTokenMapping {
 /// conformances: the event's (block index, in-block UTF-16 location) maps to
 /// the shared token space via `AudioWordEventTokenMapping`, then into the
 /// engine's frame space (a word can occupy several frames when its token was
-/// long-word-split) via `RSVPEngine.frameIndex(forTokenIndex:)`.
+/// display-split) via `RSVPEngine.frameIndex(forTokenIndex:)`.
 public enum RSVPAudioWordSync {
     public static func frameIndex(
         for event: AudioWordEvent,

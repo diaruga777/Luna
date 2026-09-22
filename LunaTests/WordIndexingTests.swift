@@ -20,22 +20,38 @@ final class WordIndexingTests: XCTestCase {
 
     // MARK: - WordSplitter
 
-    func testShortWordIsUnchanged() {
+    func testShortUnhyphenatedWordIsUnchanged() {
         XCTAssertEqual(WordSplitter.split("hello", maxCharacters: 12), ["hello"])
-        XCTAssertEqual(WordSplitter.split("well-being", maxCharacters: 12), ["well-being"])
     }
 
-    func testHyphenatedWordSplitsAtHyphenWithDuplicatedHyphen() {
-        // 13 chars > 10: split at the hyphen, hyphen shown on both sides.
+    func testHyphenatedWordSplitsEvenWhenItFitsWithHyphenOnFirstPart() {
+        XCTAssertEqual(
+            WordSplitter.split("well-being", maxCharacters: 12),
+            ["well-", "being"])
         XCTAssertEqual(
             WordSplitter.split("self-evidently", maxCharacters: 10),
-            ["self-", "-evidently"])
+            ["self-", "evidently"])
     }
 
     func testMultipleHyphens() {
         XCTAssertEqual(
             WordSplitter.split("up-to-date-thing", maxCharacters: 6),
-            ["up-", "-to-", "-date-", "-thing"])
+            ["up-", "to-", "date-", "thing"])
+    }
+
+    func testUnicodeHyphensSplitAndStayOnFirstPart() {
+        XCTAssertEqual(
+            WordSplitter.split("cost‐effective", maxCharacters: 20),
+            ["cost‐", "effective"])
+        XCTAssertEqual(
+            WordSplitter.split("non‑breaking", maxCharacters: 20),
+            ["non‑", "breaking"])
+    }
+
+    func testPunctuationHyphensAreNotTreatedAsCompoundBreaks() {
+        XCTAssertEqual(WordSplitter.split("-leading", maxCharacters: 20), ["-leading"])
+        XCTAssertEqual(WordSplitter.split("trailing-", maxCharacters: 20), ["trailing-"])
+        XCTAssertEqual(WordSplitter.split("double--barrel", maxCharacters: 20), ["double--barrel"])
     }
 
     func testLongUnhyphenatedWordIsHardWrapped() {
@@ -50,9 +66,9 @@ final class WordIndexingTests: XCTestCase {
         // First hyphen segment "antidisestablishmentarianism-" is too long → wrapped.
         let parts = WordSplitter.split("antidisestablishmentarianism-x", maxCharacters: 10)
         XCTAssertTrue(parts.allSatisfy { $0.count <= 10 })
-        XCTAssertEqual(parts.last, "-x")
-        // Reassembling (dropping the wrap hyphens and the duplicated boundary
-        // hyphens) recovers the original letters.
+        XCTAssertEqual(parts.last, "x")
+        // Reassembling after dropping wrap and boundary hyphens recovers the
+        // original letters.
         let reassembled = parts.joined().replacingOccurrences(of: "-", with: "")
         XCTAssertEqual(reassembled, "antidisestablishmentarianismx")
     }

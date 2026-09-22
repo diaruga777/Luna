@@ -5,35 +5,56 @@
 
 import Foundation
 
-/// Splits an over-long RSVP word into parts that fit the focal column.
-/// Hyphenated words break at their hyphens first (the hyphen is shown at the
-/// end of the part before the break and the start of the part after it); any
-/// part still too long is hard-hyphenated into fitting chunks. Words within
-/// the limit are returned unchanged. Pure, tested.
+/// Splits an RSVP token into display frames that fit the focal column.
+/// Compound words always break at their hyphens first, with each hyphen shown
+/// only at the end of the part before the break. Any part still too long is
+/// hard-hyphenated into fitting chunks. Unhyphenated words within the limit
+/// are returned unchanged. Pure, tested.
 public enum WordSplitter {
+
+    /// Hyphen-minus plus the two Unicode hyphens commonly found in prose.
+    /// En/em dashes are punctuation rather than compound-word separators.
+    private static let compoundHyphens: Set<Character> = ["-", "‐", "‑"]
 
     /// `maxCharacters` is the widest part (in characters) that fits on screen.
     public static func split(_ token: String, maxCharacters: Int) -> [String] {
-        guard maxCharacters > 1, token.count > maxCharacters else { return [token] }
+        guard maxCharacters > 1 else { return [token] }
 
         let hyphenParts = hyphenSplit(token)
         if hyphenParts.count > 1 {
             return hyphenParts.flatMap { hardWrap($0, maxCharacters: maxCharacters) }
         }
+        guard token.count > maxCharacters else { return [token] }
         return hardWrap(token, maxCharacters: maxCharacters)
     }
 
-    /// "well-being" → ["well-", "-being"]; "a-b-c" → ["a-", "-b-", "-c"].
-    /// The hyphen is duplicated across each break so both parts show it.
+    /// "well-being" → ["well-", "being"]; "a-b-c" → ["a-", "b-", "c"].
+    /// Only an internal hyphen between letters or numbers is a compound break;
+    /// leading/trailing hyphens and repeated punctuation stay untouched.
     private static func hyphenSplit(_ token: String) -> [String] {
-        let pieces = token.split(separator: "-", omittingEmptySubsequences: true).map(String.init)
-        guard pieces.count > 1 else { return [token] }
-        return pieces.enumerated().map { index, piece in
-            var part = piece
-            if index != 0 { part = "-" + part }
-            if index != pieces.count - 1 { part = part + "-" }
-            return part
+        let characters = Array(token)
+        guard characters.count >= 3 else { return [token] }
+
+        var parts: [String] = []
+        var current = ""
+        for index in characters.indices {
+            let character = characters[index]
+            current.append(character)
+
+            guard Self.compoundHyphens.contains(character),
+                  index > characters.startIndex,
+                  index < characters.index(before: characters.endIndex) else { continue }
+            let previous = characters[characters.index(before: index)]
+            let next = characters[characters.index(after: index)]
+            guard (previous.isLetter || previous.isNumber),
+                  (next.isLetter || next.isNumber) else { continue }
+
+            parts.append(current)
+            current = ""
         }
+        guard !parts.isEmpty else { return [token] }
+        parts.append(current)
+        return parts
     }
 
     /// Cuts a too-long part into chunks of `maxCharacters`, each but the last

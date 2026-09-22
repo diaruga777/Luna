@@ -38,9 +38,9 @@ public struct RSVPWord {
 public struct RSVPEngine {
     public let words: [RSVPWord]
     /// Source-token index (the whitespace-token space WordMap and read-aloud
-    /// share) for each entry of `words`. Splitting long tokens
-    /// adds frames, so frame indices drift from the shared cross-mode space;
-    /// these two maps convert both ways at the RSVP boundary.
+    /// share) for each entry of `words`. Splitting compounds or over-long
+    /// tokens adds frames, so frame indices drift from the shared cross-mode
+    /// space; these two maps convert both ways at the RSVP boundary.
     let sourceTokenIndices: [Int]
     /// First frame index for each source token.
     let firstFrameIndexByToken: [Int]
@@ -50,8 +50,9 @@ public struct RSVPEngine {
     /// the user scrubs through a long article.
     private let remainingDurationWeights: [Double]
 
-    /// `maxCharactersPerWord` splits over-long words into multiple frames that
-    /// fit the focal column (default `.max` = never split; used by tests).
+    /// Hyphenated compounds always split into separate frames.
+    /// `maxCharactersPerWord` additionally splits over-long fragments so they
+    /// fit the focal column (default `.max` = no length-based splitting).
     public init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
         var words: [RSVPWord] = []
         var sourceTokenIndices: [Int] = []

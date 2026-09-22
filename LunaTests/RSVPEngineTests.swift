@@ -21,6 +21,21 @@ final class RSVPEngineTests: XCTestCase {
         XCTAssertEqual(engine.words.map(\.text), ["One", "two", "three.", "Four", "five"])
     }
 
+    func testHyphenatedCompoundUsesSeparateFramesWithHyphenOnFirstPart() {
+        let engine = RSVPEngine(
+            content: makeContent(["A well-being practice."]),
+            maxCharactersPerWord: 15)
+
+        XCTAssertEqual(engine.words.map(\.text), ["A", "well-", "being", "practice."])
+        XCTAssertEqual(engine.frameIndex(forTokenIndex: 1), 1)
+        XCTAssertEqual(engine.tokenIndex(forFrameIndex: 1), 1)
+        XCTAssertEqual(engine.tokenIndex(forFrameIndex: 2), 1)
+        XCTAssertFalse(engine.words[1].endsSentence)
+        XCTAssertFalse(engine.words[1].endsParagraph)
+        XCTAssertTrue(engine.words.last?.endsSentence ?? false)
+        XCTAssertTrue(engine.words.last?.endsParagraph ?? false)
+    }
+
     func testORPIndexByLength() {
         let cases: [(length: Int, orp: Int)] = [
             (1, 0), (2, 1), (5, 1), (6, 2), (9, 2), (14, 3),

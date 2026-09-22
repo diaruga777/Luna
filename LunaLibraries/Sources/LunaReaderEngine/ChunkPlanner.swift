@@ -149,4 +149,20 @@ public enum ChunkPlanner {
         let interval = perWord * (weight + pauseWords)
         return max(minimumDisplay, interval)
     }
+
+    /// Total playback time from every chunk position through the end. Building
+    /// the suffix totals once when content or WPM changes lets the Phrases UI
+    /// update its time-remaining label with a single indexed lookup per advance.
+    public static func remainingDurations(
+        for chunks: [TextChunk], wpm: Double
+    ) -> [TimeInterval] {
+        guard wpm > 0 else { return Array(repeating: 0, count: chunks.count) }
+        var result = Array(repeating: 0.0, count: chunks.count)
+        var total = 0.0
+        for index in chunks.indices.reversed() {
+            total += duration(for: chunks[index], wpm: wpm)
+            result[index] = total
+        }
+        return result
+    }
 }

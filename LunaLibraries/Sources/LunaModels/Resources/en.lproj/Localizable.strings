@@ -855,7 +855,7 @@
 "Reader_rsvp_speedUpAccessibilityHint_Luna" = "Increases reading speed by 25 words per minute";
 "Reader_rsvp_skipBackAccessibilityLabel_Luna" = "Skip back 25 words";
 "Reader_rsvp_skipForwardAccessibilityLabel_Luna" = "Skip forward 25 words";
-"Reader_rsvp_statusPercentWpm_Luna" = "%lld%% · %lld wpm";
+"Reader_rsvp_statusTimeRemainingWpm_Luna" = "%@ · %lld wpm";
 
 /* ===== Reader — drag-up link RSVP preview (LinkRSVPPreview) ===== */
 "Reader_rsvp_preview_resumingTitle_Luna" = "Resuming: %@";

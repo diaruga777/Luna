@@ -105,4 +105,21 @@ final class ChunkPlannerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
             ChunkPlanner.duration(for: tiny, wpm: 900), ChunkPlanner.minimumDisplay)
     }
+
+    func testRemainingDurationsAreSuffixTotalsAtCurrentWPM() {
+        let chunks = ChunkPlanner.chunks(
+            words: words("one two three. four five six. seven eight nine."))
+        let remaining = ChunkPlanner.remainingDurations(for: chunks, wpm: 300)
+
+        XCTAssertEqual(remaining.count, chunks.count)
+        for index in chunks.indices {
+            let expected = chunks[index...].reduce(0.0) {
+                $0 + ChunkPlanner.duration(for: $1, wpm: 300)
+            }
+            XCTAssertEqual(remaining[index], expected, accuracy: 0.0001)
+        }
+
+        let faster = ChunkPlanner.remainingDurations(for: chunks, wpm: 600)
+        XCTAssertLessThan(faster[0], remaining[0])
+    }
 }

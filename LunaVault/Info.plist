@@ -16,9 +16,13 @@
 	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Luna Vault looks for your paired Mac on your local network to sync files.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Luna Vault needs access to the photos and videos you choose to sync to your Mac.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.sync</string>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.transfer.*</string>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.share.transfer.*</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.index</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.importRepair</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.thumbnailMaintenance</string>

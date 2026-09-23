@@ -148,6 +148,7 @@ public protocol VaultPresentationProviding: Sendable {
     func connectionStatus() async -> VaultConnectionStatus
     func pendingUploadCount() async throws -> Int
     func pendingUploads() async throws -> [VaultPendingUpload]
+    func queuedImportCount() async throws -> Int
     func cancelPendingUpload(named name: String) async throws
     func deleteItem(named name: String) async throws
     func recentFiles(limit: Int) async throws -> [VaultPresentedFile]
@@ -171,6 +172,7 @@ public protocol VaultPresentationProviding: Sendable {
 public extension VaultPresentationProviding {
     func pendingUploadCount() async throws -> Int { 0 }
     func pendingUploads() async throws -> [VaultPendingUpload] { [] }
+    func queuedImportCount() async throws -> Int { 0 }
     func cancelPendingUpload(named name: String) async throws {}
     func deleteItem(named name: String) async throws {}
 }

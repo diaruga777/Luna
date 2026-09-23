@@ -38,6 +38,11 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         ) { task in
             Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
         }
+        for identifier in [bundleID + ".transfer.*", bundleID + ".share.transfer.*"] {
+            BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+                Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
+            }
+        }
         let maintenanceKinds: [VaultBackgroundTaskKind] = [.importRepair, .index, .thumbnailMaintenance]
         for kind in maintenanceKinds {
             let identifier = bundleID + "." + kind.rawValue

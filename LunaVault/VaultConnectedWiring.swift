@@ -66,7 +66,7 @@ import LunaVaultUI
     }
 
     static func applicationWillEnterForeground() {
-        transfers?.start()
+        transfers?.resumeFromUserOpen()
         guard foregroundTask == nil, let runtime else { return }
         foregroundTask = Task {
             while !Task.isCancelled {

@@ -600,19 +600,72 @@ public struct BEPClose: Equatable, Sendable {
     }
 }
 
-// MARK: - DownloadProgress (decoded and ignored)
+// MARK: - DownloadProgress
+
+public struct BEPFileDownloadProgressUpdate: Equatable, Sendable {
+    public var name: String
+    public var version: VersionVector
+    public var blockIndexes: [Int]
+    public var isForget: Bool
+
+    public init(name: String, version: VersionVector, blockIndexes: [Int], isForget: Bool = false) {
+        self.name = name; self.version = version; self.blockIndexes = blockIndexes; self.isForget = isForget
+    }
+
+    public func encoded() -> Data {
+        var writer = ProtobufWriter()
+        writer.writeInt32(1, isForget ? 1 : 0)
+        writer.writeString(2, name)
+        writer.writeMessage(3, version.encodedProtobuf())
+        for index in blockIndexes { writer.writeVarintIncludingZero(4, UInt64(index)) }
+        return writer.data
+    }
+
+    public init(protobuf data: Data) throws {
+        var reader = ProtobufReader(data)
+        var name = ""
+        var version = VersionVector.empty
+        var indexes: [Int] = []
+        var forget = false
+        while let tag = try reader.nextTag() {
+            switch (tag.field, tag.type) {
+            case (1, .varint): forget = try reader.readInt32() == 1
+            case (2, .lengthDelimited): name = try reader.readString()
+            case (3, .lengthDelimited): version = try VersionVector(protobuf: reader.readBytes())
+            case (4, .varint): indexes.append(Int(try reader.readInt32()))
+            default: try reader.skip(tag.type)
+            }
+        }
+        self.init(name: name, version: version, blockIndexes: indexes, isForget: forget)
+    }
+}
 
 public struct BEPDownloadProgress: Equatable, Sendable {
     public var folder: String
-    public init(folder: String) { self.folder = folder }
+    public var updates: [BEPFileDownloadProgressUpdate]
+    public init(folder: String, updates: [BEPFileDownloadProgressUpdate] = []) {
+        self.folder = folder; self.updates = updates
+    }
+
+    public func encoded() -> Data {
+        var writer = ProtobufWriter()
+        writer.writeString(1, folder)
+        for update in updates { writer.writeMessage(2, update.encoded()) }
+        return writer.data
+    }
 
     public init(protobuf data: Data) throws {
         var reader = ProtobufReader(data)
         var folder = ""
+        var updates: [BEPFileDownloadProgressUpdate] = []
         while let tag = try reader.nextTag() {
-            if tag.field == 1, tag.type == .lengthDelimited { folder = try reader.readString() } else { try reader.skip(tag.type) }
+            switch (tag.field, tag.type) {
+            case (1, .lengthDelimited): folder = try reader.readString()
+            case (2, .lengthDelimited): updates.append(try BEPFileDownloadProgressUpdate(protobuf: reader.readBytes()))
+            default: try reader.skip(tag.type)
+            }
         }
-        self.init(folder: folder)
+        self.init(folder: folder, updates: updates)
     }
 }
 
@@ -647,7 +700,7 @@ public enum BEPMessage: Equatable, Sendable {
         case .index(let index): return index.encoded()
         case .request(let request): return request.encoded()
         case .response(let response): return response.encoded()
-        case .downloadProgress: return Data()
+        case .downloadProgress(let progress): return progress.encoded()
         case .ping: return Data()
         case .close(let close): return close.encoded()
         case .unknown: return Data()

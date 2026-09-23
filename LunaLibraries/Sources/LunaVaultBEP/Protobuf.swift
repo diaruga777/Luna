@@ -45,6 +45,12 @@ public struct ProtobufWriter {
         data.append(ProtobufWriter.varintBytes(value))
     }
 
+    /// Repeated scalar fields must keep an explicit zero element (block 0).
+    public mutating func writeVarintIncludingZero(_ field: Int, _ value: UInt64) {
+        tag(field, .varint)
+        data.append(ProtobufWriter.varintBytes(value))
+    }
+
     public mutating func writeInt64(_ field: Int, _ value: Int64) {
         writeVarint(field, UInt64(bitPattern: value))
     }

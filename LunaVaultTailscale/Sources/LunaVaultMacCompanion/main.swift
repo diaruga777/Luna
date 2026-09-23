@@ -178,7 +178,9 @@ private final class CompanionController: @unchecked Sendable {
                 let old = active; active = (connection, delegate); return old
             }
             if let old { await old.0.close(reason: "iPhone reconnected") }
-            try index.replace(with: CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan())
+            let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID)
+            let existing = Dictionary(uniqueKeysWithValues: try index.all().map { ($0.name, $0) })
+            try index.reconcileScan(scanner.scan(previous: existing), deviceShortID: localID.shortID)
             try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: folder.lastPathComponent,
                 devices: [BEPDevice(id: localID, name: "Luna Mac"), BEPDevice(id: accepted.device, name: hello.deviceName)])]))
             let files = try index.all()
@@ -186,13 +188,14 @@ private final class CompanionController: @unchecked Sendable {
                 lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
             delegate.startServing(connection)
             lock.withLock { status = "Connected · \(files.filter { $0.type == .file }.count) files · \(folder.path)" }
-            var lastScan = try CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan()
+            var lastScan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: files.map { ($0.name, $0) }))
             while !(await connection.isClosed) {
                 try await Task.sleep(for: .seconds(5))
                 guard lock.withLock({ active?.0 === connection && generation == selectedGeneration }) else { return }
-                let scan = try CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID).scan()
+                let indexed = try index.all()
+                let scan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: indexed.map { ($0.name, $0) }))
                 if scan != lastScan {
-                    try index.replace(with: scan)
+                    try index.reconcileScan(scan, deviceShortID: localID.shortID)
                     let updated = try index.all()
                     try await connection.send(index: BEPIndex(folder: "vault", files: updated,
                         lastSequence: updated.map(\.sequence).max() ?? 0, isUpdate: false))

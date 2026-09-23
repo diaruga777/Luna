@@ -5,14 +5,22 @@ import Foundation
 public protocol BEPConnectionDelegate: AnyObject, Sendable {
     func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async
     func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async
+    func connection(_ connection: BEPConnection, didReceive downloadProgress: BEPDownloadProgress) async
     /// Returns the block bytes, or an error code the connection sends back.
     func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode>
+    func connection(_ connection: BEPConnection, didSend responseFor: BEPRequest, byteCount: Int) async
     func connection(_ connection: BEPConnection, didCloseWith error: Error?) async
+}
+
+public extension BEPConnectionDelegate {
+    func connection(_ connection: BEPConnection, didReceive downloadProgress: BEPDownloadProgress) async {}
+    func connection(_ connection: BEPConnection, didSend responseFor: BEPRequest, byteCount: Int) async {}
 }
 
 public struct BEPConnectionTiming: Sendable {
     public var pingInterval: TimeInterval = 45
     public var receiveTimeout: TimeInterval = 300
+    public var requestTimeout: TimeInterval = 180
     public var helloTimeout: TimeInterval = 20
     public var timerTick: TimeInterval = 5
     public init() {}
@@ -36,7 +44,6 @@ public actor BEPConnection {
 
     private var readTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
-    private var requestTasks: [Task<Void, Never>] = []
     private var closed = false
     private var closeError: Error?
     private var sentClusterConfig = false
@@ -44,7 +51,11 @@ public actor BEPConnection {
     private var lastWrite: Date
     private var lastRead: Date
     private var nextRequestID: Int32 = 1
-    private var pending: [Int32: CheckedContinuation<BEPResponse, Error>] = [:]
+    private struct PendingRequest {
+        let continuation: CheckedContinuation<BEPResponse, Error>
+        let timeout: Task<Void, Never>
+    }
+    private var pending: [Int32: PendingRequest] = [:]
 
     public init(stream: any BEPByteStream, peerDevice: DeviceID, localHello: BEPHello,
                 delegate: any BEPConnectionDelegate, timing: BEPConnectionTiming = BEPConnectionTiming(),
@@ -90,20 +101,34 @@ public actor BEPConnection {
         try await write(.index(index))
     }
 
+    public func send(downloadProgress: BEPDownloadProgress) async throws {
+        try await write(.downloadProgress(downloadProgress))
+    }
+
     /// Requests one block and waits for the peer's answer.
     public func request(folder: String, name: String, block: BlockInfo, blockNo: Int32) async throws -> Data {
         let request = BEPRequest(id: allocateRequestID(), folder: folder, name: name, offset: block.offset,
                                  size: block.size, hash: block.hash, blockNo: blockNo)
         try request.validateForWire()
-        let response: BEPResponse = try await withCheckedThrowingContinuation { continuation in
-            pending[request.id] = continuation
-            Task { [weak self] in
-                do {
-                    try await self?.write(.request(request))
-                } catch {
-                    await self?.failPending(id: request.id, error: error)
+        let response: BEPResponse = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                let deadline = Task { [weak self, timeout = timing.requestTimeout] in
+                    do { try await Task.sleep(for: .seconds(timeout)) }
+                    catch { return }
+                    await self?.timeoutRequest(id: request.id)
+                }
+                pending[request.id] = PendingRequest(continuation: continuation, timeout: deadline)
+                Task { [weak self] in
+                    do { try await self?.write(.request(request)) }
+                    catch { await self?.failPending(id: request.id, error: error) }
                 }
             }
+        } onCancel: {
+            Task { await self.failPending(id: request.id, error: CancellationError()) }
         }
         guard response.code == .noError else { throw BEPRequestError.peerCode(response.code) }
         guard SHA256Digest.hash(response.data) == block.hash else { throw BEPRequestError.hashMismatch }
@@ -138,7 +163,15 @@ public actor BEPConnection {
     }
 
     private func failPending(id: Int32, error: Error) {
-        pending.removeValue(forKey: id)?.resume(throwing: error)
+        guard let request = pending.removeValue(forKey: id) else { return }
+        request.timeout.cancel()
+        request.continuation.resume(throwing: error)
+    }
+
+    private func timeoutRequest(id: Int32) async {
+        guard pending[id] != nil else { return }
+        failPending(id: id, error: BEPStreamError.timedOut)
+        await tearDown(error: BEPStreamError.timedOut)
     }
 
     // MARK: Receiving
@@ -171,7 +204,7 @@ public actor BEPConnection {
         case .index(let index):
             await delegate?.connection(self, didReceive: index)
         case .request(let request):
-            let task = Task { [weak self] in
+            Task { [weak self] in
                 guard let self else { return }
                 let result = await self.serve(request)
                 let response: BEPResponse
@@ -179,13 +212,21 @@ public actor BEPConnection {
                 case .success(let data): response = BEPResponse(id: request.id, data: data)
                 case .failure(let code): response = BEPResponse(id: request.id, data: Data(), code: code)
                 }
-                try? await self.write(.response(response))
+                do {
+                    try await self.write(.response(response))
+                    if case .success(let data) = result {
+                        await self.delegate?.connection(self, didSend: request, byteCount: data.count)
+                    }
+                } catch { /* Connection teardown retries the pending file. */ }
             }
-            requestTasks.append(task)
-            requestTasks.removeAll { $0.isCancelled }
         case .response(let response):
-            pending.removeValue(forKey: response.id)?.resume(returning: response)
-        case .ping, .downloadProgress, .unknown:
+            if let request = pending.removeValue(forKey: response.id) {
+                request.timeout.cancel()
+                request.continuation.resume(returning: response)
+            }
+        case .downloadProgress(let progress):
+            await delegate?.connection(self, didReceive: progress)
+        case .ping, .unknown:
             break
         case .close(let close):
             throw BEPProtocolError.closedByPeer(close.reason)
@@ -232,7 +273,10 @@ public actor BEPConnection {
         closeError = error
         stream.close()
         timerTask?.cancel()
-        for (_, continuation) in pending { continuation.resume(throwing: error ?? BEPStreamError.closed) }
+        for (_, request) in pending {
+            request.timeout.cancel()
+            request.continuation.resume(throwing: error ?? BEPStreamError.closed)
+        }
         pending.removeAll()
         await delegate?.connection(self, didCloseWith: error)
     }

@@ -1,5 +1,6 @@
 import Foundation
 import LunaVaultBEP
+import Darwin
 
 public struct CompanionFileRecord: Equatable, Sendable {
     public var info: BEPFileInfo
@@ -26,8 +27,11 @@ public final class CompanionIndex: @unchecked Sendable {
             modified_s INTEGER NOT NULL, modified_ns INTEGER NOT NULL,
             blocks_hash BLOB NOT NULL, block_hashes BLOB NOT NULL,
             block_size INTEGER NOT NULL, version BLOB NOT NULL,
-            sequence INTEGER NOT NULL)
+            sequence INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)
         """)
+        var hasDeleted = false
+        try db.query("PRAGMA table_info(files)") { if $0.text(1) == "deleted" { hasDeleted = true } }
+        if !hasDeleted { try db.execute("ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0") }
     }
 
     public func replace(with records: [CompanionFileRecord]) throws {
@@ -40,6 +44,54 @@ public final class CompanionIndex: @unchecked Sendable {
         }
     }
 
+    /// Merge a disk scan with the protocol index. A scan must not replace the
+    /// version received from the iPhone, or forget a deletion on reconnect.
+    public func reconcileScan(_ records: [CompanionFileRecord], deviceShortID: UInt64,
+                              now: Date = Date()) throws {
+        lock.lock(); defer { lock.unlock() }
+        var previous: [String: BEPFileInfo] = [:]
+        try db.query("SELECT name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence,deleted FROM files") {
+            let info = try Self.info(from: $0)
+            previous[info.name] = info
+        }
+        var nextSequence = previous.values.map(\.sequence).max() ?? 0
+        var updated: [BEPFileInfo] = []
+        for record in records {
+            var info = record.info
+            if let old = previous.removeValue(forKey: info.name) {
+                if !old.deleted && old.type == info.type && old.size == info.size &&
+                    old.blocksHash == info.blocksHash {
+                    info.version = old.version
+                    info.sequence = old.sequence
+                } else {
+                    info.version = old.version.updated(by: deviceShortID, now: now)
+                    nextSequence += 1
+                    info.sequence = nextSequence
+                }
+            } else {
+                nextSequence += 1
+                info.sequence = nextSequence
+            }
+            updated.append(info)
+        }
+        for old in previous.values {
+            if old.deleted { updated.append(old); continue }
+            var tombstone = old
+            tombstone.deleted = true
+            tombstone.size = 0
+            tombstone.blocks = []
+            tombstone.blocksHash = Data()
+            tombstone.version = old.version.updated(by: deviceShortID, now: now)
+            nextSequence += 1
+            tombstone.sequence = nextSequence
+            updated.append(tombstone)
+        }
+        try db.transaction {
+            try db.execute("DELETE FROM files")
+            for info in updated { try insert(info, sequence: info.sequence) }
+        }
+    }
+
     public func upsert(_ record: CompanionFileRecord) throws {
         lock.lock(); defer { lock.unlock() }
         try insert(record.info, sequence: record.info.sequence)
@@ -48,7 +100,7 @@ public final class CompanionIndex: @unchecked Sendable {
     public func all() throws -> [BEPFileInfo] {
         lock.lock(); defer { lock.unlock() }
         var result: [BEPFileInfo] = []
-        try db.query("SELECT name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence FROM files ORDER BY name") {
+        try db.query("SELECT name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence,deleted FROM files ORDER BY name") {
             result.append(try Self.info(from: $0))
         }
         return result
@@ -57,7 +109,7 @@ public final class CompanionIndex: @unchecked Sendable {
     public func file(named name: String) throws -> BEPFileInfo? {
         lock.lock(); defer { lock.unlock() }
         var result: BEPFileInfo?
-        try db.query("SELECT name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence FROM files WHERE name = ?", [.text(name)]) {
+        try db.query("SELECT name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence,deleted FROM files WHERE name = ?", [.text(name)]) {
             result = try Self.info(from: $0)
         }
         return result
@@ -72,14 +124,14 @@ public final class CompanionIndex: @unchecked Sendable {
 
     private func insert(_ info: BEPFileInfo, sequence: Int64) throws {
         try db.run("""
-        INSERT INTO files(name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence)
-        VALUES(?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO files(name,type,size,modified_s,modified_ns,blocks_hash,block_hashes,block_size,version,sequence,deleted)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(name) DO UPDATE SET type=excluded.type,size=excluded.size,modified_s=excluded.modified_s,
           modified_ns=excluded.modified_ns,blocks_hash=excluded.blocks_hash,block_hashes=excluded.block_hashes,
-          block_size=excluded.block_size,version=excluded.version,sequence=excluded.sequence
+          block_size=excluded.block_size,version=excluded.version,sequence=excluded.sequence,deleted=excluded.deleted
         """, [.text(info.name), .int(Int64(info.type.rawValue)), .int(info.size), .int(info.modifiedS),
                .int(Int64(info.modifiedNs)), .blob(info.blocksHash), .blob(BlockLayout.concatenatedHashes(info.blocks)),
-               .int(Int64(info.blockSize)), .blob(info.version.storageBytes), .int(sequence)])
+               .int(Int64(info.blockSize)), .blob(info.version.storageBytes), .int(sequence), .int(info.deleted ? 1 : 0)])
     }
 
     private static func info(from row: CompanionSQLite.Row) throws -> BEPFileInfo {
@@ -87,7 +139,7 @@ public final class CompanionIndex: @unchecked Sendable {
         let blockSize = Int32(truncatingIfNeeded: row.int(7))
         return BEPFileInfo(name: row.text(0), type: BEPFileType(rawValue: Int(row.int(1))) ?? .file,
                            size: size, modifiedS: row.int(3), modifiedNs: Int32(truncatingIfNeeded: row.int(4)),
-                           modifiedBy: 0, deleted: false, invalid: false, noPermissions: true,
+                           modifiedBy: 0, deleted: row.int(10) != 0, invalid: false, noPermissions: true,
                            version: try VersionVector(storageBytes: row.blob(8)), sequence: row.int(9),
                            blockSize: blockSize,
                            blocks: BlockLayout.blocks(fromConcatenatedHashes: row.blob(6), fileSize: size, blockSize: Int(blockSize)),
@@ -107,7 +159,7 @@ public struct CompanionFolderScanner: Sendable {
         self.deviceShortID = deviceShortID
     }
 
-    public func scan() throws -> [CompanionFileRecord] {
+    public func scan(previous: [String: BEPFileInfo] = [:]) throws -> [CompanionFileRecord] {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
         guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { return [] }
         var records: [CompanionFileRecord] = []
@@ -125,7 +177,18 @@ public struct CompanionFolderScanner: Sendable {
                     modifiedS: modifiedS, modifiedNs: modifiedNs, modifiedBy: deviceShortID,
                     noPermissions: true, version: VersionVector(counters: [VersionCounter(id: deviceShortID, value: UInt64(max(1, modifiedS)))]))))
             } else if values.isRegularFile == true {
-                let (blockSize, blocks) = try BlockLayout.blocks(forFileAt: url)
+                let size = values.fileSize.map(Int64.init) ?? 0
+                let cached = previous[relative]
+                let blockSize: Int
+                let blocks: [BlockInfo]
+                if let cached, !cached.deleted, cached.type == .file, cached.size == size,
+                   cached.modifiedS == modifiedS, cached.modifiedNs == modifiedNs,
+                   !cached.blocks.isEmpty {
+                    blockSize = cached.effectiveBlockSize
+                    blocks = cached.blocks
+                } else {
+                    (blockSize, blocks) = try BlockLayout.blocks(forFileAt: url)
+                }
                 records.append(CompanionFileRecord(info: BEPFileInfo(name: relative, size: values.fileSize.map(Int64.init) ?? 0,
                     modifiedS: modifiedS, modifiedNs: modifiedNs, modifiedBy: deviceShortID, noPermissions: true,
                     version: VersionVector(counters: [VersionCounter(id: deviceShortID, value: UInt64(max(1, modifiedS)))]),
@@ -186,10 +249,14 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
                 await previous?.value
                 guard !Task.isCancelled else { return }
                 do {
+                    for removed in incoming.files.filter({ $0.deleted && !$0.invalid })
+                        .sorted(by: { $0.name.split(separator: "/").count > $1.name.split(separator: "/").count }) {
+                        try receiveDeletion(removed)
+                    }
                     for folder in incoming.files where folder.type == .directory && !folder.invalid && !folder.deleted {
                         try receiveDirectory(folder)
                     }
-                    for file in incoming.files where file.type == .file && !file.invalid {
+                    for file in incoming.files where file.type == .file && !file.invalid && !file.deleted {
                         try await receive(file, from: connection)
                     }
                     guard !incoming.files.isEmpty else { return }
@@ -204,7 +271,16 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private func safeURL(_ name: String) throws -> URL {
         try BEPFileInfo.validateName(name)
         let root = rootURL.resolvingSymlinksInPath()
-        let url = root.appendingPathComponent(name).resolvingSymlinksInPath()
+        var url = root
+        for component in name.split(separator: "/") {
+            url.appendPathComponent(String(component))
+            var info = stat()
+            let result = url.path.withCString { lstat($0, &info) }
+            if result == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK) {
+                throw VaultTransportError.internalError("A link replaced \(name) on the Mac")
+            }
+            if result != 0 && errno != ENOENT { throw BEPStreamError.posix(errno) }
+        }
         guard url.path.hasPrefix(root.path + "/") else { throw BEPStreamError.closed }
         return url
     }
@@ -215,30 +291,93 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
         // Deletions require conflict/tombstone handling; never silently remove
         // an unrelated or newer Mac file from a stale phone announcement.
         if file.deleted { throw BEPStreamError.closed }
-        if let current = try index.file(named: file.name), current.blocksHash == file.blocksHash,
-           FileManager.default.fileExists(atPath: destination.path) { return }
+        if let current = try index.file(named: file.name), current.type == .file,
+           current.blocksHash == file.blocksHash,
+           FileManager.default.fileExists(atPath: destination.path) {
+            let actual = try BlockLayout.blocks(forFileAt: destination, blockSize: file.effectiveBlockSize)
+            guard BlockLayout.blocksHash(actual.blocks) == file.blocksHash else {
+                throw VaultTransportError.internalError("The Mac file \(file.name) changed")
+            }
+            // A prior transfer may have installed the bytes and crashed
+            // before echoing the iPhone's version. Confirm that version now.
+            var saved = file; saved.sequence = try index.maxSequence() + 1
+            try index.upsert(CompanionFileRecord(info: saved))
+            return
+        }
         if FileManager.default.fileExists(atPath: destination.path) {
             throw VaultTransportError.internalError("A different Mac file already has this name: \(file.name)")
         }
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".luna-upload-\(UUID().uuidString)")
-        FileManager.default.createFile(atPath: temporary.path, contents: nil)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let output = try FileHandle(forWritingTo: temporary)
+        let temporary = uploadTempURL(for: file)
+        if !FileManager.default.fileExists(atPath: temporary.path) {
+            guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else {
+                throw VaultTransportError.internalError("Could not prepare Mac upload file")
+            }
+        }
+        let attributes = try FileManager.default.attributesOfItem(atPath: temporary.path)
+        guard (attributes[.type] as? FileAttributeType) == .typeRegular,
+              (try temporary.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true else {
+            throw VaultTransportError.internalError("Mac upload staging was replaced")
+        }
+        let storedSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        guard storedSize <= file.size else { throw VaultTransportError.internalError("Mac upload staging has an invalid size") }
+        let output = try FileHandle(forUpdating: temporary)
         defer { try? output.close() }
         var written: Int64 = 0
-        for (offset, block) in file.blocks.enumerated() {
+        var nextBlock = 0
+        for block in file.blocks {
+            let end = block.offset + Int64(block.size)
+            guard end <= storedSize else { break }
+            try output.seek(toOffset: UInt64(block.offset))
+            let bytes = try output.read(upToCount: Int(block.size)) ?? Data()
+            guard bytes.count == Int(block.size), SHA256Digest.hash(bytes) == block.hash else { break }
+            written = end
+            nextBlock += 1
+        }
+        if storedSize != written { try output.truncate(atOffset: UInt64(written)) }
+        if nextBlock > 0 {
+            try await connection.send(downloadProgress: BEPDownloadProgress(
+                folder: folderID, updates: [BEPFileDownloadProgressUpdate(
+                    name: file.name, version: file.version, blockIndexes: Array(0..<nextBlock))]))
+        }
+        try output.seek(toOffset: UInt64(written))
+        for offset in nextBlock..<file.blocks.count {
+            let block = file.blocks[offset]
             try Task.checkCancellation()
             let bytes = try await connection.request(folder: folderID, name: file.name, block: block, blockNo: Int32(offset))
             guard bytes.count == Int(block.size) else { throw BEPStreamError.closed }
             try output.write(contentsOf: bytes); written += Int64(bytes.count)
+            if offset % 16 == 15 { try output.synchronize() }
         }
         guard written == file.size else { throw BEPStreamError.closed }
         try output.synchronize()
         try FileManager.default.moveItem(at: temporary, to: destination)
-        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(file.modifiedS))], ofItemAtPath: destination.path)
+        try? removeUploadTemps(named: file.name)
+        let modified = Date(timeIntervalSince1970: Double(file.modifiedS) + Double(file.modifiedNs) / 1_000_000_000)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: destination.path)
         var saved = file; saved.sequence = try index.maxSequence() + 1
         try index.upsert(CompanionFileRecord(info: saved))
+    }
+
+    private func uploadTempURL(for file: BEPFileInfo) -> URL {
+        let nameHash = SHA256Digest.hash(Data(file.name.utf8)).map { String(format: "%02x", $0) }.joined()
+        let versionHash = SHA256Digest.hash(file.version.storageBytes).map { String(format: "%02x", $0) }.joined()
+        return rootURL.appendingPathComponent(file.name).deletingLastPathComponent()
+            .appendingPathComponent(".luna-upload-\(nameHash)-\(versionHash)")
+    }
+
+    private func removeUploadTemps(named name: String) throws {
+        let nameHash = SHA256Digest.hash(Data(name.utf8)).map { String(format: "%02x", $0) }.joined()
+        let parent = try safeURL(name).deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: parent.path) else { return }
+        for url in try FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        where url.lastPathComponent.hasPrefix(".luna-upload-\(nameHash)-") {
+            guard (try url.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true,
+                  (try FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular else {
+                throw VaultTransportError.internalError("Mac upload staging was replaced")
+            }
+            try FileManager.default.removeItem(at: url)
+        }
     }
 
     private func receiveDirectory(_ folder: BEPFileInfo) throws {
@@ -259,6 +398,49 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         }
         var saved = folder; saved.sequence = try index.maxSequence() + 1
+        try index.upsert(CompanionFileRecord(info: saved))
+    }
+
+    private func receiveDeletion(_ tombstone: BEPFileInfo) throws {
+        try tombstone.validateForWire()
+        let destination = try safeURL(tombstone.name)
+        let current = try index.file(named: tombstone.name)
+        if let current {
+            switch tombstone.version.compare(current.version) {
+            case .lesser, .concurrentLesser:
+                throw VaultTransportError.internalError("The Mac has a newer version of \(tombstone.name)")
+            case .equal, .greater, .concurrentGreater: break
+            }
+        }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            // A file unknown to the index, or one edited since the index was
+            // built, belongs to the Mac user. Never remove it on a stale
+            // iPhone cancellation.
+            guard let current, !current.deleted else {
+                throw VaultTransportError.internalError("The Mac has an unindexed item named \(tombstone.name)")
+            }
+            if (try destination.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink == true {
+                throw VaultTransportError.internalError("A link replaced \(tombstone.name) on the Mac")
+            }
+            if current.type == .directory {
+                guard try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty else {
+                    throw VaultTransportError.internalError("The Mac folder \(tombstone.name) is not empty")
+                }
+            } else {
+                let attrs = try FileManager.default.attributesOfItem(atPath: destination.path)
+                guard (attrs[.type] as? FileAttributeType) == .typeRegular,
+                      (attrs[.size] as? NSNumber)?.int64Value == current.size else {
+                    throw VaultTransportError.internalError("The Mac file \(tombstone.name) changed")
+                }
+                let blocks = try BlockLayout.blocks(forFileAt: destination, blockSize: current.effectiveBlockSize)
+                guard BlockLayout.blocksHash(blocks.blocks) == current.blocksHash else {
+                    throw VaultTransportError.internalError("The Mac file \(tombstone.name) changed")
+                }
+            }
+            try FileManager.default.removeItem(at: destination)
+        }
+        try removeUploadTemps(named: tombstone.name)
+        var saved = tombstone; saved.sequence = try index.maxSequence() + 1
         try index.upsert(CompanionFileRecord(info: saved))
     }
 

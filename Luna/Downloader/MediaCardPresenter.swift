@@ -106,14 +106,11 @@ final class MediaCardPresenter: CardKindPresenting {
         return "\(media.thumbnailFileName ?? "")|\(MediaItemActions.storageStateKey(media))"
     }
 
-    /// A saved downloadable link still earns a card before its media row exists.
-    /// The share extension can finish after recording the platform but before
-    /// the user starts a download; hiding that row makes a successful save look
-    /// lost in Downloader.
+    /// A platform link Luna holds no media row for has no media card to draw.
+    /// The central app and Reader still show it as a link card; the
+    /// Downloader, which has no link card, gives it no slot.
     func hasContent(for item: SavedItem) -> Bool {
-        media(for: item) != nil
-            || MediaDownloadablePlatform.supports(item.urlString)
-            || MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString)
+        media(for: item) != nil || MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString)
     }
 
     /// Archived in either store means archived. `setArchived` writes both the
@@ -189,19 +186,6 @@ final class MediaCardPresenter: CardKindPresenting {
         if MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString),
            let url = item.url {
             return YouTubePlaybackCardContentViewController(sourceURL: url)
-        }
-        if media(for: item) == nil,
-           MediaDownloadablePlatform.supports(item.urlString) {
-            let pending = SavedMediaItem(
-                id: item.id, sourceURLString: item.urlString,
-                title: item.title, dateSaved: item.dateAdded,
-                kind: nil, storageState: .undownloaded,
-                thumbnailFileName: nil,
-                platform: item.contentPlatform,
-                platformItemID: item.platformItemID)
-            return MediaCardFactory.makeCard(
-                for: pending, scale: host.displayScale,
-                download: { MediaItemActions.startManualDownload(pending) })
         }
         guard let media = media(for: item), !media.isArchived else { return nil }
         return MediaCardFactory.makeCard(

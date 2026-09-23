@@ -27,11 +27,7 @@ reserves its save row up front via `MediaSaveBacking`; and the local→Photos
 transition is a single write, because the delete queue is the durable intent the
 old `pendingLocal*` pair used to provide. See `claudedocs/saves.md`.
 
-A Downloader save can first exist as a ready platform link without a `media_saves`
-row, particularly when the share extension closes before a download starts. The
-media presenter draws the same undownloaded card from that save; tapping its
-download control creates the durable media row. This also makes previously hidden
-link-only saves visible again. Once a media row exists, it has one visible
+Every Downloader save has one durable `SavedMediaItem` row and exactly one visible
 `StorageState`:
 
 1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The

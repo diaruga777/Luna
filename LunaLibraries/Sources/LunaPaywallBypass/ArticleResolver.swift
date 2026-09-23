@@ -80,13 +80,41 @@ public enum ArticleResolver {
         // failure, so it is captured here and carried into `.unreadable` at
         // the bottom.
         var directFailure: SaveFailureReason?
-        let direct = await extraction.fetchAndExtract(
+        // Boston Globe's live Safari DOM can replace #article-body with a long
+        // subscription offer after the initial HTML has loaded. That offer can
+        // clear the generic length gate, so do not treat a body-less handoff as
+        // an unlocked article. A fresh, cookieless request currently serves the
+        // article itself and avoids carrying the browser's meter cookies.
+        let isBostonGlobe = isBostonGlobeURL(url)
+        let capturedGlobeOffer = isBostonGlobe && page.html.map {
+            !hasBostonGlobeArticleBody($0)
+        } == true
+        var direct = await extraction.fetchAndExtract(
             baseURL: url,
             fetch: {
+                if capturedGlobeOffer {
+                    return try await fetcher.fetchHTMLWithoutCookies(from: url)
+                }
                 if let html = page.html { return html }
                 return try await fetcher.fetchHTML(from: url)
             },
             onFetchError: { directFailure = SaveFailureReason(fetchError: $0) })
+        // A normal URLSession read can also inherit the app's meter cookie.
+        // Give the original URL one clean request before trying other
+        // identities or archives.
+        var directHasGlobeBody = isBostonGlobe && (direct.map {
+            hasBostonGlobeArticleBody($0.sourceHTML)
+        } ?? false)
+        if isBostonGlobe && !capturedGlobeOffer && !directHasGlobeBody {
+            direct = await extraction.fetchAndExtract(
+                baseURL: url,
+                fetch: { try await fetcher.fetchHTMLWithoutCookies(from: url) },
+                onFetchError: { directFailure = SaveFailureReason(fetchError: $0) })
+            directHasGlobeBody = direct.map { hasBostonGlobeArticleBody($0.sourceHTML) } ?? false
+        }
+        if isBostonGlobe && !directHasGlobeBody {
+            direct = nil
+        }
         // Skip everything else when the direct read already succeeded. A
         // trusted prefetch (the Safari "Read in Luna" hand-off, which
         // captured the already-unlocked on-screen article) is accepted on
@@ -170,6 +198,15 @@ public enum ArticleResolver {
         attempts += plan.silent.map { strategy in
             { await bypassRunner.run(strategy.asBypassStrategy, url: url, directHTML: directHTML) }
         }
+        if isBostonGlobe {
+            attempts = attempts.map { attempt in
+                {
+                    guard let candidate = await attempt(),
+                          hasBostonGlobeArticleBody(candidate.sourceHTML) else { return nil }
+                    return candidate
+                }
+            }
+        }
 
         // A trusted capture is already on screen, so the chain is a bounded
         // attempt to improve it, not the thing the user is waiting for; it
@@ -210,6 +247,32 @@ public enum ArticleResolver {
             parksForArchive: plan.allowsArchiveToday)
         SaveDiagnostics.record("resolve: \(resolved.diagnosticSummary)", category: "bypass")
         return resolved
+    }
+
+    private static func isBostonGlobeURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "bostonglobe.com" || host.hasSuffix(".bostonglobe.com")
+    }
+
+    /// The publisher's actual story container, distinct from the subscription
+    /// plans and navigation that can themselves contain thousands of characters.
+    /// Requiring multiple substantive paragraphs also rejects a short teaser
+    /// that keeps the same article wrapper after the meter takes over.
+    private static func hasBostonGlobeArticleBody(_ html: String) -> Bool {
+        guard let document = try? SwiftSoup.parse(html),
+              let article = try? document.select("article#article-body").first(),
+              let paragraphs = try? article.select("p") else { return false }
+        let substantial = paragraphs.compactMap { try? $0.text() }
+            .filter { $0.count >= 80 }
+        let offerParagraphs = substantial.filter { paragraph in
+            let lowered = paragraph.lowercased()
+            return lowered.contains("subscribe now")
+                || lowered.contains("choose your plan")
+                || lowered.contains("digital access to the boston globe")
+        }
+        return substantial.count >= 2
+            && substantial.reduce(0) { $0 + $1.count } >= ArticleContent.readableBodyThreshold
+            && !(offerParagraphs.count >= 2 && offerParagraphs.count * 2 >= substantial.count)
     }
 
     /// Runs every silent attempt concurrently and returns the first one — in

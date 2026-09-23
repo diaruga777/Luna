@@ -45,6 +45,9 @@ final class MockArticleFetcher: HTMLFetching {
     /// serve a readable page to the Drudge/Google referer while the direct read stays
     /// locked). Falls back to `htmlByURL` when absent.
     var refererHTMLByURL: [String: String] = [:]
+    /// HTML returned specifically for a cookieless request. Falls back to
+    /// `htmlByURL` when the site's response does not vary with cookies.
+    var freshSessionHTMLByURL: [String: String] = [:]
     /// HTML returned specifically for the NEWEST-snapshot Wayback fetch of a URL (so a
     /// test can serve an archive capture that differs from the live page). Falls back to
     /// `htmlByURL` when absent.
@@ -106,6 +109,7 @@ final class MockArticleFetcher: HTMLFetching {
         record(.init(url: url, userAgent: nil, referer: nil, xForwardedFor: nil,
                      noCookies: true, kind: .freshSession))
         await delay(.freshSession)
+        if let freshHTML = freshSessionHTMLByURL[url.absoluteString] { return freshHTML }
         return try html(for: url)
     }
 

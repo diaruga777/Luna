@@ -215,6 +215,92 @@ final class ArticleResolverTests: XCTestCase {
         XCTAssertEqual(result, .paywalled(title: "Model Technique Sparks Security Concerns"))
     }
 
+    func testBostonGlobeSafariSubscriptionCaptureUsesFreshArticle() async throws {
+        let url = URL(string: "https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash/")!
+        let offer = "<html><head><title>Last Ditch Bar</title></head><body><main>"
+            + String(repeating: "<p>Subscribe now for digital access to The Boston Globe and all our journalism. Choose your plan for unlimited reading and exclusive benefits.</p>", count: 35)
+            + "</main></body></html>"
+        let prose = String(repeating: "The bar's mask policy led to a heated community meeting in Greenfield. ", count: 5)
+        let article = "<html><head><title>Last Ditch Bar</title></head><body>"
+            + "<article id=\"article-body\">"
+            + (1...5).map { "<p>Story paragraph \($0). \(prose)</p>" }.joined()
+            + "</article></body></html>"
+        let offerLength = try ArticleExtraction().extract(html: offer, baseURL: url).bodyTextLength
+        let storyLength = try ArticleExtraction().extract(html: article, baseURL: url).bodyTextLength
+        XCTAssertGreaterThan(offerLength, storyLength,
+                             "the upsell must be long enough to win the old capture floor")
+
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[url.absoluteString] = article
+        for page in [CapturedPage.safariHandoff(html: offer), .fetched(offer)] {
+            let result = await ArticleResolver.resolve(url: url, page: page, fetcher: fetcher)
+            guard case let .readable(content, _) = result else {
+                return XCTFail("expected fresh article, got \(result)")
+            }
+            XCTAssertTrue(content.wholeText.contains("Story paragraph 5"))
+            XCTAssertFalse(content.wholeText.contains("Subscribe now"))
+        }
+        XCTAssertTrue(fetcher.calls.contains { $0.kind == .freshSession && $0.url == url })
+    }
+
+    func testBostonGlobeSubscriptionResponseCannotMasqueradeAsArticle() async {
+        let url = URL(string: "https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash/")!
+        let offer = "<html><head><title>Last Ditch Bar</title></head><body><main>"
+            + String(repeating: "<p>Subscribe now for digital access to The Boston Globe and all our journalism. Choose your plan for unlimited reading and exclusive benefits.</p>", count: 35)
+            + "</main></body></html>"
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[url.absoluteString] = offer
+        let result = await ArticleResolver.resolve(url: url, fetcher: fetcher)
+        if case .readable = result { XCTFail("subscription copy was accepted as an article") }
+
+        // Some client renders keep the story wrapper and replace its children.
+        let wrappedOffer = offer.replacingOccurrences(of: "<main>", with: "<article id=\"article-body\">")
+            .replacingOccurrences(of: "</main>", with: "</article>")
+        fetcher.htmlByURL[url.absoluteString] = wrappedOffer
+        let wrappedResult = await ArticleResolver.resolve(url: url, fetcher: fetcher)
+        if case .readable = wrappedResult {
+            XCTFail("offer copy inside the article wrapper was accepted")
+        }
+    }
+
+    func testBostonGlobeMeterCookieIsClearedForArticleRetry() async {
+        let url = URL(string: "https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash/")!
+        let offer = "<html><head><title>Last Ditch Bar</title></head><body><main>"
+            + String(repeating: "<p>Subscribe now for digital access to The Boston Globe and all our journalism. Choose your plan for unlimited reading and exclusive benefits.</p>", count: 35)
+            + "</main></body></html>"
+        let prose = String(repeating: "The community members discussed the bar's updated mask policy. ", count: 6)
+        let article = "<html><head><title>Last Ditch Bar</title></head><body>"
+            + "<article id=\"article-body\">"
+            + (1...5).map { "<p>Story paragraph \($0). \(prose)</p>" }.joined()
+            + "</article></body></html>"
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[url.absoluteString] = offer
+        fetcher.freshSessionHTMLByURL[url.absoluteString] = article
+        let result = await ArticleResolver.resolve(url: url, fetcher: fetcher)
+        guard case let .readable(content, _) = result else {
+            return XCTFail("expected cookieless article, got \(result)")
+        }
+        XCTAssertTrue(content.wholeText.contains("Story paragraph 5"))
+        XCTAssertEqual(fetcher.calls.map(\.kind), [.plain, .freshSession])
+    }
+
+    func testBostonGlobeArticleBodyStillResolvesDirectly() async {
+        let url = URL(string: "https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash/")!
+        let prose = String(repeating: "The community members discussed the bar's updated mask policy. ", count: 6)
+        let html = "<html><head><title>Last Ditch Bar</title></head><body>"
+            + "<article id=\"article-body\">"
+            + (1...5).map { "<p>Story paragraph \($0). \(prose)</p>" }.joined()
+            + "</article></body></html>"
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[url.absoluteString] = html
+        let result = await ArticleResolver.resolve(url: url, fetcher: fetcher)
+        guard case let .readable(content, _) = result else {
+            return XCTFail("expected direct article, got \(result)")
+        }
+        XCTAssertTrue(content.wholeText.contains("Story paragraph 5"))
+        XCTAssertEqual(fetcher.calls.map(\.kind), [.plain])
+    }
+
     // MARK: - trusted Safari capture is a floor, not a winner
 
     /// Readable prose of `paragraphs` × 30 sentences, with no lock declaration.

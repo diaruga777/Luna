@@ -212,6 +212,13 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         return record
     }
 
+    @discardableResult
+    public func addDirectory(named name: String, now: Date = Date()) async throws -> VaultFileRecord {
+        let record = try writer.addDirectory(named: name, now: now)
+        if isConnected { try? await announcePendingChanges() }
+        return record
+    }
+
     /// Stage every entry before announcing the folder. Paths stay relative to
     /// the selected folder's parent so the same hierarchy appears on the Mac.
     public func addFolder(at sourceURL: URL, now: Date = Date()) async throws -> [String] {

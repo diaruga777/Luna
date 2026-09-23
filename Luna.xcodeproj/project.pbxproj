@@ -91,6 +91,10 @@
 		BC73C93AA28D53F0F80B6533 /* LunaDownloaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = FBD9A9848E7F387881CB8519 /* LunaDownloaderKit */; };
 		BEF3A839BE0590558E350922 /* LunaVaultSearch in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000015 /* LunaVaultSearch */; };
 		C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746380049BFBCA632316E778 /* VaultShareViewController.swift */; };
+		F10C825E0000000000000001 /* VaultIncomingQueue.swift in Vault Sources */ = {isa = PBXBuildFile; fileRef = F10C825E0000000000000003 /* VaultIncomingQueue.swift */; };
+		F10C825E0000000000000002 /* VaultIncomingQueue.swift in Share Sources */ = {isa = PBXBuildFile; fileRef = F10C825E0000000000000003 /* VaultIncomingQueue.swift */; };
+		F10C825E0000000000000004 /* VaultPhotoSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C825E0000000000000005 /* VaultPhotoSelection.swift */; };
+		F10C825E0000000000000006 /* VaultTransferController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C825E0000000000000007 /* VaultTransferController.swift */; };
 		CD329C23B9EE751289FC1447 /* LaunchPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB76A6ED9BF11562981FC803 /* LaunchPerformanceTests.swift */; };
 		D3376DB5E6C495F7AC1CD855 /* LunaAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2F9497B9CCD94E28698A4E6B /* LunaAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D420FE1CC9FC65F75887C4E0 /* LunaReaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 14B13DF93AE6646CB27E4301 /* LunaReaderKit */; };
@@ -410,6 +414,9 @@
 		70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		746380049BFBCA632316E778 /* VaultShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultShareViewController.swift; sourceTree = "<group>"; };
+		F10C825E0000000000000003 /* VaultIncomingQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultIncomingQueue.swift; sourceTree = "<group>"; };
+		F10C825E0000000000000005 /* VaultPhotoSelection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultPhotoSelection.swift; sourceTree = "<group>"; };
+		F10C825E0000000000000007 /* VaultTransferController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTransferController.swift; sourceTree = "<group>"; };
 		79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1247,6 +1254,8 @@
 				9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */,
 				1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */,
 				133CAEF0DAC38FA08C8812D9 /* VaultConnectedWiring.swift */,
+				F10C825E0000000000000005 /* VaultPhotoSelection.swift */,
+				F10C825E0000000000000007 /* VaultTransferController.swift */,
 			);
 			name = LunaVault;
 			path = LunaVault;
@@ -1265,6 +1274,7 @@
 			isa = PBXGroup;
 			children = (
 				746380049BFBCA632316E778 /* VaultShareViewController.swift */,
+				F10C825E0000000000000003 /* VaultIncomingQueue.swift */,
 			);
 			name = LunaVaultShare;
 			path = LunaVaultShare;
@@ -2610,6 +2620,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */,
+				F10C825E0000000000000002 /* VaultIncomingQueue.swift in Share Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2679,6 +2690,9 @@
 				15C9B45A3E78445980FFF42E /* VaultSceneDelegate.swift in Sources */,
 				5797E264941DA0861AD0C231 /* KindWiring+Vault.swift in Sources */,
 				4663BAD84A2B1B18249DE3D3 /* VaultConnectedWiring.swift in Sources */,
+				F10C825E0000000000000001 /* VaultIncomingQueue.swift in Vault Sources */,
+				F10C825E0000000000000004 /* VaultPhotoSelection.swift in Sources */,
+				F10C825E0000000000000006 /* VaultTransferController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3930,7 +3944,7 @@
 				CURRENT_PROJECT_VERSION = 129;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -4000,7 +4014,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaVault/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -4420,7 +4434,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaVaultShare/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -4511,7 +4525,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaVaultShare/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -4620,7 +4634,7 @@
 				CURRENT_PROJECT_VERSION = 129;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -4678,7 +4692,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaVault/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

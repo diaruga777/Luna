@@ -6,7 +6,7 @@ import LunaVaultSearch
 
 /// The home screen and Settings share this single durable peer and session.
 public actor VaultConnectedRuntime: VaultPresentationProviding {
-    public let store: VaultFolderStore
+    public nonisolated let store: VaultFolderStore
     private let dialer: any VaultPeerDialing
     private let lookup: (any VaultPeerLookup)?
     private let localID: DeviceID
@@ -146,8 +146,23 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func importFile(at url: URL) async throws {
+        try await importFile(at: url, named: url.lastPathComponent.precomposedStringWithCanonicalMapping)
+    }
+
+    public func importFile(at url: URL, named name: String) async throws {
         guard try store.peer()?.lastConnectedAt != nil else { throw VaultSyncSessionError.notPaired }
-        _ = try await session.addFile(at: url, named: url.lastPathComponent.precomposedStringWithCanonicalMapping)
+        try await ensureParentDirectories(of: name)
+        _ = try await session.addFile(at: url, named: name)
+    }
+
+    public func importDirectory(named name: String) async throws {
+        guard try store.peer()?.lastConnectedAt != nil else { throw VaultSyncSessionError.notPaired }
+        try await ensureParentDirectories(of: name)
+        if let existing = try store.file(named: name), !existing.deleted {
+            guard existing.type == .directory else { throw VaultLocalWriteError.fileAlreadyExists(name) }
+            return
+        }
+        _ = try await session.addDirectory(named: name)
     }
 
     public func importFolder(at url: URL) async throws -> [String] {
@@ -155,7 +170,27 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         return try await session.addFolder(at: url)
     }
 
+    private func ensureParentDirectories(of name: String) async throws {
+        let components = name.split(separator: "/").dropLast()
+        var path = ""
+        for component in components {
+            path = path.isEmpty ? String(component) : path + "/" + component
+            if let existing = try store.file(named: path), !existing.deleted {
+                guard existing.type == .directory else { throw VaultLocalWriteError.fileAlreadyExists(path) }
+            } else { _ = try await session.addDirectory(named: path) }
+        }
+    }
+
     public func pendingUploadCount() async throws -> Int { try store.pendingLocalChanges().count }
+
+    public func queuedImportCount() async throws -> Int {
+        let inbox = store.rootURL.appendingPathComponent("Incoming", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: inbox, includingPropertiesForKeys: nil)) ?? []
+        return files.filter {
+            !$0.lastPathComponent.hasPrefix(".") &&
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("item.json").path)
+        }.count
+    }
 
     public func pendingUploads() async throws -> [VaultPendingUpload] {
         let sent = await session.sentBytesByFile

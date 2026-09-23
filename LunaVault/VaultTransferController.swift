@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import UIKit
 import LunaVaultStore
 import LunaVaultSync
 import LunaVaultUI
@@ -19,6 +20,7 @@ import LunaVaultUI
     private var progressCompleted: Int64 = 0
     private var intakeCount = 0
     private var continuedSubmitted = false
+    private var backgroundLease: UIBackgroundTaskIdentifier = .invalid
     var didChange: (() -> Void)?
 
     init(runtime: VaultConnectedRuntime, queue: VaultIncomingQueue, bundleID: String) {
@@ -36,14 +38,22 @@ import LunaVaultUI
 
     func endIntake() { intakeCount = max(0, intakeCount - 1) }
 
+    /// Returning to Vault is a user action that resumes an existing visible
+    /// transfer. Give that resumed batch the same continued task as a new import.
+    func resumeFromUserOpen() {
+        start(userInitiated: hasWork)
+    }
+
     func start(userInitiated: Bool = false) {
         if userInitiated { submitContinuedRequest() }
         scheduleProcessingIfNeeded()
         guard worker == nil else { return }
+        guard hasWork || intakeCount > 0 || !continued.isEmpty || !processing.isEmpty else { return }
         lastPending = [:]
         completedBytes = 0
         progressTotal = 1
         progressCompleted = 0
+        beginBackgroundLease()
         worker = Task { [weak self] in
             guard let self else { return }
             await self.drain()
@@ -76,8 +86,32 @@ import LunaVaultUI
         catch { scheduleProcessingIfNeeded() }
     }
 
+    private var hasWork: Bool {
+        ((try? queue.items().isEmpty) == false) || ((try? runtime.store.pendingLocalChanges().isEmpty) == false)
+    }
+
+    private func beginBackgroundLease() {
+        guard backgroundLease == .invalid, UIApplication.shared.applicationState != .background else { return }
+        backgroundLease = UIApplication.shared.beginBackgroundTask(withName: "Vault transfer") { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.endBackgroundLease()
+                if self.continued.isEmpty && self.processing.isEmpty {
+                    self.worker?.cancel()
+                    self.scheduleProcessingIfNeeded()
+                }
+            }
+        }
+    }
+
+    private func endBackgroundLease() {
+        guard backgroundLease != .invalid else { return }
+        let value = backgroundLease
+        backgroundLease = .invalid
+        UIApplication.shared.endBackgroundTask(value)
+    }
+
     private func scheduleProcessingIfNeeded() {
-        let hasWork = ((try? queue.items().isEmpty) == false) || ((try? runtime.store.pendingLocalChanges().isEmpty) == false)
         guard hasWork, (try? runtime.store.peer()?.lastConnectedAt) != nil else { return }
         let request = BGProcessingTaskRequest(identifier: identifierPrefix + ".sync")
         request.requiresNetworkConnectivity = true
@@ -88,6 +122,7 @@ import LunaVaultUI
         var succeeded = false
         defer {
             worker = nil
+            endBackgroundLease()
             for task in continued { task.setTaskCompleted(success: succeeded) }
             for task in processing { task.setTaskCompleted(success: succeeded) }
             continued.removeAll(); processing.removeAll()

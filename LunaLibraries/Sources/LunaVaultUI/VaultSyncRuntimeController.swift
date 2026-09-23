@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import LunaStorage
 import LunaVaultSync
 
 /// Owns the app-process wake sources for durable Vault sync. Provider changes,
@@ -10,6 +11,7 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
     private let taskIdentifier: String
     private let metadataQuery: NSMetadataQuery?
     private let notificationCenter: NotificationCenter
+    private let wifiOnlyUploads: @Sendable () -> Bool
     private let lock = NSLock()
     private var observerTokens: [NSObjectProtocol] = []
     private var activeTask: Task<Void, Never>?
@@ -23,14 +25,21 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
     }
 
     public init?(services: VaultRuntimeServices, bundle: Bundle = .main,
-                 notificationCenter: NotificationCenter = .default) {
+                 notificationCenter: NotificationCenter = .default,
+                 wifiOnlyUploads: @escaping @Sendable () -> Bool = { false }) {
         guard let sync = services.syncCoordinator,
               let identifier = Self.taskIdentifier(bundle: bundle) else { return nil }
         self.sync = sync
         taskIdentifier = identifier
         metadataQuery = services.policy.location == .iCloud ? NSMetadataQuery() : nil
         self.notificationCenter = notificationCenter
+        self.wifiOnlyUploads = wifiOnlyUploads
         super.init()
+
+        _ = NetworkReachability.shared
+        observerTokens.append(notificationCenter.addObserver(
+            forName: NetworkReachability.wifiAvailableNotification, object: nil, queue: nil
+        ) { [weak self] _ in self?.wake(.providerStateChanged) })
 
         if let metadataQuery {
             metadataQuery.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
@@ -66,7 +75,8 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
             guard activeTask == nil else { return }
             activeTask = Task { [weak self] in
                 guard let self else { return }
-                _ = await self.sync.runReadyJobs(wakeReason: reason)
+                _ = await self.sync.runReadyJobs(wakeReason: reason,
+                                                 uploadsAllowed: self.uploadsAllowed)
                 self.lock.withLock { self.activeTask = nil }
                 self.scheduleIfNeeded()
             }
@@ -87,7 +97,8 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
         task.expirationHandler = { [weak self] in self?.activeTask?.cancel() }
         activeTask = Task { [weak self] in
             guard let self else { task.setTaskCompleted(success: false); return }
-            _ = await self.sync.runReadyJobs(wakeReason: .scheduled)
+            _ = await self.sync.runReadyJobs(wakeReason: .scheduled,
+                                             uploadsAllowed: self.uploadsAllowed)
             let succeeded = !Task.isCancelled
             self.lock.withLock { self.activeTask = nil }
             task.setTaskCompleted(success: succeeded)
@@ -97,11 +108,15 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
     }
 
     private func scheduleIfNeeded() {
-        guard sync.hasPendingJobs() else { return }
+        guard sync.hasPendingJobs(uploadsAllowed: uploadsAllowed) else { return }
         let request = BGProcessingTaskRequest(identifier: taskIdentifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15)
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private var uploadsAllowed: Bool {
+        !wifiOnlyUploads() || NetworkReachability.shared.isOnWiFi
     }
 }

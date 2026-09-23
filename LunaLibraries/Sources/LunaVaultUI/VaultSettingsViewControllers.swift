@@ -42,6 +42,8 @@ public struct VaultSettingsActions {
     public var clearCache: (() async throws -> Void)?
     public var rebuildIndex: (() async throws -> Void)?
     public var requestICloudEviction: (() async -> VaultICloudLocalState)?
+    public var wifiOnlyUploads: (() -> Bool)?
+    public var setWifiOnlyUploads: ((Bool) -> Void)?
     /// Called after a child settings flow changes a provider/keychain input.
     /// The host uses this to replace its runtime and wake the new sync queue.
     public var reconfigureRuntime: (() -> Void)?
@@ -57,6 +59,8 @@ public struct VaultSettingsActions {
                 clearCache: (() async throws -> Void)? = nil,
                 rebuildIndex: (() async throws -> Void)? = nil,
                 requestICloudEviction: (() async -> VaultICloudLocalState)? = nil,
+                wifiOnlyUploads: (() -> Bool)? = nil,
+                setWifiOnlyUploads: ((Bool) -> Void)? = nil,
                 reconfigureRuntime: (() -> Void)? = nil,
                 enrollmentPrepared: ((VaultMacPairingEnrollment) -> Void)? = nil,
                 credentialSaved: ((VaultMacPairingCredential) -> Void)? = nil,
@@ -67,6 +71,8 @@ public struct VaultSettingsActions {
         self.clearCache = clearCache
         self.rebuildIndex = rebuildIndex
         self.requestICloudEviction = requestICloudEviction
+        self.wifiOnlyUploads = wifiOnlyUploads
+        self.setWifiOnlyUploads = setWifiOnlyUploads
         self.reconfigureRuntime = reconfigureRuntime
         self.enrollmentPrepared = enrollmentPrepared
         self.credentialSaved = credentialSaved
@@ -78,12 +84,13 @@ public struct VaultSettingsActions {
 
 public final class VaultSettingsViewController: UITableViewController {
     private enum Row: CaseIterable {
-        case storage, cache, index, security, mac
+        case storage, cache, index, uploads, security, mac
         var title: String {
             switch self {
             case .storage: return "Storage"
             case .cache: return "Cache"
             case .index: return "Search index"
+            case .uploads: return "Uploads"
             case .security: return "Security"
             case .mac: return "Mac"
             }
@@ -93,6 +100,7 @@ public final class VaultSettingsViewController: UITableViewController {
             case .storage: return "internaldrive"
             case .cache: return "archivebox"
             case .index: return "magnifyingglass"
+            case .uploads: return "arrow.up.circle"
             case .security: return "lock"
             case .mac: return "desktopcomputer"
             }
@@ -156,6 +164,10 @@ public final class VaultSettingsViewController: UITableViewController {
             controller = VaultCacheSettingsViewController(onClearCache: actions.clearCache)
         case .index:
             controller = VaultIndexSettingsViewController(onRebuildIndex: actions.rebuildIndex)
+        case .uploads:
+            controller = VaultUploadSettingsViewController(
+                wifiOnly: actions.wifiOnlyUploads?() ?? true,
+                onChange: actions.setWifiOnlyUploads)
         case .security:
             controller = VaultSecuritySettingsViewController()
         case .mac:
@@ -329,6 +341,53 @@ public final class VaultIndexSettingsViewController: UIViewController {
             }
             await MainActor.run { self?.button.isEnabled = true }
         }
+    }
+}
+
+public final class VaultUploadSettingsViewController: UIViewController {
+    private let wifiOnlySwitch = UISwitch()
+    private let onChange: ((Bool) -> Void)?
+
+    public init(wifiOnly: Bool, onChange: ((Bool) -> Void)? = nil) {
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+        title = "Uploads"
+        wifiOnlySwitch.isOn = wifiOnly
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let heading = UILabel()
+        heading.text = "Upload queued files only on Wi-Fi"
+        heading.font = .preferredFont(forTextStyle: .headline)
+        heading.numberOfLines = 0
+
+        let explanation = UILabel()
+        explanation.text = "Queued uploads wait for Wi-Fi when this is on. Downloads and other sync work can still use cellular."
+        explanation.font = .preferredFont(forTextStyle: .body)
+        explanation.textColor = .secondaryLabel
+        explanation.numberOfLines = 0
+
+        wifiOnlySwitch.accessibilityIdentifier = "vault.uploads.wifi-only"
+        wifiOnlySwitch.accessibilityLabel = "Upload queued files only on Wi-Fi"
+        wifiOnlySwitch.addTarget(self, action: #selector(valueChanged), for: .valueChanged)
+
+        let row = UIStackView(arrangedSubviews: [heading, wifiOnlySwitch])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 16
+        let stack = settingsStack([row, explanation])
+        view.addSubview(stack)
+        pin(stack)
+    }
+
+    @objc private func valueChanged() {
+        onChange?(wifiOnlySwitch.isOn)
     }
 }
 

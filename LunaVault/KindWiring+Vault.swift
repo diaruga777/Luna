@@ -13,6 +13,18 @@ import LunaVaultSync
 import LunaVaultTailscale
 import LunaVaultUI
 
+private enum VaultUploadNetworkPreference {
+    private static let key = "vault.wifiOnlyUploads"
+
+    static func isWiFiOnly() -> Bool {
+        (UserDefaults(suiteName: AppConfig.appGroupID)?.object(forKey: key) as? Bool) ?? true
+    }
+
+    static func setWiFiOnly(_ enabled: Bool) {
+        UserDefaults(suiteName: AppConfig.appGroupID)?.set(enabled, forKey: key)
+    }
+}
+
 /// The composition seam for Luna Vault. The app owns construction of the
 /// repository, root-key manager, and optional paired-Mac backend here. The
 /// scene receives only the resulting runtime instead of locating services.
@@ -148,6 +160,11 @@ import LunaVaultUI
                 }.value
             },
             requestICloudEviction: requestICloudEviction,
+            wifiOnlyUploads: VaultUploadNetworkPreference.isWiFiOnly,
+            setWifiOnlyUploads: { value in
+                VaultUploadNetworkPreference.setWiFiOnly(value)
+                syncRuntime?.wake(.providerStateChanged)
+            },
             reconfigureRuntime: {
                 invalidateRuntime()
                 _ = makeServices()
@@ -205,7 +222,9 @@ import LunaVaultUI
                     runtimeIdentity: runtimeIdentity)
             }
             services = value
-            syncRuntime = VaultSyncRuntimeController(services: value)
+            syncRuntime = VaultSyncRuntimeController(
+                services: value,
+                wifiOnlyUploads: { VaultUploadNetworkPreference.isWiFiOnly() })
             installBackgroundRuntime(for: value)
             return value
         } catch {

@@ -24,6 +24,10 @@ protected staged plaintext with the production backend identity and current root
 object row or upload job is made visible, and places the sealed file in the durable upload
 staging area so replay cannot produce a missing-payload job.
 
+Vault Settings → Uploads has a Wi-Fi-only switch, enabled by default. With the switch on, queued
+uploads stay durable until Wi-Fi is available; downloads and deletes continue to follow their
+normal network policy. A Wi-Fi-available path change wakes the sync queue immediately.
+
 Object visibility is a durable `object_visibility` row. Atomic imports insert the object, protected
 content, and idempotent jobs while the row remains hidden; metadata is committed and only then is
 the object published. SQLite claim queries require visibility and accept an explicit job-kind set,

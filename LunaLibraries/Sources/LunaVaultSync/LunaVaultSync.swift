@@ -221,9 +221,11 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
     /// resume without retaining plaintext or relying on in-memory closures.
     @discardableResult
     public func runReadyJobs(wakeReason: VaultSyncWakeReason,
+                             uploadsAllowed: Bool = true,
                              now: Date = Date()) async -> [VaultSyncOperationResult] {
         let candidates = (try? repository.jobs(kinds: [.upload, .download, .delete]))?.filter {
             $0.backendKey == backend.identity.stableKey &&
+            (uploadsAllowed || $0.kind != .upload) &&
             [.queued, .retrying, .running].contains($0.state)
         } ?? []
         var results: [VaultSyncOperationResult] = []
@@ -299,9 +301,10 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         return results
     }
 
-    public func hasPendingJobs() -> Bool {
+    public func hasPendingJobs(uploadsAllowed: Bool = true) -> Bool {
         ((try? repository.jobs(kinds: [.upload, .download, .delete])) ?? []).contains {
             $0.backendKey == backend.identity.stableKey &&
+            (uploadsAllowed || $0.kind != .upload) &&
             [.queued, .retrying, .running].contains($0.state)
         }
     }

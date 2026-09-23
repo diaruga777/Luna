@@ -186,6 +186,9 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
                 await previous?.value
                 guard !Task.isCancelled else { return }
                 do {
+                    for folder in incoming.files where folder.type == .directory && !folder.invalid && !folder.deleted {
+                        try receiveDirectory(folder)
+                    }
                     for file in incoming.files where file.type == .file && !file.invalid {
                         try await receive(file, from: connection)
                     }
@@ -235,6 +238,27 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
         try FileManager.default.moveItem(at: temporary, to: destination)
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(file.modifiedS))], ofItemAtPath: destination.path)
         var saved = file; saved.sequence = try index.maxSequence() + 1
+        try index.upsert(CompanionFileRecord(info: saved))
+    }
+
+    private func receiveDirectory(_ folder: BEPFileInfo) throws {
+        try folder.validateForWire()
+        let destination = try safeURL(folder.name)
+        if let existing = try index.file(named: folder.name) {
+            guard existing.type == .directory else {
+                throw VaultTransportError.internalError("A Mac file already has this folder name: \(folder.name)")
+            }
+            return
+        }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: destination.path, isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else {
+                throw VaultTransportError.internalError("A Mac file already has this folder name: \(folder.name)")
+            }
+        } else {
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        }
+        var saved = folder; saved.sequence = try index.maxSequence() + 1
         try index.upsert(CompanionFileRecord(info: saved))
     }
 

@@ -348,6 +348,39 @@ public final class VaultFolderStore: @unchecked Sendable {
         }
     }
 
+    /// A folder is an index entry too, including when it has no files.
+    @discardableResult
+    public func stageDirectory(name: String, modified: Date, ourShortID: UInt64,
+                               now: Date = Date()) throws -> VaultFileRecord {
+        try BEPFileInfo.validateName(name)
+        return try db.transaction {
+            let existing = try fileUnlocked(named: name)
+            let version = (existing?.version ?? .empty).updated(by: ourShortID, now: now)
+            let modifiedS = Int64(modified.timeIntervalSince1970.rounded(.down))
+            let modifiedNs = Int32((modified.timeIntervalSince1970 - TimeInterval(modifiedS)) * 1_000_000_000)
+            let generation = try db.scalarUnlocked("SELECT COALESCE((SELECT index_generation FROM peer WHERE id = 1), 0)")
+            try db.executeUnlocked("""
+            INSERT INTO files(name, parent, type, size, modified_s, modified_ns, modified_by, deleted, invalid, version, sequence,
+                block_size, blocks_hash, block_hashes, origin, generation, change_seq, first_seen, needs_index,
+                indexed_blocks_hash, thumbnail_blocks_hash, cache_blocks_hash, cache_bytes, cache_last_access, cache_pinned)
+            VALUES (?, ?, 1, 0, ?, ?, ?, 0, 0, ?, 0, 0, X'', X'', 1, ?, ?, ?, 0, X'', X'', NULL, 0, NULL, 0)
+            ON CONFLICT(name) DO UPDATE SET type = 1, size = 0, modified_s = excluded.modified_s,
+                modified_ns = excluded.modified_ns, modified_by = excluded.modified_by, deleted = 0, invalid = 0,
+                version = excluded.version, block_size = 0, blocks_hash = X'', block_hashes = X'',
+                origin = 1, change_seq = excluded.change_seq, needs_index = 0,
+                cache_blocks_hash = NULL, cache_bytes = 0, cache_last_access = NULL, cache_pinned = 0
+            """, [.text(name), .text(Self.parent(of: name)), .integer(modifiedS), .integer(Int64(modifiedNs)),
+                  .integer(Int64(bitPattern: ourShortID)), .blob(version.storageBytes), .integer(generation),
+                  .integer(try nextChangeSequenceUnlocked()), .double(now.timeIntervalSinceReferenceDate)])
+            try db.executeUnlocked("""
+            INSERT INTO local_changes(name, kind, version, created_at) VALUES (?, 0, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET kind = 0, version = excluded.version, created_at = excluded.created_at
+            """, [.text(name), .blob(version.storageBytes), .double(now.timeIntervalSinceReferenceDate)])
+            guard let record = try fileUnlocked(named: name) else { throw VaultStoreError.invalidRecord(name) }
+            return record
+        }
+    }
+
     /// Records a delete: a tombstone with our version and a pending change.
     /// Returns nil when the file is unknown or already deleted.
     @discardableResult

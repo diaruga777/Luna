@@ -27,6 +27,63 @@ final class VaultConnectedPairingTests: XCTestCase {
         do { try await runtime.removePairing(); XCTFail("Pending uploads must prevent disconnect") } catch { }
         XCTAssertEqual(try store.peer()?.deviceID, peer.deviceID)
         XCTAssertEqual(try store.pendingLocalChanges().count, 1)
+        do {
+            try await runtime.waitForUpload(names: [source.lastPathComponent])
+            XCTFail("A local import must not be reported as saved on the Mac")
+        } catch let error as VaultSyncSessionError {
+            XCTAssertEqual(error, .uploadPending)
+        }
+    }
+
+    func testFolderImportPreservesNestedFilesAndEmptyDirectories() async throws {
+        let folder = directory.appendingPathComponent("Shared")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let server = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
+        defer { server.close() }
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil,
+            localID: transport.identity())
+        try await runtime.pair(code: server.code.text)
+        let selected = directory.appendingPathComponent("Project")
+        let nested = selected.appendingPathComponent("Notes")
+        let empty = selected.appendingPathComponent("Empty")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        let content = Data("Nested upload".utf8)
+        try content.write(to: nested.appendingPathComponent("readme.txt"))
+        let names = try await runtime.importFolder(at: selected)
+        XCTAssertEqual(Set(names), Set(["Project", "Project/Notes", "Project/Notes/readme.txt", "Project/Empty"]))
+        try await runtime.waitForUpload(names: names, timeout: 15)
+        XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("Project/Notes/readme.txt")), content)
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Project/Empty").path,
+                                                       isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        let second = directory.appendingPathComponent("Second/Project/Notes")
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        try Data("Added later".utf8).write(to: second.appendingPathComponent("extra.txt"))
+        let additional = try await runtime.importFolder(at: second.deletingLastPathComponent())
+        XCTAssertEqual(additional, ["Project/Notes/extra.txt"])
+        try await runtime.waitForUpload(names: additional, timeout: 15)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("Project/Notes/extra.txt")),
+                       Data("Added later".utf8))
+        await runtime.stop()
+    }
+
+    func testFourGiBFileMetadataKeeps64BitSizeAndOffsets() throws {
+        let size: Int64 = 4 * 1_024 * 1_024 * 1_024 + 123
+        let blockSize = BlockLayout.blockSize(forFileSize: size)
+        XCTAssertEqual(blockSize, 4 * 1_024 * 1_024)
+        let hashes = Data(repeating: 7, count: Int((size + Int64(blockSize) - 1) / Int64(blockSize)) * 32)
+        let blocks = BlockLayout.blocks(fromConcatenatedHashes: hashes, fileSize: size, blockSize: blockSize)
+        XCTAssertEqual(blocks.last.map { $0.offset + Int64($0.size) }, size)
+        let file = BEPFileInfo(name: "archive.zip", size: size, blockSize: Int32(blockSize), blocks: blocks,
+                               blocksHash: BlockLayout.blocksHash(blocks))
+        let decoded = try BEPFileInfo(protobuf: file.encoded())
+        XCTAssertEqual(decoded.size, size)
+        XCTAssertEqual(decoded.blocks.last?.offset, blocks.last?.offset)
     }
 
     func testChangingMacCannotForgetFilesWaitingToUpload() async throws {

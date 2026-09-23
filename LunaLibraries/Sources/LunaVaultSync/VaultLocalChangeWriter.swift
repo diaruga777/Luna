@@ -2,10 +2,20 @@ import Foundation
 import LunaVaultBEP
 import LunaVaultStore
 
-public enum VaultLocalWriteError: Error, Equatable, Sendable {
+public enum VaultLocalWriteError: Error, Equatable, Sendable, LocalizedError {
     case notPaired
     case sourceNotRegularFile
     case fileAlreadyExists(String)
+    case unsupportedEntry(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .notPaired: return "Connect your Mac before importing."
+        case .sourceNotRegularFile: return "Choose a regular file or folder."
+        case .fileAlreadyExists(let name): return "A file or folder named \(name) already exists in Vault."
+        case .unsupportedEntry(let name): return "Vault cannot import \(name). Remove links or special items from the folder and try again."
+        }
+    }
 }
 
 /// Projection cleanup supplied by the indexing/UI composition root. The sync
@@ -72,6 +82,18 @@ public final class VaultLocalChangeWriter: @unchecked Sendable {
     }
 
     @discardableResult
+    public func addDirectory(named name: String, modified: Date = Date(),
+                             now: Date = Date()) throws -> VaultFileRecord {
+        guard let peer = try store.peer(), peer.isFolderAccepted else { throw VaultLocalWriteError.notPaired }
+        try BEPFileInfo.validateName(name)
+        if let existing = try store.file(named: name), !existing.deleted {
+            throw VaultLocalWriteError.fileAlreadyExists(name)
+        }
+        return try store.stageDirectory(name: name, modified: modified,
+                                        ourShortID: localDevice.shortID, now: now)
+    }
+
+    @discardableResult
     public func deleteFile(named name: String, now: Date = Date()) async throws -> VaultFileRecord? {
         guard let peer = try store.peer(), peer.isFolderAccepted else { throw VaultLocalWriteError.notPaired }
         guard let tombstone = try store.stageDelete(name: name, ourShortID: localDevice.shortID, now: now) else {
@@ -89,4 +111,3 @@ public final class VaultLocalChangeWriter: @unchecked Sendable {
         #endif
     }
 }
-

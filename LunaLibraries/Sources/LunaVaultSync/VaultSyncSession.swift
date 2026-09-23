@@ -19,6 +19,8 @@ public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
     case noConnection
     case allAddressesFailed([String])
     case initialIndexTimedOut
+    case uploadPending
+    case uploadInterrupted(String)
 
     public var errorDescription: String? {
         switch self {
@@ -27,6 +29,8 @@ public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
         case .noConnection: return "The Mac closed the connection. Keep Luna Vault open on the Mac and accept the pairing request."
         case .allAddressesFailed: return "Your iPhone could not reach the Mac. Connect both devices to the same Wi-Fi, allow Local Network access for Luna Vault in iPhone Settings, and copy a fresh code. For a Tailscale address, connect Tailscale on both devices."
         case .initialIndexTimedOut: return "The Mac did not send its file list. Accept the pairing request on the Mac, then try again."
+        case .uploadPending: return "This import is saved on your iPhone but has not reached your Mac. Keep both apps open and reconnect; Vault will retry the pending upload."
+        case .uploadInterrupted(let reason): return "This import is saved on your iPhone but has not reached your Mac. Transfer stopped: \(reason). Reconnect to retry."
         }
     }
 }
@@ -199,8 +203,53 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     @discardableResult
     public func addFile(at sourceURL: URL, named name: String, now: Date = Date()) async throws -> VaultFileRecord {
         let record = try writer.addFile(at: sourceURL, named: name, now: now)
-        if isConnected { try await announcePendingChanges() }
+        if isConnected { try? await announcePendingChanges() }
         return record
+    }
+
+    /// Stage every entry before announcing the folder. Paths stay relative to
+    /// the selected folder's parent so the same hierarchy appears on the Mac.
+    public func addFolder(at sourceURL: URL, now: Date = Date()) async throws -> [String] {
+        let fm = FileManager.default
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                                         .contentModificationDateKey]
+        let root = sourceURL.standardizedFileURL
+        var entries: [(URL, String, Bool, Date)] = []
+        func collect(_ url: URL, name: String) throws {
+            try BEPFileInfo.validateName(name)
+            let values = try url.resourceValues(forKeys: keys)
+            guard values.isSymbolicLink != true else { throw VaultLocalWriteError.unsupportedEntry(name) }
+            let directory = values.isDirectory == true
+            guard directory || values.isRegularFile == true else { throw VaultLocalWriteError.unsupportedEntry(name) }
+            entries.append((url, name, directory, values.contentModificationDate ?? now))
+            if directory {
+                for child in try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: Array(keys)).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                    // The Mac scanner also excludes hidden entries. Do not
+                    // leave an invisible upload pending forever for .DS_Store.
+                    if child.lastPathComponent.hasPrefix(".") { continue }
+                    try collect(child, name: name + "/" + child.lastPathComponent.precomposedStringWithCanonicalMapping)
+                }
+            }
+        }
+        try collect(root, name: root.lastPathComponent.precomposedStringWithCanonicalMapping)
+        for (_, name, directory, _) in entries {
+            if let existing = try store.file(named: name), !existing.deleted,
+               !(directory && existing.type == .directory) {
+                throw VaultLocalWriteError.fileAlreadyExists(name)
+            }
+        }
+        var names: [String] = []
+        for (url, name, directory, modified) in entries {
+            try Task.checkCancellation()
+            if directory {
+                if let existing = try store.file(named: name), !existing.deleted { continue }
+                _ = try writer.addDirectory(named: name, modified: modified, now: now)
+            }
+            else { _ = try writer.addFile(at: url, named: name, now: now) }
+            names.append(name)
+        }
+        if isConnected { try? await announcePendingChanges() }
+        return names
     }
 
     @discardableResult

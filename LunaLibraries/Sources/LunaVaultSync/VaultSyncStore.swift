@@ -23,6 +23,7 @@ public protocol VaultSyncStoring: AnyObject, Sendable {
 
     func stageImport(name: String, size: Int64, blockSize: Int, blocks: [BlockInfo], modified: Date,
                      ourShortID: UInt64, now: Date) throws -> VaultFileRecord
+    func stageDirectory(name: String, modified: Date, ourShortID: UInt64, now: Date) throws -> VaultFileRecord
     func stageDelete(name: String, ourShortID: UInt64, now: Date) throws -> VaultFileRecord?
     func pendingLocalChanges() throws -> [VaultLocalChange]
     func announcedIndexEntries() throws -> [BEPFileInfo]

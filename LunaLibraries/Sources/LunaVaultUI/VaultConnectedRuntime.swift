@@ -147,7 +147,33 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
 
     public func importFile(at url: URL) async throws {
         guard try store.peer()?.lastConnectedAt != nil else { throw VaultSyncSessionError.notPaired }
-        _ = try await session.addFile(at: url, named: url.lastPathComponent)
+        _ = try await session.addFile(at: url, named: url.lastPathComponent.precomposedStringWithCanonicalMapping)
+    }
+
+    public func importFolder(at url: URL) async throws -> [String] {
+        guard try store.peer()?.lastConnectedAt != nil else { throw VaultSyncSessionError.notPaired }
+        return try await session.addFolder(at: url)
+    }
+
+    public func pendingUploadCount() async throws -> Int { try store.pendingLocalChanges().count }
+
+    /// Mac confirmation arrives only after it has written and indexed the bytes.
+    public func waitForUpload(names: [String], timeout: TimeInterval? = nil) async throws {
+        let wanted = Set(names)
+        let deadline = timeout.map { Date().addingTimeInterval($0) }
+        while true {
+            try Task.checkCancellation()
+            let pending = Set(try store.pendingLocalChanges().map(\.name))
+            if pending.isDisjoint(with: wanted) { return }
+            guard await session.isConnected else {
+                if case .offline(let reason) = await session.currentState {
+                    throw VaultSyncSessionError.uploadInterrupted(reason)
+                }
+                throw VaultSyncSessionError.uploadPending
+            }
+            if let deadline, Date() >= deadline { throw VaultSyncSessionError.uploadPending }
+            try await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     public func cachePresentation() async throws -> VaultCachePresentation {

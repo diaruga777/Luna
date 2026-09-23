@@ -12,6 +12,7 @@
 
 import LunaMediaDownload
 import LunaModels
+import LunaSavesUI
 import LunaStorage
 import UIKit
 import XCTest
@@ -32,6 +33,34 @@ final class SavedMediaDeckSlotTests: XCTestCase {
     }
 
     // MARK: - Failed saves are cards, so they are slots
+
+    /// The share extension can save a reel link without creating a media row
+    /// (for example, when the user closes its preview before downloading).
+    /// Downloader must still show that save and offer its download control.
+    @MainActor
+    func testInstagramReelSavedAsLinkRemainsInDownloaderDeck() throws {
+        let url = "https://www.instagram.com/remi_chu/reel/Dcm3bSupNHf/"
+        var save = SavedItem(urlString: url)
+        save.platform = .instagram
+        save.platformItemID = "Dcm3bSupNHf"
+        save.state = .ready
+        SavedMediaDeckFixtures.reseedSaves([save])
+        XCTAssertNil(SavedMediaStore.shared.item(withID: save.id))
+        XCTAssertTrue(LunaApp.downloader.includes(save))
+
+        let previousMedia = CardKindPresenters.media
+        defer { CardKindPresenters.media = previousMedia }
+        let presenter = MediaCardPresenter()
+        CardKindPresenters.media = presenter
+        let deck = MediaCardDeck.makeRoot()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        XCTAssertTrue(deck.slots.contains { $0.id == save.id })
+        XCTAssertTrue(presenter.cardContent(for: save, host: deck)
+            is UndownloadedMediaCardContentViewController)
+        _ = window
+    }
 
     /// A failed save sits after the media rows, and the deck must count it.
     /// Feeding `canPull` only `items.count + cardOffset` — the last MEDIA

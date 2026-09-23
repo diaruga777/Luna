@@ -721,8 +721,9 @@ enum MediaCardDeck {
         let style = CardCarouselStyle.singleKindDeck
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
-            // This app has no generic link card, so a platform save with
-            // nothing downloaded behind it is not a slot here.
+            // The media presenter draws a download card for a saved media
+            // link even before the library has a file row. This app still
+            // has no fallback for unrelated kinds.
             configuration.showsSavesWithoutKindContent = false
             // The LINK is shareable in every storage state — only the file row of
             // the menu waits for a download — so the circle shows for any media

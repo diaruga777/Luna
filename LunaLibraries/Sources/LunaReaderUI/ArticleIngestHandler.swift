@@ -5,7 +5,9 @@
 
 import LunaArchiveReader
 import LunaDocuments
+import LunaHTMLClassification
 import LunaModels
+import LunaPaywallBypass
 import LunaStorage
 import Foundation
 
@@ -20,7 +22,15 @@ import Foundation
 /// tier, so the app shell installs the witness there.
 public final class ArticleIngestHandler {
 
-    public init() {}
+    private let subscriptionRepairResolver: (URL) async -> ArticleResolution
+
+    public init(
+        subscriptionRepairResolver: @escaping (URL) async -> ArticleResolution = {
+            await ArticleResolver.resolve(url: $0)
+        }
+    ) {
+        self.subscriptionRepairResolver = subscriptionRepairResolver
+    }
 
     // MARK: - Articles
 
@@ -117,6 +127,7 @@ public final class ArticleIngestHandler {
     /// re-attempt an un-archivable page (which never gets a saved file, so it would
     /// otherwise re-enter the candidate set on every pass) on every refresh.
     @MainActor private var archiveBackfillAttempted: Set<UUID> = []
+    @MainActor private var subscriptionRepairAttempted: Set<UUID> = []
 
     /// `.webarchive` capture was added after many items were saved, and several save
     /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
@@ -133,6 +144,8 @@ public final class ArticleIngestHandler {
             isBackfillingArchives = true
             defer { isBackfillingArchives = false }
 
+            await repairBostonGlobeSubscriptionSaves(store: store)
+
             let candidates = store.items().filter { item in
                 item.state == .ready
                     && item.sanitizedDocumentType == nil          // documents already have a source file
@@ -147,6 +160,45 @@ public final class ArticleIngestHandler {
                 await captureWebArchiveIfPossible(for: item, url: url, html: nil, store: store)
             }
         }
+    }
+
+    /// Older Globe saves may already be `.ready` with a long subscription
+    /// pitch. A normal pending-save sweep intentionally skips ready rows, so
+    /// replace only unmistakable offers when the app next runs its backfills.
+    /// Failed attempts leave the old row untouched; one attempt per session
+    /// avoids repeated network work on every foreground transition.
+    @MainActor
+    func repairBostonGlobeSubscriptionSaves(store: SavesStore) async {
+        let candidates = store.items().filter { item in
+            guard item.state == .ready,
+                  !subscriptionRepairAttempted.contains(item.id),
+                  let url = item.url,
+                  let content = store.content(for: item) else { return false }
+            return Self.isBostonGlobeSubscriptionOffer(content, url: url)
+        }
+        for item in candidates.prefix(4) {
+            guard let url = item.url else { continue }
+            subscriptionRepairAttempted.insert(item.id)
+            let resolution = await subscriptionRepairResolver(url)
+            guard case let .readable(content, html) = resolution,
+                  !Self.isBostonGlobeSubscriptionOffer(content, url: url),
+                  let current = store.item(withID: item.id), current.state == .ready
+            else { continue }
+            await persistArticle(content, html: html, for: current, url: url, store: store)
+        }
+    }
+
+    static func isBostonGlobeSubscriptionOffer(_ content: ArticleContent, url: URL) -> Bool {
+        guard let host = url.host?.lowercased(),
+              host == "bostonglobe.com" || host.hasSuffix(".bostonglobe.com")
+        else { return false }
+        let opening = content.wholeText.prefix(2_000).lowercased()
+        if PaywallDetector.gateMarkers.contains(where: opening.contains) { return true }
+        let offerAction = ["subscribe now", "become a subscriber", "start your subscription",
+                           "choose your plan", "subscribe to read"].contains(where: opening.contains)
+        let offerProduct = ["digital access", "unlimited access", "subscriber benefits",
+                            "subscription offer", "subscription plan"].contains(where: opening.contains)
+        return offerAction && offerProduct
     }
 
     /// Captures and stores a cleaned `.webarchive` from the HTML that produced the

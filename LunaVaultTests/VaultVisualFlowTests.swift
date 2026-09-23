@@ -123,6 +123,20 @@ final class VaultVisualFlowTests: XCTestCase {
         XCTAssertEqual(root.tableView.numberOfRows(inSection: 0), 2)
         try await capture("09-connected-empty")
     }
+    func testPendingTransferShowsByteProgressPerFile() async throws {
+        let item = VaultPendingUpload(name: "Archive.zip", totalBytes: 4 * 1_024 * 1_024 * 1_024,
+                                      sentBytes: 1 * 1_024 * 1_024 * 1_024,
+                                      isDeleting: false, isDirectory: false)
+        let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(
+            connectionStatus: { .connected }, pendingUploads: { [item] }))
+        try await host(root)
+        try await waitUntil { root.tableView.numberOfSections == 3 }
+        XCTAssertEqual(root.tableView.numberOfRows(inSection: 1), 1)
+        let cell = root.tableView(root.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertTrue((cell.accessibilityLabel ?? "").contains("Archive.zip"))
+        XCTAssertTrue((cell.accessibilityLabel ?? "").contains("of"))
+        try await capture("10-pending-transfer")
+    }
     func testConnectedSettingsVisuals() async throws {
         let controller = VaultConnectedSettingsViewController(services: VaultPresentationServices(
             connectionStatus: { .connected },

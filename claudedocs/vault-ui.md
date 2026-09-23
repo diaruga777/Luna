@@ -41,9 +41,14 @@ files avoid a flashing progress sheet. Quick Look is presented from the visible
 folder. Large preview copies run off the main actor, and temporary plaintext
 preview copies are removed when Quick Look closes. The add menu offers separate
 file and folder pickers. Folder import retains nested paths and empty folders.
-The import sheet changes from local preparation to Mac transfer and closes only
-after Mac confirmation; Home displays the count of pending items when a transfer
-is interrupted. Import errors appear after the document picker has dismissed.
+The import sheet covers local preparation, then closes so Home can show each
+pending file in Transfers with bytes sent,
+total bytes, and a progress bar; reaching the byte total means Vault is waiting
+for the Mac to save and confirm it. A pending file or folder can be cancelled from
+that row. Recent, search, and folder rows offer swipe to delete, with confirmation.
+Deletion remains pending until the Mac acknowledges it; the same name cannot be
+reimported before that acknowledgement. Import errors appear after the document
+picker has dismissed.
 
 The share extension is still a deferred capability. It now says so and directs
 users to the in-app Files picker instead of displaying a false save/Done flow.
@@ -78,7 +83,8 @@ and scrollable setup at accessibility text sizes. Its XCTest attachments capture
 light/dark libraries, search, setup, connected settings, and large-text states.
 
 `LunaVaultConnectionTests` verifies real loopback TLS pairing/download/upload,
-connection failure behavior, and preserving imports during disconnect. Its separate
+per-file transfer progress, block timeouts, resumable Mac uploads, and cancellation.
+Its separate
 scheme avoids the legacy app-hosted test bundle's duplicate package type linkage.
 Live user-Mac pairing, Files-provider UI, and physical-device animation performance
 are not implied by these automated checks.

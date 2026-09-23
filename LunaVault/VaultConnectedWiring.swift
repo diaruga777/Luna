@@ -87,7 +87,6 @@ import LunaVaultUI
     private var work: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
     private weak var progress: UIViewController?
-    private var progressMessage = "Preparing a local copy. Keep Vault open."
     private var visiblePresenter: UIViewController? { presenter?.navigationController?.topViewController ?? presenter }
     init(runtime: VaultConnectedRuntime) { self.runtime = runtime }
 
@@ -110,7 +109,6 @@ import LunaVaultUI
     }
     private func startImport(_ url: URL) {
         guard work == nil else { return }
-        progressMessage = "Preparing a local copy. Keep Vault open."
         showProgress(title: "Importing", filename: url.lastPathComponent)
         work = Task {
             let access = url.startAccessingSecurityScopedResource()
@@ -120,16 +118,15 @@ import LunaVaultUI
                 let names: [String]
                 if isFolder { names = try await runtime.importFolder(at: url) }
                 else { try await runtime.importFile(at: url); names = [url.lastPathComponent.precomposedStringWithCanonicalMapping] }
-                setProgressMessage(filename: url.lastPathComponent,
-                                   message: "Sending to your Mac. Keep both apps open until it finishes.")
-                try await runtime.waitForUpload(names: names)
                 await hideProgress()
+                presenter?.refresh()
+                try await runtime.waitForUpload(names: names)
                 presenter?.refresh()
                 UIAccessibility.post(notification: .announcement, argument: "Saved on your Mac")
             } catch {
                 await hideProgress()
                 presenter?.refresh()
-                if !Task.isCancelled { show(error, title: "Import Not Complete") }
+                if !Task.isCancelled, !(error is CancellationError) { show(error, title: "Import Not Complete") }
             }
             work = nil
         }
@@ -178,7 +175,7 @@ import LunaVaultUI
             controller.view.backgroundColor = .systemBackground
             var loading = UIContentUnavailableConfiguration.loading()
             loading.text = filename
-            loading.secondaryText = progressMessage
+            loading.secondaryText = "Preparing a local copy. Keep Vault open."
             controller.contentUnavailableConfiguration = loading
             controller.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Hide", primaryAction: UIAction { [weak self] _ in
                 self?.progress?.dismiss(animated: true)
@@ -191,14 +188,6 @@ import LunaVaultUI
             progress = navigation
             visiblePresenter?.present(navigation, animated: true)
         }
-    }
-    private func setProgressMessage(filename: String, message: String) {
-        progressMessage = message
-        guard let controller = (progress as? UINavigationController)?.topViewController else { return }
-        var loading = UIContentUnavailableConfiguration.loading()
-        loading.text = filename
-        loading.secondaryText = message
-        controller.contentUnavailableConfiguration = loading
     }
     private func hideProgress() async {
         progressTask?.cancel(); progressTask = nil

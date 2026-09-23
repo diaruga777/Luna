@@ -6,6 +6,7 @@ public enum VaultLocalWriteError: Error, Equatable, Sendable, LocalizedError {
     case notPaired
     case sourceNotRegularFile
     case fileAlreadyExists(String)
+    case deletionPending(String)
     case unsupportedEntry(String)
 
     public var errorDescription: String? {
@@ -13,6 +14,7 @@ public enum VaultLocalWriteError: Error, Equatable, Sendable, LocalizedError {
         case .notPaired: return "Connect your Mac before importing."
         case .sourceNotRegularFile: return "Choose a regular file or folder."
         case .fileAlreadyExists(let name): return "A file or folder named \(name) already exists in Vault."
+        case .deletionPending(let name): return "Wait for your Mac to confirm deletion of \(name) before importing it again."
         case .unsupportedEntry(let name): return "Vault cannot import \(name). Remove links or special items from the folder and try again."
         }
     }
@@ -57,6 +59,9 @@ public final class VaultLocalChangeWriter: @unchecked Sendable {
         if let existing = try store.file(named: name), !existing.deleted {
             throw VaultLocalWriteError.fileAlreadyExists(name)
         }
+        if try store.pendingLocalChanges().contains(where: { $0.name == name && $0.kind == .delete }) {
+            throw VaultLocalWriteError.deletionPending(name)
+        }
         let attributes = try fileManager.attributesOfItem(atPath: sourceURL.path)
         guard (attributes[.type] as? FileAttributeType) == .typeRegular else {
             throw VaultLocalWriteError.sourceNotRegularFile
@@ -88,6 +93,9 @@ public final class VaultLocalChangeWriter: @unchecked Sendable {
         try BEPFileInfo.validateName(name)
         if let existing = try store.file(named: name), !existing.deleted {
             throw VaultLocalWriteError.fileAlreadyExists(name)
+        }
+        if try store.pendingLocalChanges().contains(where: { $0.name == name && $0.kind == .delete }) {
+            throw VaultLocalWriteError.deletionPending(name)
         }
         return try store.stageDirectory(name: name, modified: modified,
                                         ourShortID: localDevice.shortID, now: now)

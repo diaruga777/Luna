@@ -17,7 +17,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     private let settingsController: (() -> UIViewController)?
     private let search = UISearchController(searchResultsController: nil)
     private var status: VaultConnectionStatus = .notPaired
-    private var pendingUploads = 0
+    private var pendingUploads: [VaultPendingUpload] = []
     private var recents: [VaultPresentedFile] = []
     private var results: [VaultPresentedFile] = []
     private var loaded = false
@@ -27,6 +27,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     private var searchTask: Task<Void, Never>?
     private var loadTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
+    private var uploadRefreshTask: Task<Void, Never>?
     private var loadGeneration = 0
     public private(set) var emptyStateConfiguration: UIContentUnavailableConfiguration?
 
@@ -42,7 +43,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     }
     @available(*, unavailable)
     public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { searchTask?.cancel(); loadTask?.cancel(); refreshTask?.cancel() }
+    deinit { searchTask?.cancel(); loadTask?.cancel(); refreshTask?.cancel(); uploadRefreshTask?.cancel() }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -52,6 +53,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         tableView.accessibilityIdentifier = VaultAccessibilityID.content
         tableView.keyboardDismissMode = .onDrag
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "file")
+        tableView.register(VaultPendingUploadCell.self, forCellReuseIdentifier: "upload")
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 76
         definesPresentationContext = true
@@ -83,7 +85,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         let generation = loadGeneration
         loadTask = Task { [weak self, runtime] in
             async let connection = runtime.connectionStatus()
-            async let pending = vaultAsyncResult { try await runtime.pendingUploadCount() }
+            async let pending = vaultAsyncResult { try await runtime.pendingUploads() }
             let files = await vaultAsyncResult { try await runtime.recentFiles(limit: 30) }
             let state = await connection
             let uploadCount = await pending
@@ -94,7 +96,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             let wasLoaded = loaded
             let hadError = loadError
             status = state
-            if case .success(let count) = uploadCount { pendingUploads = count }
+            if case .success(let items) = uploadCount { pendingUploads = items }
             loaded = true
             switch files {
             case .success(let items): recents = items; loadError = false
@@ -110,6 +112,8 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     private var hasQuery: Bool { !query.isEmpty }
     private var needsSetup: Bool { loaded && status == .notPaired && recents.isEmpty && !loadError }
     private var visibleFiles: [VaultPresentedFile] { hasQuery ? results : recents }
+    private var uploadSection: Int? { !hasQuery && !pendingUploads.isEmpty ? 1 : nil }
+    private var recentSection: Int { uploadSection == nil ? 1 : 2 }
 
     @objc private func settingsTapped() {
         guard let controller = settingsController?() else { return }
@@ -150,6 +154,17 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         }
     }
     private func updatePresentation() {
+        if !pendingUploads.isEmpty && uploadRefreshTask == nil {
+            uploadRefreshTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(1)) } catch { break }
+                    self?.refresh()
+                }
+            }
+        } else if pendingUploads.isEmpty {
+            uploadRefreshTask?.cancel()
+            uploadRefreshTask = nil
+        }
         navigationItem.searchController = needsSetup || !loaded ? nil : search
         if loaded && status != .notPaired {
             let actions = [UIAction(title: "Import File", image: UIImage(systemName: "doc")) { [weak self] _ in self?.importHandler?() },
@@ -203,16 +218,28 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         }
         emptyStateConfiguration = empty
     }
-    public override func numberOfSections(in tableView: UITableView) -> Int { !loaded || needsSetup || hasQuery ? 1 : 2 }
+    public override func numberOfSections(in tableView: UITableView) -> Int {
+        !loaded || needsSetup || hasQuery ? 1 : (uploadSection == nil ? 2 : 3)
+    }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !loaded || needsSetup { return 1 }
-        return !hasQuery && section == 0 ? 2 : max(1, visibleFiles.count)
+        if !hasQuery && section == 0 { return 2 }
+        if uploadSection == section { return pendingUploads.count }
+        return max(1, visibleFiles.count)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        hasQuery ? (visibleFiles.isEmpty ? nil : "\(visibleFiles.count) Results") : (section == 1 && !recents.isEmpty ? "Recent Files" : nil)
+        if hasQuery { return visibleFiles.isEmpty ? nil : "\(visibleFiles.count) Results" }
+        if uploadSection == section { return "Transfers" }
+        return section == recentSection && !recents.isEmpty ? "Recent Files" : nil
     }
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if let emptyStateConfiguration, !loaded || needsSetup || hasQuery || indexPath.section == 1 {
+        if uploadSection == indexPath.section {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "upload", for: indexPath) as! VaultPendingUploadCell
+            let item = pendingUploads[indexPath.row]
+            cell.configure(item, connected: status == .connected) { [weak self] in self?.confirmCancel(item) }
+            return cell
+        }
+        if let emptyStateConfiguration, !loaded || needsSetup || hasQuery || indexPath.section == recentSection {
             return vaultEmptyCell(configuration: emptyStateConfiguration, minimumHeight: max(280,
                 tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom - (needsSetup || hasQuery ? 0 : 190)))
         }
@@ -232,9 +259,9 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         return cell
     }
     private var connectionDescription: String {
-        if pendingUploads > 0 {
-            let count = "\(pendingUploads) item\(pendingUploads == 1 ? "" : "s")"
-            return status == .connected ? "\(count) uploading · Keep Vault open" : "\(count) waiting for Mac · Reconnect to resume"
+        if !pendingUploads.isEmpty {
+            let count = "\(pendingUploads.count) item\(pendingUploads.count == 1 ? "" : "s")"
+            return status == .connected ? "\(count) transferring · Keep Vault open" : "\(count) waiting for Mac · Reconnect to resume"
         }
         switch status {
         case .connected: return "Connected"
@@ -249,11 +276,63 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         if !hasQuery && indexPath.section == 0 {
             if indexPath.row == 0 { settingsTapped() }
             else { openFolder("") }
+        } else if uploadSection == indexPath.section {
+            return
         } else {
             guard visibleFiles.indices.contains(indexPath.row) else { return }
             let file = visibleFiles[indexPath.row]
             if file.isDirectory { openFolder(file.path) } else { openHandler?(file.id) }
         }
+    }
+
+    private func confirmCancel(_ item: VaultPendingUpload) {
+        guard !item.isDeleting else { return }
+        let alert = UIAlertController(title: "Cancel \((item.name as NSString).lastPathComponent)?",
+            message: "Vault will stop this transfer and delete its local copy. If the Mac already saved it, Vault will remove that copy too.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Keep", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Cancel and Delete", style: .destructive) { [weak self, runtime] _ in
+            Task {
+                do { try await runtime.cancelPendingUpload(named: item.name); self?.refresh() }
+                catch { self?.showTransferError(error) }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func confirmDelete(_ item: VaultPresentedFile) {
+        let title = item.isDirectory ? "Delete Folder?" : "Delete File?"
+        let alert = UIAlertController(title: title,
+            message: "Delete \(item.name) from your Mac’s Vault folder? This cannot be undone.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Keep", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self, runtime] _ in
+            Task {
+                do { try await runtime.deleteItem(named: item.path); self?.refresh() }
+                catch { self?.showTransferError(error) }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func showTransferError(_ error: Error) {
+        let alert = UIAlertController(title: "Couldn’t Change Transfer", message: error.localizedDescription,
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    public override func tableView(_ tableView: UITableView,
+                                   trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
+        -> UISwipeActionsConfiguration? {
+        guard loaded, !needsSetup, uploadSection != indexPath.section,
+              (hasQuery || indexPath.section == recentSection),
+              visibleFiles.indices.contains(indexPath.row) else { return nil }
+        let item = visibleFiles[indexPath.row]
+        let action = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
+            done(false)
+            self?.confirmDelete(item)
+        }
+        return UISwipeActionsConfiguration(actions: [action])
     }
     private func openFolder(_ path: String) {
         navigationController?.pushViewController(VaultBrowseViewController(runtime: runtime, path: path, openHandler: openHandler), animated: true)
@@ -354,6 +433,97 @@ public final class VaultBrowseViewController: UITableViewController {
             navigationController?.pushViewController(VaultBrowseViewController(runtime: runtime, path: item.path, openHandler: openHandler), animated: true)
         } else { openHandler?(item.id) }
     }
+
+    public override func tableView(_ tableView: UITableView,
+                                   trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
+        -> UISwipeActionsConfiguration? {
+        guard emptyStateConfiguration == nil, items.indices.contains(indexPath.row) else { return nil }
+        let item = items[indexPath.row]
+        let action = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
+            done(false)
+            self?.confirmDelete(item)
+        }
+        return UISwipeActionsConfiguration(actions: [action])
+    }
+
+    private func confirmDelete(_ item: VaultPresentedFile) {
+        let alert = UIAlertController(title: item.isDirectory ? "Delete Folder?" : "Delete File?",
+            message: "Delete \(item.name) from your Mac’s Vault folder? This cannot be undone.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Keep", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self, runtime] _ in
+            Task {
+                do { try await runtime.deleteItem(named: item.path); self?.loadChildren() }
+                catch {
+                    let errorAlert = UIAlertController(title: "Couldn’t Delete", message: error.localizedDescription,
+                                                       preferredStyle: .alert)
+                    errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(errorAlert, animated: true)
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+}
+
+private final class VaultPendingUploadCell: UITableViewCell {
+    private let nameLabel = UILabel()
+    private let detailLabel = UILabel()
+    private let progressBar = UIProgressView(progressViewStyle: .default)
+    private let cancelButton = UIButton(type: .system)
+    private var onCancel: (() -> Void)?
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        selectionStyle = .none
+        nameLabel.font = .preferredFont(forTextStyle: .body)
+        nameLabel.lineBreakMode = .byTruncatingMiddle
+        detailLabel.font = .preferredFont(forTextStyle: .subheadline)
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.numberOfLines = 2
+        cancelButton.setTitle("Cancel", for: .normal)
+        cancelButton.setContentHuggingPriority(.required, for: .horizontal)
+        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        let heading = UIStackView(arrangedSubviews: [nameLabel, cancelButton])
+        heading.axis = .horizontal
+        heading.spacing = 12
+        heading.alignment = .center
+        let stack = UIStackView(arrangedSubviews: [heading, detailLabel, progressBar])
+        stack.axis = .vertical
+        stack.spacing = 7
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(_ item: VaultPendingUpload, connected: Bool, onCancel: @escaping () -> Void) {
+        self.onCancel = onCancel
+        nameLabel.text = (item.name as NSString).lastPathComponent
+        cancelButton.isHidden = item.isDeleting
+        progressBar.isHidden = item.isDirectory || item.isDeleting
+        if item.isDeleting {
+            detailLabel.text = connected ? "Deleting from Mac…" : "Waiting to delete on Mac"
+        } else if item.isDirectory {
+            detailLabel.text = connected ? "Waiting for Mac to create folder" : "Waiting for Mac"
+        } else {
+            let sent = ByteCountFormatter.string(fromByteCount: item.sentBytes, countStyle: .file)
+            let total = ByteCountFormatter.string(fromByteCount: item.totalBytes, countStyle: .file)
+            let status = !connected ? "Waiting for Mac" :
+                item.sentBytes >= item.totalBytes ? "Waiting for Mac to save" : "Sending"
+            detailLabel.text = "\(sent) of \(total) · \(status)"
+            progressBar.progress = item.totalBytes > 0 ? Float(Double(item.sentBytes) / Double(item.totalBytes)) : 0
+        }
+        accessibilityIdentifier = "vault.transfer.\(safeID(item.name))"
+        accessibilityLabel = "\(item.name), \(detailLabel.text ?? "")"
+    }
+
+    @objc private func cancelTapped() { onCancel?() }
 }
 
 /// Empty configurations in table rows stay in the accessibility tree and can

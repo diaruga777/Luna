@@ -35,6 +35,25 @@ public struct VaultPresentedFile: Equatable, Sendable {
     }
 }
 
+/// Bytes accepted by the transport for an iPhone-originated file. Completion
+/// still waits for the Mac's index acknowledgement after its final disk write.
+public struct VaultPendingUpload: Equatable, Sendable {
+    public let name: String
+    public let totalBytes: Int64
+    public let sentBytes: Int64
+    public let isDeleting: Bool
+    public let isDirectory: Bool
+
+    public init(name: String, totalBytes: Int64, sentBytes: Int64,
+                isDeleting: Bool, isDirectory: Bool) {
+        self.name = name
+        self.totalBytes = totalBytes
+        self.sentBytes = sentBytes
+        self.isDeleting = isDeleting
+        self.isDirectory = isDirectory
+    }
+}
+
 public enum VaultNetworkSelection: String, CaseIterable, Equatable, Sendable {
     case syncthingPublic
     case tailscale
@@ -128,6 +147,9 @@ public struct VaultIndexPresentation: Equatable, Sendable {
 public protocol VaultPresentationProviding: Sendable {
     func connectionStatus() async -> VaultConnectionStatus
     func pendingUploadCount() async throws -> Int
+    func pendingUploads() async throws -> [VaultPendingUpload]
+    func cancelPendingUpload(named name: String) async throws
+    func deleteItem(named name: String) async throws
     func recentFiles(limit: Int) async throws -> [VaultPresentedFile]
     func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile]
     func children(of path: String) async throws -> [VaultPresentedFile]
@@ -148,6 +170,9 @@ public protocol VaultPresentationProviding: Sendable {
 
 public extension VaultPresentationProviding {
     func pendingUploadCount() async throws -> Int { 0 }
+    func pendingUploads() async throws -> [VaultPendingUpload] { [] }
+    func cancelPendingUpload(named name: String) async throws {}
+    func deleteItem(named name: String) async throws {}
 }
 
 /// Closure-backed composition object used by the app and deterministic tests.
@@ -155,6 +180,7 @@ public extension VaultPresentationProviding {
 /// fails quietly without inventing transport state.
 public struct VaultPresentationServices: VaultPresentationProviding, @unchecked Sendable {
     public var connectionStatusHandler: @Sendable () async -> VaultConnectionStatus
+    public var pendingUploadsHandler: @Sendable () async throws -> [VaultPendingUpload]
     public var recentFilesHandler: @Sendable (Int) async throws -> [VaultPresentedFile]
     public var searchHandler: @Sendable (String, Int) async throws -> [VaultPresentedFile]
     public var childrenHandler: @Sendable (String) async throws -> [VaultPresentedFile]
@@ -171,6 +197,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
 
     public init(
         connectionStatus: @escaping @Sendable () async -> VaultConnectionStatus = { .notPaired },
+        pendingUploads: @escaping @Sendable () async throws -> [VaultPendingUpload] = { [] },
         recentFiles: @escaping @Sendable (Int) async throws -> [VaultPresentedFile] = { _ in [] },
         search: @escaping @Sendable (String, Int) async throws -> [VaultPresentedFile] = { _, _ in [] },
         children: @escaping @Sendable (String) async throws -> [VaultPresentedFile] = { _ in [] },
@@ -192,6 +219,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
         rebuildIndex: @escaping @Sendable () async throws -> Void = {}
     ) {
         connectionStatusHandler = connectionStatus
+        pendingUploadsHandler = pendingUploads
         recentFilesHandler = recentFiles
         searchHandler = search
         childrenHandler = children
@@ -208,6 +236,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
     }
 
     public func connectionStatus() async -> VaultConnectionStatus { await connectionStatusHandler() }
+    public func pendingUploads() async throws -> [VaultPendingUpload] { try await pendingUploadsHandler() }
     public func recentFiles(limit: Int) async throws -> [VaultPresentedFile] { try await recentFilesHandler(limit) }
     public func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile] { try await searchHandler(query, limit) }
     public func children(of path: String) async throws -> [VaultPresentedFile] { try await childrenHandler(path) }

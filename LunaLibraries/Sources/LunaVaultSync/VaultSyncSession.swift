@@ -21,6 +21,7 @@ public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
     case initialIndexTimedOut
     case uploadPending
     case uploadInterrupted(String)
+    case uploadCancelled
 
     public var errorDescription: String? {
         switch self {
@@ -31,6 +32,7 @@ public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
         case .initialIndexTimedOut: return "The Mac did not send its file list. Accept the pairing request on the Mac, then try again."
         case .uploadPending: return "This import is saved on your iPhone but has not reached your Mac. Keep both apps open and reconnect; Vault will retry the pending upload."
         case .uploadInterrupted(let reason): return "This import is saved on your iPhone but has not reached your Mac. Transfer stopped: \(reason). Reconnect to retry."
+        case .uploadCancelled: return "This upload was cancelled."
         }
     }
 }
@@ -79,6 +81,8 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     private var receivedInitialIndex = false
     private var offeredFolders: [VaultRemoteFolder] = []
     private var invalidatedCacheNames = Set<String>()
+    private var servedBlockOffsets: [String: Set<Int64>] = [:]
+    private var sentBytes: [String: Int64] = [:]
 
     public init(store: any VaultSyncStoring, dialer: any VaultPeerDialing,
                 lookup: (any VaultPeerLookup)?, localDevice: DeviceID,
@@ -110,6 +114,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         }
     }
     public var availableFolders: [VaultRemoteFolder] { offeredFolders }
+    public var sentBytesByFile: [String: Int64] { sentBytes }
 
     public func start(forceLookup: Bool = false) async throws {
         if isConnected, !forceLookup { return }
@@ -232,7 +237,9 @@ public actor VaultSyncSession: BEPConnectionDelegate {
             }
         }
         try collect(root, name: root.lastPathComponent.precomposedStringWithCanonicalMapping)
+        let deleting = Set(try store.pendingLocalChanges().filter { $0.kind == .delete }.map(\.name))
         for (_, name, directory, _) in entries {
+            if deleting.contains(name) { throw VaultLocalWriteError.deletionPending(name) }
             if let existing = try store.file(named: name), !existing.deleted,
                !(directory && existing.type == .directory) {
                 throw VaultLocalWriteError.fileAlreadyExists(name)
@@ -255,8 +262,43 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     @discardableResult
     public func deleteFile(named name: String, now: Date = Date()) async throws -> VaultFileRecord? {
         let record = try await writer.deleteFile(named: name, now: now)
-        if record != nil, isConnected { try await announcePendingChanges() }
+        if record != nil, isConnected { try? await announcePendingChanges() }
         return record
+    }
+
+    public func deleteItem(named name: String, now: Date = Date()) async throws {
+        guard let record = try store.file(named: name), !record.deleted else { return }
+        var names: [String] = []
+        func collect(_ current: VaultFileRecord) throws {
+            if current.type == .directory {
+                for child in try store.children(of: current.name) { try collect(child) }
+            }
+            names.append(current.name)
+        }
+        try collect(record)
+        let pendingAdds = Set(try store.pendingLocalChanges().filter { $0.kind == .add }.map(\.name))
+        let interruptsUpload = names.contains(where: { pendingAdds.contains($0) })
+        if interruptsUpload { await closeConnection(reason: "File deleted") }
+        for entry in names { _ = try await writer.deleteFile(named: entry, now: now) }
+        if interruptsUpload {
+            await setState(.offline("File deleted"))
+            try? await start()
+        } else if isConnected { try? await announcePendingChanges() }
+    }
+
+    /// Aborts the current transfer before replacing a pending add with a
+    /// durable deletion. The Mac confirms the tombstone even if its final
+    /// block raced with cancellation and was already installed.
+    public func cancelPendingUpload(named name: String) async throws {
+        let changes = try store.pendingLocalChanges()
+        let affected = changes.filter {
+            $0.kind == .add && ($0.name == name || $0.name.hasPrefix(name + "/"))
+        }.map(\.name).sorted { $0.count > $1.count }
+        guard !affected.isEmpty else { throw VaultSyncSessionError.uploadCancelled }
+        await closeConnection(reason: "Upload cancelled")
+        for entry in affected { _ = try await writer.deleteFile(named: entry) }
+        await setState(.offline("Upload cancelled"))
+        try? await start()
     }
 
     @discardableResult
@@ -324,6 +366,10 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 invalidatedCacheNames.insert(name)
             }
             for name in result.confirmed { try? cache.setPinned(false, name: name) }
+            for name in result.confirmed {
+                servedBlockOffsets.removeValue(forKey: name)
+                sentBytes.removeValue(forKey: name)
+            }
             if !index.isUpdate {
                 receivedInitialIndex = true
                 try store.recordConnected(at: clock())
@@ -360,9 +406,40 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         }
     }
 
+    public func connection(_ connection: BEPConnection, didSend request: BEPRequest,
+                           byteCount: Int) async {
+        guard self.connection === connection,
+              let record = try? store.file(named: request.name),
+              record.origin == .localPending, !record.deleted,
+              record.blocks.contains(where: { $0.offset == request.offset && $0.size == request.size && $0.hash == request.hash })
+        else { return }
+        if servedBlockOffsets[request.name, default: []].insert(request.offset).inserted {
+            sentBytes[request.name, default: 0] = min(record.size, sentBytes[request.name, default: 0] + Int64(byteCount))
+        }
+    }
+
+    public func connection(_ connection: BEPConnection, didReceive downloadProgress: BEPDownloadProgress) async {
+        guard self.connection === connection, let peer = try? store.peer(),
+              downloadProgress.folder == peer.folderID else { return }
+        for update in downloadProgress.updates where !update.isForget {
+            guard let record = try? store.file(named: update.name),
+                  record.origin == .localPending, !record.deleted, record.version == update.version else { continue }
+            let blocks = record.blocks
+            for index in update.blockIndexes where blocks.indices.contains(index) {
+                let block = blocks[index]
+                if servedBlockOffsets[update.name, default: []].insert(block.offset).inserted {
+                    sentBytes[update.name, default: 0] = min(record.size,
+                        sentBytes[update.name, default: 0] + Int64(block.size))
+                }
+            }
+        }
+    }
+
     public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {
         guard self.connection === connection else { return }
         self.connection = nil
+        servedBlockOffsets.removeAll()
+        sentBytes.removeAll()
         if state != .idle { await setState(.offline(error.map { String(describing: $0) } ?? "Disconnected")) }
     }
 
@@ -380,6 +457,8 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     private func closeConnection(reason: String) async {
         let old = connection
         connection = nil
+        servedBlockOffsets.removeAll()
+        sentBytes.removeAll()
         if let old { await old.close(reason: reason) }
     }
 

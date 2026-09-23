@@ -28,6 +28,7 @@ public protocol VaultSyncStoring: AnyObject, Sendable {
     func pendingLocalChanges() throws -> [VaultLocalChange]
     func announcedIndexEntries() throws -> [BEPFileInfo]
     func file(named name: String) throws -> VaultFileRecord?
+    func children(of parent: String) throws -> [VaultFileRecord]
     func filesNeedingIndex(limit: Int) throws -> [VaultFileRecord]
     func markIndexed(name: String, blocksHash: Data) throws
     func markThumbnail(name: String, blocksHash: Data) throws

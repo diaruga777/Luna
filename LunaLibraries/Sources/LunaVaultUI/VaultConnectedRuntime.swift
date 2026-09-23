@@ -157,14 +157,37 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
 
     public func pendingUploadCount() async throws -> Int { try store.pendingLocalChanges().count }
 
+    public func pendingUploads() async throws -> [VaultPendingUpload] {
+        let sent = await session.sentBytesByFile
+        return try store.pendingLocalChanges().compactMap { change in
+            guard let record = try store.file(named: change.name) else { return nil }
+            return VaultPendingUpload(name: change.name,
+                totalBytes: change.kind == .add ? record.size : 0,
+                sentBytes: change.kind == .add ? min(record.size, sent[change.name] ?? 0) : 0,
+                isDeleting: change.kind == .delete, isDirectory: record.type == .directory)
+        }
+    }
+
+    public func cancelPendingUpload(named name: String) async throws {
+        try await session.cancelPendingUpload(named: name)
+    }
+
+    public func deleteItem(named name: String) async throws {
+        guard try store.peer()?.lastConnectedAt != nil else { throw VaultSyncSessionError.notPaired }
+        try await session.deleteItem(named: name)
+    }
+
     /// Mac confirmation arrives only after it has written and indexed the bytes.
     public func waitForUpload(names: [String], timeout: TimeInterval? = nil) async throws {
         let wanted = Set(names)
         let deadline = timeout.map { Date().addingTimeInterval($0) }
         while true {
             try Task.checkCancellation()
-            let pending = Set(try store.pendingLocalChanges().map(\.name))
-            if pending.isDisjoint(with: wanted) { return }
+            let pending = try store.pendingLocalChanges()
+            if pending.contains(where: { wanted.contains($0.name) && $0.kind == .delete }) {
+                throw CancellationError()
+            }
+            if Set(pending.map(\.name)).isDisjoint(with: wanted) { return }
             guard await session.isConnected else {
                 if case .offline(let reason) = await session.currentState {
                     throw VaultSyncSessionError.uploadInterrupted(reason)

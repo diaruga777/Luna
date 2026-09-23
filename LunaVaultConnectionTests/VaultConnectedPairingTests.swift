@@ -33,6 +33,19 @@ final class VaultConnectedPairingTests: XCTestCase {
         } catch let error as VaultSyncSessionError {
             XCTAssertEqual(error, .uploadPending)
         }
+        let progress = try await runtime.pendingUploads()
+        XCTAssertEqual(progress.first?.totalBytes, Int64(try Data(contentsOf: source).count))
+        XCTAssertEqual(progress.first?.sentBytes, 0)
+        try await runtime.cancelPendingUpload(named: source.lastPathComponent)
+        XCTAssertEqual(try store.pendingLocalChanges().first?.kind, .delete)
+        XCTAssertTrue(try XCTUnwrap(store.file(named: source.lastPathComponent)).deleted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.cacheFileURL(for: source.lastPathComponent).path))
+        do {
+            try await runtime.importFile(at: source)
+            XCTFail("Retry must wait for the Mac's delete confirmation")
+        } catch let error as VaultLocalWriteError {
+            XCTAssertEqual(error, .deletionPending(source.lastPathComponent))
+        }
     }
 
     func testFolderImportPreservesNestedFilesAndEmptyDirectories() async throws {
@@ -69,6 +82,13 @@ final class VaultConnectedPairingTests: XCTestCase {
         try await runtime.waitForUpload(names: additional, timeout: 15)
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("Project/Notes/extra.txt")),
                        Data("Added later".utf8))
+        try await runtime.deleteItem(named: "Project")
+        for _ in 0..<100 {
+            if try store.pendingLocalChanges().isEmpty { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Project").path))
         await runtime.stop()
     }
 
@@ -180,6 +200,16 @@ final class VaultConnectedPairingTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(upload.lastPathComponent)), uploaded)
         XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        try await runtime.deleteItem(named: upload.lastPathComponent)
+        let deletionDeadline = Date().addingTimeInterval(8)
+        while Date() < deletionDeadline, !(try store.pendingLocalChanges()).isEmpty {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(upload.lastPathComponent).path))
+        XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        try await runtime.importFile(at: upload)
+        try await runtime.waitForUpload(names: [upload.lastPathComponent], timeout: 8)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(upload.lastPathComponent)), uploaded)
         await runtime.stop()
         let reopened = try VaultFolderStore(rootURL: store.rootURL)
         let next = try VaultConnectedRuntime(store: reopened, dialer: transport, lookup: nil, localID: local)
@@ -248,6 +278,152 @@ final class VaultConnectedPairingTests: XCTestCase {
         do { try await connection.start(); XCTFail("A silent peer must time out") } catch { }
         XCTAssertLessThan(Date().timeIntervalSince(start), 2)
     }
+
+    func testPerFileSentBytesCountAfterABlockResponse() async throws {
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Progress"))
+        try store.savePeer(VaultPeerRecord(deviceID: mac, name: "Mac",
+            manualAddresses: [.tcp(host: "localhost", port: 22000)], folderID: "vault", lastConnectedAt: Date()))
+        let (clientStream, serverStream) = PipeByteStream.pair()
+        let delegate = EmptyDelegate()
+        let server = BEPConnection(stream: serverStream, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        let session = VaultSyncSession(store: store, dialer: StreamDialer(stream: clientStream), lookup: nil, localDevice: phone)
+        async let hello = server.start()
+        try await session.start()
+        _ = try await hello
+        try await server.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",
+            devices: [BEPDevice(id: mac, name: "Mac"), BEPDevice(id: phone, name: "Phone")])]))
+        try await server.send(index: BEPIndex(folder: "vault", files: [], isUpdate: false))
+        try await session.waitForInitialIndex(timeout: 1)
+        let source = directory.appendingPathComponent("progress.bin")
+        let contents = Data(repeating: 7, count: 64 * 1_024)
+        try contents.write(to: source)
+        let file = try await session.addFile(at: source, named: source.lastPathComponent)
+        let received = try await server.request(folder: "vault", name: file.name,
+                                                block: XCTUnwrap(file.blocks.first), blockNo: 0)
+        XCTAssertEqual(received, contents)
+        let deadline = Date().addingTimeInterval(1)
+        var sent = await session.sentBytesByFile[file.name]
+        while Date() < deadline, sent != Int64(contents.count) {
+            try await Task.sleep(for: .milliseconds(10))
+            sent = await session.sentBytesByFile[file.name]
+        }
+        XCTAssertEqual(sent, Int64(contents.count))
+        await session.stop(); await server.close(reason: "Test ended")
+    }
+
+    func testBlockRequestTimesOutEvenWhilePingsContinue() async throws {
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let (clientStream, serverStream) = PipeByteStream.pair()
+        let clientDelegate = EmptyDelegate()
+        let serverDelegate = SlowDelegate()
+        var clientTiming = BEPConnectionTiming()
+        clientTiming.requestTimeout = 0.1
+        clientTiming.pingInterval = 0.02
+        clientTiming.timerTick = 0.01
+        var serverTiming = BEPConnectionTiming()
+        serverTiming.pingInterval = 0.02
+        serverTiming.timerTick = 0.01
+        let client = BEPConnection(stream: clientStream, peerDevice: mac,
+            localHello: BEPHello(deviceName: "Phone", clientName: "Test", clientVersion: "1"),
+            delegate: clientDelegate, timing: clientTiming)
+        let server = BEPConnection(stream: serverStream, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"),
+            delegate: serverDelegate, timing: serverTiming)
+        async let hello = server.start()
+        try await client.start()
+        _ = try await hello
+        try await client.send(clusterConfig: BEPClusterConfig(folders: []))
+        try await server.send(clusterConfig: BEPClusterConfig(folders: []))
+        let block = BlockInfo(offset: 0, size: 1, hash: SHA256Digest.hash(Data([7])))
+        do {
+            _ = try await client.request(folder: "vault", name: "slow.bin", block: block, blockNo: 0)
+            XCTFail("An unanswered block must not wait forever")
+        } catch let error as BEPStreamError {
+            XCTAssertEqual(error, .timedOut)
+        }
+        let closed = await client.isClosed
+        XCTAssertTrue(closed)
+        await server.close(reason: "Test ended")
+    }
+
+    func testMacRescanPreservesConfirmedVersionAndDeletion() throws {
+        let folder = directory.appendingPathComponent("Rescan")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("archive.zip")
+        try Data(repeating: 7, count: 128).write(to: url)
+        let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: 22)
+        let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("RescanIndex.sqlite"))
+        let initial = try XCTUnwrap(scanner.scan().first?.info)
+        var received = initial
+        received.version = VersionVector(counters: [VersionCounter(id: 11, value: 123)])
+        received.sequence = 12
+        try index.upsert(CompanionFileRecord(info: received))
+
+        try index.reconcileScan(scanner.scan(), deviceShortID: 22)
+        XCTAssertEqual(try index.file(named: received.name)?.version, received.version)
+
+        try FileManager.default.removeItem(at: url)
+        try index.reconcileScan(scanner.scan(), deviceShortID: 22)
+        let deleted = try XCTUnwrap(index.file(named: received.name))
+        XCTAssertTrue(deleted.deleted)
+        XCTAssertNoThrow(try deleted.validateForWire())
+        XCTAssertEqual(deleted.version.value(for: 11), 123)
+        XCTAssertGreaterThan(deleted.version.value(for: 22), 0)
+
+        try index.reconcileScan(scanner.scan(), deviceShortID: 22)
+        XCTAssertEqual(try index.file(named: received.name)?.version, deleted.version)
+        let reopened = try CompanionIndex(databaseURL: directory.appendingPathComponent("RescanIndex.sqlite"))
+        XCTAssertEqual(try reopened.file(named: received.name)?.deleted, true)
+    }
+
+    func testMacResumesVerifiedBlocksAndReportsTheirProgress() async throws {
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let folder = directory.appendingPathComponent("Resume")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = Data(repeating: 3, count: BlockLayout.minimumBlockSize)
+        let second = Data(repeating: 4, count: BlockLayout.minimumBlockSize)
+        let bytes = first + second
+        let layout = BlockLayout.blocks(for: bytes)
+        let version = VersionVector(counters: [VersionCounter(id: phone.shortID, value: 1)])
+        let file = BEPFileInfo(name: "archive.zip", size: Int64(bytes.count), modifiedS: 1_700_000_000,
+            modifiedBy: phone.shortID, noPermissions: true, version: version,
+            blockSize: Int32(layout.blockSize), blocks: layout.blocks,
+            blocksHash: BlockLayout.blocksHash(layout.blocks))
+        let nameHash = SHA256Digest.hash(Data(file.name.utf8)).map { String(format: "%02x", $0) }.joined()
+        let versionHash = SHA256Digest.hash(version.storageBytes).map { String(format: "%02x", $0) }.joined()
+        let partial = folder.appendingPathComponent(".luna-upload-\(nameHash)-\(versionHash)")
+        try first.write(to: partial)
+        let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("ResumeIndex.sqlite"))
+        let macDelegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: mac, folderID: "vault")
+        let phoneDelegate = SecondBlockOnlyDelegate(bytes: second)
+        let (phoneStream, macStream) = PipeByteStream.pair()
+        let phoneConnection = BEPConnection(stream: phoneStream, peerDevice: mac,
+            localHello: BEPHello(deviceName: "Phone", clientName: "Test", clientVersion: "1"), delegate: phoneDelegate)
+        let macConnection = BEPConnection(stream: macStream, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: macDelegate)
+        async let hello = macConnection.start()
+        try await phoneConnection.start()
+        _ = try await hello
+        try await phoneConnection.send(clusterConfig: BEPClusterConfig(folders: []))
+        try await macConnection.send(clusterConfig: BEPClusterConfig(folders: []))
+        macDelegate.startServing(macConnection)
+        try await phoneConnection.send(index: BEPIndex(folder: "vault", files: [file], isUpdate: true))
+        let destination = folder.appendingPathComponent(file.name)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline && !FileManager.default.fileExists(atPath: destination.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), bytes)
+        XCTAssertFalse(phoneDelegate.requestedFirstBlock)
+        XCTAssertTrue(phoneDelegate.resumedBlockIndexes.contains(0))
+        await phoneConnection.close(reason: "Test ended")
+        await macConnection.close(reason: "Test ended")
+    }
 }
 
 private struct RejectingDialer: VaultPeerDialing {
@@ -259,6 +435,39 @@ private final class EmptyDelegate: BEPConnectionDelegate, @unchecked Sendable {
     func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async {}
     func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async {}
     func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> { .failure(.noSuchFile) }
+    func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {}
+}
+
+private final class SlowDelegate: BEPConnectionDelegate, @unchecked Sendable {
+    func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async {}
+    func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async {}
+    func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
+        try? await Task.sleep(for: .seconds(1))
+        return .success(Data([7]))
+    }
+    func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {}
+}
+
+private final class SecondBlockOnlyDelegate: BEPConnectionDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let bytes: Data
+    private var firstRequested = false
+    private var resumed: [Int] = []
+    init(bytes: Data) { self.bytes = bytes }
+    var requestedFirstBlock: Bool { lock.lock(); defer { lock.unlock() }; return firstRequested }
+    var resumedBlockIndexes: [Int] { lock.lock(); defer { lock.unlock() }; return resumed }
+    func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async {}
+    func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async {}
+    func connection(_ connection: BEPConnection, didReceive downloadProgress: BEPDownloadProgress) async {
+        lock.withLock { resumed += downloadProgress.updates.flatMap(\.blockIndexes) }
+    }
+    func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
+        if request.blockNo == 0 {
+            lock.withLock { firstRequested = true }
+            return .failure(.noSuchFile)
+        }
+        return .success(bytes)
+    }
     func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {}
 }
 

@@ -127,6 +127,7 @@ public struct VaultIndexPresentation: Equatable, Sendable {
 /// exposed to UIKit.
 public protocol VaultPresentationProviding: Sendable {
     func connectionStatus() async -> VaultConnectionStatus
+    func pendingUploadCount() async throws -> Int
     func recentFiles(limit: Int) async throws -> [VaultPresentedFile]
     func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile]
     func children(of path: String) async throws -> [VaultPresentedFile]
@@ -143,6 +144,10 @@ public protocol VaultPresentationProviding: Sendable {
     func indexPresentation() async throws -> VaultIndexPresentation
     func setScratchQuota(bytes: Int64) async throws
     func rebuildIndex() async throws
+}
+
+public extension VaultPresentationProviding {
+    func pendingUploadCount() async throws -> Int { 0 }
 }
 
 /// Closure-backed composition object used by the app and deterministic tests.

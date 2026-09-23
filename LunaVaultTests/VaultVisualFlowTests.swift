@@ -118,6 +118,8 @@ final class VaultVisualFlowTests: XCTestCase {
         try await host(root)
         try await waitUntil { (root.emptyStateConfiguration)?.text == "No Files Yet" }
         XCTAssertNotNil(root.navigationItem.leftBarButtonItem)
+        XCTAssertEqual(root.navigationItem.leftBarButtonItem?.menu?.children.map(\.title),
+                       ["Import File", "Import Folder"])
         XCTAssertEqual(root.tableView.numberOfRows(inSection: 0), 2)
         try await capture("09-connected-empty")
     }

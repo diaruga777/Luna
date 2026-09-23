@@ -35,7 +35,8 @@ import LunaVaultUI
         }
         let files = VaultConnectedFilePresenter(runtime: runtime)
         let root = VaultSyncthingHomeViewController(runtime: runtime,
-            importHandler: { files.importFile() }, openHandler: { files.open($0) },
+            importHandler: { files.importFile() }, importFolderHandler: { files.importFolder() },
+            openHandler: { files.open($0) },
             settingsController: { VaultConnectedSettingsViewController(runtime: runtime) })
         files.presenter = root; presenter = files; home = root
         applicationWillEnterForeground()
@@ -86,12 +87,19 @@ import LunaVaultUI
     private var work: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
     private weak var progress: UIViewController?
+    private var progressMessage = "Preparing a local copy. Keep Vault open."
     private var visiblePresenter: UIViewController? { presenter?.navigationController?.topViewController ?? presenter }
     init(runtime: VaultConnectedRuntime) { self.runtime = runtime }
 
     func importFile() {
         guard work == nil else { return }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
+        picker.delegate = self
+        visiblePresenter?.present(picker, animated: true)
+    }
+    func importFolder() {
+        guard work == nil else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = self
         visiblePresenter?.present(picker, animated: true)
     }
@@ -102,18 +110,26 @@ import LunaVaultUI
     }
     private func startImport(_ url: URL) {
         guard work == nil else { return }
-        showProgress(title: "Importing File", filename: url.lastPathComponent)
+        progressMessage = "Preparing a local copy. Keep Vault open."
+        showProgress(title: "Importing", filename: url.lastPathComponent)
         work = Task {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                try await runtime.importFile(at: url)
+                let isFolder = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+                let names: [String]
+                if isFolder { names = try await runtime.importFolder(at: url) }
+                else { try await runtime.importFile(at: url); names = [url.lastPathComponent.precomposedStringWithCanonicalMapping] }
+                setProgressMessage(filename: url.lastPathComponent,
+                                   message: "Sending to your Mac. Keep both apps open until it finishes.")
+                try await runtime.waitForUpload(names: names)
                 await hideProgress()
                 presenter?.refresh()
-                UIAccessibility.post(notification: .announcement, argument: "File imported")
+                UIAccessibility.post(notification: .announcement, argument: "Saved on your Mac")
             } catch {
                 await hideProgress()
-                if !Task.isCancelled { show(error, title: "Couldn’t Import File") }
+                presenter?.refresh()
+                if !Task.isCancelled { show(error, title: "Import Not Complete") }
             }
             work = nil
         }
@@ -162,12 +178,12 @@ import LunaVaultUI
             controller.view.backgroundColor = .systemBackground
             var loading = UIContentUnavailableConfiguration.loading()
             loading.text = filename
-            loading.secondaryText = "Keep Vault open while your file is prepared."
+            loading.secondaryText = progressMessage
             controller.contentUnavailableConfiguration = loading
-            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in
-                self?.work?.cancel()
+            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Hide", primaryAction: UIAction { [weak self] _ in
                 self?.progress?.dismiss(animated: true)
                 self?.progress = nil
+                self?.presenter?.refresh()
             })
             let navigation = UINavigationController(rootViewController: controller)
             navigation.isModalInPresentation = true
@@ -175,6 +191,14 @@ import LunaVaultUI
             progress = navigation
             visiblePresenter?.present(navigation, animated: true)
         }
+    }
+    private func setProgressMessage(filename: String, message: String) {
+        progressMessage = message
+        guard let controller = (progress as? UINavigationController)?.topViewController else { return }
+        var loading = UIContentUnavailableConfiguration.loading()
+        loading.text = filename
+        loading.secondaryText = message
+        controller.contentUnavailableConfiguration = loading
     }
     private func hideProgress() async {
         progressTask?.cancel(); progressTask = nil

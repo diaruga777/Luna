@@ -12,10 +12,12 @@ public extension VaultAccessibilityID {
 public final class VaultSyncthingHomeViewController: UITableViewController, UISearchResultsUpdating {
     private let runtime: any VaultPresentationProviding
     private let importHandler: (() -> Void)?
+    private let importFolderHandler: (() -> Void)?
     private let openHandler: ((String) -> Void)?
     private let settingsController: (() -> UIViewController)?
     private let search = UISearchController(searchResultsController: nil)
     private var status: VaultConnectionStatus = .notPaired
+    private var pendingUploads = 0
     private var recents: [VaultPresentedFile] = []
     private var results: [VaultPresentedFile] = []
     private var loaded = false
@@ -29,9 +31,11 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     public private(set) var emptyStateConfiguration: UIContentUnavailableConfiguration?
 
     public init(runtime: any VaultPresentationProviding, importHandler: (() -> Void)? = nil,
-                openHandler: ((String) -> Void)? = nil, settingsController: (() -> UIViewController)? = nil) {
+                importFolderHandler: (() -> Void)? = nil, openHandler: ((String) -> Void)? = nil,
+                settingsController: (() -> UIViewController)? = nil) {
         self.runtime = runtime
         self.importHandler = importHandler
+        self.importFolderHandler = importFolderHandler
         self.openHandler = openHandler
         self.settingsController = settingsController
         super.init(style: .insetGrouped)
@@ -79,20 +83,24 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         let generation = loadGeneration
         loadTask = Task { [weak self, runtime] in
             async let connection = runtime.connectionStatus()
+            async let pending = vaultAsyncResult { try await runtime.pendingUploadCount() }
             let files = await vaultAsyncResult { try await runtime.recentFiles(limit: 30) }
             let state = await connection
+            let uploadCount = await pending
             guard let self, !Task.isCancelled, generation == loadGeneration else { return }
             let previous = recents
             let previousStatus = status
+            let previousPending = pendingUploads
             let wasLoaded = loaded
             let hadError = loadError
             status = state
+            if case .success(let count) = uploadCount { pendingUploads = count }
             loaded = true
             switch files {
             case .success(let items): recents = items; loadError = false
             case .failure: loadError = true
             }
-            if previous != recents || previousStatus != status || !wasLoaded || hadError != loadError {
+            if previous != recents || previousStatus != status || previousPending != pendingUploads || !wasLoaded || hadError != loadError {
                 updatePresentation()
             }
             // Preserve search results and keyboard during background connection updates.
@@ -144,8 +152,10 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     private func updatePresentation() {
         navigationItem.searchController = needsSetup || !loaded ? nil : search
         if loaded && status != .notPaired {
-            let add = UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(importTapped))
-            add.accessibilityLabel = "Import file"
+            let actions = [UIAction(title: "Import File", image: UIImage(systemName: "doc")) { [weak self] _ in self?.importHandler?() },
+                           UIAction(title: "Import Folder", image: UIImage(systemName: "folder")) { [weak self] _ in self?.importFolderHandler?() }]
+            let add = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: UIMenu(children: actions))
+            add.accessibilityLabel = "Import file or folder"
             add.accessibilityIdentifier = VaultAccessibilityID.importButton
             navigationItem.leftBarButtonItem = add
         } else { navigationItem.leftBarButtonItem = nil }
@@ -222,6 +232,10 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         return cell
     }
     private var connectionDescription: String {
+        if pendingUploads > 0 {
+            let count = "\(pendingUploads) item\(pendingUploads == 1 ? "" : "s")"
+            return status == .connected ? "\(count) uploading · Keep Vault open" : "\(count) waiting for Mac · Reconnect to resume"
+        }
         switch status {
         case .connected: return "Connected"
         case .syncing: return "Syncing files…"

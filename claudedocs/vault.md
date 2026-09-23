@@ -13,8 +13,13 @@ unauthenticated stream.
 ## v1 policy
 
 - One paired Mac and one folder.
-- The active iOS UI imports and previews files; it does not expose delete,
+- The active iOS UI imports files and folders and previews files; it does not expose delete,
   rename, move, or edit.
+- Folder import stages its visible regular files and directories (including
+  empty directories) under the selected folder name. It is a one-time import;
+  later source-folder edits are not watched on iOS. Hidden entries and links
+  are excluded because the Mac scanner does not index them. Existing Mac
+  directories can be reused; conflicting file names are rejected.
 - The iPhone announces only local files that it created and still retains.
 - File dates are the BEP modification time. Creation or embedded content dates
   are intentionally ignored.
@@ -36,6 +41,11 @@ durable across relaunch; `settings` stores quotas and network mode.
 Cached content, scratch files, thumbnails, staging imports, and the identity
 certificate live below the Vault App Group directory and use
 `completeUntilFirstUserAuthentication` on iOS.
+The import sheet stays open through the Mac's index acknowledgement, which
+arrives after the companion has written the bytes. Hiding the sheet lets the
+import continue while the app is open; Home shows the pending item count
+until a later connection confirms it. A transport failure is shown as pending
+rather than a false successful import.
 
 ## Pairing and networking
 

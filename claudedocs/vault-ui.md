@@ -39,8 +39,11 @@ upload, because removing/replacing the peer clears the mirror's local-change row
 File opening presents delayed, cancellable progress for slow preparation; cached
 files avoid a flashing progress sheet. Quick Look is presented from the visible
 folder. Large preview copies run off the main actor, and temporary plaintext
-preview copies are removed when Quick Look closes. File import reports errors
-only after the document picker has dismissed.
+preview copies are removed when Quick Look closes. The add menu offers separate
+file and folder pickers. Folder import retains nested paths and empty folders.
+The import sheet changes from local preparation to Mac transfer and closes only
+after Mac confirmation; Home displays the count of pending items when a transfer
+is interrupted. Import errors appear after the document picker has dismissed.
 
 The share extension is still a deferred capability. It now says so and directs
 users to the in-app Files picker instead of displaying a false save/Done flow.

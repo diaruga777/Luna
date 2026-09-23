@@ -40,7 +40,7 @@ File opening presents delayed, cancellable progress for slow preparation; cached
 files avoid a flashing progress sheet. Quick Look is presented from the visible
 folder. Large preview copies run off the main actor, and temporary plaintext
 preview copies are removed when Quick Look closes. The add menu offers separate
-file and folder pickers. Folder import retains nested paths and empty folders.
+file, folder, Photos, and album pickers. Folder import retains nested paths and empty folders.
 The import sheet covers local preparation, then closes so Home can show each
 pending file in Transfers with bytes sent,
 total bytes, and a progress bar; reaching the byte total means Vault is waiting
@@ -50,9 +50,14 @@ Deletion remains pending until the Mac acknowledges it; the same name cannot be
 reimported before that acknowledgement. Import errors appear after the document
 picker has dismissed.
 
-The share extension is still a deferred capability. It now says so and directs
-users to the in-app Files picker instead of displaying a false save/Done flow.
-It does not claim to persist incoming attachments.
+The share extension copies multiple files into the App Group inbox before it
+reports that they are queued. It submits an iOS 26 continued processing request,
+which Vault handles with a system Live Activity showing transfer progress.
+The Files and Photos pickers use the same queue. Individual Photos are stored
+under `Photos/`; an album creates `Photos/<album>/` on the Mac. iOS may postpone
+or expire a background request, so queued payloads and local changes survive
+app termination and resume on a later foreground or processing wake. Home shows
+the number of files still in the inbox alongside the Mac's pending transfers.
 
 ## Icon
 
@@ -83,7 +88,9 @@ and scrollable setup at accessibility text sizes. Its XCTest attachments capture
 light/dark libraries, search, setup, connected settings, and large-text states.
 
 `LunaVaultConnectionTests` verifies real loopback TLS pairing/download/upload,
-per-file transfer progress, block timeouts, resumable Mac uploads, and cancellation.
+per-file transfer progress, block timeouts, resumable Mac uploads, cancellation,
+and nested Photos album paths. `VaultIncomingQueueTests` verifies ordered App
+Group handoff survives reopening its store.
 Its separate
 scheme avoids the legacy app-hosted test bundle's duplicate package type linkage.
 Live user-Mac pairing, Files-provider UI, and physical-device animation performance

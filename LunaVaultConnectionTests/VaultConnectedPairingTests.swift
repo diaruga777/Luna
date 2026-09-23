@@ -14,6 +14,27 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
 
+    func testPhotoAlbumPathsStageFoldersAndFileForMac() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let local = try DeviceID(bytes: Data(repeating: 3, count: 32))
+        let peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 4, count: 32)),
+            name: "My Mac", folderID: "vault", lastConnectedAt: Date())
+        try store.savePeer(peer)
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil, localID: local)
+        let source = directory.appendingPathComponent("sunrise.jpg")
+        try Data("photo bytes".utf8).write(to: source)
+
+        try await runtime.importFile(at: source, named: "Photos/Trips/sunrise.jpg")
+        try await runtime.importDirectory(named: "Photos/Empty Album")
+
+        XCTAssertEqual(try store.file(named: "Photos")?.type, .directory)
+        XCTAssertEqual(try store.file(named: "Photos/Trips")?.type, .directory)
+        XCTAssertEqual(try store.file(named: "Photos/Empty Album")?.type, .directory)
+        XCTAssertEqual(try store.file(named: "Photos/Trips/sunrise.jpg")?.type, .file)
+        XCTAssertEqual(Set(try store.pendingLocalChanges().map(\.name)),
+            Set(["Photos", "Photos/Trips", "Photos/Trips/sunrise.jpg", "Photos/Empty Album"]))
+    }
+
     func testDisconnectCannotForgetFilesWaitingToUpload() async throws {
         let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
         let local = try DeviceID(bytes: Data(repeating: 1, count: 32))

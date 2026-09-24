@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import BackgroundTasks
 
 /// Copies shared files into the App Group before returning to the source app.
-/// The containing app drains this durable inbox and owns the Mac connection.
+/// The containing app handles the continued task for the shared queue.
 final class VaultShareViewController: UIViewController {
     private var saving = false
 
@@ -78,11 +78,11 @@ final class VaultShareViewController: UIViewController {
     }
 
     private func submitTransferRequest() -> Bool {
-        guard #available(iOS 26.0, *), let bundleID = Bundle.main.bundleIdentifier else { return false }
+        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
         let request = BGContinuedProcessingTaskRequest(
-            identifier: bundleID + ".transfer." + UUID().uuidString,
+            identifier: bundleID + ".transfer",
             title: "Syncing to Mac", subtitle: "Preparing shared files")
-        request.strategy = .queue
+        request.strategy = .fail
         do { try BGTaskScheduler.shared.submit(request); return true }
         catch { return false }
     }

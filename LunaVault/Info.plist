@@ -22,7 +22,7 @@
 	<array>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.sync</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.transfer.*</string>
-		<string>$(PRODUCT_BUNDLE_PREFIX).vault.share.transfer.*</string>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.share.transfer</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.index</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.importRepair</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.thumbnailMaintenance</string>

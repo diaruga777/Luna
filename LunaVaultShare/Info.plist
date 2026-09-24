@@ -6,7 +6,7 @@
 	<string>$(APP_GROUP_ID)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>$(PRODUCT_BUNDLE_PREFIX).vault.share.transfer.*</string>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.share.transfer</string>
 	</array>
 	<key>NSExtension</key>
 	<dict>

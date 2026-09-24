@@ -18,8 +18,11 @@ import LunaVaultUI
     private var completedBytes: Int64 = 0
     private var progressTotal: Int64 = 1
     private var progressCompleted: Int64 = 0
+    private var lastProgressAt = Date()
+    private var lastProgressSnapshot: (bytes: Int64, count: Int)?
     private var intakeCount = 0
     private var continuedSubmitted = false
+    private var continuedIdentifier: String?
     private var backgroundLease: UIBackgroundTaskIdentifier = .invalid
     var didChange: (() -> Void)?
 
@@ -38,10 +41,10 @@ import LunaVaultUI
 
     func endIntake() { intakeCount = max(0, intakeCount - 1) }
 
-    /// Returning to Vault is a user action that resumes an existing visible
-    /// transfer. Give that resumed batch the same continued task as a new import.
+    /// Resume durable uploads when Vault is opened. A continued task is only
+    /// submitted for a new user-initiated import.
     func resumeFromUserOpen() {
-        start(userInitiated: hasWork)
+        start()
     }
 
     func start(userInitiated: Bool = false) {
@@ -53,6 +56,8 @@ import LunaVaultUI
         completedBytes = 0
         progressTotal = 1
         progressCompleted = 0
+        lastProgressAt = Date()
+        lastProgressSnapshot = nil
         beginBackgroundLease()
         worker = Task { [weak self] in
             guard let self else { return }
@@ -62,7 +67,10 @@ import LunaVaultUI
 
     func handle(_ task: BGTask) {
         if let continuedTask = task as? BGContinuedProcessingTask {
-            continuedSubmitted = false
+            if continuedTask.identifier == continuedIdentifier {
+                continuedSubmitted = false
+                continuedIdentifier = nil
+            }
             continued.append(continuedTask)
             continuedTask.progress.totalUnitCount = progressTotal
             continuedTask.progress.completedUnitCount = progressCompleted
@@ -73,16 +81,35 @@ import LunaVaultUI
                 self?.scheduleProcessingIfNeeded()
             }
         }
+        if let continuedTask = task as? BGContinuedProcessingTask {
+            Task { [weak self, weak continuedTask] in
+                try? await Task.sleep(for: .seconds(180))
+                guard let self, let continuedTask,
+                      self.continued.contains(where: { $0 === continuedTask }) else { return }
+                self.worker?.cancel()
+                self.continued.removeAll { $0 === continuedTask }
+                continuedTask.setTaskCompleted(success: false)
+                self.scheduleProcessingIfNeeded()
+            }
+        }
         start()
     }
 
     private func submitContinuedRequest() {
         guard continued.isEmpty && !continuedSubmitted else { return }
+        guard (try? runtime.store.peer()?.lastConnectedAt) != nil else { return }
         let identifier = identifierPrefix + ".transfer." + UUID().uuidString
+        guard BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: { task in
+            Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
+        }) else { return }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier, title: "Syncing to Mac", subtitle: "Preparing Vault files")
-        request.strategy = .queue
-        do { try BGTaskScheduler.shared.submit(request); continuedSubmitted = true }
+        request.strategy = .fail
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            continuedSubmitted = true
+            continuedIdentifier = identifier
+        }
         catch { scheduleProcessingIfNeeded() }
     }
 
@@ -123,9 +150,18 @@ import LunaVaultUI
         defer {
             worker = nil
             endBackgroundLease()
+            let handledShareTask = continued.contains { $0.identifier == identifierPrefix + ".share.transfer" }
             for task in continued { task.setTaskCompleted(success: succeeded) }
             for task in processing { task.setTaskCompleted(success: succeeded) }
             continued.removeAll(); processing.removeAll()
+            if let continuedIdentifier {
+                BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: continuedIdentifier)
+                self.continuedIdentifier = nil
+                continuedSubmitted = false
+            }
+            if !hasWork && !handledShareTask {
+                BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifierPrefix + ".share.transfer")
+            }
             if !succeeded { scheduleProcessingIfNeeded() }
             didChange?()
         }
@@ -149,6 +185,9 @@ import LunaVaultUI
                 let uploads = try await runtime.pendingUploads()
                 let remaining = try queue.items()
                 updateProgress(uploads: uploads, queued: remaining)
+                if Date().timeIntervalSince(lastProgressAt) > (intakeCount > 0 ? 300 : 120) {
+                    return
+                }
                 if uploads.isEmpty && remaining.isEmpty && intakeCount == 0 {
                     succeeded = true
                     return
@@ -209,6 +248,10 @@ import LunaVaultUI
         progressTotal = max(1, completedBytes + remainingBytes)
         progressCompleted = min(progressTotal, completedBytes + uploads.reduce(Int64(0)) { $0 + $1.sentBytes })
         let count = uploads.count + queued.count
+        if lastProgressSnapshot?.bytes != progressCompleted || lastProgressSnapshot?.count != count {
+            lastProgressAt = Date()
+            lastProgressSnapshot = (progressCompleted, count)
+        }
         let title = "Syncing to Mac"
         let subtitle = count == 1 ? "1 file remaining" : "\(count) files remaining"
         for task in continued {

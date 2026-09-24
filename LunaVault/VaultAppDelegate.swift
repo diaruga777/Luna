@@ -20,13 +20,10 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    /// Registers every Vault BGTask identifier exactly once, before launch
-    /// finishes, matching `BGTaskScheduler`'s register-once-before-launch-ends
-    /// contract. `VaultWiring` rebuilds the sync runtime and the background
-    /// scheduler on setup completion and on Settings changes; these launch
-    /// handlers route to whichever instance is current when a task fires
-    /// instead of registering again, so neither rebuild can crash on a
-    /// duplicate registration.
+    /// Registers fixed launch handlers before launch finishes. In-app
+    /// continued tasks register their complete dynamic ID at submission time.
+    /// The share extension cannot register a handler, so its single queue ID
+    /// is registered here in the containing app.
     private func registerBackgroundTasks() {
         // Mirrors the fallback `VaultBackgroundTaskScheduler.identifierPrefix`
         // uses in `KindWiring+Vault.installBackgroundRuntime`, so a nil bundle
@@ -38,10 +35,11 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         ) { task in
             Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
         }
-        for identifier in [bundleID + ".transfer.*", bundleID + ".share.transfer.*"] {
-            BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
-                Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
-            }
+        // A wildcard registration does not match a submitted UUID on iOS 26.
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: bundleID + ".share.transfer", using: nil
+        ) { task in
+            Task { @MainActor in VaultConnectedWiring.handleSyncBackgroundTask(task) }
         }
         let maintenanceKinds: [VaultBackgroundTaskKind] = [.importRepair, .index, .thumbnailMaintenance]
         for kind in maintenanceKinds {

@@ -91,6 +91,10 @@ light/dark libraries, search, setup, connected settings, and large-text states.
 per-file transfer progress, block timeouts, resumable Mac uploads, cancellation,
 and nested Photos album paths. `VaultIncomingQueueTests` verifies ordered App
 Group handoff survives reopening its store.
+Continued processing requests now use the exact registered identifier: the
+share extension submits one static queue task handled by the containing app,
+while in-app imports register their unique task immediately before submitting.
+An idle transfer ends its Live Activity and keeps unsent files durable for retry.
 Its separate
 scheme avoids the legacy app-hosted test bundle's duplicate package type linkage.
 Live user-Mac pairing, Files-provider UI, and physical-device animation performance

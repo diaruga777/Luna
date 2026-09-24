@@ -14,6 +14,8 @@ relay listener, or tailnet listener. Each accepted peer must be paired before
 its index is applied. The server sends `ClusterConfig` and a full or resumable
 index, serves requested blocks directly from disk with hash verification, and
 pulls iPhone-created blocks into a temporary file before atomic installation.
+It enables serving after the folder scan and before advertising that index, so
+an iPhone opening a newly listed file cannot race the serving authorization.
 Deletes become tombstones in the index and remove the local file only after
 the protocol has accepted the change.
 

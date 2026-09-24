@@ -206,14 +206,16 @@ import LunaVaultUI
             do {
                 let source = try await runtime.fileURL(named: name)
                 try Task.checkCancellation()
-                // Copy potentially large files away from the main actor. Quick Look needs
-                // the original extension; the durable cache uses hashed filenames.
+                // Quick Look needs the original extension; the durable cache uses
+                // hashed filenames. A hard link preserves the complete downloaded
+                // file without copying gigabytes into the preview directory.
                 let target = try await Task.detached(priority: .userInitiated) {
                     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VaultPreview-\(UUID().uuidString)")
                     do {
                         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                         let target = directory.appendingPathComponent((name as NSString).lastPathComponent)
-                        try FileManager.default.copyItem(at: source, to: target)
+                        do { try FileManager.default.linkItem(at: source, to: target) }
+                        catch { try FileManager.default.copyItem(at: source, to: target) }
                         return target
                     } catch { try? FileManager.default.removeItem(at: directory); throw error }
                 }.value
@@ -242,9 +244,10 @@ import LunaVaultUI
             controller.view.backgroundColor = .systemBackground
             var loading = UIContentUnavailableConfiguration.loading()
             loading.text = filename
-            loading.secondaryText = "Preparing a local copy for background sync."
+            loading.secondaryText = title == "Opening File" ? "Downloading from your Mac…" : "Preparing files for sync to your Mac."
             controller.contentUnavailableConfiguration = loading
-            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Hide", primaryAction: UIAction { [weak self] _ in
+            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Cancel", primaryAction: UIAction { [weak self] _ in
+                self?.work?.cancel()
                 self?.progress?.dismiss(animated: true)
                 self?.progress = nil
                 self?.presenter?.refresh()

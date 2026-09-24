@@ -13,10 +13,18 @@ public protocol BEPByteStream: AnyObject, Sendable {
     func close()
 }
 
-public enum BEPStreamError: Error, Equatable {
+public enum BEPStreamError: Error, Equatable, LocalizedError {
     case closed
     case posix(Int32)
     case timedOut
+
+    public var errorDescription: String? {
+        switch self {
+        case .closed: return "The Mac disconnected while sending the file. Keep Luna Vault open on the Mac and try again."
+        case .timedOut: return "The Mac stopped responding while sending the file. Check the connection and try again."
+        case .posix: return "The connection to the Mac failed while sending the file. Try again."
+        }
+    }
 }
 
 /// A byte stream over a socket-like file descriptor. Reads and writes run on

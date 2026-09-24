@@ -294,9 +294,17 @@ public actor BEPConnection {
     }
 }
 
-public enum BEPRequestError: Error, Equatable {
+public enum BEPRequestError: Error, Equatable, LocalizedError {
     case peerCode(BEPErrorCode)
     case hashMismatch
+
+    public var errorDescription: String? {
+        switch self {
+        case .peerCode(.noSuchFile): return "The Mac no longer has this version of the file. Refresh Vault and try again."
+        case .peerCode: return "The Mac couldn’t send this file. Keep Luna Vault open on the Mac and try again."
+        case .hashMismatch: return "The file changed while downloading. Refresh Vault and try again."
+        }
+    }
 }
 
 /// Fails after `seconds` with `BEPStreamError.timedOut`.

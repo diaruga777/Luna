@@ -246,6 +246,23 @@ final class VaultConnectedPairingTests: XCTestCase {
         await next.stop()
     }
 
+    func testMacPullOfMultiBlockFile() async throws {
+        let folder = directory.appendingPathComponent("LargeShared")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let expected = Data((0..<(BlockLayout.minimumBlockSize * 10)).map { UInt8($0 % 251) })
+        try expected.write(to: folder.appendingPathComponent("From Mac.bin"))
+        let server = try await LocalMacPeer(root: directory.appendingPathComponent("LargeMac"), folder: folder)
+        defer { server.close() }
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("LargePhone"))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil,
+            localID: try transport.identity())
+        try await runtime.pair(code: server.code.text)
+        let pulled = try await runtime.fileURL(named: "From Mac.bin")
+        XCTAssertEqual(try Data(contentsOf: pulled), expected)
+        await runtime.stop()
+    }
+
     func testSessionDoesNotReportConnectedBeforeMacIndexArrives() async throws {
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))

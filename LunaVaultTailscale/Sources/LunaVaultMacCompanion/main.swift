@@ -184,9 +184,11 @@ private final class CompanionController: @unchecked Sendable {
             try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: folder.lastPathComponent,
                 devices: [BEPDevice(id: localID, name: "Luna Mac"), BEPDevice(id: accepted.device, name: hello.deviceName)])]))
             let files = try index.all()
+            // The iPhone can request a block as soon as it reads this index.
+            // Authorize serving before the index is put on the wire.
+            delegate.startServing(connection)
             try await connection.send(index: BEPIndex(folder: "vault", files: files,
                 lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
-            delegate.startServing(connection)
             lock.withLock { status = "Connected · \(files.filter { $0.type == .file }.count) files · \(folder.path)" }
             var lastScan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: files.map { ($0.name, $0) }))
             while !(await connection.isClosed) {

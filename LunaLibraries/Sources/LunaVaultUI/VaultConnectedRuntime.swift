@@ -146,7 +146,20 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     public func fileURL(named name: String) async throws -> URL {
         if let url = try cache.cachedURL(for: name) { return url }
         if !(await session.isConnected) { try await session.start() }
-        return try await session.fetchFile(named: name)
+        // A socket is usable before the Mac's first index has arrived. A tap
+        // during that gap must wait for current block metadata and permission.
+        try await session.waitForInitialIndex()
+        do { return try await session.fetchFile(named: name) }
+        catch {
+            guard !Task.isCancelled, error is BEPRequestError || error is BEPStreamError else { throw error }
+            // The Mac can replace a file between index and block request, or
+            // a half-open socket can fail its first transfer. One fresh index
+            // and connection gives the tap a useful retry without a loop.
+            await session.stop(reason: "Retrying file download")
+            try await session.start(forceLookup: true)
+            try await session.waitForInitialIndex()
+            return try await session.fetchFile(named: name)
+        }
     }
 
     public func importFile(at url: URL) async throws {

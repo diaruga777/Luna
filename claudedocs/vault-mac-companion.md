@@ -19,7 +19,12 @@ the protocol has accepted the change.
 
 Upload staging has a stable name for each file version. On reconnect the Mac
 hashes completed blocks in that staging file, reports them to the phone, and
-requests only the remainder. Individual block requests time out even if
+requests only the remainder. New blocks use a rolling window of up to eight
+requests, capped at 32 MiB of payload. Out-of-order responses are written at
+their verified offsets; staging is synchronized every 32 MiB and before atomic
+installation. Reconnect verifies the contiguous completed prefix and safely
+truncates any incomplete or out-of-order tail before resuming. Individual
+block requests time out even if
 connection pings continue. The folder scan preserves confirmed iPhone versions
 and tombstones across reconnects. It reuses block hashes for files whose size
 and modification time are unchanged, avoiding repeated reads of large files.

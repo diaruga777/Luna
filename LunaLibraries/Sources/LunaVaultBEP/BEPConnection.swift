@@ -142,6 +142,14 @@ public actor BEPConnection {
     /// Sends Close and tears the connection down.
     public func close(reason: String) async {
         guard !closed else { return }
+        // A stalled socket may never finish a write. Bound the courtesy
+        // Close frame so reconnect can always tear down the old stream.
+        let deadline = Task { [stream] in
+            do { try await Task.sleep(for: .seconds(1)) }
+            catch { return }
+            stream.close()
+        }
+        defer { deadline.cancel() }
         try? await write(.close(BEPClose(reason: reason)))
         await tearDown(error: nil)
     }
@@ -157,7 +165,11 @@ public actor BEPConnection {
             throw BEPProtocolError.clusterConfigExpected
         }
         let frame = BEPFraming.encodeMessage(message)
-        try await stream.write(frame)
+        do { try await stream.write(frame) }
+        catch {
+            await tearDown(error: error)
+            throw error
+        }
         bytesSent += Int64(frame.count)
         lastWrite = clock()
     }

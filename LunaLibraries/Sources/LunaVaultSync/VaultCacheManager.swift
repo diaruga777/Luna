@@ -110,13 +110,23 @@ public final class VaultCacheManager: @unchecked Sendable {
     }
 
     public func cachedURL(for name: String, now: Date = Date()) throws -> URL? {
-        guard let record = try store.file(named: name), record.isCachedCurrent else { return nil }
+        guard let record = try store.file(named: name) else { return nil }
+        return try cachedURL(for: record, now: now)
+    }
+
+    public func cachedURL(for record: VaultFileRecord, now: Date = Date()) throws -> URL? {
+        guard record.isCachedCurrent else { return nil }
+        let name = record.name
         let url = store.cacheFileURL(for: name)
         guard fileManager.fileExists(atPath: url.path) else {
             try store.clearCache(name: name)
             return nil
         }
-        try store.markCacheAccess(name: name, now: now)
+        // A transfer touches this for every block; cache expiry is measured
+        // in days, so writing SQLite once per 30 seconds is sufficient.
+        if now.timeIntervalSince(record.cache?.lastAccess ?? .distantPast) >= 30 {
+            try store.markCacheAccess(name: name, now: now)
+        }
         return url
     }
 

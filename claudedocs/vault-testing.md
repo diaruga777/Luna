@@ -91,3 +91,24 @@ is required for the deterministic suite. A live iCloud run must explicitly
 exercise a provisioned entitlement and record both download and eviction
 resource values; a successful API call alone is not evidence that local bytes
 were evicted.
+
+## Connected transfer regressions
+
+`LunaVaultConnectionTests` is the focused hostless iOS test scheme for the BEP
+session and production Mac file delegate. Its deterministic pipe tests cover
+consecutive large uploads without re-announcing confirmed files, out-of-order
+rolling requests, the eight-request/32-MiB bound, corrupt blocks, verified
+resume, initial-index timeout recovery, and failed/stalled writes. Existing
+loopback Go TLS tests cover pairing, downloads, uploads, and reconnects without
+a live Mac, tailnet, or external discovery service.
+
+```sh
+xcodebuild test -scheme LunaVaultConnectionTests \
+  -destination 'platform=iOS Simulator,id=<UDID>'
+```
+
+The latency benchmark compares the old serial request pattern with the rolling
+window using 4 MiB of data and 20 ms simulated latency per request. It reports
+both durations without asserting a wall-clock speed threshold. A local iOS 26.2
+run measured approximately 0.69 s serial versus 0.087 s windowed (7.9x); this
+isolates request latency and is not a device/network throughput guarantee.

@@ -75,24 +75,41 @@ import LunaVaultUI
             continuedTask.progress.totalUnitCount = progressTotal
             continuedTask.progress.completedUnitCount = progressCompleted
         } else { processing.append(task) }
-        task.expirationHandler = { [weak self] in
+        task.expirationHandler = { [weak self, weak task] in
             Task { @MainActor in
-                self?.worker?.cancel()
-                self?.scheduleProcessingIfNeeded()
+                guard let self, let task else { return }
+                self.expire(task)
             }
         }
         if let continuedTask = task as? BGContinuedProcessingTask {
             Task { [weak self, weak continuedTask] in
-                try? await Task.sleep(for: .seconds(180))
-                guard let self, let continuedTask,
-                      self.continued.contains(where: { $0 === continuedTask }) else { return }
-                self.worker?.cancel()
-                self.continued.removeAll { $0 === continuedTask }
-                continuedTask.setTaskCompleted(success: false)
-                self.scheduleProcessingIfNeeded()
+                while true {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard let self, let continuedTask,
+                          self.continued.contains(where: { $0 === continuedTask }) else { return }
+                    // Expire an idle activity, never a healthy large upload
+                    // simply because three minutes elapsed since submission.
+                    if Date().timeIntervalSince(self.lastProgressAt) >= 180 {
+                        self.expire(continuedTask)
+                        return
+                    }
+                }
             }
         }
         start()
+    }
+
+    private func expire(_ task: BGTask) {
+        guard continued.contains(where: { $0 === task }) || processing.contains(where: { $0 === task }) else { return }
+        continued.removeAll { $0 === task }
+        processing.removeAll { $0 === task }
+        task.setTaskCompleted(success: false)
+        // Foreground transfers do not depend on a background task's lifetime.
+        if UIApplication.shared.applicationState == .background,
+           continued.isEmpty, processing.isEmpty, backgroundLease == .invalid {
+            worker?.cancel()
+        }
+        scheduleProcessingIfNeeded()
     }
 
     private func submitContinuedRequest() {
@@ -123,7 +140,8 @@ import LunaVaultUI
             Task { @MainActor in
                 guard let self else { return }
                 self.endBackgroundLease()
-                if self.continued.isEmpty && self.processing.isEmpty {
+                if UIApplication.shared.applicationState == .background,
+                   self.continued.isEmpty && self.processing.isEmpty {
                     self.worker?.cancel()
                     self.scheduleProcessingIfNeeded()
                 }
@@ -186,7 +204,11 @@ import LunaVaultUI
                 let remaining = try queue.items()
                 updateProgress(uploads: uploads, queued: remaining)
                 if Date().timeIntervalSince(lastProgressAt) > (intakeCount > 0 ? 300 : 120) {
-                    return
+                    guard UIApplication.shared.applicationState != .background else { return }
+                    // Pings can keep a dead transfer looking connected. A new
+                    // session re-announces durable changes and resumes blocks.
+                    await runtime.reconnect(force: true)
+                    lastProgressAt = Date()
                 }
                 if uploads.isEmpty && remaining.isEmpty && intakeCount == 0 {
                     succeeded = true
@@ -203,7 +225,12 @@ import LunaVaultUI
                 if status == .notPaired || status == .offline {
                     await runtime.reconnect()
                     let retry = await runtime.connectionStatus()
-                    if retry == .notPaired || retry == .offline { return }
+                    if retry == .notPaired { return }
+                    if retry == .offline {
+                        guard UIApplication.shared.applicationState != .background else { return }
+                        try await Task.sleep(for: .seconds(5))
+                        continue
+                    }
                 }
                 try await Task.sleep(for: .milliseconds(500))
             }

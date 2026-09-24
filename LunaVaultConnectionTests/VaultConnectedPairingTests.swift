@@ -335,6 +335,187 @@ final class VaultConnectedPairingTests: XCTestCase {
         await session.stop(); await server.close(reason: "Test ended")
     }
 
+    func testNextUploadDoesNotReannouncePreviouslyConfirmedLargeFile() async throws {
+        let folder = directory.appendingPathComponent("Shared")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        try store.savePeer(VaultPeerRecord(deviceID: mac, name: "Mac",
+            manualAddresses: [.tcp(host: "localhost", port: 22000)], folderID: "vault", lastConnectedAt: Date()))
+        let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("Mac.sqlite"))
+        let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: mac, folderID: "vault")
+        let (phoneStream, macStream) = PipeByteStream.pair()
+        let server = BEPConnection(stream: macStream, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        let session = VaultSyncSession(store: store, dialer: StreamDialer(stream: phoneStream), lookup: nil, localDevice: phone)
+        async let hello = server.start()
+        try await session.start()
+        _ = try await hello
+        try await server.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",
+            devices: [BEPDevice(id: mac, name: "Mac"), BEPDevice(id: phone, name: "Phone")])]))
+        try await server.send(index: BEPIndex(folder: "vault", files: [], isUpdate: false))
+        delegate.startServing(server)
+        try await session.waitForInitialIndex(timeout: 1)
+        do {
+            let first = directory.appendingPathComponent("large.bin")
+            let contents = Data(repeating: 7, count: 16 * 1024 * 1024)
+            try contents.write(to: first)
+            _ = try await session.addFile(at: first, named: "large.bin")
+            try await waitForConfirmation(in: store)
+            XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("large.bin")), contents)
+
+            // A previously confirmed file must not be re-read or re-applied on
+            // the next import. An independent Mac edit makes that visible.
+            let edited = Data("Edited on Mac after confirmation".utf8)
+            try edited.write(to: folder.appendingPathComponent("large.bin"))
+            let second = directory.appendingPathComponent("next.bin")
+            try Data("Next file".utf8).write(to: second)
+            _ = try await session.addFile(at: second, named: "next.bin")
+            try await waitForConfirmation(in: store)
+            XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("next.bin")), Data("Next file".utf8))
+            XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("large.bin")), edited)
+            XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        } catch {
+            await session.stop()
+            await server.close(reason: "Test ended")
+            throw error
+        }
+        await session.stop()
+        await server.close(reason: "Test ended")
+    }
+
+    private func waitForConfirmation(in store: VaultFolderStore) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while try !store.pendingLocalChanges().isEmpty {
+            guard Date() < deadline else { throw VaultSyncSessionError.uploadPending }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func testInitialIndexTimeoutClosesSessionSoNextStartCanRedial() async throws {
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Timeout"))
+        try store.savePeer(VaultPeerRecord(deviceID: mac, name: "Mac",
+            manualAddresses: [.tcp(host: "localhost", port: 22000)], folderID: "vault", lastConnectedAt: Date()))
+        let (clientStream, serverStream) = PipeByteStream.pair()
+        let delegate = EmptyDelegate()
+        let server = BEPConnection(stream: serverStream, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        let session = VaultSyncSession(store: store, dialer: StreamDialer(stream: clientStream), lookup: nil, localDevice: phone)
+        async let hello = server.start()
+        try await session.start()
+        _ = try await hello
+        do {
+            try await session.waitForInitialIndex(timeout: 0.05)
+            XCTFail("Silent Mac must time out")
+        } catch let error as VaultSyncSessionError { XCTAssertEqual(error, .initialIndexTimedOut) }
+        let connected = await session.isConnected
+        XCTAssertFalse(connected, "A timed-out session must not be reused by start()")
+        let state = await session.currentState
+        XCTAssertEqual(state, .offline("Initial index timed out"))
+        await server.close(reason: "Test ended")
+    }
+
+    func testCloseUnblocksAStalledWrite() async throws {
+        let (clientStream, serverStream) = PipeByteStream.pair()
+        let stream = ControlledWriteStream(base: clientStream)
+        let delegate = EmptyDelegate()
+        let connection = BEPConnection(stream: stream, peerDevice: try DeviceID(bytes: Data(repeating: 1, count: 32)),
+            localHello: BEPHello(deviceName: "Phone", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        try await serverStream.write(BEPFraming.encodeHello(BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1")))
+        try await connection.start()
+        stream.mode = .stall
+        let started = Date()
+        await connection.close(reason: "Reconnect stalled transfer")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        let closed = await connection.isClosed
+        XCTAssertTrue(closed)
+        serverStream.close()
+    }
+
+    func testWriteFailureImmediatelyClosesConnection() async throws {
+        let (clientStream, serverStream) = PipeByteStream.pair()
+        let stream = ControlledWriteStream(base: clientStream)
+        let delegate = EmptyDelegate()
+        let connection = BEPConnection(stream: stream, peerDevice: try DeviceID(bytes: Data(repeating: 1, count: 32)),
+            localHello: BEPHello(deviceName: "Phone", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        try await serverStream.write(BEPFraming.encodeHello(BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1")))
+        try await connection.start()
+        stream.mode = .fail
+        do { try await connection.send(clusterConfig: BEPClusterConfig(folders: [])); XCTFail("Write should fail") }
+        catch { }
+        let closed = await connection.isClosed
+        XCTAssertTrue(closed, "A failed announcement must trigger reconnect rather than leave the session connected")
+        serverStream.close()
+    }
+
+    func testRollingBlockWindowIsBoundedAndDoesNotWaitForSlowFirstBlock() async throws {
+        let bytes = Data(repeating: 7, count: 24 * BlockLayout.minimumBlockSize)
+        let blocks = BlockLayout.blocks(for: bytes).blocks
+        let probe = TransferWindowProbe(bytes: bytes)
+        var output = Data(count: bytes.count)
+        try await BEPBlockTransfer.receive(blocks: blocks, request: { index, block in
+            try await probe.read(index, block: block)
+        }, write: { _, block, data in
+            output.replaceSubrange(Int(block.offset)..<(Int(block.offset) + data.count), with: data)
+        })
+        XCTAssertEqual(output, bytes)
+        let peak = await probe.peak
+        let refilled = await probe.refilledBeforeFirstCompleted
+        XCTAssertGreaterThan(peak, 1)
+        XCTAssertLessThanOrEqual(peak, BEPBlockTransfer.maximumOutstandingRequests)
+        XCTAssertTrue(refilled)
+    }
+
+    func testLargeBlocksLimitWindowToThirtyTwoMiB() async throws {
+        let bytes = Data(repeating: 7, count: 3 * BlockLayout.maximumBlockSize)
+        let blocks = BlockLayout.blocks(for: bytes, blockSize: BlockLayout.maximumBlockSize).blocks
+        let probe = TransferWindowProbe(bytes: bytes)
+        var received = 0
+        try await BEPBlockTransfer.receive(blocks: blocks, request: { index, block in
+            try await probe.read(index, block: block)
+        }, write: { _, _, data in received += data.count })
+        let peak = await probe.peak
+        XCTAssertEqual(peak, 2)
+        XCTAssertEqual(received, bytes.count)
+    }
+
+    func testBlockWindowLatencyBenchmark() async throws {
+        let bytes = Data(repeating: 5, count: 32 * BlockLayout.minimumBlockSize)
+        let blocks = BlockLayout.blocks(for: bytes).blocks
+        let request: @Sendable (Int, BlockInfo) async throws -> Data = { _, block in
+            try await Task.sleep(for: .milliseconds(20))
+            return bytes.subdata(in: Int(block.offset)..<(Int(block.offset) + Int(block.size)))
+        }
+        let serialStart = Date()
+        for (index, block) in blocks.enumerated() {
+            let data = try await request(index, block)
+            XCTAssertEqual(SHA256Digest.hash(data), block.hash)
+        }
+        let serialSeconds = Date().timeIntervalSince(serialStart)
+        let windowStart = Date()
+        var received = 0
+        try await BEPBlockTransfer.receive(blocks: blocks, request: request,
+                                           write: { _, _, data in received += data.count })
+        let windowSeconds = Date().timeIntervalSince(windowStart)
+        XCTAssertEqual(received, bytes.count)
+        print("Vault 4 MiB / 20 ms simulated request latency: serial=\(serialSeconds)s window=\(windowSeconds)s speedup=\(serialSeconds / windowSeconds)x")
+    }
+
+    func testCorruptBlockIsNeverWritten() async throws {
+        let bytes = Data([1, 2, 3])
+        let blocks = BlockLayout.blocks(for: bytes).blocks
+        var writes = 0
+        do {
+            try await BEPBlockTransfer.receive(blocks: blocks,
+                request: { _, _ in Data([3, 2, 1]) }, write: { _, _, _ in writes += 1 })
+            XCTFail("Corrupt bytes must be rejected")
+        } catch let error as BEPRequestError { XCTAssertEqual(error, .hashMismatch) }
+        XCTAssertEqual(writes, 0)
+    }
+
     func testBlockRequestTimesOutEvenWhilePingsContinue() async throws {
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
@@ -544,4 +725,61 @@ private final class LocalMacPeer: @unchecked Sendable {
 private struct StreamDialer: VaultPeerDialing {
     let stream: any BEPByteStream
     func dial(_ address: VaultPeerAddress, expecting: DeviceID) async throws -> any BEPByteStream { stream }
+}
+
+private actor TransferWindowProbe {
+    let bytes: Data
+    var active = 0
+    var peak = 0
+    var firstCompleted = false
+    var refilledBeforeFirstCompleted = false
+    init(bytes: Data) { self.bytes = bytes }
+    func read(_ index: Int, block: BlockInfo) async throws -> Data {
+        active += 1
+        peak = max(peak, active)
+        defer { active -= 1 }
+        if index >= BEPBlockTransfer.maximumOutstandingRequests, !firstCompleted {
+            refilledBeforeFirstCompleted = true
+        }
+        try await Task.sleep(for: .milliseconds(index == 0 ? 200 : 10))
+        if index == 0 { firstCompleted = true }
+        return bytes.subdata(in: Int(block.offset)..<(Int(block.offset) + Int(block.size)))
+    }
+}
+
+private final class ControlledWriteStream: BEPByteStream, @unchecked Sendable {
+    enum Mode { case normal, fail, stall }
+    private let base: any BEPByteStream
+    private let lock = NSLock()
+    private var storedMode: Mode = .normal
+    private var closed = false
+    private var pending: [CheckedContinuation<Void, Error>] = []
+    var mode: Mode {
+        get { lock.withLock { storedMode } }
+        set { lock.withLock { storedMode = newValue } }
+    }
+    init(base: any BEPByteStream) { self.base = base }
+    func read(exactly count: Int) async throws -> Data { try await base.read(exactly: count) }
+    func write(_ data: Data) async throws {
+        switch mode {
+        case .normal: try await base.write(data)
+        case .fail: throw BEPStreamError.closed
+        case .stall:
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                lock.withLock {
+                    if closed { continuation.resume(throwing: BEPStreamError.closed) }
+                    else { pending.append(continuation) }
+                }
+            }
+        }
+    }
+    func close() {
+        let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+            closed = true
+            defer { pending.removeAll() }
+            return pending
+        }
+        base.close()
+        waiters.forEach { $0.resume(throwing: BEPStreamError.closed) }
+    }
 }

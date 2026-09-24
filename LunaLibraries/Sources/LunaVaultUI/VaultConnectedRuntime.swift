@@ -118,7 +118,11 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             try await session.start(forceLookup: force)
             try await session.waitForInitialIndex()
             _ = await session.refreshInvalidatedCache()
-        } catch { /* The session's offline state retains the verified pairing. */ }
+        } catch {
+            // In particular, an initial-index timeout must not leave a
+            // half-open session in `syncing` that start() keeps reusing.
+            await session.stop(reason: "Reconnect failed")
+        }
     }
 
     public func stop() async { await session.stop() }

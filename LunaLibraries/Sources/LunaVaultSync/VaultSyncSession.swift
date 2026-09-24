@@ -189,7 +189,11 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         let deadline = clock().addingTimeInterval(max(0, timeout))
         while !receivedInitialIndex {
             guard isConnected else { throw VaultSyncSessionError.noConnection }
-            guard clock() < deadline else { throw VaultSyncSessionError.initialIndexTimedOut }
+            guard clock() < deadline else {
+                await closeConnection(reason: "Initial index timed out")
+                await setState(.offline("Initial index timed out"))
+                throw VaultSyncSessionError.initialIndexTimedOut
+            }
             try await Task.sleep(nanoseconds: 25_000_000)
         }
         return true
@@ -198,7 +202,11 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     public func announcePendingChanges() async throws {
         guard let connection, let peer = try store.peer() else { throw VaultSyncSessionError.noConnection }
         guard peer.isFolderAccepted else { throw VaultSyncSessionError.folderNotAccepted }
-        let entries = try store.announcedIndexEntries()
+        // Cached files were already announced at connect time. Re-announcing
+        // them makes the Mac re-hash every previous upload before the next one.
+        let pending = Set(try store.pendingLocalChanges().map(\.name))
+        let entries = try store.announcedIndexEntries().filter { pending.contains($0.name) }
+        guard !entries.isEmpty else { return }
         try await connection.send(index: BEPIndex(
             folder: peer.folderID, files: entries,
             lastSequence: entries.map(\.sequence).max() ?? 0,
@@ -393,10 +401,9 @@ public actor VaultSyncSession: BEPConnectionDelegate {
               request.folder == peer.folderID,
               let record = try? store.file(named: request.name),
               record.isCachedCurrent,
-              record.blocks.contains(where: {
-                  $0.offset == request.offset && $0.size == request.size && $0.hash == request.hash
-              }),
-              let url = try? cache.cachedURL(for: request.name) else {
+              let block = record.block(atOffset: request.offset),
+              block.size == request.size, block.hash == request.hash,
+              let url = try? cache.cachedURL(for: record) else {
             return .failure(.noSuchFile)
         }
         do {
@@ -418,7 +425,8 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         guard self.connection === connection,
               let record = try? store.file(named: request.name),
               record.origin == .localPending, !record.deleted,
-              record.blocks.contains(where: { $0.offset == request.offset && $0.size == request.size && $0.hash == request.hash })
+              let block = record.block(atOffset: request.offset),
+              block.size == request.size, block.hash == request.hash
         else { return }
         if servedBlockOffsets[request.name, default: []].insert(request.offset).inserted {
             sentBytes[request.name, default: 0] = min(record.size, sentBytes[request.name, default: 0] + Int64(byteCount))

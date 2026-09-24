@@ -24,7 +24,7 @@ public enum VaultBlockFetchError: Error, Equatable, Sendable {
 /// Bytes are first materialized beside their final destination and become
 /// visible only after the complete file has verified.
 public final class VaultBlockFetcher: @unchecked Sendable {
-    public static let maximumOutstandingRequests = 8
+    public static let maximumOutstandingRequests = BEPBlockTransfer.maximumOutstandingRequests
 
     private let store: any VaultSyncStoring
     private let cache: VaultCacheManager
@@ -67,28 +67,14 @@ public final class VaultBlockFetcher: @unchecked Sendable {
         let output = try FileHandle(forWritingTo: temporary)
         defer { try? output.close() }
 
-        let blocks = file.blocks
-        for batchStart in stride(from: 0, to: blocks.count, by: Self.maximumOutstandingRequests) {
-            try Task.checkCancellation()
-            let end = min(batchStart + Self.maximumOutstandingRequests, blocks.count)
-            let batch = try await withThrowingTaskGroup(of: (Int, Data).self) { group in
-                for index in batchStart..<end {
-                    let block = blocks[index]
-                    group.addTask {
-                        let bytes = try await requester.request(
-                            folder: folderID, name: file.name, block: block, blockNo: Int32(index))
-                        guard bytes.count == Int(block.size), SHA256Digest.hash(bytes) == block.hash else {
-                            throw VaultBlockFetchError.invalidBlock(index)
-                        }
-                        return (index, bytes)
-                    }
-                }
-                var received: [(Int, Data)] = []
-                for try await item in group { received.append(item) }
-                return received.sorted { $0.0 < $1.0 }
-            }
-            for (_, bytes) in batch { try output.write(contentsOf: bytes) }
-        }
+        try await BEPBlockTransfer.receive(blocks: file.blocks,
+            request: { index, block in
+                try await requester.request(folder: folderID, name: file.name,
+                                            block: block, blockNo: Int32(index))
+            }, write: { _, block, bytes in
+                try output.seek(toOffset: UInt64(block.offset))
+                try output.write(contentsOf: bytes)
+            })
         try output.synchronize()
 
         switch destination {

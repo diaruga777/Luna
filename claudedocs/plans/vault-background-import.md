@@ -15,3 +15,14 @@ Files selected in Vault, selected from Photos, or sent to the Vault share extens
 ## Platform boundary
 
 Apple's iOS 26 SDK permits an extension to submit a continued processing request, and the containing app handles the work. The share extension still cannot reliably open the app itself, so it first publishes the payload to the App Group, then submits a request. If the system rejects or delays that request, Vault resumes the queue when opened or at a scheduled processing wake. iOS can expire or cancel background work, so the queue survives process death and the Live Activity appears only while a continued task is running.
+
+## Transfer recovery
+
+The foreground drain retries offline connections and forces a fresh session
+after 120 seconds without upload progress (300 seconds while intake is active).
+Pending local changes and verified Mac staging blocks survive this reconnect.
+Background execution still stops at its idle limit and schedules a later wake.
+A continued-processing activity expires after three minutes **without progress**,
+not three minutes from launch; a background task or UIKit lease expiring does
+not cancel work while Vault remains in the foreground. System background
+expiration cancels the worker once no execution grant remains.

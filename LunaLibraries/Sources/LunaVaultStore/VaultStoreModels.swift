@@ -120,6 +120,17 @@ public struct VaultFileRecord: Equatable, Sendable {
         BlockLayout.blocks(fromConcatenatedHashes: blockHashes, fileSize: size, blockSize: blockSize)
     }
 
+    /// Check one requested block without rebuilding the entire block list.
+    public func block(atOffset offset: Int64) -> BlockInfo? {
+        guard type == .file, !deleted, !invalid, blockSize > 0, offset >= 0,
+              offset % Int64(blockSize) == 0, blockHashes.count % 32 == 0 else { return nil }
+        let index = offset / Int64(blockSize)
+        guard index < Int64(blockHashes.count / 32), offset < size || (size == 0 && offset == 0) else { return nil }
+        let start = blockHashes.startIndex + Int(index) * 32
+        return BlockInfo(offset: offset, size: Int32(min(Int64(blockSize), size - offset)),
+                         hash: Data(blockHashes[start..<(start + 32)]))
+    }
+
     public var displayName: String {
         name.split(separator: "/").last.map(String.init) ?? name
     }

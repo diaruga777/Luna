@@ -340,15 +340,21 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
                 folder: folderID, updates: [BEPFileDownloadProgressUpdate(
                     name: file.name, version: file.version, blockIndexes: Array(0..<nextBlock))]))
         }
-        try output.seek(toOffset: UInt64(written))
-        for offset in nextBlock..<file.blocks.count {
-            let block = file.blocks[offset]
-            try Task.checkCancellation()
-            let bytes = try await connection.request(folder: folderID, name: file.name, block: block, blockNo: Int32(offset))
-            guard bytes.count == Int(block.size) else { throw BEPStreamError.closed }
-            try output.write(contentsOf: bytes); written += Int64(bytes.count)
-            if offset % 16 == 15 { try output.synchronize() }
-        }
+        var unsynchronizedBytes = 0
+        try await BEPBlockTransfer.receive(blocks: file.blocks, startingAt: nextBlock,
+            request: { [folderID] offset, block in
+                try await connection.request(folder: folderID, name: file.name,
+                                             block: block, blockNo: Int32(offset))
+            }, write: { _, block, bytes in
+                try output.seek(toOffset: UInt64(block.offset))
+                try output.write(contentsOf: bytes)
+                written += Int64(bytes.count)
+                unsynchronizedBytes += bytes.count
+                if unsynchronizedBytes >= BEPBlockTransfer.maximumBufferedBytes {
+                    try output.synchronize()
+                    unsynchronizedBytes = 0
+                }
+            })
         guard written == file.size else { throw BEPStreamError.closed }
         try output.synchronize()
         try FileManager.default.moveItem(at: temporary, to: destination)

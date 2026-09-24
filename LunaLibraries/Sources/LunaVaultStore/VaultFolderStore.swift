@@ -620,6 +620,8 @@ public final class VaultFolderStore: @unchecked Sendable {
                 switch row.text(0) {
                 case "cache_quota": settings.cacheQuotaBytes = Int64(row.text(1)) ?? settings.cacheQuotaBytes
                 case "scratch_quota": settings.scratchQuotaBytes = Int64(row.text(1)) ?? settings.scratchQuotaBytes
+                case "photo_image_format": settings.photoImageFormat = VaultPhotoImageFormat(rawValue: row.text(1)) ?? .jpeg
+                case "photo_video_format": settings.photoVideoFormat = VaultPhotoVideoFormat(rawValue: row.text(1)) ?? .mp4
                 default: break
                 }
             }
@@ -632,6 +634,11 @@ public final class VaultFolderStore: @unchecked Sendable {
             for (key, value) in [("cache_quota", settings.cacheQuotaBytes), ("scratch_quota", settings.scratchQuotaBytes)] {
                 try db.executeUnlocked("INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                                        [.text(key), .text(String(value))])
+            }
+            for (key, value) in [("photo_image_format", settings.photoImageFormat.rawValue),
+                                 ("photo_video_format", settings.photoVideoFormat.rawValue)] {
+                try db.executeUnlocked("INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                                       [.text(key), .text(value)])
             }
         }
     }

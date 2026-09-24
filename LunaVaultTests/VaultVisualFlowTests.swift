@@ -143,7 +143,12 @@ final class VaultVisualFlowTests: XCTestCase {
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote", remoteName: "MacBook Pro") },
             cachePresentation: { VaultCachePresentation(usedBytes: 24_500_000, quotaBytes: 500_000_000, fileCount: 12) }), pairingHandler: { _ in })
         try await host(controller)
-        try await waitUntil { controller.tableView.numberOfSections == 4 }
+        try await waitUntil { controller.tableView.numberOfSections == 5 }
+        XCTAssertEqual(controller.tableView.numberOfRows(inSection: 3), 2)
+        let image = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 3))
+        let video = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 1, section: 3))
+        XCTAssertEqual(image.accessibilityLabel, "Images, JPEG")
+        XCTAssertEqual(video.accessibilityLabel, "Videos, MP4")
         try await capture("10-connected-settings")
     }
     func testSetupAdaptsToLargeTextAndSmallScreen() async throws {

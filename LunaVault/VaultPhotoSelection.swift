@@ -1,7 +1,10 @@
+import AVFoundation
+import ImageIO
 import Photos
 import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
+import LunaVaultStore
 
 /// A file exported from the user's photo library. `destinationURL` is durable and
 /// can be handed to the Vault import/sync queue immediately.
@@ -39,13 +42,13 @@ public enum VaultPhotoSelectionError: LocalizedError {
     }
 }
 
-/// Presents PhotoKit pickers and exports original resource bytes directly to
-/// disk. The destination is never assembled in memory, which keeps videos and
-/// Live Photos safe to use with a background import queue.
+/// Presents PhotoKit pickers and stages exports on disk for the import queue.
 @MainActor
 public final class VaultPhotoSelectionCoordinator: NSObject, PHPickerViewControllerDelegate {
     public typealias Completion = (Result<[VaultPhotoExportedFile], Error>) -> Void
     public var onExportStart: (() -> Void)?
+    public var imageFormat: VaultPhotoImageFormat = .jpeg
+    public var videoFormat: VaultPhotoVideoFormat = .mp4
 
     private var pickerRequest: (destinationRootURL: URL, albumName: String?, completion: Completion)?
 
@@ -151,9 +154,12 @@ public final class VaultPhotoSelectionCoordinator: NSObject, PHPickerViewControl
                     do {
                         let destination = try copied.get()
                         let original = String(destination.lastPathComponent.dropFirst(37))
-                        let name = self.uniqueFilename(original: original, in: folder)
+                        let mediaType = UTType(filenameExtension: destination.pathExtension) ?? UTType(type)
+                        let (staged, exportedName) = try await self.convertIfNeeded(destination, named: original,
+                            mediaType: mediaType, in: folder)
+                        let name = self.uniqueFilename(original: exportedName, in: folder)
                         let normalized = folder.appendingPathComponent(name)
-                        try FileManager.default.moveItem(at: destination, to: normalized)
+                        try FileManager.default.moveItem(at: staged, to: normalized)
                         output.append(VaultPhotoExportedFile(assetIdentifier: identifier,
                                                              stagedURL: normalized,
                                                              relativeName: ["Photos", albumName.map(self.safeComponent), name].compactMap { $0 }.joined(separator: "/")))
@@ -194,6 +200,7 @@ public final class VaultPhotoSelectionCoordinator: NSObject, PHPickerViewControl
             }
             do {
                 let resource = try self.originalResource(for: asset)
+                let resourceTypeIdentifier = resource.uniformTypeIdentifier
                 let destination = folder.appendingPathComponent(self.uniqueFilename(original: resource.originalFilename, in: folder))
                 let options = PHAssetResourceRequestOptions()
                 options.isNetworkAccessAllowed = true
@@ -201,9 +208,18 @@ public final class VaultPhotoSelectionCoordinator: NSObject, PHPickerViewControl
                     Task { @MainActor in
                         guard let self else { return }
                         if let error { completion(.failure(error)); return }
-                        output.append(VaultPhotoExportedFile(assetIdentifier: id, stagedURL: destination,
-                                                             relativeName: ["Photos", self.safeComponent(albumName), destination.lastPathComponent].joined(separator: "/")))
-                        next(index + 1)
+                        do {
+                            let mediaType = UTType(resourceTypeIdentifier) ?? UTType(filenameExtension: destination.pathExtension)
+                            let (staged, exportedName) = try await self.convertIfNeeded(destination,
+                                named: destination.lastPathComponent, mediaType: mediaType, in: folder)
+                            let name = staged == destination ? destination.lastPathComponent
+                                : self.uniqueFilename(original: exportedName, in: folder)
+                            let finalURL = folder.appendingPathComponent(name)
+                            if staged != finalURL { try FileManager.default.moveItem(at: staged, to: finalURL) }
+                            output.append(VaultPhotoExportedFile(assetIdentifier: id, stagedURL: finalURL,
+                                relativeName: ["Photos", self.safeComponent(albumName), name].joined(separator: "/")))
+                            next(index + 1)
+                        } catch { completion(.failure(error)) }
                     }
                 }
             } catch { completion(.failure(error)) }
@@ -218,6 +234,50 @@ public final class VaultPhotoSelectionCoordinator: NSObject, PHPickerViewControl
         }
         if let resource = resources.first(where: { $0.type == .photo || $0.type == .video }) { return resource }
         throw VaultPhotoSelectionError.assetUnavailable(asset.localIdentifier)
+    }
+
+    func convertIfNeeded(_ source: URL, named name: String, mediaType: UTType?, in folder: URL)
+        async throws -> (URL, String) {
+        let isVideo = mediaType?.conforms(to: .movie) == true || mediaType?.conforms(to: .video) == true
+        let isImage = mediaType?.conforms(to: .image) == true
+        if isVideo && videoFormat == .mp4 && source.pathExtension.lowercased() != "mp4" {
+            let target = folder.appendingPathComponent(".convert-\(UUID().uuidString).mp4")
+            do {
+                let asset = AVURLAsset(url: source)
+                guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+                    throw VaultPhotoSelectionError.exportFailed("This video cannot be converted to MP4.")
+                }
+                try await exporter.export(to: target, as: .mp4)
+                try FileManager.default.removeItem(at: source)
+                return (target, (name as NSString).deletingPathExtension + ".mp4")
+            } catch {
+                try? FileManager.default.removeItem(at: target)
+                throw error
+            }
+        }
+        if isImage && imageFormat == .jpeg && !["jpg", "jpeg"].contains(source.pathExtension.lowercased()) {
+            let target = folder.appendingPathComponent(".convert-\(UUID().uuidString).jpg")
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    guard let image = CGImageSourceCreateWithURL(source as CFURL, nil),
+                          let destination = CGImageDestinationCreateWithURL(target as CFURL,
+                              UTType.jpeg.identifier as CFString, 1, nil) else {
+                        throw VaultPhotoSelectionError.exportFailed("This image cannot be converted to JPEG.")
+                    }
+                    CGImageDestinationAddImageFromSource(destination, image, 0,
+                        [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+                    guard CGImageDestinationFinalize(destination) else {
+                        throw VaultPhotoSelectionError.exportFailed("This image cannot be converted to JPEG.")
+                    }
+                }.value
+                try FileManager.default.removeItem(at: source)
+                return (target, (name as NSString).deletingPathExtension + ".jpg")
+            } catch {
+                try? FileManager.default.removeItem(at: target)
+                throw error
+            }
+        }
+        return (source, name)
     }
 
     private func requestPhotoAccess(_ completion: @escaping (Bool) -> Void) {

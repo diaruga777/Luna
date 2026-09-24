@@ -1,4 +1,5 @@
 import Foundation
+import LunaVaultStore
 
 /// The four user-visible connection states. Transport-specific retry,
 /// discovery, and BEP details deliberately stop below this boundary.
@@ -167,6 +168,9 @@ public protocol VaultPresentationProviding: Sendable {
     func indexPresentation() async throws -> VaultIndexPresentation
     func setScratchQuota(bytes: Int64) async throws
     func rebuildIndex() async throws
+    func photoExportFormats() async throws -> (VaultPhotoImageFormat, VaultPhotoVideoFormat)
+    func setPhotoImageFormat(_ format: VaultPhotoImageFormat) async throws
+    func setPhotoVideoFormat(_ format: VaultPhotoVideoFormat) async throws
 }
 
 public extension VaultPresentationProviding {
@@ -175,6 +179,9 @@ public extension VaultPresentationProviding {
     func queuedImportCount() async throws -> Int { 0 }
     func cancelPendingUpload(named name: String) async throws {}
     func deleteItem(named name: String) async throws {}
+    func photoExportFormats() async throws -> (VaultPhotoImageFormat, VaultPhotoVideoFormat) { (.jpeg, .mp4) }
+    func setPhotoImageFormat(_ format: VaultPhotoImageFormat) async throws {}
+    func setPhotoVideoFormat(_ format: VaultPhotoVideoFormat) async throws {}
 }
 
 /// Closure-backed composition object used by the app and deterministic tests.

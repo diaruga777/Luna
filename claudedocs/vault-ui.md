@@ -32,7 +32,9 @@ pairing returns to the library. A pairing deep link or **Update Connection** ope
 setup even for an already paired Mac.
 
 Paired settings separates connection, downloaded storage, search maintenance,
-and disconnect. Removal actions require an explanation and confirmation.
+Photos export formats, and disconnect. Images default to JPEG and videos to
+MP4; each can be changed independently to Original. Both the individual picker
+and album import use the saved choice. Removal actions require an explanation and confirmation.
 Disconnecting or changing to another Mac is blocked while local changes await
 upload, because removing/replacing the peer clears the mirror's local-change rows.
 
@@ -41,6 +43,11 @@ files avoid a flashing progress sheet. Quick Look is presented from the visible
 folder. Large preview copies run off the main actor, and temporary plaintext
 preview copies are removed when Quick Look closes. The add menu offers separate
 file, folder, Photos, and album pickers. Folder import retains nested paths and empty folders.
+Opening waits for the Mac's current index before requesting blocks and retries
+once on a stale or failed block connection. The sheet labels the transfer as a
+download from the Mac and Cancel stops the in-flight request. Quick Look uses a
+hard link to the downloaded cache when possible, avoiding another full copy of
+large files.
 The import sheet covers local preparation, then closes so Home can show each
 pending file in Transfers with bytes sent,
 total bytes, and a progress bar; reaching the byte total means Vault is waiting
@@ -54,7 +61,10 @@ The share extension copies multiple files into the App Group inbox before it
 reports that they are queued. It submits an iOS 26 continued processing request,
 which Vault handles with a system Live Activity showing transfer progress.
 The Files and Photos pickers use the same queue. Individual Photos are stored
-under `Photos/`; an album creates `Photos/<album>/` on the Mac. iOS may postpone
+under `Photos/`; an album creates `Photos/<album>/` on the Mac.
+Already matching JPEG and MP4 files keep their original bytes; other media is
+converted on disk before queuing, so large videos are not loaded into memory.
+The Original setting preserves the Photos resource format. iOS may postpone
 or expire a background request, so queued payloads and local changes survive
 app termination and resume on a later foreground or processing wake. Home shows
 the number of files still in the inbox alongside the Mac's pending transfers.
@@ -88,9 +98,12 @@ and scrollable setup at accessibility text sizes. Its XCTest attachments capture
 light/dark libraries, search, setup, connected settings, and large-text states.
 
 `LunaVaultConnectionTests` verifies real loopback TLS pairing/download/upload,
-per-file transfer progress, block timeouts, resumable Mac uploads, cancellation,
+multiblock Mac pulls, photo format settings persistence, per-file transfer
+progress, block timeouts, resumable Mac uploads, cancellation,
 and nested Photos album paths. `VaultIncomingQueueTests` verifies ordered App
 Group handoff survives reopening its store.
+`VaultPhotoFormatTests` checks PNG to JPEG and MOV to MP4 conversion plus the
+Original choices without requesting Photos access.
 Continued processing requests now use the exact registered identifier: the
 share extension submits one static queue task handled by the containing app,
 while in-app imports register their unique task immediately before submitting.

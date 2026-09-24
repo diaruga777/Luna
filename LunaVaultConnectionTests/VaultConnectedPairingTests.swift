@@ -263,6 +263,20 @@ final class VaultConnectedPairingTests: XCTestCase {
         await runtime.stop()
     }
 
+    func testPhotoFormatSettingsPersist() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("PhotoSettingsPhone"))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil,
+            localID: try DeviceID(bytes: Data(repeating: 1, count: 32)))
+        let defaults = try await runtime.photoExportFormats()
+        XCTAssertEqual(defaults.0, .jpeg)
+        XCTAssertEqual(defaults.1, .mp4)
+        try await runtime.setPhotoImageFormat(.original)
+        try await runtime.setPhotoVideoFormat(.original)
+        let reopened = try VaultFolderStore(rootURL: store.rootURL)
+        XCTAssertEqual(try reopened.settings().photoImageFormat, .original)
+        XCTAssertEqual(try reopened.settings().photoVideoFormat, .original)
+    }
+
     func testSessionDoesNotReportConnectedBeforeMacIndexArrives() async throws {
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))

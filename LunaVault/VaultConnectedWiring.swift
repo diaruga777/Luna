@@ -130,6 +130,11 @@ import LunaVaultUI
 
     private func presentPhotos(album: Bool) {
         guard let presenter = visiblePresenter else { return }
+        do {
+            let settings = try runtime.store.settings()
+            photos.imageFormat = settings.photoImageFormat
+            photos.videoFormat = settings.photoVideoFormat
+        } catch { show(error, title: "Couldn’t Load Photo Settings"); return }
         let root = queue.rootURL.appendingPathComponent(".photo-export-" + UUID().uuidString, isDirectory: true)
         let completion: VaultPhotoSelectionCoordinator.Completion = { [weak self] result in
             guard let self else { return }

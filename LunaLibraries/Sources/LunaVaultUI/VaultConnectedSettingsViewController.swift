@@ -1,4 +1,5 @@
 import UIKit
+import LunaVaultStore
 
 /// Connection setup and maintenance are distinct states, backed by the same verified runtime.
 public final class VaultConnectedSettingsViewController: UITableViewController, UITextFieldDelegate {
@@ -8,6 +9,8 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
     private var snapshot: VaultPairingSnapshot?
     private var connection: VaultConnectionStatus = .notPaired
     private var cache: VaultCachePresentation?
+    private var imageFormat: VaultPhotoImageFormat = .jpeg
+    private var videoFormat: VaultPhotoVideoFormat = .mp4
     private var message: String?
     private var messageIsError = false
     private var operation: Task<Void, Never>?
@@ -72,6 +75,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
             snapshot = try await runtime.pairingSnapshot()
             connection = await runtime.connectionStatus()
             cache = try await runtime.cachePresentation()
+            (imageFormat, videoFormat) = try await runtime.photoExportFormats()
         } catch { message = "Couldn’t load settings. Try reopening this screen."; messageIsError = true }
         loading = false
         render()
@@ -132,14 +136,14 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         guard !isPaired, let cell = tableView.cellForRow(at: IndexPath(row: 1, section: 0)) else { return }
         configurePairCell(cell)
     }
-    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? 4 : (needsNetworkSettings ? 2 : 1)) }
+    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? 5 : (needsNetworkSettings ? 2 : 1)) }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !isPaired { return section == 0 ? 2 : 1 }
-        return section == 0 ? 3 : (section == 1 ? 2 : 1)
+        return section == 0 ? 3 : (section == 1 || section == 3 ? 2 : 1)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? "Pairing Code" : nil }
-        return ["Connection", "On This iPhone", "Search", ""][section]
+        return ["Connection", "On This iPhone", "Search", "Photos Export", ""][section]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? (message ?? "Connect only to a Mac you own and trust.") : "Enable Local Network access for Vault, then try again." }
@@ -147,6 +151,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         case 0: return message ?? (connection == .offline ? "Keep Luna Vault open on your Mac to connect. Downloaded files are still available offline." : "Files download when you open them.")
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
         case 2: return "Search finds file names and text in downloaded files. Rebuild only if results seem incomplete."
+        case 3: return "Choose the formats used when importing from Photos into Vault. Original keeps the library file unchanged."
         default: return nil
         }
     }
@@ -192,6 +197,12 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
                 cell.selectionStyle = .none
             case (1, 1): content.text = "Remove Downloads"; content.image = UIImage(systemName: "arrow.down.circle")
             case (2, _): content.text = "Rebuild Search Index"; content.image = UIImage(systemName: "magnifyingglass")
+            case (3, 0):
+                content.text = "Images"; content.secondaryText = imageFormat.title
+                content.image = UIImage(systemName: "photo"); cell.accessoryType = .disclosureIndicator
+            case (3, 1):
+                content.text = "Videos"; content.secondaryText = videoFormat.title
+                content.image = UIImage(systemName: "video"); cell.accessoryType = .disclosureIndicator
             default:
                 content.text = "Disconnect Mac"; content.textProperties.color = .systemRed
                 content.image = UIImage(systemName: "eject"); content.imageProperties.tintColor = .systemRed
@@ -245,13 +256,45 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
                 run(message: "Removing downloads…") { [runtime] in try await runtime.clearCache(); return "Downloads removed." }
             }
         case (2, _): run(message: "Rebuilding search index…") { [runtime] in try await runtime.rebuildIndex(); return "Search index is up to date." }
-        case (3, _):
+        case (3, 0): chooseImageFormat(from: indexPath)
+        case (3, 1): chooseVideoFormat(from: indexPath)
+        case (4, _):
             confirm(title: "Disconnect Your Mac?", message: "Your Mac’s files will stay on your Mac. You’ll need its pairing code to connect again.", action: "Disconnect") { [weak self] in
                 guard let self else { return }
                 run(message: "Disconnecting…") { [runtime] in try await runtime.removePairing(); return "Mac disconnected." }
             }
         default: break
         }
+    }
+    private func chooseImageFormat(from indexPath: IndexPath) {
+        let sheet = UIAlertController(title: "Image Export Format", message: nil, preferredStyle: .actionSheet)
+        for format in VaultPhotoImageFormat.allCases {
+            sheet.addAction(UIAlertAction(title: format.title, style: .default) { [weak self, runtime] _ in
+                self?.run(message: "Saving image format…") {
+                    try await runtime.setPhotoImageFormat(format)
+                    return "Images will export as \(format.title)."
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = tableView
+        sheet.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+        present(sheet, animated: true)
+    }
+    private func chooseVideoFormat(from indexPath: IndexPath) {
+        let sheet = UIAlertController(title: "Video Export Format", message: nil, preferredStyle: .actionSheet)
+        for format in VaultPhotoVideoFormat.allCases {
+            sheet.addAction(UIAlertAction(title: format.title, style: .default) { [weak self, runtime] _ in
+                self?.run(message: "Saving video format…") {
+                    try await runtime.setPhotoVideoFormat(format)
+                    return "Videos will export as \(format.title)."
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = tableView
+        sheet.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+        present(sheet, animated: true)
     }
     private func confirm(title: String, message: String, action: String, handler: @escaping () -> Void) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)

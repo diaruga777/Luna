@@ -162,6 +162,23 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         }
     }
 
+    public func photoExportFormats() async throws -> (VaultPhotoImageFormat, VaultPhotoVideoFormat) {
+        let settings = try store.settings()
+        return (settings.photoImageFormat, settings.photoVideoFormat)
+    }
+
+    public func setPhotoImageFormat(_ format: VaultPhotoImageFormat) async throws {
+        var settings = try store.settings()
+        settings.photoImageFormat = format
+        try store.saveSettings(settings)
+    }
+
+    public func setPhotoVideoFormat(_ format: VaultPhotoVideoFormat) async throws {
+        var settings = try store.settings()
+        settings.photoVideoFormat = format
+        try store.saveSettings(settings)
+    }
+
     public func importFile(at url: URL) async throws {
         try await importFile(at: url, named: url.lastPathComponent.precomposedStringWithCanonicalMapping)
     }

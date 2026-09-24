@@ -182,12 +182,32 @@ public struct VaultStoreSettings: Equatable, Sendable {
 
     public var cacheQuotaBytes: Int64
     public var scratchQuotaBytes: Int64
+    public var photoImageFormat: VaultPhotoImageFormat
+    public var photoVideoFormat: VaultPhotoVideoFormat
 
     public init(cacheQuotaBytes: Int64 = VaultStoreSettings.defaultCacheQuota,
-                scratchQuotaBytes: Int64 = VaultStoreSettings.defaultScratchQuota) {
+                scratchQuotaBytes: Int64 = VaultStoreSettings.defaultScratchQuota,
+                photoImageFormat: VaultPhotoImageFormat = .jpeg,
+                photoVideoFormat: VaultPhotoVideoFormat = .mp4) {
         self.cacheQuotaBytes = cacheQuotaBytes
         self.scratchQuotaBytes = scratchQuotaBytes
+        self.photoImageFormat = photoImageFormat
+        self.photoVideoFormat = photoVideoFormat
     }
+}
+
+public enum VaultPhotoImageFormat: String, CaseIterable, Sendable {
+    case jpeg
+    case original
+
+    public var title: String { self == .jpeg ? "JPEG" : "Original" }
+}
+
+public enum VaultPhotoVideoFormat: String, CaseIterable, Sendable {
+    case mp4
+    case original
+
+    public var title: String { self == .mp4 ? "MP4" : "Original" }
 }
 
 /// What applying an index batch changed, so callers can update the search

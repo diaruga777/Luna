@@ -27,14 +27,6 @@
         "message": "Track in Luna",
         "description": "Button that adds a product to Luna Price Tracker."
     },
-    "findingVideo": {
-        "message": "Finding video…",
-        "description": "Status shown in the in-page player while the native handler resolves the post's video."
-    },
-    "videoUnplayable": {
-        "message": "This one can't play here",
-        "description": "Shown in the in-page player when the video can't be resolved or streamed in Safari. The Open in Luna button below it still hands the page to Luna."
-    },
     "closeVideo": {
         "message": "Close",
         "description": "Accessibility label for the in-page player's X button."

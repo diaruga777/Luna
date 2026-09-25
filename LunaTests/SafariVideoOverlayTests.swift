@@ -81,15 +81,6 @@ final class SafariVideoOverlayTests: XCTestCase {
             """)
     }
 
-    private func stageText() -> String {
-        js.string("""
-            (function () {
-                var overlay = document.getElementById(window.__lunaVideoOverlayID);
-                return overlay ? overlay.textContent : "";
-            })()
-            """) ?? ""
-    }
-
     private func json(_ value: String) -> String { SafariJSTestHarness.jsString(value) }
 
     // MARK: - Resolved
@@ -132,30 +123,45 @@ final class SafariVideoOverlayTests: XCTestCase {
             """))
     }
 
-    // MARK: - Degrading
+    // MARK: - Unplayable media
 
-    /// An empty answer — an unsupported host, a resolve failure, a split
-    /// audio/video post the handler refused, or its own timeout — leaves the
-    /// panel up with a message and no player. The Download button below it is
-    /// what the user came for and stays.
-    func testAnEmptyResolveDegradesToTheHandoff() {
+    /// A failed fetch or a split stream does not put a popup over the page.
+    func testAnEmptyResolveLeavesThePageAlone() {
         present(assets: "[]")
-        XCTAssertTrue(overlayExists())
+        XCTAssertFalse(overlayExists())
         XCTAssertNil(videoSource())
-        XCTAssertTrue(
-            stageText().contains(
-                js.string("window.__lunaMessageDefaults.videoUnplayable") ?? "!"),
-            "the degraded stage should say the video can't play here, got: \(stageText())")
     }
 
     /// A resolve that answers something with no URL is the same failure.
-    func testAnAssetWithNoURLDegrades() {
+    func testAnAssetWithNoURLDoesNotOpen() {
         present(assets: "[{ kind: \"video\" }]")
-        XCTAssertNil(videoSource())
+        XCTAssertFalse(overlayExists())
     }
 
-    /// A rejected round trip must not leave the player spinning forever.
-    func testARejectedResolveDegrades() {
+    func testAStillImageAssetDoesNotOpen() {
+        present(assets: "[{ url: \(json(Self.posterURL)), kind: \"image\" }]")
+        XCTAssertFalse(overlayExists())
+    }
+
+    /// The popup waits for the native result instead of covering a text/photo post.
+    func testThePopupWaitsForAPlayableResolve() {
+        _ = js.evaluate("""
+            window.__lunaSetResolveMediaRequest(function () {
+                return new Promise(function (resolve) { window.__finishResolve = resolve; });
+            });
+            window.__lunaPresentVideoOverlay(
+                { scheme: "lunadownloader", supportsMedia: true },
+                { label: "Open in Luna", url: function () { return "lunadownloader://read"; } });
+            "requested"
+            """)
+        XCTAssertFalse(overlayExists())
+        _ = js.evaluate("window.__finishResolve({ assets: \(playableAsset) }); \"resolved\"")
+        _ = js.evaluate("void 0")
+        XCTAssertTrue(overlayExists())
+    }
+
+    /// A rejected round trip leaves no popup behind.
+    func testARejectedResolveDoesNotOpen() {
         _ = js.evaluate("""
             window.__lunaSetResolveMediaRequest(function () {
                 return Promise.reject(new Error("no native host"));
@@ -166,13 +172,12 @@ final class SafariVideoOverlayTests: XCTestCase {
             "presented"
             """)
         _ = js.evaluate("void 0")
-        XCTAssertTrue(overlayExists())
-        XCTAssertNil(videoSource())
+        XCTAssertFalse(overlayExists())
     }
 
     /// The media element itself is the last line: the page's CSP has the final
     /// say on the load, and an expired CDN URL 403s. Either surfaces as `error`.
-    func testAVideoErrorDegradesTheStage() {
+    func testAVideoErrorDismissesThePopup() {
         present(assets: playableAsset)
         XCTAssertNotNil(videoSource())
         _ = js.evaluate("""
@@ -180,8 +185,7 @@ final class SafariVideoOverlayTests: XCTestCase {
             v.dispatchEvent(new Event("error"));
             "dispatched"
             """)
-        XCTAssertNil(videoSource())
-        XCTAssertTrue(overlayExists(), "the panel stays — Download is still offered")
+        XCTAssertFalse(overlayExists())
     }
 
     // MARK: - Dismissal
@@ -242,13 +246,10 @@ final class SafariVideoOverlayTests: XCTestCase {
         XCTAssertEqual(downloadNavigation(), "lunadownloader://resolvedmedia?ret=safari")
     }
 
-    /// Degraded: the app is handed the PAGE, exactly as this pill did before the
-    /// player existed, so nothing is lost when inline playback isn't possible.
-    func testDownloadAfterADegradedResolveOpensTheOriginalHandoff() {
+    /// A failed resolve leaves no Download control for the user to dismiss.
+    func testDownloadIsAbsentAfterAFailedResolve() {
         present(assets: "[]")
-        let opened = downloadNavigation() ?? ""
-        XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
-        XCTAssertTrue(opened.hasSuffix("&ret=safari"), "got \(opened)")
+        XCTAssertFalse(overlayExists())
     }
 
     // MARK: - The page's own player

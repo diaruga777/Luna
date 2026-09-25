@@ -597,8 +597,7 @@ Downloader-platform flow:
    (below) opens BY ITSELF on such a page when the page's subject is a video; the pill
    is then how the user gets back to it after a dismissal, and the route on a page that
    never earns an auto-open. The deep link `<ownScheme>://read?url=...&ret=safari`
-   is still what that overlay falls back to when nothing turns out to be playable, and
-   is still what Reddit's pill does directly.
+   remains Reddit's pill action. An unplayable resolve leaves other pages alone.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
    those URLs if the user adds/saves them manually, but the Safari extension only shows
    the "Download in Luna" pill when a platform page is not a static-image post. Explicit
@@ -655,8 +654,8 @@ Downloader-platform flow:
    `og:video`/player metadata, GIF/GIFV/video URLs, or the old-reddit `#siteTable`
    row for `v.redd.it` / animated URLs. Static `i.redd.it` image posts do not show
    the pill. Because feeds must never get ANY pill, a reddit host that is not a post
-   short-circuits `content.js` before the product/article heuristics. New Reddit is a
-   client-side-navigating SPA, so
+   short-circuits `content.js` before plugin claims and product/article heuristics.
+   New Reddit is a client-side-navigating SPA, so
    `content.js` retries on hydration (bounded) and runs a ~1s soft-nav watcher (reddit
    hosts only) that drops/re-adds the pill as the URL changes between feed and post.
 
@@ -681,9 +680,9 @@ Settings has written nothing, so no default is ever written anywhere.
 `SafariMediaPillTests` covers both halves of the off state and
 `SafariVideoOverlayContractTests` pins the key across all three processes.
 
-**It opens on its own, and the pill is the way back to it.** The player is not a
-reward for finding a button — on a page whose subject IS a video it is up before
-the user does anything, in its loading state, and the resolve is already running.
+**It opens on its own, and the pill is the way back to it.** On a page whose
+subject is a video, the resolve starts without a tap. The popup appears only
+after the resolver returns a playable video or GIF URL.
 The pill stays where it was: tapping it re-opens a player the user dismissed, and
 on a page that never earns an auto-open it does what it always did.
 
@@ -710,7 +709,7 @@ content.js (recognized media page, or a pill tap)
   → SafariWebExtensionHandler: SocialMediaResolver().resolveAssets(for:)   ← the app's own resolver
       ├─ ResolvedMediaCache (App Group)  ← the FULL [MediaAsset]
       └─ reply {assets:[{url, kind, thumbnailURL?}]}  ← only what a <video> can stream
-  → content.js sets <video src>
+  → content.js opens the popup and sets <video src> if a playable asset exists
 ```
 
 **Shape.** A dimmed, blurred fixed backdrop (tap to close); a panel at
@@ -915,17 +914,16 @@ anything outside the panel that starts playing for as long as the panel is up.
 Without it, the auto-open's own earliness is what would leave a reel autoplaying,
 unmuted, behind the overlay.
 
-**Everything that can go wrong lands in one place.** An empty resolve, the
-handler's 20s budget, the JS 25s backstop, a CSP refusal, or an expired
-IP-bound googlevideo URL all surface as either an empty asset list or a `video`
-`error` event: the stage is replaced with a short message and Download reverts to
-the navigation the pill did before this feature existed. Nothing is lost.
+**Failed playback leaves the page clear.** An empty or rejected resolve,
+the handler's 20s budget, or the JS 25s backstop never displays the popup.
+A CSP refusal or expired CDN URL that raises a `video` `error` event dismisses
+an open popup immediately. The pill remains available for a later retry.
 
 **Reddit keeps exactly today's treatment** — the plain pill, navigating into the
 app — and does not enter the overlay path (`evaluateRedditPage` keeps building
-`downloadTargetFor`). Reddit hosts video and audio as two independent DASH
-streams, so a browser handed the video URL plays it silently; muxing is the
-download pipeline's job (`MediaMuxer`). This is expressed twice, deliberately:
+`downloadTargetFor` before plugins can claim the page). Reddit hosts video and
+audio as two independent DASH streams. A browser handed the video URL plays it
+silently; muxing is the download pipeline's job (`MediaMuxer`). This is expressed twice, deliberately:
 as the routing above, and as `MediaAsset.isDirectlyPlayable` in LunaMediaResolve
 (no separate audio track, not a still), which the handler filters its reply
 through — so the extension never names a platform to get this right.

@@ -187,15 +187,12 @@ final class SafariMediaPillTests: XCTestCase {
 
     // MARK: - Dismissal
 
-    /// Closing it is the user saying "not this page", and a look still pending
-    /// from the hydration walk must respect that rather than putting the panel
-    /// back seconds later. (Opened from the pill here, so the walk is still
-    /// waiting for a signal when the dismissal lands — the one arrangement where
-    /// the two can actually race.)
+    /// Closing it is the user saying "not this page". A later hydration look
+    /// must not put the popup back over the page.
     func testADismissalStopsThePendingAutoOpen() {
         offer(Self.noVideoSignal, at: Self.mediaPages[0])
         tapPill()
-        XCTAssertTrue(overlayExists(), "the pill should open it even with nothing found yet")
+        XCTAssertTrue(overlayExists(), "the resolved video should open from the pill")
         dismissOverlay()
         XCTAssertFalse(overlayExists())
         _ = js.evaluate("document.body.appendChild(document.createElement(\"video\")); \"hydrated\"")
@@ -259,6 +256,22 @@ final class SafariMediaPillTests: XCTestCase {
         XCTAssertFalse(waitForOverlay(within: 0.5), "reddit must not enter the overlay path")
         let opened = js.awaitAppSchemeNavigation { self.tapPill() } ?? ""
         XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
+    }
+
+    func testRedditTextAndPhotoPostsNeverOpenWithPluginsEnabled() {
+        for postType in ["text", "image"] {
+            js.load(
+                html: "<html><body><shreddit-post post-type=\"\(postType)\"></shreddit-post></body></html>",
+                urlString: "https://www.reddit.com/r/pics/comments/1abc2d/title/",
+                scripts: [SafariJSTestHarness.platformHosts, SafariJSTestHarness.contentScript])
+            _ = js.evaluate("""
+                window.__lunaStartPillDecision(
+                    { scheme: "luna", supportsMedia: true, supportsPlugins: true });
+                "offered"
+                """)
+            XCTAssertFalse(pillExists(), postType)
+            XCTAssertFalse(overlayExists(), postType)
+        }
     }
 
     // MARK: - Turned off

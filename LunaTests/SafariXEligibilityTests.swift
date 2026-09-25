@@ -24,12 +24,15 @@ final class SafariXEligibilityTests: XCTestCase {
             } } };
             window.__lunaSetResolveMediaRequest(function () {
                 window.__resolveCalls++;
-                return new Promise(function () {});
+                return Promise.resolve({ assets: [
+                    { url: "https://cdn.example.com/v.mp4", kind: "video" }
+                ] });
             });
             window.__lunaStartPillDecision({scheme: "luna", supportsArticles: true,
                 supportsProducts: true, supportsMedia: true \(context)});
             "offered"
             """)
+        _ = js.evaluate("void 0")
     }
 
     private var pill: Bool { js.bool("!!document.getElementById(window.__lunaPillID)") }

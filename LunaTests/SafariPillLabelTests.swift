@@ -38,7 +38,7 @@ final class SafariPillLabelTests: XCTestCase {
         "readInLuna", "downloadInLuna", "trackInLuna", "openingLuna", "unlockedWithLuna",
         "setupCompleteTitle", "returnToApp", "wasPriceOnDate",
         "findingSellers", "priceAtSeller", "noBetterPrice", "sellerLookupFailed",
-        "findingVideo", "videoUnplayable", "closeVideo",
+        "closeVideo",
     ]
 
     // MARK: - The fallback

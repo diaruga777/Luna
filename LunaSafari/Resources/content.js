@@ -140,8 +140,6 @@
         readInLuna: "📖  Read in Luna",
         downloadInLuna: "Open in Luna",
         trackInLuna: "Track in Luna",
-        findingVideo: "Finding video…",
-        videoUnplayable: "This one can't play here",
         closeVideo: "Close",
         setupCompleteTitle: "Nice!\nYou're all set up",
         // `{app}`, NOT `$APP$`: `$NAME$` is WebExtension i18n PLACEHOLDER syntax, and
@@ -663,10 +661,9 @@
             : Promise.resolve(null);
     }
 
-    /// The video overlay target for a plugin's media claim: `ingest` runs
-    /// when the panel opens (the same timing the native flow's `resolveMedia`
-    /// round trip has), and Download hands the resolved Model to the app
-    /// instead of the native `queueResolvedDownload` round trip.
+    /// The video overlay target for a plugin's media claim: `ingest` confirms
+    /// a playable asset before the panel opens. Download hands the resolved
+    /// Model to the app instead of the native `queueResolvedDownload` round trip.
     function pluginVideoOverlayTargetFor(resp, walk) {
         var handoff = {
             label: localizedMessage("downloadInLuna"),
@@ -688,7 +685,9 @@
                 pendingModelJSON = outcome.raw;
                 pendingModelPluginId = outcome.pluginId;
                 return {
-                    assets: outcome.model.assets.map(function (asset) {
+                    assets: outcome.model.assets.filter(function (asset) {
+                        return asset.type === "video" || asset.type === "gif";
+                    }).map(function (asset) {
                         var mapped = { url: asset.url, kind: asset.type };
                         if (asset.thumbnailURL) { mapped.thumbnailURL = asset.thumbnailURL; }
                         return mapped;
@@ -719,10 +718,8 @@
         if (walk.claim.kind === "media") {
             var target = pluginVideoOverlayTargetFor(resp, walk);
             injectLunaButton(target);
-            // The plugin already classified THIS url as media — a stronger
-            // signal than the heuristic table `autoPresentVideoOverlay` exists
-            // for — so the panel opens once, immediately, rather than through
-            // that table's URL-shape/DOM-signal retry schedule.
+            // The plugin already classified this URL as media, so resolve it
+            // immediately. The panel only appears if ingest finds video.
             if (typeof target.present === "function" && !videoOverlayDismissed) {
                 target.present();
             }
@@ -737,6 +734,10 @@
     /// the fixed Swift-parity heuristics in `offerLunaButton` below.
     function startPillDecision(resp) {
         if (isXHost()) { handleXPage(resp); return; }
+        // Reddit's post-owned media gate and split-stream hand-off apply even
+        // when a plugin claims the page. A broad plugin media claim can include
+        // a text or photo post and must never open the in-page player there.
+        if (isRedditHost()) { offerLunaButton(resp); return; }
         if (!(resp && resp.supportsPlugins)) {
             offerLunaButton(resp);
             return;
@@ -2629,9 +2630,8 @@
     // which is why this only ever plays a SAME-PLATFORM asset — instagram.com
     // allows *.cdninstagram.com, x.com allows *.twimg.com, and so on.
     //
-    // Nothing here decides WHAT is playable: the handler answers with the assets
-    // `MediaAsset.isDirectlyPlayable` accepted, and an empty answer — for any
-    // reason at all — falls back to the hand-off this pill used to do.
+    // The handler answers with assets `MediaAsset.isDirectlyPlayable` accepted.
+    // Resolve before showing the popup: an empty answer leaves the page alone.
     var VIDEO_OVERLAY_ID = "luna-video-overlay";
     // Longer than the handler's own 20s budget, so a native side that answers
     // late still wins over this backstop and only a DEAD one trips it.
@@ -2781,12 +2781,39 @@
             .catch(function () { return null; });
     }
 
+    var pendingVideoOverlayResolve = null;
+
     function presentVideoOverlay(context, handoff, options) {
         options = options || {};
         var resolveMedia = options.resolveMedia || requestResolvedMedia;
-        var performDownload = options.performDownload || defaultPerformResolvedDownload;
         if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
         var sourceURL = location.href;
+        if (pendingVideoOverlayResolve && pendingVideoOverlayResolve.url === sourceURL) { return; }
+        var request = { url: sourceURL };
+        pendingVideoOverlayResolve = request;
+        try {
+            Promise.resolve(resolveMedia(sourceURL, document.title || "")).then(function (result) {
+                if (pendingVideoOverlayResolve !== request) { return; }
+                pendingVideoOverlayResolve = null;
+                if (location.href !== sourceURL) { return; }
+                if (isXHost() && xPageContentKind() !== "media") { return; }
+                var assets = result && Array.isArray(result.assets) ? result.assets : [];
+                var asset = assets.find(function (item) {
+                    return item && item.url && (item.kind === "video" || item.kind === "gif");
+                });
+                if (asset && !document.getElementById(VIDEO_OVERLAY_ID)) {
+                    showResolvedVideoOverlay(context, handoff, options, sourceURL, asset);
+                }
+            }, function () {
+                if (pendingVideoOverlayResolve === request) { pendingVideoOverlayResolve = null; }
+            });
+        } catch (e) {
+            if (pendingVideoOverlayResolve === request) { pendingVideoOverlayResolve = null; }
+        }
+    }
+
+    function showResolvedVideoOverlay(context, handoff, options, sourceURL, asset) {
+        var performDownload = options.performDownload || defaultPerformResolvedDownload;
         var tint = (handoff && handoff.tint) || KIND_TINTS.media;
 
         var backdrop = document.createElement("div");
@@ -2846,8 +2873,7 @@
         panel.appendChild(header);
 
         // The stage opens at 16:9 and is the ONLY part of the panel that ever
-        // changes size — swapping the status line for the player (or for the
-        // failure message) still doesn't resize anything under the user's thumb.
+        // changes size.
         // What does resize it is learning the clip's real shape: see
         // `setStageAspect`, which is the whole of the popup's height.
         var stage = document.createElement("div");
@@ -2858,15 +2884,6 @@
             display: "flex", alignItems: "center", justifyContent: "center"
         });
         panel.appendChild(stage);
-
-        var status = document.createElement("div");
-        status.appendChild(document.createTextNode(localizedMessage("findingVideo")));
-        applyStyle(status, {
-            boxSizing: "border-box", color: "rgba(255,255,255,0.72)", textAlign: "center",
-            font: "500 15px/1.3 -apple-system, system-ui, sans-serif",
-            margin: "0", padding: "0 16px"
-        });
-        stage.appendChild(status);
 
         var download = document.createElement("div");
         download.setAttribute("role", "button");
@@ -2889,7 +2906,6 @@
 
         var video = null;
         var closed = false;
-        var didResolve = false;
 
         // ── The popup's height ──────────────────────────────────────────────
         // A 9:16 reel in a 16:9 letterbox is mostly black bars, so the stage
@@ -3053,28 +3069,13 @@
         backdrop.addEventListener("click", dismiss);
         close.addEventListener("click", dismiss);
 
-        // The stage failed (or never resolved): keep the panel, say so, and let
-        // Download do exactly what the pill did before this feature existed.
-        var degrade = function () {
-            didResolve = false;
-            if (video && video.parentNode) { video.parentNode.removeChild(video); }
-            video = null;
-            status.textContent = localizedMessage("videoUnplayable");
-            if (!status.parentNode) { stage.appendChild(status); }
-        };
-
         download.addEventListener("click", function () {
             download.textContent = localizedMessage("openingLuna");
             download.style.opacity = "0.7";
             download.style.pointerEvents = "none";
             if (video) { try { video.pause(); } catch (e) {} }
-            // Resolved: the handler already holds the assets, so the app is sent
-            // a payload-free link and drains them itself. Not resolved: the
-            // original hand-off, which makes the app do the whole job.
-            if (!didResolve) {
-                window.location.href = handoff.url();
-                return;
-            }
+            // The handler already holds the assets, so the app drains them from
+            // a payload-free link.
             performDownload(sourceURL, context).then(function (destination) {
                 window.location.href = destination || handoff.url();
             });
@@ -3099,71 +3100,63 @@
         }
         window.addEventListener("orientationchange", onViewportResize);
 
-        var resolved = resolveMedia(sourceURL, document.title || "");
-        resolved.then(function (result) {
-            if (closed) { return; }
-            var asset = (result.assets || [])[0];
-            if (!asset || !asset.url) { degrade(); return; }
-            didResolve = true;
-            // The resolve itself often knows the rendition's size (the CDN names
-            // it in the URL — `MediaAsset.declaredPixelSize`), and it lands a
-            // whole network round trip before the element's metadata does. It is
-            // the media's own size, not a guess about it, so it counts as the
-            // answer.
-            if (asset.width > 0 && asset.height > 0) {
-                setStageAspect(asset.height / asset.width, true);
-            }
-            if (status.parentNode) { status.parentNode.removeChild(status); }
-            video = document.createElement("video");
-            video.setAttribute("controls", "");
-            video.setAttribute("playsinline", "");
-            video.setAttribute("webkit-playsinline", "");
-            video.setAttribute("preload", "metadata");
-            if (asset.thumbnailURL) { video.setAttribute("poster", asset.thumbnailURL); }
-            applyStyle(video, {
-                boxSizing: "border-box", display: "block", width: "100%", height: "100%",
-                objectFit: "contain", background: "#000000", margin: "0", padding: "0",
-                border: "none", borderRadius: "0"
-            });
-            // The authority on the clip's shape. We ask before playback below,
-            // then repeat the read across Safari's readiness signals.
-            var applyVideoAspect = function () {
-                if (closed || !video) { return; }
-                if (video.videoWidth > 0 && video.videoHeight > 0) {
-                    setStageAspect(video.videoHeight / video.videoWidth, true);
-                }
-            };
-            // Nothing has said anything about the shape yet, and the stream may
-            // not either until the user presses Play (iOS defers metadata for an
-            // off-page player). The poster is already being fetched to fill the
-            // stage — decoding it costs nothing extra and is usually the clip's
-            // own shape. A guess, so the stream still overrides it.
-            if (asset.thumbnailURL && stageAspect === 0) {
-                var cover = new Image();
-                cover.addEventListener("load", function () {
-                    if (closed || !(cover.naturalWidth > 0)) { return; }
-                    setStageAspect(cover.naturalHeight / cover.naturalWidth, false);
-                });
-                cover.src = asset.thumbnailURL;
-            }
-            // iOS can defer `loadedmetadata` for an off-main-page player until a
-            // user gesture, and a restored page can race past that one event.
-            // Every subsequent readiness/playback signal repeats the cheap size
-            // read, while `setStageAspect` discards duplicates.
-            ["loadedmetadata", "loadeddata", "canplay", "durationchange", "playing"]
-                .forEach(function (eventName) {
-                    video.addEventListener(eventName, applyVideoAspect);
-                });
-            // The page's CSP has the last word on the media load, and an expired
-            // googlevideo URL 403s — either way the element reports it here.
-            video.addEventListener("error", function () { if (!closed) { degrade(); } }, true);
-            video.setAttribute("src", asset.url);
-            stage.appendChild(video);
-            // `preload=metadata` is advisory on iOS. An explicit load starts the
-            // metadata request now, before Download or Play provides a gesture.
-            try { video.load(); } catch (e) {}
-            applyVideoAspect();
+        // The resolve itself often knows the rendition's size (the CDN names
+        // it in the URL — `MediaAsset.declaredPixelSize`), and it lands a
+        // whole network round trip before the element's metadata does. It is
+        // the media's own size, not a guess about it, so it counts as the
+        // answer.
+        if (asset.width > 0 && asset.height > 0) {
+            setStageAspect(asset.height / asset.width, true);
+        }
+        video = document.createElement("video");
+        video.setAttribute("controls", "");
+        video.setAttribute("playsinline", "");
+        video.setAttribute("webkit-playsinline", "");
+        video.setAttribute("preload", "metadata");
+        if (asset.thumbnailURL) { video.setAttribute("poster", asset.thumbnailURL); }
+        applyStyle(video, {
+            boxSizing: "border-box", display: "block", width: "100%", height: "100%",
+            objectFit: "contain", background: "#000000", margin: "0", padding: "0",
+            border: "none", borderRadius: "0"
         });
+        // The authority on the clip's shape. We ask before playback below,
+        // then repeat the read across Safari's readiness signals.
+        var applyVideoAspect = function () {
+            if (closed || !video) { return; }
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+                setStageAspect(video.videoHeight / video.videoWidth, true);
+            }
+        };
+        // Nothing has said anything about the shape yet, and the stream may
+        // not either until the user presses Play (iOS defers metadata for an
+        // off-page player). The poster is already being fetched to fill the
+        // stage — decoding it costs nothing extra and is usually the clip's
+        // own shape. A guess, so the stream still overrides it.
+        if (asset.thumbnailURL && stageAspect === 0) {
+            var cover = new Image();
+            cover.addEventListener("load", function () {
+                if (closed || !(cover.naturalWidth > 0)) { return; }
+                setStageAspect(cover.naturalHeight / cover.naturalWidth, false);
+            });
+            cover.src = asset.thumbnailURL;
+        }
+        // iOS can defer `loadedmetadata` for an off-main-page player until a
+        // user gesture, and a restored page can race past that one event.
+        // Every subsequent readiness/playback signal repeats the cheap size
+        // read, while `setStageAspect` discards duplicates.
+        ["loadedmetadata", "loadeddata", "canplay", "durationchange", "playing"]
+            .forEach(function (eventName) {
+                video.addEventListener(eventName, applyVideoAspect);
+            });
+        // The page's CSP has the last word on the media load, and an expired
+        // googlevideo URL 403s — either way the element reports it here.
+        video.addEventListener("error", function () { if (!closed) { dismiss(); } }, true);
+        video.setAttribute("src", asset.url);
+        stage.appendChild(video);
+        // `preload=metadata` is advisory on iOS. An explicit load starts the
+        // metadata request now, before Download or Play provides a gesture.
+        try { video.load(); } catch (e) {}
+        applyVideoAspect();
     }
 
     /// Opens the player without being asked, on a recognized post page whose
@@ -3541,8 +3534,8 @@
     }
 
     // The same pill, tapped to open the in-page player instead of leaving for
-    // the app — with `downloadTargetFor`'s hand-off carried along as the
-    // fallback the overlay uses when nothing turns out to be playable.
+    // the app — with `downloadTargetFor`'s hand-off carried along for a failed
+    // queue operation after the user taps Download.
     //
     // Reddit deliberately does NOT come through here (see `handleReddit`): its
     // video and audio are separate DASH streams, so there is nothing a single

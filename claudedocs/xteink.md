@@ -475,6 +475,9 @@ window, which drives the same trigger and queue sweep.
   check after a user sleep to 00:00/12:00 UTC; later automatic checks are 12
   hours apart. Without a set clock, each sleep arms a 12-hour delay.
   Luna's existing `no_work` response ends an empty-queue window immediately.
+  If Wi-Fi escalation starts but no phone joins the reader's AP, the
+  automatic window closes that AP after 20 seconds; manual sync retains its
+  two-minute upload window.
   The separately installed plugin does not change CrossPoint's sleep path.
 - **Read-driven remote deletion is IN scope now** (above); what remains out
   is a device-initiated deletion policy of its own accord — the X3 never

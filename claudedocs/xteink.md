@@ -15,11 +15,12 @@ Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
 email is involved. Luna builds an image-free, compressed Xteink EPUB and
 delivers it only while the CrossPoint BLE rendezvous is already active — a
 share-row send is **enqueue-only** (below); the reader is what opens the
-window. There is no background periodic sync: a window opens only from the
-reader's HOME-menu **Luna Sync** row (manual, shows overall progress),
-first-time pairing, and a short read-report ping the reader fires on its own
-when a Luna-synced book is finished. Over-sized books escalate to CrossPoint
-Wi-Fi inside that same window.
+window. A window opens from the reader's HOME-menu **Luna Sync** row
+(manual, shows overall progress), first-time pairing, or a short read-report
+ping the reader fires when a Luna-synced book is finished. The **X3 firmware
+fork** also wakes from deep sleep twice a day to open a headless automatic
+sync window; the plugin build does not. Over-sized books escalate to
+CrossPoint Wi-Fi inside that same window.
 
 Status notifications are size-capped by BLE: one notification carries MTU−3
 bytes and NimBLE truncates the rest on air, so the reader keeps every status
@@ -437,8 +438,8 @@ foreground, and background sweeps first promote ready items whose source is
 configured for `.allSaves` into `.queued`; this also covers articles finalized
 by the share/action extensions, which cannot call the app-only readiness hook.
 Those sweeps may then retry queued work, but a Xteink send only ever actually
-goes out from that trigger — there is no periodic background wake to piggyback
-on.
+goes out from that trigger — the fork's timer wake opens an ordinary sync
+window, which drives the same trigger and queue sweep.
 
 ## UI
 
@@ -467,8 +468,14 @@ on.
 - **No Xteink cloud sync.** The official cloud path requires patching the
   device firmware to point at a custom server. If direct Wi-Fi upload proves
   too fiddly, that is the revisit.
-- **No background periodic sync.** A window opens only from the reader's Luna
-  Sync row, pairing, or a read-report ping — never a timer wake.
+- **No timer wake in the plugin build.** The X3 firmware fork arms a 12-hour
+  deep-sleep timer when Luna Sync is enabled and paired. Its timer boot leaves
+  the e-ink display and frontlight untouched, opens the usual authenticated
+  BLE window, then returns to deep sleep. A valid X3 clock anchors the first
+  check after a user sleep to 00:00/12:00 UTC; later automatic checks are 12
+  hours apart. Without a set clock, each sleep arms a 12-hour delay.
+  Luna's existing `no_work` response ends an empty-queue window immediately.
+  The separately installed plugin does not change CrossPoint's sleep path.
 - **Read-driven remote deletion is IN scope now** (above); what remains out
   is a device-initiated deletion policy of its own accord — the X3 never
   deletes a book on its own schedule, only in response to Luna's `delete`.

@@ -39,6 +39,28 @@ public enum BlockLayout {
         size >= minimumBlockSize && size <= maximumBlockSize && (size & (size - 1)) == 0
     }
 
+    /// Validate peer metadata before allocating buffers or seeking in a file.
+    /// Blocks must cover one contiguous file; only an empty file has a zero block.
+    @discardableResult
+    public static func validate(_ blocks: [BlockInfo], fileSize: Int64? = nil) throws -> Int64 {
+        guard !blocks.isEmpty else { throw BEPProtocolError.invalidFileInfo("file has no blocks") }
+        var end: Int64 = 0
+        for block in blocks {
+            guard block.offset == end, block.size >= 0,
+                  block.size <= maximumBlockSize, block.hash.count == 32,
+                  block.size > 0 || (blocks.count == 1 && block.hash == emptyBlockHash) else {
+                throw BEPProtocolError.invalidFileInfo("invalid block layout")
+            }
+            let (next, overflow) = end.addingReportingOverflow(Int64(block.size))
+            guard !overflow else { throw BEPProtocolError.invalidFileInfo("file is too large") }
+            end = next
+        }
+        if let fileSize, fileSize != end {
+            throw BEPProtocolError.invalidFileInfo("blocks do not match file size")
+        }
+        return end
+    }
+
     /// Hashes a file into blocks. An empty file yields one zero-length block.
     public static func blocks(forFileAt url: URL, blockSize: Int? = nil) throws -> (blockSize: Int, blocks: [BlockInfo]) {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -84,8 +106,11 @@ public enum BlockLayout {
 
     /// Reconstructs the block list from stored hashes plus the size rule.
     public static func blocks(fromConcatenatedHashes hashes: Data, fileSize: Int64, blockSize: Int) -> [BlockInfo] {
-        guard hashes.count % 32 == 0 else { return [] }
+        guard hashes.count % 32 == 0, fileSize >= 0,
+              blockSize > 0, blockSize <= maximumBlockSize else { return [] }
         let count = hashes.count / 32
+        let expected = fileSize == 0 ? 1 : fileSize / Int64(blockSize) + (fileSize % Int64(blockSize) == 0 ? 0 : 1)
+        guard Int64(count) == expected else { return [] }
         var result: [BlockInfo] = []
         result.reserveCapacity(count)
         var offset: Int64 = 0

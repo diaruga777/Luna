@@ -200,6 +200,9 @@ public final class VaultFolderStore: @unchecked Sendable {
             for file in index.files {
                 maxSequence = max(maxSequence, file.sequence)
                 guard (try? BEPFileInfo.validateName(file.name)) != nil else { continue }
+                // Refuse malformed lengths and offsets before persisting hashes;
+                // the mirror reconstructs offsets from its stored block size.
+                try file.validateForWire()
                 try applyOne(file, generation: generation, ourShortID: ourShortID, now: now, into: &result)
             }
             if maxSequence > 0 {

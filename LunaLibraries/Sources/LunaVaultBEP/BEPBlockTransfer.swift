@@ -11,8 +11,13 @@ public enum BEPBlockTransfer {
         request: @escaping @Sendable (Int, BlockInfo) async throws -> Data,
         write: (Int, BlockInfo, Data) throws -> Void
     ) async throws {
+        try Task.checkCancellation()
+        try BlockLayout.validate(blocks)
+        guard start >= 0, start <= blocks.count else {
+            throw BEPProtocolError.invalidFileInfo("invalid resume position")
+        }
         guard start < blocks.count else { return }
-        let largest = max(1, blocks.map { Int($0.size) }.max() ?? 1)
+        let largest = max(1, blocks.lazy.map { Int($0.size) }.max() ?? 1)
         let window = max(1, min(maximumOutstandingRequests, maximumBufferedBytes / largest))
         try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             func enqueue(_ index: Int) {

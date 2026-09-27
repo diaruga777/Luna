@@ -14,6 +14,75 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
 
+    func testInvalidBlockLayoutsFailBeforeRequestOrWrite() async throws {
+        let hash = SHA256Digest.hash(Data([1]))
+        let invalid: [[BlockInfo]] = [
+            [],
+            [.init(offset: -1, size: 1, hash: hash)],
+            [.init(offset: 0, size: -1, hash: hash)],
+            [.init(offset: 0, size: Int32(BlockLayout.maximumBlockSize + 1), hash: hash)],
+            [.init(offset: 0, size: 1, hash: Data())],
+            [.init(offset: 0, size: 0, hash: hash)],
+            [.init(offset: 0, size: 1, hash: hash), .init(offset: 0, size: 1, hash: hash)],
+            [.init(offset: 0, size: 1, hash: hash), .init(offset: 2, size: 1, hash: hash)]
+        ]
+        for blocks in invalid {
+            do {
+                try await BEPBlockTransfer.receive(blocks: blocks, request: { _, _ in
+                    XCTFail("Invalid metadata must never reach the network")
+                    return Data()
+                }, write: { _, _, _ in XCTFail("Invalid metadata must never reach disk") })
+                XCTFail("Accepted malformed blocks")
+            } catch is BEPProtocolError { }
+        }
+        let empty = BlockLayout.blocks(for: Data()).blocks
+        XCTAssertEqual(try BlockLayout.validate(empty, fileSize: 0), 0)
+        XCTAssertThrowsError(try BlockLayout.validate(empty, fileSize: 1))
+        for start in [-1, 2] {
+            do {
+                try await BEPBlockTransfer.receive(blocks: empty, startingAt: start,
+                    request: { _, _ in XCTFail("Invalid resume position"); return Data() },
+                    write: { _, _, _ in XCTFail("Invalid resume position") })
+                XCTFail("Accepted invalid resume position")
+            } catch is BEPProtocolError { }
+        }
+    }
+
+    func testInvalidIndexRollsBackWithoutReplacingLibrary() throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        try store.savePeer(VaultPeerRecord(deviceID: DeviceID(bytes: Data(repeating: 4, count: 32)), name: "Mac", folderID: "vault"))
+        let blocks = BlockLayout.blocks(for: Data([1])).blocks
+        let valid = BEPFileInfo(name: "keep.txt", size: 1, blocks: blocks)
+        _ = try store.applyIndex(BEPIndex(folder: "vault", files: [valid], isUpdate: false), ourShortID: 1)
+        var invalid = valid
+        invalid.name = "bad.txt"
+        invalid.size = 100
+        XCTAssertThrowsError(try store.applyIndex(BEPIndex(folder: "vault", files: [invalid], isUpdate: false), ourShortID: 1))
+        XCTAssertNotNil(try store.file(named: "keep.txt"))
+        XCTAssertNil(try store.file(named: "bad.txt"))
+    }
+
+    func testDownloadsAndRecentLimitsUseCurrentLocalCopies() async throws {
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let local = try DeviceID(bytes: Data(repeating: 3, count: 32))
+        try store.savePeer(VaultPeerRecord(deviceID: DeviceID(bytes: Data(repeating: 4, count: 32)),
+            name: "Mac", folderID: "vault", lastConnectedAt: Date()))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: RejectingDialer(), lookup: nil, localID: local)
+        let source = directory.appendingPathComponent("note.txt")
+        try Data("offline copy".utf8).write(to: source)
+        try await runtime.importFile(at: source)
+        let downloads = try await runtime.downloadedFiles()
+        XCTAssertEqual(downloads.map(\.name), ["note.txt"])
+        XCTAssertTrue(downloads[0].isDownloaded)
+        let zero = try await runtime.recentFiles(limit: 0)
+        let negative = try await runtime.recentFiles(limit: -1)
+        XCTAssertTrue(zero.isEmpty)
+        XCTAssertTrue(negative.isEmpty)
+        try FileManager.default.removeItem(at: store.cacheFileURL(for: "note.txt"))
+        let missing = try await runtime.downloadedFiles()
+        XCTAssertTrue(missing.isEmpty)
+    }
+
     func testPhotoAlbumPathsStageFoldersAndFileForMac() async throws {
         let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
         let local = try DeviceID(bytes: Data(repeating: 3, count: 32))

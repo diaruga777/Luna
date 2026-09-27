@@ -3,6 +3,25 @@ import UniformTypeIdentifiers
 @testable import LunaVault
 
 final class VaultIncomingQueueTests: XCTestCase {
+    func testCancelledIntakeDoesNotPublishAPartialFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("VaultQueueCancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let queue = try VaultIncomingQueue(rootURL: root.appendingPathComponent("Incoming"))
+        let source = root.appendingPathComponent("movie.mp4")
+        let bytes = Data(repeating: 42, count: 3 * 1_024 * 1_024 + 13)
+        try bytes.write(to: source)
+        let cancelled = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try queue.enqueueFile(at: source, relativeName: "movie.mp4")
+        }
+        do { _ = try await cancelled.value; XCTFail("Cancelled intake must not publish") }
+        catch is CancellationError { }
+        XCTAssertTrue(try queue.items().isEmpty)
+        let item = try queue.enqueueFile(at: source, relativeName: "movie.mp4")
+        XCTAssertEqual(try Data(contentsOf: queue.payloadURL(for: item)), bytes)
+        XCTAssertEqual(item.byteCount, Int64(bytes.count))
+    }
+
     func testPublishedFilesSurviveReopenInFIFOOrder() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("VaultQueueTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }

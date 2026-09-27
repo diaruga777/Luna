@@ -415,7 +415,9 @@ public struct BEPFileInfo: Equatable, Sendable {
         if deleted && !blocks.isEmpty { throw BEPProtocolError.invalidFileInfo("deleted entry has blocks") }
         if type != .file && !blocks.isEmpty { throw BEPProtocolError.invalidFileInfo("non-file has blocks") }
         if type != .file && size != 0 { throw BEPProtocolError.invalidFileInfo("non-file has size") }
-        if type == .file && !deleted && !invalid && blocks.isEmpty { throw BEPProtocolError.invalidFileInfo("file has no blocks") }
+        if type == .file && !deleted && !invalid {
+            try BlockLayout.validate(blocks, fileSize: size)
+        }
     }
 
     public static func validateName(_ name: String) throws {

@@ -44,6 +44,8 @@ public final class VaultBlockFetcher: @unchecked Sendable {
                       now: Date = Date()) async throws -> URL {
         guard file.type == .file, !file.deleted, !file.invalid,
               !file.blocks.isEmpty else { throw VaultBlockFetchError.invalidFile }
+        try Task.checkCancellation()
+        try BlockLayout.validate(file.blocks, fileSize: file.size)
         if destination == .scratch {
             let quota = try cache.effectiveScratchQuota()
             guard file.size <= quota else {
@@ -75,6 +77,7 @@ public final class VaultBlockFetcher: @unchecked Sendable {
                 try output.seek(toOffset: UInt64(block.offset))
                 try output.write(contentsOf: bytes)
             })
+        try Task.checkCancellation()
         try output.synchronize()
 
         switch destination {

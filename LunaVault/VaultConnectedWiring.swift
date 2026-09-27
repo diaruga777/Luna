@@ -168,19 +168,22 @@ import LunaVaultUI
         showProgress(title: "Queuing", filename: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) items")
         work = Task {
             do {
-                try await Task.detached(priority: .userInitiated) { [queue] in
+                let preparation = Task.detached(priority: .userInitiated) { [queue] in
                     for url in urls {
                         try Task.checkCancellation()
                         let access = url.startAccessingSecurityScopedResource()
                         defer { if access { url.stopAccessingSecurityScopedResource() } }
-                        let isFolder = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+                        let rootValues = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                        guard rootValues.isSymbolicLink != true else { throw CocoaError(.fileReadUnsupportedScheme) }
+                        let isFolder = rootValues.isDirectory == true
                         if isFolder {
                             _ = try queue.enqueueDirectory(relativeName: url.lastPathComponent.precomposedStringWithCanonicalMapping)
                             let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
                             while let file = enumerator?.nextObject() as? URL {
                                 try Task.checkCancellation()
                                 let relative = url.lastPathComponent + "/" + file.path.dropFirst(url.path.count + 1)
-                                let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+                                let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
+                                if values.isSymbolicLink == true { enumerator?.skipDescendants(); continue }
                                 if values.isDirectory == true {
                                     _ = try queue.enqueueDirectory(relativeName: relative.precomposedStringWithCanonicalMapping)
                                 } else if values.isRegularFile == true {
@@ -189,7 +192,11 @@ import LunaVaultUI
                             }
                         } else { _ = try queue.enqueueFile(at: url, relativeName: url.lastPathComponent.precomposedStringWithCanonicalMapping) }
                     }
-                }.value
+                }
+                try await withTaskCancellationHandler {
+                    try await preparation.value
+                    try Task.checkCancellation()
+                } onCancel: { preparation.cancel() }
                 await hideProgress()
                 presenter?.refresh()
                 UIAccessibility.post(notification: .announcement, argument: "Queued for sync to your Mac")
@@ -214,16 +221,21 @@ import LunaVaultUI
                 // Quick Look needs the original extension; the durable cache uses
                 // hashed filenames. A hard link preserves the complete downloaded
                 // file without copying gigabytes into the preview directory.
-                let target = try await Task.detached(priority: .userInitiated) {
+                let preparation = Task.detached(priority: .userInitiated) {
+                    try Task.checkCancellation()
                     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VaultPreview-\(UUID().uuidString)")
                     do {
                         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                         let target = directory.appendingPathComponent((name as NSString).lastPathComponent)
                         do { try FileManager.default.linkItem(at: source, to: target) }
                         catch { try FileManager.default.copyItem(at: source, to: target) }
+                        try Task.checkCancellation()
                         return target
                     } catch { try? FileManager.default.removeItem(at: directory); throw error }
-                }.value
+                }
+                let target = try await withTaskCancellationHandler {
+                    try await preparation.value
+                } onCancel: { preparation.cancel() }
                 prepared = target
                 try Task.checkCancellation()
                 await hideProgress()

@@ -42,6 +42,7 @@ struct VaultIncomingQueue {
 
     @discardableResult
     func enqueueFile(at source: URL, relativeName: String, isDirectory: Bool = false) throws -> Item {
+        try Task.checkCancellation()
         try Self.validate(relativeName)
         let type = try source.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
         guard type.isSymbolicLink != true,
@@ -54,7 +55,30 @@ struct VaultIncomingQueue {
         let payload = draft.appendingPathComponent("payload", isDirectory: isDirectory)
         try FileManager.default.createDirectory(at: draft, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: draft) }
-        try FileManager.default.copyItem(at: source, to: payload)
+        if isDirectory {
+            try FileManager.default.copyItem(at: source, to: payload)
+        } else {
+            // Bound memory and observe cancellation between chunks, including
+            // a single large movie. Never publish a partially copied payload.
+            var attributes: [FileAttributeKey: Any] = [:]
+            #if os(iOS)
+            attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
+            #endif
+            guard FileManager.default.createFile(atPath: payload.path, contents: nil, attributes: attributes) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let input = try FileHandle(forReadingFrom: source)
+            defer { try? input.close() }
+            let output = try FileHandle(forWritingTo: payload)
+            defer { try? output.close() }
+            while true {
+                try Task.checkCancellation()
+                let chunk = try input.read(upToCount: 1_024 * 1_024) ?? Data()
+                if chunk.isEmpty { break }
+                try output.write(contentsOf: chunk)
+            }
+            try output.synchronize()
+        }
         let size = (try? payload.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         let item = Item(id: id, relativeName: relativeName, isDirectory: isDirectory,
                         createdAt: Date(), byteCount: size)
@@ -62,6 +86,7 @@ struct VaultIncomingQueue {
         #if os(iOS)
         try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: payload.path)
         #endif
+        try Task.checkCancellation()
         try FileManager.default.moveItem(at: draft, to: ready)
         return item
     }

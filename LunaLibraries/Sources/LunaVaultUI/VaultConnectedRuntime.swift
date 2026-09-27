@@ -128,8 +128,13 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     public func stop() async { await session.stop() }
 
     public func recentFiles(limit: Int) async throws -> [VaultPresentedFile] {
-        try store.liveFiles().filter { $0.type == .file }.sorted { $0.modified > $1.modified }
-            .prefix(limit).map(Self.present)
+        try store.liveFiles(limit: max(0, limit)).map(Self.present)
+    }
+
+    public func downloadedFiles() async throws -> [VaultPresentedFile] {
+        try store.cachedFiles().filter { $0.isCachedCurrent && !$0.deleted && !$0.invalid }
+            .filter { FileManager.default.fileExists(atPath: store.cacheFileURL(for: $0.name).path) }
+            .map(Self.present)
     }
 
     public func children(of path: String) async throws -> [VaultPresentedFile] {
@@ -137,10 +142,21 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile] {
+        guard limit > 0 else { return [] }
         let names = Set(try searchIndex.search(query, limit: limit).map(\.filename))
-        return try store.liveFiles().filter {
-            $0.name.localizedCaseInsensitiveContains(query) || names.contains($0.name)
-        }.prefix(limit).map(Self.present)
+        var matches: [VaultPresentedFile] = []
+        var offset = 0
+        let pageSize = 256
+        repeat {
+            try Task.checkCancellation()
+            let page = try store.liveFiles(limit: pageSize, offset: offset)
+            for file in page where file.name.localizedCaseInsensitiveContains(query) || names.contains(file.name) {
+                matches.append(Self.present(file))
+                if matches.count == limit { return matches }
+            }
+            if page.count < pageSize { return matches }
+            offset += pageSize
+        } while true
     }
 
     public func fileURL(named name: String) async throws -> URL {
@@ -289,6 +305,6 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
     private static func present(_ file: VaultFileRecord) -> VaultPresentedFile {
         VaultPresentedFile(id: file.name, name: file.displayName, path: file.name,
-            modifiedAt: file.modified, byteCount: file.size, isDirectory: file.type == .directory)
+            modifiedAt: file.modified, byteCount: file.size, isDirectory: file.type == .directory, isDownloaded: file.isCachedCurrent)
     }
 }

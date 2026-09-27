@@ -23,11 +23,12 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var initialQueue: Bool
     private var artworkHeight: NSLayoutConstraint!
     private var queueHeight: NSLayoutConstraint!
+    private var artworkID: UInt64?
     init(showQueue: Bool) { initialQueue = showQueue; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .secondarySystemBackground
+        view.backgroundColor = .systemBackground
         view.tintColor = .label
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(scroll)
         let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 20; stack.translatesAutoresizingMaskIntoConstraints = false; scroll.addSubview(stack)
@@ -78,15 +79,17 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private func refresh() {
         titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
         artistLabel.text = player.nowPlaying?.artist ?? "Choose music from your library"
-        art.image = MusicStyle.image(player.nowPlaying, size: 800) ?? UIImage(systemName: "music.note")
-        art.contentMode = player.nowPlaying?.artwork == nil ? .center : .scaleAspectFill
+        if artworkID != player.nowPlaying?.persistentID {
+            MusicStyle.changeArtwork(art, to: MusicStyle.image(player.nowPlaying, size: 800), hasArtwork: player.nowPlaying?.artwork != nil)
+            artworkID = player.nowPlaying?.persistentID
+        }
         art.accessibilityLabel = "Album artwork"
-        play.setImage(UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill"), for: .normal)
+        play.configuration?.image = UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill")
         play.accessibilityLabel = player.isPlaying ? "Pause" : "Play"
         shuffle.tintColor = player.shuffleEnabled ? .systemPink : .label
         shuffle.accessibilityValue = player.shuffleEnabled ? "On" : "Off"
         repeatButton.tintColor = player.repeatMode == .none ? .label : .systemPink
-        repeatButton.setImage(UIImage(systemName: player.repeatMode == .one ? "repeat.1" : "repeat"), for: .normal)
+        repeatButton.configuration?.image = UIImage(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
         repeatButton.accessibilityValue = player.repeatMode == .one ? "One Song" : player.repeatMode == .all ? "All Songs" : "Off"
         sourceLabel.text = player.sourcePlaylistName.map { "Continue Playing\nFrom \($0)" } ?? "Continue Playing"
         table.reloadData()

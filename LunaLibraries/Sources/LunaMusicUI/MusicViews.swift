@@ -18,9 +18,23 @@ internal enum MusicStyle {
         view.clipsToBounds = true
         return view
     }
+    static func changeArtwork(_ view: UIImageView, to image: UIImage?, hasArtwork: Bool) {
+        let update = {
+            view.image = image ?? UIImage(systemName: "music.note")
+            view.contentMode = hasArtwork ? .scaleAspectFill : .center
+        }
+        if view.window != nil && !UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(with: view, duration: 0.25,
+                              options: [.transitionCrossDissolve, .beginFromCurrentState],
+                              animations: update)
+        } else { update() }
+    }
     static func button(_ symbol: String, label: String, action: @escaping () -> Void) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: symbol), for: .normal)
+        var configuration: UIButton.Configuration
+        if #available(iOS 26, *) { configuration = .glass() }
+        else { configuration = .tinted() }
+        configuration.image = UIImage(systemName: symbol)
+        let button = UIButton(configuration: configuration)
         button.accessibilityLabel = label
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
@@ -74,6 +88,9 @@ public class MusicScreenViewController: UIViewController {
         view.endEditing(true)
         let controller = MusicPlayerViewController(showQueue: queue)
         controller.modalPresentationStyle = .pageSheet
+        if !queue, !UIAccessibility.isReduceMotionEnabled {
+            controller.preferredTransition = .zoom(options: nil) { [weak self] _ in self?.mini }
+        }
         if let sheet = controller.sheetPresentationController { sheet.detents = [.large()]; sheet.prefersGrabberVisible = true }
         present(controller, animated: true)
     }
@@ -121,12 +138,17 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
     let titleLabel = UILabel()
     let artistLabel = UILabel()
     private var play: UIButton!
+    private var artworkID: UInt64?
     override init(effect: UIVisualEffect? = nil) {
-        super.init(effect: effect ?? UIBlurEffect(style: .systemChromeMaterial))
+        let background: UIVisualEffect
+        if #available(iOS 26, *) {
+            let glass = UIGlassEffect(style: .regular)
+            glass.isInteractive = true
+            background = glass
+        } else { background = UIBlurEffect(style: .systemChromeMaterial) }
+        super.init(effect: effect ?? background)
         layer.cornerRadius = 30
         clipsToBounds = true
-        layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-        layer.borderWidth = 0.5
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         artistLabel.font = .preferredFont(forTextStyle: .subheadline)
         artistLabel.textColor = .secondaryLabel
@@ -152,9 +174,11 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         let player = MusicPlaybackController.shared
         titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
         artistLabel.text = player.nowPlaying?.artist ?? "Choose a song from your library"
-        art.image = MusicStyle.image(player.nowPlaying, size: 100) ?? UIImage(systemName: "music.note")
-        art.contentMode = player.nowPlaying?.artwork == nil ? .center : .scaleAspectFill
-        play.setImage(UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill"), for: .normal)
+        if artworkID != player.nowPlaying?.persistentID {
+            MusicStyle.changeArtwork(art, to: MusicStyle.image(player.nowPlaying, size: 100), hasArtwork: player.nowPlaying?.artwork != nil)
+            artworkID = player.nowPlaying?.persistentID
+        }
+        play.configuration?.image = UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill")
         play.accessibilityLabel = player.isPlaying ? "Pause" : "Play"
     }
 }

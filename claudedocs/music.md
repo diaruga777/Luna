@@ -21,8 +21,11 @@ recent albums. Search covers song titles, album titles, artist names and
 playlists. Playlist creation and adding songs use the public media-library APIs;
 errors are presented instead of reporting an unsuccessful edit as saved.
 
-Selecting a song anywhere starts it first. Among playlists containing that song,
-the most recently **successfully played in Luna Music** wins. With no matching
+Selecting a song anywhere starts it first. Among curated playlists containing
+that song, the most recently **successfully played in Luna Music** wins. Smart
+and Genius playlists are excluded from automatic continuation so a broad
+automatic playlist cannot fill the queue with unrelated tracks. A song tapped
+inside a playlist uses that playlist. With no matching
 Luna playback history, the largest matching playlist wins (unique song count;
 stable persistent-ID tie break). Remaining songs are shuffled without duplicates
 or an immediate repeat of the selected song. With no containing playlist, only
@@ -48,13 +51,18 @@ Intent routes are retained until a cold-start scene has installed observers.
 ## System surfaces
 
 See [music-system-integrations.md](music-system-integrations.md) for Siri,
-Shortcuts, widgets, Control Center and the queue Live Activity. The app and
+Shortcuts, widgets, Control Center and CarPlay. The app and
 widget use the family App Group for a small, separate music state snapshot.
 
-The UI is implemented with public UIKit components. Apple Music's private UI,
+The UI uses native UIKit navigation search, sheets, controls and iOS 26 Liquid
+Glass for floating playback controls. The mini player opens the sheet with
+UIKit's interactive zoom transition; artwork changes use a brief dissolve.
+Both honor Reduce Motion. Apple Music's private UI,
 catalog lyrics, Sing, AutoMix and download-management interfaces are not
-available through this implementation. Dedicated CarPlay browsing requires
-Apple's `com.apple.developer.carplay-audio` entitlement and is not enabled.
+available through this implementation. CarPlay has a separate template scene
+for browsing the device library and uses the system Now Playing template.
+Distribution requires Apple to grant the `com.apple.developer.carplay-audio`
+managed entitlement to the app's signing profile.
 System playback controls remain owned by MediaPlayer. There is no standalone
 watchOS app or independent Apple Watch library.
 
@@ -82,3 +90,9 @@ focus on cold launch, clearing/refocusing search on foreground, and queue deep
 links on warm and cold launches. A screenshot confirmed the library categories,
 search field, keyboard and mini player. Real-device music playback and system
 surfaces still require the populated-library checks described above.
+
+The follow-up build passes with the CarPlay scene and Liquid Glass controls.
+The revised song-queue policy has a regression test for automatic playlists;
+all 17 Music unit tests and 3 UI tests passed on the iOS 26.2 simulator.
+CarPlay template interaction and real-library queue membership still need a
+CarPlay simulator or authorized device with a populated music library.

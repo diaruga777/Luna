@@ -72,7 +72,10 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath); results[indexPath.row].configure(cell, owner: self); return cell
     }
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true); guard gridAlbums == nil else { return }; results[indexPath.row].open(from: self)
+        tableView.deselectRow(at: indexPath, animated: true); guard gridAlbums == nil else { return }
+        if case .song(let song) = results[indexPath.row], let playlist = collection?.playlist {
+            MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(song, in: playlist) }
+        } else { results[indexPath.row].open(from: self) }
     }
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard gridAlbums == nil, case .song(let item) = results[indexPath.row] else { return nil }
@@ -90,8 +93,17 @@ private final class MusicCollectionHeader: UIView {
         let artwork = MusicStyle.artwork(MusicStyle.image(result.songs.first, size: 600), corner: isArtist ? 100 : 14)
         let name = UILabel(); name.text = result.name; name.font = .preferredFont(forTextStyle: .largeTitle); name.adjustsFontForContentSizeCategory = true; name.numberOfLines = 0; name.textAlignment = .center
         let caption = UILabel(); caption.text = "\(result.songs.count) songs"; caption.textColor = .secondaryLabel; caption.font = .preferredFont(forTextStyle: .subheadline); caption.textAlignment = .center
-        let play = UIButton(configuration: .filled()); play.configuration?.title = "Play"; play.configuration?.image = UIImage(systemName: "play.fill"); play.configuration?.imagePadding = 8; play.configuration?.cornerStyle = .capsule; play.configuration?.baseBackgroundColor = .label; play.configuration?.baseForegroundColor = .systemBackground
-        let shuffle = UIButton(configuration: .tinted()); shuffle.configuration?.title = "Shuffle"; shuffle.configuration?.image = UIImage(systemName: "shuffle"); shuffle.configuration?.imagePadding = 8; shuffle.configuration?.cornerStyle = .capsule; shuffle.configuration?.baseForegroundColor = .label
+        let playConfiguration: UIButton.Configuration
+        let shuffleConfiguration: UIButton.Configuration
+        if #available(iOS 26, *) {
+            playConfiguration = .prominentGlass()
+            shuffleConfiguration = .glass()
+        } else {
+            playConfiguration = .filled()
+            shuffleConfiguration = .tinted()
+        }
+        let play = UIButton(configuration: playConfiguration); play.configuration?.title = "Play"; play.configuration?.image = UIImage(systemName: "play.fill"); play.configuration?.imagePadding = 8; play.configuration?.cornerStyle = .capsule
+        let shuffle = UIButton(configuration: shuffleConfiguration); shuffle.configuration?.title = "Shuffle"; shuffle.configuration?.image = UIImage(systemName: "shuffle"); shuffle.configuration?.imagePadding = 8; shuffle.configuration?.cornerStyle = .capsule
         play.addAction(UIAction { [weak self] _ in self?.onPlay?(false) }, for: .touchUpInside)
         shuffle.addAction(UIAction { [weak self] _ in self?.onPlay?(true) }, for: .touchUpInside)
         let buttons = UIStackView(arrangedSubviews: [play, shuffle]); buttons.spacing = 16; buttons.distribution = .fillEqually

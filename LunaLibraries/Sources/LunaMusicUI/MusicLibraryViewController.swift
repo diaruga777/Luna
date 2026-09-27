@@ -4,8 +4,9 @@ import MusicKit
 import LunaMusicCore
 
 @MainActor
-public final class MusicLibraryViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
-    private let search = UISearchBar()
+public final class MusicLibraryViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate, UISearchResultsUpdating {
+    private let searchController = UISearchController(searchResultsController: nil)
+    private var search: UISearchBar { searchController.searchBar }
     private var pendingSearchFocus = false
     private let library = MusicLibraryController.shared
     private var results: [MusicResult] = []
@@ -15,17 +16,18 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         super.viewDidLoad()
         title = "Library"
         navigationController?.navigationBar.prefersLargeTitles = true
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchResultsUpdater = self
+        navigationItem.searchController = searchController
+        navigationItem.preferredSearchBarPlacement = .stacked
+        navigationItem.hidesSearchBarWhenScrolling = false
+        definesPresentationContext = true
         search.placeholder = "Your Library"
         search.searchTextField.accessibilityIdentifier = "music.library.search"
-        search.searchBarStyle = .minimal
         search.delegate = self
         search.autocapitalizationType = .none
         search.autocorrectionType = .no
         search.accessibilityLabel = "Search songs, albums, artists, and playlists"
-        search.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(search)
-        tableTop.isActive = false
-        NSLayoutConstraint.activate([search.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), search.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8), search.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8), table.topAnchor.constraint(equalTo: search.bottomAnchor)])
         table.dataSource = self; table.delegate = self
         table.register(UITableViewCell.self, forCellReuseIdentifier: "row")
         table.register(MusicArtworkGridCell.self, forCellReuseIdentifier: "grid")
@@ -37,18 +39,27 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     }
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if pendingSearchFocus { search.becomeFirstResponder(); pendingSearchFocus = false }
+        if pendingSearchFocus { searchController.isActive = true; search.becomeFirstResponder(); pendingSearchFocus = false }
     }
     public func foregroundSearch(query: String = "") {
         pendingSearchFocus = true
         loadViewIfNeeded()
         if presentedViewController != nil { dismiss(animated: false) }
         navigationController?.popToRootViewController(animated: false)
+        // UIKit can keep the integrated search controller active across a trip
+        // to SpringBoard while dropping its first responder. Restart its native
+        // presentation before asking for the keyboard again.
+        searchController.isActive = false
         search.text = query
         update()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.view.window != nil else { return }
-            self.search.becomeFirstResponder(); self.pendingSearchFocus = false
+            self.searchController.isActive = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self, self.view.window != nil else { return }
+                self.search.becomeFirstResponder()
+                self.pendingSearchFocus = false
+            }
         }
     }
     public func showQueue() {
@@ -58,6 +69,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         presentPlayer(queue: true)
     }
     public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) { update() }
+    public func updateSearchResults(for searchController: UISearchController) { update() }
     public func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
     private func update() {
         results = []

@@ -241,7 +241,9 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
             destinationTopChromeInset: 80)
 
         if UIAccessibility.isReduceMotionEnabled {
-            XCTAssertFalse(prepared)
+            XCTAssertTrue(prepared)
+            XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
+            reader.finishCardViewportTransition(completed: true)
             return
         }
         XCTAssertTrue(prepared)
@@ -254,6 +256,37 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         reader.finishCardViewportTransition(completed: true)
         XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
         XCTAssertEqual(textView.alpha, 1, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testLiveResizeKeepsTheSamePassageAtTheSameHeight() throws {
+        var item = SavedItem(urlString: "https://example.com/resize")
+        item.state = .ready
+        let content = ArticleContent(title: "Resize", blocks: [
+            paragraph(String(repeating: "A changing window should keep this passage in place. ", count: 200))])
+        let reader = ScrollReaderViewController(item: item, content: content)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 350, height: 750)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+        text.layoutManager.ensureLayout(for: text.textContainer)
+        text.contentOffset.y = 600
+        reader.scrollViewDidScroll(text)
+        let glyph = text.layoutManager.glyphIndex(for: CGPoint(
+            x: 1, y: text.contentOffset.y + text.bounds.height * 0.25 - text.textContainerInset.top),
+            in: text.textContainer)
+        let character = text.layoutManager.characterIndexForGlyph(at: glyph)
+        func screenY() -> CGFloat {
+            let range = text.layoutManager.glyphRange(
+                forCharacterRange: NSRange(location: character, length: 1), actualCharacterRange: nil)
+            return text.layoutManager.boundingRect(forGlyphRange: range, in: text.textContainer).minY
+                + text.textContainerInset.top - text.contentOffset.y
+        }
+        let before = screenY()
+        reader.view.frame.size.width = 900
+        reader.view.setNeedsLayout()
+        reader.view.layoutIfNeeded()
+        XCTAssertEqual(screenY(), before, accuracy: 2)
+        XCTAssertGreaterThan(text.bounds.width - text.textContainerInset.left - text.textContainerInset.right, 600)
     }
 
     private func firstTextView(in view: UIView) -> UITextView? {

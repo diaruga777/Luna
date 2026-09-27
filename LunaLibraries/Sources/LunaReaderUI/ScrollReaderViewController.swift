@@ -82,6 +82,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// width. The live text view stays masked but hidden until its final TextKit
     /// layout and anchored content offset are ready.
     private var viewportReflowTransition: TextViewportReflowTransition?
+    private var lastTextViewportWidth: CGFloat = 0
+    private var resizeAnchor: TextViewportReflowTransition.AnchorGeometry?
     private let store = SavesStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
@@ -497,6 +499,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             : textView.contentOffset.y
         ScrollPresentationState.setSuppressed(false, for: textView)
         transition.finish()
+        captureResizeAnchor()
         layoutCompletionArea()
         layoutAnimatedImageViews()
     }
@@ -676,6 +679,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let widthChanged = lastTextViewportWidth > 0
+            && abs(lastTextViewportWidth - textView.bounds.width) > 0.5
         // Keep the text in a readable column on wide screens (iPad / landscape).
         let horizontal = Self.horizontalTextInset(forViewportWidth: view.bounds.width)
         if abs(textView.textContainerInset.left - horizontal) > 0.5 {
@@ -683,6 +688,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
         }
         layoutCompletionArea()
+        if widthChanged, viewportReflowTransition == nil, let resizeAnchor {
+            ScrollPresentationState.setSuppressed(true, for: textView)
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            textView.contentOffset.y = clampedContentOffsetY(
+                TextViewportReflowTransition.restoredOffset(for: resizeAnchor, in: textView))
+            ScrollPresentationState.setSuppressed(false, for: textView)
+        }
+        lastTextViewportWidth = textView.bounds.width
+        captureResizeAnchor()
         layoutAnimatedImageViews()
 
         // Restore the scroll position as soon as we have real bounds — BEFORE
@@ -1393,7 +1407,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     // MARK: - Read tracking
 
+    private func captureResizeAnchor() {
+        guard viewportReflowTransition == nil,
+              abs(lastTextViewportWidth - textView.bounds.width) < 0.5 else { return }
+        resizeAnchor = TextViewportReflowTransition.anchorGeometry(
+            in: textView, layoutManager: textView.layoutManager)
+    }
+
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        captureResizeAnchor()
         checkFinishedReading()
         updateAnimatedImagePlayback()
         if scrollView.isTracking || scrollView.isDragging {

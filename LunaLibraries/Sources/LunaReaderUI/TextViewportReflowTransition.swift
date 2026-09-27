@@ -57,8 +57,7 @@ final class TextViewportReflowTransition {
               textView.bounds.width > 0,
               destinationSize.width > 0,
               abs(destinationSize.width - textView.bounds.width) > 0.5,
-              textView.alpha > 0,
-              !UIAccessibility.isReduceMotionEnabled
+              textView.alpha > 0
         else { return nil }
 
         let sourceManager = textView.layoutManager
@@ -98,6 +97,12 @@ final class TextViewportReflowTransition {
         overlay.backgroundColor = .clear
         overlay.isUserInteractionEnabled = false
         overlay.clipsToBounds = true
+
+        if UIAccessibility.isReduceMotionEnabled {
+            return TextViewportReflowTransition(
+                textView: textView, overlay: overlay, moves: [],
+                destinationContentOffsetY: destinationOffset, originalTextAlpha: textView.alpha)
+        }
 
         let sourceOffset = textView.contentOffset.y
         let viewportHeight = max(textView.bounds.height, destinationSize.height)
@@ -178,7 +183,7 @@ final class TextViewportReflowTransition {
         textView?.alpha = originalTextAlpha
     }
 
-    private struct AnchorGeometry {
+    struct AnchorGeometry {
         let characterRange: NSRange
         let screenY: CGFloat
         let sourceIsAtTop: Bool
@@ -187,7 +192,7 @@ final class TextViewportReflowTransition {
     /// Anchor the glyph around the upper quarter of the viewport, rather than
     /// raw pixels, so the same passage stays under the reader's eyes as earlier
     /// line wraps expand or contract above it.
-    private static func anchorGeometry(
+    static func anchorGeometry(
         in textView: UITextView,
         layoutManager: NSLayoutManager
     ) -> AnchorGeometry? {
@@ -211,6 +216,15 @@ final class TextViewportReflowTransition {
             characterRange: characterRange,
             screenY: rect.minY + textView.textContainerInset.top - textView.contentOffset.y,
             sourceIsAtTop: sourceIsAtTop)
+    }
+
+    static func restoredOffset(for anchor: AnchorGeometry, in textView: UITextView) -> CGFloat {
+        destinationOffsetY(
+            textView: textView, destinationManager: textView.layoutManager,
+            destinationContainer: textView.textContainer,
+            destinationInsets: textView.textContainerInset,
+            destinationAdjustedTopInset: textView.adjustedContentInset.top,
+            destinationHeight: textView.bounds.height, anchor: anchor)
     }
 
     private static func destinationOffsetY(

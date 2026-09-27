@@ -60,7 +60,8 @@ public final class MoveDestinationPicker: UITableViewController {
     ) -> UITableViewCell {
         let row = rows[indexPath.row]
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.textLabel?.text = row.group.name
+        cell.textLabel?.text = row.group.kind == .inbox ? L10n.string("WriterLibrary_polish_unfiledDocuments") : row.group.name
+        cell.textLabel?.numberOfLines = 0
         cell.imageView?.image = UIImage(systemName: row.group.iconName)
         cell.indentationLevel = row.depth
         cell.backgroundColor = LunaColors.secondaryBackground

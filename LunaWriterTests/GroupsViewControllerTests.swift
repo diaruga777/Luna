@@ -20,14 +20,14 @@ final class GroupsViewControllerTests: XCTestCase {
 
         let rows = controller.visibleRowsForTesting
         XCTAssertEqual(
-            Set([.libraryAll, .libraryRecent, .libraryFavorites, .inboxRow, .trashRow]) as Set<GroupsRow>,
-            Set(rows).intersection([.libraryAll, .libraryRecent, .libraryFavorites, .inboxRow, .trashRow]))
+            Set([.libraryAll, .libraryNotes, .libraryRecent, .trashRow]) as Set<GroupsRow>,
+            Set(rows).intersection([.libraryAll, .libraryNotes, .libraryRecent, .trashRow]))
     }
 
     /// On a compact width the sidebar is the only column on screen, so its
     /// `+` menu must lead with a document, not only a group and a filter.
     @MainActor
-    func testThePlusMenuLeadsWithNewDocumentAndRoutesItToTheDelegate() throws {
+    func testThePlusMenuLeadsWithNewBookAndStillRoutesDocumentCreation() throws {
         let stack = try makeWriterStack()
         let controller = GroupsViewController(library: stack.library, notes: stack.library)
         let delegate = RecordingGroupsSelectionDelegate()
@@ -35,7 +35,7 @@ final class GroupsViewControllerTests: XCTestCase {
         layoutWriterScreen(controller)
 
         let first = try XCTUnwrap(controller.newItemMenu().children.first as? UIAction)
-        XCTAssertEqual(first.title, L10n.string("WriterLibrary_command_newSheet"))
+        XCTAssertEqual(first.title, "New Book")
 
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
         controller.requestNewDocument(in: nil)

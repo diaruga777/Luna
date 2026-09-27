@@ -193,7 +193,7 @@ public final class LibraryRootViewController: UISplitViewController {
             primaryNavigation.setViewControllers(
                 [groupsViewController, sheetsViewController, container], animated: false)
         } else {
-            setViewController(container, for: .secondary)
+            setViewController(UINavigationController(rootViewController: container), for: .secondary)
         }
     }
 
@@ -284,8 +284,11 @@ public final class LibraryRootViewController: UISplitViewController {
         ]
     }
 
-    @objc private func newSheetKeyCommand() { sheetsViewController.createSheet() }
-    @objc private func newGroupKeyCommand() { groupsViewController.createGroup(parent: nil) }
+    @objc private func newSheetKeyCommand() {
+        if currentSelection == .notes { sheetsViewController.createNote() }
+        else { sheetsViewController.createSheet() }
+    }
+    @objc private func newGroupKeyCommand() { groupsViewController.createBook(parent: nil) }
     @objc private func focusSearchKeyCommand() { sheetsViewController.focusSearch() }
     @objc private func toggleNotesKeyCommand() { currentContainer?.toggleNotesPanel() }
     @objc private func openSettingsKeyCommand() { presentSettings() }
@@ -342,6 +345,10 @@ extension LibraryRootViewController: GroupsSelectionDelegate {
             show(.supplementary)
             return
         }
+        currentContainer?.editor.flushPendingSave()
+        currentContainer = nil
+        environment.sessionState.recordOpenDocument(nil)
+        sheetsViewController.openDocumentID = nil
         if primaryNavigation.viewControllers.contains(sheetsViewController) {
             primaryNavigation.popToViewController(sheetsViewController, animated: true)
             return
@@ -387,6 +394,12 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
             return
         }
         currentContainer?.editor.flushPendingSave()
+        if (try? environment.library.groups())?.first(where: { $0.id == document.groupID })?.kind == .project {
+            currentSelection = .group(document.groupID)
+            groupsViewController.highlight(currentSelection)
+            sheetsViewController.select(currentSelection)
+            environment.sessionState.recordSelection(currentSelection.storedValue)
+        }
         let editorContainer = EditorContainerViewController(environment: environment, document: document)
         editorContainer.editingStateObserver = self
         editorContainer.documentOpener = self
@@ -409,7 +422,7 @@ extension LibraryRootViewController: SheetsSelectionDelegate {
                 primaryNavigation.setViewControllers(stack, animated: true)
             }
         } else {
-            setViewController(editorContainer, for: .secondary)
+            setViewController(UINavigationController(rootViewController: editorContainer), for: .secondary)
             show(.secondary)
         }
     }
@@ -480,8 +493,8 @@ extension LibraryRootViewController: UISplitViewControllerDelegate {
         if supplementaryNavigation.viewControllers.isEmpty {
             supplementaryNavigation.setViewControllers([sheetsViewController], animated: false)
         }
-        if let currentContainer, currentContainer.parent !== self {
-            setViewController(currentContainer, for: .secondary)
+        if let currentContainer, currentContainer.navigationController !== viewController(for: .secondary) {
+            setViewController(UINavigationController(rootViewController: currentContainer), for: .secondary)
         }
     }
 }

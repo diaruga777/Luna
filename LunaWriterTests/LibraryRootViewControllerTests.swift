@@ -221,7 +221,7 @@ final class LibraryRootViewControllerTests: XCTestCase {
         defer { window.isHidden = true }
         XCTAssertFalse(root.isCollapsed)
 
-        let secondary = try XCTUnwrap(root.viewController(for: .secondary) as? EditorContainerViewController)
+        let secondary = try XCTUnwrap((root.viewController(for: .secondary) as? UINavigationController)?.topViewController as? EditorContainerViewController)
         XCTAssertEqual(secondary.document.id, document.id)
         XCTAssertEqual(root.currentDocumentIDForTesting, document.id)
         let sheets = try XCTUnwrap(

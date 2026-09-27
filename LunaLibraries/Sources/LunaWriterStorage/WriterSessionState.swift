@@ -7,6 +7,7 @@ import LunaWriterModels
 public enum LibrarySelectionValue: Equatable, Sendable {
     case all
     case recent
+    case notes
     case favorites
     case inbox
     case trash
@@ -18,6 +19,7 @@ public enum LibrarySelectionValue: Equatable, Sendable {
         switch self {
         case .all: return "all"
         case .recent: return "recent"
+        case .notes: return "notes"
         case .favorites: return "favorites"
         case .inbox: return "inbox"
         case .trash: return "trash"
@@ -32,6 +34,7 @@ public enum LibrarySelectionValue: Equatable, Sendable {
         switch storageValue {
         case "all": self = .all
         case "recent": self = .recent
+        case "notes": self = .notes
         case "favorites": self = .favorites
         case "inbox": self = .inbox
         case "trash": self = .trash

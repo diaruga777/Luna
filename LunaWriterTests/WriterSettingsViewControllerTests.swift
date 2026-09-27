@@ -48,7 +48,7 @@ final class WriterSettingsViewControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testReadAlongSectionListsOnlyTheAvailableCapabilityPlusCalibrate() throws {
+    func testReadAlongAndSnapshotsStayRemovedEvenWithLegacyHandlers() throws {
         let stack = try makeWriterStack()
         let handler = ScriptedReadAlongSettings()
         handler.gazeAvailable = true
@@ -57,9 +57,9 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         let controller = WriterSettingsViewController(environment: environment)
         layoutWriterScreen(controller)
 
-        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 5)
+        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 4)
         // Gaze + Calibrate, no Voice row.
-        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 1), 2)
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 1), 1)
     }
 
     @MainActor
@@ -81,7 +81,7 @@ final class WriterSettingsViewControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testSelectingCalibrateRowRoutesThroughTheReadAlongHandler() throws {
+    func testLibraryRowDoesNotStartCalibration() throws {
         let stack = try makeWriterStack()
         let handler = ScriptedReadAlongSettings()
         let environment = makeLibraryEnvironment(stack: stack, readAlongSettings: handler)
@@ -89,13 +89,13 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         layoutWriterScreen(controller)
 
         // Gaze(0), Voice(1), Calibrate(2) — both capabilities default to available.
-        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 1))
+        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
 
-        XCTAssertTrue(handler.calibrationPresentedFrom === controller)
+        XCTAssertNil(handler.calibrationPresentedFrom)
     }
 
     @MainActor
-    func testCalibrationGradeShowsOnTheCalibrateRowWhenSet() throws {
+    func testLegacyCalibrationGradeDoesNotAppearInSettings() throws {
         let stack = try makeWriterStack()
         let handler = ScriptedReadAlongSettings()
         handler.lastCalibrationGrade = "Good"
@@ -103,8 +103,8 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         let controller = WriterSettingsViewController(environment: environment)
         layoutWriterScreen(controller)
 
-        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 2, section: 1))
-        XCTAssertEqual(cell.detailTextLabel?.text, "Good")
+        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertNotEqual(cell.detailTextLabel?.text, "Good")
     }
 
     /// organiser #12: font, line width and focus mode used to present a

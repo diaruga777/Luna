@@ -17,9 +17,7 @@ public final class FilterEditorViewController: UIViewController {
 
     private let nameField = UITextField()
     private let searchField = UITextField()
-    private let favoritesSwitch = UISwitch()
     private let modifiedControl: UISegmentedControl
-    private let keywordsField = UITextField()
 
     /// The window each "Modified within" segment stands for; nil is any time.
     static let modifiedWindows: [TimeInterval?] = [nil, 86_400, 7 * 86_400, 30 * 86_400]
@@ -53,19 +51,6 @@ public final class FilterEditorViewController: UIViewController {
         configure(
             searchField, placeholder: L10n.string("WriterLibrary_filter_searchPlaceholder"),
             text: filter.predicate.searchText ?? "")
-        configure(
-            keywordsField, placeholder: L10n.string("WriterLibrary_filter_keywordsPlaceholder"),
-            text: filter.predicate.keywordsAll.joined(separator: ", "))
-        keywordsField.autocapitalizationType = .none
-
-        favoritesSwitch.isOn = filter.predicate.favoritesOnly
-        let favoritesLabel = UILabel()
-        favoritesLabel.text = L10n.string("WriterLibrary_filter_favoritesOnly")
-        favoritesLabel.textColor = LunaColors.primaryText
-        favoritesLabel.font = .preferredFont(forTextStyle: .body)
-        let favoritesRow = UIStackView(arrangedSubviews: [favoritesLabel, favoritesSwitch])
-        favoritesRow.axis = .horizontal
-
         let modifiedLabel = UILabel()
         modifiedLabel.text = L10n.string("WriterLibrary_filter_modifiedWithin")
         modifiedLabel.textColor = LunaColors.secondaryText
@@ -74,7 +59,7 @@ public final class FilterEditorViewController: UIViewController {
             Self.modifiedWindows.firstIndex(of: filter.predicate.modifiedWithin) ?? 0
 
         let stack = UIStackView(arrangedSubviews: [
-            nameField, searchField, favoritesRow, modifiedLabel, modifiedControl, keywordsField,
+            nameField, searchField, modifiedLabel, modifiedControl,
         ])
         stack.axis = .vertical
         stack.spacing = 16
@@ -118,13 +103,8 @@ public final class FilterEditorViewController: UIViewController {
         filter.name = name.isEmpty ? L10n.string("WriterLibrary_groups_newFilterDefaultName") : name
         let search = (searchField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         filter.predicate.searchText = search.isEmpty ? nil : search
-        filter.predicate.favoritesOnly = favoritesSwitch.isOn
         let index = modifiedControl.selectedSegmentIndex
         filter.predicate.modifiedWithin = Self.modifiedWindows.indices.contains(index) ? Self.modifiedWindows[index] : nil
-        filter.predicate.keywordsAll = (keywordsField.text ?? "")
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
         guard (try? library.save(filter)) != nil else { return false }
         onSave?(filter)
         return true

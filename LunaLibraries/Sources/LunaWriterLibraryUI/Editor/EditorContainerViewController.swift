@@ -5,23 +5,15 @@ import LunaWriterModels
 import LunaWriterStorage
 import LunaWriterText
 
-/// Hosts one open sheet's editor behind a `NavHeaderBar`: back, the sheet's
-/// title, a notes button carrying its count, the read-along chrome host, and
-/// the ⋯ menu. The notes panel is a side child on a wide layout and a
-/// presented sheet on a compact one — never a modal that would swallow
-/// touches meant for a card next door.
+/// A document editor with native navigation, chapter controls, and a notes
+/// inspector that adapts to a sheet on compact widths.
 public final class EditorContainerViewController: UIViewController {
 
     private let environment: LibraryEnvironment
     private(set) var document: WriterDocument
 
-    private let header = NavHeaderBar()
     private(set) var editor: (UIViewController & DocumentEditing)!
-    private var readAlongChromeView: UIView?
     private var notesPanel: DocumentNotesPanelViewController?
-    /// Whether the header shows a back chevron. Nil until the first update,
-    /// so the first call always installs whichever controls belong there.
-    private var showsBackControl: Bool?
     /// A caret and keyboard state handed in before `viewDidLoad` built the
     /// editor; given to it as soon as it exists.
     private var pendingEditingState: EditorEditingState?
@@ -32,9 +24,6 @@ public final class EditorContainerViewController: UIViewController {
     /// Exactly one is active at a time.
     private var editorTopToHeaderConstraint: NSLayoutConstraint!
     private var editorTopToViewConstraint: NSLayoutConstraint!
-    /// The read-along chip's equivalent pair, when read-along installed one.
-    private var chromeTopToHeaderConstraint: NSLayoutConstraint?
-    private var chromeTopToSafeAreaConstraint: NSLayoutConstraint?
     /// The open notes panel's top constraint, when it is hosted as a side
     /// child — re-pinned alongside the editor when the chrome toggles.
     private var notesPanelTopConstraint: NSLayoutConstraint?
@@ -45,11 +34,8 @@ public final class EditorContainerViewController: UIViewController {
     /// The chrome's hidden state, for a test that cannot see `isChromeHidden`.
     var isChromeHiddenForTesting: Bool { isChromeHidden }
 
-    /// Built through the header's factory so it keeps a bar button's minimum
-    /// width; a long title would otherwise squeeze it to nothing.
-    private lazy var notesButton = NavHeaderBar.imageButton(
-        systemName: "note.text", target: self, action: #selector(notesTapped),
-        accessibilityLabel: L10n.string("WriterLibrary_editor_notesButtonLabel"))
+    private lazy var notesButton = UIBarButtonItem(
+        image: UIImage(systemName: "note.text"), style: .plain, target: self, action: #selector(notesTapped))
 
     /// Told where the caret rests in this sheet, so the root can record the
     /// page for the next launch.
@@ -58,10 +44,10 @@ public final class EditorContainerViewController: UIViewController {
     public weak var documentOpener: DocumentOpening?
 
     /// The header's current title — for tests, which cannot see `header`.
-    var headerTitleForTesting: String? { header.title }
+    var headerTitleForTesting: String? { title }
     /// The header's current trailing controls — for a test that must tell a
     /// rebuilt control apart from the same one left alone.
-    var trailingControlsForTesting: [UIView] { header.trailingControlsForTesting }
+    var trailingControlsForTesting: [UIBarButtonItem] { navigationItem.rightBarButtonItems ?? [] }
     /// Whether the notes panel is hosted as a side child right now.
     var isNotesPanelChildForTesting: Bool { notesPanel?.parent === self }
     /// Whether the notes panel is presented as a sheet right now.
@@ -80,7 +66,7 @@ public final class EditorContainerViewController: UIViewController {
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
         updateLeadingControls()
     }
 
@@ -92,20 +78,16 @@ public final class EditorContainerViewController: UIViewController {
     /// changed: replacing the leading stack dirties layout, and a rebuild
     /// per pass never lets the pass settle.
     private func updateLeadingControls() {
-        let isPushed = (navigationController?.viewControllers.count ?? 0) > 1
-        guard showsBackControl != isPushed else { return }
-        showsBackControl = isPushed
-        header.setLeadingControls(
-            isPushed ? [NavHeaderBar.backButton(target: self, action: #selector(backTapped))] : [])
+        navigationItem.leftItemsSupplementBackButton = true
+        if !(splitViewController?.isCollapsed ?? true) {
+            navigationItem.leftBarButtonItem = splitViewController?.displayModeButtonItem
+        }
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if isMovingFromParent || navigationController?.topViewController !== self {
             navigationController?.setNavigationBarHidden(false, animated: animated)
-        }
-        if isMovingFromParent, let editor {
-            environment.readAlongChrome?.tearDownReadAlong(for: editor)
         }
     }
 
@@ -116,7 +98,8 @@ public final class EditorContainerViewController: UIViewController {
         view.backgroundColor = LunaColors.background
         // The header carries its own back control; the collapsed stack's bar
         // would otherwise show a second one above it.
-        navigationItem.hidesBackButton = true
+        navigationItem.hidesBackButton = false
+        navigationItem.largeTitleDisplayMode = .never
 
         editor = environment.editorMaker.makeEditor(for: document)
         editor.editingDelegate = self
@@ -125,12 +108,10 @@ public final class EditorContainerViewController: UIViewController {
             editor.restoreEditingState(pendingEditingState)
         }
 
-        notesButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        header.title = displayTitle(for: document)
+        title = displayTitle(for: document)
         updateLeadingControls()
-        header.setTrailingControls(trailingHeaderControls())
-        let contentTop = header.mount(in: self)
+        configureNavigationBar()
+        let contentTop = view.safeAreaLayoutGuide.topAnchor
 
         addChild(editor)
         editor.view.translatesAutoresizingMaskIntoConstraints = false
@@ -148,23 +129,6 @@ public final class EditorContainerViewController: UIViewController {
             editorTrailingConstraint,
         ])
 
-        // The read-along chip floats over the editor's top-trailing corner; it
-        // sizes itself, so only its position is pinned here.
-        if let chrome = environment.readAlongChrome?.readAlongChrome(for: editor) {
-            readAlongChromeView = chrome
-            chrome.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(chrome)
-            let toHeader = chrome.topAnchor.constraint(equalTo: contentTop, constant: 8)
-            let toSafeArea = chrome.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8)
-            toSafeArea.isActive = false
-            chromeTopToHeaderConstraint = toHeader
-            chromeTopToSafeAreaConstraint = toSafeArea
-            NSLayoutConstraint.activate([
-                toHeader,
-                chrome.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            ])
-        }
         updateNotesButton()
         layoutForCurrentWidth()
         environment.library.addObserver(self)
@@ -172,7 +136,6 @@ public final class EditorContainerViewController: UIViewController {
 
     deinit {
         environment.library.removeObserver(self)
-        if let editor { environment.readAlongChrome?.tearDownReadAlong(for: editor) }
     }
 
     public override func viewWillLayoutSubviews() {
@@ -188,42 +151,69 @@ public final class EditorContainerViewController: UIViewController {
     /// unchanged, which an autosave one second after every typing burst
     /// otherwise does for nothing.
     private func setTitleIfChanged(_ title: String) {
-        guard header.title != title else { return }
-        header.title = title
+        guard self.title != title else { return }
+        self.title = title
     }
 
-    @objc private func backTapped() {
-        if let navigationController, navigationController.viewControllers.count > 1 {
-            navigationController.popViewController(animated: true)
-        }
+    private func configureNavigationBar() {
+        notesButton.accessibilityLabel = L10n.string("WriterLibrary_polish_documentNotes")
+        let chapters = UIBarButtonItem(image: UIImage(systemName: "list.bullet"), style: .plain, target: self, action: #selector(chaptersTapped))
+        chapters.accessibilityLabel = L10n.string("WriterLibrary_polish_chapters")
+        let more = UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] completion in completion(self?.ellipsisMenuChildren() ?? []) }
+        ]))
+        more.accessibilityLabel = L10n.string("WriterLibrary_polish_more")
+        navigationItem.rightBarButtonItems = [more, notesButton, chapters]
     }
 
-    // MARK: - Header controls
-
-    /// Built once, in `viewDidLoad`. The ⋯ button's menu wraps a deferred
-    /// element so a save never needs to rebuild the button or its menu — the
-    /// favourite title and icon are read from `document` when the menu
-    /// opens, not when this is called.
-    private func trailingHeaderControls() -> [UIView] {
-        // `NavHeaderBar.imageButton` needs a real target action; `showsMenuAsPrimaryAction`
-        // below replaces it as the button's actual tap behaviour, so it never runs.
-        let menuButton = NavHeaderBar.imageButton(
-            systemName: "ellipsis.circle", target: self, action: #selector(unusedMenuButtonAction),
-            accessibilityLabel: L10n.string("WriterLibrary_editor_moreMenuTitle"))
-        menuButton.menu = UIMenu(children: [
-            UIDeferredMenuElement.uncached { [weak self] completion in
-                completion(self?.ellipsisMenuChildren() ?? [])
-            },
-        ])
-        menuButton.showsMenuAsPrimaryAction = true
-        return [notesButton, menuButton]
+    @objc private func chaptersTapped() {
+        editor.flushPendingSave()
+        let organizer = ChapterOrganizer(library: environment.library, textStore: environment.textStore)
+        do {
+            if let book = try organizer.book(containing: document) {
+                let screen = ChaptersViewController(library: environment.library, textStore: environment.textStore,
+                                                    book: book, currentID: document.id) { [weak self] chapter in
+                    self?.documentOpener?.openDocument(chapter)
+                }
+                present(UINavigationController(rootViewController: screen), animated: true)
+            } else {
+                let alert = UIAlertController(title: L10n.string("WriterLibrary_polish_organizeAsBook"), message: L10n.string("WriterLibrary_polish_organizeAsBookDetail"), preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                alert.addAction(UIAlertAction(title: L10n.string("WriterLibrary_polish_createBook"), style: .default) { [weak self] _ in self?.addNextChapter() })
+                present(alert, animated: true)
+            }
+        } catch { showChapterError(error) }
     }
 
-    @objc private func unusedMenuButtonAction() {}
+    private func addNextChapter() {
+        editor.flushPendingSave()
+        do {
+            let chapter = try ChapterOrganizer(library: environment.library, textStore: environment.textStore)
+                .startNewChapter(after: document, text: "")
+            documentOpener?.openDocument(chapter)
+        } catch { showChapterError(error) }
+    }
+
+    private func adjacentChapter(_ offset: Int) {
+        let organizer = ChapterOrganizer(library: environment.library, textStore: environment.textStore)
+        do {
+            guard let book = try organizer.book(containing: document) else { return }
+            let chapters = try organizer.contents(of: book.id).flatMap(\.chapters)
+            guard let index = chapters.firstIndex(where: { $0.id == document.id }), chapters.indices.contains(index + offset) else { return }
+            editor.flushPendingSave()
+            documentOpener?.openDocument(chapters[index + offset])
+        } catch { showChapterError(error) }
+    }
+
+    private func showChapterError(_ error: Error) {
+        let alert = UIAlertController(title: L10n.string("WriterLibrary_polish_updateBookError"), message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
 
     private func updateNotesButton() {
         let count = (try? environment.notes.notes(for: document.id).count) ?? 0
-        notesButton.setTitle(count > 0 ? " \(count)" : nil, for: .normal)
+        notesButton.accessibilityLabel = "Document Notes, \(count) notes"
     }
 
     /// For tests, which cannot see the private trailing header button whose
@@ -237,33 +227,18 @@ public final class EditorContainerViewController: UIViewController {
 
     private func ellipsisMenuChildren() -> [UIMenuElement] {
         [
+            UIAction(title: L10n.string("WriterLibrary_polish_newChapterAfter"), image: UIImage(systemName: "doc.badge.plus")) { [weak self] _ in self?.addNextChapter() },
+            UIAction(title: L10n.string("WriterLibrary_polish_previousChapter"), image: UIImage(systemName: "chevron.left")) { [weak self] _ in self?.adjacentChapter(-1) },
+            UIAction(title: L10n.string("WriterLibrary_polish_nextChapter"), image: UIImage(systemName: "chevron.right")) { [weak self] _ in self?.adjacentChapter(1) },
+            UIAction(title: L10n.string("WriterLibrary_polish_copyChapterLink"), image: UIImage(systemName: "link")) { [weak self] _ in
+                guard let self else { return }
+                UIPasteboard.general.url = URL(string: "lunawriter://document/\(self.document.id.storageValue)")
+            },
             exportMenu(),
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_statisticsAction"),
-                image: UIImage(systemName: "chart.bar")
-            ) { [weak self] _ in self?.presentStatistics() },
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_keywordsAction"),
-                image: UIImage(systemName: "tag")
-            ) { [weak self] _ in self?.presentKeywordEditor() },
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_goalAction"),
-                image: UIImage(systemName: "flag")
-            ) { [weak self] _ in self?.presentGoalEditor() },
             UIAction(
                 title: L10n.string("WriterLibrary_sheets_moveAction"),
                 image: UIImage(systemName: "folder")
             ) { [weak self] _ in self?.presentMovePicker() },
-            UIAction(
-                title: self.document.isFavorite
-                    ? L10n.string("WriterLibrary_sheets_unfavoriteAction")
-                    : L10n.string("WriterLibrary_sheets_favoriteAction"),
-                image: UIImage(systemName: document.isFavorite ? "star.slash" : "star")
-            ) { [weak self] _ in self?.toggleFavorite() },
-            UIAction(
-                title: L10n.string("WriterLibrary_snapshots_title"),
-                image: UIImage(systemName: "clock.arrow.circlepath")
-            ) { [weak self] _ in self?.presentSnapshots() },
             UIAction(
                 title: L10n.string("Common_delete"),
                 image: UIImage(systemName: "trash"), attributes: .destructive
@@ -341,7 +316,7 @@ public final class EditorContainerViewController: UIViewController {
     @discardableResult
     public func trashDocument() -> Bool {
         guard (try? environment.library.trash(document.id)) != nil else { return false }
-        backTapped()
+        navigationController?.popViewController(animated: true)
         return true
     }
 
@@ -405,9 +380,7 @@ public final class EditorContainerViewController: UIViewController {
             panel.view.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(panel.view)
             panel.showsLeadingSeparator = true
-            let topConstraint = isChromeHidden
-                ? panel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-                : panel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+            let topConstraint = panel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
             notesPanelTopConstraint = topConstraint
             NSLayoutConstraint.activate([
                 topConstraint,
@@ -460,23 +433,10 @@ public final class EditorContainerViewController: UIViewController {
 
         editorTopToHeaderConstraint.isActive = !hidden
         editorTopToViewConstraint.isActive = hidden
-        chromeTopToHeaderConstraint?.isActive = !hidden
-        chromeTopToSafeAreaConstraint?.isActive = hidden
         reanchorNotesPanelTop()
 
-        let apply = {
-            self.header.alpha = hidden ? 0 : 1
-            self.readAlongChromeView?.alpha = hidden ? 0 : 1
-            self.header.transform = hidden
-                ? CGAffineTransform(translationX: 0, y: -self.header.bounds.height)
-                : .identity
-            self.view.layoutIfNeeded()
-        }
-        if animated {
-            UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseInOut], animations: apply)
-        } else {
-            apply()
-        }
+        navigationController?.setNavigationBarHidden(hidden, animated: animated)
+        view.layoutIfNeeded()
     }
 
     /// Re-pins the side notes panel's top between the header's bottom and
@@ -484,9 +444,7 @@ public final class EditorContainerViewController: UIViewController {
     private func reanchorNotesPanelTop() {
         guard let notesPanel, notesPanel.parent === self else { return }
         if let notesPanelTopConstraint { notesPanelTopConstraint.isActive = false }
-        let topConstraint = isChromeHidden
-            ? notesPanel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-            : notesPanel.view.topAnchor.constraint(equalTo: header.bottomAnchor)
+        let topConstraint = notesPanel.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         topConstraint.isActive = true
         notesPanelTopConstraint = topConstraint
     }
@@ -529,7 +487,7 @@ extension EditorContainerViewController: DocumentEditingDelegate {
     }
 
     public func editor(_ editor: DocumentEditing, wantsChromeHidden hidden: Bool) {
-        setChromeHidden(hidden, animated: true)
+        // Native navigation stays available while writing.
     }
 
     public func editorDidRequestChromeToggle(_ editor: DocumentEditing) {

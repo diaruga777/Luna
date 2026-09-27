@@ -53,7 +53,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         headerTitle = L10n.string("Common_settings")
         super.viewDidLoad()
         tableView.backgroundColor = LunaColors.background
-        readAlongRows = Self.readAlongRows(for: environment.readAlongSettings)
+        readAlongRows = []
         NotificationCenter.default.addObserver(
             self, selector: #selector(settingsDidChange), name: WriterSettings.didChange, object: nil)
     }
@@ -91,7 +91,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         switch visibleSections[section] {
         case .editor: return EditorRow.allCases.count
         case .readAlong: return readAlongRows.count
-        case .library: return LibraryRow.allCases.count
+        case .library: return 1
         case .appearance: return AppearanceRow.allCases.count
         case .about: return AboutRow.allCases.count
         }

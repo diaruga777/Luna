@@ -123,7 +123,7 @@ final class WriterEditorScreen: UIViewController, DocumentEditing, EditorViewCon
         do {
             let session = try DocumentSession(
                 document: document, textStore: storage.textStore, marksStore: storage.library,
-                settings: storage.settings, snapshots: storage.library)
+                settings: storage.settings)
             registry.register(session)
             return WriterEditorScreen(session: session, environment: environment, library: storage.library)
         } catch {

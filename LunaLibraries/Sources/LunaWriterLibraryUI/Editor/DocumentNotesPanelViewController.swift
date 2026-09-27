@@ -77,7 +77,7 @@ public final class DocumentNotesPanelViewController: UIViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.backgroundColor = LunaColors.background
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Note")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: L10n.string("WriterLibrary_polish_noteTitle"))
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
         emptyLabel.text = L10n.string("WriterLibrary_notes_emptyMessage")
@@ -270,9 +270,9 @@ extension DocumentNotesPanelViewController: UITableViewDataSource, UITableViewDe
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Note", for: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: L10n.string("WriterLibrary_polish_noteTitle"), for: indexPath)
         let note = rows[indexPath.row]
-        cell.textLabel?.numberOfLines = 4
+        cell.textLabel?.numberOfLines = 0
         cell.textLabel?.font = .preferredFont(forTextStyle: .body)
         cell.textLabel?.adjustsFontForContentSizeCategory = true
         cell.backgroundColor = LunaColors.secondaryBackground

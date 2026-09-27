@@ -1284,7 +1284,7 @@
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
 "WriterStorage_untitledProjectName_Luna" = "Untitled Project";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
-"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Tap space twice, quickly, to open the palette: look up a note, make one, insert a symbol, find another word, format, or start a new chapter.\n- Focus mode dims everything but the sentence you are in.\n- Read a document aloud and Luna marks what you say about it.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Tap space twice, quickly, to open the palette: look up a note, make one, insert a symbol, find another word, format, or start a new chapter.\n- Focus mode dims everything but the sentence you are in.\n- Create a book from the Library, then add chapters and collections from Contents.\n- All Notes keeps your ideas and research together, with links to the documents they belong to.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
 "WriterLibrary_command_export_Luna" = "Export…";
@@ -1292,25 +1292,19 @@
 "WriterLibrary_command_focusGroups_Luna" = "Focus Sidebar";
 "WriterLibrary_command_focusSearch_Luna" = "Search";
 "WriterLibrary_command_focusSheets_Luna" = "Focus Documents";
-"WriterLibrary_command_newGroup_Luna" = "New Group";
+"WriterLibrary_command_newGroup_Luna" = "New Book";
 "WriterLibrary_command_newSheet_Luna" = "New Document";
 "WriterLibrary_command_openSelection_Luna" = "Open Selected Document";
 "WriterLibrary_command_settings_Luna" = "Settings…";
 "WriterLibrary_command_toggleNotes_Luna" = "Toggle Notes Panel";
 "WriterLibrary_command_trash_Luna" = "Move to Trash";
 "WriterLibrary_editor_emptySelection_Luna" = "Select a document to start writing.";
-"WriterLibrary_editor_goalAction_Luna" = "Goal";
-"WriterLibrary_editor_keywordsAction_Luna" = "Keywords";
-"WriterLibrary_editor_moreMenuTitle_Luna" = "More";
-"WriterLibrary_editor_notesButtonLabel_Luna" = "Notes";
 "WriterLibrary_editor_openAction_Luna" = "Open";
 "WriterLibrary_editor_statisticsAction_Luna" = "Statistics";
 "WriterLibrary_editor_statisticsMessage_Luna" = "%lld words · %lld characters · %lld sentences · %lld paragraphs";
 "WriterLibrary_export_chooseFormatTitle_Luna" = "Export As";
 "WriterLibrary_export_failedMessage_Luna" = "The file could not be written.";
 "WriterLibrary_export_failedTitle_Luna" = "Couldn't Export";
-"WriterLibrary_filter_favoritesOnly_Luna" = "Favorites only";
-"WriterLibrary_filter_keywordsPlaceholder_Luna" = "Keywords, separated by commas";
 "WriterLibrary_filter_modifiedAny_Luna" = "Any time";
 "WriterLibrary_filter_modifiedDay_Luna" = "1 day";
 "WriterLibrary_filter_modifiedMonth_Luna" = "30 days";
@@ -1352,7 +1346,6 @@
 "WriterLibrary_groups_renameAction_Luna" = "Rename";
 "WriterLibrary_groups_renameAlertTitle_Luna" = "Rename Group";
 "WriterLibrary_groups_screenTitle_Luna" = "Library";
-"WriterLibrary_groups_sectionGroups_Luna" = "Groups";
 "WriterLibrary_groups_sectionInbox_Luna" = "Inbox";
 "WriterLibrary_groups_sectionLibrary_Luna" = "Library";
 "WriterLibrary_groups_sectionTrash_Luna" = "Trash";
@@ -1391,7 +1384,6 @@
 "WriterLibrary_settings_typewriterRow_Luna" = "Typewriter Scrolling";
 "WriterLibrary_settings_versionRow_Luna" = "Version";
 "WriterLibrary_settings_voiceRow_Luna" = "Voice";
-"WriterLibrary_sheets_attachToAction_Luna" = "Attach to…";
 "WriterLibrary_sheets_attachToTitle_Luna" = "Attach to…";
 "WriterLibrary_sheets_duplicateAction_Luna" = "Duplicate";
 "WriterLibrary_sheets_emptyScope_Luna" = "No documents here yet. Tap + to write one.";
@@ -1401,9 +1393,7 @@
 "WriterLibrary_sheets_emptyTrashConfirmMessage_Luna" = "%lld documents will be deleted for good.";
 "WriterLibrary_sheets_emptyTrashConfirmMessageOne_Luna" = "1 document will be deleted for good.";
 "WriterLibrary_sheets_emptyTrashConfirmTitle_Luna" = "Empty the Trash?";
-"WriterLibrary_sheets_favoriteAction_Luna" = "Favorite";
 "WriterLibrary_sheets_justNow_Luna" = "Just now";
-"WriterLibrary_sheets_keywordAction_Luna" = "Keyword";
 "WriterLibrary_sheets_moveAction_Luna" = "Move";
 "WriterLibrary_sheets_restoreAction_Luna" = "Restore";
 "WriterLibrary_sheets_searchPlaceholder_Luna" = "Search documents";
@@ -1412,7 +1402,6 @@
 "WriterLibrary_sheets_sortMenuTitle_Luna" = "Sort By";
 "WriterLibrary_sheets_sortModified_Luna" = "Date Modified";
 "WriterLibrary_sheets_sortTitle_Luna" = "Title";
-"WriterLibrary_sheets_unfavoriteAction_Luna" = "Unfavorite";
 "WriterLibrary_snapshots_emptyRow_Luna" = "No snapshots yet.";
 "WriterLibrary_snapshots_restoreAction_Luna" = "Restore";
 "WriterLibrary_snapshots_restoreConfirmTitle_Luna" = "Restore this snapshot?";
@@ -1444,7 +1433,6 @@
 "WriterEditor_paletteNewNoteNamed_Luna" = "New note “%@”";
 "WriterEditor_paletteNoteFromAnotherSheet_Luna" = "From another document";
 "WriterEditor_commandNewChapter_Luna" = "New chapter";
-"WriterEditor_commandNewChapterDetail_Luna" = "End the chapter here and start the next";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
 "WriterEditor_menuContinueWriting_Luna" = "Continue writing";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
@@ -1532,4 +1520,47 @@
 "Transcription_fileTooLarge_Luna" = "The recording is too large to transcribe";
 "Transcription_failed_Luna" = "The recording could not be transcribed";
 
-"WriterLibrary_chapter_wordCount_Luna" = "%lld words";
+
+// Writer books and notes
+"WriterLibrary_polish_addChapter_Luna" = "Add Chapter…";
+"WriterLibrary_polish_addExistingDocument_Luna" = "Add Existing Document…";
+"WriterLibrary_polish_addToBook_Luna" = "Add to Book";
+"WriterLibrary_polish_allNotes_Luna" = "All Notes";
+"WriterLibrary_polish_bookEmpty_Luna" = "Start with a new chapter, or open Contents to add collections and existing documents.";
+"WriterLibrary_polish_booksCollections_Luna" = "Books & Collections";
+"WriterLibrary_polish_chapters_Luna" = "Chapters";
+"WriterLibrary_polish_contents_Luna" = "Contents";
+"WriterLibrary_polish_copyChapterLink_Luna" = "Copy Chapter Link";
+"WriterLibrary_polish_create_Luna" = "Create";
+"WriterLibrary_polish_createBook_Luna" = "Create Book";
+"WriterLibrary_polish_createBookError_Luna" = "Couldn’t Create Book";
+"WriterLibrary_polish_deleteNote_Luna" = "Delete Note";
+"WriterLibrary_polish_discard_Luna" = "Discard";
+"WriterLibrary_polish_discardChanges_Luna" = "Discard Changes?";
+"WriterLibrary_polish_documentNotes_Luna" = "Document Notes";
+"WriterLibrary_polish_keepEditing_Luna" = "Keep Editing";
+"WriterLibrary_polish_linkDocument_Luna" = "Link to Document…";
+"WriterLibrary_polish_linkDocumentLabel_Luna" = "Link to Document";
+"WriterLibrary_polish_linkedDocuments_Luna" = "Linked Documents";
+"WriterLibrary_polish_more_Luna" = "More";
+"WriterLibrary_polish_newBook_Luna" = "New Book";
+"WriterLibrary_polish_newChapter_Luna" = "New Chapter";
+"WriterLibrary_polish_newChapterAfter_Luna" = "New Chapter After This";
+"WriterLibrary_polish_newChapterCollection_Luna" = "New Chapter Collection";
+"WriterLibrary_polish_newCollection_Luna" = "New Collection";
+"WriterLibrary_polish_newNote_Luna" = "New Note";
+"WriterLibrary_polish_nextChapter_Luna" = "Next Chapter";
+"WriterLibrary_polish_noteText_Luna" = "Note text";
+"WriterLibrary_polish_noteTitle_Luna" = "Note";
+"WriterLibrary_polish_notesEmpty_Luna" = "Keep ideas and research here. Add a note with +.";
+"WriterLibrary_polish_organizeAsBook_Luna" = "Organize as a Book";
+"WriterLibrary_polish_organizeAsBookDetail_Luna" = "Create a book around this document and add the next chapter.";
+"WriterLibrary_polish_previousChapter_Luna" = "Previous Chapter";
+"WriterLibrary_polish_saveChangesError_Luna" = "Couldn’t Save Changes";
+"WriterLibrary_polish_saveNoteError_Luna" = "Couldn’t Save Note";
+"WriterLibrary_polish_searchDocuments_Luna" = "Search Documents";
+"WriterLibrary_polish_searchNotes_Luna" = "Search Notes";
+"WriterLibrary_polish_titlePlaceholder_Luna" = "Title";
+"WriterLibrary_polish_unfiledDocuments_Luna" = "Unfiled Documents";
+"WriterLibrary_polish_unlinkedNote_Luna" = "Unlinked note";
+"WriterLibrary_polish_updateBookError_Luna" = "Couldn’t Update Book";

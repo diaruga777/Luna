@@ -15,11 +15,8 @@ public final class SheetCell: UICollectionViewListCell {
         if #available(iOS 26, *) { return UIVisualEffectView(effect: UIGlassEffect()) }
         return UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
     }()
-    private let favoriteGlyph = UIImageView()
     private let snippetLabel = UILabel()
     private let dateLabel = UILabel()
-    private let goalBar = MoonHorizonProgressBar()
-    private let chipsStack = UIStackView()
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -53,6 +50,7 @@ public final class SheetCell: UICollectionViewListCell {
 
     private func configureViews() {
         titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
         titleLabel.adjustsFontForContentSizeCategory = true
         chapterNumber.font = .monospacedDigitSystemFont(ofSize: 15, weight: .medium)
         chapterNumber.textColor = LunaColors.secondaryText
@@ -76,10 +74,6 @@ public final class SheetCell: UICollectionViewListCell {
         ])
         titleLabel.textColor = LunaColors.primaryText
 
-        favoriteGlyph.image = UIImage(systemName: "star.fill")
-        favoriteGlyph.tintColor = LunaColors.primaryText
-        favoriteGlyph.setContentHuggingPriority(.required, for: .horizontal)
-
         snippetLabel.font = .preferredFont(forTextStyle: .subheadline)
         snippetLabel.adjustsFontForContentSizeCategory = true
         snippetLabel.textColor = LunaColors.secondaryText
@@ -89,24 +83,7 @@ public final class SheetCell: UICollectionViewListCell {
         dateLabel.adjustsFontForContentSizeCategory = true
         dateLabel.textColor = LunaColors.tertiaryText
 
-        goalBar.showsActivityPulse = false
-        goalBar.isHidden = true
-
-        chipsStack.axis = .horizontal
-        chipsStack.spacing = 6
-        chipsStack.alignment = .center
-
-        let titleRow = UIStackView(arrangedSubviews: [titleLabel, favoriteGlyph])
-        titleRow.axis = .horizontal
-        titleRow.spacing = 6
-        titleRow.alignment = .center
-
-        let metaRow = UIStackView(arrangedSubviews: [dateLabel, goalBar])
-        metaRow.axis = .horizontal
-        metaRow.spacing = 8
-        metaRow.alignment = .center
-
-        let stack = UIStackView(arrangedSubviews: [titleRow, snippetLabel, metaRow, chipsStack])
+        let stack = UIStackView(arrangedSubviews: [titleLabel, snippetLabel, dateLabel])
         stack.axis = .vertical
         stack.spacing = 4
         let row = UIStackView(arrangedSubviews: [chapterBadge, stack])
@@ -116,8 +93,6 @@ public final class SheetCell: UICollectionViewListCell {
         row.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(row)
 
-        goalBar.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        goalBar.heightAnchor.constraint(equalToConstant: 6).isActive = true
 
         NSLayoutConstraint.activate([
             row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
@@ -131,35 +106,12 @@ public final class SheetCell: UICollectionViewListCell {
         chapterBadge.isHidden = chapterOrdinal == nil
         chapterNumber.text = chapterOrdinal.map { String($0) }
         chapterNumber.accessibilityLabel = chapterOrdinal.map { L10n.string("WriterStorage_chapterTitle", Int64($0)) }
-        snippetLabel.numberOfLines = chapterOrdinal == nil ? 2 : 1
+        snippetLabel.numberOfLines = 3
         titleLabel.text = document.title.isEmpty ? L10n.string("Common_untitled") : document.title
-        favoriteGlyph.isHidden = !document.isFavorite
         snippetLabel.text = document.snippet
         snippetLabel.isHidden = document.snippet.isEmpty
-        dateLabel.text = chapterOrdinal == nil
-            ? Self.relativeDateText(for: document.updatedAt)
-            : L10n.string("WriterLibrary_chapter_wordCount", Int64(document.wordCount))
+        dateLabel.text = Self.relativeDateText(for: document.updatedAt)
 
-        if let goal = document.goal {
-            goalBar.isHidden = false
-            goalBar.setProgress(Self.progress(for: document, goal: goal), animated: false)
-        } else {
-            goalBar.isHidden = true
-        }
-
-        chipsStack.arrangedSubviews.forEach {
-            chipsStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-        let visible = document.keywords.prefix(Self.maxVisibleChips)
-        for keyword in visible {
-            chipsStack.addArrangedSubview(Self.chip(for: keyword))
-        }
-        chipsStack.isHidden = chapterOrdinal != nil || document.keywords.isEmpty
-        let overflow = document.keywords.count - visible.count
-        if overflow > 0 {
-            chipsStack.addArrangedSubview(Self.chip(for: "+\(overflow)"))
-        }
     }
 
     /// Words per minute a reader gets through, for the `.readingMinutes` goal
@@ -214,51 +166,26 @@ public final class UnattachedNoteCell: UICollectionViewListCell {
 
     public static let reuseIdentifier = "UnattachedNoteCell"
 
-    private let sourceGlyph = UIImageView()
-    private let textLabel = UILabel()
     public let attachButton = UIButton(type: .system)
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
-        sourceGlyph.tintColor = LunaColors.secondaryText
-        sourceGlyph.setContentHuggingPriority(.required, for: .horizontal)
-
-        textLabel.font = .systemFont(ofSize: 14)
-        textLabel.textColor = LunaColors.primaryText
-        textLabel.numberOfLines = 2
-
-        attachButton.setTitle(L10n.string("WriterLibrary_sheets_attachToAction"), for: .normal)
-        attachButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-        attachButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        let stack = UIStackView(arrangedSubviews: [sourceGlyph, textLabel, attachButton])
-        stack.axis = .horizontal
-        stack.spacing = 8
-        stack.alignment = .center
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-        ])
+        attachButton.setImage(UIImage(systemName: "link"), for: .normal)
+        attachButton.accessibilityLabel = L10n.string("WriterLibrary_polish_linkDocumentLabel")
+        attachButton.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
     }
 
-    @available(*, unavailable)
-    public required init?(coder: NSCoder) { nil }
+    @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
-    public func configure(with note: WriterNote) {
-        textLabel.text = note.text
-        sourceGlyph.image = UIImage(systemName: Self.symbol(for: note.source))
-    }
-
-    private static func symbol(for source: WriterNote.Source) -> String {
-        switch source {
-        case .typed: return "keyboard"
-        case .mention: return "at"
-        case .intent: return "bolt"
-        case .voice: return "mic"
-        }
+    public func configure(with note: WriterNote, linkedTitles: [String] = []) {
+        var content = UIListContentConfiguration.subtitleCell()
+        content.text = note.text
+        content.textProperties.numberOfLines = 0
+        content.textProperties.font = .preferredFont(forTextStyle: .body)
+        content.secondaryText = linkedTitles.isEmpty ? L10n.string("WriterLibrary_polish_unlinkedNote") : linkedTitles.joined(separator: " · ")
+        content.secondaryTextProperties.numberOfLines = 0
+        content.textToSecondaryTextVerticalPadding = 8
+        contentConfiguration = content
+        accessories = [.customView(configuration: .init(customView: attachButton, placement: .trailing()))]
     }
 }

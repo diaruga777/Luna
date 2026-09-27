@@ -138,7 +138,7 @@ final class EditorContainerViewControllerTests: XCTestCase {
     /// the deferred element would), not when the trailing controls were
     /// built — so a toggle needs no control rebuild to stay correct.
     @MainActor
-    func testFavoriteToggleNeedsNoTrailingControlsRebuildToStayCorrect() throws {
+    func testLegacyFavoriteMetadataDoesNotReturnRemovedMenuActions() throws {
         let stack = try makeWriterStack()
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
@@ -151,9 +151,11 @@ final class EditorContainerViewControllerTests: XCTestCase {
         XCTAssertTrue(container.toggleFavorite())
 
         XCTAssertEqual(before.map(ObjectIdentifier.init), container.trailingControlsForTesting.map(ObjectIdentifier.init))
-        let favoriteAction = try XCTUnwrap(container.ellipsisMenuForTesting.children.compactMap { $0 as? UIAction }
-            .first { $0.title == L10n.string("WriterLibrary_sheets_unfavoriteAction") })
-        XCTAssertEqual(favoriteAction.title, L10n.string("WriterLibrary_sheets_unfavoriteAction"))
+        let titles = container.ellipsisMenuForTesting.children.compactMap { ($0 as? UIAction)?.title }
+        for removed in ["Favorite", "Unfavorite", "Goal", "Keywords", "Statistics", "Snapshots"] {
+            XCTAssertFalse(titles.contains(removed))
+        }
+        XCTAssertTrue(titles.contains("New Chapter After This"))
     }
 
     @MainActor
@@ -247,7 +249,7 @@ final class EditorContainerViewControllerTests: XCTestCase {
     // MARK: - Chrome
 
     @MainActor
-    func testWantsChromeHiddenHidesTheHeaderAndRepinsTheEditorToTheViewTop() throws {
+    func testTypingKeepsNativeNavigationAvailable() throws {
         let stack = try makeWriterStack()
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
@@ -257,15 +259,15 @@ final class EditorContainerViewControllerTests: XCTestCase {
         let container = EditorContainerViewController(environment: environment, document: document)
         layoutWriterScreen(container)
         let shownTop = container.editor.view.frame.minY
-        XCTAssertGreaterThan(shownTop, 0, "the editor starts below the header")
+        XCTAssertEqual(shownTop, container.view.safeAreaInsets.top)
         XCTAssertFalse(container.isChromeHiddenForTesting)
 
         let editor = try XCTUnwrap(editorMaker.madeEditors.first)
         editor.simulateChromeHiddenRequest(true)
         container.view.layoutIfNeeded()
 
-        XCTAssertTrue(container.isChromeHiddenForTesting)
-        XCTAssertEqual(container.editor.view.frame.minY, 0, "hidden chrome pins the editor to the view's own top")
+        XCTAssertFalse(container.isChromeHiddenForTesting)
+        XCTAssertEqual(container.editor.view.frame.minY, shownTop)
     }
 
     @MainActor

@@ -17,6 +17,7 @@ public enum WriterDragTypes {
 public enum GroupsRow: Hashable {
     case libraryAll
     case libraryRecent
+    case libraryNotes
     case libraryFavorites
     case inboxRow
     case trashRow
@@ -90,6 +91,7 @@ public final class GroupsViewController: UICollectionViewController {
         configureDragAndDrop()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "plus"), menu: newItemMenu())
+        navigationItem.rightBarButtonItem?.accessibilityLabel = L10n.string("Common_add")
         let settings = UIBarButtonItem(
             image: UIImage(systemName: "gearshape"), style: .plain, target: self,
             action: #selector(settingsTapped))
@@ -106,6 +108,8 @@ public final class GroupsViewController: UICollectionViewController {
     /// where reappearing after a push is the usual "nothing is selected yet".
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        navigationItem.largeTitleDisplayMode = .never
+        navigationController?.navigationBar.prefersLargeTitles = false
         clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
     }
 
@@ -153,9 +157,10 @@ public final class GroupsViewController: UICollectionViewController {
         let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
             elementKind: UICollectionView.elementKindSectionHeader
         ) { [weak self] header, _, indexPath in
-            guard let section = Section(rawValue: indexPath.section) else { return }
+            guard let self, let sections = self.dataSource?.snapshot().sectionIdentifiers, sections.indices.contains(indexPath.section) else { return }
+            let section = sections[indexPath.section]
             var content = UIListContentConfiguration.sidebarHeader()
-            content.text = self?.headerTitle(for: section)
+            content.text = self.headerTitle(for: section)
             header.contentConfiguration = content
         }
         dataSource = UICollectionViewDiffableDataSource<Section, GroupsRow>(
@@ -187,23 +192,20 @@ public final class GroupsViewController: UICollectionViewController {
         switch section {
         case .library: return L10n.string("WriterLibrary_groups_sectionLibrary")
         case .inbox: return L10n.string("WriterLibrary_groups_sectionInbox")
-        case .groups: return L10n.string("WriterLibrary_groups_sectionGroups")
+        case .groups: return L10n.string("WriterLibrary_polish_booksCollections")
         case .trash: return L10n.string("WriterLibrary_groups_sectionTrash")
         }
     }
 
     private func applySnapshots() {
         var snapshot = NSDiffableDataSourceSnapshot<Section, GroupsRow>()
-        snapshot.appendSections(Section.allCases)
+        snapshot.appendSections([.library, .groups, .trash])
         dataSource.apply(snapshot, animatingDifferences: false)
 
         var library = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
-        library.append([.libraryAll, .libraryRecent, .libraryFavorites])
+        library.append([.libraryAll, .libraryNotes, .libraryRecent])
         dataSource.apply(library, to: .library, animatingDifferences: false)
 
-        var inbox = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
-        inbox.append([.inboxRow])
-        dataSource.apply(inbox, to: .inbox, animatingDifferences: false)
 
         var groupsSnapshot = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
         appendGroupTree(into: &groupsSnapshot, parent: nil)
@@ -233,6 +235,7 @@ public final class GroupsViewController: UICollectionViewController {
         switch selection {
         case .all: return .libraryAll
         case .recent: return .libraryRecent
+        case .notes: return .libraryNotes
         case .favorites: return .libraryFavorites
         case .inbox: return .inboxRow
         case .trash: return .trashRow
@@ -300,11 +303,15 @@ public final class GroupsViewController: UICollectionViewController {
         var content = UIListContentConfiguration.sidebarCell()
         // Pinned, so a row reconfigured after it was selected does not keep
         // the accent tint UIKit gave its glyph while it was highlighted.
-        content.imageProperties.tintColor = LunaColors.primaryText
+        content.imageProperties.tintColor = .tintColor
+        cell.accessories = []
         switch row {
         case .libraryAll:
             content.text = L10n.string("WriterLibrary_groups_libraryAll")
             content.image = UIImage(systemName: "tray.full")
+        case .libraryNotes:
+            content.text = L10n.string("WriterLibrary_polish_allNotes")
+            content.image = UIImage(systemName: "note.text")
         case .libraryRecent:
             content.text = L10n.string("WriterLibrary_groups_libraryRecent")
             content.image = UIImage(systemName: "clock")
@@ -350,6 +357,7 @@ public final class GroupsViewController: UICollectionViewController {
         selectedRow = row
         switch row {
         case .libraryAll: selectionDelegate?.groupsViewController(self, didSelect: .all)
+        case .libraryNotes: selectionDelegate?.groupsViewController(self, didSelect: .notes)
         case .libraryRecent: selectionDelegate?.groupsViewController(self, didSelect: .recent)
         case .libraryFavorites: selectionDelegate?.groupsViewController(self, didSelect: .favorites)
         case .inboxRow: selectionDelegate?.groupsViewController(self, didSelect: .inbox)
@@ -371,6 +379,9 @@ public final class GroupsViewController: UICollectionViewController {
     /// The `+` menu. Tests read it through this rather than the bar button.
     func newItemMenu() -> UIMenu {
         UIMenu(children: [
+            UIAction(title: L10n.string("WriterLibrary_polish_newBook"), image: UIImage(systemName: "book.closed")) { [weak self] _ in
+                self?.createBook(parent: nil)
+            },
             UIAction(
                 title: L10n.string("WriterLibrary_command_newSheet"),
                 image: UIImage(systemName: "square.and.pencil")
@@ -384,6 +395,27 @@ public final class GroupsViewController: UICollectionViewController {
                 image: UIImage(systemName: "line.3.horizontal.decrease.circle")
             ) { [weak self] _ in self?.presentNewFilterEditor(scope: nil) },
         ])
+    }
+
+    public func createBook(parent: GroupID?) {
+        let alert = UIAlertController(title: parent == nil ? L10n.string("WriterLibrary_polish_newBook") : L10n.string("WriterLibrary_polish_newChapterCollection"), message: nil, preferredStyle: .alert)
+        alert.addTextField { $0.placeholder = L10n.string("WriterLibrary_polish_titlePlaceholder") }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("WriterLibrary_polish_create"), style: .default) { [weak self] _ in
+            guard let self, let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
+            do {
+                let book = try self.library.createGroup(name: name, icon: "book.closed", parent: parent, kind: .project)
+                if let parent { self.setCollapsed(false, for: parent) }
+                self.reload()
+                self.highlight(.group(book.id))
+                self.selectionDelegate?.groupsViewController(self, didSelect: .group(book.id))
+            } catch {
+                let errorAlert = UIAlertController(title: L10n.string("WriterLibrary_polish_createBookError"), message: error.localizedDescription, preferredStyle: .alert)
+                errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                self.present(errorAlert, animated: true)
+            }
+        })
+        present(alert, animated: true)
     }
 
     /// A group made from a menu gets its name asked for at once, instead of
@@ -488,6 +520,9 @@ public final class GroupsViewController: UICollectionViewController {
 
     private func groupContextMenu(for id: GroupID) -> UIMenu {
         UIMenu(children: [
+            UIAction(title: L10n.string("WriterLibrary_polish_newChapterCollection"), image: UIImage(systemName: "folder.badge.plus")) { [weak self] _ in
+                self?.createBook(parent: id)
+            },
             UIAction(
                 title: L10n.string("WriterLibrary_command_newSheet"),
                 image: UIImage(systemName: "square.and.pencil")
@@ -623,7 +658,7 @@ extension GroupsViewController: UICollectionViewDragDelegate, UICollectionViewDr
         case .group(let id): return id
         case .inboxRow: return library.inboxGroupID
         case .trashRow: return library.trashGroupID
-        case .libraryAll, .libraryRecent, .libraryFavorites, .filter: return nil
+        case .libraryAll, .libraryRecent, .libraryNotes, .libraryFavorites, .filter: return nil
         }
     }
 

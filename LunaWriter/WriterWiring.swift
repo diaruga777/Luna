@@ -36,7 +36,7 @@ import LunaWriterVoice
         // one: the root then opens it through the same restore path.
         if let welcome = try stack.bootstrap(), !stack.sessionState.hasSnapshot {
             stack.sessionState.snapshot = WriterSessionState.Snapshot(
-                documentID: welcome.id, selection: .inbox)
+                documentID: welcome.id, selection: .all)
         }
         stack.reconciler.openDocuments = openSessions
         stack.watcher.start()
@@ -85,13 +85,10 @@ import LunaWriterVoice
         let maker = WriterEditorMaker(
             storage: stack, registry: openSessions, aiAssistant: makeAIAssistant())
         editorMaker = maker
-        let readAlong = WriterReadAlongChrome(storage: stack, trackerMaker: Self.makeGazeTrackerMaker())
-        self.readAlong = readAlong
         let environment = LibraryEnvironment(
             library: stack.library, notes: stack.library, marks: stack.library,
             textStore: stack.textStore, snapshots: stack.library, noteIndex: stack.noteIndex,
             settings: stack.settings, sessionState: stack.sessionState, editorMaker: maker,
-            readAlongChrome: readAlong, readAlongSettings: readAlong,
             libraryRootPath: stack.libraryRoot.path)
         let root = LibraryRootViewController(environment: environment)
         self.root = root

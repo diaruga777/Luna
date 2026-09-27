@@ -95,7 +95,7 @@ final class SheetsViewControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testTrailingSwipeTrashesASheetAndLeadingSwipeTogglesFavorite() throws {
+    func testTrailingSwipeTrashesASheetAndThereIsNoFavoriteSwipe() throws {
         let stack = try makeWriterStack()
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
@@ -104,12 +104,7 @@ final class SheetsViewControllerTests: XCTestCase {
         layoutWriterScreen(controller)
         controller.select(.group(group.id))
 
-        let leading = try XCTUnwrap(controller.leadingSwipeActions(for: document.id))
-        let favoriteAction = try XCTUnwrap(leading.actions.first)
-        var favoriteCompleted = false
-        favoriteAction.handler(favoriteAction, UIView()) { success in favoriteCompleted = success }
-        XCTAssertTrue(favoriteCompleted)
-        XCTAssertEqual(try stack.library.document(document.id)?.isFavorite, true)
+        XCTAssertNil(controller.leadingSwipeActions(for: document.id))
 
         let trailing = try XCTUnwrap(controller.trailingSwipeActions(for: document.id))
         let trashAction = try XCTUnwrap(trailing.actions.first { $0.style == .destructive })
@@ -139,19 +134,14 @@ final class SheetsViewControllerTests: XCTestCase {
         let trailingProvider = try XCTUnwrap(configuration.trailingSwipeActionsConfigurationProvider)
         let indexPath = IndexPath(item: 0, section: 0)
 
-        let leading = try XCTUnwrap(leadingProvider(indexPath))
-        let favoriteAction = try XCTUnwrap(leading.actions.first)
-        var favoriteCompleted = false
-        favoriteAction.handler(favoriteAction, UIView()) { success in favoriteCompleted = success }
-        XCTAssertTrue(favoriteCompleted)
-        XCTAssertEqual(try stack.library.document(document.id)?.isFavorite, true)
+        XCTAssertNil(leadingProvider(indexPath))
 
         let trailing = try XCTUnwrap(trailingProvider(indexPath))
         XCTAssertTrue(trailing.actions.contains { $0.style == .destructive })
     }
 
     @MainActor
-    func testContextMenuOnASheetOffersOpenFavoriteMoveKeywordsGoalDuplicateAndTrash() throws {
+    func testContextMenuOnASheetOffersOnlyDocumentActions() throws {
         let stack = try makeWriterStack()
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)
         let document = try stack.library.createDocument(in: group.id, title: "Sheet")
@@ -169,10 +159,7 @@ final class SheetsViewControllerTests: XCTestCase {
             Set(titles),
             Set([
                 L10n.string("WriterLibrary_editor_openAction"),
-                L10n.string("WriterLibrary_sheets_favoriteAction"),
                 L10n.string("WriterLibrary_sheets_moveAction"),
-                L10n.string("WriterLibrary_editor_keywordsAction"),
-                L10n.string("WriterLibrary_editor_goalAction"),
                 L10n.string("WriterLibrary_sheets_duplicateAction"),
                 L10n.string("Common_delete"),
             ]))
@@ -352,5 +339,24 @@ private final class RecordingSheetsSelectionDelegate: SheetsSelectionDelegate {
     var selected: [WriterDocument] = []
     func sheetsViewController(_ controller: SheetsViewController, didSelect document: WriterDocument) {
         selected.append(document)
+    }
+}
+
+extension SheetsViewControllerTests {
+    @MainActor
+    func testAllNotesIsSearchableAndIncludesDocumentNotes() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Book")
+        let attached = WriterNote(documentIDs: [document.id], text: "The lighthouse keeper waits for the storm to pass.")
+        let standalone = WriterNote(text: "An idea without a document.")
+        try stack.library.insert(attached)
+        try stack.library.insert(standalone)
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        layoutWriterScreen(controller)
+        controller.select(.notes)
+        XCTAssertEqual(Set(controller.visibleRowsForTesting), [.unattachedNote(attached.id), .unattachedNote(standalone.id)])
+        controller.currentSearchQueryForTesting = "storm"
+        XCTAssertEqual(controller.visibleRowsForTesting, [.unattachedNote(attached.id)])
+        XCTAssertEqual(controller.title, "All Notes")
     }
 }

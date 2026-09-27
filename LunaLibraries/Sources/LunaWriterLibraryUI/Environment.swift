@@ -98,6 +98,7 @@ public protocol ReadAlongSettingsHandling: AnyObject {
 public enum LibrarySelection: Hashable {
     case all
     case recent
+    case notes
     case favorites
     case inbox
     case trash
@@ -111,6 +112,7 @@ extension LibrarySelection {
         switch self {
         case .all: return .all
         case .recent: return .recent
+        case .notes: return .notes
         case .favorites: return .favorites
         case .inbox: return .inbox
         case .trash: return .trash
@@ -123,8 +125,9 @@ extension LibrarySelection {
         switch stored {
         case .all: self = .all
         case .recent: self = .recent
-        case .favorites: self = .favorites
-        case .inbox: self = .inbox
+        case .notes: self = .notes
+        case .favorites: self = .all
+        case .inbox: self = .all
         case .trash: self = .trash
         case .group(let id): self = .group(id)
         case .filter(let id): self = .filter(id)

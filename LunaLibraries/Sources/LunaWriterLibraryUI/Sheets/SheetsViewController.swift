@@ -135,6 +135,11 @@ public final class SheetsViewController: UICollectionViewController {
         let wasChapterList = isChapterList
         let changedScope = currentSelection != selection
         currentSelection = selection
+        if changedScope {
+            searchQuery = nil
+            searchController.searchBar.text = nil
+            searchController.isActive = false
+        }
         if case .group(let id) = selection {
             isChapterList = (try? library.groups())?.first { $0.id == id }?.kind == .project
         } else { isChapterList = false }
@@ -142,11 +147,13 @@ public final class SheetsViewController: UICollectionViewController {
         if isChapterList && (changedScope || !wasChapterList) { currentSort = .manual }
         if wasChapterList && !isChapterList { currentSort = nonChapterSort }
         if isViewLoaded && wasChapterList != isChapterList { configureSwipeActionsLayout() }
-        navigationItem.largeTitleDisplayMode = isChapterList ? .always : .never
+        navigationItem.largeTitleDisplayMode = .never
         if navigationController?.topViewController === self {
-            navigationController?.navigationBar.prefersLargeTitles = isChapterList
+            navigationController?.navigationBar.prefersLargeTitles = false
         }
         title = titleText(for: selection)
+        navigationItem.leftBarButtonItem = selection == .notes ? nil : editButtonItem
+        searchController.searchBar.placeholder = selection == .notes ? L10n.string("WriterLibrary_polish_searchNotes") : L10n.string("WriterLibrary_polish_searchDocuments")
         navigationItem.rightBarButtonItems = trailingBarButtons()
         reload()
     }
@@ -156,7 +163,7 @@ public final class SheetsViewController: UICollectionViewController {
     /// collapsed, where the list is what the writer came back to.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.navigationBar.prefersLargeTitles = isChapterList
+        navigationController?.navigationBar.prefersLargeTitles = false
         clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
         reselectOpenDocument()
     }
@@ -175,6 +182,7 @@ public final class SheetsViewController: UICollectionViewController {
     private func titleText(for selection: LibrarySelection) -> String {
         switch selection {
         case .all: return L10n.string("WriterLibrary_groups_libraryAll")
+        case .notes: return L10n.string("WriterLibrary_polish_allNotes")
         case .recent: return L10n.string("WriterLibrary_groups_libraryRecent")
         case .favorites: return L10n.string("WriterLibrary_groups_libraryFavorites")
         case .inbox: return L10n.string("WriterLibrary_groups_inboxRow")
@@ -205,8 +213,12 @@ public final class SheetsViewController: UICollectionViewController {
         snapshot.appendSections(Section.allCases)
         snapshot.appendItems(documents.map { .document($0.id) }, toSection: .documents)
 
-        if currentSelection == .inbox {
-            let unattached = (try? notes.unattachedNotes()) ?? []
+        if currentSelection == .inbox || currentSelection == .notes {
+            let all = (try? (currentSelection == .notes ? notes.allNotes() : notes.unattachedNotes())) ?? []
+            let unattached = all.filter { note in
+                guard let query = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return true }
+                return note.text.localizedCaseInsensitiveContains(query)
+            }
             notesByID = Dictionary(uniqueKeysWithValues: unattached.map { ($0.id, $0) })
             snapshot.appendItems(unattached.map { .unattachedNote($0.id) }, toSection: .unattachedNotes)
         }
@@ -236,20 +248,31 @@ public final class SheetsViewController: UICollectionViewController {
     /// empty, or this scope has no documents yet.
     private func updateEmptyState(rowCount: Int) {
         emptyLabel.isHidden = rowCount > 0
-        guard rowCount == 0 else { return }
+        guard rowCount == 0 else { contentUnavailableConfiguration = nil; return }
         if let searchQuery, !searchQuery.isEmpty {
             emptyLabel.text = L10n.string("WriterLibrary_sheets_emptySearch")
+        } else if currentSelection == .notes {
+            emptyLabel.text = L10n.string("WriterLibrary_polish_notesEmpty")
+        } else if isChapterList {
+            emptyLabel.text = L10n.string("WriterLibrary_polish_bookEmpty")
         } else if currentSelection == .trash {
             emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyTrash")
         } else {
             emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyScope")
         }
+        var empty = UIContentUnavailableConfiguration.empty()
+        empty.text = title
+        empty.secondaryText = emptyLabel.text
+        empty.image = UIImage(systemName: currentSelection == .notes ? "note.text" : "book.closed")
+        contentUnavailableConfiguration = empty
+        emptyLabel.isHidden = true
     }
 
     private func loadDocuments() -> [WriterDocument] {
         let base: [WriterDocument]
         switch currentSelection {
         case .all: base = (try? library.documents(matching: FilterPredicate(), scope: nil)) ?? []
+        case .notes: base = []
         case .recent: base = (try? library.recent(days: 7)) ?? []
         case .favorites: base = (try? library.favorites()) ?? []
         case .inbox: base = (try? library.documents(in: library.inboxGroupID, sort: currentSort)) ?? []
@@ -290,7 +313,8 @@ public final class SheetsViewController: UICollectionViewController {
         let noteCellRegistration = UICollectionView.CellRegistration<UnattachedNoteCell, SheetsRow> {
             [weak self] cell, _, row in
             guard case .unattachedNote(let id) = row, let note = self?.notesByID[id] else { return }
-            cell.configure(with: note)
+            let names = note.documentIDs.compactMap { try? self?.library.document($0)?.title }
+            cell.configure(with: note, linkedTitles: names)
             cell.attachButton.removeTarget(nil, action: nil, for: .allEvents)
             cell.attachButton.addAction(UIAction { [weak self] _ in self?.presentAttachPicker(for: id) }, for: .touchUpInside)
         }
@@ -320,6 +344,16 @@ public final class SheetsViewController: UICollectionViewController {
     }
 
     private func trailingBarButtons() -> [UIBarButtonItem] {
+        if currentSelection == .notes {
+            return [UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newNoteTapped))]
+        }
+        if isChapterList {
+            let contents = UIBarButtonItem(image: UIImage(systemName: "list.bullet"), style: .plain, target: self, action: #selector(showContents))
+            contents.accessibilityLabel = L10n.string("WriterLibrary_polish_contents")
+            let add = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newSheetTapped))
+            add.accessibilityLabel = L10n.string("WriterLibrary_polish_newChapter")
+            return [add, contents]
+        }
         var items = [UIBarButtonItem(
             image: UIImage(systemName: "arrow.up.arrow.down"), menu: sortMenu())]
         if currentSelection == .trash {
@@ -393,9 +427,23 @@ public final class SheetsViewController: UICollectionViewController {
     func openFirstOrSelectedSheet() {
         let selected = (collectionView.indexPathsForSelectedItems ?? [])
             .compactMap { dataSource.itemIdentifier(for: $0) }
-        let target = selected.first ?? dataSource.snapshot().itemIdentifiers(inSection: .documents).first
+        let target = selected.first ?? dataSource.snapshot().itemIdentifiers.first
+        if case .unattachedNote(let id)? = target { presentNote(notesByID[id]); return }
         guard case .document(let id)? = target, let document = documentsByID[id] else { return }
         selectionDelegate?.sheetsViewController(self, didSelect: document)
+    }
+
+    @objc private func newNoteTapped() { presentNote(nil) }
+    func createNote() { presentNote(nil) }
+
+    private func presentNote(_ note: WriterNote?) {
+        let editor = NoteEditorViewController(note: note, store: notes, library: library) { [weak self] document in
+            guard let self else { return }
+            self.selectionDelegate?.sheetsViewController(self, didSelect: document)
+        }
+        let navigation = UINavigationController(rootViewController: editor)
+        navigation.modalPresentationStyle = .formSheet
+        present(navigation, animated: true)
     }
 
     @objc private func newSheetTapped() {
@@ -407,10 +455,31 @@ public final class SheetsViewController: UICollectionViewController {
     @discardableResult
     public func createSheet(in group: GroupID? = nil) -> WriterDocument? {
         let group = group ?? targetGroupForNewSheet()
-        guard let document = try? library.createDocument(in: group, title: nil) else { return nil }
+        let document: WriterDocument
+        do {
+            if (try library.groups()).first(where: { $0.id == group })?.kind == .project {
+                document = try ChapterOrganizer(library: library, textStore: textStore).appendChapter(in: group)
+            } else { document = try library.createDocument(in: group, title: nil) }
+        } catch { showOrganizationError(error); return nil }
         reload()
         selectionDelegate?.sheetsViewController(self, didSelect: document)
         return document
+    }
+
+    @objc private func showContents() {
+        guard case .group(let id) = currentSelection,
+              let group = (try? library.groups())?.first(where: { $0.id == id }) else { return }
+        let screen = ChaptersViewController(library: library, textStore: textStore, book: group, currentID: openDocumentID) { [weak self] document in
+            guard let self else { return }
+            self.selectionDelegate?.sheetsViewController(self, didSelect: document)
+        }
+        present(UINavigationController(rootViewController: screen), animated: true)
+    }
+
+    private func showOrganizationError(_ error: Error) {
+        let alert = UIAlertController(title: L10n.string("WriterLibrary_polish_saveChangesError"), message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     private func targetGroupForNewSheet() -> GroupID {
@@ -430,6 +499,7 @@ public final class SheetsViewController: UICollectionViewController {
             selectionDelegate?.sheetsViewController(self, didSelect: document)
         } else {
             opensASheet = false
+            if case .unattachedNote(let id) = row, let note = notesByID[id] { presentNote(note) }
         }
         // Beside a visible editor column the open sheet's row keeps its
         // highlight, which is what says which sheet is on screen. A
@@ -446,6 +516,14 @@ public final class SheetsViewController: UICollectionViewController {
         _ collectionView: UICollectionView, contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
+        if indexPaths.count == 1, case .unattachedNote(let id)? = dataSource.itemIdentifier(for: indexPaths[0]) {
+            return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+                UIMenu(children: [UIAction(title: L10n.string("WriterLibrary_polish_deleteNote"), image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                    do { try self?.notes.delete(id); self?.reload() }
+                    catch { self?.showOrganizationError(error) }
+                }])
+            })
+        }
         guard indexPaths.count == 1, case .document(let id)? = dataSource.itemIdentifier(for: indexPaths[0])
         else { return nil }
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
@@ -468,20 +546,8 @@ public final class SheetsViewController: UICollectionViewController {
                 self.selectionDelegate?.sheetsViewController(self, didSelect: document)
             },
             UIAction(
-                title: document.isFavorite
-                    ? L10n.string("WriterLibrary_sheets_unfavoriteAction")
-                    : L10n.string("WriterLibrary_sheets_favoriteAction"),
-                image: UIImage(systemName: document.isFavorite ? "star.slash" : "star")
-            ) { [weak self] _ in self?.toggleFavorite(id) },
-            UIAction(
                 title: L10n.string("WriterLibrary_sheets_moveAction"), image: UIImage(systemName: "folder")
             ) { [weak self] _ in self?.presentMovePicker(for: [id]) },
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_keywordsAction"), image: UIImage(systemName: "tag")
-            ) { [weak self] _ in self?.presentKeywordEditor(for: id) },
-            UIAction(
-                title: L10n.string("WriterLibrary_editor_goalAction"), image: UIImage(systemName: "flag")
-            ) { [weak self] _ in self?.presentGoalEditor(for: id) },
             UIAction(
                 title: L10n.string("WriterLibrary_sheets_duplicateAction"),
                 image: UIImage(systemName: "doc.on.doc")
@@ -542,10 +608,6 @@ public final class SheetsViewController: UICollectionViewController {
                 action: #selector(moveSelectedTapped)),
             UIBarButtonItem.flexibleSpace(),
             UIBarButtonItem(
-                title: L10n.string("WriterLibrary_sheets_keywordAction"), style: .plain, target: self,
-                action: #selector(keywordSelectedTapped)),
-            UIBarButtonItem.flexibleSpace(),
-            UIBarButtonItem(
                 title: L10n.string("Common_delete"), style: .plain, target: self,
                 action: #selector(trashSelectedTapped)),
         ]
@@ -586,17 +648,7 @@ public final class SheetsViewController: UICollectionViewController {
     /// The favourite toggle. Exposed so tests can invoke the action's handler
     /// directly instead of driving a real swipe gesture.
     public func leadingSwipeActions(for id: DocumentID) -> UISwipeActionsConfiguration? {
-        guard let document = documentsByID[id] else { return nil }
-        let title = document.isFavorite
-            ? L10n.string("WriterLibrary_sheets_unfavoriteAction")
-            : L10n.string("WriterLibrary_sheets_favoriteAction")
-        let action = UIContextualAction(style: .normal, title: title) { [weak self] _, _, completion in
-            self?.toggleFavorite(id)
-            completion(true)
-        }
-        action.backgroundColor = LunaColors.tertiaryFill
-        action.image = UIImage(systemName: document.isFavorite ? "star.slash" : "star.fill")
-        return UISwipeActionsConfiguration(actions: [action])
+        nil
     }
 
     /// Move + Trash normally; Restore in the Trash. Exposed for the same
@@ -741,7 +793,7 @@ extension SheetsViewController: LibraryChangeObserving {
         switch change {
         case .groups, .documents: reload()
         case .document(let id): handleDocumentChange(id)
-        case .notes: if currentSelection == .inbox { reload() }
+        case .notes: if currentSelection == .inbox || currentSelection == .notes { reload() }
         }
     }
 
@@ -768,6 +820,7 @@ extension SheetsViewController: LibraryChangeObserving {
         case .trash: return document.trashedAt != nil
         case .group(let id): return document.trashedAt == nil && document.groupID == id
         case .favorites: return document.trashedAt == nil && document.isFavorite
+        case .notes: return false
         case .inbox: return document.trashedAt == nil && document.groupID == library.inboxGroupID
         // `.recent` and `.filter` scopes can depend on more than this one
         // row (a rolling date window, an arbitrary predicate) — a full

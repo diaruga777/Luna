@@ -1,5 +1,47 @@
 # Luna Writer
 
+## Books and notes navigation (September 2026)
+
+Writer now centers on books, chapter collections, documents, and notes.
+The sidebar offers All Documents, All Notes, Last 7 Days, Books & Collections,
+and Trash. Inbox and Favorites are no longer navigation destinations; saved
+sessions on either reopen All Documents. Existing documents, notes, and legacy
+metadata remain in the library. The internal inbox group is still the storage
+location for unfiled documents and is labeled Unfiled Documents in move pickers.
+
+- **All Notes** includes attached and standalone notes exactly once, ordered by
+  update date, with full-text search. Rows wrap the entire note and show linked
+  document titles. Tap to edit in a scrollable sheet; the link menu opens linked
+  documents or attaches the note elsewhere. New notes can be captured here
+  without creating a document. Long-press a row to delete it.
+- **Books** can be created directly from the sidebar + menu. Each book uses the
+  existing project group model and opens in manual chapter order. New Chapter
+  creates a heading-backed document. Contents provides a table of contents,
+  nested chapter collections, adding existing documents, and native Edit-mode
+  reorder handles that also move chapters between collections. Collections
+  retain their manual order in the sidebar and table of contents.
+- **The editor** uses a standard navigation bar and native back navigation,
+  with Chapters, Document Notes, and More controls. Navigation stays available
+  while typing. Chapters opens the containing book, including its collections;
+  an unfiled document can become a book. More offers a new following chapter,
+  previous/next chapter navigation, and a stable `lunawriter://document/<uuid>`
+  link for sharing references across chapters. Export, move, and delete remain.
+- **The command palette** uses the full note text rather than the short FTS
+  excerpt, wraps it in rows up to 520 points wide, and scrolls within the space
+  above the keyboard. The exact Return target gets an explicit tinted fill,
+  border, return glyph, and selected accessibility trait. Arrow-key changes and
+  cleared selection update all four together. Note peek cards scroll long text;
+  document notes use uncapped wrapping, and the related-note strip shows three
+  lines with access to the full note panel.
+- Goals, statistics, keywords, favorites, snapshots, read-along, and gaze
+  tracking are removed from the editor/library controls and settings. Production
+  wiring no longer creates read-along or gaze services or records editing-session
+  snapshots. Their legacy storage types remain readable for compatibility.
+
+The sections below document earlier implementation history; descriptions of the
+removed controls and custom editor header are superseded by this section.
+
+
 Luna Writer is a standalone Markdown writing app (`LunaWriter` target, bundle
 `com.hsanabria.luna.writer`, URL scheme `lunawriter://`, strings suffix
 `_Writer`). It shares no store with the other Luna apps and talks to no

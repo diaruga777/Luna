@@ -6,16 +6,18 @@ public enum MusicQueuePlanner {
         public let id: UInt64
         public let songIDs: [UInt64]
         public let lastPlayed: Date?
+        public let isAutomatic: Bool
 
-        public init(id: UInt64, songIDs: [UInt64], lastPlayed: Date? = nil) {
+        public init(id: UInt64, songIDs: [UInt64], lastPlayed: Date? = nil, isAutomatic: Bool = false) {
             self.id = id
             self.songIDs = songIDs
             self.lastPlayed = lastPlayed
+            self.isAutomatic = isAutomatic
         }
     }
 
     public static func playlist(containing songID: UInt64, in playlists: [Playlist]) -> Playlist? {
-        playlists.filter { $0.songIDs.contains(songID) }.sorted { lhs, rhs in
+        playlists.filter { !$0.isAutomatic && $0.songIDs.contains(songID) }.sorted { lhs, rhs in
             if lhs.lastPlayed != rhs.lastPlayed {
                 return (lhs.lastPlayed ?? .distantPast) > (rhs.lastPlayed ?? .distantPast)
             }

@@ -119,7 +119,7 @@ public final class MusicPlaybackController: ObservableObject {
         changed()
     }
 
-    public func playSong(_ item: MPMediaItem) async throws {
+    public func playSong(_ item: MPMediaItem, in preferredPlaylist: MPMediaPlaylist? = nil) async throws {
         if MusicLibraryController.shared.playlists.isEmpty {
             await MusicLibraryController.shared.reload()
         }
@@ -127,16 +127,20 @@ public final class MusicPlaybackController: ObservableObject {
         let recency = defaults.dictionary(forKey: recencyKey) as? [String: Double] ?? [:]
         let candidates = playlists.map {
             MusicQueuePlanner.Playlist(id: $0.persistentID, songIDs: $0.items.map(\.persistentID),
-                                       lastPlayed: recency[String($0.persistentID)].map(Date.init(timeIntervalSince1970:)))
+                                       lastPlayed: recency[String($0.persistentID)].map(Date.init(timeIntervalSince1970:)),
+                                       isAutomatic: !$0.playlistAttributes.intersection([.smart, .genius]).isEmpty)
         }
-        let selected = MusicQueuePlanner.playlist(containing: item.persistentID, in: candidates)
-        let playlist = playlists.first { $0.persistentID == selected?.id }
+        let preferred = preferredPlaylist.flatMap { playlist in
+            candidates.first { $0.id == playlist.persistentID && $0.songIDs.contains(item.persistentID) }
+        }
+        let selected = preferred ?? MusicQueuePlanner.playlist(containing: item.persistentID, in: candidates)
+        let playlist = preferredPlaylist?.persistentID == selected?.id ? preferredPlaylist : playlists.first { $0.persistentID == selected?.id }
         var generator = SystemRandomNumberGenerator()
         let ids = MusicQueuePlanner.songIDs(startingWith: item.persistentID, playlist: selected, using: &generator)
         var byID: [UInt64: MPMediaItem] = [item.persistentID: item]
         for song in playlist?.items ?? [] { byID[song.persistentID] = song }
         let ordered = ids.compactMap { byID[$0] }
-        try await start(ordered, playlist: playlist, shuffled: true,
+        try await start(ordered, playlist: playlist, shuffled: selected != nil,
                         originalIDs: [item.persistentID] + (selected?.songIDs ?? []).filter { $0 != item.persistentID })
     }
 

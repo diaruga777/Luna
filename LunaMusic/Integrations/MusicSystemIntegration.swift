@@ -13,7 +13,6 @@ import OSLog
     private var needsRefresh = false
     private var lastState: MusicActivityAttributes.ContentState?
     private var lastSongID: MPMediaEntityPersistentID?
-    private var activity: Activity<MusicActivityAttributes>?
     private let log = Logger(subsystem: "LunaMusic", category: "SystemIntegration")
 
     func start() {
@@ -24,6 +23,11 @@ import OSLog
             })
         }
         LunaMusicShortcuts.updateAppShortcutParameters()
+        Task {
+            for existing in Activity<MusicActivityAttributes>.activities {
+                await existing.end(nil, dismissalPolicy: .immediate)
+            }
+        }
         scheduleRefresh()
     }
 
@@ -43,10 +47,6 @@ import OSLog
     private func refresh() async {
         let player = MusicPlaybackController.shared
         guard let song = player.nowPlaying else {
-            for existing in Activity<MusicActivityAttributes>.activities {
-                await existing.end(nil, dismissalPolicy: .immediate)
-            }
-            activity = nil
             lastState = nil
             lastSongID = nil
             if let url = MusicWidgetSnapshot.storeURL { try? FileManager.default.removeItem(at: url) }
@@ -63,21 +63,6 @@ import OSLog
             lastState?.nextTitle != state.nextTitle || lastState?.playlist != state.playlist
         let expectedElapsed = (lastState?.elapsed ?? 0) + ((lastState?.isPlaying ?? false) ? Date().timeIntervalSince(lastState?.updatedAt ?? Date()) : 0)
         let seeked = abs(state.elapsed - expectedElapsed) > 3
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(state.isPlaying ? max(30, state.duration - state.elapsed + 15) : 300))
-
-        if activity == nil {
-            // A terminated app's old activity may refer to an obsolete queue.
-            for existing in Activity<MusicActivityAttributes>.activities {
-                await existing.end(nil, dismissalPolicy: .immediate)
-            }
-            if state.isPlaying, UIApplication.shared.applicationState == .active,
-               ActivityAuthorizationInfo().areActivitiesEnabled {
-                do { activity = try Activity.request(attributes: MusicActivityAttributes(sessionID: UUID()), content: content) }
-                catch { log.error("Unable to start queue activity: \(error.localizedDescription, privacy: .public)") }
-            }
-        } else if metadataChanged || seeked {
-            await activity?.update(content)
-        }
         if metadataChanged || seeked || lastState == nil {
             do {
                 if let url = MusicWidgetSnapshot.storeURL {

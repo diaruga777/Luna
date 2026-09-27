@@ -1,6 +1,7 @@
 import ActivityKit
 import Foundation
 
+// Retained only to dismiss queue Live Activities created by older releases.
 struct MusicActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var title: String

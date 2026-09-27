@@ -1,4 +1,5 @@
 import UIKit
+import CarPlay
 
 @main
 final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,6 +9,12 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        if session.role == .carTemplateApplication {
+            let configuration = UISceneConfiguration(name: "MusicCarPlay", sessionRole: session.role)
+            configuration.sceneClass = CPTemplateApplicationScene.self
+            configuration.delegateClass = MusicCarPlaySceneDelegate.self
+            return configuration
+        }
         let configuration = UISceneConfiguration(name: "Music", sessionRole: session.role)
         configuration.delegateClass = MusicSceneDelegate.self
         return configuration

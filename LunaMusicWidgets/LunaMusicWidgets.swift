@@ -1,4 +1,3 @@
-import ActivityKit
 import AppIntents
 import SwiftUI
 import WidgetKit
@@ -6,7 +5,6 @@ import WidgetKit
 @main struct LunaMusicWidgetBundle: WidgetBundle {
     var body: some Widget {
         LunaMusicLibraryWidget()
-        LunaMusicQueueActivity()
         LunaMusicPlaybackControl()
         LunaMusicNextControl()
     }
@@ -24,82 +22,6 @@ private struct MusicTransport: View {
                 .accessibilityLabel("Next Song")
         }
         .font(.title2).buttonStyle(.plain)
-    }
-}
-
-private struct MusicProgress: View {
-    let state: MusicActivityAttributes.ContentState
-    var body: some View {
-        if state.duration > 0 {
-            if state.isPlaying {
-                ProgressView(timerInterval: state.playbackStart...state.playbackStart.addingTimeInterval(state.duration), countsDown: false)
-                    .tint(.white)
-            } else {
-                ProgressView(value: min(state.elapsed, state.duration), total: state.duration).tint(.white)
-            }
-        }
-    }
-}
-
-struct LunaMusicQueueActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: MusicActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.pink)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(context.isStale ? "Playback Queue" : context.state.title).font(.headline).lineLimit(1)
-                        Text(context.isStale ? "Open Luna Music to refresh" : context.state.artist).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer()
-                    Image(systemName: "list.bullet").accessibilityLabel("Playback Queue")
-                }
-                if !context.isStale, let next = context.state.nextTitle {
-                    Text("Next: \(next)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                if !context.isStale {
-                    MusicProgress(state: context.state)
-                    HStack { Spacer(); MusicTransport(isPlaying: context.state.isPlaying); Spacer() }
-                } else {
-                    Text("Open your queue to refresh playback").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .padding().activityBackgroundTint(.black.opacity(0.8)).activitySystemActionForegroundColor(.white)
-            .widgetURL(URL(string: "lunamusic://queue"))
-        } dynamicIsland: { context in
-            DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    Image(systemName: "music.note").foregroundStyle(.pink).font(.title2)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    Image(systemName: "list.bullet").accessibilityLabel("Playback Queue")
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    VStack(spacing: 3) {
-                        Text(context.isStale ? "Playback Queue" : context.state.title).font(.headline).lineLimit(1)
-                        Text(context.isStale ? "Open Luna Music to refresh" : context.state.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 12) {
-                        if !context.isStale, let next = context.state.nextTitle {
-                            Text("Next: \(next)").font(.caption).lineLimit(1)
-                        }
-                        if !context.isStale {
-                            MusicProgress(state: context.state)
-                            MusicTransport(isPlaying: context.state.isPlaying)
-                        }
-                    }.padding(.top, 8)
-                }
-            } compactLeading: {
-                Image(systemName: "music.note").foregroundStyle(.pink)
-            } compactTrailing: {
-                Image(systemName: context.isStale ? "list.bullet" : (context.state.isPlaying ? "waveform" : "pause.fill")).foregroundStyle(.pink)
-            } minimal: {
-                Image(systemName: "music.note").foregroundStyle(.pink)
-            }
-            .widgetURL(URL(string: "lunamusic://queue"))
-        }
     }
 }
 

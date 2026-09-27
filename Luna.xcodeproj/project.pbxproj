@@ -30,6 +30,7 @@
 		30668C231C13671D4EAEC5A3 /* LunaLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		37DF3A722475ECA29774A6C2 /* LunaKit in Frameworks */ = {isa = PBXBuildFile; productRef = BDABD95163ABBB5F515E81B7 /* LunaKit */; };
 		3BC736AD047C058356A991EF /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
+		3BD4B7FF6D1D7A6697072D3B /* MusicCarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F39CBC1578D474BE0097ADC3 /* MusicCarPlaySceneDelegate.swift */; };
 		3EFF1B92B5A10E6FCCAC0E16 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C1 /* LunaVaultTailscale */; };
 		3F7F3136F480965FB7A218AE /* LunaVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 03209A3839713E5B2151D087 /* LunaVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4142DF31BCC07DF42F077D2C /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
@@ -514,6 +515,7 @@
 		F10C825E0000000000000003 /* VaultIncomingQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultIncomingQueue.swift; sourceTree = "<group>"; };
 		F10C825E0000000000000005 /* VaultPhotoSelection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultPhotoSelection.swift; sourceTree = "<group>"; };
 		F10C825E0000000000000007 /* VaultTransferController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTransferController.swift; sourceTree = "<group>"; };
+		F39CBC1578D474BE0097ADC3 /* MusicCarPlaySceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicCarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		F70000000000000000000000 /* SharedIconAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = SharedIconAssets.xcassets; sourceTree = "<group>"; };
 		FB2058296382A195E386F5C8 /* LunaReaderLaunchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaReaderLaunchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF703AF04B63ED294953F60F /* LunaVault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1313,6 +1315,7 @@
 				C7C95D8FD22E1F923BCB06E3 /* MusicLaunchRoute.swift */,
 				A547025C57FFBE1A744CA00A /* MusicSceneDelegate.swift */,
 				6C4F85534CCAA1A696A83832 /* MusicSystemIntegration.swift */,
+				F39CBC1578D474BE0097ADC3 /* MusicCarPlaySceneDelegate.swift */,
 			);
 			name = LunaMusic;
 			path = LunaMusic;
@@ -2972,6 +2975,7 @@
 				B028B1CB47A4A8FE950FED3D /* MusicActivityAttributes.swift in Sources */,
 				258AE1AFA80892591C7B2849 /* MusicControlIntents.swift in Sources */,
 				C90D922BF90E20ADB0880098 /* MusicSystemIntegration.swift in Sources */,
+				3BD4B7FF6D1D7A6697072D3B /* MusicCarPlaySceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

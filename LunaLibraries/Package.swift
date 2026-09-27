@@ -11,6 +11,7 @@ let package = Package(
     // a `swift build` on the Mac still compiles the Foundation-only tiers.
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
+        .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI"]),
         // MARK: - Per-app kits
         //
         // One dynamic kit per content app. The app, every one of its
@@ -144,6 +145,8 @@ let package = Package(
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
     ],
     targets: [
+        .target(name: "LunaMusicCore"),
+        .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
         .target(name: "LunaAppConfig"),

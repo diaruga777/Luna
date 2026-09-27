@@ -19,6 +19,12 @@ public final class MusicPlaybackController: ObservableObject {
     private let player = MPMusicPlayerController.applicationQueuePlayer
     private let defaults = UserDefaults.standard
     private let recencyKey = "LunaMusic.playlistLastPlayed.v1"
+    private let snapshotKey = "LunaMusic.playbackQueue.v1"
+    private var pendingSnapshot: MusicQueueSnapshot?
+    private var needsPreparation = false
+    private var isPreparing = false
+    private var sourcePlaylistID: UInt64?
+    private var lastPersistence = Date.distantPast
     private var observers: [NSObjectProtocol] = []
     private var timer: Timer?
     private var pendingPlaylistID: UInt64?
@@ -28,8 +34,14 @@ public final class MusicPlaybackController: ObservableObject {
 
     private init() {
         player.beginGeneratingPlaybackNotifications()
-        player.shuffleMode = .off // Shuffle explicitly, keeping the selected song first.
-        player.repeatMode = .none
+        if let data = defaults.data(forKey: snapshotKey) {
+            pendingSnapshot = try? JSONDecoder().decode(MusicQueueSnapshot.self, from: data)
+            needsPreparation = pendingSnapshot != nil && player.nowPlayingItem == nil
+            if !needsPreparation { pendingSnapshot = nil }
+        }
+        observers.append(NotificationCenter.default.addObserver(forName: .lunaMusicLibraryChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.restoreIfNeeded() }
+        })
         for name in [Notification.Name.MPMusicPlayerControllerNowPlayingItemDidChange,
                      .MPMusicPlayerControllerPlaybackStateDidChange] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: player, queue: .main) { [weak self] _ in
@@ -40,6 +52,71 @@ public final class MusicPlaybackController: ObservableObject {
             Task { @MainActor in self?.refresh() }
         }
         refresh()
+    }
+
+    /// Resolves saved IDs for the paused UI only. The system queue is untouched until Resume.
+    public func restoreIfNeeded() async {
+        guard needsPreparation, let snapshot = pendingSnapshot else { return }
+        let library = MusicLibraryController.shared
+        guard library.authorizationStatus == .authorized else { return }
+        if !library.hasLoaded || library.isLoading { await library.reload() }
+        guard needsPreparation, pendingSnapshot != nil, !library.isLoading else { return }
+        let byID = Dictionary(library.songs.map { ($0.persistentID, $0) }, uniquingKeysWith: { first, _ in first })
+        guard let restored = snapshot.resolving(availableIDs: Set(byID.keys)) else {
+            pendingSnapshot = nil
+            needsPreparation = false
+            defaults.removeObject(forKey: snapshotKey)
+            return
+        }
+        queue = restored.songIDs.compactMap { byID[$0] }
+        currentIndex = restored.currentIndex
+        nowPlaying = queue[currentIndex]
+        duration = nowPlaying?.playbackDuration ?? 0
+        playbackTime = min(restored.playbackTime, duration)
+        unshuffledIDs = restored.originalSongIDs
+        shuffleEnabled = restored.shuffleEnabled
+        repeatMode = MPMusicRepeatMode(rawValue: restored.repeatMode) ?? .none
+        sourcePlaylistName = restored.sourcePlaylistName
+        sourcePlaylistID = restored.sourcePlaylistID
+        isPlaying = false
+        pendingSnapshot = nil
+        changed()
+    }
+
+    /// Called by an explicit Play/Resume action, including Shortcuts and playback controls.
+    public func resume() async throws {
+        await restoreIfNeeded()
+        guard !isPreparing else { return }
+        guard needsPreparation else {
+            guard nowPlaying != nil else { throw MusicPlaybackError.emptyQueue }
+            player.play()
+            refresh()
+            return
+        }
+        guard queue.indices.contains(currentIndex), let current = nowPlaying else { throw MusicPlaybackError.emptyQueue }
+        isPreparing = true
+        defer { isPreparing = false }
+        let generation = UUID()
+        requestID = generation
+        let descriptor = MPMusicPlayerMediaItemQueueDescriptor(itemCollection: MPMediaItemCollection(items: queue))
+        descriptor.startItem = current
+        descriptor.setStartTime(playbackTime, for: current)
+        player.shuffleMode = .off
+        player.repeatMode = repeatMode
+        player.setQueue(with: descriptor)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            player.prepareToPlay { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
+        guard requestID == generation else { throw CancellationError() }
+        needsPreparation = false
+        pendingPlaylistID = sourcePlaylistID
+        errorMessage = nil
+        player.play()
+        refresh()
+        changed()
     }
 
     public func playSong(_ item: MPMediaItem) async throws {
@@ -76,8 +153,11 @@ public final class MusicPlaybackController: ObservableObject {
         if let queueMutation { await queueMutation.value }
         guard requestID == id else { throw CancellationError() }
         pendingPlaylistID = nil
+        pendingSnapshot = nil
+        needsPreparation = false
         errorMessage = nil
         player.shuffleMode = .off
+        player.repeatMode = repeatMode
         player.setQueue(with: MPMediaItemCollection(items: items))
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -90,6 +170,7 @@ public final class MusicPlaybackController: ObservableObject {
             queue = items
             unshuffledIDs = originalIDs
             sourcePlaylistName = playlist?.name
+            sourcePlaylistID = playlist?.persistentID
             shuffleEnabled = shuffled
             pendingPlaylistID = playlist?.persistentID
             player.play()
@@ -107,21 +188,32 @@ public final class MusicPlaybackController: ObservableObject {
     }
 
     public func togglePlayPause() {
-        if player.playbackState == .playing { player.pause() }
-        else if nowPlaying != nil { player.play() }
-        refresh()
+        if needsPreparation {
+            Task { do { try await resume() } catch { errorMessage = error.localizedDescription; changed() } }
+        } else {
+            if player.playbackState == .playing { player.pause() }
+            else if nowPlaying != nil { player.play() }
+            refresh()
+        }
     }
 
-    public func next() { player.skipToNextItem(); refresh() }
+    public func next() {
+        if needsPreparation { moveRestoredSelection(by: 1); return }
+        player.skipToNextItem(); refresh()
+    }
     public func previous() {
+        if needsPreparation {
+            if playbackTime > 3 { seek(to: 0) } else { moveRestoredSelection(by: -1) }
+            return
+        }
         if player.currentPlaybackTime > 3 { player.skipToBeginning() }
         else { player.skipToPreviousItem() }
         refresh()
     }
     public func seek(to time: TimeInterval) {
         guard time.isFinite else { return }
-        player.currentPlaybackTime = min(max(0, time), duration)
-        refresh()
+        if needsPreparation { playbackTime = min(max(0, time), duration) }
+        else { player.currentPlaybackTime = min(max(0, time), duration); refresh() }
         changed()
     }
     public func cycleRepeat() {
@@ -131,7 +223,7 @@ public final class MusicPlaybackController: ObservableObject {
         case .one: repeatMode = .none
         @unknown default: repeatMode = .none
         }
-        player.repeatMode = repeatMode
+        if !needsPreparation { player.repeatMode = repeatMode }
         changed()
     }
 
@@ -196,6 +288,11 @@ public final class MusicPlaybackController: ObservableObject {
             var upcoming = Array(self.queue.dropFirst(index + 1))
             transform(&upcoming)
             upcoming = self.deduplicated(upcoming).filter { $0.persistentID != expectedID }
+            if self.needsPreparation {
+                self.queue = Array(self.queue.prefix(index + 1)) + upcoming
+                self.changed()
+                return
+            }
             let replacement = upcoming
             let result: (MPMusicPlayerControllerQueue, Error?) = await withCheckedContinuation { continuation in
                 self.player.perform(queueTransaction: { mutable in
@@ -218,6 +315,7 @@ public final class MusicPlaybackController: ObservableObject {
     }
 
     private func refresh() {
+        guard !needsPreparation else { return }
         let oldID = nowPlaying?.persistentID
         let oldPlaying = isPlaying
         let oldIndex = currentIndex
@@ -235,8 +333,32 @@ public final class MusicPlaybackController: ObservableObject {
             pendingPlaylistID = nil
         }
         if oldID != nowPlaying?.persistentID || oldPlaying != isPlaying || oldIndex != currentIndex { changed() }
+        else if isPlaying && Date().timeIntervalSince(lastPersistence) >= 5 { persistQueue() }
     }
-    private func changed() { NotificationCenter.default.post(name: .lunaMusicPlaybackChanged, object: self) }
+
+    private func moveRestoredSelection(by offset: Int) {
+        guard !queue.isEmpty else { return }
+        currentIndex = min(max(0, currentIndex + offset), queue.count - 1)
+        nowPlaying = queue[currentIndex]
+        duration = nowPlaying?.playbackDuration ?? 0
+        playbackTime = 0
+        changed()
+    }
+
+    private func persistQueue() {
+        guard !queue.isEmpty, queue.indices.contains(currentIndex) else { return }
+        let snapshot = MusicQueueSnapshot(songIDs: queue.map(\.persistentID), currentIndex: currentIndex,
+                                          playbackTime: playbackTime, originalSongIDs: unshuffledIDs,
+                                          shuffleEnabled: shuffleEnabled, repeatMode: repeatMode.rawValue,
+                                          sourcePlaylistName: sourcePlaylistName, sourcePlaylistID: sourcePlaylistID)
+        if let data = try? JSONEncoder().encode(snapshot) { defaults.set(data, forKey: snapshotKey) }
+        lastPersistence = Date()
+    }
+
+    private func changed() {
+        persistQueue()
+        NotificationCenter.default.post(name: .lunaMusicPlaybackChanged, object: self)
+    }
     private func deduplicated(_ items: [MPMediaItem]) -> [MPMediaItem] {
         var seen = Set<UInt64>()
         return items.filter { seen.insert($0.persistentID).inserted }

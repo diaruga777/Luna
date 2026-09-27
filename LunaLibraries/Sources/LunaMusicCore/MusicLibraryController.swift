@@ -27,7 +27,8 @@ public final class MusicLibraryController: ObservableObject {
     @Published public private(set) var isLoading = false
     @Published public private(set) var errorMessage: String?
     private var observer: NSObjectProtocol?
-    private var pendingReload = false
+    public private(set) var hasLoaded = false
+    private var loadWaiters: [CheckedContinuation<Void, Never>] = []
 
     private init() {
         MPMediaLibrary.default().beginGeneratingLibraryChangeNotifications()
@@ -54,9 +55,13 @@ public final class MusicLibraryController: ObservableObject {
             NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
             return
         }
-        guard !isLoading else { pendingReload = true; return }
+        guard !isLoading else {
+            await withCheckedContinuation { loadWaiters.append($0) }
+            return
+        }
         isLoading = true
         errorMessage = nil
+        NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
         // Queries do synchronous IPC. Run them on a serial background queue; the returned
         // media objects are immutable snapshots and published together on the main actor.
         let snapshot = await withCheckedContinuation { continuation in
@@ -71,6 +76,7 @@ public final class MusicLibraryController: ObservableObject {
         }
         guard Self.libraryAuthorizationStatus == .authorized else {
             isLoading = false
+            finishLoadWaiters()
             await reload()
             return
         }
@@ -81,8 +87,15 @@ public final class MusicLibraryController: ObservableObject {
         albums = snapshot.albums
         artists = snapshot.artists
         isLoading = false
+        hasLoaded = true
+        finishLoadWaiters()
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
-        if pendingReload { pendingReload = false; await reload() }
+    }
+
+    private func finishLoadWaiters() {
+        let waiting = loadWaiters
+        loadWaiters.removeAll()
+        waiting.forEach { $0.resume() }
     }
 
     @discardableResult

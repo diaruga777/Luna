@@ -1,5 +1,5 @@
 import XCTest
-@testable import LunaMusic
+@testable import LunaMusicCore
 
 final class MusicQueuePlannerTests: XCTestCase {
     func testMostRecentlyPlayedContainingPlaylistWinsOverLargerPlaylist() {

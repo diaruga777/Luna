@@ -13,8 +13,9 @@ unauthenticated stream.
 ## v1 policy
 
 - One paired Mac and one folder.
-- The active iOS UI imports files and folders and previews files; it does not expose delete,
-  rename, move, or edit.
+- The active iOS UI imports files and folders, previews files, and confirms deletion
+  from recent/search/folder rows. Downloads lists current local copies for offline
+  use. Rename, move, and edit are not exposed.
 - Folder import stages its visible regular files and directories (including
   empty directories) under the selected folder name. It is a one-time import;
   later source-folder edits are not watched on iOS. Hidden entries and links

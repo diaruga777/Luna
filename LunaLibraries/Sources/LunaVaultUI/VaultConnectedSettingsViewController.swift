@@ -6,6 +6,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
     private let runtime: any VaultPresentationProviding
     private let pairingHandler: (String) async throws -> Void
     private let code = UITextField()
+    private let connectButton = UIButton(type: .system)
     private var snapshot: VaultPairingSnapshot?
     private var connection: VaultConnectionStatus = .notPaired
     private var cache: VaultCachePresentation?
@@ -146,7 +147,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         return ["Connection", "On This iPhone", "Search", "Photos Export", ""][section]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if !isPaired { return section == 0 ? (message ?? "Connect only to a Mac you own and trust.") : "Enable Local Network access for Vault, then try again." }
+        if !isPaired { return section == 0 ? (message ?? "Transfers are encrypted between this iPhone and your paired Mac.") : "Enable Local Network access for Vault, then try again." }
         switch section {
         case 0: return message ?? (connection == .offline ? "Keep Luna Vault open on your Mac to connect. Downloaded files are still available offline." : "Files download when you open them.")
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
@@ -220,20 +221,35 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
     }
     private func configurePairCell(_ cell: UITableViewCell) {
         let enabled = operation == nil && !(code.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        var content = cell.defaultContentConfiguration()
-        content.text = operation == nil ? "Connect Mac" : "Waiting for your Mac…"
-        content.textProperties.color = enabled ? .tintColor : .secondaryLabel
-        content.textProperties.alignment = .center
-        content.textProperties.font = .preferredFont(forTextStyle: .headline)
-        cell.contentConfiguration = content
-        cell.isAccessibilityElement = true
-        cell.accessibilityLabel = content.text
-        cell.accessibilityIdentifier = "vault.mac.pair"
-        cell.accessibilityTraits = enabled ? .button : [.button, .notEnabled]
-        cell.isUserInteractionEnabled = enabled
-        if operation != nil { let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating(); cell.accessoryView = spinner }
-        else { cell.accessoryView = nil }
+        var configuration: UIButton.Configuration
+        if #available(iOS 26.0, *) { configuration = .prominentGlass() }
+        else { configuration = .filled() }
+        configuration.title = operation == nil ? "Connect Mac" : "Connecting…"
+        configuration.cornerStyle = .capsule
+        configuration.showsActivityIndicator = operation != nil
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
+        connectButton.configuration = configuration
+        connectButton.isEnabled = enabled
+        connectButton.accessibilityIdentifier = "vault.mac.pair"
+        connectButton.accessibilityHint = "Approve this iPhone in Luna Vault on your Mac"
+        if connectButton.superview !== cell.contentView {
+            connectButton.removeFromSuperview()
+            connectButton.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(connectButton)
+            connectButton.addAction(UIAction(identifier: .init("vault.connect")) { [weak self] _ in self?.pair() }, for: .primaryActionTriggered)
+            NSLayoutConstraint.activate([
+                connectButton.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+                connectButton.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+                connectButton.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
+                connectButton.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12),
+                connectButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            ])
+        }
+        cell.selectionStyle = .none
+        cell.backgroundConfiguration = .clear()
+        cell.isAccessibilityElement = false
     }
+
     public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard operation == nil else { return }

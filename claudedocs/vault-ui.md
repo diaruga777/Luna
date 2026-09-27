@@ -112,3 +112,25 @@ Its separate
 scheme avoids the legacy app-hosted test bundle's duplicate package type linkage.
 Live user-Mac pairing, Files-provider UI, and physical-device animation performance
 are not implied by these automated checks.
+
+## Polish pass — 28 September 2026
+
+- Native Liquid Glass buttons for Connect Mac, the empty-library import action,
+  and per-file transfer cancellation. System navigation and search retain their
+  standard appearance. Transfer buttons have 44-point touch targets and separate
+  VoiceOver labels; progress text supports Dynamic Type.
+- Downloads opens a local-only list without waiting for the Mac. File rows show
+  Downloaded or On Mac. Downloads has no destructive Mac-file swipe action;
+  Remove Downloads remains in Settings.
+- Byte-only progress changes update visible transfer cells in place. They retain
+  the import menu, scroll position, and focus. Recent files use SQLite's limit;
+  searches scan cancellable 256-record pages instead of loading every record.
+- Cancel propagates to detached import/preview preparation. Incoming file copies
+  use 1-MB chunks with cancellation checks and publish only complete payloads.
+  Folder intake skips symbolic links. Previously queued files remain durable.
+- Peer block metadata is checked for contiguous offsets, valid lengths and hashes,
+  and agreement with file size before transfer. Invalid index batches roll back.
+
+Validation: 30 connection tests and 11 UI/intake tests on iOS 26.2; UI attachments
+cover light/dark, setup, offline downloads, empty states, and accessibility text.
+Physical-device throughput and live user-Mac pairing were not measured in this pass.

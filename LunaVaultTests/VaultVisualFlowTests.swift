@@ -7,7 +7,7 @@ final class VaultVisualFlowTests: XCTestCase {
     private var window: UIWindow?
     private let files = [
         VaultPresentedFile(id: "Travel/Autumn itinerary.pdf", name: "Autumn itinerary.pdf", path: "Travel/Autumn itinerary.pdf", modifiedAt: Date(), byteCount: 245_760),
-        VaultPresentedFile(id: "Home renovation notes.txt", name: "Home renovation notes.txt", path: "Home renovation notes.txt", modifiedAt: Date().addingTimeInterval(-86_400), byteCount: 8_192),
+        VaultPresentedFile(id: "Home renovation notes.txt", name: "Home renovation notes.txt", path: "Home renovation notes.txt", modifiedAt: Date().addingTimeInterval(-86_400), byteCount: 8_192, isDownloaded: true),
         VaultPresentedFile(id: "Coast.jpg", name: "Coast.jpg", path: "Coast.jpg", modifiedAt: Date().addingTimeInterval(-172_800), byteCount: 2_460_000)
     ]
     override func tearDown() { window?.isHidden = true; window = nil; super.tearDown() }
@@ -120,7 +120,7 @@ final class VaultVisualFlowTests: XCTestCase {
         XCTAssertNotNil(root.navigationItem.leftBarButtonItem)
         XCTAssertEqual(root.navigationItem.leftBarButtonItem?.menu?.children.map(\.title),
                        ["Import File", "Import Folder", "Select Photos", "Select Photo Album"])
-        XCTAssertEqual(root.tableView.numberOfRows(inSection: 0), 2)
+        XCTAssertEqual(root.tableView.numberOfRows(inSection: 0), 3)
         try await capture("09-connected-empty")
     }
     func testPendingTransferShowsByteProgressPerFile() async throws {
@@ -133,10 +133,39 @@ final class VaultVisualFlowTests: XCTestCase {
         try await waitUntil { root.tableView.numberOfSections == 3 }
         XCTAssertEqual(root.tableView.numberOfRows(inSection: 1), 1)
         let cell = root.tableView(root.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
-        XCTAssertTrue((cell.accessibilityLabel ?? "").contains("Archive.zip"))
-        XCTAssertTrue((cell.accessibilityLabel ?? "").contains("of"))
+        XCTAssertFalse(cell.isAccessibilityElement, "VoiceOver must reach the Cancel button")
+        let controls = descendants(of: cell)
+        XCTAssertTrue(controls.compactMap { ($0 as? UILabel)?.text }.contains("Archive.zip"))
+        XCTAssertTrue(controls.compactMap { ($0 as? UILabel)?.text }.contains { $0.contains("of") })
+        let cancel = try XCTUnwrap(controls.compactMap { $0 as? UIButton }.first)
+        XCTAssertEqual(cancel.accessibilityLabel, "Cancel transfer of Archive.zip")
         try await capture("10-pending-transfer")
+        root.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        root.tableView.layoutIfNeeded()
+        root.tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
+        try await capture("10-pending-transfer-large-text")
     }
+    func testDownloadsAreAccessibleOfflineAndExplainEmptyState() async throws {
+        let downloaded = VaultPresentedFile(id: "notes.txt", name: "notes.txt", path: "notes.txt",
+            modifiedAt: Date(), byteCount: 512, isDownloaded: true)
+        let controller = VaultBrowseViewController(runtime: VaultPresentationServices(
+            connectionStatus: { .offline }, downloadedFiles: { [downloaded] }), path: "", downloadsOnly: true)
+        try await host(controller)
+        try await waitUntil { controller.tableView.numberOfRows(inSection: 0) == 1 }
+        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertTrue((cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText?.contains("Downloaded") == true)
+        XCTAssertEqual(cell.accessibilityHint, "Open downloaded file")
+        try await capture("13-downloads-offline")
+        let empty = VaultBrowseViewController(runtime: VaultPresentationServices(), path: "", downloadsOnly: true)
+        try await host(empty)
+        try await waitUntil { empty.emptyStateConfiguration?.text == "No Downloads Yet" }
+        try await capture("14-downloads-empty")
+    }
+
+    private func descendants(of view: UIView) -> [UIView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
     func testConnectedSettingsVisuals() async throws {
         let controller = VaultConnectedSettingsViewController(services: VaultPresentationServices(
             connectionStatus: { .connected },

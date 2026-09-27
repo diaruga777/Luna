@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 public extension VaultAccessibilityID {
     static let connectionStatus = "vault.connection.status"
     static let browse = "vault.browse"
+    static let downloads = "vault.downloads"
     static let refresh = "vault.refresh"
     static let pairingDeviceID = "vault.pairing.local-device-id"
 }
@@ -113,8 +114,19 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             case .success(let items): recents = items; loadError = false
             case .failure: loadError = true
             }
-            if previous != recents || previousStatus != status || previousPending != pendingUploads || previousQueued != queuedImportCount || !wasLoaded || hadError != loadError {
+            let sameTransfers = previousPending.map(\.name) == pendingUploads.map(\.name)
+                && zip(previousPending, pendingUploads).allSatisfy { $0.isDeleting == $1.isDeleting && $0.isDirectory == $1.isDirectory }
+            if previous != recents || previousStatus != status || !sameTransfers || previousQueued != queuedImportCount || !wasLoaded || hadError != loadError {
                 updatePresentation()
+            } else if previousPending != pendingUploads, let section = uploadSection {
+                // Byte progress must not reload the table or interrupt scrolling,
+                // VoiceOver focus, a swipe action, or the open import menu.
+                for path in tableView.indexPathsForVisibleRows ?? [] where path.section == section {
+                    guard pendingUploads.indices.contains(path.row),
+                          let cell = tableView.cellForRow(at: path) as? VaultPendingUploadCell else { continue }
+                    let item = pendingUploads[path.row]
+                    cell.configure(item, connected: status == .connected) { [weak self] in self?.confirmCancel(item) }
+                }
             }
             // Preserve search results and keyboard during background connection updates.
         }
@@ -178,14 +190,16 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         }
         navigationItem.searchController = needsSetup || !loaded ? nil : search
         if loaded && status != .notPaired {
-            let actions = [UIAction(title: "Import File", image: UIImage(systemName: "doc")) { [weak self] _ in self?.importHandler?() },
-                           UIAction(title: "Import Folder", image: UIImage(systemName: "folder")) { [weak self] _ in self?.importFolderHandler?() },
-                           UIAction(title: "Select Photos", image: UIImage(systemName: "photo")) { [weak self] _ in self?.importPhotosHandler?() },
-                           UIAction(title: "Select Photo Album", image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in self?.importPhotoAlbumHandler?() }]
-            let add = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: UIMenu(children: actions))
-            add.accessibilityLabel = "Import files or photos"
-            add.accessibilityIdentifier = VaultAccessibilityID.importButton
-            navigationItem.leftBarButtonItem = add
+            if navigationItem.leftBarButtonItem == nil {
+                let actions = [UIAction(title: "Import File", image: UIImage(systemName: "doc")) { [weak self] _ in self?.importHandler?() },
+                               UIAction(title: "Import Folder", image: UIImage(systemName: "folder")) { [weak self] _ in self?.importFolderHandler?() },
+                               UIAction(title: "Select Photos", image: UIImage(systemName: "photo")) { [weak self] _ in self?.importPhotosHandler?() },
+                               UIAction(title: "Select Photo Album", image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in self?.importPhotoAlbumHandler?() }]
+                let add = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: UIMenu(children: actions))
+                add.accessibilityLabel = "Import files or photos"
+                add.accessibilityIdentifier = VaultAccessibilityID.importButton
+                navigationItem.leftBarButtonItem = add
+            }
         } else { navigationItem.leftBarButtonItem = nil }
         updateEmptyState()
         tableView.reloadData()
@@ -196,10 +210,11 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             emptyStateConfiguration = UIContentUnavailableConfiguration.loading()
             return
         } else if needsSetup {
-            empty.image = UIImage(systemName: "externaldrive.badge.icloud")
+            empty.image = UIImage(systemName: "laptopcomputer.and.iphone")
             empty.text = "Your files. With you."
             empty.secondaryText = "Connect your Mac to browse and search your files here. Download what you need, when you need it."
-            empty.button = .filled()
+            if #available(iOS 26.0, *) { empty.button = .prominentGlass() }
+            else { empty.button = .filled() }
             empty.button.title = "Connect Mac"
             empty.button.cornerStyle = .capsule
             empty.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.settingsTapped() }
@@ -220,6 +235,8 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             empty.image = UIImage(systemName: loadError ? "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90" : "folder")
             empty.text = loadError ? "Couldn’t Load Files" : "No Files Yet"
             empty.secondaryText = loadError ? "Pull down to refresh your library." : "Add a file from this iPhone or put files in your Mac’s Vault folder."
+            if #available(iOS 26.0, *) { empty.button = loadError ? .glass() : .prominentGlass() }
+            else { empty.button = .filled() }
             empty.button.title = loadError ? "Try Again" : "Import File"
             empty.buttonProperties.primaryAction = UIAction { [weak self] _ in
                 guard let self else { return }
@@ -236,7 +253,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !loaded || needsSetup { return 1 }
-        if !hasQuery && section == 0 { return 2 }
+        if !hasQuery && section == 0 { return 3 }
         if uploadSection == section { return pendingUploads.count + (queuedImportCount > 0 ? 1 : 0) }
         return max(1, visibleFiles.count)
     }
@@ -252,7 +269,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
                 var content = cell.defaultContentConfiguration()
                 content.image = UIImage(systemName: "tray.full")
                 content.text = queuedImportCount == 1 ? "1 file queued" : "\(queuedImportCount) files queued"
-                content.secondaryText = "Waiting to stage for your Mac"
+                content.secondaryText = "Preparing to send to your Mac"
                 cell.contentConfiguration = content
                 cell.accessoryType = .none
                 cell.accessibilityIdentifier = "vault.transfer.queued"
@@ -265,20 +282,23 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         }
         if let emptyStateConfiguration, !loaded || needsSetup || hasQuery || indexPath.section == recentSection {
             return vaultEmptyCell(configuration: emptyStateConfiguration, minimumHeight: max(280,
-                tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom - (needsSetup || hasQuery ? 0 : 190)))
+                tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom - (needsSetup || hasQuery ? 0 : 260)))
         }
         let cell = tableView.dequeueReusableCell(withIdentifier: "file", for: indexPath)
         if !hasQuery && indexPath.section == 0 {
             var content = cell.defaultContentConfiguration()
-            content.text = indexPath.row == 0 ? "My Mac" : "Browse Folders"
-            content.secondaryText = indexPath.row == 0 ? connectionDescription : nil
-            content.image = UIImage(systemName: indexPath.row == 0 ? "desktopcomputer" : "folder")
+            content.text = ["My Mac", "Browse Folders", "Downloads"][indexPath.row]
+            content.secondaryText = indexPath.row == 0 ? connectionDescription :
+                indexPath.row == 2 ? "Available on this iPhone" : nil
+            content.secondaryTextProperties.numberOfLines = 0
+            content.image = UIImage(systemName: ["desktopcomputer", "folder", "arrow.down.circle"][indexPath.row])
             content.imageProperties.tintColor = .tintColor
             cell.contentConfiguration = content
             cell.accessoryType = .disclosureIndicator
-            cell.accessibilityIdentifier = indexPath.row == 0 ? VaultAccessibilityID.connectionStatus : VaultAccessibilityID.browse
+            cell.accessibilityIdentifier = [VaultAccessibilityID.connectionStatus, VaultAccessibilityID.browse, VaultAccessibilityID.downloads][indexPath.row]
             cell.accessibilityLabel = nil
-            cell.accessibilityHint = indexPath.row == 0 ? "Connection and storage settings" : "Browse Vault folders"
+            cell.accessibilityHint = ["Connection and storage settings", "Browse Vault folders", "Browse downloaded files"][indexPath.row]
+            cell.selectionStyle = .default
         } else { configureVaultFileCell(cell, item: visibleFiles[indexPath.row], prefix: hasQuery ? "vault.result" : "vault.recent") }
         return cell
     }
@@ -300,7 +320,11 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         guard loaded, !needsSetup else { return }
         if !hasQuery && indexPath.section == 0 {
             if indexPath.row == 0 { settingsTapped() }
-            else { openFolder("") }
+            else if indexPath.row == 1 { openFolder("") }
+            else {
+                navigationController?.pushViewController(VaultBrowseViewController(runtime: runtime,
+                    path: "", downloadsOnly: true, openHandler: openHandler), animated: true)
+            }
         } else if uploadSection == indexPath.section {
             return
         } else {
@@ -372,9 +396,11 @@ public final class VaultBrowseViewController: UITableViewController {
     private var items: [VaultPresentedFile] = []
     private var loadTask: Task<Void, Never>?
     private var sortByDate = false
+    private let downloadsOnly: Bool
     public private(set) var emptyStateConfiguration: UIContentUnavailableConfiguration?
-    public init(runtime: any VaultPresentationProviding, path: String, openHandler: ((String) -> Void)? = nil) {
+    public init(runtime: any VaultPresentationProviding, path: String, downloadsOnly: Bool = false, openHandler: ((String) -> Void)? = nil) {
         self.runtime = runtime; self.path = path; self.openHandler = openHandler
+        self.downloadsOnly = downloadsOnly
         super.init(style: .insetGrouped)
     }
     @available(*, unavailable)
@@ -382,7 +408,7 @@ public final class VaultBrowseViewController: UITableViewController {
     deinit { loadTask?.cancel() }
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = path.isEmpty ? "Browse" : (path as NSString).lastPathComponent
+        title = downloadsOnly ? "Downloads" : path.isEmpty ? "Browse" : (path as NSString).lastPathComponent
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         tableView.accessibilityIdentifier = "vault.browse.list"
@@ -413,15 +439,20 @@ public final class VaultBrowseViewController: UITableViewController {
     @objc private func refreshPulled() { loadChildren(refresh: true) }
     private func loadChildren(refresh: Bool = false) {
         loadTask?.cancel()
-        loadTask = Task { [weak self, runtime, path] in
-            if refresh { await runtime.refresh() }
-            let result = await vaultAsyncResult { try await runtime.children(of: path) }
+        loadTask = Task { [weak self, runtime, path, downloadsOnly] in
+            if refresh && !downloadsOnly { await runtime.refresh() }
+            let result = await vaultAsyncResult {
+                try await downloadsOnly ? runtime.downloadedFiles() : runtime.children(of: path)
+            }
             guard let self, !Task.isCancelled else { return }
             refreshControl?.endRefreshing()
             switch result {
             case .success(let loaded):
                 items = loaded; sortItems()
-                if loaded.isEmpty { showEmpty(title: "This Folder Is Empty", message: "Files added on your Mac will appear here after syncing.", error: false) }
+                if loaded.isEmpty {
+                    showEmpty(title: downloadsOnly ? "No Downloads Yet" : "This Folder Is Empty",
+                        message: downloadsOnly ? "Open a file while connected to your Mac to keep a copy here. Downloads can be removed to free space." : "Files added on your Mac will appear here after syncing.", error: false)
+                }
                 else { emptyStateConfiguration = nil }
             case .failure:
                 items = []
@@ -462,7 +493,7 @@ public final class VaultBrowseViewController: UITableViewController {
     public override func tableView(_ tableView: UITableView,
                                    trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
         -> UISwipeActionsConfiguration? {
-        guard emptyStateConfiguration == nil, items.indices.contains(indexPath.row) else { return nil }
+        guard !downloadsOnly, emptyStateConfiguration == nil, items.indices.contains(indexPath.row) else { return nil }
         let item = items[indexPath.row]
         let action = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
             done(false)
@@ -502,10 +533,20 @@ private final class VaultPendingUploadCell: UITableViewCell {
         selectionStyle = .none
         nameLabel.font = .preferredFont(forTextStyle: .body)
         nameLabel.lineBreakMode = .byTruncatingMiddle
+        nameLabel.adjustsFontForContentSizeCategory = true
+        nameLabel.numberOfLines = 2
+        detailLabel.adjustsFontForContentSizeCategory = true
         detailLabel.font = .preferredFont(forTextStyle: .subheadline)
         detailLabel.textColor = .secondaryLabel
-        detailLabel.numberOfLines = 2
-        cancelButton.setTitle("Cancel", for: .normal)
+        detailLabel.numberOfLines = 0
+        var cancel: UIButton.Configuration
+        if #available(iOS 26.0, *) { cancel = .glass() }
+        else { cancel = .plain() }
+        cancel.image = UIImage(systemName: "xmark")
+        cancel.cornerStyle = .capsule
+        cancelButton.configuration = cancel
+        cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        cancelButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         cancelButton.setContentHuggingPriority(.required, for: .horizontal)
         cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         let heading = UIStackView(arrangedSubviews: [nameLabel, cancelButton])
@@ -529,6 +570,8 @@ private final class VaultPendingUploadCell: UITableViewCell {
 
     func configure(_ item: VaultPendingUpload, connected: Bool, onCancel: @escaping () -> Void) {
         self.onCancel = onCancel
+        isAccessibilityElement = false
+        cancelButton.accessibilityLabel = "Cancel transfer of \((item.name as NSString).lastPathComponent)"
         nameLabel.text = (item.name as NSString).lastPathComponent
         cancelButton.isHidden = item.isDeleting
         progressBar.isHidden = item.isDirectory || item.isDeleting
@@ -545,7 +588,9 @@ private final class VaultPendingUploadCell: UITableViewCell {
             progressBar.progress = item.totalBytes > 0 ? Float(Double(item.sentBytes) / Double(item.totalBytes)) : 0
         }
         accessibilityIdentifier = "vault.transfer.\(safeID(item.name))"
-        accessibilityLabel = "\(item.name), \(detailLabel.text ?? "")"
+        progressBar.isAccessibilityElement = false
+        nameLabel.accessibilityLabel = item.name
+        detailLabel.accessibilityTraits.insert(.updatesFrequently)
     }
 
     @objc private func cancelTapped() { onCancel?() }
@@ -569,7 +614,8 @@ private func configureVaultFileCell(_ cell: UITableViewCell, item: VaultPresente
     content.text = item.name
     content.textProperties.numberOfLines = 2
     content.secondaryText = [VaultDateChipFormatter.string(from: item.modifiedAt),
-                             item.isDirectory ? nil : ByteCountFormatter.string(fromByteCount: item.byteCount, countStyle: .file)]
+                             item.isDirectory ? nil : ByteCountFormatter.string(fromByteCount: item.byteCount, countStyle: .file),
+                             item.isDirectory ? nil : item.isDownloaded ? "Downloaded" : "On Mac"]
         .compactMap { $0 }.joined(separator: " · ")
     if !item.snippet.isEmpty { content.secondaryText = item.snippet + "\n" + (content.secondaryText ?? "") }
     content.secondaryTextProperties.numberOfLines = 3
@@ -581,7 +627,8 @@ private func configureVaultFileCell(_ cell: UITableViewCell, item: VaultPresente
     cell.accessoryType = item.isDirectory ? .disclosureIndicator : .none
     cell.accessibilityIdentifier = "\(prefix).\(safeID(item.id))"
     cell.accessibilityLabel = nil
-    cell.accessibilityHint = item.isDirectory ? "Open folder" : "Open file"
+    cell.accessibilityHint = item.isDirectory ? "Open folder" : item.isDownloaded ? "Open downloaded file" : "Download from your Mac and open"
+    cell.selectionStyle = .default
 }
 private func vaultFileSymbol(_ item: VaultPresentedFile) -> String {
     if item.isDirectory { return "folder.fill" }

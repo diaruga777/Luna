@@ -307,3 +307,21 @@ final class WriterNoteIndexTests: XCTestCase {
         return note.id
     }
 }
+
+extension WriterNoteIndexTests {
+    func testAllNotesIncludeUnlinkedAndMultiplyLinkedNotesExactlyOnce() throws {
+        let stack = try makeWriterStack()
+        let first = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "First")
+        let second = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Second")
+        let linked = WriterNote(documentIDs: [first.id, second.id], text: "A complete note shared by chapters.")
+        let unlinked = WriterNote(text: "A standalone idea.")
+        try stack.library.insert(linked)
+        try stack.library.insert(unlinked)
+        let all = try stack.library.allNotes()
+        XCTAssertEqual(Set(all.map(\.id)), [linked.id, unlinked.id])
+        XCTAssertEqual(all.count, 2)
+        XCTAssertEqual(Set(try XCTUnwrap(all.first { $0.id == linked.id }).documentIDs), [first.id, second.id])
+        try stack.library.trash(first.id)
+        XCTAssertEqual(try stack.library.allNotes().count, 2)
+    }
+}

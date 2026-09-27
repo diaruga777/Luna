@@ -212,6 +212,7 @@ final class InMemoryNotes: NoteStoring {
     private(set) var stored: [NoteID: WriterNote] = [:]
     private(set) var attachments: [NoteID: [DocumentID: NoteAttachment]] = [:]
 
+    func allNotes() throws -> [WriterNote] { Array(stored.values) }
     func notes(for document: DocumentID) throws -> [WriterNote] {
         stored.values.filter { $0.documentIDs.contains(document) }
     }

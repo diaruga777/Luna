@@ -104,3 +104,24 @@ final class ChapterOrganizerTests: XCTestCase {
         XCTAssertTrue(controller.visibleRowsForTesting.contains(.group(project.id)))
     }
 }
+
+extension ChapterOrganizerTests {
+    func testBookContentsKeepNestedCollectionsInReadingOrder() throws {
+        let stack = try makeWriterStack()
+        let organizer = ChapterOrganizer(library: stack.library, textStore: stack.textStore)
+        let book = try organizer.createBook(named: "The Journey")
+        let prologue = try organizer.appendChapter(in: book.id, title: "Prologue")
+        let part = try organizer.createBook(named: "Part One", parent: book.id)
+        let first = try organizer.appendChapter(in: part.id, title: "Departure")
+        let second = try organizer.appendChapter(in: part.id, title: "Arrival")
+        XCTAssertEqual(try organizer.book(containing: first)?.id, book.id)
+        XCTAssertEqual(try organizer.contents(of: book.id).map(\.depth), [0, 1])
+        XCTAssertEqual(try organizer.contents(of: book.id).flatMap(\.chapters).map(\.id), [prologue.id, first.id, second.id])
+        try stack.library.moveDocument(second.id, to: part.id, at: 0)
+        XCTAssertEqual(try organizer.contents(of: book.id).flatMap(\.chapters).map(\.id), [prologue.id, second.id, first.id])
+        XCTAssertEqual(try stack.textStore.loadText(first), "# Departure\n\n")
+        // Identity-based chapter links survive both title and collection changes.
+        try stack.library.moveDocument(first.id, to: book.id, at: 1)
+        XCTAssertEqual(try stack.library.document(first.id)?.groupID, book.id)
+    }
+}

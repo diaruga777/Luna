@@ -34,6 +34,7 @@ private final class FakeNoteStore: NoteStoring {
     var inserted: [WriterNote] = []
     var attachments: [(NoteID, DocumentID, NoteAttachment)] = []
 
+    func allNotes() throws -> [WriterNote] { Array(notes.values) }
     func notes(for document: DocumentID) throws -> [WriterNote] { Array(notes.values) }
     func unattachedNotes() throws -> [WriterNote] { [] }
     func note(_ id: NoteID) throws -> WriterNote? { notes[id] }

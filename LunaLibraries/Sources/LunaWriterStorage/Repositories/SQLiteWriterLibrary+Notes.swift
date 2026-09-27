@@ -7,6 +7,10 @@ extension SQLiteWriterLibrary {
         "id, text, source, anchor_document_id, anchor_start, anchor_end, anchor_exact,"
         + " anchor_prefix, anchor_suffix, created_at, updated_at"
 
+    public func allNotes() throws -> [WriterNote] {
+        try loadNotes("SELECT \(Self.noteColumns) FROM notes ORDER BY updated_at DESC, id ASC")
+    }
+
     public func notes(for document: DocumentID) throws -> [WriterNote] {
         try loadNotes(
             "SELECT \(Self.noteColumns) FROM notes"

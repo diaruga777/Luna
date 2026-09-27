@@ -111,6 +111,7 @@ public protocol WriterLibraryStoring: AnyObject {
 }
 
 public protocol NoteStoring: AnyObject {
+    func allNotes() throws -> [WriterNote]
     func notes(for document: DocumentID) throws -> [WriterNote]
     func unattachedNotes() throws -> [WriterNote]
     func note(_ id: NoteID) throws -> WriterNote?

@@ -61,3 +61,56 @@ public final class ChapterOrganizer: ChapterOrganizing {
         return project
     }
 }
+
+extension ChapterOrganizer {
+    /// Each collection owns an ordered sequence of chapters. Nested collections
+    /// represent parts of a book; existing group IDs and document links stay stable.
+    public func createBook(named name: String, parent: GroupID? = nil) throws -> WriterGroup {
+        try library.createGroup(name: name, icon: Self.projectIcon, parent: parent, kind: .project)
+    }
+
+    public func appendChapter(in group: GroupID, title: String? = nil) throws -> WriterDocument {
+        let position = try library.documents(in: group, sort: .manual).count
+        var chapter = try library.createDocument(in: group, title: nil)
+        let heading = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try textStore.saveText("# " + ((heading?.isEmpty == false ? heading : nil)
+            ?? L10nWriterStorage.chapterTitle(position + 1)) + "\n\n", for: &chapter)
+        return chapter
+    }
+
+    /// Find the outermost book so navigation includes sibling collections.
+    public func book(containing document: WriterDocument) throws -> WriterGroup? {
+        let groups = try library.groups()
+        var current = groups.first { $0.id == document.groupID }
+        var book: WriterGroup?
+        var visited = Set<GroupID>()
+        while let group = current, visited.insert(group.id).inserted {
+            if group.kind == .project { book = group }
+            current = groups.first { $0.id == group.parentID }
+        }
+        return book
+    }
+
+    public struct ChapterSection {
+        public let group: WriterGroup
+        public let depth: Int
+        public let chapters: [WriterDocument]
+    }
+
+    /// Direct chapters precede subcollections, each in its stored manual order.
+    public func contents(of book: GroupID) throws -> [ChapterSection] {
+        let groups = try library.groups()
+        var result: [ChapterSection] = []
+        var visited = Set<GroupID>()
+        func visit(_ id: GroupID, depth: Int) throws {
+            guard visited.insert(id).inserted, let group = groups.first(where: { $0.id == id }) else { return }
+            result.append(ChapterSection(group: group, depth: depth,
+                                         chapters: try library.documents(in: id, sort: .manual)))
+            for child in groups.filter({ $0.parentID == id && $0.kind.isEditable }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
+                try visit(child.id, depth: depth + 1)
+            }
+        }
+        try visit(book, depth: 0)
+        return result
+    }
+}

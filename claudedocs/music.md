@@ -16,8 +16,8 @@ Apple Music's app queue. There is no subscription offer, store, radio, or catalo
 search. Cloud items in the user's library may stream according to Apple's
 account and availability rules. Downloaded filters `isCloudItem == false`.
 
-The library shows playlists, artists, albums, songs and downloaded songs, plus
-recent albums. Search covers song titles, album titles, artist names and
+The library shows playlists, artists, albums, songs and downloaded songs.
+There is no Recently Added section. Search covers song titles, album titles, artist names and
 playlists. Playlist creation and adding songs use the public media-library APIs;
 errors are presented instead of reporting an unsuccessful edit as saved.
 
@@ -55,9 +55,22 @@ Shortcuts, widgets, Control Center and CarPlay. The app and
 widget use the family App Group for a small, separate music state snapshot.
 
 The UI uses native UIKit navigation search, sheets, controls and iOS 26 Liquid
-Glass for floating playback controls. The mini player opens the sheet with
+Glass for floating playback controls. The compact 48-point mini player opens the full-screen player with
 UIKit's interactive zoom transition; artwork changes use a brief dissolve.
-Both honor Reduce Motion. Apple Music's private UI,
+List typography, artwork sizes, collection headers and search typography follow
+the supplied Apple Music references while retaining Dynamic Type.
+
+Now Playing reserves the bottom of the screen for seeking, transport, system
+volume and AirPlay. Artwork fits the remaining space; playback controls never
+scroll away. In landscape, artwork/queue and playback controls occupy separate
+columns. The queue button or an upward drag over the artwork reveals the queue:
+artwork and track labels move into its compact header with an interruptible spring.
+The queue scrolls independently. Tap the queue button again or pull down on the
+queue header to restore artwork. Shuffle and repeat have filled selected states,
+VoiceOver values, and a distinct repeat-one symbol. Queue rows retain reordering;
+long-press a row to remove it. The top grabber is also an accessible close button.
+Transitions honor Reduce Motion (queue switches immediately and the full-screen
+player uses the system's standard modal presentation). Apple Music's private UI,
 catalog lyrics, Sing, AutoMix and download-management interfaces are not
 available through this implementation. CarPlay has a separate template scene
 for browsing the device library and uses the system Now Playing template.
@@ -96,3 +109,11 @@ The revised song-queue policy has a regression test for automatic playlists;
 all 17 Music unit tests and 3 UI tests passed on the iOS 26.2 simulator.
 CarPlay template interaction and real-library queue membership still need a
 CarPlay simulator or authorized device with a populated music library.
+
+The UX polish passes all 17 Music unit tests and 4 UI tests on iPhone 17 Pro /
+iOS 26.2. The added UI test verifies queue-button and upward-drag navigation,
+shuffle/repeat selection values, unchanged transport position across the
+transition, and player dismissal. Search focus and warm/cold queue routes still
+pass. Simulator screenshots were reviewed against the supplied references;
+MPVolumeView does not expose a working volume slider on Simulator, so actual
+volume output and populated-library artwork remain device checks.

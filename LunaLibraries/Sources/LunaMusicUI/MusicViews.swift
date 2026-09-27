@@ -6,6 +6,26 @@ import LunaMusicCore
 @MainActor
 internal enum MusicStyle {
     static let tint = UIColor.systemPink
+    static func font(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: weight))
+    }
+    static func plainButton(_ symbol: String, label: String, size: CGFloat = 22, action: @escaping () -> Void) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: symbol)
+        configuration.baseForegroundColor = .label
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)
+        let button = UIButton(configuration: configuration)
+        button.accessibilityLabel = label
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        return button
+    }
+    static func setSelected(_ selected: Bool, on button: UIButton) {
+        button.isSelected = selected
+        button.configuration?.baseForegroundColor = selected ? .darkGray : .white
+        button.configuration?.background.backgroundColor = UIColor.white.withAlphaComponent(selected ? 0.7 : 0.12)
+        button.configuration?.cornerStyle = .capsule
+        button.accessibilityTraits = selected ? [.button, .selected] : .button
+    }
     static func image(_ item: MPMediaItem?, size: CGFloat = 300) -> UIImage? {
         item?.artwork?.image(at: CGSize(width: size, height: size))
     }
@@ -28,16 +48,6 @@ internal enum MusicStyle {
                               options: [.transitionCrossDissolve, .beginFromCurrentState],
                               animations: update)
         } else { update() }
-    }
-    static func button(_ symbol: String, label: String, action: @escaping () -> Void) -> UIButton {
-        var configuration: UIButton.Configuration
-        if #available(iOS 26, *) { configuration = .glass() }
-        else { configuration = .tinted() }
-        configuration.image = UIImage(systemName: symbol)
-        let button = UIButton(configuration: configuration)
-        button.accessibilityLabel = label
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
-        return button
     }
     static func run(from presenter: UIViewController, _ action: @escaping () async throws -> Void) {
         Task { do { try await action() } catch {
@@ -70,13 +80,23 @@ public class MusicScreenViewController: UIViewController {
         tableTop = table.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         NSLayoutConstraint.activate([
             tableTop, table.leadingAnchor.constraint(equalTo: view.leadingAnchor), table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            table.bottomAnchor.constraint(equalTo: mini.topAnchor, constant: -6),
-            mini.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16), mini.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            mini.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), mini.heightAnchor.constraint(equalToConstant: 64)
+            table.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            mini.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), mini.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            mini.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), mini.heightAnchor.constraint(equalToConstant: 48)
         ])
+        table.contentInset.bottom = 72
+        table.verticalScrollIndicatorInsets.bottom = 72
         mini.onOpen = { [weak self] in self?.presentPlayer(queue: false) }
         observe(.lunaMusicPlaybackChanged) { [weak self] in self?.mini.refresh() }
         mini.refresh()
+    }
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let inset = max(72, view.bounds.maxY - mini.frame.minY + 8)
+        if abs(table.contentInset.bottom - inset) > 1 {
+            table.contentInset.bottom = inset
+            table.verticalScrollIndicatorInsets.bottom = inset
+        }
     }
     func observe(_ name: Notification.Name, action: @escaping @MainActor () -> Void) {
         notificationTokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
@@ -87,11 +107,10 @@ public class MusicScreenViewController: UIViewController {
     func presentPlayer(queue: Bool) {
         view.endEditing(true)
         let controller = MusicPlayerViewController(showQueue: queue)
-        controller.modalPresentationStyle = .pageSheet
-        if !queue, !UIAccessibility.isReduceMotionEnabled {
+        controller.modalPresentationStyle = .fullScreen
+        if !UIAccessibility.isReduceMotionEnabled {
             controller.preferredTransition = .zoom(options: nil) { [weak self] _ in self?.mini }
         }
-        if let sheet = controller.sheetPresentationController { sheet.detents = [.large()]; sheet.prefersGrabberVisible = true }
         present(controller, animated: true)
     }
     func songMenu(_ item: MPMediaItem) -> UIMenu {
@@ -115,8 +134,12 @@ public class MusicScreenViewController: UIViewController {
         config.text = item.title ?? "Unknown Song"
         config.secondaryText = item.artist ?? "Unknown Artist"
         config.image = MusicStyle.image(item, size: 100) ?? UIImage(systemName: "music.note")
-        config.imageProperties.maximumSize = CGSize(width: 52, height: 52)
+        config.imageProperties.maximumSize = CGSize(width: 48, height: 48)
         config.imageProperties.cornerRadius = 6
+        config.textProperties.font = MusicStyle.font(22)
+        config.secondaryTextProperties.font = MusicStyle.font(19)
+        config.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20)
+        config.imageToTextPadding = 12
         config.secondaryTextProperties.color = .secondaryLabel
         cell.contentConfiguration = config
         let more = UIButton(type: .system)
@@ -149,23 +172,23 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         super.init(effect: effect ?? background)
         layer.cornerRadius = 30
         clipsToBounds = true
-        titleLabel.font = .preferredFont(forTextStyle: .headline)
-        artistLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.font = MusicStyle.font(17, weight: .semibold)
+        artistLabel.font = MusicStyle.font(17)
         artistLabel.textColor = .secondaryLabel
         [titleLabel, artistLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
         let labels = UIStackView(arrangedSubviews: [titleLabel, artistLabel]); labels.axis = .vertical
         let open = UIButton(type: .custom)
         open.addAction(UIAction { [weak self] _ in self?.onOpen?() }, for: .touchUpInside)
         open.accessibilityLabel = "Open Now Playing"
-        play = MusicStyle.button("play.fill", label: "Play") { MusicPlaybackController.shared.togglePlayPause() }
-        let next = MusicStyle.button("forward.fill", label: "Next Song") { MusicPlaybackController.shared.next() }
+        play = MusicStyle.plainButton("play.fill", label: "Play", size: 18) { MusicPlaybackController.shared.togglePlayPause() }
+        let next = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 16) { MusicPlaybackController.shared.next() }
         play.tintColor = .label; next.tintColor = .label
-        let stack = UIStackView(arrangedSubviews: [art, labels, play, next]); stack.spacing = 10; stack.alignment = .center
+        let stack = UIStackView(arrangedSubviews: [art, labels, play, next]); stack.spacing = 8; stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
         open.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(open)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
-            art.widthAnchor.constraint(equalToConstant: 46), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 40), next.widthAnchor.constraint(equalToConstant: 40),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            art.widthAnchor.constraint(equalToConstant: 32), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 40), next.widthAnchor.constraint(equalToConstant: 40),
             open.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), open.topAnchor.constraint(equalTo: contentView.topAnchor), open.bottomAnchor.constraint(equalTo: contentView.bottomAnchor), open.trailingAnchor.constraint(equalTo: play.leadingAnchor)
         ])
     }

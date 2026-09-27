@@ -91,24 +91,36 @@ private final class MusicCollectionHeader: UIView {
         let isArtist: Bool
         if case .artist = result { isArtist = true } else { isArtist = false }
         let artwork = MusicStyle.artwork(MusicStyle.image(result.songs.first, size: 600), corner: isArtist ? 100 : 14)
-        let name = UILabel(); name.text = result.name; name.font = .preferredFont(forTextStyle: .largeTitle); name.adjustsFontForContentSizeCategory = true; name.numberOfLines = 0; name.textAlignment = .center
-        let caption = UILabel(); caption.text = "\(result.songs.count) songs"; caption.textColor = .secondaryLabel; caption.font = .preferredFont(forTextStyle: .subheadline); caption.textAlignment = .center
-        let playConfiguration: UIButton.Configuration
-        let shuffleConfiguration: UIButton.Configuration
-        if #available(iOS 26, *) {
-            playConfiguration = .prominentGlass()
-            shuffleConfiguration = .glass()
-        } else {
-            playConfiguration = .filled()
-            shuffleConfiguration = .tinted()
+        let name = UILabel(); name.text = result.name; name.font = MusicStyle.font(isArtist ? 34 : 28, weight: .bold); name.adjustsFontForContentSizeCategory = true; name.numberOfLines = 0; name.textAlignment = .center
+        var playConfiguration = UIButton.Configuration.filled()
+        playConfiguration.baseBackgroundColor = isArtist ? .secondarySystemBackground : .white
+        playConfiguration.baseForegroundColor = isArtist ? .label : .darkGray
+        playConfiguration.title = "Play"
+        playConfiguration.image = UIImage(systemName: "play.fill")
+        playConfiguration.imagePadding = 8
+        playConfiguration.cornerStyle = .capsule
+        playConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes; attributes.font = MusicStyle.font(22, weight: .semibold); return attributes
         }
-        let play = UIButton(configuration: playConfiguration); play.configuration?.title = "Play"; play.configuration?.image = UIImage(systemName: "play.fill"); play.configuration?.imagePadding = 8; play.configuration?.cornerStyle = .capsule
-        let shuffle = UIButton(configuration: shuffleConfiguration); shuffle.configuration?.title = "Shuffle"; shuffle.configuration?.image = UIImage(systemName: "shuffle"); shuffle.configuration?.imagePadding = 8; shuffle.configuration?.cornerStyle = .capsule
+        var shuffleConfiguration = playConfiguration
+        shuffleConfiguration.baseBackgroundColor = .secondarySystemBackground
+        shuffleConfiguration.baseForegroundColor = .label
+        shuffleConfiguration.title = "Shuffle"
+        shuffleConfiguration.image = UIImage(systemName: "shuffle")
+        let play = UIButton(configuration: playConfiguration)
+        let shuffle = UIButton(configuration: shuffleConfiguration)
         play.addAction(UIAction { [weak self] _ in self?.onPlay?(false) }, for: .touchUpInside)
         shuffle.addAction(UIAction { [weak self] _ in self?.onPlay?(true) }, for: .touchUpInside)
-        let buttons = UIStackView(arrangedSubviews: [play, shuffle]); buttons.spacing = 16; buttons.distribution = .fillEqually
-        let stack = UIStackView(arrangedSubviews: [artwork, name, caption, buttons]); stack.axis = .vertical; stack.alignment = .center; stack.spacing = 18; stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
-        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24), stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24), stack.topAnchor.constraint(equalTo: topAnchor, constant: 16), stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -28), artwork.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: isArtist ? 0.35 : 0.76), artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor), name.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.heightAnchor.constraint(greaterThanOrEqualToConstant: 54)])
+        let buttons = UIStackView(arrangedSubviews: isArtist ? [play, shuffle] : [shuffle, play])
+        buttons.spacing = 16
+        buttons.distribution = isArtist ? .fillEqually : .fill
+        if !isArtist {
+            shuffle.configuration?.title = nil
+            shuffle.accessibilityLabel = "Shuffle"
+            shuffle.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        }
+        let stack = UIStackView(arrangedSubviews: [artwork, name, buttons]); stack.axis = .vertical; stack.alignment = .center; stack.spacing = 22; stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20), stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20), stack.topAnchor.constraint(equalTo: topAnchor, constant: 16), stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -28), artwork.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: isArtist ? 0.24 : 0.74), artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor), name.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.heightAnchor.constraint(greaterThanOrEqualToConstant: 60)])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
@@ -119,7 +131,7 @@ internal final class MusicArtworkGridCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear; selectionStyle = .none; separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
-        row.spacing = 16; row.distribution = .fillEqually; row.alignment = .top; row.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(row)
+        row.spacing = 12; row.distribution = .fillEqually; row.alignment = .top; row.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(row)
         NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20), row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20), row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10), row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -127,8 +139,8 @@ internal final class MusicArtworkGridCell: UITableViewCell {
         row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
         for album in albums {
             let art = MusicStyle.artwork(MusicStyle.image(album.representativeItem))
-            let label = UILabel(); label.text = album.representativeItem?.albumTitle ?? "Unknown Album"; label.font = .preferredFont(forTextStyle: .body); label.adjustsFontForContentSizeCategory = true
-            let artist = UILabel(); artist.text = album.representativeItem?.artist; artist.font = .preferredFont(forTextStyle: .subheadline); artist.textColor = .secondaryLabel; artist.adjustsFontForContentSizeCategory = true
+            let label = UILabel(); label.text = album.representativeItem?.albumTitle ?? "Unknown Album"; label.font = MusicStyle.font(19); label.adjustsFontForContentSizeCategory = true
+            let artist = UILabel(); artist.text = album.representativeItem?.artist; artist.font = MusicStyle.font(17); artist.textColor = .secondaryLabel; artist.adjustsFontForContentSizeCategory = true
             let stack = UIStackView(arrangedSubviews: [art, label, artist]); stack.axis = .vertical; stack.spacing = 4
             let tile = UIView(); stack.translatesAutoresizingMaskIntoConstraints = false; tile.addSubview(stack)
             let button = UIButton(type: .custom); button.translatesAutoresizingMaskIntoConstraints = false; tile.addSubview(button); button.accessibilityLabel = "\(label.text ?? "Album"), \(artist.text ?? "")"; button.addAction(UIAction { _ in select(album) }, for: .touchUpInside)

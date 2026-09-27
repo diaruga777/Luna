@@ -23,6 +23,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
         search.placeholder = "Your Library"
+        search.searchTextField.font = MusicStyle.font(22)
         search.searchTextField.accessibilityIdentifier = "music.library.search"
         search.delegate = self
         search.autocapitalizationType = .none
@@ -30,7 +31,6 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         search.accessibilityLabel = "Search songs, albums, artists, and playlists"
         table.dataSource = self; table.delegate = self
         table.register(UITableViewCell.self, forCellReuseIdentifier: "row")
-        table.register(MusicArtworkGridCell.self, forCellReuseIdentifier: "grid")
         observe(.lunaMusicLibraryChanged) { [weak self] in self?.update() }
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "arrow.clockwise"), primaryAction: UIAction { [weak self] _ in Task { await self?.library.reload() } })
         navigationItem.rightBarButtonItem?.accessibilityLabel = "Refresh Library"
@@ -105,29 +105,11 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             } else { table.backgroundView = empty }
         }
     }
-    public func numberOfSections(in tableView: UITableView) -> Int { query.isEmpty ? 2 : 1 }
+    public func numberOfSections(in tableView: UITableView) -> Int { 1 }
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if !query.isEmpty { return results.count }
-        return section == 0 ? categories.count : Int(ceil(Double(recentAlbums.count) / 2))
-    }
-    private var recentAlbums: [MPMediaItemCollection] {
-        Array(library.albums.sorted { ($0.representativeItem?.dateAdded ?? .distantPast) > ($1.representativeItem?.dateAdded ?? .distantPast) }.prefix(20))
-    }
-    public func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { query.isEmpty && section == 1 && !recentAlbums.isEmpty ? "Recently Added" : nil }
-    public func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
-        guard let header = view as? UITableViewHeaderFooterView else { return }
-        header.textLabel?.font = .preferredFont(forTextStyle: .title1)
-        header.textLabel?.textColor = .label
-        header.textLabel?.text = "Recently Added"
+        query.isEmpty ? categories.count : results.count
     }
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if query.isEmpty && indexPath.section == 1 {
-            let cell = tableView.dequeueReusableCell(withIdentifier: "grid", for: indexPath) as! MusicArtworkGridCell
-            let albums = recentAlbums
-            let start = indexPath.row * 2
-            cell.configure(Array(albums[start..<min(start + 2, albums.count)])) { [weak self] album in self?.open(.album(album)) }
-            return cell
-        }
         let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
         cell.accessoryView = nil
         if query.isEmpty {
@@ -135,7 +117,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             var config = cell.defaultContentConfiguration(); config.text = category.0; config.image = UIImage(systemName: category.1)
             config.textProperties.font = .preferredFont(forTextStyle: .title2)
             config.imageProperties.tintColor = .label; config.imageProperties.reservedLayoutSize = CGSize(width: 34, height: 34)
-            config.directionalLayoutMargins.top = 18; config.directionalLayoutMargins.bottom = 18
+            config.directionalLayoutMargins.top = 12; config.directionalLayoutMargins.bottom = 12
             cell.contentConfiguration = config; cell.accessoryType = .disclosureIndicator
         } else { results[indexPath.row].configure(cell, owner: self) }
         cell.backgroundColor = .clear
@@ -172,11 +154,15 @@ internal enum MusicResult {
         if case .song(let item) = self { owner.configureSong(cell, item: item); cell.accessoryType = .none; return }
         var config = cell.defaultContentConfiguration(); config.text = name
         config.image = MusicStyle.image(songs.first, size: 120) ?? UIImage(systemName: "music.note.list")
-        config.imageProperties.maximumSize = CGSize(width: 64, height: 64); config.imageProperties.cornerRadius = 8
-        config.directionalLayoutMargins.top = 10; config.directionalLayoutMargins.bottom = 10
+        config.imageProperties.maximumSize = CGSize(width: 64, height: 64); config.imageProperties.cornerRadius = 6
+        config.textProperties.font = MusicStyle.font(22)
+        config.secondaryTextProperties.font = MusicStyle.font(19)
+        config.directionalLayoutMargins.leading = 20; config.directionalLayoutMargins.trailing = 20
+        config.imageToTextPadding = 12
+        config.directionalLayoutMargins.top = 8; config.directionalLayoutMargins.bottom = 8
         if case .artist = self { config.imageProperties.cornerRadius = 32; config.secondaryText = "Artist" }
         if case .album = self { config.secondaryText = songs.first?.artist }
-        if case .playlist = self { config.secondaryText = "Playlist · \(songs.count) songs" }
+
         config.secondaryTextProperties.color = .secondaryLabel
         cell.contentConfiguration = config; cell.backgroundColor = .clear
     }

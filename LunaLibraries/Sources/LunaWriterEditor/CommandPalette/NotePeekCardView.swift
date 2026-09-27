@@ -68,7 +68,22 @@ public final class NotePeekCardView: UIView {
         buttons.axis = .horizontal
         buttons.spacing = 12
 
-        let stack = UIStackView(arrangedSubviews: [sheetLabel, bodyLabel, buttons])
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
+        bodyLabel.adjustsFontForContentSizeCategory = true
+        scroll.addSubview(bodyLabel)
+        let preferredHeight = scroll.heightAnchor.constraint(equalToConstant: 240)
+        preferredHeight.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            bodyLabel.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            bodyLabel.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            bodyLabel.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            bodyLabel.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            bodyLabel.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            preferredHeight,
+        ])
+        let stack = UIStackView(arrangedSubviews: [sheetLabel, scroll, buttons])
         stack.axis = .vertical
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false

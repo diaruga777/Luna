@@ -408,7 +408,7 @@ public final class CommandPaletteController {
         var assembled = trimmed.isEmpty ? [] : searchRows
         assembled.append(contentsOf: results.map { hit in
             PaletteRow(
-                title: hit.snippet.isEmpty ? hit.noteText : hit.snippet,
+                title: hit.noteText.isEmpty ? hit.snippet : hit.noteText,
                 detail: hit.documentIDs.contains(documentID)
                     ? nil : L10n.string("WriterEditor_paletteNoteFromAnotherSheet"),
                 symbolName: "note.text", action: .peekNote(hit.noteID),

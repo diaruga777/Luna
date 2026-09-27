@@ -903,9 +903,10 @@ extension EditorViewController: CommandPaletteControllerDelegate {
         NSLayoutConstraint.activate([
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             card.widthAnchor.constraint(
-                lessThanOrEqualToConstant: min(CommandPaletteOverlayView.maximumWidth, view.bounds.width - 32)),
+                equalToConstant: min(CommandPaletteOverlayView.maximumWidth, view.bounds.width - 32)),
             card.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
-            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            card.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            card.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
         ])
         peekCard = card
     }
@@ -962,7 +963,7 @@ extension EditorViewController: RelatedNotesObserving {
     public func relatedNotesRanker(
         _ ranker: RelatedNotesRanker, didRank hits: [NoteHit], topMatch: NoteHit?
     ) {
-        relatedStrip.show(noteID: topMatch?.noteID, snippet: topMatch?.snippet ?? "")
+        relatedStrip.show(noteID: topMatch?.noteID, snippet: topMatch?.noteText ?? "")
         updateAccessoryContainer()
     }
 }

@@ -15,7 +15,7 @@ public protocol RelatedNoteStripViewDelegate: AnyObject {
 /// being written. It is there only while a match exists.
 public final class RelatedNoteStripView: UIView {
 
-    public static let height: CGFloat = 32
+    public static let height: CGFloat = 72
 
     public weak var delegate: RelatedNoteStripViewDelegate?
 
@@ -40,7 +40,9 @@ public final class RelatedNoteStripView: UIView {
         configuration.image = UIImage(systemName: "note.text")
         configuration.imagePadding = 6
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
+        configuration.titleLineBreakMode = .byWordWrapping
         button.configuration = configuration
+        button.titleLabel?.numberOfLines = 3
         button.tintColor = EditorTheme.caret
         button.contentHorizontalAlignment = .leading
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -48,7 +50,7 @@ public final class RelatedNoteStripView: UIView {
         addSubview(button)
         NSLayoutConstraint.activate([
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
-            button.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor),
             button.topAnchor.constraint(equalTo: topAnchor),
             button.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])

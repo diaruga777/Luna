@@ -77,7 +77,7 @@ final class CommandPaletteOverlayTests: XCTestCase {
         XCTAssertFalse(right.accessibilityTraits.contains(.selected))
         XCTAssertEqual(PaletteRow.displayGroups(in: rows), [[0, 2], [1]])
         let note = try XCTUnwrap(buttons.first { $0.tag == 1 })
-        XCTAssertNil(note.configuration?.attributedSubtitle)
+        XCTAssertEqual(note.configuration?.subtitle, "Unnecessary explanation")
     }
 
     func testWrappedQueryStaysVisibleAboveAStationaryPanel() throws {
@@ -127,5 +127,34 @@ final class CommandPaletteOverlayTests: XCTestCase {
         overlay.place(anchoredTo: CGRect(x: 30, y: 120, width: 2, height: 24), in: container, keyboardTop: 180)
         XCTAssertGreaterThanOrEqual(overlay.frame.minY, 0)
         XCTAssertLessThanOrEqual(overlay.frame.maxY, 180)
+    }
+}
+
+extension CommandPaletteOverlayTests {
+    func testLongNoteWrapsAndReturnSelectionHasVisibleFillAndBorder() throws {
+        let note = String(repeating: "A lighthouse keeper waits for the storm to pass. ", count: 5)
+        let rows = [PaletteRow(title: note, detail: "Another chapter", symbolName: "note.text", action: .createNote),
+                    PaletteRow(title: "Second result", symbolName: "note.text", action: .createNote)]
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+        let overlay = CommandPaletteOverlayView()
+        container.addSubview(overlay)
+        overlay.update(rows: rows, highlightedIndex: 0)
+        overlay.place(anchoredTo: CGRect(x: 20, y: 60, width: 2, height: 20), in: container, keyboardTop: 900)
+        overlay.layoutIfNeeded()
+        let buttons = descendants(overlay).compactMap { $0 as? UIButton }
+        let first = try XCTUnwrap(buttons.first { $0.tag == 0 })
+        let second = try XCTUnwrap(buttons.first { $0.tag == 1 })
+        XCTAssertEqual(first.titleLabel?.numberOfLines, 0)
+        XCTAssertGreaterThan(first.bounds.height, CommandPaletteOverlayView.rowHeight)
+        XCTAssertTrue(first.isSelected)
+        XCTAssertEqual(first.configuration?.background.strokeWidth, 2)
+        XCTAssertNotEqual(first.configuration?.background.backgroundColor, second.configuration?.background.backgroundColor)
+        overlay.highlight(1)
+        XCTAssertFalse(first.isSelected)
+        XCTAssertTrue(second.isSelected)
+        XCTAssertEqual(second.configuration?.background.strokeWidth, 2)
+        overlay.highlight(nil)
+        XCTAssertFalse(second.isSelected)
+        XCTAssertEqual(second.configuration?.background.strokeWidth, 0)
     }
 }

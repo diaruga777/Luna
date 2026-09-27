@@ -20,7 +20,7 @@ public protocol CommandPaletteOverlayViewDelegate: AnyObject {
 /// key commands.
 public final class CommandPaletteOverlayView: UIView {
 
-    public static let maximumWidth: CGFloat = 300
+    public static let maximumWidth: CGFloat = 520
     public static let rowHeight: CGFloat = 48
     /// The gap between the caret line and the panel.
     public static let anchorGap: CGFloat = 12
@@ -122,8 +122,13 @@ public final class CommandPaletteOverlayView: UIView {
         for (position, view) in resultViews {
             let isHighlighted = position == index
             let button = (view as? PaletteRowView)?.button ?? (view as? UIButton)
-            button?.configuration?.baseBackgroundColor = isHighlighted
-                ? EditorTheme.caret.withAlphaComponent(0.22) : nil
+            // A plain background is deterministic; glass configurations may ignore
+            // baseBackgroundColor and previously hid the keyboard selection.
+            button?.configuration?.background.backgroundColor = isHighlighted
+                ? UIColor.tintColor.withAlphaComponent(0.18) : .secondarySystemBackground
+            button?.configuration?.background.strokeColor = isHighlighted ? .tintColor : .clear
+            button?.configuration?.background.strokeWidth = isHighlighted ? 2 : 0
+            button?.isSelected = isHighlighted
             (view as? PaletteRowView)?.returnIcon.isHidden = !isHighlighted
             button?.accessibilityTraits = isHighlighted ? [.button, .selected] : [.button]
         }
@@ -141,7 +146,9 @@ public final class CommandPaletteOverlayView: UIView {
             // Keep the best result visible when returning from lower rows.
             scrollView.setContentOffset(.zero, animated: false)
         } else {
-            scrollView.scrollRectToVisible(selected.convert(selected.bounds, to: scrollView), animated: false)
+            var visible = selected.convert(selected.bounds, to: scrollView)
+            visible.size.height = min(visible.height, scrollView.bounds.height)
+            scrollView.scrollRectToVisible(visible, animated: false)
         }
     }
 
@@ -165,7 +172,7 @@ public final class CommandPaletteOverlayView: UIView {
     }
 
     private static func glassButtonConfiguration() -> UIButton.Configuration {
-        if #available(iOS 26, *) { return .glass() }
+
         var configuration = UIButton.Configuration.filled()
         configuration.baseBackgroundColor = LunaColors.secondaryBackground
         return configuration
@@ -229,9 +236,14 @@ public final class CommandPaletteOverlayView: UIView {
                 .foregroundColor: LunaColors.primaryText,
             ]))
         configuration.titleAlignment = .leading
-        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.titleLineBreakMode = .byWordWrapping
+        configuration.subtitle = row.detail
+        configuration.subtitleLineBreakMode = .byWordWrapping
+        configuration.titlePadding = 5
         button.configuration = configuration
-        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.numberOfLines = 0
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.accessibilityLabel = [row.title, row.detail].compactMap { $0 }.joined(separator: ", ")
         button.accessibilityIdentifier = "writer.commandPalette.result.\(index)"
         button.contentHorizontalAlignment = .leading
         button.tintColor = EditorTheme.caret
@@ -302,7 +314,7 @@ final class PaletteRowView: UIView {
         super.init(frame: .zero)
         button.translatesAutoresizingMaskIntoConstraints = false
         returnIcon.translatesAutoresizingMaskIntoConstraints = false
-        returnIcon.tintColor = LunaColors.secondaryText
+        returnIcon.tintColor = .tintColor
         returnIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(textStyle: .footnote)
         returnIcon.isHidden = true
         returnIcon.isUserInteractionEnabled = false

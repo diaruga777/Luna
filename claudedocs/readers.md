@@ -55,10 +55,8 @@ back in behind it. An
 offset within that title region is normalized to zero when Scroll or Original persists,
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore
-(`-adjustedContentInset.top`); applying it as raw zero would hide the title again. The
-top inset never changes during either transition on a portrait phone-shaped host, so
-hiding chrome cannot move the reader or its content offset there. On the large/wide
-Scroll transition described below, the wider title may wrap to a different height;
+(`-adjustedContentInset.top`); applying it as raw zero would hide the title again. On every host, hiding Scroll chrome widens the text viewport. The wider title may
+wrap to a different height;
 the TextKit transition resolves that destination inset up front and anchors the same
 reading glyph, so the title-height change cannot jump the passage. Both copies'
 backgrounds begin at the card's top edge,
@@ -107,18 +105,16 @@ downward gesture anywhere in the article could dismiss the chrome at all — eve
 read as permanently surfaced. A long article is unaffected (the cap sits far above half
 a viewport). Tests: `ScrollDirectionImmersionTrackerTests`.
 
-**Large/wide Scroll is tap-only and width-expanding.** `ReaderCardViewportPolicy`
-selects this behavior for every iPad (including iPad mini and narrow multitasking
-windows), plus any host whose available width is greater than its height (the geometry
-hook for a future foldable iPhone). In that mode `allowsScrollDrivenImmersion` is false:
-scrolling down, scrolling up, reaching the top, and reaching the bottom never change
-card chrome. A plain card tap is the only Scroll show/hide toggle. RSVP keeps its
-existing play/pause-driven chrome behavior, and Original/web mode does not gain the
-width expansion.
+**Wide Scroll can open from a tap or a vertical reading gesture on a rail card.**
+Once expanded, iPad and wider-than-tall hosts keep chrome dismissed while scrolling;
+a plain tap restores the rail. Compact portrait phones retain their directional
+scroll behavior. RSVP keeps its play/pause chrome behavior, and Original/web mode
+does not gain text width expansion.
 
-When a tap hides chrome in large/wide Scroll, the centered card expands horizontally to
-the host bounds with a 16pt outer inset, as well as taking the freed footer lane. The
-reverse tap contracts it to the ordinary aspect-fit card. `TextViewportReflowTransition`
+Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
+inset on wide windows and no extra outer inset on compact windows. Wide rail
+cards also take the unused space above their previews. Restoring chrome returns
+the selected article to the rail or the compact deck. `TextViewportReflowTransition`
 builds a second TextKit layout for the destination width before the 0.32s transition,
 anchors the glyph around the upper quarter of the viewport, and temporarily replaces
 the live jumping layout with per-glyph images. Every glyph whose old→new path intersects
@@ -183,6 +179,31 @@ mistaking the restored mode value for an already-mounted reader), so a cold laun
 loads the saved web archive immediately without requiring a mode round trip.
 
 The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(audioEnabled:)`: audio → `SpeechController`; else plain. The footer routes play/pause/skip/speed to the speech engine.
+
+## Adaptive article layout
+
+Reader opts into `CardCarouselMetrics.readerRail` at window widths of 700pt or
+more. The native horizontal scroll view shows equal-sized article cards with a
+24pt gap, snaps to a card, and mounts only a bounded window around the viewport.
+A tap on plain card content or a vertical reading gesture selects that article
+and dismisses chrome. Links, selection, and controls retain their own actions.
+The selected card expands into the available width and height; tapping brings
+back the rail with that same article selected. Narrow windows retain the single
+card deck and its directional scroll chrome.
+
+Dismissed Scroll cards now use the full safe width on compact iPhone windows,
+with the text view's own 20pt margin. Wide windows retain 16pt outside the card
+and a maximum 680pt text column. Expansion and contraction use the existing
+TextKit glyph transition, informed by Lune's stable reading-anchor approach.
+The same character stays at its reading height during a live window resize;
+Reduce Motion restores that anchor without creating animated glyph views.
+
+Layout follows the window's current bounds and asymmetric safe-area insets,
+so wide phone windows use the same rail as iPad. The installed SDKs stop at iOS
+27.0: Duo's iOS 27.1 `reservedRegions(kind:)` / arrangement APIs and fold poses
+are not integrated or verified yet. Test those on Xcode 27.1 before claiming
+fold-specific support. Lune remains a read-only reference, with no dependency
+or files copied from it.
 
 ## Scroll reader (+ split-web link handling)
 

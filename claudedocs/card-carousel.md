@@ -168,14 +168,24 @@ The date moves in exactly three ways, and no others:
   download progress is drawn inside the downloading item's own card (see
   "Store plumbing" below).
 
-## Wide containers (iPad)
+## Reader horizontal rail
+
+`ArticleCardsViewController` enables `usesAdaptiveReaderRail`. At 700pt and
+above, `CardCarouselMetrics.readerRail` caps preview widths at 360pt and places
+them 24pt apart inside a native `UIScrollView`. The rail supports touch scrolling,
+deceleration and snapping; it mounts a bounded range around the visible cards.
+A selected card temporarily leaves the scroll view during immersion, then
+returns to the same index. Reader taps and vertical reading gestures can select
+any visible card. Window resizing recomputes the rail without replacing the
+selected content controller. Other carousel hosts retain their existing geometry.
+
+## Wide containers (other decks)
 
 `LunaLayout` (LunaDesignSystem) is the ONE answer to "is there more room here",
 asked as pure geometry over a container **width** rather than the device idiom —
 an iPad in half-screen Split View and an iPhone are the same layout problem, and a
 13" iPad in landscape is a different one from the same device in portrait. The
-threshold is 700pt: above every iPhone (widest 440), below every iPad in portrait
-(narrowest 744). Unit-tested through `CardCarouselMetricsTests`' wide cases.
+threshold is 700pt and applies to the current window, including wide phones. Unit-tested through `CardCarouselMetricsTests`' wide cases.
 
 Consequences for the deck:
 

@@ -888,3 +888,84 @@ final class CarouselScrubberUtilityChipTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class ReaderRailTests: XCTestCase {
+    func testRailAdaptsToWindowWidthWithoutChangingOtherDecks() {
+        for size in [CGSize(width: 744, height: 900), CGSize(width: 1024, height: 1200),
+                     CGSize(width: 1366, height: 800), CGSize(width: 900, height: 500)] {
+            let rail = CardCarouselMetrics.readerRail(containerSize: size)
+            XCTAssertTrue(rail.isHorizontalRail)
+            XCTAssertLessThanOrEqual(rail.cardSize.width, 360)
+            XCTAssertEqual(rail.centerX(forSlotOffset: 1) - rail.centerX(forSlotOffset: 0),
+                           rail.cardSize.width + 24, accuracy: 0.01)
+            XCTAssertEqual(rail.scale(forSlotOffset: 1), 1)
+            XCTAssertFalse(CardCarouselMetrics.resolve(containerSize: size).isHorizontalRail)
+        }
+        let phone = CGSize(width: 430, height: 800)
+        XCTAssertEqual(CardCarouselMetrics.readerRail(containerSize: phone),
+                       CardCarouselMetrics.resolve(containerSize: phone))
+    }
+
+    func testRailScrollsFarWithoutLoadingTheWholeLibraryAndRestoresAfterImmersion() throws {
+        let source = LargeScrubDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.usesAdaptiveReaderRail = true
+        carousel.dataSource = source
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 1366, height: 1024)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 10)
+        carousel.view.layoutIfNeeded()
+        let rail = try XCTUnwrap(findRail(in: carousel.view))
+        let center = try XCTUnwrap(carousel.cardView(at: 10))
+        let neighbor = try XCTUnwrap(carousel.cardView(at: 11))
+        XCTAssertTrue(center.superview === rail)
+        XCTAssertTrue(carousel.view.bounds.contains(neighbor.convert(neighbor.bounds, to: carousel.view)), "neighbor=\(neighbor.convert(neighbor.bounds, to: carousel.view)), rail offset=\(rail.contentOffset)")
+        XCTAssertLessThan(source.contentRequestCounts.count, 15)
+
+        let stride = neighbor.frame.midX - center.frame.midX
+        rail.contentOffset.x = stride * 800
+        carousel.scrollViewDidEndDecelerating(rail)
+        XCTAssertEqual(carousel.currentIndex, 800)
+        XCTAssertLessThan(source.contentRequestCounts.count, 30)
+        let selected = try XCTUnwrap(carousel.cardView(at: 800))
+        carousel.setImmersed(true, horizontalInset: 16)
+        XCTAssertFalse(selected.superview === rail)
+        XCTAssertEqual(selected.bounds.width, 1334, accuracy: 0.5)
+        XCTAssertFalse(rail.isScrollEnabled)
+        carousel.setImmersed(false)
+        XCTAssertTrue(selected.superview === rail)
+        XCTAssertEqual(selected.convert(selected.bounds, to: carousel.view).midX, 683, accuracy: 0.5)
+        XCTAssertTrue(rail.isScrollEnabled)
+
+        carousel.view.frame.size = CGSize(width: 430, height: 932)
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+        XCTAssertEqual(carousel.currentIndex, 800)
+        XCTAssertTrue(rail.isHidden)
+        XCTAssertFalse(selected.superview === rail)
+        XCTAssertLessThan(selected.bounds.width, 430)
+    }
+
+    func testPhoneExpansionUsesAvailableWidthAndReturnsToCard() throws {
+        let source = OneCardViewportDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.usesAdaptiveReaderRail = true
+        carousel.dataSource = source
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 430, height: 932)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData()
+        let card = try XCTUnwrap(carousel.cardView(at: 0))
+        let restingWidth = card.bounds.width
+        carousel.setImmersed(true, horizontalInset: 0)
+        XCTAssertEqual(card.bounds.width, 430, accuracy: 0.5)
+        XCTAssertGreaterThan(card.bounds.width, restingWidth)
+        carousel.setImmersed(false)
+        XCTAssertEqual(card.bounds.width, restingWidth, accuracy: 0.5)
+    }
+
+    private func findRail(in view: UIView) -> UIScrollView? {
+        if view.accessibilityIdentifier == "Reader.cardRail" { return view as? UIScrollView }
+        return view.subviews.lazy.compactMap { self.findRail(in: $0) }.first
+    }
+}

@@ -12,9 +12,9 @@
 //    the fullscreen reader view — one header, one layout — so "fullscreen"
 //    is not a separate presentation.
 //  - Going fullscreen fades the peeking side cards and bottom scrub strip, and
-//    extends the card into the freed room. On iPad / a wider-than-tall host,
-//    Scroll also expands nearly full width and is tap-only; portrait phones
-//    keep direction-driven scroll chrome (down hides, up restores).
+//    expands Scroll into the safe width. Wide windows browse a horizontal rail;
+//    tapping or vertically scrolling a visible card expands it for reading.
+//    Portrait phones keep directional scroll chrome (down hides, up restores).
 //    In RSVP, playing fades them out and pausing fades them back. The
 //    reader's own header never moves or changes.
 //  - Long-pressing a card exposes its archive action through a context menu.
@@ -78,6 +78,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         view.backgroundColor = LunaColors.background
         // Handed to the carousel as chrome, so it fades away with the scrub
         // strip and side cards when a reader takes over the screen.
+        carousel.usesAdaptiveReaderRail = true
         carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
@@ -861,7 +862,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // and its resting footprint for as long as the column beside it is open,
         // so reading it must not fade the deck away or grow the card downward
         // over the column's own controls.
-        guard inlineColumn == nil else { return }
+        guard inlineColumn == nil, card.isCentered else { return }
         // The deck answers first, and it refuses while a page turn owns it: a
         // reader still decelerating from a flick keeps reporting its travel
         // through the swipe that pages it away. Raising this screen's own
@@ -956,10 +957,10 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         immersed: Bool
     ) -> CGFloat? {
         guard immersed,
-              readerCardUsesTapOnlyScrollChrome(card),
               card.rabbitHoleReader?.focusedScrollReader != nil
         else { return nil }
-        return Self.expandedReaderHorizontalInset
+        return LunaLayout.isWide(containerWidth: view.bounds.width)
+            ? Self.expandedReaderHorizontalInset : 0
     }
 
     // MARK: - The second column (wide screens)

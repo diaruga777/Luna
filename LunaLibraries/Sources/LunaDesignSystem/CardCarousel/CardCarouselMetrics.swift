@@ -26,6 +26,10 @@ public struct CardCarouselMetrics: Equatable {
     /// Room kept above and below the card inside the card area.
     public static let verticalPadding: CGFloat = 12
 
+    /// Reader rails place neighboring cards at a uniform, scrollable interval.
+    public var isHorizontalRail = false
+    public var railStride: CGFloat { cardSize.width + 24 }
+
     public var containerSize: CGSize
     public var cardSize: CGSize
     /// Points of a neighboring card visibly inside the container edge.
@@ -86,6 +90,18 @@ public struct CardCarouselMetrics: Equatable {
             sideScale: sideScale)
     }
 
+    /// Uses the available window width, including wide phones and resized windows.
+    /// A bounded column leaves readable previews beside the selected article.
+    public static func readerRail(containerSize: CGSize) -> CardCarouselMetrics {
+        var result = resolve(containerSize: containerSize)
+        guard containerSize.width >= 700 else { return result }
+        let width = min(result.cardSize.width, 360, (containerSize.width - 72) / 2)
+        result.cardSize = CGSize(width: width, height: width / cardAspectRatio)
+        result.sideScale = 1
+        result.isHorizontalRail = true
+        return result
+    }
+
     /// Resting scale for the slot `offset` cards away from center (0 = centered).
     public func scale(forSlotOffset offset: Int) -> CGFloat {
         offset == 0 ? 1 : sideScale
@@ -96,6 +112,7 @@ public struct CardCarouselMetrics: Equatable {
     /// container edge; slots further out continue at one scaled-card-width steps,
     /// fully off screen.
     public func centerX(forSlotOffset offset: Int) -> CGFloat {
+        if isHorizontalRail { return containerSize.width / 2 + CGFloat(offset) * railStride }
         guard offset != 0 else { return containerSize.width / 2 }
         let scaledWidth = cardSize.width * sideScale
         let step = CGFloat(abs(offset) - 1) * scaledWidth

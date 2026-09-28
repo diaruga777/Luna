@@ -30,6 +30,20 @@ enum ArticleStageCatalog {
     private static var deckStages: [StageDescriptor] {
         [
             StageDescriptor(
+                id: "deck.article.rail", screen: "Card deck", variant: "adaptive article rail",
+                summary: "Several readable articles for testing horizontal browsing and viewport expansion.",
+                kind: .article,
+                seed: {
+                    StageFixtures.completeOnboarding()
+                    let titles = ["A Wider View", "The Quiet Reading Room", "Across the River", "Notes for Tomorrow"]
+                    let items = titles.enumerated().map { index, title in
+                        StageFixtures.article(seed: "rail-\(index)", url: "https://example.com/rail/\(index)",
+                                              title: title, hoursAgo: index + 1)
+                    }
+                    StageFixtures.seed(items, contents: Dictionary(uniqueKeysWithValues:
+                        items.map { ($0.id, StageFixtures.content($0.title ?? "Article")) }))
+                }),
+            StageDescriptor(
                 id: "deck.article.locked", screen: "Card deck", variant: "paywalled article",
                 summary: "A hard-paywalled save: the locked overlay over the card, with no "
                     + "extracted text behind it.",

@@ -289,6 +289,23 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         XCTAssertGreaterThan(text.bounds.width - text.textContainerInset.left - text.textContainerInset.right, 600)
     }
 
+    @MainActor
+    func testLiveResizeKeepsTheTitleAtTheTop() throws {
+        let reader = ScrollReaderViewController(
+            item: SavedItem(urlString: "https://example.com/title-resize"),
+            content: ArticleContent(title: "Title", blocks: [
+                paragraph(String(repeating: "A preview should retain its title. ", count: 80))]))
+        reader.topChromeInset = 96
+        reader.view.frame = CGRect(x: 0, y: 0, width: 834, height: 900)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+        XCTAssertEqual(text.contentOffset.y, -text.adjustedContentInset.top, accuracy: 0.5)
+        reader.view.frame.size = CGSize(width: 260, height: 400)
+        reader.topChromeInset = 140
+        reader.view.layoutIfNeeded()
+        XCTAssertEqual(text.contentOffset.y, -text.adjustedContentInset.top, accuracy: 0.5)
+    }
+
     private func firstTextView(in view: UIView) -> UITextView? {
         if let tv = view as? UITextView { return tv }
         for sub in view.subviews { if let found = firstTextView(in: sub) { return found } }

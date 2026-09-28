@@ -83,6 +83,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// layout and anchored content offset are ready.
     private var viewportReflowTransition: TextViewportReflowTransition?
     private var lastTextViewportWidth: CGFloat = 0
+    private var resizeWasAtTop = true
     private var resizeAnchor: TextViewportReflowTransition.AnchorGeometry?
     private let store = SavesStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
@@ -691,8 +692,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if widthChanged, viewportReflowTransition == nil, let resizeAnchor {
             ScrollPresentationState.setSuppressed(true, for: textView)
             textView.layoutManager.ensureLayout(for: textView.textContainer)
-            textView.contentOffset.y = clampedContentOffsetY(
-                TextViewportReflowTransition.restoredOffset(for: resizeAnchor, in: textView))
+            textView.contentOffset.y = resizeWasAtTop ? -textView.adjustedContentInset.top
+                : clampedContentOffsetY(TextViewportReflowTransition.restoredOffset(for: resizeAnchor, in: textView))
             ScrollPresentationState.setSuppressed(false, for: textView)
         }
         lastTextViewportWidth = textView.bounds.width
@@ -1410,6 +1411,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func captureResizeAnchor() {
         guard viewportReflowTransition == nil,
               abs(lastTextViewportWidth - textView.bounds.width) < 0.5 else { return }
+        resizeWasAtTop = textView.contentOffset.y + textView.adjustedContentInset.top <= 1
         resizeAnchor = TextViewportReflowTransition.anchorGeometry(
             in: textView, layoutManager: textView.layoutManager)
     }

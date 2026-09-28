@@ -48,6 +48,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     private let readerBackButton = UIButton(type: .system)
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
+    private var readerModeCenterX: NSLayoutConstraint!
+    private var readerModeCenterY: NSLayoutConstraint!
     /// The deck's trailing bottom circle, dressed as the reader's share pill.
     private var readerShareButton: UIButton { trailingBottomButton }
     private let footerContentFade = ReaderFooterContentFadeView()
@@ -241,8 +243,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         let slack = (Self.topChromeClearance - Self.chromeButtonDiameter) / 2
         let minimumTop = view.safeAreaInsets.top + 4
         let top = max(minimumTop, (card?.minY ?? minimumTop) + inset - slack)
-        let leading = (card?.minX ?? 12) + inset
-        let trailing = (card?.maxX ?? (view.bounds.width - 12)) - inset
+        let leading = (card?.minX ?? (view.safeAreaInsets.left + 12)) + inset
+        let trailing = (card?.maxX ?? (view.bounds.width - view.safeAreaInsets.right - 12)) - inset
         readerChromeRow.frame = CGRect(
             x: leading, y: top,
             width: max(trailing - leading, Self.chromeButtonDiameter * 2),
@@ -334,7 +336,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
                 y: readerChromeRow.frame.minY + readerAudioButton.center.y - diameter / 2,
                 width: diameter, height: diameter)
             target = CGAffineTransform(
-                translationX: view.bounds.maxX - inset - seat.maxX,
+                translationX: view.bounds.maxX - view.safeAreaInsets.right - inset - seat.maxX,
                 y: view.safeAreaInsets.top + inset - seat.minY)
         } else {
             target = .identity
@@ -401,6 +403,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutReaderChromeRow()
+        layoutReaderControlsForDisplay()
         // Rotation (or a Split View resize) moves the column with the card it
         // sits beside; a container that has stopped being wide enough for two
         // columns closes it rather than leaving it half off screen.
@@ -565,12 +568,29 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         readerModeControl.isUserInteractionEnabled = false
         readerModeControl.accessibilityElementsHidden = true
         view.addSubview(readerModeControl)
+        readerModeCenterX = readerModeControl.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor)
+        readerModeCenterY = readerModeControl.centerYAnchor.constraint(equalTo: readerShareButton.centerYAnchor)
         NSLayoutConstraint.activate([
-            readerModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            readerModeControl.centerYAnchor.constraint(
-                equalTo: readerShareButton.centerYAnchor),
+            readerModeCenterX,
+            readerModeCenterY,
             readerModeControl.heightAnchor.constraint(equalToConstant: 32),
+            readerModeControl.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, constant: -24),
         ])
+    }
+
+    private func layoutReaderControlsForDisplay() {
+        guard readerModeCenterX != nil else { return }
+        let safe = view.bounds.inset(by: view.safeAreaInsets).insetBy(dx: 12, dy: 0)
+        let regions = ReaderDisplayLayout.reservedControlRegions(in: view)
+            + [settingsButton.frame.insetBy(dx: -8, dy: -4), readerShareButton.frame.insetBy(dx: -8, dy: -4)]
+        let size = readerModeControl.intrinsicContentSize
+        guard size.width > 0 else { return }
+        let preferred = CGRect(x: safe.midX - size.width / 2,
+                               y: readerShareButton.center.y - 16,
+                               width: size.width, height: 32)
+        let frame = ReaderDisplayLayout.controlFrame(preferred, in: safe, avoiding: regions)
+        readerModeCenterX.constant = frame.midX - view.safeAreaLayoutGuide.layoutFrame.midX
+        readerModeCenterY.constant = frame.midY - readerShareButton.center.y
     }
 
     private static let dismissedBottomControlTransform = CGAffineTransform(
@@ -947,7 +967,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     func readerCardUsesTapOnlyScrollChrome(
         _ card: ReaderCardContentViewController
     ) -> Bool {
-        ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
+        carousel.usesReaderGrid || ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
             userInterfaceIdiom: traitCollection.userInterfaceIdiom,
             viewportSize: view.bounds.size)
     }
@@ -959,7 +979,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         guard immersed,
               card.rabbitHoleReader?.focusedScrollReader != nil
         else { return nil }
-        return LunaLayout.isWide(containerWidth: view.bounds.width)
+        return (carousel.usesReaderGrid || LunaLayout.isWide(containerWidth: view.bounds.width))
             ? Self.expandedReaderHorizontalInset : 0
     }
 

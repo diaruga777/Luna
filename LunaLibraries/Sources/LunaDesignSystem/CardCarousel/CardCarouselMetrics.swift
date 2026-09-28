@@ -92,9 +92,9 @@ public struct CardCarouselMetrics: Equatable {
 
     /// Two equal rows of article previews. Width follows available space instead
     /// of the portrait deck aspect ratio; all columns have equal visual weight.
-    public static func readerGrid(containerSize: CGSize) -> CardCarouselMetrics {
+    public static func readerGrid(containerSize: CGSize, prefersExpandedLayout: Bool = false) -> CardCarouselMetrics {
         var result = resolve(containerSize: containerSize)
-        guard containerSize.width >= 700 else { return result }
+        guard containerSize.width >= 700 || (prefersExpandedLayout && containerSize.width >= 560) else { return result }
         let height = max(40, (containerSize.height - 48) / 2)
         let width = min(340, max(260, (containerSize.width - 64) / 3))
         result.cardSize = CGSize(width: width, height: height)

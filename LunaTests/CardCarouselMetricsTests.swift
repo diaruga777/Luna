@@ -978,3 +978,74 @@ final class ReaderGridTests: XCTestCase {
         return view.subviews.lazy.compactMap { self.findGrid(in: $0) }.first
     }
 }
+
+@MainActor
+final class ReaderDuoLayoutTests: XCTestCase {
+    func testRegularWidthInnerDisplayShowsPreviewsBelowIPadBreakpoint() {
+        let size = CGSize(width: 660, height: 850)
+        XCTAssertTrue(CardCarouselMetrics.readerGrid(containerSize: size, prefersExpandedLayout: true).isPreviewGrid)
+        XCTAssertFalse(CardCarouselMetrics.readerGrid(containerSize: size).isPreviewGrid)
+        XCTAssertFalse(CardCarouselMetrics.readerGrid(containerSize: CGSize(width: 402, height: 850), prefersExpandedLayout: true).isPreviewGrid)
+    }
+
+    func testInnerDisplayUsesItsAsymmetricSafeAreaAndCollapsesToOneCard() throws {
+        let source = OneCardViewportDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.usesAdaptiveReaderGrid = true
+        carousel.dataSource = source
+        carousel.traitOverrides.horizontalSizeClass = .regular
+        carousel.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 58, bottom: 0, right: 12)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 669, height: 951))
+        window.rootViewController = carousel
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.layoutIfNeeded()
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData()
+        XCTAssertTrue(carousel.usesReaderGrid)
+        let card = try XCTUnwrap(carousel.cardView(at: 0))
+        let grid = try XCTUnwrap(card.superview as? UIScrollView)
+        XCTAssertEqual(grid.convert(grid.bounds, to: carousel.view).minX, 58, accuracy: 0.5)
+        carousel.setImmersed(true, horizontalInset: 16)
+        let expanded = card.convert(card.bounds, to: carousel.view)
+        XCTAssertEqual(expanded.minX, 74, accuracy: 0.5)
+        XCTAssertEqual(expanded.maxX, 641, accuracy: 0.5)
+        carousel.setImmersed(false)
+        carousel.traitOverrides.horizontalSizeClass = .compact
+        carousel.view.frame.size.width = 466
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+        XCTAssertFalse(carousel.usesReaderGrid)
+        XCTAssertEqual(carousel.currentIndex, 0)
+    }
+
+    func testControlsMoveBesideAnActiveVerticalFold() {
+        let safe = CGRect(x: 44, y: 24, width: 812, height: 760)
+        let fold = CGRect(x: 430, y: 0, width: 40, height: 900)
+        let preferred = CGRect(x: 340, y: 720, width: 220, height: 32)
+        let result = ReaderDisplayLayout.controlFrame(preferred, in: safe, avoiding: [fold])
+        XCTAssertTrue(safe.contains(result))
+        XCTAssertFalse(fold.intersects(result))
+        XCTAssertEqual(result.minY, preferred.minY)
+        XCTAssertEqual(result.size, preferred.size)
+    }
+
+    func testControlsAvoidHorizontalFoldAndCameraTogether() {
+        let safe = CGRect(x: 40, y: 20, width: 800, height: 800)
+        let fold = CGRect(x: 0, y: 380, width: 900, height: 40)
+        let camera = CGRect(x: 680, y: 350, width: 160, height: 120)
+        let result = ReaderDisplayLayout.controlFrame(
+            CGRect(x: 610, y: 390, width: 200, height: 32), in: safe, avoiding: [fold, camera])
+        XCTAssertTrue(safe.contains(result))
+        XCTAssertFalse(fold.intersects(result))
+        XCTAssertFalse(camera.intersects(result))
+    }
+
+    func testFlatDisplayLeavesControlsInPlaceAndRespectsAsymmetricInsets() {
+        let safe = CGRect(x: 70, y: 20, width: 630, height: 760)
+        let preferred = CGRect(x: 300, y: 720, width: 160, height: 32)
+        XCTAssertEqual(ReaderDisplayLayout.controlFrame(preferred, in: safe, avoiding: []), preferred)
+        let edge = ReaderDisplayLayout.controlFrame(CGRect(x: 0, y: 720, width: 160, height: 32), in: safe, avoiding: [])
+        XCTAssertEqual(edge.minX, 70)
+    }
+}

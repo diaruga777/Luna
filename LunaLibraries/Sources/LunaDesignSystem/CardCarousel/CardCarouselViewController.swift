@@ -386,6 +386,7 @@ public final class CardCarouselViewController: UIViewController {
     /// One geometry per container, shared by all its cards. Reader can opt into
     /// a two-row grid; other decks use the aspect-fit launch-card geometry.
     private var resolvedMetrics: CardCarouselMetrics?
+    private var prefersExpandedReaderLayout = false
     private var metricsContainerSize: CGSize = .zero
 
     /// The card geometry at the current container size, computed on first sight.
@@ -393,7 +394,7 @@ public final class CardCarouselViewController: UIViewController {
         guard metricsContainerSize.width > 0, metricsContainerSize.height > 0 else { return nil }
         if let resolvedMetrics { return resolvedMetrics }
         let resolved = usesAdaptiveReaderGrid
-            ? CardCarouselMetrics.readerGrid(containerSize: metricsContainerSize)
+            ? CardCarouselMetrics.readerGrid(containerSize: metricsContainerSize, prefersExpandedLayout: prefersExpandedReaderLayout)
             : CardCarouselMetrics.resolve(containerSize: metricsContainerSize)
         resolvedMetrics = resolved
         return resolved
@@ -529,8 +530,8 @@ public final class CardCarouselViewController: UIViewController {
             scrubberTrailingConstraint,
             scrubber.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
             cardAreaTopConstraint,
-            cardArea.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            cardArea.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            cardArea.leadingAnchor.constraint(equalTo: usesAdaptiveReaderGrid ? view.safeAreaLayoutGuide.leadingAnchor : view.leadingAnchor),
+            cardArea.trailingAnchor.constraint(equalTo: usesAdaptiveReaderGrid ? view.safeAreaLayoutGuide.trailingAnchor : view.trailingAnchor),
             cardArea.bottomAnchor.constraint(equalTo: scrubber.topAnchor),
         ])
 
@@ -559,13 +560,18 @@ public final class CardCarouselViewController: UIViewController {
         super.viewDidLayoutSubviews()
         // Keep the footer controls' clearance but remove the duplicate thumbnail
         // navigation in the library; every visible preview is already a target.
-        scrubber.isHidden = usesAdaptiveReaderGrid && view.bounds.width >= 700
+        let expanded = traitCollection.horizontalSizeClass == .regular
+        if expanded != prefersExpandedReaderLayout {
+            prefersExpandedReaderLayout = expanded
+            resolvedMetrics = nil
+        }
         let size = cardArea.bounds.size
         guard size.width > 0, size.height > 0 else { return }
         if metricsContainerSize != size {
             metricsContainerSize = size
             resolvedMetrics = nil
         }
+        scrubber.isHidden = usesReaderGrid
         layoutReaderGrid()
         alignScrubberToCardColumn()
         // Render the eclipse corona for this exact card geometry now, in the

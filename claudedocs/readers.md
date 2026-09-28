@@ -202,15 +202,30 @@ TextKit glyph transition, informed by Lune's stable reading-anchor approach.
 The same character stays at its reading height during a live window resize;
 Reduce Motion restores that anchor without creating animated glyph views.
 
-Layout follows the window's current bounds and asymmetric safe-area insets,
-so wide phone windows use the same grid as iPad. Xcode 27.1 beta (27A9269)
-is available and is Apple's designated Duo toolchain; Xcode 27.2 beta does not
-include Duo support. `xcodes` was upgraded from 1.6.2 to 2.1.0, but downloading
-27.1 is blocked on Apple ID authentication. The installed SDKs still stop at
-27.0. Duo's `reservedRegions(kind:)` APIs, fold poses, and a Duo build remain
-unverified. Lune remains a read-only reference with no files changed.
+Layout follows the window's bounds, horizontal size class, and asymmetric safe
+areas. A regular-width inner display can show the two-row grid from 560pt of
+usable width; compact phone windows still use one card. Reader's card area and
+floating controls respect each horizontal safe-area inset independently.
 
-Validation: focused geometry, text reflow, and wide-reader expansion tests.
+### iPhone Duo
+
+Build Reader with Xcode 27.1 / iOS 27.1 to opt into Duo's full display area.
+`ReaderDisplayLayout` queries UIKit's active division and occlusion reserved
+regions. The reading-mode control chooses the nearest unobstructed position,
+avoiding the fold, camera, and Settings/Share buttons. Scrolling article content
+remains continuous across the fold, following Apple's guidance for articles.
+Geometry is recalculated on layout and size-class changes. UIKit's module-version
+and runtime availability guards preserve builds with stable Xcode 26.2.
+
+The Duo simulator runtime is iOS 27.1 (24A94401). Tests cover regular-width
+inner displays, compact windows, asymmetric insets, vertical and horizontal
+folds, camera collisions, and returning to a flat display. Lune is unchanged.
+
+Validation: Xcode 27.1 builds and launches Reader on the iPhone Duo simulator;
+23 focused geometry, text reflow, and wide-reader expansion tests pass there.
+The stable Xcode 26.2 build also passes. Simulator pose controls were unavailable
+while the host Mac was locked, so inner-display/fold geometry is verified by
+tests; the outer display was inspected in a simulator screenshot.
 The broader chrome tests have five failures reproduced on the starting commit
 (`ecc968176`): centered-card immersion, cross-kind title reveal, staged title
 reveal, deletion content cleanup, and the old fixed-title-inset expectation.

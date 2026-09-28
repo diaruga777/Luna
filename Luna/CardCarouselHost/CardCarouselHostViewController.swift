@@ -1182,9 +1182,9 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
         guard let leadingConstraint = bottomControlLeadingConstraint,
               let trailingConstraint = bottomControlTrailingConstraint
         else { return }
-        var leading: CGFloat = 12
-        var trailing: CGFloat = -12
-        if LunaLayout.isWide(containerWidth: view.bounds.width) {
+        var leading: CGFloat = view.safeAreaInsets.left + 12
+        var trailing: CGFloat = -view.safeAreaInsets.right - 12
+        if !carousel.usesReaderGrid, LunaLayout.isWide(containerWidth: view.bounds.width) {
             let column = carousel.restingCardColumn(in: view)
             leading = max(12, column.lowerBound + 12)
             trailing = min(-12, column.upperBound - view.bounds.width - 12)

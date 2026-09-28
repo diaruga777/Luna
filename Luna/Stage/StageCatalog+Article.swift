@@ -30,12 +30,12 @@ enum ArticleStageCatalog {
     private static var deckStages: [StageDescriptor] {
         [
             StageDescriptor(
-                id: "deck.article.rail", screen: "Card deck", variant: "adaptive article rail",
+                id: "deck.article.rail", screen: "Card deck", variant: "two-row article library",
                 summary: "Several readable articles for testing horizontal browsing and viewport expansion.",
                 kind: .article,
                 seed: {
                     StageFixtures.completeOnboarding()
-                    let titles = ["A Wider View", "The Quiet Reading Room", "Across the River", "Notes for Tomorrow"]
+                    let titles = ["A Wider View", "The Quiet Reading Room", "Across the River", "Notes for Tomorrow", "A Walk in the Woods", "On Looking Closely", "The Long Way Home", "A Sunday Morning", "Room to Think", "The Shape of Cities", "Small Discoveries", "After the Rain"]
                     let items = titles.enumerated().map { index, title in
                         StageFixtures.article(seed: "rail-\(index)", url: "https://example.com/rail/\(index)",
                                               title: title, hoursAgo: index + 1)

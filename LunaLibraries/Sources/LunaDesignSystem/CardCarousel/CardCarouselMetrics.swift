@@ -26,9 +26,9 @@ public struct CardCarouselMetrics: Equatable {
     /// Room kept above and below the card inside the card area.
     public static let verticalPadding: CGFloat = 12
 
-    /// Reader rails place neighboring cards at a uniform, scrollable interval.
-    public var isHorizontalRail = false
-    public var railStride: CGFloat { cardSize.width + 24 }
+    /// Reader previews use a continuous collection with two rows.
+    public var isPreviewGrid = false
+    public var columnStride: CGFloat { cardSize.width + 24 }
 
     public var containerSize: CGSize
     public var cardSize: CGSize
@@ -90,16 +90,34 @@ public struct CardCarouselMetrics: Equatable {
             sideScale: sideScale)
     }
 
-    /// Uses the available window width, including wide phones and resized windows.
-    /// A bounded column leaves readable previews beside the selected article.
-    public static func readerRail(containerSize: CGSize) -> CardCarouselMetrics {
+    /// Two equal rows of article previews. Width follows available space instead
+    /// of the portrait deck aspect ratio; all columns have equal visual weight.
+    public static func readerGrid(containerSize: CGSize) -> CardCarouselMetrics {
         var result = resolve(containerSize: containerSize)
         guard containerSize.width >= 700 else { return result }
-        let width = min(result.cardSize.width, 360, (containerSize.width - 72) / 2)
-        result.cardSize = CGSize(width: width, height: width / cardAspectRatio)
+        let height = max(40, (containerSize.height - 48) / 2)
+        let width = min(340, max(260, (containerSize.width - 64) / 3))
+        result.cardSize = CGSize(width: width, height: height)
         result.sideScale = 1
-        result.isHorizontalRail = true
+        result.isPreviewGrid = true
         return result
+    }
+
+    public func previewFrame(at index: Int) -> CGRect {
+        CGRect(x: 24 + CGFloat(index / 2) * columnStride,
+               y: 12 + CGFloat(index % 2) * (cardSize.height + 24),
+               width: cardSize.width, height: cardSize.height)
+    }
+
+    public func previewContentWidth(count: Int) -> CGFloat {
+        max(containerSize.width, 48 + CGFloat((max(0, count) + 1) / 2) * columnStride - 24)
+    }
+
+    /// One offscreen column on either side keeps native scrolling smooth.
+    public func previewIndices(offset: CGFloat) -> ClosedRange<Int> {
+        let first = max(0, Int(floor((offset - 24) / columnStride)) - 1)
+        let last = max(first, Int(ceil((offset + containerSize.width) / columnStride)))
+        return (first * 2)...(last * 2 + 1)
     }
 
     /// Resting scale for the slot `offset` cards away from center (0 = centered).
@@ -112,7 +130,7 @@ public struct CardCarouselMetrics: Equatable {
     /// container edge; slots further out continue at one scaled-card-width steps,
     /// fully off screen.
     public func centerX(forSlotOffset offset: Int) -> CGFloat {
-        if isHorizontalRail { return containerSize.width / 2 + CGFloat(offset) * railStride }
+        if isPreviewGrid { return containerSize.width / 2 + CGFloat(offset) * columnStride }
         guard offset != 0 else { return containerSize.width / 2 }
         let scaledWidth = cardSize.width * sideScale
         let step = CGFloat(abs(offset) - 1) * scaledWidth

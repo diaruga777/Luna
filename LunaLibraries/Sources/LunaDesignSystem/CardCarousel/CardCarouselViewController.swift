@@ -372,19 +372,19 @@ public final class CardCarouselViewController: UIViewController {
         let content: CardContentViewController
     }
 
-    /// Reader opts into a native horizontal scroll rail when its window has room.
-    public var usesAdaptiveReaderRail = false {
+    /// Reader opts into a native horizontal preview grid when its window has room.
+    public var usesAdaptiveReaderGrid = false {
         didSet { resolvedMetrics = nil; if isViewLoaded { view.setNeedsLayout() } }
     }
-    private let readerRail = UIScrollView()
+    private let readerGrid = UIScrollView()
     private var readerActivationPan: UIPanGestureRecognizer!
-    private var isLayingOutRail = false
-    private var usesReaderRail: Bool { metrics?.isHorizontalRail == true }
+    private var isLayingOutGrid = false
+    public var usesReaderGrid: Bool { metrics?.isPreviewGrid == true }
 
     private var slots: [Int: Slot] = [:]
     private var count = 0
     /// One geometry per container, shared by all its cards. Reader can opt into
-    /// a horizontal rail; other decks use the aspect-fit launch-card geometry.
+    /// a two-row grid; other decks use the aspect-fit launch-card geometry.
     private var resolvedMetrics: CardCarouselMetrics?
     private var metricsContainerSize: CGSize = .zero
 
@@ -392,8 +392,8 @@ public final class CardCarouselViewController: UIViewController {
     private var metrics: CardCarouselMetrics? {
         guard metricsContainerSize.width > 0, metricsContainerSize.height > 0 else { return nil }
         if let resolvedMetrics { return resolvedMetrics }
-        let resolved = usesAdaptiveReaderRail
-            ? CardCarouselMetrics.readerRail(containerSize: metricsContainerSize)
+        let resolved = usesAdaptiveReaderGrid
+            ? CardCarouselMetrics.readerGrid(containerSize: metricsContainerSize)
             : CardCarouselMetrics.resolve(containerSize: metricsContainerSize)
         resolvedMetrics = resolved
         return resolved
@@ -493,15 +493,15 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardArea)
         pullTabHint.isHidden = true
-        readerRail.showsHorizontalScrollIndicator = false
-        readerRail.showsVerticalScrollIndicator = false
-        readerRail.contentInsetAdjustmentBehavior = .never
-        readerRail.decelerationRate = .fast
-        readerRail.isDirectionalLockEnabled = true
-        readerRail.clipsToBounds = false
-        readerRail.delegate = self
-        readerRail.accessibilityIdentifier = "Reader.cardRail"
-        cardArea.addSubview(readerRail)
+        readerGrid.showsHorizontalScrollIndicator = true
+        readerGrid.showsVerticalScrollIndicator = false
+        readerGrid.contentInsetAdjustmentBehavior = .never
+        readerGrid.decelerationRate = .normal
+        readerGrid.isDirectionalLockEnabled = true
+        readerGrid.clipsToBounds = true
+        readerGrid.delegate = self
+        readerGrid.accessibilityIdentifier = "Reader.previewGrid"
+        cardArea.addSubview(readerGrid)
         readerActivationPan = UIPanGestureRecognizer(target: self, action: #selector(activateScrolledReader(_:)))
         readerActivationPan.cancelsTouchesInView = false
         readerActivationPan.delegate = self
@@ -557,13 +557,16 @@ public final class CardCarouselViewController: UIViewController {
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Keep the footer controls' clearance but remove the duplicate thumbnail
+        // navigation in the library; every visible preview is already a target.
+        scrubber.isHidden = usesAdaptiveReaderGrid && view.bounds.width >= 700
         let size = cardArea.bounds.size
         guard size.width > 0, size.height > 0 else { return }
         if metricsContainerSize != size {
             metricsContainerSize = size
             resolvedMetrics = nil
         }
-        layoutReaderRail()
+        layoutReaderGrid()
         alignScrubberToCardColumn()
         // Render the eclipse corona for this exact card geometry now, in the
         // background, rather than on whichever tap first starts a transition.
@@ -625,7 +628,7 @@ public final class CardCarouselViewController: UIViewController {
         for slot in slots.values { unmount(slot) }
         slots = [:]
         currentIndex = target
-        resetRailOffset()
+        resetGridOffset()
         mountWindow()
         removeOrphanCardViews()
         stripLoadGeneration += 1
@@ -698,6 +701,9 @@ public final class CardCarouselViewController: UIViewController {
     /// resolves the metrics.
     public func restingCenteredCardFrame(in target: UIView) -> CGRect? {
         guard let metrics else { return nil }
+        if usesReaderGrid {
+            return readerGrid.convert(metrics.previewFrame(at: currentIndex), to: target)
+        }
         return cardArea.convert(metrics.centeredCardFrame(), to: target)
     }
 
@@ -707,7 +713,7 @@ public final class CardCarouselViewController: UIViewController {
     /// peeking side cards and the scrub strip fade out, and (with
     /// `extendsCard`) the centered card's bottom edge extends into the room
     /// the strip frees up. `horizontalInset` opts Scroll readers into the safe
-    /// viewport width. A wide Reader rail also uses the space above the resting
+    /// viewport width. A wide Reader grid also uses the space above the resting
     /// card. The content prepares its text layout before either edge moves.
     public private(set) var isImmersed = false
 
@@ -758,7 +764,8 @@ public final class CardCarouselViewController: UIViewController {
         // gap fades the INCOMING card, which then arrives at centre invisible.
         // Surfacing is never refused; a reload asks for it unconditionally.
         guard !immersed || !(isPagingGesture || isTransitioning) else { return false }
-        let resolvedHorizontalInset = immersed ? horizontalInset.map { max(0, $0) } : nil
+        let requestedInset = horizontalInset ?? (usesReaderGrid ? 16 : nil)
+        let resolvedHorizontalInset = immersed ? requestedInset.map { max(0, $0) } : nil
         if immersed == isImmersed {
             // Already immersed but the extension mode changed (e.g. a mode
             // switch from scroll to RSVP mid-immersion) — re-apply the card
@@ -846,7 +853,7 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func applyColumnAsideLayout() {
-        readerRail.isScrollEnabled = usesReaderRail && !isImmersed && !isColumnAside
+        readerGrid.isScrollEnabled = usesReaderGrid && !isImmersed && !isColumnAside
         cardArea.transform = CGAffineTransform(translationX: columnAsideShift, y: 0)
         applyScrubberTransform()
         applyCardVisibility()
@@ -891,10 +898,10 @@ public final class CardCarouselViewController: UIViewController {
         // glass rim fades in step with the strip and side cards, and its
         // surface tone clears so the content edge fades dissolve into the
         // screen background rather than a card-toned band.
-        readerRail.isScrollEnabled = usesReaderRail && !isImmersed && !isColumnAside
-        if !isImmersed { resetRailOffset() }
+        readerGrid.isScrollEnabled = usesReaderGrid && !isImmersed && !isColumnAside
+
         if let card = slots[currentIndex]?.card {
-            let parent = usesReaderRail && !isImmersed ? readerRail : cardArea
+            let parent = usesReaderGrid && !isImmersed ? readerGrid : cardArea
             if card.superview !== parent {
                 let frame = card.convert(card.bounds, to: parent)
                 parent.addSubview(card)
@@ -905,24 +912,22 @@ public final class CardCarouselViewController: UIViewController {
         slots[currentIndex]?.card.borderAlpha = isImmersed ? 0 : 1
         slots[currentIndex]?.card.setSurfaceHidden(isImmersed)
         guard let metrics, let slot = slots[currentIndex] else { return }
-        let resting = metrics.centeredCardFrame()
+        let resting = usesReaderGrid ? metrics.previewFrame(at: currentIndex) : metrics.centeredCardFrame()
         var frame = resting
-        if isImmersed, let horizontalInset = immersionHorizontalInset {
+        if isImmersed, let horizontalInset = immersionHorizontalInset ?? (usesReaderGrid ? 16 : nil) {
             let target = view.convert(view.bounds.inset(by: UIEdgeInsets(top: 0, left: view.safeAreaInsets.left, bottom: 0, right: view.safeAreaInsets.right)), to: cardArea)
             let width = max(1, target.width - horizontalInset * 2)
             frame.origin.x = target.midX - width / 2
             frame.size.width = width
-            if usesReaderRail { frame.origin.y = CardCarouselMetrics.verticalPadding }
+            if usesReaderGrid { frame.origin.y = CardCarouselMetrics.verticalPadding }
         }
-        if isImmersed, immersionExtendsCard {
+        if isImmersed, immersionExtendsCard || usesReaderGrid {
             // Extend only the bottom edge to the carousel view's bottom (the
             // room the faded scrub strip frees up).
             let target = view.convert(view.bounds, to: cardArea)
             frame.size.height = max(target.maxY - frame.minY, frame.height)
         }
-        if slot.card.superview === readerRail {
-            frame.origin.x += CGFloat(currentIndex) * metrics.railStride
-        }
+
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: frame.size)
         slot.card.center = CGPoint(x: frame.midX, y: frame.midY)
@@ -938,15 +943,15 @@ public final class CardCarouselViewController: UIViewController {
     /// card, so text content can prepare a true old-layout → new-layout reflow.
     private func prepareCenteredContentForImmersionLayout() {
         guard let metrics, let slot = slots[currentIndex] else { return }
-        var frame = metrics.centeredCardFrame()
-        if isImmersed, let horizontalInset = immersionHorizontalInset {
+        var frame = usesReaderGrid ? metrics.previewFrame(at: currentIndex) : metrics.centeredCardFrame()
+        if isImmersed, let horizontalInset = immersionHorizontalInset ?? (usesReaderGrid ? 16 : nil) {
             let target = view.convert(view.bounds.inset(by: UIEdgeInsets(top: 0, left: view.safeAreaInsets.left, bottom: 0, right: view.safeAreaInsets.right)), to: cardArea)
             let width = max(1, target.width - horizontalInset * 2)
             frame.origin.x = target.midX - width / 2
             frame.size.width = width
-            if usesReaderRail { frame.origin.y = CardCarouselMetrics.verticalPadding }
+            if usesReaderGrid { frame.origin.y = CardCarouselMetrics.verticalPadding }
         }
-        if isImmersed, immersionExtendsCard {
+        if isImmersed, immersionExtendsCard || usesReaderGrid {
             let target = view.convert(view.bounds, to: cardArea)
             frame.size.height = max(target.maxY - frame.minY, frame.height)
         }
@@ -964,7 +969,7 @@ public final class CardCarouselViewController: UIViewController {
             return
         }
         reportNavigationTarget(target)
-        if usesReaderRail {
+        if usesReaderGrid {
             runEclipse(to: target, completion: completion)
             return
         }
@@ -982,48 +987,47 @@ public final class CardCarouselViewController: UIViewController {
         audioSession.setMuted(muted)
     }
 
-    // MARK: - Adaptive reader rail
+    // MARK: - Adaptive reader grid
 
     private var mountedReaderRange: ClosedRange<Int> {
-        let radius = usesReaderRail
-            ? Int(ceil(cardArea.bounds.width / max(metrics?.railStride ?? 1, 1))) + 1 : 1
-        let center = usesReaderRail
-            ? min(max(Int(round(readerRail.contentOffset.x / max(metrics?.railStride ?? 1, 1))), 0), max(0, count - 1)) : currentIndex
-        return (center - radius)...(center + radius)
+        guard usesReaderGrid, let metrics else { return (currentIndex - 1)...(currentIndex + 1) }
+        return metrics.previewIndices(offset: readerGrid.contentOffset.x)
     }
 
-    private func resetRailOffset() {
-        guard let metrics else { return }
-        layoutReaderRail()
-        isLayingOutRail = true
-        readerRail.setContentOffset(CGPoint(x: CGFloat(currentIndex) * metrics.railStride, y: 0), animated: false)
-        isLayingOutRail = false
+    /// Explicit navigation reveals a preview without centering or snapping it.
+    private func resetGridOffset() {
+        guard usesReaderGrid, let metrics else { return }
+        layoutReaderGrid()
+        let frame = metrics.previewFrame(at: currentIndex).insetBy(dx: -24, dy: 0)
+        var x = readerGrid.contentOffset.x
+        if frame.minX < x { x = frame.minX }
+        if frame.maxX > x + readerGrid.bounds.width { x = frame.maxX - readerGrid.bounds.width }
+        isLayingOutGrid = true
+        readerGrid.contentOffset = CGPoint(x: max(0, min(x, readerGrid.contentSize.width - readerGrid.bounds.width)), y: 0)
+        isLayingOutGrid = false
     }
 
-    private func layoutReaderRail() {
-        guard !isLayingOutRail, let metrics else { return }
-        isLayingOutRail = true
-        defer { isLayingOutRail = false }
-        let changedSize = readerRail.bounds.size != cardArea.bounds.size
-        readerRail.frame = cardArea.bounds
-        readerRail.contentSize = CGSize(
-            width: cardArea.bounds.width + CGFloat(max(0, count - 1)) * metrics.railStride,
-            height: cardArea.bounds.height)
-        readerRail.isHidden = !usesReaderRail
-        readerRail.isScrollEnabled = usesReaderRail && !isImmersed && !isColumnAside
-        if changedSize || !usesReaderRail {
-            readerRail.contentOffset = CGPoint(x: CGFloat(currentIndex) * metrics.railStride, y: 0)
-        }
+    private func layoutReaderGrid() {
+        guard !isLayingOutGrid, let metrics else { return }
+        isLayingOutGrid = true
+        defer { isLayingOutGrid = false }
+        let oldOffset = readerGrid.contentOffset.x
+        readerGrid.frame = cardArea.bounds
+        readerGrid.contentSize = CGSize(width: metrics.previewContentWidth(count: count), height: cardArea.bounds.height)
+        readerGrid.isHidden = !usesReaderGrid
+        readerGrid.isScrollEnabled = usesReaderGrid && !isImmersed && !isColumnAside
+        let maximum = max(0, readerGrid.contentSize.width - readerGrid.bounds.width)
+        readerGrid.contentOffset = CGPoint(x: min(maximum, max(0, oldOffset)), y: 0)
     }
 
-    private func railCard(at point: CGPoint) -> Slot? {
+    private func previewCard(at point: CGPoint) -> Slot? {
         slots.values.first {
             $0.card.alpha > 0.01 && !$0.card.isHidden
                 && $0.card.convert($0.card.bounds, to: cardArea).contains(point)
         }
     }
 
-    private func selectRailCard(_ index: Int) {
+    private func selectPreview(_ index: Int) {
         guard index >= 0, index < count, index != currentIndex else { return }
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = index
@@ -1037,9 +1041,9 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     @objc private func activateScrolledReader(_ gesture: UIPanGestureRecognizer) {
-        guard gesture.state == .began, usesReaderRail, !isImmersed,
-              let slot = railCard(at: gesture.location(in: cardArea)) else { return }
-        selectRailCard(slot.index)
+        guard gesture.state == .began, usesReaderGrid, !isImmersed,
+              let slot = previewCard(at: gesture.location(in: cardArea)) else { return }
+        selectPreview(slot.index)
         delegate?.carousel(self, didTapCenteredCardAt: slot.index)
     }
 
@@ -1047,11 +1051,12 @@ public final class CardCarouselViewController: UIViewController {
 
     private func mountWindow() {
         guard count > 0 else { return }
+        if slots[currentIndex] == nil { slots[currentIndex] = mount(index: currentIndex) }
         for index in mountedReaderRange
         where index >= 0 && index < count && slots[index] == nil {
             slots[index] = mount(index: index)
         }
-        layoutReaderRail()
+        layoutReaderGrid()
         for slot in slots.values { applyRestingLayout(to: slot) }
     }
 
@@ -1064,7 +1069,7 @@ public final class CardCarouselViewController: UIViewController {
         content.setMuted(audioSession.isMuted)
         content.audioAvailabilityObserver = self
         content.playbackObserver = self
-        (usesReaderRail ? readerRail : cardArea).addSubview(card)
+        (usesReaderGrid ? readerGrid : cardArea).addSubview(card)
         content.didMove(toParent: self)
         return Slot(index: index, card: card, content: content)
     }
@@ -1113,7 +1118,7 @@ public final class CardCarouselViewController: UIViewController {
             return
         }
         let offset = stagedOffset ?? (slot.index - currentIndex)
-        let parent = usesReaderRail ? readerRail : cardArea
+        let parent = usesReaderGrid ? readerGrid : cardArea
         if slot.card.superview !== parent { parent.addSubview(slot.card) }
         applyRestingLayout(to: slot.card, atSlotOffset: offset)
         // A live scrub preview draws the whole deck itself; the real cards
@@ -1134,18 +1139,21 @@ public final class CardCarouselViewController: UIViewController {
         to card: CarouselCardView, atSlotOffset offset: Int
     ) {
         guard let metrics else { return }
-        card.layer.cornerRadius = CarouselCardView.cornerRadius
+        card.layer.cornerRadius = usesReaderGrid ? 16 : CarouselCardView.cornerRadius
+        card.setBorderEnabled(style.showsCardBorder && !usesReaderGrid)
         card.borderAlpha = 1
         card.setSurfaceHidden(false)
         card.transform = .identity
         card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
-        card.center = CGPoint(
-            x: metrics.centerX(forSlotOffset: offset) + (card.superview === readerRail ? CGFloat(currentIndex) * metrics.railStride : 0),
-            y: metrics.centerY())
+        if usesReaderGrid {
+            card.frame = metrics.previewFrame(at: max(0, currentIndex + offset))
+        } else {
+            card.center = CGPoint(x: metrics.centerX(forSlotOffset: offset), y: metrics.centerY())
+        }
         card.transform = CGAffineTransform(
             scaleX: metrics.scale(forSlotOffset: offset),
             y: metrics.scale(forSlotOffset: offset))
-        card.dimAlpha = offset == 0 || usesReaderRail ? 0 : CarouselCardView.restingDimAlpha
+        card.dimAlpha = offset == 0 || usesReaderGrid ? 0 : CarouselCardView.restingDimAlpha
     }
 
     /// Removes any card view left in the hierarchy that no mounted slot owns —
@@ -1170,7 +1178,7 @@ public final class CardCarouselViewController: UIViewController {
     /// its own horizontal interaction, so one gesture never also pulls a tray.
     public func centeredCardConsumesHorizontalDrag(at point: CGPoint, in space: UIView) -> Bool {
         guard count > 0, !isTransitioning, let slot = slots[currentIndex] else { return false }
-        if usesReaderRail, !isImmersed, !isColumnAside {
+        if usesReaderGrid, !isImmersed, !isColumnAside {
             return cardArea.bounds.contains(space.convert(point, to: cardArea))
         }
         // While immersed the centered card is bottom-extended past its resting
@@ -1339,9 +1347,9 @@ public final class CardCarouselViewController: UIViewController {
         duration: TimeInterval = CardEclipseTransition.duration,
         completion: (() -> Void)? = nil
     ) {
-        if usesReaderRail {
-            readerRail.setContentOffset(CGPoint(x: CGFloat(target) * (metrics?.railStride ?? 1), y: 0), animated: !UIAccessibility.isReduceMotionEnabled)
-            selectRailCard(target)
+        if usesReaderGrid {
+            selectPreview(target)
+            resetGridOffset()
             completion?()
             return
         }
@@ -1509,7 +1517,7 @@ public final class CardCarouselViewController: UIViewController {
         }
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = target
-        resetRailOffset()
+        resetGridOffset()
         updatePlaybackControls()
         UIView.transition(
             with: cardArea,
@@ -1607,7 +1615,7 @@ public final class CardCarouselViewController: UIViewController {
     private func settleScrubPreview(to target: Int) {
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = target
-        resetRailOffset()
+        resetGridOffset()
 
         let keep = Set(mountedReaderRange)
         for slot in Array(slots.values) where !keep.contains(slot.index) && slot.index != currentIndex {
@@ -1703,10 +1711,11 @@ public final class CardCarouselViewController: UIViewController {
                .contains(where: { $0 is UIControl || $0 === playbackScrubProgress }) {
             return
         }
-        if usesReaderRail, !isImmersed, !isColumnAside, let slot = railCard(at: location) {
+        if usesReaderGrid, !isImmersed, !isColumnAside {
+            guard let slot = previewCard(at: location) else { return }
             let point = cardArea.convert(location, to: slot.content.view)
             guard slot.content.allowsCardTap(at: point) else { return }
-            selectRailCard(slot.index)
+            selectPreview(slot.index)
             delegate?.carousel(self, didTapCenteredCardAt: slot.index)
             return
         }
@@ -1836,7 +1845,7 @@ public final class CardCarouselViewController: UIViewController {
         let shouldShow = showsPullTabHint
             && isViewVisible
             && !pullTabHintStore.hasSeenCardPagingSwipe
-            && !usesReaderRail
+            && !usesReaderGrid
             && count > 1
             && currentIndex < count - 1
             && !isImmersed
@@ -1950,9 +1959,9 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
         let insideCenter = centeredCardFrame().contains(location)
         if gestureRecognizer === readerActivationPan {
             let velocity = readerActivationPan.velocity(in: cardArea)
-            return usesReaderRail && !isImmersed && !isColumnAside && !isTransitioning
+            return usesReaderGrid && !isImmersed && !isColumnAside && !isTransitioning
                 && abs(velocity.y) > abs(velocity.x)
-                && railCard(at: location) != nil
+                && previewCard(at: location) != nil
         }
         if gestureRecognizer === playbackScrubPan {
             guard let content = slots[currentIndex]?.content,
@@ -1963,7 +1972,7 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return playbackScrubProgress.isPointInsideKnob(point)
         }
         if gestureRecognizer === pagePan {
-            if usesReaderRail { return false }
+            if usesReaderGrid { return false }
             // A new touch sequence: whatever the last one claimed is over.
             isPagingGesture = false
             // A horizontal control under the finger — the RSVP scrubber, any
@@ -2061,16 +2070,24 @@ extension CardCarouselViewController: UIContextMenuInteractionDelegate {
               // Only the resting card deck differentiates text vs whitespace;
               // an immersed (chrome-hidden) card is pure reading — leave every
               // press to the content's own selection and link menus.
-              !isImmersed,
-              centeredCardFrame().contains(location)
+              !isImmersed
         else { return nil }
+        let index: Int
+        if usesReaderGrid {
+            guard let slot = previewCard(at: location) else { return nil }
+            index = slot.index
+        } else {
+            guard centeredCardFrame().contains(location) else { return nil }
+            index = currentIndex
+        }
         // A press the content claims (real text, a link, an inline image) is not
         // ours — decline so text selection or the content's own menu proceeds.
-        if let content = slots[currentIndex]?.content,
+        if let content = slots[index]?.content,
            content.longPressSelectsContent(at: cardArea.convert(location, to: content.view)) {
             return nil
         }
-        guard let menu = delegate?.carousel(self, menuForCardAt: currentIndex) else { return nil }
+        guard let menu = delegate?.carousel(self, menuForCardAt: index) else { return nil }
+        if usesReaderGrid { selectPreview(index) }
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
     }
 
@@ -2103,7 +2120,7 @@ extension CardCarouselViewController: UIContextMenuInteractionDelegate {
 
 extension CardCarouselViewController: UIScrollViewDelegate {
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === readerRail, usesReaderRail, !isLayingOutRail,
+        guard scrollView === readerGrid, usesReaderGrid, !isLayingOutGrid,
               !isImmersed, !isTransitioning else { return }
         let keep = Set(mountedReaderRange)
         for slot in Array(slots.values) where !keep.contains(slot.index) && slot.index != currentIndex {
@@ -2113,23 +2130,6 @@ extension CardCarouselViewController: UIScrollViewDelegate {
         mountWindow()
     }
 
-    public func scrollViewWillEndDragging(
-        _ scrollView: UIScrollView, withVelocity velocity: CGPoint,
-        targetContentOffset: UnsafeMutablePointer<CGPoint>
-    ) {
-        guard scrollView === readerRail, let metrics else { return }
-        let index = min(max(Int(round(targetContentOffset.pointee.x / metrics.railStride)), 0), max(0, count - 1))
-        targetContentOffset.pointee = CGPoint(x: CGFloat(index) * metrics.railStride, y: 0)
-    }
-
-    public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settleReaderRail(scrollView) }
-    public func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { settleReaderRail(scrollView) }
-    public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { settleReaderRail(scrollView) }
-    }
-
-    private func settleReaderRail(_ scrollView: UIScrollView) {
-        guard scrollView === readerRail, usesReaderRail, !isImmersed, let metrics else { return }
-        selectRailCard(min(max(Int(round(scrollView.contentOffset.x / metrics.railStride)), 0), max(0, count - 1)))
-    }
+    // Native deceleration deliberately keeps the user's exact scroll position.
+    // Scrolling the library never changes the article selected for reading.
 }

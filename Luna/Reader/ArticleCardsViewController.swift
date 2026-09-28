@@ -12,7 +12,7 @@
 //    the fullscreen reader view — one header, one layout — so "fullscreen"
 //    is not a separate presentation.
 //  - Going fullscreen fades the peeking side cards and bottom scrub strip, and
-//    expands Scroll into the safe width. Wide windows browse a horizontal rail;
+//    expands Scroll into the safe width. Wide windows browse a continuous two-row preview grid;
 //    tapping or vertically scrolling a visible card expands it for reading.
 //    Portrait phones keep directional scroll chrome (down hides, up restores).
 //    In RSVP, playing fades them out and pausing fades them back. The
@@ -78,7 +78,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         view.backgroundColor = LunaColors.background
         // Handed to the carousel as chrome, so it fades away with the scrub
         // strip and side cards when a reader takes over the screen.
-        carousel.usesAdaptiveReaderRail = true
+        carousel.usesAdaptiveReaderGrid = true
         carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
@@ -236,7 +236,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         // after this one; without settling it first the very first pass has no
         // card frame to place the row against.
         carousel.view.layoutIfNeeded()
-        let card = carousel.restingCenteredCardFrame(in: view)
+        let card = carousel.usesReaderGrid ? nil : carousel.restingCenteredCardFrame(in: view)
         let inset = Self.chromeCardCornerInset
         let slack = (Self.topChromeClearance - Self.chromeButtonDiameter) / 2
         let minimumTop = view.safeAreaInsets.top + 4
@@ -1755,8 +1755,13 @@ final class ReaderCardContentViewController: CardContentViewController,
         updateTitleHandoffLatch()
         // With no scroll surface the active reader is RSVP (or a non-ready
         // placeholder), whose title is fixed and never follows card chrome.
-        let showsPinnedTitle = titleScrollView == nil
+        // A library preview keeps its identity visible even when the article
+        // remembers a reading position below its title.
+        let isLibraryPreview = cardChromeVisible
+            && (parent as? CardCarouselViewController)?.usesReaderGrid == true
+        let showsPinnedTitle = titleScrollView == nil || isLibraryPreview
             || (cardChromeVisible && pinnedTitleHasTakenOver)
+        scrollTitleHeader.alpha = isLibraryPreview ? 0 : 1
         let changes = {
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
         }

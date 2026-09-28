@@ -182,14 +182,18 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 
 ## Adaptive article layout
 
-Reader opts into `CardCarouselMetrics.readerRail` at window widths of 700pt or
-more. The native horizontal scroll view shows equal-sized article cards with a
-24pt gap, snaps to a card, and mounts only a bounded window around the viewport.
-A tap on plain card content or a vertical reading gesture selects that article
-and dismisses chrome. Links, selection, and controls retain their own actions.
-The selected card expands into the available width and height; tapping brings
-back the rail with that same article selected. Narrow windows retain the single
-card deck and its directional scroll chrome.
+Reader opts into `CardCarouselMetrics.readerGrid` at window widths of 700pt or
+more. Two equal rows of previews scroll horizontally with native deceleration;
+there is no snapping, selected-card scaling, or automatic selection on scroll.
+Previews use plain rounded surfaces without the glass rim. The duplicate
+thumbnail strip is hidden, and the top controls sit at the window edges.
+Only visible columns and a small buffer are mounted, even in large libraries.
+
+Tapping plain preview content or scrolling vertically on it selects that article
+and expands it into the available reading area. Links, selection, and controls
+retain their own actions. Dismissing the reading view returns the article to its
+original row and preserves the library's exact horizontal position. Empty space
+between previews has no tap action. Narrow windows retain the single-card deck.
 
 Dismissed Scroll cards now use the full safe width on compact iPhone windows,
 with the text view's own 20pt margin. Wide windows retain 16pt outside the card
@@ -199,11 +203,17 @@ The same character stays at its reading height during a live window resize;
 Reduce Motion restores that anchor without creating animated glyph views.
 
 Layout follows the window's current bounds and asymmetric safe-area insets,
-so wide phone windows use the same rail as iPad. The installed SDKs stop at iOS
-27.0: Duo's iOS 27.1 `reservedRegions(kind:)` / arrangement APIs and fold poses
-are not integrated or verified yet. Test those on Xcode 27.1 before claiming
-fold-specific support. Lune remains a read-only reference, with no dependency
-or files copied from it.
+so wide phone windows use the same grid as iPad. Xcode 27.1 beta (27A9269)
+is available and is Apple's designated Duo toolchain; Xcode 27.2 beta does not
+include Duo support. `xcodes` was upgraded from 1.6.2 to 2.1.0, but downloading
+27.1 is blocked on Apple ID authentication. The installed SDKs still stop at
+27.0. Duo's `reservedRegions(kind:)` APIs, fold poses, and a Duo build remain
+unverified. Lune remains a read-only reference with no files changed.
+
+Validation: focused geometry, text reflow, and wide-reader expansion tests.
+The broader chrome tests have five failures reproduced on the starting commit
+(`ecc968176`): centered-card immersion, cross-kind title reveal, staged title
+reveal, deletion content cleanup, and the old fixed-title-inset expectation.
 
 ## Scroll reader (+ split-web link handling)
 

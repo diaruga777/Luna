@@ -890,67 +890,76 @@ final class CarouselScrubberUtilityChipTests: XCTestCase {
 }
 
 @MainActor
-final class ReaderRailTests: XCTestCase {
-    func testRailAdaptsToWindowWidthWithoutChangingOtherDecks() {
+final class ReaderGridTests: XCTestCase {
+    func testGridFitsTwoRowsAndUsesEqualPreviewSizes() {
         for size in [CGSize(width: 744, height: 900), CGSize(width: 1024, height: 1200),
                      CGSize(width: 1366, height: 800), CGSize(width: 900, height: 500)] {
-            let rail = CardCarouselMetrics.readerRail(containerSize: size)
-            XCTAssertTrue(rail.isHorizontalRail)
-            XCTAssertLessThanOrEqual(rail.cardSize.width, 360)
-            XCTAssertEqual(rail.centerX(forSlotOffset: 1) - rail.centerX(forSlotOffset: 0),
-                           rail.cardSize.width + 24, accuracy: 0.01)
-            XCTAssertEqual(rail.scale(forSlotOffset: 1), 1)
-            XCTAssertFalse(CardCarouselMetrics.resolve(containerSize: size).isHorizontalRail)
+            let grid = CardCarouselMetrics.readerGrid(containerSize: size)
+            XCTAssertTrue(grid.isPreviewGrid)
+            let first = grid.previewFrame(at: 0)
+            let second = grid.previewFrame(at: 1)
+            let third = grid.previewFrame(at: 2)
+            XCTAssertEqual(first.minX, second.minX)
+            XCTAssertEqual(second.minY - first.maxY, 24)
+            XCTAssertEqual(third.minY, first.minY)
+            XCTAssertEqual(third.minX - first.maxX, 24)
+            XCTAssertEqual(second.maxY, size.height - 12)
+            XCTAssertEqual(grid.previewContentWidth(count: 7), max(size.width, 4 * grid.columnStride + 24))
+            XCTAssertFalse(CardCarouselMetrics.resolve(containerSize: size).isPreviewGrid)
         }
         let phone = CGSize(width: 430, height: 800)
-        XCTAssertEqual(CardCarouselMetrics.readerRail(containerSize: phone),
+        XCTAssertEqual(CardCarouselMetrics.readerGrid(containerSize: phone),
                        CardCarouselMetrics.resolve(containerSize: phone))
     }
 
-    func testRailScrollsFarWithoutLoadingTheWholeLibraryAndRestoresAfterImmersion() throws {
+    func testGridScrollIsContinuousAndRestoresExactOffsetAfterReading() throws {
         let source = LargeScrubDataSource()
         let carousel = CardCarouselViewController()
-        carousel.usesAdaptiveReaderRail = true
+        carousel.usesAdaptiveReaderGrid = true
         carousel.dataSource = source
         carousel.view.frame = CGRect(x: 0, y: 0, width: 1366, height: 1024)
         carousel.view.layoutIfNeeded()
         carousel.reloadData(centeringAt: 10)
         carousel.view.layoutIfNeeded()
-        let rail = try XCTUnwrap(findRail(in: carousel.view))
-        let center = try XCTUnwrap(carousel.cardView(at: 10))
-        let neighbor = try XCTUnwrap(carousel.cardView(at: 11))
-        XCTAssertTrue(center.superview === rail)
-        XCTAssertTrue(carousel.view.bounds.contains(neighbor.convert(neighbor.bounds, to: carousel.view)), "neighbor=\(neighbor.convert(neighbor.bounds, to: carousel.view)), rail offset=\(rail.contentOffset)")
-        XCTAssertLessThan(source.contentRequestCounts.count, 15)
+        let grid = try XCTUnwrap(findGrid(in: carousel.view))
+        let selected = try XCTUnwrap(carousel.cardView(at: 10))
+        let secondRow = try XCTUnwrap(carousel.cardView(at: 11))
+        XCTAssertTrue(selected.superview === grid)
+        XCTAssertEqual(selected.frame.minX, secondRow.frame.minX)
+        XCTAssertGreaterThan(secondRow.frame.minY, selected.frame.maxY)
+        XCTAssertLessThan(source.contentRequestCounts.count, 22)
 
-        let stride = neighbor.frame.midX - center.frame.midX
-        rail.contentOffset.x = stride * 800
-        carousel.scrollViewDidEndDecelerating(rail)
-        XCTAssertEqual(carousel.currentIndex, 800)
-        XCTAssertLessThan(source.contentRequestCounts.count, 30)
-        let selected = try XCTUnwrap(carousel.cardView(at: 800))
-        carousel.setImmersed(true, horizontalInset: 16)
-        XCTAssertFalse(selected.superview === rail)
+        // A fractional scroll remains fractional and does not select an article.
+        grid.contentOffset.x += 37.5
+        let offset = grid.contentOffset.x
+        XCTAssertEqual(carousel.currentIndex, 10)
+        carousel.setImmersed(true, extendsCard: true, horizontalInset: 16)
+        XCTAssertFalse(selected.superview === grid)
         XCTAssertEqual(selected.bounds.width, 1334, accuracy: 0.5)
-        XCTAssertFalse(rail.isScrollEnabled)
+        XCTAssertFalse(grid.isScrollEnabled)
         carousel.setImmersed(false)
-        XCTAssertTrue(selected.superview === rail)
-        XCTAssertEqual(selected.convert(selected.bounds, to: carousel.view).midX, 683, accuracy: 0.5)
-        XCTAssertTrue(rail.isScrollEnabled)
+        XCTAssertTrue(selected.superview === grid)
+        XCTAssertEqual(grid.contentOffset.x, offset, accuracy: 0.01)
+        XCTAssertEqual(selected.frame.minX, secondRow.frame.minX)
+        XCTAssertTrue(grid.isScrollEnabled)
 
+        grid.contentOffset.x = 800 * (selected.bounds.width + 24)
+        XCTAssertEqual(carousel.currentIndex, 10)
+        XCTAssertLessThan(source.contentRequestCounts.count, 40)
+        XCTAssertLessThan(carousel.children.count, 20)
         carousel.view.frame.size = CGSize(width: 430, height: 932)
         carousel.view.setNeedsLayout()
         carousel.view.layoutIfNeeded()
-        XCTAssertEqual(carousel.currentIndex, 800)
-        XCTAssertTrue(rail.isHidden)
-        XCTAssertFalse(selected.superview === rail)
+        XCTAssertEqual(carousel.currentIndex, 10)
+        XCTAssertTrue(grid.isHidden)
+        XCTAssertFalse(selected.superview === grid)
         XCTAssertLessThan(selected.bounds.width, 430)
     }
 
     func testPhoneExpansionUsesAvailableWidthAndReturnsToCard() throws {
         let source = OneCardViewportDataSource()
         let carousel = CardCarouselViewController()
-        carousel.usesAdaptiveReaderRail = true
+        carousel.usesAdaptiveReaderGrid = true
         carousel.dataSource = source
         carousel.view.frame = CGRect(x: 0, y: 0, width: 430, height: 932)
         carousel.view.layoutIfNeeded()
@@ -964,8 +973,8 @@ final class ReaderRailTests: XCTestCase {
         XCTAssertEqual(card.bounds.width, restingWidth, accuracy: 0.5)
     }
 
-    private func findRail(in view: UIView) -> UIScrollView? {
-        if view.accessibilityIdentifier == "Reader.cardRail" { return view as? UIScrollView }
-        return view.subviews.lazy.compactMap { self.findRail(in: $0) }.first
+    private func findGrid(in view: UIView) -> UIScrollView? {
+        if view.accessibilityIdentifier == "Reader.previewGrid" { return view as? UIScrollView }
+        return view.subviews.lazy.compactMap { self.findGrid(in: $0) }.first
     }
 }

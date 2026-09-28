@@ -373,6 +373,35 @@ final class ArticleCardsChromeTests: XCTestCase {
             "the \(label) chrome circle should be mounted")
     }
 
+    func testWidePreviewShowsItsTitleAndExpandsFromSecondRow() throws {
+        let title = "A title visible in the library"
+        let controller = makeArticleController(seed: "wide-preview-title", title: title,
+                                               size: CGSize(width: 1024, height: 1200))
+        controller.view.layoutIfNeeded()
+        let carousel = controller.carousel
+        // Slot zero is the utility tile; the first saved article is in row two.
+        let card = try XCTUnwrap(carousel.cardView(at: 1))
+        let content = try XCTUnwrap(carousel.contentController(at: 1) as? ReaderCardContentViewController)
+        let headers = headerViews(labelled: title, in: content.view)
+        XCTAssertTrue(headers.contains {
+            $0.alpha > 0.01 && $0.convert($0.bounds, to: content.view).intersects(content.view.bounds)
+        }, "each unselected preview must show its title")
+        let grid = try XCTUnwrap(card.superview as? UIScrollView)
+        let frame = card.frame
+        carousel.page(by: 1)
+        let animations = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animations) }
+        controller.carousel(carousel, didTapCenteredCardAt: 1)
+        XCTAssertTrue(carousel.isImmersed)
+        XCTAssertGreaterThan(card.bounds.height, frame.height)
+        XCTAssertGreaterThan(card.bounds.width, frame.width)
+        controller.carousel(carousel, didTapCenteredCardAt: 1)
+        XCTAssertFalse(carousel.isImmersed)
+        XCTAssertTrue(card.superview === grid)
+        XCTAssertEqual(card.frame, frame)
+    }
+
     func testScrollableTitleCopyKeepsInsetStableAndCentersFaviconBesideMultilineTitle() throws {
         let title = "A deliberately long article title that wraps across multiple header lines"
         let controller = makeArticleController(seed: "stable-title", title: title)

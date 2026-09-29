@@ -10,10 +10,9 @@ import Foundation
 /// and nothing about whether either app is installed.
 ///
 /// Each provider has a PRIMARY form and a fallback the caller opens when the
-/// primary cannot be opened here. ChatGPT's primary is its custom scheme,
-/// because the web form opens Safari even when the app is installed; Claude's
-/// is a universal link, which the Claude app claims when it is installed and
-/// the web serves when it is not.
+/// primary cannot be opened here. ChatGPT uses its web query route: opening
+/// `chatgpt://new-chat?prompt=` can launch the app while silently discarding
+/// the prompt. Claude uses a universal link.
 public enum LLMDeepLink {
 
     /// The longest URL a provider is asked to accept. Claude Code caps its `q`
@@ -39,7 +38,7 @@ public enum LLMDeepLink {
     ) -> URL? {
         switch provider {
         case .chatGPT:
-            return build("chatgpt://new-chat?prompt=", prompt)
+            return build("https://chatgpt.com/?q=", prompt)
         case .claude:
             switch claudeTarget {
             case .chat: return build("https://claude.ai/new?q=", prompt)
@@ -57,7 +56,7 @@ public enum LLMDeepLink {
     ) -> URL? {
         switch provider {
         case .chatGPT:
-            return build("https://chatgpt.com/?q=", prompt)
+            return nil
         case .claude:
             switch claudeTarget {
             case .chat: return nil

@@ -177,10 +177,11 @@ extension PluginCreateViewController: LLMHandoffRowDelegate {
         }
         let host = Self.host(inDescription: description)
         let prompt = LLMHandoffPrompts.pluginCreation(description: description, host: host)
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt) else { return }
         handoffStore.begin(.plugin(description: description, host: host), provider: provider)
         showWaiting(for: provider)
         descriptionView.resignFirstResponder()
-        launcher.openLLM(link, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: prompt))
+        if launcher.openPrompt(prompt, provider: provider) {
+            row.setHint(L10n.string("Plugins_createPromptCopied", provider.displayName))
+        }
     }
 }

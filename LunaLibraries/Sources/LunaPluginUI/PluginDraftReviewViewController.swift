@@ -399,10 +399,11 @@ extension PluginDraftReviewViewController: LLMHandoffRowDelegate {
         guard let origin else { return }
         let prompt = LLMHandoffPrompts.pluginCorrection(
             description: origin.description, host: origin.host, errors: correctionErrors)
-        guard let link = LLMDeepLink.url(for: provider, prompt: prompt) else { return }
         handoffStore.begin(
             .plugin(description: origin.description, host: origin.host), provider: provider)
         row.setHint(L10n.string("Plugins_create4Waiting", provider.displayName))
-        launcher.openLLM(link, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: prompt))
+        if launcher.openPrompt(prompt, provider: provider) {
+            row.setHint(L10n.string("Plugins_createPromptCopied", provider.displayName))
+        }
     }
 }

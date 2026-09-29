@@ -15,7 +15,7 @@ final class LLMDeepLinkTests: XCTestCase {
         let url = try XCTUnwrap(LLMDeepLink.url(for: .chatGPT, prompt: prompt))
         let value = try XCTUnwrap(
             URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "prompt" })?.value)
+                .queryItems?.first(where: { $0.name == "q" })?.value)
         XCTAssertEqual(value, prompt)
     }
 
@@ -54,14 +54,10 @@ final class LLMDeepLinkTests: XCTestCase {
         XCTAssertEqual(code.absoluteString, "https://claude.ai/code/new?q=x")
     }
 
-    /// ChatGPT's own app is asked first and the web form is the fallback;
-    /// Claude's chat link is already the web, so it has none.
-    func testFallbacksExistOnlyWhereThePrimaryIsAnAppScheme() throws {
+    func testChatGPTUsesTheWebQueryRouteInsteadOfTheUnsupportedAppPromptRoute() throws {
         let chatGPT = try XCTUnwrap(LLMDeepLink.url(for: .chatGPT, prompt: "x"))
-        XCTAssertEqual(chatGPT.scheme, "chatgpt")
-        XCTAssertEqual(
-            LLMDeepLink.fallbackURL(for: .chatGPT, prompt: "x")?.absoluteString,
-            "https://chatgpt.com/?q=x")
+        XCTAssertEqual(chatGPT.absoluteString, "https://chatgpt.com/?q=x")
+        XCTAssertNil(LLMDeepLink.fallbackURL(for: .chatGPT, prompt: "x"))
 
         XCTAssertNil(LLMDeepLink.fallbackURL(for: .claude, prompt: "x", claudeTarget: .chat))
         XCTAssertEqual(

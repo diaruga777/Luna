@@ -25,10 +25,24 @@ public final class LLMLauncher: LLMLaunching {
 
     public func openLLM(_ url: URL, fallback: URL?) {
         let application = UIApplication.shared
-        if application.canOpenURL(url) {
-            application.open(url)
-            return
+        application.open(url, options: [:]) { opened in
+            if !opened, let fallback { application.open(fallback) }
         }
-        if let fallback { application.open(fallback) }
+    }
+}
+
+public extension LLMLaunching {
+    /// Returns true when the prompt needed clipboard delivery because its
+    /// percent-encoded URL exceeded the provider limit. Never drop a tap.
+    @discardableResult
+    func openPrompt(_ prompt: String, provider: LLMProvider) -> Bool {
+        if let url = LLMDeepLink.url(for: provider, prompt: prompt) {
+            openLLM(url, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: prompt))
+            return false
+        }
+        UIPasteboard.general.string = prompt
+        let landing = LLMDeepLink.url(for: provider, prompt: "")!
+        openLLM(landing, fallback: LLMDeepLink.fallbackURL(for: provider, prompt: ""))
+        return true
     }
 }

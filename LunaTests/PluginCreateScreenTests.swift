@@ -47,12 +47,13 @@ final class PluginCreateScreenTests: XCTestCase {
         let launcher = RecordingCreateLauncher()
         let screen = PluginCreateViewController(
             prefill: "https://recipes.example.com/slow-roast — save the recipe",
-            launcher: launcher)
+            handoffStore: temporaryHandoffStore(), launcher: launcher)
         _ = UITestSupport.host(screen)
 
         screen.row(LLMHandoffRowView(), didChoose: .chatGPT)
 
-        XCTAssertEqual(launcher.opened.first?.scheme, "chatgpt")
+        XCTAssertEqual(launcher.opened.first?.scheme, "https")
+        XCTAssertEqual(launcher.opened.first?.host, "chatgpt.com")
         let prompt = launcher.opened.first.flatMap(LLMHandoffPromptReader.prompt(in:)) ?? ""
         XCTAssertTrue(prompt.contains("save the recipe"), prompt)
         XCTAssertTrue(prompt.contains("recipes.example.com"), prompt)
@@ -84,12 +85,31 @@ final class PluginCreateScreenTests: XCTestCase {
 
     func testAnEmptyDescriptionAsksForOneRatherThanOpeningAProvider() {
         let launcher = RecordingCreateLauncher()
-        let screen = PluginCreateViewController(launcher: launcher)
+        let screen = PluginCreateViewController(handoffStore: temporaryHandoffStore(), launcher: launcher)
         _ = UITestSupport.host(screen)
 
         screen.row(LLMHandoffRowView(), didChoose: .claude)
 
         XCTAssertTrue(launcher.opened.isEmpty)
+    }
+
+    func testAnEncodedPromptTooLongForTheURLIsCopiedInsteadOfDroppingTheTap() {
+        let launcher = RecordingCreateLauncher()
+        let store = temporaryHandoffStore()
+        let description = String(repeating: "保存", count: 600)
+        let screen = PluginCreateViewController(
+            prefill: description, handoffStore: store, launcher: launcher)
+        _ = UITestSupport.host(screen)
+        let prompt = LLMHandoffPrompts.pluginCreation(description: description, host: nil)
+        XCTAssertNil(LLMDeepLink.url(for: .chatGPT, prompt: prompt))
+        let previous = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previous }
+        let row = LLMHandoffRowView()
+        screen.row(row, didChoose: .chatGPT)
+        XCTAssertEqual(UIPasteboard.general.string, prompt)
+        XCTAssertEqual(launcher.opened.first?.host, "chatgpt.com")
+        XCTAssertNotNil(store.pluginRecord())
+        XCTAssertEqual(row.hintForTesting, L10n.string("Plugins_createPromptCopied", "ChatGPT"))
     }
 
     private func temporaryHandoffStore() -> LLMHandoffStore {

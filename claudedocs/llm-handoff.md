@@ -6,7 +6,7 @@ this: tap ChatGPT or Claude on the card, answer the prompt Luna already wrote,
 and bring the reply back as a Luna file (`claudedocs/luna-file.md`).
 
 Luna never calls a model over the network and holds no API key. It opens the
-provider's own app with the prompt in the URL, and the user is the one who
+provider's web or universal link with the prompt in the URL, and the user is the one who
 carries the answer back.
 
 ## The round trip
@@ -30,19 +30,23 @@ the user abandoned.
 
 | Provider | Opened first | Fallback |
 | --- | --- | --- |
-| ChatGPT | `chatgpt://new-chat?prompt=…` | `https://chatgpt.com/?q=…` |
+| ChatGPT | `https://chatgpt.com/?q=…` | none |
 | Claude (chat) | `https://claude.ai/new?q=…` | none — it is already the web |
 | Claude (Code) | `https://claude.ai/code/new?q=…` | `claude://code/new?q=…` |
 
-ChatGPT's own app is asked first because its web form opens Safari even when the
-app is installed. Claude's is a universal link, which the app claims when it is
-installed and the web serves when it is not.
+ChatGPT uses the web query route. The old undocumented custom scheme launched
+ChatGPT but could discard the prompt, and `canOpenURL` could not detect that.
+Claude uses a universal link. Native prompt consumption still needs verification
+with the installed provider app; an OS open callback only confirms URL dispatch.
 
 Encoding keeps every delimiter as data: the allowed set is `urlQueryAllowed`
 minus `& + = ? # /`, so a URL inside the prompt survives as a URL. A prompt whose
 built link would pass `LLMDeepLink.maxURLCharacters` (8,000) yields **no link** —
 a truncated prompt is a truncated instruction, and the prompt budget
-(`LLMHandoffPrompts.maxCharacters`, 3,600) leaves the encoding room.
+(`LLMHandoffPrompts.maxCharacters`, 3,600) generally leaves encoding room for
+Latin text. Plugin creation and correction now copy an oversized prompt to the
+clipboard, open the provider's empty composer and display a paste instruction.
+Unicode text can exceed the URL ceiling even inside the raw character budget.
 
 **Claude Code is a long press.** The Claude button carries a
 `UIContextMenuInteraction` offering "Use Claude chat" / "Use Claude Code", and
@@ -162,3 +166,10 @@ same-URL failed save and that a ready article is replaced in place.
 `LunaTests/SaveContentReplacementTests.swift` — the tracker's history and the
 media save's stale file. `LunaTests/UndownloadedMediaCardTests.swift` — that a
 recorded hand-off renders its hint with no tap, and a refusal replaces it.
+
+## Correctness review (2026-09-29)
+
+The provider buttons use unmodified template marks bundled from the providers’
+desktop apps; provenance is in `LunaDesignSystem/Resources/LLMProviderArtwork.md`.
+`LLMLauncher` checks the completion of the actual open before using a fallback.
+See [the plugin review](reviews/plugin-correctness-2026-09-29.md) for evidence and limits.

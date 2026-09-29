@@ -1564,3 +1564,5 @@
 "WriterLibrary_polish_unfiledDocuments_Luna" = "Unfiled Documents";
 "WriterLibrary_polish_unlinkedNote_Luna" = "Unlinked note";
 "WriterLibrary_polish_updateBookError_Luna" = "Couldn’t Update Book";
+
+"Plugins_createPromptCopied_Luna" = "Prompt copied. Paste it into %@, then open the .luna file in its reply.";

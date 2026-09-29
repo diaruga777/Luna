@@ -168,6 +168,56 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         throw error
     }
 
+    public func browseMac(_ request: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        return try await connection.browseMac(request)
+    }
+
+    /// Temporary, unindexed download. Ownership of the returned directory passes
+    /// to the preview presenter, which removes it when Quick Look closes.
+    public func downloadMacFile(path: String) async throws -> URL {
+        let response = try await browseMac(VaultMacBrowseRequest(.stat, path: path))
+        guard let file = response.entries.first, !file.isDirectory, file.size >= 0,
+              !file.version.isEmpty, file.path == URL(fileURLWithPath: path).standardizedFileURL.path else {
+            throw VaultMacBrowseError("The Mac returned invalid file information.")
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("VaultPreview-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            let capacity = try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber
+            guard let capacity, file.size <= max(0, capacity.int64Value - 200 * 1_024 * 1_024) else {
+                throw VaultMacBrowseError("There isn’t enough space on this iPhone to download this file. Free some space and try again.")
+            }
+            let destination = directory.appendingPathComponent((path as NSString).lastPathComponent)
+            guard FileManager.default.createFile(atPath: destination.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+            #if os(iOS)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+            #endif
+            let handle = try FileHandle(forWritingTo: destination)
+            defer { try? handle.close() }
+            var offset: Int64 = 0
+            while offset < file.size {
+                try Task.checkCancellation()
+                let length = Int(min(Int64(VaultMacBrowseProtocol.chunkSize), file.size - offset))
+                let chunk = try await browseMac(VaultMacBrowseRequest(.read, path: path, offset: offset,
+                    length: length, version: file.version))
+                guard let bytes = chunk.data, bytes.count == length else { throw VaultMacBrowseError("The Mac returned an incomplete file.") }
+                try Task.checkCancellation()
+                try handle.write(contentsOf: bytes)
+                offset += Int64(length)
+            }
+            let final = try await browseMac(VaultMacBrowseRequest(.stat, path: path))
+            guard final.entries.first?.version == file.version else { throw VaultMacBrowseError("This file changed during download. Open it again.") }
+            try Task.checkCancellation()
+            return destination
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
     public func stop(reason: String = "Background") async {
         await closeConnection(reason: reason)
         await setState(.idle)
@@ -282,6 +332,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     }
 
     public func deleteItem(named name: String, now: Date = Date()) async throws {
+        try BEPFileInfo.validateName(name)
         guard let record = try store.file(named: name), !record.deleted else { return }
         var names: [String] = []
         func collect(_ current: VaultFileRecord) throws {

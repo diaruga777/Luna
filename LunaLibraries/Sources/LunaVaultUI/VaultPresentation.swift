@@ -1,5 +1,6 @@
 import Foundation
 import LunaVaultStore
+import LunaVaultBEP
 
 /// The four user-visible connection states. Transport-specific retry,
 /// discovery, and BEP details deliberately stop below this boundary.
@@ -157,6 +158,7 @@ public protocol VaultPresentationProviding: Sendable {
     func downloadedFiles() async throws -> [VaultPresentedFile]
     func recentFiles(limit: Int) async throws -> [VaultPresentedFile]
     func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile]
+    func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse
     func children(of path: String) async throws -> [VaultPresentedFile]
     func refresh() async
 
@@ -177,6 +179,9 @@ public protocol VaultPresentationProviding: Sendable {
 }
 
 public extension VaultPresentationProviding {
+    func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
+        throw VaultMacBrowseError("Connect to an updated Luna Vault companion on your Mac to browse files.")
+    }
     func downloadedFiles() async throws -> [VaultPresentedFile] { [] }
     func pendingUploadCount() async throws -> Int { 0 }
     func pendingUploads() async throws -> [VaultPendingUpload] { [] }
@@ -197,6 +202,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
     public var downloadedFilesHandler: @Sendable () async throws -> [VaultPresentedFile]
     public var recentFilesHandler: @Sendable (Int) async throws -> [VaultPresentedFile]
     public var searchHandler: @Sendable (String, Int) async throws -> [VaultPresentedFile]
+    public var macDirectoryHandler: @Sendable (String?, Int64, Bool) async throws -> VaultMacBrowseResponse
     public var childrenHandler: @Sendable (String) async throws -> [VaultPresentedFile]
     public var refreshHandler: @Sendable () async -> Void
     public var pairingSnapshotHandler: @Sendable () async throws -> VaultPairingSnapshot
@@ -215,6 +221,9 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
         downloadedFiles: @escaping @Sendable () async throws -> [VaultPresentedFile] = { [] },
         recentFiles: @escaping @Sendable (Int) async throws -> [VaultPresentedFile] = { _ in [] },
         search: @escaping @Sendable (String, Int) async throws -> [VaultPresentedFile] = { _, _ in [] },
+        macDirectory: @escaping @Sendable (String?, Int64, Bool) async throws -> VaultMacBrowseResponse = { _, _, _ in
+            throw VaultMacBrowseError("Connect to an updated Luna Vault companion on your Mac to browse files.")
+        },
         children: @escaping @Sendable (String) async throws -> [VaultPresentedFile] = { _ in [] },
         refresh: @escaping @Sendable () async -> Void = {},
         pairingSnapshot: @escaping @Sendable () async throws -> VaultPairingSnapshot = {
@@ -238,6 +247,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
         downloadedFilesHandler = downloadedFiles
         recentFilesHandler = recentFiles
         searchHandler = search
+        macDirectoryHandler = macDirectory
         childrenHandler = children
         refreshHandler = refresh
         pairingSnapshotHandler = pairingSnapshot
@@ -256,6 +266,9 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
     public func downloadedFiles() async throws -> [VaultPresentedFile] { try await downloadedFilesHandler() }
     public func recentFiles(limit: Int) async throws -> [VaultPresentedFile] { try await recentFilesHandler(limit) }
     public func search(_ query: String, limit: Int) async throws -> [VaultPresentedFile] { try await searchHandler(query, limit) }
+    public func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
+        try await macDirectoryHandler(path, offset, showHidden)
+    }
     public func children(of path: String) async throws -> [VaultPresentedFile] { try await childrenHandler(path) }
     public func refresh() async { await refreshHandler() }
     public func pairingSnapshot() async throws -> VaultPairingSnapshot { try await pairingSnapshotHandler() }

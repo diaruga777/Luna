@@ -14,6 +14,94 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
 
+    func testMacBrowserDownloadsOutsideVaultWithoutIndexingOrMutating() async throws {
+        let folder = directory.appendingPathComponent("Vault")
+        let outside = directory.appendingPathComponent("Documents")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let expected = Data(repeating: 83, count: VaultMacBrowseProtocol.chunkSize * 2 + 37)
+        let source = outside.appendingPathComponent("Résumé 🌓.bin")
+        try expected.write(to: source)
+        let server = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
+        defer { server.close() }
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil, localID: transport.identity())
+        try await runtime.pair(code: server.code.text)
+        let page = try await runtime.macDirectory(path: outside.path, offset: 0, showHidden: false)
+        XCTAssertEqual(page.entries.map(\.name), [source.lastPathComponent])
+        let url = try await runtime.macFileURL(path: source.path)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        XCTAssertEqual(try Data(contentsOf: url), expected)
+        XCTAssertEqual(try Data(contentsOf: source), expected)
+        XCTAssertTrue(try store.liveFiles().isEmpty)
+        XCTAssertTrue(try store.pendingLocalChanges().isEmpty)
+        let search = try await runtime.search("Résumé", limit: 100)
+        XCTAssertTrue(search.isEmpty)
+        let downloads = try await runtime.downloadedFiles()
+        XCTAssertTrue(downloads.isEmpty, "External previews must not enter Vault's cache/index")
+        for invalid in [source.path, "../Documents/" + source.lastPathComponent] {
+            do { try await runtime.deleteItem(named: invalid); XCTFail("Accepted deletion outside Vault") } catch { }
+            do { try await runtime.importFile(at: source, named: invalid); XCTFail("Accepted upload outside Vault") } catch { }
+        }
+        XCTAssertEqual(try Data(contentsOf: source), expected)
+        await runtime.stop()
+    }
+
+    func testMacBrowserPaginationHiddenFilesSymlinksAndChangedFile() throws {
+        let browser = CompanionMacBrowser(homeURL: directory)
+        for index in 0..<260 { try Data([1, 2, 3]).write(to: directory.appendingPathComponent(String(format: "%03d.txt", index))) }
+        try Data([4]).write(to: directory.appendingPathComponent(".hidden"))
+        let first = try browser.perform(.init(.list, path: directory.path))
+        XCTAssertEqual(first.entries.count, 256)
+        let second = try browser.perform(.init(.list, path: directory.path, offset: XCTUnwrap(first.nextOffset)))
+        XCTAssertEqual(second.entries.count, 4)
+        XCTAssertNil(second.nextOffset)
+        XCTAssertEqual(Set((first.entries + second.entries).map(\.name)).count, 260)
+        let hidden = try browser.perform(.init(.list, path: directory.path, showHidden: true))
+        XCTAssertTrue(hidden.entries.contains { $0.name == ".hidden" })
+        let alias = directory.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: directory)
+        let links = try browser.perform(.init(.list, path: directory.path, offset: 256))
+        XCTAssertTrue(links.entries.contains { $0.name == "alias" && $0.isDirectory })
+        let source = directory.appendingPathComponent("000.txt")
+        let metadata = try XCTUnwrap(browser.perform(.init(.stat, path: source.path)).entries.first)
+        let read = try browser.perform(.init(.read, path: source.path, length: 3, version: metadata.version))
+        XCTAssertEqual(read.data, Data([1, 2, 3]))
+        XCTAssertThrowsError(try browser.perform(.init(.read, path: source.path, offset: -1, length: 1, version: metadata.version)))
+        XCTAssertThrowsError(try browser.perform(.init(.read, path: source.path, length: VaultMacBrowseProtocol.chunkSize + 1, version: metadata.version)))
+        try Data([9, 8, 7]).write(to: source, options: .atomic)
+        XCTAssertThrowsError(try browser.perform(.init(.read, path: source.path, length: 3, version: metadata.version)))
+        XCTAssertThrowsError(try browser.perform(.init(.stat, path: "/dev/null")))
+        XCTAssertThrowsError(try browser.perform(.init(.list, path: "relative")))
+        XCTAssertThrowsError(try browser.perform(.init(.list, path: directory.appendingPathComponent("missing").path)))
+    }
+
+    func testMacBrowserRequiresApprovedPeerAndIgnoresBrowserIndexes() async throws {
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("index.sqlite"))
+        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault")
+        let streams = PipeByteStream.pair()
+        let connection = BEPConnection(stream: streams.0, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        let request = BEPRequest(id: 1, folder: VaultMacBrowseProtocol.folder,
+            name: try VaultMacBrowseRequest(.list, path: directory.path).encodedName(), offset: 0, size: 0, hash: Data())
+        let denied = await delegate.connection(connection, serve: request)
+        if case .success = denied { XCTFail("Read before pairing approval") }
+        delegate.startServing(connection)
+        let allowed = await delegate.connection(connection, serve: request)
+        if case .failure = allowed { XCTFail("Approved peer could not browse") }
+        await delegate.connection(connection, didReceive: BEPIndex(folder: VaultMacBrowseProtocol.folder,
+            files: [BEPFileInfo(name: "must-not-create", type: .directory)], isUpdate: true))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("must-not-create").path))
+        XCTAssertTrue(try index.all().isEmpty)
+        await delegate.connection(connection, didCloseWith: nil)
+        let closed = await delegate.connection(connection, serve: request)
+        if case .success = closed { XCTFail("Read after disconnect") }
+        streams.0.close(); streams.1.close()
+    }
+
     func testInvalidBlockLayoutsFailBeforeRequestOrWrite() async throws {
         let hash = SHA256Digest.hash(Data([1]))
         let invalid: [[BlockInfo]] = [

@@ -137,6 +137,15 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             .map(Self.present)
     }
 
+    public func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
+        try await session.browseMac(VaultMacBrowseRequest(path == nil ? .locations : .list,
+            path: path ?? "", offset: offset, showHidden: showHidden))
+    }
+
+    public func macFileURL(path: String) async throws -> URL {
+        try await session.downloadMacFile(path: path)
+    }
+
     public func children(of path: String) async throws -> [VaultPresentedFile] {
         try store.children(of: path).map(Self.present)
     }

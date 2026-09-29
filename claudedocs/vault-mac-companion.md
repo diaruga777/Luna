@@ -37,3 +37,18 @@ Pairing mode lasts five minutes and displays the Mac device ID as QR/text. A
 new iPhone is shown with its ID and an Accept button. The menu exposes status,
 folder selection, public-discovery and Tailscale toggles, device-ID copying,
 Pair iPhone, and Quit.
+
+## Read-only browsing beyond Vault
+
+The paired iPhone can request live locations, directory pages, and regular-file
+reads from anywhere the companion is allowed to read. `CompanionMacBrowser`
+serves these through the versioned Luna browser namespace after the same pairing
+gate as Vault sync. No browser path is scanned recursively or stored in
+`companion.sqlite`; only the selected Vault folder is indexed and writable.
+
+Home/Desktop/Documents/Downloads, `/`, and `/Volumes` are offered as locations.
+Symbolic links can be followed for reads. Writes still use the original
+folder-relative, link-rejecting sync path. The pairing dialog states both scopes.
+For protected folders, grant the companion Files and Folders or Full Disk Access
+in macOS Privacy & Security. The app never changes these permissions itself.
+Both the iPhone app and companion need this version for Mac Files browsing.

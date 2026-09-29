@@ -451,7 +451,11 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     }
 
     public func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
-        guard transferLock.withLock({ authorized }), request.folder == folderID,
+        guard transferLock.withLock({ authorized }) else { return .failure(.noSuchFile) }
+        if request.folder == VaultMacBrowseProtocol.folder {
+            return await Task.detached(priority: .userInitiated) { CompanionMacBrowser().respond(to: request) }.value
+        }
+        guard request.folder == folderID,
               let record = try? index.file(named: request.name),
               record.blocks.indices.contains(Int(request.blockNo)),
               record.blocks[Int(request.blockNo)].hash == request.hash,

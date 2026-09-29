@@ -110,6 +110,30 @@ public actor BEPConnection {
         let request = BEPRequest(id: allocateRequestID(), folder: folder, name: name, offset: block.offset,
                                  size: block.size, hash: block.hash, blockNo: blockNo)
         try request.validateForWire()
+        let response = try await sendRequest(request)
+        guard SHA256Digest.hash(response.data) == block.hash else { throw BEPRequestError.hashMismatch }
+        return response.data
+    }
+
+    /// Browser replies have no pre-indexed hash: TLS authenticates these live
+    /// responses. Normal sync block requests above always retain hash checking.
+    public func browseMac(_ operation: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
+        let request = BEPRequest(id: allocateRequestID(), folder: VaultMacBrowseProtocol.folder,
+            name: try operation.encodedName(), offset: 0, size: 0, hash: Data())
+        let response: BEPResponse
+        do { response = try await sendRequest(request) }
+        catch BEPRequestError.peerCode {
+            throw VaultMacBrowseError("Mac browsing is unavailable. Update and reopen Luna Vault on your Mac, then reconnect.")
+        }
+        guard response.data.count <= VaultMacBrowseProtocol.maximumResponseSize else {
+            throw VaultMacBrowseError("The Mac returned too much browser data.")
+        }
+        let value = try JSONDecoder().decode(VaultMacBrowseResponse.self, from: response.data)
+        if let error = value.error { throw VaultMacBrowseError(error) }
+        return value
+    }
+
+    private func sendRequest(_ request: BEPRequest) async throws -> BEPResponse {
         let response: BEPResponse = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 guard !Task.isCancelled else {
@@ -131,8 +155,7 @@ public actor BEPConnection {
             Task { await self.failPending(id: request.id, error: CancellationError()) }
         }
         guard response.code == .noError else { throw BEPRequestError.peerCode(response.code) }
-        guard SHA256Digest.hash(response.data) == block.hash else { throw BEPRequestError.hashMismatch }
-        return response.data
+        return response
     }
 
     public func sendPing() async throws {

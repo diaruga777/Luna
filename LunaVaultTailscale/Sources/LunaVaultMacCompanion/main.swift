@@ -30,7 +30,7 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         window.title = "Luna Vault"; window.isReleasedWhenClosed = false
         let heading = NSTextField(labelWithString: "Luna Vault on Mac")
         heading.font = .systemFont(ofSize: 24, weight: .semibold)
-        let instructions = NSTextField(wrappingLabelWithString: "Choose a folder, copy the pairing code, and paste it in Vault Settings on your iPhone. Accept the request here to share this folder.")
+        let instructions = NSTextField(wrappingLabelWithString: "Choose a folder, copy the pairing code, and paste it in Vault Settings on your iPhone. Accept the request here to browse this Mac from your iPhone. Only the Vault folder is indexed and writable; other folders are read only.")
         codeField.isSelectable = true; codeField.maximumNumberOfLines = 4
         codeField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         let copy = NSButton(title: "Copy pairing code", target: self, action: #selector(copyCode))
@@ -162,8 +162,8 @@ private final class CompanionController: @unchecked Sendable {
                 let approved = await MainActor.run {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
-                    alert.messageText = "Share your Vault folder with this iPhone?"
-                    alert.informativeText = "\(hello.deviceName) wants access to \(folder.path).\n\nDevice: \(accepted.device.description)"
+                    alert.messageText = "Allow this iPhone to browse your Mac?"
+                    alert.informativeText = "\(hello.deviceName) can read files throughout this Mac, subject to macOS permissions. Only \(folder.path) is indexed and can receive uploads or deletions.\n\nDevice: \(accepted.device.description)"
                     alert.addButton(withTitle: "Accept"); alert.addButton(withTitle: "Reject")
                     return alert.runModal() == .alertFirstButtonReturn
                 }

@@ -7,6 +7,7 @@ import Foundation
 import LunaModels
 import LunaPluginKit
 import LunaStorage
+import LunaSend
 
 /// The reserved settings keys Luna itself reads. A schema may not declare one
 /// (§11.1 keeps the leading underscore), and `luna.settings.set` accepts them
@@ -28,11 +29,18 @@ public final class PluginExportRowProvider: PluginExportRowProviding {
 
     private let invoker: (any PluginHookInvoking)?
     private let stage: PluginExportStage?
+    private let store: SavesStore
+    private let coordinator: ArticleSendCoordinator
 
     /// The shipped provider reads the installed platform and the shared stage.
-    public init(invoker: (any PluginHookInvoking)? = nil, stage: PluginExportStage? = nil) {
+    public init(
+        invoker: (any PluginHookInvoking)? = nil, stage: PluginExportStage? = nil,
+        store: SavesStore = .shared, coordinator: ArticleSendCoordinator = .shared
+    ) {
         self.invoker = invoker
         self.stage = stage
+        self.store = store
+        self.coordinator = coordinator
     }
 
     private var activeInvoker: (any PluginHookInvoking)? {
@@ -57,9 +65,17 @@ public final class PluginExportRowProvider: PluginExportRowProviding {
 
     @MainActor
     public func runExport(pluginID: String, saveID: UUID) {
-        let stage = self.stage ?? PluginExportStage.shared
-        Task { @MainActor in
-            await stage.run(pluginID: pluginID, saveID: saveID, auto: false)
+        guard let export = activeInvoker?.loadedPlugins.first(where: { $0.id == pluginID })?.export
+        else { return }
+        if export.isDestination {
+            guard let item = store.item(withID: saveID) else { return }
+            let destinationID = PluginDestinationLegacyIDs.destinationID(forPluginID: pluginID)
+            Task { await coordinator.send(item, toDestinationID: destinationID) }
+        } else {
+            let stage = self.stage ?? PluginExportStage.shared
+            Task { @MainActor in
+                await stage.run(pluginID: pluginID, saveID: saveID, auto: false)
+            }
         }
     }
 
@@ -95,8 +111,9 @@ public enum PluginExportConfiguration {
             return false
         }
         for key in export.requiresSettings {
-            guard let json = settings.valueJSON(pluginID: pluginID, key: key),
-                  !json.isEmpty, json != "null", json != "\"\"", json != "false"
+            guard let json = settings.valueJSON(pluginID: pluginID, key: key) else { return false }
+            if listing.settings.contains(where: { $0.key == key && $0.isSecret }) { continue }
+            guard !json.isEmpty, json != "null", json != "\"\"", json != "false"
             else { return false }
         }
         // A plugin that declares `mail` sends through the connected account,

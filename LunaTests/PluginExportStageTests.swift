@@ -5,7 +5,7 @@
 
 import Foundation
 import LunaModels
-import LunaPluginExport
+@testable import LunaPluginExport
 import LunaPluginKit
 import LunaSend
 import LunaStorage
@@ -323,6 +323,43 @@ final class PluginExportStageTests: XCTestCase {
             store: store, destinations: [destination],
             retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
             now: { Date(timeIntervalSinceReferenceDate: 1_000) })
+    }
+
+    func testDestinationShareRowQueuesRetryAndRecordsSuccessfulDelivery() async {
+        let item = readyArticle()
+        let destination = destination(PluginExportFixtures.export(input: "url", isDestination: true))
+        let provider = PluginExportRowProvider(
+            invoker: invoker, store: store, coordinator: coordinator(destination))
+        invoker.resultJSON = "{\"status\":\"retry\"}"
+        provider.runExport(pluginID: Self.pluginID, saveID: item.id)
+        for _ in 0..<100 {
+            if store.item(withID: item.id)?.sendState(for: destination.id) == .queued { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .queued)
+        // Wait for the first invocation to settle before pressing again.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        invoker.resultJSON = "{\"status\":\"sent\"}"
+        provider.runExport(pluginID: Self.pluginID, saveID: item.id)
+        for _ in 0..<100 {
+            if store.item(withID: item.id)?.sendState(for: destination.id) == .sent { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .sent)
+    }
+
+    func testDestinationRegistryTracksImportsUpdatesAndDisablesWithoutRelaunch() {
+        let old = ArticleDestinationRegistry.snapshot
+        defer { ArticleDestinationRegistry.install(old.destinations, replacingBuiltInIDs: old.replacedIDs) }
+        invoker.plugins = []
+        PluginExportComposition.installDestinations(invoker: invoker)
+        XCTAssertTrue(ArticleDestinationRegistry.installed.isEmpty)
+        let export = PluginExportFixtures.export(input: "url", isDestination: true)
+        invoker.plugins = [PluginExportFixtures.summary(id: Self.pluginID, export: export)]
+        XCTAssertEqual(ArticleDestinationRegistry.installed.map(\.id), [PluginDestinationLegacyIDs.destinationID(forPluginID: Self.pluginID)])
+        invoker.plugins = []
+        XCTAssertTrue(ArticleDestinationRegistry.installed.isEmpty)
+        XCTAssertEqual(ArticleDestinationRegistry.replacedBuiltInIDs, Set(["kindle", "xteink"]))
     }
 
     func testASentStatusMarksTheSendSent() async {

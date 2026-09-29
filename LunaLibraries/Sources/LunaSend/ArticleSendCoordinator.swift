@@ -145,6 +145,7 @@ public enum ArticleDestinationRegistry {
     private static let lock = NSLock()
     private static var destinations: [any ArticleDestination] = []
     private static var replacedIDs: Set<String> = []
+    private static var provider: (() -> (destinations: [any ArticleDestination], replacedIDs: Set<String>))?
 
     /// Replaces what an earlier call installed. Idempotent, so a second
     /// platform install leaves one set of destinations rather than two.
@@ -154,22 +155,33 @@ public enum ArticleDestinationRegistry {
         lock.lock()
         self.destinations = destinations
         replacedIDs = ids
+        provider = nil
         lock.unlock()
     }
 
-    public static var installed: [any ArticleDestination] {
+    /// A plugin catalog changes after launch. Read its current declarations
+    /// whenever the coordinator needs destinations, including after imports,
+    /// updates, disables and changes made in another process.
+    public static func installProvider(
+        _ provider: @escaping () -> (destinations: [any ArticleDestination], replacedIDs: Set<String>)
+    ) {
         lock.lock()
-        defer { lock.unlock() }
-        return destinations
+        self.provider = provider
+        lock.unlock()
     }
 
-    /// Built-in destination ids a plugin now owns. The coordinator drops those
-    /// Swift destinations, so one id never has two delivery routes.
-    public static var replacedBuiltInIDs: Set<String> {
+    public static var snapshot: (destinations: [any ArticleDestination], replacedIDs: Set<String>) {
         lock.lock()
-        defer { lock.unlock() }
-        return replacedIDs
+        let provider = self.provider
+        let stored = (destinations, replacedIDs)
+        lock.unlock()
+        return provider?() ?? stored
     }
+
+    public static var installed: [any ArticleDestination] { snapshot.destinations }
+
+    /// Built-in destination ids a plugin now owns.
+    public static var replacedBuiltInIDs: Set<String> { snapshot.replacedIDs }
 
     /// Empties the registry. Tests use it to leave the process as they found it.
     public static func removeAll() {
@@ -350,9 +362,9 @@ public final class ArticleSendCoordinator {
     /// can be after `shared` was first touched.
     private var destinations: [ArticleDestination] {
         guard readsDestinationRegistry else { return builtInDestinations }
-        let replaced = ArticleDestinationRegistry.replacedBuiltInIDs
-        return builtInDestinations.filter { !replaced.contains($0.id) }
-            + ArticleDestinationRegistry.installed
+        let current = ArticleDestinationRegistry.snapshot
+        return builtInDestinations.filter { !current.replacedIDs.contains($0.id) }
+            + current.destinations
     }
 
     private func destination(id: String) -> ArticleDestination? {

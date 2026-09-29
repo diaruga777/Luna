@@ -70,17 +70,16 @@ public enum PluginExportComposition {
             ArticleDestinationRegistry.removeAll()
             return
         }
-        var destinations: [any ArticleDestination] = []
-        var pluginIDs: [String] = []
-        for plugin in invoker.loadedPlugins {
-            guard let export = plugin.export, export.isDestination else { continue }
-            destinations.append(PluginDestination(pluginID: plugin.id, export: export))
-            pluginIDs.append(plugin.id)
+        ArticleDestinationRegistry.installProvider {
+            let plugins = invoker.loadedPlugins.filter { $0.export?.isDestination == true }
+            let destinations: [any ArticleDestination] = plugins.compactMap { plugin in
+                guard let export = plugin.export else { return nil }
+                return PluginDestination(pluginID: plugin.id, export: export)
+            }
+            // Central Luna owns these integrations through plugins even when
+            // a plugin is disabled. Never resurrect its Swift twin on disable.
+            return (destinations, Set(PluginDestinationLegacyIDs.byPluginID.values))
         }
-        ArticleDestinationRegistry.install(
-            destinations,
-            replacingBuiltInIDs: PluginDestinationLegacyIDs.replacedIDs(
-                forLoadedPluginIDs: pluginIDs))
     }
 
     // MARK: - Kindle migration (§9.5)

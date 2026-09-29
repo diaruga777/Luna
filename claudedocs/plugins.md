@@ -53,13 +53,15 @@ consent screen still serves the manual `+` import, where the user chose the
 file themselves.
 
 `PluginDraftValidator` stages the draft in a temporary store, activates it on
-a disposable off-main runtime, and runs `classify` and `ingest` against the
+a disposable off-main runtime with its own VM and execution queue, and runs `classify` and `ingest` against the
 recorded page. It serves `fetch` and `html` only
 (`PluginDraftValidator.servedCapabilities`); every other declared namespace is
 the standard unavailable proxy, so a manifest asking for `storage` passes with
 a "not tested" warning rather than being refused for a grant it will hold once
 installed. With no page to try, the draft is only loaded and the report says
-so. Nothing is written to the installed-plugin tree, the saves database, the
+so. Export-only and device drafts also receive a registration-only check, with
+an explicit warning that delivery and device hooks were not executed. A target
+URL must match the manifest even when no recovery-case object accompanies it. Nothing is written to the installed-plugin tree, the saves database, the
 Keychain or user files. A failing draft offers **Generate again**, which opens
 a new chat with `LLMHandoffPrompts.pluginCorrection` carrying the original
 request and the findings.
@@ -81,7 +83,7 @@ prompt and may carry more operational context.
 | `LunaPluginExport` | LunaPluginRuntime, LunaSend, LunaEpub, LunaMailAccount | `PluginExportStage`, `PluginExportInputProducer`, `PluginDestination`, `PluginDestinationLegacyIDs`, `PluginExportRowProvider`, mail/notifications/exports bridges |
 | `LunaPluginTransport` | LunaPluginRuntime, LunaSend (lock only) | `luna.bluetooth`/`luna.wifi` bridges, `PluginBluetoothCenter`/`Store`, `PluginBluetoothSession`, `PluginPairedDeviceStore`, `CoreBluetoothPluginTransport` |
 | `LunaPluginUI` | LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaDesignSystem, LunaSavesUI, LunaArchiveReader | Settings → Plugins, import/consent, the settings-schema renderer, `luna.ui`/`luna.settings`/`luna.browser` bridges, `PluginBrowserViewController`, `PluginUnlockFlow` |
-| `LunaBundledPlugins` | none (resources only) | the nine bundled `*.js` plugins under a `Plugins/` resource folder — **not** named `Resources`: a directory literally called `Resources` at a bundle's root makes `codesign` read the bundle as a framework layout and refuse it (`LunaLibraries/Package.swift` comment, `LunaLibraries/Sources/LunaBundledPlugins/LunaBundledPlugins.swift`) |
+| `LunaBundledPlugins` | none (resources only) | the sixteen bundled `*.js` plugins under a `Plugins/` resource folder — **not** named `Resources`: a directory literally called `Resources` at a bundle's root makes `codesign` read the bundle as a framework layout and refuse it (`LunaLibraries/Package.swift` comment, `LunaLibraries/Sources/LunaBundledPlugins/LunaBundledPlugins.swift`) |
 
 Model types and the adopter protocols live in `LunaModels/Plugin/` (bottom of
 the stack), so a kind module can install a witness without depending on any
@@ -1336,3 +1338,22 @@ that POSTs an article's Markdown to a URL read from a setting, returning
 `null` since it delivers itself). Both were run under
 `node tools/plugin-sim/run.mjs` against local fixtures; see `docs/plugins/README.md`
 for the exact commands and output.
+
+## Correctness fixes (2026-09-29)
+
+- Launch and reload evaluation share the one-second load deadline used by
+  import preflight. A timeout stops waiting; it cannot terminate JavaScript.
+  Draft validation has its own VM and queue, so it cannot wedge live plugins.
+- `PluginSettingsStore` routes secret schema fields to `PluginSecretsStore`
+  under the field's bare key. Settings reads and change hooks expose only a
+  set marker. Existing plaintext values migrate before normal launch-time
+  plugin loading. Required secret fields count as configured when set.
+- Destination share rows use `ArticleSendCoordinator`, preserving queued,
+  retry, sent and remote-file bookkeeping. Ordinary exports still use the
+  export stage directly. The destination registry reads the live runtime on
+  each access, so import, update and disable take effect without relaunch.
+  Central Luna keeps the Swift Kindle/Xteink routes retired when their plugins
+  are disabled.
+
+Review, remaining issues and verification limits:
+[plugin correctness review](reviews/plugin-correctness-2026-09-29.md).

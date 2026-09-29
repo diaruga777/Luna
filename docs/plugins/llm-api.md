@@ -56,12 +56,12 @@ ingest({ url, claim: { kind, itemId? }, page?, reason, context }): Promise<Model
 
 - `classify` runs for every matching plugin, in priority order, on every
   save. Budget 8 s; it should need none of it. Decide from the URL's path and
-  query. Return `false` for anything that is not this content. The first
-  plugin to claim wins.
+  query. Return `false` for anything that is not this content. Each claimed plugin is tried until one produces a valid Model.
 - `ingest` runs for the plugin that claimed. Budget 30 s of idle time (each
   `luna.fetch` resets it). Return `null` when the page turns out to have no
-  such content; Luna continues with its own extraction. Throwing an error
-  is logged and treated like `null`.
+  such content; Luna tries the next plugin, then its own extraction. Ordinary errors
+  are logged and treated like `null`. Let `browser-deferred` propagate so
+  Luna can pause the save and finish the browser step in the app.
 - `page` is present only when the save started from Safari with the page
   already open: `{ url, html?, title?, source }`. Use it when present to avoid
   a fetch. `context` is `"app" | "share" | "action" | "safari"`.
@@ -165,10 +165,10 @@ luna.text.clean(s): string                                          // tags drop
 ## 8. Other namespaces (declare only if used)
 
 - `storage` — `luna.storage.get/set/delete/keys`, per-plugin JSON key/value, ≤ 256 KB a value.
-- `settings` — `luna.settings.get(key)`; values a user typed into Settings for fields the manifest declares under `"settings": [{ "key", "label", "type": "text"|"secret"|"toggle"|"choice" }]`.
+- `settings` — `await luna.settings.get(key)` reads values from manifest fields such as `{"key":"apiKey","label":"API Key","type":"password","secret":true}`. Types include `text`, `password`, `toggle`, `choice`, `number`, `email`, `url`. Secret fields return `""` when set; read their value with `await luna.secrets.get("apiKey")` (declare `secrets` too).
 - `secrets` — `luna.secrets.get/set/delete`, Keychain-backed.
 - `crypto` — `sha256`, `hmacSHA256`, `randomBytes` (base64 in and out).
-- `browser` — `luna.browser.open({ url, detect })` shows the page to the user to pass a login or challenge, then returns `{ html, cookieHeader }`. Only for pages that truly need a person.
+- `browser` — `luna.browser.open({ url, detect })` shows the page to the user to pass a login or challenge, then returns `{ html, cookieHeader }`. Only for pages that truly need a person. `detect` is a JavaScript string evaluated on the page that must return `"wait"`, `"challenge"`, `"done"` or `"error"`. Pass the ingest input's `saveId` when available. Rethrow `browser-deferred` in any catch handler.
 - `files`, `downloads`, `ui`, `mail`, `notifications`, `bluetooth`, `wifi`, `exports` exist for export plugins and device integrations; an ingest plugin does not need them.
 
 ## 9. Errors

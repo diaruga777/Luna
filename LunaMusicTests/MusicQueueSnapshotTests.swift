@@ -125,7 +125,7 @@ final class MusicLayoutTests: XCTestCase {
     func testCollectionSearchFiltersAlbumsAndSongs() {
         let first = LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars")
         let second = LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist")
-        for result in [MusicResult.album(MPMediaItemCollection(items: [first, second])), .artist(MPMediaItemCollection(items: [first, second]))] {
+        for result in [MusicResult.album(MPMediaItemCollection(items: [first, second])), .artist(MPMediaItemCollection(items: [first, second])), .playlist(LayoutPlaylist(items: [first, second]))] {
             let rows: [MusicResult]
             if case .artist = result {
                 rows = [.album(MPMediaItemCollection(items: [first])), .album(MPMediaItemCollection(items: [second]))]

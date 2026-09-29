@@ -37,6 +37,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var repeatButton: UIButton!
     private var queueButton: UIButton!
     private var token: NSObjectProtocol?
+    private var routeToken: NSObjectProtocol?
     private var timer: Timer?
     private var showsQueue: Bool
     private var artworkID: UInt64?
@@ -58,6 +59,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         view.backgroundColor = UIColor(white: 0.2, alpha: 1)
         view.tintColor = .white
         backdrop.contentMode = .scaleAspectFill
+        backdrop.alpha = 0.15
         backdrop.clipsToBounds = true
         shade.backgroundColor = UIColor.black.withAlphaComponent(0.25)
         [backdrop, blur, shade, stage, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, route, grabber, close].forEach(view.addSubview)
@@ -157,6 +159,9 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         token = NotificationCenter.default.addObserver(forName: .lunaMusicPlaybackChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        routeToken = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updateOutputName() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in Task { @MainActor in self?.updateTime() } }
         refresh()
         updateQueueAccessibility()
@@ -165,6 +170,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
 
     deinit {
         if let token { NotificationCenter.default.removeObserver(token) }
+        if let routeToken { NotificationCenter.default.removeObserver(routeToken) }
         timer?.invalidate()
     }
 
@@ -225,7 +231,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         for child in [options, sourceLabel, table] { child.transform = .identity }
         let optionsY = max(86, compactNames.maxY + 14)
         options.frame = CGRect(x: 0, y: optionsY, width: width, height: 38)
-        let sourceHeight: CGFloat = player.sourcePlaylistName == nil ? 30 : 58
+        let sourceHeight = sourceLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
         sourceLabel.frame = CGRect(x: 0, y: options.frame.maxY + 20, width: width, height: sourceHeight)
         table.frame = CGRect(x: 0, y: sourceLabel.frame.maxY + 12, width: width, height: max(0, height - sourceLabel.frame.maxY - 12))
         for child in [options, sourceLabel, table] {
@@ -270,6 +276,16 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         return velocity.y < 0
     }
 
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === queuePan else { return true }
+        var touched = touch.view
+        while let current = touched, current !== stage {
+            if current is UIControl { return false }
+            touched = current.superview
+        }
+        return true
+    }
+
     private func stopTransition() {
         guard let animator, animator.state == .active else { return }
         let fraction = animator.fractionComplete
@@ -301,6 +317,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         artistLabel.text = player.nowPlaying?.artist ?? "Choose music from your library"
         if artworkID != player.nowPlaying?.persistentID {
             let image = MusicStyle.image(player.nowPlaying, size: 800)
+            view.backgroundColor = MusicStyle.artworkColor(image) ?? UIColor(white: 0.2, alpha: 1)
             MusicStyle.changeArtwork(art, to: image, hasArtwork: image != nil)
             MusicStyle.changeArtwork(backdrop, to: image, hasArtwork: image != nil)
             artworkID = player.nowPlaying?.persistentID
@@ -318,7 +335,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
             source.append(NSAttributedString(string: "\nFrom \(name)", attributes: [.font: MusicStyle.font(19), .foregroundColor: UIColor.white.withAlphaComponent(0.6)]))
         }
         sourceLabel.attributedText = source
-        outputLabel.text = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portName).joined(separator: ", ")
+        updateOutputName()
         more.isEnabled = player.nowPlaying != nil
         if let item = player.nowPlaying {
             more.menu = UIMenu(children: [
@@ -333,13 +350,29 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         }
         table.reloadData()
         if upcomingCount == 0 {
-            var config = UIContentUnavailableConfiguration.empty()
-            config.text = "No Upcoming Songs"
-            config.secondaryText = "Choose a song or add music with Play Next."
-            table.backgroundView = UIContentUnavailableView(configuration: config)
+            let empty = UIView()
+            let label = UILabel()
+            label.font = MusicStyle.font(20)
+            label.textColor = UIColor.white.withAlphaComponent(0.55)
+            label.textAlignment = .center
+            label.numberOfLines = 0
+            if player.repeatMode == .one { label.text = "Repeating Song" }
+            else if player.repeatMode == .all && !player.queue.isEmpty { label.text = "Repeating \(player.queue.count) Songs" }
+            else { label.text = "No Upcoming Songs" }
+            label.translatesAutoresizingMaskIntoConstraints = false
+            empty.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: empty.topAnchor, constant: 24),
+                label.leadingAnchor.constraint(equalTo: empty.leadingAnchor, constant: 12),
+                label.trailingAnchor.constraint(equalTo: empty.trailingAnchor, constant: -12)
+            ])
+            table.backgroundView = empty
         } else { table.backgroundView = nil }
         view.setNeedsLayout()
         updateTime()
+    }
+    private func updateOutputName() {
+        outputLabel.text = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portName).joined(separator: ", ")
     }
     private func updateTime() {
         guard !slider.isTracking else { return }

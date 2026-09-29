@@ -78,6 +78,11 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     }
     private func rebuildHeader() {
         guard let collection else { return }
+        if collection.playlist != nil, let color = MusicStyle.artworkColor(collection.artwork(size: 120)) {
+            overrideUserInterfaceStyle = .dark
+            view.backgroundColor = color
+            view.tintColor = .white
+        }
         let header = MusicCollectionHeader(result: collection)
         header.onPlay = { [weak self] shuffle in
             guard let self, let current = self.collection else { return }
@@ -119,6 +124,7 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         guard let header = table.tableHeaderView else { return }
         let height = header.systemLayoutSizeFitting(CGSize(width: table.bounds.width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         if header.frame.width != table.bounds.width || abs(header.frame.height - height) > 1 { header.frame.size = CGSize(width: table.bounds.width, height: height); table.tableHeaderView = header }
+        if collection != nil { scrollViewDidScroll(table) }
     }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { gridAlbums.map { ($0.count + 1) / 2 } ?? filteredResults.count }
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

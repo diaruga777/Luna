@@ -29,6 +29,38 @@ internal enum MusicStyle {
     static func image(_ item: MPMediaItem?, size: CGFloat = 300) -> UIImage? {
         item?.artwork?.image(at: CGSize(width: size, height: size))
     }
+    /// Sample a small palette so artwork contributes a calm background color,
+    /// without making the cover itself legible behind controls.
+    static func artworkColor(_ image: UIImage?) -> UIColor? {
+        guard let cgImage = image?.cgImage else { return nil }
+        let side = 16
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(data: bytes.baseAddress, width: side, height: side,
+                                          bitsPerComponent: 8, bytesPerRow: side * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return nil }
+        var bins: [Int: (weight: CGFloat, hue: CGFloat, saturation: CGFloat)] = [:]
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            guard pixels[offset + 3] > 200 else { continue }
+            let color = UIColor(red: CGFloat(pixels[offset]) / 255, green: CGFloat(pixels[offset + 1]) / 255,
+                                blue: CGFloat(pixels[offset + 2]) / 255, alpha: 1)
+            var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0
+            color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil)
+            guard saturation > 0.15, brightness > 0.12 else { continue }
+            let key = Int(hue * 24)
+            let weight = saturation * brightness
+            let previous = bins[key] ?? (0, 0, 0)
+            bins[key] = (previous.weight + weight, previous.hue + hue * weight, previous.saturation + saturation * weight)
+        }
+        guard let dominant = bins.values.max(by: { $0.weight < $1.weight }) else { return UIColor(white: 0.2, alpha: 1) }
+        return UIColor(hue: dominant.hue / dominant.weight,
+                       saturation: min(0.8, dominant.saturation / dominant.weight * 0.8), brightness: 0.3, alpha: 1)
+    }
     static func artwork(_ image: UIImage? = nil, corner: CGFloat = 8) -> UIImageView {
         let view = UIImageView(image: image ?? UIImage(systemName: "music.note"))
         view.contentMode = image == nil ? .center : .scaleAspectFill

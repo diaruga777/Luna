@@ -117,3 +117,32 @@ transition, and player dismissal. Search focus and warm/cold queue routes still
 pass. Simulator screenshots were reviewed against the supplied references;
 MPVolumeView does not expose a working volume slider on Simulator, so actual
 volume output and populated-library artwork remain device checks.
+
+## Screenshot polish (2026-09-29)
+
+Artist, album, playlist and category screens have native pull-down search. A
+query filters only the current collection and clearing it restores the header.
+Artist grids show album years. Playlists build a four-cover mosaic when four
+distinct album artworks are available and use an artwork-derived background.
+The collection title appears in the navigation bar after its header scrolls away.
+
+Playlists expose **Add Music** in the header and overflow menu. The sheet searches
+library songs and preserves multiple selections across searches. Add submits the
+selection through `MPMediaPlaylist.add`; failures retain the selection and show
+an error. A successful edit reloads the open playlist. Creating a playlist opens
+its detail screen, and song menus also offer New Playlist. Smart/Genius playlists
+are excluded from song-menu destinations; other API write failures are surfaced.
+
+The mini player grows to fit Dynamic Type and reserves separate 44-point play
+and skip targets. Queue layout uses untransformed frames so repeated layout and
+queue transitions cannot shift mode buttons over the compact song header. Rows
+size to their text, empty collection messages follow the header, and the player
+uses smaller paused artwork, a song menu, a subdued artwork color and audio-output
+name. Search uses the native text size instead of an oversized custom field font.
+
+Verification: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. The 22 unit/layout tests cover
+queue policy, large-text mini-player bounds and hit targets, repeated queue
+layout, empty playlist geometry, collection search and multi-selection across
+searches. All 4 foreground/queue UI tests pass. Layout tests use in-memory media
+snapshots and do not write the real library. Real playlist writes, populated
+library artwork, volume and audio routes still require a signed-in device check.

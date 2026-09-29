@@ -1,269 +1,213 @@
-# Luna plugin API (for writing an ingest plugin)
+# Luna plugin authoring contract
 
-Luna is an iOS app that saves links: articles, products with a price, and
-media files. A plugin is ONE JavaScript file (ES2022, no `import`/`export`/
-`require`, no libraries) that turns a URL into a **Model** Luna saves. Luna
-renders the Model itself; a plugin never draws UI.
+Deliver ONE ES2022 JavaScript file named `<name>.luna`. No imports, packages
+or `require`. Luna runs the JavaScript and renders its data with native UI.
+A plugin extracts articles, products or media from URLs, or exports saved items.
 
-Deliver the plugin as a file named `<name>.luna`.
+## File and manifest
 
-## 1. File shape
+The first non-whitespace token is a block comment with `luna-plugin` on its
+first line and JSON on the following lines. Call `luna.register` once at top
+level. Every supplied hook must be a function. Return JSON-compatible data;
+cycles, BigInt, DOM objects and functions are not Models.
 
 ```js
 /* luna-plugin
 {
-  "id": "user.example.com",
+  "id": "user.example",
   "name": "Example",
   "version": "1.0.0",
   "api": 1,
   "produces": ["article"],
   "match": { "hosts": ["example.com", "*.example.com"] },
-  "priority": 0,
   "capabilities": ["fetch", "html"]
 }
 */
 luna.register({
-  classify({ url }) { /* fast: decide from the URL alone */ },
-  async ingest({ url, claim }) { /* fetch, parse, return a Model or null */ },
+  classify({ url }) {
+    return /^\/articles\/[^/]+/.test(luna.parseURL(url)?.pathname || "")
+      ? { kind: "article" } : false;
+  },
+  async ingest({ url, page }) {
+    const source = page?.html ? {ok:true, text:page.html, url:page.url} : await luna.fetch(url);
+    if (!source.ok) return null;
+    const article = await luna.html.article(source.text, source.url);
+    return article ? {kind:"article", ...article, baseURL:source.url} : null;
+  },
 });
 ```
 
-The header comment is the first thing in the file. Its first line is exactly
-`luna-plugin`; the rest of the comment is one JSON object. Luna reads the
-header without running the code. The body calls `luna.register` exactly once
-at top level.
+Adapt the host, path rule and extraction to the request. Never invent text,
+prices or media URLs. Keep the plugin ID stable across updates.
 
-| Field | Rule |
-| --- | --- |
-| `id` | lowercase `[a-z0-9.-]`, ≤ 100 chars, stable across versions |
-| `name` | ≤ 40 chars |
-| `version` | `major.minor.patch` |
-| `api` | `1` |
-| `produces` | non-empty subset of `"article"`, `"media"`, `"product"` |
-| `match` | `{ "hosts": [...] }` exact hosts or `"*.host"` wildcards, or `{ "any": true }` for URL-shape plugins |
-| `priority` | integer, higher runs first; default 0 |
-| `capabilities` | only the `luna.*` namespaces the code calls (`fetch`, `html`, `storage`, `settings`, `secrets`, `files`, `crypto`, `browser`, …). An undeclared namespace is `undefined`. |
-| `description` | optional, ≤ 200 chars |
+- `id`: lowercase `[a-z0-9.-]`, up to 100 characters, no empty dot segments.
+- `name`: non-empty, up to 40 characters; `description`: optional, up to 200.
+- `version`: `major.minor.patch`; `api`: `1`.
+- Ingest requires non-empty `produces` (`article`, `media`, `product`) and
+  `match`: exact hosts, `*.example.com` (apex and subdomains), or `{any:true}`.
+  Write hosts without a scheme, port or path.
+- Host-specific plugins precede `match.any`. Within each group, higher
+  integer `priority` runs first, then ID. Default is 0; bundled extractors use
+  100. Use 101 to override one for the same host. A usable Model stops the walk.
+- `capabilities`: only namespaces used by the plugin. Undeclared namespaces
+  are absent; declared but unavailable ones reject `unavailable-here`.
+- Human-facing text may be a language map such as `{en:"Name",es:"Nombre"}`;
+  every value must be a string and `en` is required.
 
-## 2. Hooks
-
-Each hook receives exactly one JSON argument.
+## Hooks and flow
 
 ```ts
-classify({ url, page?, context }): false | { kind: "article"|"media"|"product", itemId?: string }
-ingest({ url, claim: { kind, itemId? }, page?, reason, context }): Promise<Model | null>
+classify({url, page?, context, intent?}): false | {kind, itemId?}
+ingest({url, claim, page?, context, reason, saveId?, intent?}): Model | null
+export(input): {text:string} | {url:string} | {file:FileHandle} | DeliveryStatus | null
 ```
 
-- `classify` runs for every matching plugin, in priority order, on every
-  save. Budget 8 s; it should need none of it. Decide from the URL's path and
-  query. Return `false` for anything that is not this content. Each claimed plugin is tried until one produces a valid Model.
-- `ingest` runs for the plugin that claimed. Budget 30 s of idle time (each
-  `luna.fetch` resets it). Return `null` when the page turns out to have no
-  such content; Luna tries the next plugin, then its own extraction. Ordinary errors
-  are logged and treated like `null`. Let `browser-deferred` propagate so
-  Luna can pause the save and finish the browser step in the app.
-- `page` is present only when the save started from Safari with the page
-  already open: `{ url, html?, title?, source }`. Use it when present to avoid
-  a fetch. `context` is `"app" | "share" | "action" | "safari"`.
+All hooks may be async. `context` is `app`, `share`, `action` or `safari`;
+`page` may supply `{url, html?, title?, source}`. Reuse its HTML if present.
+`reason` is `save`, `resume` or `reresolve`. `classify` should decide cheaply
+from the URL (8-second budget). Ingest has a 30-second idle budget refreshed
+by bridge activity. Return `null` to decline; Luna tries the next plugin and
+then native extraction. Ordinary errors also fall through and are logged.
 
-## 3. Models
+Let `browser-deferred` propagate. A blanket catch returning null loses the
+browser handoff. Media extractors should return false when
+`intent === "transcribe"`; transcript plugins may then return an article.
+No polling loops, busy waits or timers.
 
-Strings are capped (title/name 300 chars, others 200, excerpt 1000, URLs
-4096, article `html` 4 MB). A relative URL is resolved against the page URL.
-Never invent a value; omit an optional field you cannot read.
+## Models
 
 ```ts
-interface ArticleModel {
-  kind: "article"; title: string; html: string;     // html: the COMPLETE body as clean HTML
-  author?: string; publishedAt?: string;            // ISO 8601
-  language?: string; leadImageURL?: string; excerpt?: string; baseURL?: string;
-  document?: { url: string; type: "pdf"|"epub"|"docx"|"rtf"|"html"|"md"|"txt" };  // a file Luna parses instead of html
+Article = {
+  kind:"article", title:string, html?:string,
+  author?:string, publishedAt?:string, language?:string,
+  leadImageURL?:string, excerpt?:string, baseURL?:string,
+  document?:{url:string,type:"pdf"|"epub"|"docx"|"rtf"|"html"|"md"|"txt",headers?:Record<string,string>},
+  transcription?:{url:string,type:"audio"|"video",audioURL?:string,headers?:Record<string,string>,expiresAt?:number}
 }
-interface ProductModel {
-  kind: "product"; name: string;
-  price: { amount: string; currency: string };      // amount "129.99" (digits and a dot), currency ISO 4217
-  imageURL?: string; brand?: string; productId?: string;
-  identifiers?: { gtin?: string; mpn?: string; sku?: string };
-  sellers?: { url: string; name?: string; price?: { amount: string; currency: string } }[];
+Media = {
+  kind:"media", title?:string, author?:string, platform?:string, itemId?:string,
+  thumbnailURL?:string, expiresAt?:number,
+  assets:{url:string,type:"video"|"image"|"gif"|"audio",audioURL?:string,
+          thumbnailURL?:string,quality?:string,headers?:Record<string,string>}[]
 }
-interface MediaModel {
-  kind: "media"; title?: string; author?: string; thumbnailURL?: string; itemId?: string;
-  assets: { url: string; type: "video"|"image"|"gif"|"audio";
-            thumbnailURL?: string; audioURL?: string; quality?: string;
-            headers?: Record<string,string> }[];    // 1–50 direct file URLs; headers only user-agent, referer, cookie, accept, accept-language, origin, range
-  expiresAt?: number;                               // epoch seconds, for signed URLs
+Product = {
+  kind:"product", name:string, price:{amount:string,currency:string},
+  imageURL?:string, brand?:string, productId?:string,
+  identifiers?:{gtin?:string,mpn?:string,sku?:string},
+  sellers?:{url:string,name?:string,price?:{amount:string,currency:string}}[]
 }
 ```
 
-Article `html` keeps `p`, `h2`–`h4`, `blockquote`, `ul`/`ol`/`li`, `pre`,
-`img` (absolute `src`), `a` (absolute `href`), `figure`/`figcaption`, and
-drops navigation, ads, related links, comments and scripts.
+Articles need HTML, a document or a transcription. Documents and
+transcriptions are mutually exclusive; optional HTML precedes a transcript.
+Use a decimal string for price (`"19.99"`) and the actual currency (`"USD"`).
+Caps: title/name 300 characters, short strings 200, excerpt 1000, URLs 4096,
+HTML 4 MB, assets 1–50, sellers up to 20. Media/document/transcription headers
+allow user-agent, referer, cookie, accept, accept-language, origin and range.
+Expiry is epoch seconds. Relative Model URLs resolve against the saved URL;
+use absolute URLs or an article's baseURL after redirects.
 
-## 4. Always available
+## Helpers
 
-```ts
-luna.register(hooks)
-luna.parseURL(url, base?): { href, protocol, hostname, pathname, search, searchParams: Record<string,string>, hash } | null
-luna.log(message, data?)                   // Luna's diagnostics log
-luna.env: { context, api: 1, pluginId, version, locale, languages }
-luna.LunaError                             // throw new luna.LunaError("code", "message")
-luna.bytes: { fromBase64, toBase64, utf8Encode, utf8Decode }
+There is no global DOM, `fetch`, `URL`, `TextEncoder` or `TextDecoder` in the
+app. Use these helpers; all names in this section except fetch/html/text are
+always available:
+
+```js
+luna.parseURL(url, base) // parsed fields or null; searchParams.get/getAll/has/entries
+luna.log(message, data)
+luna.localize({en:"Name",es:"Nombre"})
+luna.env // {context,api,pluginId,version,locale,languages}
+new luna.LunaError("code", "message")
+luna.bytes.utf8Encode(text) // Uint8Array
+luna.bytes.utf8Decode(bytes) // string, replaces malformed UTF-8
+luna.bytes.fromBase64(text) // Uint8Array
+luna.bytes.toBase64(bytes) // string
 ```
 
-## 5. `luna.fetch` (capability `fetch`)
+Declare `fetch`:
 
-```ts
-luna.fetch(url | { url, method?, headers?, userAgent?, body?, cookies?, redirect?, maxBytes?, timeout?, as? })
-  : Promise<{ ok, status, url, redirected, headers, text?, base64?, truncated, bytes }>
-// method GET|POST|HEAD|PUT; body string | {json} | {form} | {base64}; cookies "shared"|"ephemeral"|"none";
-// redirect "follow"|"manual"; timeout seconds (idle, default 20); as "text"|"base64"
-// userAgent: "safari" | "googlebot" | "googlebot-mobile" | "bingbot" | "facebookbot" | a literal UA string
-
-luna.fetch.text(url, opts?): Promise<string>        // GET, rejects "fetch-failed" on a non-2xx status
-luna.fetch.json(url, opts?): Promise<unknown>       // GET + JSON.parse
-luna.fetch.doc(url, opts?): Promise<HTMLDocument>   // GET + luna.html.parse with baseURL set to the final URL
+```js
+const r = await luna.fetch(url); // or request object below
+// r: {ok,status,url,redirected,headers,text?,base64?,truncated,bytes}
+// text is a string, NOT a .text() method
+await luna.fetch.text(url, options); // rejects non-2xx
+await luna.fetch.json(url, options); // parses JSON, rejects invalid JSON
+await luna.fetch.doc(url, options);  // needs html too; uses final URL as base
 ```
 
-Fetch only the page's own site (and its CDN for media). A blocked page
-sometimes opens with `userAgent: "googlebot"` or with the `Referer` of the
-site's front page.
+Requests: `{url, method?, headers?, userAgent?, body?, cookies?, redirect?,
+maxBytes?, timeout?, as?}`. Timeout is seconds (default 20, capped at 120).
+Body: string, `{json: value}`, `{form: fields}`, `{base64: text}`, or multipart.
+Cookies: `shared` (default), `ephemeral`, `none`. Redirect: `follow` (default),
+`manual`, `headThenGet`. Response form: `text` or `base64`.
+User agents: `safari`, `googlebot`, `googlebot-mobile`, `bingbot`, `facebookbot`
+or a literal string. Helpers accept the same request options except `url`/`as`.
 
-## 6. `luna.html` (capability `html`)
+Declare `html` (includes `luna.text`):
 
-```ts
-luna.html.parse(html, baseURL?): HTMLDocument
-luna.html.text(html): string                          // tags stripped, entities decoded, script/style dropped
-luna.html.jsonScripts(doc, type?): unknown[]          // parsed <script type="application/ld+json"> (default) contents
-luna.html.jsonLD(doc): object[]                       // same, with @graph flattened and bad JSON skipped
-luna.html.meta(doc): { title?, description?, canonical?, image?, author?, published?, siteName?, language?, type? }
-                                                      // <title>, OpenGraph, Twitter cards, meta author, article:published_time, link canonical, html lang, JSON-LD
-luna.html.article(html, baseURL?): Promise<{ title, html, text, author?, publishedAt?, leadImageURL?, excerpt? } | null>
-                                                      // Luna's own main-content extraction; await it; null when the page has no article body
+```js
+const doc = luna.html.parse(html, baseURL);
+doc.querySelector(css); doc.querySelectorAll(css); // element or null; array
+// elements: textContent, innerHTML, outerHTML, children, parentElement, tagName,
+// getAttribute, hasAttribute, attributes, matches, closest, absoluteURL(attr)
+// documents also have title, documentElement, head and body
+luna.html.meta(doc); // title, description, canonical, image, author, published, siteName, language, type
+luna.html.jsonLD(doc); // objects; flattens @graph, skips bad JSON
+luna.html.jsonScripts(doc, type); // default: application/ld+json
+await luna.html.article(html, baseURL); // {title,html,text,author?,...} or null; ALWAYS await
+luna.html.text(html);
+luna.text.clean(text);
+luna.text.price(text); // {amount, currency?} or null
+luna.text.date(text); // ISO date or null
 ```
 
-`HTMLDocument` / `HTMLElement`:
+Selectors support tags, classes, IDs, attributes, descendant/child
+combinators, `:not`, `:first-child`, `:nth-child`; no `:has` or `:contains`.
+Omit unknown optional fields. Use `element.absoluteURL("src")` or
+`luna.parseURL(value, finalURL)?.href` for relative media URLs.
 
-```ts
-querySelector(css), querySelectorAll(css) → Array, closest(css), matches(css)
-textContent, innerHTML, outerHTML, children, parentElement, tagName (upper-case)
-getAttribute(name), hasAttribute(name), attributes, absoluteURL(attr)   // resolves href/src against the base
-doc.title, doc.documentElement, doc.head, doc.body
-```
+## Exports and settings
 
-Selectors: type, `.class`, `#id`, `[attr]`, `[attr=v]`, `^=`, `$=`, `*=`,
-descendant and `>` child combinators, `:not()`, `:first-child`, `:nth-child()`.
-No `:has()`, no `:contains()`.
-
-## 7. `luna.text` (with capability `html`)
-
-```ts
-luna.text.price(s): { amount: string; currency?: string } | null   // "$1,299.00" → {amount:"1299.00",currency:"USD"}; "1.299,00 €" → {amount:"1299.00",currency:"EUR"}
-luna.text.date(s): string | null                                    // common absolute dates → ISO 8601; relative dates → null
-luna.text.clean(s): string                                          // tags dropped, entities decoded, whitespace collapsed, trimmed
-```
-
-## 8. Other namespaces (declare only if used)
-
-- `storage` — `luna.storage.get/set/delete/keys`, per-plugin JSON key/value, ≤ 256 KB a value.
-- `settings` — `await luna.settings.get(key)` reads values from manifest fields such as `{"key":"apiKey","label":"API Key","type":"password","secret":true}`. Types include `text`, `password`, `toggle`, `choice`, `number`, `email`, `url`. Secret fields return `""` when set; read their value with `await luna.secrets.get("apiKey")` (declare `secrets` too).
-- `secrets` — `luna.secrets.get/set/delete`, Keychain-backed.
-- `crypto` — `sha256`, `hmacSHA256`, `randomBytes` (base64 in and out).
-- `browser` — `luna.browser.open({ url, detect })` shows the page to the user to pass a login or challenge, then returns `{ html, cookieHeader }`. Only for pages that truly need a person. `detect` is a JavaScript string evaluated on the page that must return `"wait"`, `"challenge"`, `"done"` or `"error"`. Pass the ingest input's `saveId` when available. Rethrow `browser-deferred` in any catch handler.
-- `files`, `downloads`, `ui`, `mail`, `notifications`, `bluetooth`, `wifi`, `exports` exist for export plugins and device integrations; an ingest plugin does not need them.
-
-## 9. Errors
-
-Every rejection is a `luna.LunaError` with `.code`: `bad-argument`,
-`fetch-failed`, `network-refused` (blocked host), `too-large`,
-`capability-not-declared` (the manifest did not declare the namespace a
-helper needs, such as `html` for `luna.fetch.doc`), `unavailable-here` (a
-namespace this process cannot serve), `cancelled`.
-Catch what you can recover from; otherwise return `null` from `ingest`.
-
-## 10. Complete examples
-
-Article, using the metadata and content helpers:
+An export-only plugin omits `produces`/`match` and registers `export`:
 
 ```js
 /* luna-plugin
-{"id":"user.example.com","name":"Example","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["example.com","*.example.com"]},"capabilities":["fetch","html"]}
+{"id":"user.copy-markdown","name":"Copy Markdown","version":"1.0.0","api":1,
+ "export":{"kinds":["article"],"input":"markdown","title":"Copy Markdown"}}
 */
-luna.register({
-  classify({ url }) {
-    const u = luna.parseURL(url);
-    return u && /^\/\d{4}\/\d{2}\/[^/]+/.test(u.pathname) ? { kind: "article" } : false;
-  },
-  async ingest({ url }) {
-    const doc = await luna.fetch.doc(url);
-    const meta = luna.html.meta(doc);
-    const article = await luna.html.article(doc.outerHTML, url);
-    if (!article) return null;
-    return {
-      kind: "article",
-      title: meta.title || article.title,
-      html: article.html,
-      author: meta.author || article.author,
-      publishedAt: luna.text.date(meta.published || article.publishedAt || ""),
-      leadImageURL: meta.image || article.leadImageURL,
-      language: meta.language,
-    };
-  },
-});
+luna.register({ export(input) { return {text:input.text}; } });
 ```
 
-Product, from JSON-LD with a DOM fallback:
+Available input formats: article → url/epub/pdf/docx/markdown/text/html/json;
+media → url/json/file; product → url/json. Every declared kind must support
+`input`. Text formats use `input.text`; files use `input.file`; JSON uses
+`input.json`. Input also includes kind, format, saveId, url and title.
+Return exactly one of `text`, `url`, `file` or `status`; null means no share
+output. Delivery statuses are `sent`, `failed` or `retry`, with optional
+message/hard/remoteName. A queued destination additionally declares
+`export.destination:true` and requires the full destination/device contract.
 
-```js
-/* luna-plugin
-{"id":"user.shop.example","name":"Example Shop","version":"1.0.0","api":1,"produces":["product"],"match":{"hosts":["shop.example"]},"capabilities":["fetch","html"]}
-*/
-luna.register({
-  classify({ url }) {
-    return /\/products\/[^/]+/.test(luna.parseURL(url)?.pathname || "") ? { kind: "product" } : false;
-  },
-  async ingest({ url }) {
-    const doc = await luna.fetch.doc(url);
-    const ld = luna.html.jsonLD(doc).find((o) => o["@type"] === "Product");
-    if (ld && ld.offers) {
-      const offer = Array.isArray(ld.offers) ? ld.offers[0] : ld.offers;
-      return { kind: "product", name: ld.name, brand: ld.brand?.name || ld.brand,
-               imageURL: Array.isArray(ld.image) ? ld.image[0] : ld.image,
-               price: { amount: String(offer.price), currency: offer.priceCurrency } };
-    }
-    const name = doc.querySelector("h1")?.textContent;
-    const price = luna.text.price(doc.querySelector(".price")?.textContent || "");
-    if (!name || !price?.currency) return null;
-    return { kind: "product", name: luna.text.clean(name), price, imageURL: luna.html.meta(doc).image };
-  },
-});
-```
+Declare capabilities before using them:
 
-Media, from a JSON API the page's site exposes:
+- `settings`: `await luna.settings.get(key)`, `.all()`, `.set(key,value)`.
+  Schema: `settings:[{key:"endpoint",type:"url",label:"Endpoint",required:true}]`.
+  Types: text/email/url/password/number/toggle/choice/pairedDevice/action/info.
+  Choice needs `options:[{id,label}]`. Keys use ASCII letters/digits/underscore,
+  no leading underscore or duplicates. Booleans must be true/false.
+- `secrets`: `await luna.secrets.get/set/delete`. For a token, declare a
+  password field with `secret:true` and read it through secrets.get.
+  settings.get masks stored secrets as `""`. Secret writes are app-only.
+- `storage`: await get/set/delete/keys; JSON values up to 256 KB per key.
+- `browser`: await open({url,saveId?,detect}); returns HTML and cookieHeader.
+  detect is JS text returning wait/challenge/done/error. Extensions defer.
+- `files`, `crypto`, `downloads`, `ui`, `mail`, `notifications`, `bluetooth`,
+  `wifi`, `exports`: specialized APIs; consult the full API and bundled
+  Kindle/Xteink implementations before writing device/delivery code.
 
-```js
-/* luna-plugin
-{"id":"user.clips.example","name":"Clips","version":"1.0.0","api":1,"produces":["media"],"match":{"hosts":["clips.example"]},"capabilities":["fetch"]}
-*/
-luna.register({
-  classify({ url }) {
-    const id = luna.parseURL(url)?.pathname.match(/^\/v\/([A-Za-z0-9_-]+)/)?.[1];
-    return id ? { kind: "media", itemId: id } : false;
-  },
-  async ingest({ claim }) {
-    const info = await luna.fetch.json(`https://clips.example/api/v/${claim.itemId}`);
-    if (!info?.mp4) return null;
-    return { kind: "media", title: info.title, thumbnailURL: info.poster,
-             assets: [{ url: info.mp4, type: "video", thumbnailURL: info.poster }] };
-  },
-});
-```
+## Verify
 
-## 11. Checklist before answering
-
-- Header parses as JSON; `id`, `name`, `version`, `api`, `produces`, `match` present.
-- Every `luna.*` namespace the code calls is in `capabilities`; nothing extra.
-- `classify` returns `false` for other pages on the same site.
-- `ingest` returns only kinds listed in `produces`, with the required fields
-  (`article`: `title`, `html`; `product`: `name`, `price.amount`,
-  `price.currency`; `media`: `assets[].url`, `assets[].type`), or `null`.
-- No invented text, prices or URLs. No loops that wait. Errors caught.
+Check the JSON header, capabilities, hook names, path matching and Model
+fields. Return false on unrelated paths and null on missing content. Keep
+browser deferrals intact. Use saved fixtures when running the Node harness;
+passing validation is not proof of live extraction or delivery. Test in Luna.

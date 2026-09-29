@@ -26,6 +26,8 @@
 }
 */
 
+/// <reference path="../../../tools/plugin-sim/luna-plugin.d.ts" />
+
 // An export plugin needs no `produces`/`classify`/`ingest` — those are the
 // ingest hooks. It needs only `export`, which the manifest's own `export`
 // declaration requires `luna.register` to provide.

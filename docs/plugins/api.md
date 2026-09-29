@@ -93,7 +93,9 @@ produce a specific code your `ingest`/`export`/etc. caller can read back
 luna.register(hooks: PluginHooks): void;
 ```
 
-Call this exactly once, at the top level. **Every hook is called with
+Call this exactly once, at the top level. Supplied hooks must be functions;
+Luna captures their values once at registration. Results must be JSON-compatible;
+serialization errors are reported as hook failures. **Every hook is called with
 exactly one JSON argument** — this is why `onBluetooth` takes `event` alone
 (read the live session with the separate, synchronous
 `luna.bluetooth.session()`) and `onAction` takes `{ key, action? }` rather than a bare
@@ -135,7 +137,7 @@ plugin serves fails the save; it never falls through to a download.
 ## Always present
 
 ```ts
-luna.parseURL(url: string, base?: string): ParsedURL;
+luna.parseURL(url: string, base?: string): ParsedURL | null;
 luna.log(message: string, data?: unknown): void;
 luna.bytes: {
   fromBase64(s: string): Uint8Array;
@@ -640,7 +642,7 @@ interface ArticleTranscriptionSpec {
 }
 interface ArticleModel {
   kind: "article"; title: string; author?: string; publishedAt?: string;
-  html?: string;                     // required unless transcription is set; then it PRECEDES the transcript
+  html?: string;                     // required unless document or transcription is set; text precedes a transcript
   baseURL?: string; leadImageURL?: string; excerpt?: string;
   language?: string;                 // BCP-47; also the transcription language when set
   document?: ArticleDocumentSpec;    // never together with transcription

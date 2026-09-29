@@ -20,14 +20,14 @@ implementation agent) sees an answer in seconds instead of a full
 
 ```sh
 cd tools/plugin-sim
-npm install
+npm ci
 ```
 
 ## Running a plugin
 
 ```sh
 node run.mjs <plugin.js> <url>
-node run.mjs <plugin.js> <url> --hook classify   # classify only
+node run.mjs <plugin.js> <url> --hook classify   # classify, then ingest if claimed
 node run.mjs <plugin.js> <url> --hook ingest     # ingest only, against a synthetic claim
 node run.mjs <plugin.js> <url> --hook export     # export-only convenience run
 node run.mjs <plugin.js> <url> --fixture ./fixtures/some-platform
@@ -43,10 +43,9 @@ decline it; an `article` Model may then carry a `transcription` spec instead
 of `html`, and the validator checks that spec's shape. The bundled transcript
 plugins' fixture directories are under `fixtures/<platform>-transcript*/`.
 
-The first form prints the `classify` verdict and, when it claims the URL, the
-`ingest` Model as JSON. `validate` and `test` print one structured JSON report
+The default and `test` forms use the same evaluator and report. Every command prints one structured JSON report
 and exit non-zero when the manifest, registration, hook result, or timeout is
-invalid. They evaluate the plugin in a child process and kill that process at
+invalid. All forms evaluate the plugin in a child process and kill that process at
 the deadline, so a draft with a top-level infinite loop cannot hang the shell.
 
 `--fixture <dir>` answers every `luna.fetch` from a file in that directory
@@ -91,11 +90,12 @@ so there is no page-side backing to compare.
 
 ## Manifest rules
 
-`run.mjs` does not carry its own copy of the manifest limits. It reads
+`manifest.mjs` does not carry its own copy of the manifest limits. It reads
 `LunaLibraries/Sources/LunaPluginKit/Resources/PluginManifestRules.json`, the
 same file the app bundles, and `PluginManifestRulesParityTests` pins that file
-to `PluginManifestParser`'s own constants. So a name this harness accepts is a
-name the app accepts.
+to `PluginManifestParser`'s own constants. Shared acceptance fixtures also compare host patterns, translations,
+settings, export formats and Bluetooth declarations with the native parser.
+The full native Model decoder remains the authority for Model limits.
 
 ## Typings
 
@@ -104,6 +104,7 @@ authoring docs under `docs/plugins/`. Reference it from a plugin file for
 editor checking:
 
 ```js
+// Place this AFTER the JSON header; adjust the path for your plugin.
 /// <reference path="../../tools/plugin-sim/luna-plugin.d.ts" />
 ```
 
@@ -112,8 +113,23 @@ editor checking:
 - `luna.browser` — declared but always rejects `unavailable-here`; see above.
 - `luna.secrets`, `luna.ui`, `luna.mail`, `luna.notifications`,
   `luna.bluetooth`, `luna.wifi`, `luna.exports` — app-only or WebKit-only
-  capabilities with no Node equivalent. `bridge.mjs` simply never installs
-  them, matching how an undeclared capability is absent everywhere else.
+  capabilities with no Node equivalent. Declared names reject `unavailable-here`; undeclared names remain absent.
 - A three-strikes disable — the `validate`/`test` parent kills a child at its
   deadline and reports a timeout; production's JavaScriptCore policy remains
   Luna's responsibility.
+
+## Checks and practical limits
+
+Run `npm test` for runtime primitives, shared manifest cases, CLI regressions,
+bundled registrations, starter fixtures, HTML/text parity and starter type checks.
+
+`luna.fetch` timeout values are seconds (default 20, capped at 120). The
+harness uses a wall-clock request deadline including body consumption and
+aborts the request on expiry; the app uses an idle network deadline. CLI
+`--timeout` is milliseconds and bounds the whole child process in all modes.
+The child process is a timeout boundary, not an OS security sandbox: only run
+plugin source you trust in Node. Browser/Node globals are not portable to JSC.
+
+The harness checks common Model shapes, not every native field/cap. `ok:true`
+with `ingest:null` is a valid decline, not successful extraction. A host
+mismatch fails the run because Luna would never select that plugin.

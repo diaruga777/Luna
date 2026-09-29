@@ -150,7 +150,7 @@ than accumulating a second runtime.
 ### 2.1 Shape
 
 One UTF-8 `.js` file, ES2022 (JavaScriptCore on iOS 18 — async/await,
-optional chaining, classes, `Promise`, typed arrays, `TextEncoder`), no
+optional chaining, classes, `Promise`, typed arrays; use `luna.bytes` for text encoding), no
 `import`/`export`/`require`. Two parts:
 
 1. **The header**: the first non-whitespace token must be a block comment
@@ -164,8 +164,8 @@ optional chaining, classes, `Promise`, typed arrays, `TextEncoder`), no
    import with a field-and-line error.
 2. **The body**, which must call `luna.register(hooks)` exactly once at top
    level. `register` and the declared capability namespaces are the only
-   things on `luna` before that call; `PluginContext.seal()` then
-   `Object.freeze`s `luna` and `luna.bytes`.
+   things on `luna` before that call; the host freezes its grants before source evaluation. Registration validates
+   function values and stores a frozen snapshot of the hooks.
 
 ### 2.2 Manifest fields, as the parser enforces them
 
@@ -1357,3 +1357,25 @@ for the exact commands and output.
 
 Review, remaining issues and verification limits:
 [plugin correctness review](reviews/plugin-correctness-2026-09-29.md).
+
+## September 29 authoring audit follow-up
+
+The authoring guide now starts with tested article/media/product files and an
+export example. AI prompts carry a working article implementation, precedence
+rules and export guidance. The compact reference and typings agree on nullable
+parseURL and document-only articles. `site/dist/p1` is the generated local copy;
+these source changes do not deploy the public site.
+
+Runtime settlement now uses captured Promise methods for plain values,
+Promises and thenables. Throwing then getters, cycles and BigInt report errors
+instead of disappearing as declines or timing out. Registration requires
+functions and snapshots getters once. Safari and Node return null for invalid
+URLs, matching native behavior. UTF-8 uses replacement characters for malformed
+input and matches TextDecoder's leading BOM handling.
+
+The manifest parser rejects malformed hosts, export option types and Bluetooth
+flags. Node reads shared enum/format tables and runs the same 57 manifest cases.
+All CLI modes use one bounded evaluator, perform host matching and cross a JSON
+boundary. Node fetch timeouts use seconds, cover response bodies and abort the
+request; unavailable declared capabilities reject consistently. The Node tool
+remains an approximation of native network/adoption behavior, not a sandbox.

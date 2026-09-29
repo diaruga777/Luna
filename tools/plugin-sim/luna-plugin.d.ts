@@ -238,7 +238,7 @@ export interface ArticleModel {
   title: string;
   author?: string;
   publishedAt?: string;
-  /** Required unless `transcription` is set; with it, optional text that
+  /** Required unless `document` or `transcription` is set; with a recording, text that
    *  PRECEDES the transcript (a description, the post's own words). */
   html?: string;
   baseURL?: string;
@@ -605,7 +605,7 @@ export interface Bytes {
 /// an undeclared one is `undefined`, never a stub that throws.
 export interface Luna {
   register(hooks: PluginHooks): void;
-  parseURL(url: string, base?: string): ParsedURL;
+  parseURL(url: string, base?: string): ParsedURL | null;
   log(message: string, data?: unknown): void;
   bytes: Bytes;
   env: Env;

@@ -1,752 +1,154 @@
-# Writing a Luna plugin
+# Write a Luna plugin
 
-This guide is for a JavaScript developer with no iOS background. It walks
-through writing, testing and importing a plugin for Luna, the iOS app.
+A plugin is one JavaScript file with a JSON header and one `luna.register`
+call. It either extracts an article, media item or product from a URL, or
+exports a saved item. Luna owns the UI. Only central Luna runs plugins;
+the Reader, Downloader and Price Tracker sibling apps use their native paths.
 
-A plugin is one `.js` file. It extends one of two things Luna does:
+## Start from a working file
 
-- **Ingest** — turn a URL into a Model Luna can save (an article, a media
-  item, or a product). Only central Luna (the paid, all-kinds app) runs
-  plugins; the three sibling apps do not.
-- **Export** — turn a saved item into a file, or deliver it somewhere
-  (email, a webhook, a Bluetooth reader).
+| Task | Starter | What to change |
+| --- | --- | --- |
+| Read an article | [minimal-article.js](examples/minimal-article.js) | Host, article path rule, extraction if needed |
+| Save a video | [minimal-media.js](examples/minimal-media.js) | Host, clip path rule, video selector |
+| Track a product | [minimal-product.js](examples/minimal-product.js) | Host, product path rule, price source |
+| Send Markdown to a webhook | [export-webhook.js](examples/export-webhook.js) | Delivery requirements; the user sets the endpoint |
 
-Luna never runs a plugin-authored screen. It renders every Model with its
-own built-in reader, media card, or product card. A plugin's job stops at
-"here is the data"; Luna's job is showing it.
+From the repository root:
 
-For the full API reference, see [`api.md`](./api.md) and
-[`luna-plugin.d.ts`](../../tools/plugin-sim/luna-plugin.d.ts) in this repo.
-For a deeper, code-cited account of how the platform works internally, see
-`claudedocs/plugins.md`.
+```sh
+npm ci --prefix tools/plugin-sim
+cp docs/plugins/examples/minimal-media.js my-plugin.luna
+node tools/plugin-sim/run.mjs validate my-plugin.luna
+node tools/plugin-sim/run.mjs test my-plugin.luna https://clipvault.example/clip/abc123 \
+  --fixture docs/plugins/examples/fixtures/clipvault
+```
 
-## 1. The file
+Change the manifest's `id`, `name`, `match.hosts`, and the path/selector rules
+for your site. Keep the ID stable for updates. Import the `.luna` file into
+Luna and review its permissions and draft test. A `.js` file works for manual
+plugin import too. Run a real save in Luna before relying on it.
 
-A plugin file has two parts: a header comment, and a body.
+The fixture command makes no network requests. A report with `ok: true`
+means the checks passed; look at `result.ingest` to see the actual Model.
+`null` is a legal decline, not successful extraction. The Node harness checks
+common shapes; native draft validation checks the full Model decoder.
+
+For autocomplete, put this **after** the JSON header (adjust the path when
+moving the file):
+
+```js
+/// <reference path="./tools/plugin-sim/luna-plugin.d.ts" />
+```
+
+## The contract
 
 ```js
 /* luna-plugin
 {
-  "id": "app.luna.reddit",
-  "name": "Reddit",
+  "id": "user.example",
+  "name": "Example",
   "version": "1.0.0",
   "api": 1,
-  "produces": ["media"],
-  "match": { "hosts": ["reddit.com", "*.reddit.com", "redd.it", "*.redd.it"] },
-  "priority": 100,
-  "capabilities": ["fetch"]
+  "produces": ["article"],
+  "match": { "hosts": ["example.com"] },
+  "capabilities": ["fetch", "html"]
 }
 */
 luna.register({
-  classify({ url }) { /* … */ },
-  async ingest({ url, claim }) { /* … */ },
-});
-```
-
-The header must be the very first thing in the file — the first
-non-whitespace characters must be `/*`, and the comment's first line
-(trimmed) must read `luna-plugin`. Everything after that line, up to the
-closing `*/`, is parsed as one JSON object. Luna reads this header WITHOUT
-running any of your code — this is what lets it show a safe "here's what
-this plugin can do" screen before installing anything.
-
-The most important header fields:
-
-| Field | Meaning |
-| --- | --- |
-| `id` | A reverse-DNS string, lowercase letters/digits/`.`/`-` only, e.g. `"app.luna.reddit"`. This is your plugin's permanent identity — it is also a folder name on disk, so keep it stable across versions. |
-| `name` | Shown in Settings and on the install screen. ≤ 40 characters. |
-| `version` | `major.minor.patch`, e.g. `"1.0.0"`. |
-| `api` | Always `1` right now. |
-| `produces` | For an ingest plugin: which Model kinds it can return — any of `"article"`, `"media"`, `"product"`. Omit this entirely for an export-only plugin. |
-| `match` | For an ingest plugin: `{ "hosts": [...] }` (exact hostnames or `"*.example.com"` wildcards) or `{ "any": true }` for a plugin that inspects the URL shape rather than the host. |
-| `priority` | A number; higher runs first among plugins that match the same URL. Bundled plugins ship at `100`. |
-| `capabilities` | The `luna.*` namespaces this plugin needs (§4). An undeclared namespace simply does not exist on `luna` — there is no way to reach it by accident. |
-
-The body must call `luna.register({ ... })` **exactly once**, at the top
-level of the file. `register` is the only thing on `luna` before that call.
-
-A user-visible field — `name`, `description`, `export.title`, and a
-`settings[]` field's `label`/`help`/`placeholder`/`options[].label` — may be
-a table instead of a plain string, keyed by BCP-47 language tag, which MUST
-include `"en"`:
-
-```json
-"label": { "en": "Kindle address", "es": "Dirección de Kindle" }
-```
-
-Luna resolves this to one string when it imports the plugin, matching the
-device's own preferred languages (an exact tag, then that tag's language —
-`"pt-BR"` falls back to `"pt"` — then `"en"`). Your own code can apply the
-same rule to a table it builds at runtime with `luna.localize(table)`.
-
-
-
-## 2. Writing an ingest plugin, step by step
-
-We'll build the bundled Reddit plugin
-(`LunaLibraries/Sources/LunaBundledPlugins/Plugins/reddit.js`) up from
-nothing. Its job: given a Reddit post URL, find the hosted video.
-
-### Step 1 — `classify`: is this URL yours?
-
-```js
-luna.register({
   classify({ url }) {
-    const parsed = luna.parseURL(url);
-    const id = postID(parsed);           // your own logic
-    if (id) return { kind: "media", itemId: id };
-    return false;
+    return /^\/articles\/[^/]+/.test(luna.parseURL(url)?.pathname || "")
+      ? { kind: "article" } : false;
+  },
+  async ingest({ url, page }) {
+    const source = page?.html ? { ok: true, text: page.html, url: page.url } : await luna.fetch(url);
+    if (!source.ok) return null;
+    const article = await luna.html.article(source.text, source.url);
+    return article ? { kind: "article", ...article, baseURL: source.url } : null;
   },
 });
 ```
 
-`classify` runs for every matched plugin, in priority order, the moment a
-URL is saved. It must be fast and cheap — Luna gives it 8 seconds, and it
-normally needs none of that: reading the URL's own shape (path, query) is
-almost always enough. Return `false` when the URL is not yours. Return
-`{ kind, itemId? }` when it is — `kind` must be one of the values you listed
-in `produces`.
+The header must be the first non-whitespace token. Its first comment line is
+`luna-plugin`; the rest is JSON. No Markdown fences inside the file.
 
-`classify` CAN call `luna.fetch`/`luna.html` if it genuinely needs to look at
-the page (say, a redirecting share link with no id in it), but most plugins
-never need to. It should not call anything else — `luna.storage`, `luna.ui`
-and the rest are for `ingest` and later, not this quick a decision — mainly
-because of the budget: `classify` gets 8 seconds total, and a call that waits
-on a modal or a slow write eats into the same window every other matched
-plugin's `classify` also has to fit inside.
+- Use ES2022 without imports, packages or `require`. The app has no DOM,
+  global `fetch`, `URL`, `TextEncoder`, `TextDecoder` or timers. Use `luna`
+  helpers. Node having a global does not make it available in Luna.
+- Register once at top level. Hooks must be functions; Luna captures their
+  values at registration. Return JSON data, not DOM nodes, functions, BigInt
+  or cyclic objects. Hooks may be synchronous or async.
+- `classify` returns `false` or `{ kind, itemId? }`; `kind` must be in
+  `produces`. Decide from the URL when possible. The budget is 8 seconds.
+- `ingest` receives that claim, the URL, optional page snapshot, context,
+  reason, optional save ID and intent. Return a Model or `null`. Bridge
+  activity refreshes its 30-second idle budget.
+- A decline, ordinary error or invalid Model lets Luna try the next plugin,
+  then native extraction. Let `browser-deferred` propagate so Luna can pause
+  the save for a browser step. Avoid blanket catches that return `null`.
+- `page` may contain already-fetched HTML, including a Safari snapshot.
+  Reuse it. When fetching, resolve relative links against the final response
+  URL; `luna.fetch.doc` and `element.absoluteURL(attr)` do this for you.
+- Media extractors should decline `intent === "transcribe"` so a transcript
+  plugin can handle the request.
 
-The FIRST plugin to claim a URL wins; Luna does not ask any lower-priority
-plugin after that. If every matched plugin declines, Luna's own built-in
-classifier decides — your plugin adds new sites, it never has to replace
-existing ones.
+## Matching and precedence
 
-### Step 2 — `ingest`: build the Model
+Exact hosts match themselves. `"*.example.com"` matches both `example.com`
+and its subdomains. Write hostnames without a scheme, port or path.
+`{ "any": true }` is for plugins that recognize content from URL shape.
 
-Once your plugin has claimed the URL, Luna calls `ingest` with that same
-claim:
+Host-specific plugins run before `match.any` plugins. Within each group,
+higher `priority` runs first, then ID. Default priority is 0; bundled site
+extractors use 100. Choose 101 when intentionally overriding an extractor
+for the same host. The first usable Model ends the walk. Using the same ID
+as another plugin replaces it rather than adding another candidate.
 
-```js
-async ingest({ url, claim }) {
-  const id = claim.itemId;
-  const listing = await getJSON({
-    url: "https://www.reddit.com/comments/" + id + ".json",
-    headers: { Accept: "application/json" },
-  });
-  const post = sourcePost(listing);
-  if (!post) return null;                 // see "declining", below
+## Use the helpers
 
-  const video = post.secure_media?.reddit_video;
-  if (!video) return null;
-
-  return {
-    kind: "media",
-    platform: "reddit",
-    itemId: id,
-    assets: [{ url: video.fallback_url, type: "video" }],
-  };
-},
-```
-
-`ingest` gets a generous budget: 30 seconds of **idle** time (every
-`luna.fetch`/`luna.html` call resets the clock, so a slow server is fine as
-long as your plugin is actually waiting on it, not stuck).
-
-### Step 3 — declining
-
-Sometimes `classify` claims a URL, and `ingest` then discovers the page has
-nothing usable (a deleted post, a gallery with no video, whatever). Return
-`null` — not `false`, not an error:
-
-```js
-if (!video) return null;
-```
-
-`null` tells Luna "I looked, and there's nothing here for me." Luna moves on
-to the next matched plugin, and finally to its own built-in classifier. A
-plugin that THROWS an error, times out, or returns something malformed also
-falls through the same way — one broken plugin can never stop Luna from
-saving a page some other path could still handle.
-
-### Step 4 — the Model shapes
-
-Your `ingest` hook returns one of three shapes, matching what you listed in
-`produces`:
-
-**`media`** (see full shape in [`api.md`](./api.md#mediamodel)):
-
-```js
-return {
-  kind: "media",
-  title: "…",                 // optional
-  platform: "reddit",         // free text; Luna maps known names to its own icons
-  itemId: "…",
-  assets: [
-    { url: "https://…/video.mp4", type: "video" },
-    // a separate audio track, for sites (like Reddit) that split them:
-    { url: "https://…/audio.mp4", type: "audio", audioURL: "…" },
-  ],
-};
-```
-
-`assets` is 1–50 entries, shown in that order. Luna's own download engine
-fetches these — your plugin never downloads anything itself.
-
-**`article`**:
-
-```js
-return {
-  kind: "article",
-  title: "…",
-  html: "<p>the cleaned body, as a fragment</p>",   // ≤ 4 MB
-  author: "…",                                      // optional
-  publishedAt: "2026-01-01T00:00:00Z",               // optional, ISO 8601
-};
-```
-
-Luna's reader renders `html` almost as-is (no readability scoring — your
-plugin already chose the body). Point `document` at a URL instead of/beside
-`html` when the real content is a PDF/EPUB/DOCX file Luna should download and
-open as a document. Point `transcription` at an audio or video file when the
-words are SPOKEN rather than written — Step 5 below.
-
-**`product`**:
-
-```js
-return {
-  kind: "product",
-  name: "…",
-  price: { amount: "19.99", currency: "USD" },   // amount is a STRING — never a float
-  imageURL: "…",                                  // optional
-};
-```
-
-Add `sellers: [{ url, name?, price? }]` (up to 20) if your plugin already
-knows about alternative sellers — Luna then skips its own seller search for
-that item.
-
-Every field has a size cap (titles 300 characters, a URL string 4096
-characters, and so on) — see `PluginModelCaps` in `api.md`. A URL you write
-may be a relative path; Luna resolves it against the page's own URL for you.
-
-### Step 5 — a file to transcribe
-
-An `article` Model can hand Luna an audio or video file instead of text.
-Luna downloads the file, transcribes it on the device (iOS 26 and later,
-no server), writes the transcript as the article's body, and deletes the
-file. The save shows as pending until the transcript is in. The smallest
-possible plugin of this kind is `direct-media-transcript.js`
-(`LunaLibraries/Sources/LunaBundledPlugins/Plugins/direct-media-transcript.js`),
-which reads a URL that is itself an `.mp3`/`.m4a`/`.mp4`/… file:
-
-```js
-async ingest({ url }) {
-  const file = source(url);              // { type: "audio" | "video", name }
-  if (!file) return null;
-  return {
-    kind: "article",
-    title: file.name,
-    transcription: { url: url, type: file.type },
-  };
-},
-```
-
-Three rules make a transcript plugin behave well:
-
-1. **Offer the cheapest source you can, in this order.** Captions the site
-   already publishes are text — return them as an ordinary `html` Model and
-   no file is fetched at all. Otherwise an audio-only file (a few megabytes
-   per hour). Only then the video. `youtube-transcript.js` shows all three
-   legs; `reddit-transcript.js` shows the audio leg, since Reddit stores a
-   video's sound as a separate file.
-2. **Lead with the text you have.** `html` is optional beside
-   `transcription`, and what you put there — the post's own words, a
-   description — is placed BEFORE the transcript in the reader. Omit it
-   when there is none; never send `""`.
-3. **Respect the intent.** The app's Transcribe actions call every matched
-   plugin with `intent: "transcribe"` in the `classify` input. A plugin that
-   would STORE the media (`produces: ["media"]`) must return `false` then, so
-   the walk reaches your transcript plugin. Give the transcript plugin a
-   LOWER priority than the media plugin for the same site (the bundled
-   pairs use 100 and 90): on a plain save the media plugin wins, on a
-   Transcribe action it steps aside, and a user who disables the media
-   plugin in Settings → Plugins makes yours the default. Your own
-   `classify` ignores `intent` — it claims whenever the URL is yours.
-
-`transcription.headers` takes the same header names an asset's do. Set
-`expiresAt` (epoch seconds) when the URL is signed: Luna re-runs your
-`ingest` with `reason: "reresolve"` before fetching a stale one, and again
-if the CDN answers 401/403/410. Set `language` (BCP-47) on the Model when
-you know what is spoken; the transcriber uses it to pick its on-device
-model. A video with a separate audio leg goes in as `type: "video"` with
-`audioURL` set, and Luna fetches ONLY the audio.
-
-## 3. `luna.html` — reading a page
-
-```js
-const doc = luna.html.parse(html, url);
-const title = doc.querySelector("h1.title")?.textContent;
-const image = doc.querySelector('meta[property="og:image"]')?.getAttribute("content");
-```
-
-`luna.html` is a deliberately SMALL subset of the DOM — `querySelector`/
-`querySelectorAll` (CSS selectors: type, class, id, attribute matches,
-`:not()`, `:first-child`, `:nth-child`, descendant/child combinators),
-`textContent`/`innerHTML`/`outerHTML`, `children`/`parentElement`,
-`getAttribute`/`hasAttribute`/`attributes`, `matches`/`closest`, and
-`absoluteURL(attr)` (resolves a `href`/`src` against the page's own URL for
-you). This is on purpose: the SAME subset runs identically on three
-completely different engines — SwiftSoup inside the app, the browser's own
-`DOMParser` inside Safari, and `linkedom` in the offline dev tool — so a
-plugin author never has to think about which one is running underneath.
-`luna.html.text(html)` strips tags and decodes entities in one call;
-`luna.html.jsonScripts(doc)` parses every embedded
-`<script type="application/ld+json">`/`"application/json">` block for you.
-
-Four helpers save you the parts most hand-written extractors get wrong:
-
-```js
-const meta = luna.html.meta(doc);          // title/description/canonical/image/author/published/…
-const ld = luna.html.jsonLD(doc);          // ld+json only, @graph flattened, bad JSON skipped
-const article = await luna.html.article(html, url);   // Luna's own readability pass, or null
-const price = luna.text.price("1.299,00 €");          // { amount: "1299.00", currency: "EUR" }
-```
-
-`meta` reads OpenGraph, Twitter cards, plain `<meta>`, `<link rel=canonical>`,
-`<title>`, `<html lang>` and JSON-LD in one fixed order and omits what the page
-never says. `article` answers a Promise in EVERY process — in Safari it is
-relayed to Luna, which has the extractor — and `null` when the page has no
-article body, which is your cue to `return null`. `luna.text.price/date/clean`
-come with the `html` capability and need no declaration of their own:
-`price` applies Luna's separator rules, `date` turns the common absolute
-formats into ISO 8601 (and a relative phrase into `null`), and `clean` decodes
-entities, drops tags and collapses whitespace.
-[`api.md`](./api.md) has the exact rules.
-
-## 4. `luna.fetch` — reaching the network
-
-```js
-const response = await luna.fetch({
-  url: "https://example.com/api/post/123",
-  headers: { Accept: "application/json" },
-  userAgent: "googlebot",     // a named identity, or write your own literal string
-});
-if (response.ok) {
-  const data = JSON.parse(response.text);
-}
-```
-
-Named `userAgent` identities: `"safari"`, `"googlebot"`, `"googlebot-mobile"`,
-`"bingbot"`, `"facebookbot"` — these send the matching literal `User-Agent`
-(and, for the Google ones, a matching `X-Forwarded-For`). Anything else you
-write is sent as-is.
-
-`cookies` controls whose cookie jar the request uses: `"shared"` (default —
-the site's normal, logged-out consent state), `"ephemeral"` (a fresh jar,
-nothing remembered), or `"none"`. To reuse the session a `luna.browser` step
-just earned (§6), set the `Cookie` header from the result's `cookieHeader`;
-any other `cookies` value rejects `bad-argument`. `redirect` is `"follow"`
-(default), `"manual"` (stop at the 3xx and read `Location` yourself), or
-`"headThenGet"`.
-
-A POST body can be a plain string, `{ base64: "…" }`, `{ form: {...} }`,
-`{ json: {...} }`, or `{ multipart: [...] }` (each part is `{ name, filename?,
-mime?, text?, base64?, file? }` — `file` takes a `FileHandle` and uploads the
-bytes straight off disk, defaulting `filename` and `mime` to the handle's own;
-it needs the `files` capability, so it works everywhere except Safari). Luna
-sets `Content-Type` for `form`/`json`/`multipart` bodies for you.
-
-## 5. Storage, secrets, and settings
-
-- **`luna.storage`** — a simple key/value store (`get`/`set`/`delete`/`keys`),
-  plus named "collections" for querying a small number of documents by up to
-  two indexed fields (`luna.storage.collection("name").put(id, doc, { k1,
-  k2 })`, then `.find({ k1: "…" })`). Values are JSON, capped at 256 KB each.
-  This is App Group storage — every process your plugin runs in shares it.
-- **`luna.secrets`** — one Keychain-backed string per key
-  (`get`/`set`/`delete`). Only the app can `set`/`delete`; the share/action
-  extensions can only `get` what the app already stored. Use this for a
-  token, not `luna.storage` — it is never returned to JavaScript in cleartext
-  from an extension.
-- **`luna.settings`** — reads/writes the values your manifest's `settings`
-  schema declares (see "Settings schema" below). `get`/`all` work
-  everywhere; `set` is app-only (Settings itself is where a user edits
-  values; a plugin usually only reads them).
-
-### Settings schema
-
-A manifest's `settings` array is what draws your plugin's row in
-Settings → Plugins → *your plugin*, one field per entry:
-
-```json
-"settings": [
-  { "key": "apiKey", "type": "password", "label": "API Key", "secret": true,
-    "required": true, "help": "From your account's Developer page." },
-  { "key": "mode", "type": "choice", "label": "Mode", "default": "auto",
-    "options": [{ "id": "auto", "label": "Automatic" }, { "id": "manual", "label": "Manual" }] }
-]
-```
-
-Each entry is `{ key, type, label, help?, placeholder?, options?, default?,
-required?, secret? }`. `key` is ASCII letters, digits and `_` only, and may
-never start with `_` — that prefix is reserved for keys Luna itself writes.
-`_status` is the special key whose value drives the dot a destination plugin's
-own share row shows. `type` is one of:
-
-| `type` | What the detail screen renders |
+| Need | API |
 | --- | --- |
-| `text`, `email`, `url`, `password`, `number` | An inline text field, with the matching keyboard; `password` masks input |
-| `toggle` | A switch row |
-| `choice` | A row that pushes a picker over `options`, and redraws once one is chosen |
-| `pairedDevice` | A row with Pair/Unpair buttons, calling `onAction({ key, action: "pair" \| "unpair" })` |
-| `action` | A plain button row calling `onAction({ key })` |
-| `info` | Read-only text — no stored value, just `label`/`help` |
+| Parse a URL safely | `luna.parseURL(url, base?)` → parsed URL or `null`; `searchParams.get("id")` |
+| Read JSON | `await luna.fetch.json(url, options?)` |
+| Read an HTML document | `await luna.fetch.doc(url, options?)` — needs `fetch` and `html` |
+| Extract article text | `await luna.html.article(html, baseURL)` → article or `null` |
+| Read metadata / structured data | `luna.html.meta(doc)` / `luna.html.jsonLD(doc)` |
+| Normalize a price / date / text | `luna.text.price/date/clean` — included with `html` |
+| Convert text / bytes | `luna.bytes.utf8Encode/utf8Decode/fromBase64/toBase64` |
+| Inspect a failure | `luna.log(message, data?)`; `error.code` for bridge failures |
 
-Every type shows `help` under its label when you set it. `default` is the
-value `luna.settings.get(key)` answers before anything is stored — JSON, so
-a string default still needs its own quotes in the manifest
-(`"default": "auto"`, not `"default": auto`). `secret: true` masks a stored
-value back to `""` in `luna.settings.get`/`.all` — the plaintext only ever
-reaches your plugin through `luna.secrets`, never through the settings you
-declared here. `required: true` means Luna treats your plugin as
-unconfigured — no export row, no auto-send — until this field holds a
-value; naming the same key in your `export`'s own `requiresSettings` (§7)
-checks it a second time, for a field an export needs but a settings screen
-does not otherwise require.
+Declare each capability you call. Undeclared namespaces are absent. Declared
+capabilities unavailable in a process reject `unavailable-here`. `register`,
+`parseURL`, `log`, `bytes`, `env`, `LunaError` and `localize` are always present.
 
-## 6. The browser step, and why a hook re-runs
+`luna.fetch` returns a response object with `text` as a string, not a
+`.text()` method. `fetch.text/json/doc` reject non-success HTTP statuses.
+Fetch `timeout` is in **seconds**; the CLI's `--timeout` is in **milliseconds**.
 
-Some pages need a real browser — a CAPTCHA, a login wall, an age gate. For
-that, declare the `browser` capability and call:
+## Models and exports
 
-```js
-async ingest({ url }) {
-  if (looksBlocked(await luna.fetch({ url }))) {
-    const result = await luna.browser.open({
-      url,
-      detect: "document.title.includes('Verify') ? 'challenge' : 'done'",
-    });
-    // result.html is the FINAL page's HTML, after the challenge cleared.
-  }
-}
-```
+- Article: `{ kind: "article", title, html }`, or use `document` (PDF/EPUB/etc.)
+  or `transcription` (audio/video) as the body. A document and a transcription
+  cannot appear together. HTML is optional when either supplies the body.
+- Media: `{ kind: "media", assets: [{ url, type: "video" }] }`. A separate
+  audio track belongs in that asset's `audioURL`, not a second video asset.
+- Product: `{ kind: "product", name, price: { amount: "19.99", currency: "USD" } }`.
+  Preserve the amount as a decimal string; never invent a missing currency.
+- Export-only: omit `produces` and `match`. Declare `export: { kinds, input,
+  title }` and register `export(input)`. For Markdown/text/HTML input, read
+  `input.text`; for EPUB/PDF/DOCX/media files, read `input.file`. The export
+  format must support every declared kind. Use the webhook starter or the
+  full API's device/destination contract.
 
-`detect` is a tiny script Luna evaluates inside the real browser every
-350 ms; it must answer one of `"wait"`, `"challenge"`, `"done"`, or
-`"error"`. Luna keeps its own loading cover up until `detect` says
-`"challenge"` — the moment the person actually needs to do something — then
-hides it, shows the real page, and closes it once `detect` says `"done"`.
+## References and tests
 
-**What actually happens depends on where your plugin is running.** In the
-app itself, Luna can show that browser directly. In the share extension, the
-action extension, or Safari, there is no room (and no time) to show a modal
-browser — so `luna.browser.open` immediately rejects, the save is marked
-"locked," and the user is told to open Luna to finish it. When they do, Luna
-re-runs your `ingest` hook from the top with `reason: "resume"` — and this
-time, when your plugin calls `luna.browser.open` with the SAME URL, Luna
-hands back the stored result instantly, with no browser shown at all. Write
-your plugin so this replay is safe: check the browser's result before
-re-fetching anything you already have.
+- [Full API and limits](api.md)
+- [Compact reference for AI authoring](llm-api.md)
+- [Type definitions](../../tools/plugin-sim/luna-plugin.d.ts)
+- [Harness options and limitations](../../tools/plugin-sim/README.md)
+- [Internal architecture](../../claudedocs/plugins.md)
 
-## 7. Export plugins
-
-An export plugin has no `produces`/`classify`/`ingest` at all — just an
-`export` declaration and hook:
-
-```json
-"export": {
-  "kinds": ["article"],
-  "input": "epub",
-  "title": "Send to Kindle",
-  "symbol": "book.closed",
-  "destination": true,
-  "requiresSettings": ["kindleAddress"]
-}
-```
-
-`input` says what Luna hands your hook: `"url"`, `"epub"`, `"pdf"`, `"docx"`,
-`"markdown"`, `"text"`, `"html"`, `"json"`, or `"file"` (not every kind
-supports every format — Luna refuses to import a declaration asking for one
-it can't build). Your `export` hook receives that content and does something
-with it:
-
-```js
-async export(input) {
-  const address = await luna.settings.get("kindleAddress");
-  await luna.mail.send({
-    to: [address],
-    subject: input.title,
-    attachments: [{ file: input.file, name: input.file.name, mime: "application/epub+zip" }],
-  });
-  return { status: "sent" };
-},
-```
-
-(This is `kindle.js` — `LunaLibraries/Sources/LunaBundledPlugins/Plugins/kindle.js`
-— nearly verbatim.) Return `null` when your plugin delivered the content
-itself and there is nothing more to show; return `{ file }`/`{ text }`/
-`{ url }` to hand something to the system share sheet instead;
-`destination: true` plugins additionally return `{ status: "sent" |
-"failed" | "retry", message?, hard?, remoteName? }` — Luna's own send queue,
-retry backoff, and per-source auto-send settings apply to a `destination`
-plugin exactly as they do to Luna's own Kindle/Xteink code. `retry` is a
-DEFERRAL: it costs no failure count and no backoff, which is what makes an
-"enqueue until the device wakes" destination workable. `remoteName` is the
-name the receiver filed the save under; report it and Luna can ask the
-receiver to delete that exact file later (see `luna.exports` in `api.md`).
-Add `"dequeueOnRead": true` to the `export` block when your receiver tracks
-reading of its own: Luna then drops a queued send whose save was finished in
-Luna before the send went out, rather than delivering a book its owner has
-already moved past. `requiresSettings`
-gates when the share row is even offered — Luna checks those keys have a
-value before showing "Send to Kindle" at all.
-
-**A thrown error is retried by default.** Only `throw new
-luna.LunaError("hard", "the address is wrong")` or `{ status: "failed", hard:
-true }` tells Luna to stop retrying — everything else is treated as "might
-work next time."
-
-## 8. Bluetooth and Wi-Fi plugins
-
-`xteink.js` (`LunaLibraries/Sources/LunaBundledPlugins/Plugins/xteink.js`) is
-the full worked example — a plugin that talks BLE to a pocket e-reader and
-falls back to Wi-Fi for a large file. The shape:
-
-```json
-"capabilities": ["bluetooth", "wifi", "fetch", "files", "crypto", "secrets"],
-"bluetooth": {
-  "services": ["6F9F0A00-9B1D-4D1F-9F53-5B6B8B3D0F10"],
-  "pairing": "accessorySetupKit",
-  "standingConnect": true,
-  "role": "central"
-}
-```
-
-```js
-luna.register({
-  async onBluetooth(event) {
-    if (event.type !== "connected") return;
-    const session = luna.bluetooth.session();   // NOT a second hook argument
-    // … talk to the device over session.discover/read/write/subscribe/next …
-  },
-});
-```
-
-**A hook always takes exactly one argument.** `onBluetooth` receives the
-`event` object; the live session — if there is one — comes from the
-SYNCHRONOUS `luna.bluetooth.session()` call, not from a second parameter.
-That session stays valid for the whole `onBluetooth` call, including any
-`export` call your own code triggers through
-`luna.exports.deliverQueued()` — so a device you've already authenticated in
-`onBluetooth` doesn't need re-authenticating inside `export`.
-
-`luna.bluetooth.pair()` shows the system's Bluetooth picker, scoped to the
-service UUIDs you declared. Uploads over Wi-Fi are just `luna.fetch` with a
-`multipart` body — there is no separate upload API.
-
-## 9. Testing with `tools/plugin-sim`
-
-You do not need Xcode, a simulator, or even a Mac with Luna installed to
-iterate on a plugin. `tools/plugin-sim/` is a small Node.js harness that
-implements the same `luna.*` API (`undici` for `luna.fetch`, `linkedom` for
-`luna.html`, in-memory storage) so you can run your plugin from the command
-line and see its answer in under a second.
-
-```sh
-cd tools/plugin-sim
-npm install
-```
-
-Then, from the repo root:
-
-```sh
-node tools/plugin-sim/run.mjs docs/plugins/examples/minimal-media.js \
-  "https://clipvault.example/clip/abc123" \
-  --fixture docs/plugins/examples/fixtures/clipvault
-```
-
-prints:
-
-```
-plugin: docs.example.minimal-media v1.0.0 (api 1)
-classify: {
-  "kind": "media",
-  "itemId": "abc123"
-}
-ingest: {
-  "kind": "media",
-  "title": "A short clip",
-  "itemId": "abc123",
-  "assets": [
-    {
-      "url": "https://cdn.clipvault.example/videos/abc123.mp4",
-      "type": "video"
-    }
-  ]
-}
-```
-
-`--fixture <dir>` answers every `luna.fetch` call from a file in that
-directory instead of the real network — save a page once (`curl` it into the
-directory under a name matching either its URL's last path segment or its
-full host+path with `/`/`?`/`&`/`=` turned into `_`), then iterate offline.
-Drop `--fixture` to hit the real network instead. Add `--hook classify` or
-`--hook ingest` to run just one hook. Add `--intent transcribe` to run the
-hooks the way the app's Transcribe actions call them (`intent` set on the
-input); a media plugin must then decline, and a transcript plugin's Model
-is checked for a valid `transcription` spec. The bundled transcript plugins'
-fixtures live under `tools/plugin-sim/fixtures/<platform>-transcript*/`.
-
-`run.mjs`'s normal convenience form exercises `classify` and `ingest`; the
-`test` form also accepts `--hook export` and returns a JSON pass/fail report.
-It does not call `onBluetooth`, `onAction`, or `onSettingsChanged`. To check
-an export plugin with custom input before importing it into Luna, write a short
-standalone script against `tools/plugin-sim/bridge.mjs`'s `createBridge`, the
-way `export-webhook.js` was verified for this guide:
-
-```js
-import { createBridge } from "./tools/plugin-sim/bridge.mjs";
-const luna = createBridge({
-  pluginId: "docs.example.export-webhook", capabilities: ["fetch", "settings"],
-  fetchImpl: async (url, opts) => { /* record opts.body, answer { ok: true, … } */ },
-});
-await luna.settings.set("webhookUrl", "https://hooks.example.com/receive");
-const hooks = new Function("luna", source + "\nreturn luna.__registeredHooks;")(luna);
-const result = await hooks.export({ kind: "article", format: "markdown", text: "…", /* … */ });
-```
-
-Running that against `docs/plugins/examples/export-webhook.js` with
-`webhookUrl` set to `"https://hooks.example.com/receive"` and a fake
-`fetchImpl` produces `export result: null` and a captured request of
-`POST https://hooks.example.com/receive` with the article's Markdown as the
-body — confirming the plugin does exactly what its description says.
-
-Also run the `luna.html` parity check whenever you touch selector-heavy code:
-
-```sh
-node tools/plugin-sim/spec.mjs
-```
-
-This runs the same 60-case specification
-(`LunaTests/Fixtures/Plugins/html-subset.spec.js`) that Luna's own test
-suite runs against its two OTHER `luna.html` backings (SwiftSoup in the app,
-`DOMParser` in Safari) — if your plugin depends on `luna.html` behavior this
-spec doesn't cover, it may behave differently inside the real app than it
-did in this harness.
-
-Reference the typings from your editor for autocomplete and type-checking:
-
-```js
-/// <reference path="../../tools/plugin-sim/luna-plugin.d.ts" />
-```
-
-## 10. Creating a plugin with ChatGPT or Claude
-
-This path is for people who do not write code, and it needs no account and no
-API key. In central Luna, open Settings → Plugins and tap the wand
-(**Create with AI**), or choose **Create Plugin…** on a failed save's card,
-which fills the box in with the URL and what went wrong.
-
-Describe the site, or the kind of link, and paste an example URL. Tap
-**ChatGPT** or **Claude**. Luna opens that app with the whole request already
-written: what a Luna plugin is, the file shape, the Model shapes, and a link to
-the API reference at <https://luna-site-bm6.pages.dev/p1>. Luna remembers the
-request, so leaving the screen and coming back shows it again.
-
-Ask for the answer as a file. The model replies with `{name}.luna` — a plugin
-file, the same JavaScript as §1 with the `/* luna-plugin` header. Tap it in the
-reply and choose Luna. A code block works too: long-press it, share it as text,
-and pick Luna.
-
-Luna opens the **review screen** on the draft. It reads the header and shows,
-in order: the plugin's name, version and the version it replaces; what it
-produces and which hosts it runs on; the hooks it declares and the hooks it
-actually registered; every capability as one plain sentence; the settings
-fields it asks for, whether it runs in the background, and what it exports.
-Then Luna tests the draft: it stages it in a temporary store, loads it on a
-disposable runtime, and runs `classify` and `ingest` against your example URL.
-Only `luna.fetch` and `luna.html` are served during the test, and `luna.fetch`
-may reach only that page's own site — every other namespace answers
-`unavailable-here`, so a plugin that declares `storage` still passes, marked
-"not tested". With no example URL the draft is loaded and nothing more, and the
-result says so.
-
-- **Save** installs it. On this screen, Save is the consent: nothing else is
-  asked afterwards. A draft that failed the test still offers Save (labelled
-  **Save Anyway**), because an author who knows better is not blocked.
-- **Discard** writes nothing.
-- **Generate again** opens a new chat with the original request plus the
-  problems Luna found, and asks for a corrected file.
-
-Everything works the same in the share and action extensions, so a file that
-arrives while you are inside another app is reviewed and saved there.
-
-Developers can run the same shape checks without the app using the bounded
-child-process harness:
-
-```sh
-node tools/plugin-sim/run.mjs validate ./my-plugin.js
-node tools/plugin-sim/run.mjs test ./my-plugin.js https://example.com/article --fixture ./fixtures
-```
-
-## 11. Importing into Luna
-
-This is the path for a file you wrote yourself. A `.luna` file you TAPPED goes
-to the review screen in §10 instead, and Save there is the consent.
-
-Open Luna → Settings → Plugins → **Add** → either **Import from Files…**
-(pick a `.js` or `.luna` file) or **Paste source** (paste the whole file into
-a text box). Luna parses the header, shows a consent screen — your plugin's name,
-version, what kinds it produces, its export declaration if any, and every
-capability you declared in one plain-language sentence each ("Read pages you
-save," "Send email on your behalf," and so on) — and installs only after the
-user taps Import. Declining installs nothing.
-
-If you update an already-installed plugin with NEW capabilities it did not
-have before, Luna shows consent again for just the added ones. A plugin
-sharing an id with a bundled one (say, you ship your own `app.luna.kindle`)
-REPLACES the bundled copy while installed, and reverts to it if you delete
-your version.
-
-**Luna's consent screen says, plainly: "Luna limits what a plugin can reach,
-but cannot stop a plugin that does not finish."** JavaScriptCore has no way
-to forcibly interrupt running code. A hook that gets stuck in an infinite
-loop keeps the whole plugin runtime tied up until it either finishes or the
-process is killed — after three timeouts in a row, Luna stops calling that
-plugin at all and shows "Stopped" in Settings, but it cannot reach in and
-stop the stuck call itself. Write hooks that always terminate: bound your
-loops, and let `luna.fetch`'s own `timeout` option do the waiting for you
-rather than polling in a `while` loop with no exit.
-
-## 12. Budgets
-
-| Hook | Time given | What happens past that |
-| --- | --- | --- |
-| `classify` | 8 seconds (wall clock) | abandoned; treated as "did not claim" |
-| `ingest` | 30 seconds, but the clock resets on every `luna.fetch`/`luna.html`/etc. call | abandoned; Luna moves to the next matched plugin |
-| `export` | 120 seconds (wall clock) | reported as a soft failure |
-| `onBluetooth` | 25 seconds per event | the session is closed |
-| `onAction` / `onSettingsChanged` | 10 seconds | reported in Settings |
-
-Three timeouts in a row disable the plugin until the user re-enables it.
-
-## 13. What's different in Safari
-
-Your plugin's `classify`/`ingest` also run inside the Safari extension's
-content script — the isolated JavaScript world Safari gives a web
-extension, sitting alongside the real page. There, `luna.html` is backed by
-the browser's own `DOMParser` (same subset, same behavior — see §3), and an
-additional namespace, `luna.page`, gives you the LIVE document
-(`luna.page.document()`) without needing to fetch anything. Everything else
-that touches the network or storage (`luna.fetch`, `luna.storage`,
-`luna.settings.get`) is relayed to the native extension and back — this adds
-latency but changes nothing about your code. `luna.secrets`, `luna.files`,
-`luna.ui`, `luna.mail`, `luna.notifications`, `luna.bluetooth`, and
-`luna.wifi` do not exist in Safari at all; declaring one of those
-capabilities is harmless (Safari simply serves the other capabilities you
-also declared), but any call on one there rejects.
-
-`luna.browser.open` in Safari always rejects immediately — there's no
-"locked save" concept before a save exists. Instead, Luna shows a "Finish in
-Luna" link that opens the app and starts the save from scratch, which is
-where §6's resume flow takes over.
+Run `npm test --prefix tools/plugin-sim` to check the harness, shared manifest
+and HTML cases, bundled registrations, starters, and their TypeScript types.
+The simulator suite additionally checks native bridges, import/rollback,
+concurrency, adoption, exports, and Safari behavior.

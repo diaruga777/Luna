@@ -12,41 +12,25 @@
 }
 */
 
-// A worked minimum, not a toy: `classify` decides from the URL alone (cheap,
-// no network), and `ingest` fetches the page once and reads the single tag
-// that names the video. Most real media plugins are this shape plus more
-// tags to try — see `reddit.js` and `instagram.js` in
-// `LunaLibraries/Sources/LunaBundledPlugins/Plugins/` for the two-legged
-// (video + audio) and multi-stage versions of the same idea.
-
-/// The clip id from a `/clip/<id>` path, or null for anything else on this host.
-function clipID(url) {
-    const parsed = luna.parseURL(url);
-    const match = /^\/clip\/([A-Za-z0-9_-]+)/.exec(parsed.pathname || "");
-    return match ? match[1] : null;
-}
+/// <reference path="../../../tools/plugin-sim/luna-plugin.d.ts" />
 
 luna.register({
-    classify({ url }) {
-        const id = clipID(url);
+    classify({ url, intent }) {
+        if (intent === "transcribe") return false;
+        const id = luna.parseURL(url)?.pathname.match(/^\/clip\/([A-Za-z0-9_-]+)/)?.[1];
         return id ? { kind: "media", itemId: id } : false;
     },
 
-    async ingest({ url, claim }) {
-        const response = await luna.fetch({ url });
-        if (!response.ok) { return null; }
-
-        const doc = luna.html.parse(response.text, url);
-        const videoTag = doc.querySelector('meta[property="og:video"]');
-        const videoURL = videoTag ? videoTag.getAttribute("content") : null;
-        if (!videoURL) { return null; }
-
-        const titleTag = doc.querySelector('meta[property="og:title"]');
+    async ingest({ url, page, claim }) {
+        const doc = page?.html ? luna.html.parse(page.html, page.url) : await luna.fetch.doc(url);
+        // absoluteURL uses the fetched page's final URL, including redirects.
+        const video = doc.querySelector('meta[property="og:video"]')?.absoluteURL("content");
+        if (!video) return null;
         return {
             kind: "media",
-            title: titleTag ? titleTag.getAttribute("content") : undefined,
+            title: luna.html.meta(doc).title,
             itemId: claim.itemId,
-            assets: [{ url: videoURL, type: "video" }],
+            assets: [{ url: video, type: "video" }],
         };
     },
 });

@@ -7,11 +7,15 @@
   "scripts": {
     "run": "node run.mjs",
     "spec": "node spec.mjs",
-    "test": "node test.mjs"
+    "test": "node runtime-test.mjs && node manifest-test.mjs && node test.mjs && node examples-test.mjs && node spec.mjs && npm run typecheck",
+    "typecheck": "tsc --noEmit --allowJs --checkJs --target es2022 --module esnext ../../docs/plugins/examples/*.js"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
     "linkedom": "0.18.13",
-    "undici": "8.10.1"
+    "undici": "8.11.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
   }
 }

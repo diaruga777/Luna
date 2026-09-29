@@ -98,7 +98,7 @@ public enum LLMHandoffPrompts {
     /// is the site to name in the manifest skeleton when known.
     public static func pluginCreation(description: String, host: String?) -> String {
         """
-        Write a plugin for Luna, an iOS save-it-for-later app. A Luna plugin is ONE JavaScript file that turns a URL into something Luna saves: an article, a product with its price, or a media file. Read the API reference first: \(pluginAPIReferenceURL)
+        Write a plugin for Luna, an iOS save-it-for-later app. A Luna plugin is ONE JavaScript file that extracts articles, products or media from URLs, or exports saved items. Read the API reference first: \(pluginAPIReferenceURL)
 
         What I want:
         --- REQUEST ---
@@ -115,7 +115,7 @@ public enum LLMHandoffPrompts {
         let list = errors.map { "- " + $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .joined(separator: "\n")
         return """
-        A Luna plugin generated for the request below failed Luna's checks. Write a corrected plugin from scratch that avoids every listed problem. Luna is an iOS save-it-for-later app; a plugin is ONE JavaScript file that turns a URL into an article, a product with its price, or a media file. Read the API reference first: \(pluginAPIReferenceURL)
+        A Luna plugin generated for the request below failed Luna's checks. Write a corrected plugin from scratch that avoids every listed problem. Luna is an iOS save-it-for-later app; a plugin is ONE JavaScript file for URL extraction or exporting saved items. Read the API reference first: \(pluginAPIReferenceURL)
 
         --- REQUEST ---
         \(bounded(description, limit: maxCorrectionDescriptionCharacters) ?? "")
@@ -137,26 +137,31 @@ public enum LLMHandoffPrompts {
         let requirements = compact ? "" : """
 
         Requirements:
-        - The header comment is the first thing in the file and its JSON is the manifest: id uses [a-z0-9.-]; name is 40 characters or fewer; produces lists the kinds ingest can return (article, media, product); match.hosts are exact hosts or *.wildcards; capabilities lists only the luna namespaces the code calls.
-        - classify is fast: it decides from the URL shape and returns false for anything that is not this content.
-        - ingest returns a Model whose kind is in produces, or null when the page has none. Article: {kind, title, html, author?, publishedAt?, language?, leadImageURL?}. Product: {kind, name, price:{amount:"12.34",currency:"USD"}, imageURL?, brand?}. Media: {kind, title?, assets:[{url, type:"video"|"image"|"gif"|"audio"}]}. Never invent text, prices or URLs.
-        - Prefer the helpers over hand-written parsing: luna.fetch.doc / .text / .json, luna.html.meta, luna.html.jsonLD, luna.html.article, luna.text.price, luna.text.date. Fetch only the page's own site. Catch errors. No polling or busy loops.
-        - ES2022 JavaScript, no import/export/require, no libraries, exactly one top-level luna.register.
+        - ES2022, no import/export/require or libraries. Use luna.parseURL and luna.bytes; URL, fetch and TextEncoder globals are unavailable. No polling or busy loops.
+        - Never invent content, prices or URLs. Prefer luna.fetch.json/doc, luna.html.meta/jsonLD/article and luna.text.price/date. Await article(). Keep final URLs after redirects. Let browser-deferred propagate through catch handlers.
+        - For exports, omit produces/match and replace the ingest hooks with export(input). Declare export:{kinds:["article"],input:"markdown",title:"Export"}; read input.text. Return {text}, {url}, {file}, a delivery status, or null. See the reference for settings/device APIs.
 
         """
         return """
-        Deliver ONE file named "<name>.luna" as a downloadable attachment (if you cannot attach files, put the whole file in a single code block). No text outside the file.
+        Deliver ONE file named "<name>.luna" as a downloadable attachment (or one complete code block). No text outside the file.
+        Start with the JSON header; register once. Use a stable [a-z0-9.-] id, name ≤40 characters and only needed capabilities.
+        Host-specific plugins precede match.any, then higher priority runs first. Bundled extractors use 100; use 101 to override one for the same host, or 0 for a new site. A valid result stops the walk.
 
-        File shape:
+        Article starter (adapt hosts and paths):
         /* luna-plugin
-        {"id":"user.\(site)","name":"\(site)","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["\(site)","*.\(site)"]},"capabilities":["fetch","html"]}
+        {"id":"user.\(site)","name":"Example","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["\(site)","*.\(site)"]},"capabilities":["fetch","html"]}
         */
         luna.register({
-          classify({ url }) { /* decide from the URL alone */ return { kind: "article" }; },
-          async ingest({ url }) { const doc = await luna.fetch.doc(url); /* … */ return model; }
+          classify({url}) { return /\\/articles\\/[^/]+/.test(luna.parseURL(url)?.pathname || "") ? {kind:"article"} : false; },
+          async ingest({url, page}) {
+            const source = page?.html ? {text:page.html,url:page.url} : await luna.fetch(url);
+            if (source.ok === false) return null;
+            const article = await luna.html.article(source.text, source.url);
+            return article ? {kind:"article", ...article, baseURL:source.url} : null;
+          }
         });
         \(requirements)
-        Before answering, check: the header parses as JSON; every luna namespace used is declared in capabilities; ingest returns only kinds listed in produces; the Model has its required fields; classify returns false for other pages.
+        Check the header, capabilities, required hooks and returned Model fields. An article needs title and html, document or transcription; a product needs name and price:{amount:"12.34",currency:"USD"}; media needs assets:[{url,type:"video"|"image"|"gif"|"audio"}].
         """
     }
 

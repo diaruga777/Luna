@@ -95,6 +95,8 @@ enum PluginBootstrapScript {
                         i++;
                     }
                 }
+                // TextEncoder replaces an unpaired UTF-16 surrogate.
+                if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
                 if (code < 0x80) {
                     out.push(code);
                 } else if (code < 0x800) {
@@ -113,26 +115,36 @@ enum PluginBootstrapScript {
         function utf8Decode(bytes) {
             const data = toBytes(bytes);
             const parts = [];
-            let i = 0;
-            while (i < data.length) {
-                const byte = data[i++];
-                let code;
-                if (byte < 0x80) {
-                    code = byte;
-                } else if (byte >= 0xc0 && byte < 0xe0) {
-                    code = ((byte & 31) << 6) | (data[i++] & 63);
-                } else if (byte >= 0xe0 && byte < 0xf0) {
-                    code = ((byte & 15) << 12) | ((data[i++] & 63) << 6) | (data[i++] & 63);
-                } else {
-                    code = ((byte & 7) << 18) | ((data[i++] & 63) << 12)
-                        | ((data[i++] & 63) << 6) | (data[i++] & 63);
+            let first = true;
+            for (let i = 0; i < data.length;) {
+                const lead = data[i++];
+                let code = lead;
+                let count = 0;
+                let lower = 0x80, upper = 0xbf;
+                if (lead >= 0xc2 && lead <= 0xdf) { code &= 31; count = 1; }
+                else if (lead >= 0xe0 && lead <= 0xef) {
+                    code &= 15; count = 2;
+                    if (lead === 0xe0) lower = 0xa0;
+                    if (lead === 0xed) upper = 0x9f;
+                } else if (lead >= 0xf0 && lead <= 0xf4) {
+                    code &= 7; count = 3;
+                    if (lead === 0xf0) lower = 0x90;
+                    if (lead === 0xf4) upper = 0x8f;
+                } else if (lead >= 0x80) { code = 0xfffd; }
+                for (let j = 0; j < count; j++) {
+                    const next = data[i];
+                    if (i === data.length || next < lower || next > upper) {
+                        // Reprocess an invalid continuation as the next lead.
+                        code = 0xfffd;
+                        break;
+                    }
+                    i++;
+                    code = (code << 6) | (next & 63);
+                    lower = 0x80; upper = 0xbf;
                 }
-                if (code > 0xffff) {
-                    code -= 0x10000;
-                    parts.push(String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 1023)));
-                } else {
-                    parts.push(String.fromCharCode(code));
-                }
+                // Match TextDecoder's replacement mode and leading BOM rule.
+                if (!first || code !== 0xfeff) parts.push(String.fromCodePoint(code));
+                first = false;
             }
             return parts.join("");
         }

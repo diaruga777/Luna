@@ -117,6 +117,18 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(json, "[\"héllo 🌙\",true,11]")
     }
 
+    func testUTF8ReplacesMalformedSequencesAndStripsOnlyTheLeadingBOM() async {
+        let json = await answer(#"""
+            return { value: [
+                luna.bytes.toBase64(luna.bytes.utf8Encode("\ud800")),
+                luna.bytes.utf8Decode([0xe2, 0x82]),
+                luna.bytes.utf8Decode([0xe2, 40, 0xa1]),
+                luna.bytes.utf8Decode([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf, 65])
+            ] };
+            """#)
+        XCTAssertEqual(json, "[\"77+9\",\"�\",\"�(�\",\"\u{feff}A\"]")
+    }
+
     func testBase64MatchesWhatSwiftProduces() async {
         let expected = Data("Luna".utf8).base64EncodedString()
         let json = await answer("""

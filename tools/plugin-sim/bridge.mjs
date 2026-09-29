@@ -13,10 +13,8 @@
 // `config.downloads`, since there is no real download engine or saves
 // database here). `browser` is declared when requested but always rejects
 // `unavailable-here` — there is no page to run a challenge detector against
-// outside a real WebKit process. Absent entirely, same as an undeclared
-// capability everywhere else: `secrets`, `page`, `ui`, `mail`,
-// `notifications`, `bluetooth`, `wifi`, `exports` (see
-// `claudedocs/plugins.md` §13.3 for the reasoning behind each).
+// outside a real WebKit process. Other declared capabilities without a
+// Node implementation reject unavailable-here, just like the native host.
 
 import { fetch as undiciFetch } from "undici";
 import { parseHTML } from "linkedom";
@@ -486,10 +484,10 @@ function bytesToBase64(bytes) {
   return Buffer.from(bytes).toString("base64");
 }
 function utf8Encode(text) {
-  return new Uint8Array(Buffer.from(text, "utf8"));
+  return new TextEncoder().encode(text);
 }
 function utf8Decode(bytes) {
-  return Buffer.from(bytes).toString("utf8");
+  return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
 }
 function bytesFromInput(input) {
   return typeof input === "string"
@@ -757,26 +755,32 @@ function fetchFactory(fetchImpl, files) {
       headers["Content-Type"] =
         headers["Content-Type"] || `multipart/form-data; boundary=${boundary}`;
     }
-    const timeout = Number.isFinite(req.timeout)
-      ? Math.max(1, req.timeout)
-      : 30_000;
+    const seconds = req.timeout === undefined ? 20 : req.timeout;
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new LunaError("bad-argument", "timeout must be a finite number greater than 0 (seconds)");
+    }
+    const timeout = Math.min(seconds, 120) * 1000;
+    const controller = new AbortController();
     let timeoutID;
     try {
-      const response = await Promise.race([
-        fetchImpl(req.url, {
+      return await Promise.race([
+        Promise.resolve().then(() => fetchImpl(req.url, {
           method: req.method || "GET",
           headers,
           body,
           redirect: req.redirect === "manual" ? "manual" : "follow",
-        }),
+          signal: controller.signal,
+        })).then((response) => makeFetchResult(response, req, files)),
         new Promise((_, reject) => {
           timeoutID = setTimeout(
-            () => reject(new LunaError("timeout", "fetch timed out")),
+            () => {
+              reject(new LunaError("timeout", "fetch timed out"));
+              controller.abort();
+            },
             timeout,
           );
         }),
       ]);
-      return await makeFetchResult(response, req, files);
     } finally {
       clearTimeout(timeoutID);
     }
@@ -1074,5 +1078,13 @@ export function createBridge(config = {}) {
     };
   }
 
+  for (const name of capabilities) {
+    if (luna[name] !== undefined) continue;
+    const refuse = () => Promise.reject(new LunaError(
+      "unavailable-here", `luna.${name} is not available in the node harness`));
+    luna[name] = new Proxy(refuse, {
+      get: (_target, key) => key === "then" ? undefined : refuse,
+    });
+  }
   return luna;
 }

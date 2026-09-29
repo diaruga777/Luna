@@ -107,6 +107,29 @@ final class PluginDraftValidatorTests: XCTestCase {
         XCTAssertEqual(Set(report.registeredHooks), [.classify, .ingest])
     }
 
+    func testTargetURLAloneMustMatchTheManifest() async {
+        let report = await PluginDraftValidator.validate(
+            sourceText: source(classify: "{ kind: 'article' }",
+                ingest: "{ kind: 'article', title: 'Wrong site', html: '<p>Body</p>' }"),
+            targetURL: URL(string: "https://other.example/story"))
+        XCTAssertFalse(report.passed)
+        XCTAssertTrue(report.errors.joined().contains("does not match the host"))
+    }
+
+    func testExportOnlyDraftLoadsWithoutSendingAnything() async {
+        let report = await PluginDraftValidator.validate(sourceText: """
+        /* luna-plugin
+        {"id":"user.export","name":"Export","version":"1.0.0","api":1,
+         "export":{"kinds":["article"],"input":"text","title":"Export text"}}
+        */
+        luna.register({ export() { throw new Error("must not execute an export during review"); } });
+        """)
+        XCTAssertTrue(report.passed, report.errors.joined())
+        XCTAssertEqual(report.registeredHooks, [.export])
+        XCTAssertNil(report.modelKind)
+        XCTAssertTrue(report.warnings.joined().contains("were not run"))
+    }
+
     private func recoveryCase() -> PluginRecoveryCase {
         PluginRecoveryCase(
             originalURL: "https://example.com/story", outcome: "failed")

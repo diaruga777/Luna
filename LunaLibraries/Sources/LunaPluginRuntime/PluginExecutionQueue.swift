@@ -43,6 +43,23 @@ final class PluginExecutionQueue {
         queue.sync(execute: work)
     }
 
+    /// Bounds launch/reload evaluation as well as hooks. A timed-out body is
+    /// quarantined until it returns; a queued body is cancelled before entry.
+    func sync<T>(timeout: TimeInterval, _ work: @escaping () -> T) -> T? {
+        let item = PluginQueueItem()
+        let result = PluginQueueResult<T>()
+        let finished = DispatchSemaphore(value: 0)
+        enqueue(item: item) {
+            result.store(work())
+            finished.signal()
+        }
+        guard finished.wait(timeout: .now() + timeout) == .success else {
+            abandon(item)
+            return nil
+        }
+        return result.value
+    }
+
     /// Runs `work` on the plugin queue without waiting for it.
     ///
     /// A capability bridge whose work finishes elsewhere — a fetch completing on
@@ -140,5 +157,18 @@ final class PluginQueueItem {
         }
         abandoned = true
         return true
+    }
+}
+
+private final class PluginQueueResult<T> {
+    private let lock = NSLock()
+    private var stored: T?
+    var value: T? {
+        lock.lock(); defer { lock.unlock() }
+        return stored
+    }
+    func store(_ value: T) {
+        lock.lock(); defer { lock.unlock() }
+        stored = value
     }
 }

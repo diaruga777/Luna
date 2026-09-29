@@ -40,16 +40,11 @@ public enum PluginDraftValidator {
         case .success(let parsed):
             manifest = parsed
         }
-        guard manifest.isIngestPlugin else {
-            return failed(
-                "The manifest must declare classify and ingest hooks by declaring a produces kind.",
-                phase: "manifest")
-        }
-        if let host = recoveryCase?.host, !host.isEmpty,
+        let target = targetURL ?? recoveryCase.flatMap { URL(string: $0.canonicalURL) }
+        if manifest.isIngestPlugin, let host = target?.host,
            !manifest.summary(hooks: [.classify, .ingest], isBundled: false).matches(host: host) {
             return failed("The plugin does not match the host \(host).", phase: "host")
         }
-        let target = targetURL ?? recoveryCase.flatMap { URL(string: $0.canonicalURL) }
 
         let untested = Set(manifest.capabilities).subtracting(servedCapabilities)
         var warnings: [String] = []
@@ -74,7 +69,7 @@ public enum PluginDraftValidator {
         let runtime = PluginRuntime(
             store: store, bundled: BundledPluginCatalog(bundle: nil, store: store),
             capabilities: registry, processContext: PluginProcessContext(kind: .app),
-            scratch: scratch)
+            scratch: scratch, isolated: true)
         let allowedHosts = Set([target?.host, recoveryCase?.host]
             .compactMap { $0?.lowercased() }.filter { !$0.isEmpty })
         let networkViolations = DraftNetworkViolations()
@@ -95,11 +90,13 @@ public enum PluginDraftValidator {
 
         var attempts = [PluginRecoveryAttempt(
             phase: "load", result: "passed", message: "Manifest and registration loaded.")]
-        guard let target else {
+        guard manifest.isIngestPlugin, let target else {
             // Nothing names a page to try, so the draft is judged on what it
             // declares and registers. The warning is what stops a green
             // result from reading as "it worked on the site".
-            warnings.append("The draft was not run against a page.")
+            warnings.append(manifest.isIngestPlugin
+                ? "The draft was not run against a page."
+                : "Registration checked only. Export, settings actions and device hooks were not run.")
             return PluginValidationReport(
                 passed: true, warnings: warnings, attempts: attempts,
                 registeredHooks: registered)

@@ -144,7 +144,8 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         capabilities: PluginCapabilityRegistry = PluginCapabilityRegistry(),
         processContext: PluginProcessContext,
         diagnostics: PluginDiagnosticsRecording = PluginDiagnostics.shared,
-        scratch: (any PluginScratchGenerating)? = nil
+        scratch: (any PluginScratchGenerating)? = nil,
+        isolated: Bool = false
     ) {
         self.store = store
         self.bundled = bundled
@@ -152,8 +153,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         self.processContext = processContext
         self.diagnostics = diagnostics
         self.scratch = scratch
-        virtualMachine = PluginRuntime.sharedVirtualMachine
-        executionQueue = PluginRuntime.sharedExecutionQueue
+        virtualMachine = isolated ? JSVirtualMachine()! : PluginRuntime.sharedVirtualMachine
+        executionQueue = isolated
+            ? PluginExecutionQueue(label: "com.hsanabria.luna.pluginDraft.\(UUID().uuidString)")
+            : PluginRuntime.sharedExecutionQueue
     }
 
     // MARK: - Loading
@@ -307,46 +310,44 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         if !hasInFlight(pluginID: installed.id) {
             scratch?.reapAll(pluginID: installed.id)
         }
-        let context = executionQueue.sync {
-            PluginContext(
+        guard let evaluation = executionQueue.sync(timeout: Self.activationPreflightTimeout, { [self] in
+            let context = PluginContext(
                 manifest: installed.manifest, virtualMachine: virtualMachine,
                 registry: capabilities, processKind: processContext.kind,
                 scratchGeneration: { generationID },
                 log: { [weak self, id = installed.id] line in
                     guard let self else { return }
-                    self.diagnostics.record(
-                        line, pluginID: id, invocation: self.activeInvocation)
-                },
-                generationID: generationID)
-        }
-        if let failure = executionQueue.sync({ context.evaluate(source: source) }) {
-            return fail(installed, failure)
-        }
-        if let failure = context.registrationFailure {
-            return fail(installed, failure)
-        }
-        let missing = installed.manifest.requiredHooks.subtracting(context.registeredHooks)
-        if !missing.isEmpty {
+                    self.diagnostics.record(line, pluginID: id, invocation: self.activeInvocation)
+                }, generationID: generationID)
+            var failure = context.evaluate(source: source) ?? context.registrationFailure
+            if failure == nil {
+                let missing = installed.manifest.requiredHooks.subtracting(context.registeredHooks)
+                if !missing.isEmpty {
+                    failure = PluginJSFailure(
+                        pluginID: installed.id, hook: "register", reason: .missingHook,
+                        message: "the manifest needs these hooks, which the plugin did not register: "
+                            + missing.map(\.rawValue).sorted().joined(separator: ", "))
+                }
+            }
+            if failure == nil {
+                context.seal()
+                let declared = Set(installed.manifest.capabilities)
+                let granted = context.grantedNamespaces
+                let stray = context.strayNamespaces
+                if granted != declared || !stray.isEmpty {
+                    failure = PluginJSFailure(
+                        pluginID: installed.id, hook: "<capabilities>", reason: .capabilityMismatch,
+                        message: Self.mismatchMessage(granted: granted, declared: declared, stray: stray))
+                }
+            }
+            return (context, failure)
+        }) else {
             return fail(installed, PluginJSFailure(
-                pluginID: installed.id, hook: "register", reason: .missingHook,
-                message: "the manifest needs these hooks, which the plugin did not register: "
-                    + missing.map(\.rawValue).sorted().joined(separator: ", ")))
+                pluginID: installed.id, hook: "<load>", reason: .timeout,
+                message: "the plugin's top-level code did not finish before the load deadline"))
         }
-        // The grant a plugin can SEE and the grant its manifest asked for are
-        // produced by two different things. A disagreement is a wiring fault:
-        // an undeclared namespace reaching a plugin would be an ungranted
-        // capability, and a granted one missing would be a silent degradation.
-        let (granted, stray) = executionQueue.sync { () -> (Set<PluginCapabilityName>, Set<String>) in
-            context.seal()
-            return (context.grantedNamespaces, context.strayNamespaces)
-        }
-        let declared = Set(installed.manifest.capabilities)
-        guard granted == declared, stray.isEmpty else {
-            return fail(installed, PluginJSFailure(
-                pluginID: installed.id, hook: "<capabilities>", reason: .capabilityMismatch,
-                message: Self.mismatchMessage(
-                    granted: granted, declared: declared, stray: stray)))
-        }
+        let (context, failure) = evaluation
+        if let failure { return fail(installed, failure) }
         let plugin = LoadedPlugin(
             manifest: installed.manifest,
             summary: installed.manifest.summary(

@@ -90,6 +90,30 @@ final class PluginRuntimeTests: XCTestCase {
         let itemId: String?
     }
 
+    func testLaunchLoadHasADeadlineWithoutBlockingOtherIsolatedRuntimes() async throws {
+        let store = runner.store
+        let slow = plugin(body: """
+            const until = Date.now() + 1800;
+            while (Date.now() < until) {}
+            \(claimingBody)
+            """)
+        let manifest = try PluginManifestParser.parse(source: slow).get()
+        _ = try store.install(source: slow, manifest: manifest, origin: .paste)
+        let isolated = PluginRuntime(
+            store: store, bundled: BundledPluginCatalog(bundle: nil, store: store),
+            processContext: PluginProcessContext(kind: .app), isolated: true)
+        let started = Date()
+        let reports = isolated.loadAll()
+        XCTAssertEqual(reports.first?.failure?.reason, .timeout)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.6)
+        // The abandoned draft still runs for another 0.8s. Live plugin work
+        // must proceed immediately on a different VM and queue.
+        let liveStart = Date()
+        _ = try runner.load(plugin(body: claimingBody))
+        XCTAssertLessThan(Date().timeIntervalSince(liveStart), 0.5)
+        try? await Task.sleep(nanoseconds: 900_000_000)
+    }
+
     // MARK: - Loading
 
     func testAPluginThatRegistersItsRequiredHooksLoads() throws {

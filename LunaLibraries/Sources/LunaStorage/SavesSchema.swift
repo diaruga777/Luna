@@ -57,6 +57,7 @@ enum SavesSchema {
                     try rebuildPreloadPages(in: database)
                 }
                 try database.execute(tables)
+                try database.execute(KeyboardStore.schema)
                 // Version 11 assigns every live media job to the exact
                 // process-specific background session that owns its tasks.
                 // CREATE TABLE above handles a fresh database; an existing

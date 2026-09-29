@@ -1399,6 +1399,17 @@ public final class SavesStore {
     /// exists so the sidecar stores share this process's ONE connection rather
     /// than opening a second. A store whose rows drive a card's status line
     /// follows its write with `notifySidecarChanged()`.
+    // Keyboard queries share this connection but never materialize the saves list.
+    func keyboardRead<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
+        guard let database = database() else { throw CocoaError(.fileReadUnknown) }
+        return try database.perform(body)
+    }
+
+    func keyboardWrite<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
+        guard let database = database() else { throw CocoaError(.fileWriteUnknown) }
+        return try database.transaction(body)
+    }
+
     func pluginSidecar<T>(_ body: (SavesDatabase) throws -> T) -> T? {
         guard let database = database() else { return nil }
         do {

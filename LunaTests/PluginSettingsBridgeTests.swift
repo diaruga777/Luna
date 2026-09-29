@@ -25,12 +25,16 @@ final class PluginSettingsBridgeTests: XCTestCase {
         super.setUp()
         runner = PluginJSFixtureRunner()
         previousSettings = PluginPlatformServices.settings
-        PluginPlatformServices.settings = runner.kv
+        PluginSecretsStore.shared.removeAll(pluginID: Self.pluginID)
+        PluginPlatformServices.settings = PluginSettingsStore(values: runner.kv) { [store = runner.store] id in
+            store.plugin(id: id)?.manifest.settings ?? []
+        }
         runner.capabilities.register(
             PluginSettingsBridge(processKind: .app, scheduler: runner.runtime))
     }
 
     override func tearDown() {
+        PluginSecretsStore.shared.removeAll(pluginID: Self.pluginID)
         PluginPlatformServices.settings = previousSettings
         runner.cleanUp()
         runner = nil
@@ -45,7 +49,7 @@ final class PluginSettingsBridgeTests: XCTestCase {
                 """
                 /* luna-plugin
                 { "id": "\(Self.pluginID)", "name": "Settings", "version": "1.0.0", "api": 1,
-                  "capabilities": ["settings"],
+                  "capabilities": ["settings", "secrets"],
                   "settings": [
                     { "key": "apiKey", "type": "password", "label": "API Key", "secret": true },
                     { "key": "mode", "type": "text", "label": "Mode", "default": "auto" }
@@ -90,6 +94,15 @@ final class PluginSettingsBridgeTests: XCTestCase {
             return { value: await luna.settings.get("apiKey") };
         """)
         XCTAssertEqual(json, "\"\"", "the plaintext never reaches JavaScript")
+    }
+
+    func testAPluginCanUseTheTokenEnteredThroughItsSettings() async {
+        let json = await answer("""
+            await luna.settings.set("apiKey", "test-token");
+            return { value: await luna.secrets.get("apiKey") };
+        """)
+        XCTAssertEqual(json, "\"test-token\"")
+        XCTAssertEqual(runner.kv.valueJSON(pluginID: Self.pluginID, key: "apiKey"), "\"\"")
     }
 
     func testGetAnswersTheFieldsDefaultWhenNothingIsStored() async {

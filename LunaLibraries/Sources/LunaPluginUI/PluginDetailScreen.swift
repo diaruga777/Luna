@@ -317,8 +317,11 @@ public final class PluginDetailScreen: NavHeaderTableController {
     ) {
         do {
             try settingsStore.setValueJSON(json, pluginID: listing.summary.id, key: field.key)
-            values[field.key] = json
-            notifySettingsChanged(key: field.key, valueJSON: json)
+            let visibleJSON = field.isSecret
+                ? settingsStore.valueJSON(pluginID: listing.summary.id, key: field.key) ?? "null"
+                : json
+            values[field.key] = visibleJSON
+            notifySettingsChanged(key: field.key, valueJSON: visibleJSON)
             if reloadsRows { reloadValues() }
         } catch {
             presentError(error)

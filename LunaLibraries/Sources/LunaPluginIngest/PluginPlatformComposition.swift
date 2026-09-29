@@ -86,7 +86,16 @@ public enum PluginPlatformComposition {
             store: store, bundled: bundled, runtime: runtime, kv: keyValueStore)
         PluginPlatformServices.importer = PluginImporter(
             store: store, bundled: bundled, runtime: runtime)
-        PluginPlatformServices.settings = keyValueStore
+        let settings = PluginSettingsStore(values: keyValueStore) { id in
+            store.plugin(id: id)?.manifest.settings
+                ?? bundled.plugins().first(where: { $0.id == id })?.manifest.settings ?? []
+        }
+        // Migrate legacy secret fields before any plugin can read ordinary storage.
+        let imported = store.installedPlugins()
+        for plugin in imported + bundled.plugins(shadowedBy: imported) {
+            _ = settings.allValuesJSON(pluginID: plugin.id)
+        }
+        PluginPlatformServices.settings = settings
         PluginPlatformServices.scratch = scratch
 
         let reports = runtime.loadAll()

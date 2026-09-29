@@ -3,18 +3,14 @@ import LunaDesignSystem
 import LunaModels
 import LunaWriterModels
 
-/// One row of the sheets list: title, snippet, relative date, a goal ring
-/// when the sheet carries a goal, a favourite dot, and keyword chips.
+/// A document preview with a clear title, short excerpt, and its location/date.
 public final class SheetCell: UICollectionViewListCell {
 
     public static let reuseIdentifier = "SheetCell"
 
     private let titleLabel = UILabel()
     private let chapterNumber = UILabel()
-    private let chapterBadge: UIVisualEffectView = {
-        if #available(iOS 26, *) { return UIVisualEffectView(effect: UIGlassEffect()) }
-        return UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-    }()
+    private let chapterBadge = UIView()
     private let snippetLabel = UILabel()
     private let dateLabel = UILabel()
 
@@ -50,27 +46,31 @@ public final class SheetCell: UICollectionViewListCell {
 
     private func configureViews() {
         titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.numberOfLines = 0
+        titleLabel.numberOfLines = 2
         titleLabel.adjustsFontForContentSizeCategory = true
-        chapterNumber.font = .monospacedDigitSystemFont(ofSize: 15, weight: .medium)
+        chapterNumber.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .monospacedDigitSystemFont(ofSize: 15, weight: .medium))
+        chapterNumber.adjustsFontForContentSizeCategory = true
         chapterNumber.textColor = LunaColors.secondaryText
         chapterNumber.textAlignment = .center
         chapterNumber.adjustsFontSizeToFitWidth = true
         chapterNumber.minimumScaleFactor = 0.65
         chapterNumber.translatesAutoresizingMaskIntoConstraints = false
-        if #available(iOS 26, *) { chapterBadge.cornerConfiguration = .capsule() }
-        else { chapterBadge.layer.cornerRadius = 18; chapterBadge.clipsToBounds = true }
+        chapterBadge.backgroundColor = .tertiarySystemFill
+        chapterBadge.layer.cornerRadius = 8
+        chapterBadge.layer.cornerCurve = .continuous
         chapterBadge.isUserInteractionEnabled = false
-        chapterBadge.contentView.addSubview(chapterNumber)
+        chapterBadge.addSubview(chapterNumber)
         chapterBadge.isHidden = true
         let badgeWidth = chapterBadge.widthAnchor.constraint(equalToConstant: 36)
         badgeWidth.priority = UILayoutPriority(999)
         NSLayoutConstraint.activate([
             badgeWidth,
-            chapterBadge.heightAnchor.constraint(equalToConstant: 36),
-            chapterNumber.leadingAnchor.constraint(equalTo: chapterBadge.contentView.leadingAnchor, constant: 8),
-            chapterNumber.trailingAnchor.constraint(equalTo: chapterBadge.contentView.trailingAnchor, constant: -8),
-            chapterNumber.centerYAnchor.constraint(equalTo: chapterBadge.contentView.centerYAnchor),
+            chapterBadge.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+            chapterNumber.leadingAnchor.constraint(equalTo: chapterBadge.leadingAnchor, constant: 8),
+            chapterNumber.trailingAnchor.constraint(equalTo: chapterBadge.trailingAnchor, constant: -8),
+            chapterNumber.centerYAnchor.constraint(equalTo: chapterBadge.centerYAnchor),
+            chapterNumber.topAnchor.constraint(greaterThanOrEqualTo: chapterBadge.topAnchor, constant: 8),
+            chapterNumber.bottomAnchor.constraint(lessThanOrEqualTo: chapterBadge.bottomAnchor, constant: -8),
         ])
         titleLabel.textColor = LunaColors.primaryText
 
@@ -81,7 +81,8 @@ public final class SheetCell: UICollectionViewListCell {
 
         dateLabel.font = .preferredFont(forTextStyle: .caption1)
         dateLabel.adjustsFontForContentSizeCategory = true
-        dateLabel.textColor = LunaColors.tertiaryText
+        dateLabel.textColor = .secondaryLabel
+        dateLabel.numberOfLines = 2
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, snippetLabel, dateLabel])
         stack.axis = .vertical
@@ -89,7 +90,7 @@ public final class SheetCell: UICollectionViewListCell {
         let row = UIStackView(arrangedSubviews: [chapterBadge, stack])
         row.axis = .horizontal
         row.spacing = 14
-        row.alignment = .center
+        row.alignment = .top
         row.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(row)
 
@@ -102,15 +103,20 @@ public final class SheetCell: UICollectionViewListCell {
         ])
     }
 
-    public func configure(with document: WriterDocument, chapterOrdinal: Int? = nil) {
+    public func configure(with document: WriterDocument, chapterOrdinal: Int? = nil, location: String? = nil) {
         chapterBadge.isHidden = chapterOrdinal == nil
         chapterNumber.text = chapterOrdinal.map { String($0) }
         chapterNumber.accessibilityLabel = chapterOrdinal.map { L10n.string("WriterStorage_chapterTitle", Int64($0)) }
-        snippetLabel.numberOfLines = 3
+        snippetLabel.numberOfLines = traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? 0 : 2
+        titleLabel.numberOfLines = traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? 0 : 2
         titleLabel.text = document.title.isEmpty ? L10n.string("Common_untitled") : document.title
         snippetLabel.text = document.snippet
         snippetLabel.isHidden = document.snippet.isEmpty
-        dateLabel.text = Self.relativeDateText(for: document.updatedAt)
+        dateLabel.text = [Self.relativeDateText(for: document.updatedAt), location].compactMap { $0 }.joined(separator: " · ")
+        accessibilityLabel = [chapterNumber.accessibilityLabel, titleLabel.text, snippetLabel.text, dateLabel.text]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        isAccessibilityElement = true
+        accessibilityTraits.insert(.button)
 
     }
 
@@ -185,6 +191,9 @@ public final class UnattachedNoteCell: UICollectionViewListCell {
         content.secondaryText = linkedTitles.isEmpty ? L10n.string("WriterLibrary_polish_unlinkedNote") : linkedTitles.joined(separator: " · ")
         content.secondaryTextProperties.numberOfLines = 0
         content.textToSecondaryTextVerticalPadding = 8
+        content.directionalLayoutMargins.top = 16
+        content.directionalLayoutMargins.bottom = 16
+        content.secondaryTextProperties.font = .preferredFont(forTextStyle: .caption1)
         contentConfiguration = content
         accessories = [.customView(configuration: .init(customView: attachButton, placement: .trailing()))]
     }

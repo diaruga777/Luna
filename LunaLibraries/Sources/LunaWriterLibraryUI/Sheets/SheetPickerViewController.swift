@@ -16,7 +16,7 @@ public final class SheetPickerViewController: UITableViewController {
     public init(library: WriterLibraryStoring, onPick: @escaping (DocumentID) -> Void) {
         self.library = library
         self.onPick = onPick
-        super.init(style: .plain)
+        super.init(style: .insetGrouped)
     }
 
     @available(*, unavailable)
@@ -25,7 +25,8 @@ public final class SheetPickerViewController: UITableViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.string("WriterLibrary_sheets_attachToTitle")
-        tableView.backgroundColor = LunaColors.background
+        tableView.backgroundColor = .systemGroupedBackground
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: L10n.string("Common_cancel"), style: .plain, target: self,
             action: #selector(cancelTapped))
@@ -47,7 +48,11 @@ public final class SheetPickerViewController: UITableViewController {
         cell.textLabel?.text = document.title.isEmpty ? L10n.string("Common_untitled") : document.title
         cell.detailTextLabel?.text = document.snippet
         cell.detailTextLabel?.textColor = LunaColors.secondaryText
-        cell.backgroundColor = LunaColors.secondaryBackground
+        cell.backgroundColor = .secondarySystemGroupedBackground
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.textLabel?.numberOfLines = 0
+        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
         return cell
     }
 

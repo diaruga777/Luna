@@ -37,6 +37,8 @@ public final class LibraryRootViewController: UISplitViewController {
         self.primaryNavigation = UINavigationController(rootViewController: groupsViewController)
         self.supplementaryNavigation = UINavigationController(rootViewController: sheetsViewController)
         super.init(style: .tripleColumn)
+        primaryNavigation.navigationBar.prefersLargeTitles = true
+        supplementaryNavigation.navigationBar.prefersLargeTitles = true
         delegate = self
         groupsViewController.selectionDelegate = self
         sheetsViewController.selectionDelegate = self
@@ -132,16 +134,11 @@ public final class LibraryRootViewController: UISplitViewController {
     private static func emptySecondaryPlaceholder() -> UIViewController {
         let placeholder = UIViewController()
         placeholder.view.backgroundColor = LunaColors.background
-        let label = UILabel()
-        label.text = L10n.string("WriterLibrary_editor_emptySelection")
-        label.textColor = LunaColors.secondaryText
-        label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        placeholder.view.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: placeholder.view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: placeholder.view.centerYAnchor),
-        ])
+        var empty = UIContentUnavailableConfiguration.empty()
+        empty.image = UIImage(systemName: "doc.text")
+        empty.text = L10n.string("WriterLibrary_editor_emptySelection")
+        empty.secondaryText = L10n.string("WriterLibrary_navigation_chooseDocument")
+        placeholder.contentUnavailableConfiguration = empty
         return placeholder
     }
 

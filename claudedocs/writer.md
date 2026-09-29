@@ -1,5 +1,31 @@
 # Luna Writer
 
+## Library navigation refinement (September 30, 2026)
+
+The library uses native grouped destinations on iPhone and an outline sidebar
+on wider layouts. The root has a large Library title, document/note counts,
+separate book and collection rows, and direct compose access. Redundant Library
+and Trash section headings are removed. Counts follow create, move, trash, and
+restore operations without rebuilding the sidebar for ordinary text autosaves.
+
+Document, chapter, and note lists share an inset grouped presentation and a
+visible search field. Document previews use a title, two-line excerpt, and a
+quieter date/location line; accessibility text sizes can expand the title and
+excerpt. Chapter numbers use simple inset badges. The compose button is always
+in the same position. The More menu contains selection, sorting, book contents,
+and Empty Trash as appropriate. Empty lists explain their state and offer a
+contextual New Document, New Chapter, or New Note action.
+
+Selection mode keeps native back navigation, disables actions until documents
+are selected, reports the selection count, and offers Restore in Trash. Leaving
+the list or changing scope clears selection mode and its toolbar. The library
+clears its destination highlight on iPhone while retaining it beside visible
+content on iPad. Move and document pickers use the same grouped styling.
+The writing surface is unchanged.
+
+Validation: the navigation/storage-focused unit suites and Simulator UI driver
+cover library, documents, books/contents, notes, search, selection, and Trash.
+
 ## Books and notes navigation (September 2026)
 
 Writer now centers on books, chapter collections, documents, and notes.

@@ -25,9 +25,8 @@ public enum GroupsRow: Hashable {
     case filter(FilterID)
 }
 
-/// The Ulysses sidebar: Library (All / Last 7 Days / Favorites), Inbox,
-/// nested Groups (with filters as children), and Trash. A `UICollectionView`
-/// sidebar list, one section per fixed area plus a nested section for Groups.
+/// The library browser adapts from grouped destinations on iPhone to an
+/// outline sidebar beside the document list on iPad.
 public final class GroupsViewController: UICollectionViewController {
 
     private enum Section: Int, CaseIterable {
@@ -47,6 +46,18 @@ public final class GroupsViewController: UICollectionViewController {
     /// root of the Groups section.
     private var filtersByGroup: [GroupID?: [WriterFilter]] = [:]
     private var unattachedNoteCount = 0
+    private var counts: [GroupsRow: Int] = [:]
+    private struct CountMembership: Equatable {
+        let group: GroupID
+        let isTrashed: Bool
+        let isRecent: Bool
+        init(_ document: WriterDocument) {
+            group = document.groupID
+            isTrashed = document.trashedAt != nil
+            isRecent = document.updatedAt >= Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        }
+    }
+    private var countMemberships: [DocumentID: CountMembership] = [:]
     /// The row shown highlighted — kept so a reload from a `LibraryChange`
     /// does not lose the sidebar's selection (organiser #8).
     private var selectedRow: GroupsRow = .libraryAll
@@ -85,13 +96,22 @@ public final class GroupsViewController: UICollectionViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        navigationItem.largeTitleDisplayMode = .always
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        navigationItem.standardAppearance = appearance
+        navigationItem.scrollEdgeAppearance = appearance
         title = L10n.string("WriterLibrary_groups_screenTitle")
-        collectionView.backgroundColor = LunaColors.background
+        collectionView.backgroundColor = .systemGroupedBackground
+        configureLayout()
         configureDataSource()
         configureDragAndDrop()
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "plus"), menu: newItemMenu())
-        navigationItem.rightBarButtonItem?.accessibilityLabel = L10n.string("Common_add")
+        let organize = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: newItemMenu())
+        organize.accessibilityLabel = L10n.string("Common_add")
+        let compose = UIBarButtonItem(barButtonSystemItem: .compose, target: self, action: #selector(composeTapped))
+        compose.accessibilityLabel = L10n.string("WriterLibrary_command_newSheet")
+        navigationItem.rightBarButtonItems = [compose, organize]
+        navigationItem.backButtonDisplayMode = .minimal
         let settings = UIBarButtonItem(
             image: UIImage(systemName: "gearshape"), style: .plain, target: self,
             action: #selector(settingsTapped))
@@ -108,9 +128,27 @@ public final class GroupsViewController: UICollectionViewController {
     /// where reappearing after a push is the usual "nothing is selected yet".
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationItem.largeTitleDisplayMode = .never
-        navigationController?.navigationBar.prefersLargeTitles = false
+        navigationItem.largeTitleDisplayMode = .always
+        navigationController?.setToolbarHidden(true, animated: animated)
+        reload()
         clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
+    }
+
+    @objc private func composeTapped() {
+        requestNewDocument(in: newDocumentTargetGroup)
+    }
+
+    private func configureLayout() {
+        collectionView.collectionViewLayout = UICollectionViewCompositionalLayout { [weak self] index, environment in
+            let compact = environment.traitCollection.horizontalSizeClass == .compact
+            var configuration = UICollectionLayoutListConfiguration(appearance: compact ? .insetGrouped : .sidebar)
+            configuration.backgroundColor = .systemGroupedBackground
+            let sections = self?.dataSource?.snapshot().sectionIdentifiers ?? []
+            if sections.indices.contains(index), sections[index] == .groups {
+                configuration.headerMode = .supplementary
+            }
+            return NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
+        }
     }
 
     // MARK: - Data
@@ -129,6 +167,16 @@ public final class GroupsViewController: UICollectionViewController {
             filtersByGroup[key]?.sort { $0.sortIndex < $1.sortIndex }
         }
         unattachedNoteCount = (try? notes.unattachedNotes().count) ?? 0
+        let documents = (try? library.documents(matching: FilterPredicate(), scope: nil)) ?? []
+        counts = Dictionary(uniqueKeysWithValues: Dictionary(grouping: documents, by: \.groupID).map {
+            (GroupsRow.group($0.key), $0.value.count)
+        })
+        counts[.libraryAll] = documents.count
+        counts[.libraryNotes] = (try? notes.allNotes().count) ?? 0
+        counts[.libraryRecent] = (try? library.recent(days: 7).count) ?? 0
+        let trash = (try? library.documents(in: library.trashGroupID, sort: .modifiedDescending)) ?? []
+        counts[.trashRow] = trash.count
+        countMemberships = Dictionary(uniqueKeysWithValues: (documents + trash).map { ($0.id, CountMembership($0)) })
         applySnapshots()
     }
 
@@ -199,7 +247,8 @@ public final class GroupsViewController: UICollectionViewController {
 
     private func applySnapshots() {
         var snapshot = NSDiffableDataSourceSnapshot<Section, GroupsRow>()
-        snapshot.appendSections([.library, .groups, .trash])
+        let hasGroups = !topLevelGroups().isEmpty || !(filtersByGroup[nil] ?? []).isEmpty
+        snapshot.appendSections(hasGroups ? [.library, .groups, .trash] : [.library, .trash])
         dataSource.apply(snapshot, animatingDifferences: false)
 
         var library = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
@@ -209,7 +258,7 @@ public final class GroupsViewController: UICollectionViewController {
 
         var groupsSnapshot = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
         appendGroupTree(into: &groupsSnapshot, parent: nil)
-        dataSource.apply(groupsSnapshot, to: .groups, animatingDifferences: false)
+        if hasGroups { dataSource.apply(groupsSnapshot, to: .groups, animatingDifferences: false) }
 
         var trash = NSDiffableDataSourceSectionSnapshot<GroupsRow>()
         trash.append([.trashRow])
@@ -247,6 +296,12 @@ public final class GroupsViewController: UICollectionViewController {
     /// Re-applies `selectedRow`'s highlight after a snapshot rebuild, which
     /// otherwise drops it (organiser #8).
     private func reselect() {
+        guard !(splitViewController?.isCollapsed ?? false) else {
+            for indexPath in collectionView.indexPathsForSelectedItems ?? [] {
+                collectionView.deselectItem(at: indexPath, animated: false)
+            }
+            return
+        }
         guard let indexPath = dataSource.indexPath(for: selectedRow) else { return }
         collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
     }
@@ -300,7 +355,12 @@ public final class GroupsViewController: UICollectionViewController {
     // MARK: - Cell content
 
     private func configure(cell: UICollectionViewListCell, for row: GroupsRow) {
-        var content = UIListContentConfiguration.sidebarCell()
+        var content = traitCollection.horizontalSizeClass == .compact
+            ? UIListContentConfiguration.cell() : UIListContentConfiguration.sidebarCell()
+        content.textProperties.numberOfLines = traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? 0 : 2
+        content.directionalLayoutMargins.top = 14
+        content.directionalLayoutMargins.bottom = 14
+        content.imageProperties.reservedLayoutSize = CGSize(width: 28, height: 28)
         // Pinned, so a row reconfigured after it was selected does not keep
         // the accent tint UIKit gave its glyph while it was highlighted.
         content.imageProperties.tintColor = .tintColor
@@ -308,7 +368,7 @@ public final class GroupsViewController: UICollectionViewController {
         switch row {
         case .libraryAll:
             content.text = L10n.string("WriterLibrary_groups_libraryAll")
-            content.image = UIImage(systemName: "tray.full")
+            content.image = UIImage(systemName: "doc.on.doc")
         case .libraryNotes:
             content.text = L10n.string("WriterLibrary_polish_allNotes")
             content.image = UIImage(systemName: "note.text")
@@ -343,7 +403,22 @@ public final class GroupsViewController: UICollectionViewController {
             content.text = filter?.name ?? ""
             content.image = UIImage(systemName: "line.3.horizontal.decrease.circle")
         }
+        var accessories = cell.accessories
+        if let count = counts[row] {
+            accessories.insert(.label(text: count.formatted()), at: 0)
+        } else if case .group = row {
+            accessories.insert(.label(text: "0"), at: 0)
+        }
+        if traitCollection.horizontalSizeClass == .compact, accessories.isEmpty || !isExpandable(row) {
+            accessories.append(.disclosureIndicator())
+        }
+        cell.accessories = accessories
         cell.contentConfiguration = content
+    }
+
+    private func isExpandable(_ row: GroupsRow) -> Bool {
+        if case .group(let id) = row { return hasChildren(id) }
+        return false
     }
 
     private func filtersByID(_ id: FilterID) -> WriterFilter? {
@@ -731,7 +806,12 @@ extension GroupsViewController: UICollectionViewDragDelegate, UICollectionViewDr
 extension GroupsViewController: LibraryChangeObserving {
     public func libraryDidChange(_ change: LibraryChange) {
         switch change {
-        case .groups, .notes: reload()
+        case .groups, .notes, .documents: reload()
+        case .document(let id):
+            // Ordinary autosaves do not change destination counts. Avoid
+            // rebuilding the whole sidebar while the writer is typing.
+            let membership = (try? library.document(id)).map { CountMembership($0) }
+            if membership != countMemberships[id] { reload() }
         default: break
         }
     }

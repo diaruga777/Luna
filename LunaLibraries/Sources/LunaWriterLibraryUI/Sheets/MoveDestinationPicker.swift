@@ -18,7 +18,7 @@ public final class MoveDestinationPicker: UITableViewController {
     public init(library: WriterLibraryStoring, onPick: @escaping (GroupID) -> Void) {
         self.library = library
         self.onPick = onPick
-        super.init(style: .plain)
+        super.init(style: .insetGrouped)
     }
 
     @available(*, unavailable)
@@ -27,7 +27,8 @@ public final class MoveDestinationPicker: UITableViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.string("WriterLibrary_move_title")
-        tableView.backgroundColor = LunaColors.background
+        tableView.backgroundColor = .systemGroupedBackground
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: L10n.string("Common_cancel"), style: .plain, target: self,
             action: #selector(cancelTapped))
@@ -64,7 +65,11 @@ public final class MoveDestinationPicker: UITableViewController {
         cell.textLabel?.numberOfLines = 0
         cell.imageView?.image = UIImage(systemName: row.group.iconName)
         cell.indentationLevel = row.depth
-        cell.backgroundColor = LunaColors.secondaryBackground
+        cell.backgroundColor = .secondarySystemGroupedBackground
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.textLabel?.numberOfLines = 0
+        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
         return cell
     }
 

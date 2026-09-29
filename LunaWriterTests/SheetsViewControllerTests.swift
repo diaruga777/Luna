@@ -273,6 +273,49 @@ final class SheetsViewControllerTests: XCTestCase {
         XCTAssertEqual(recorder.selected?.id, created.id)
     }
 
+    @MainActor
+    func testSelectionActionsAreDisabledUntilADocumentIsSelected() throws {
+        let stack = try makeWriterStack()
+        _ = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        layoutWriterScreen(controller)
+        controller.setEditing(true, animated: false)
+        XCTAssertFalse(try XCTUnwrap(controller.toolbarItems?.first).isEnabled)
+        XCTAssertFalse(try XCTUnwrap(controller.toolbarItems?.last).isEnabled)
+
+        let index = IndexPath(item: 0, section: 0)
+        controller.collectionView.selectItem(at: index, animated: false, scrollPosition: [])
+        controller.collectionView(controller.collectionView, didSelectItemAt: index)
+        XCTAssertTrue(try XCTUnwrap(controller.toolbarItems?.first).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(controller.toolbarItems?.last).isEnabled)
+
+        controller.select(.notes)
+        XCTAssertFalse(controller.isEditing)
+        XCTAssertNil(controller.toolbarItems)
+        XCTAssertTrue(controller.selectedRowsForTesting.isEmpty)
+    }
+
+    @MainActor
+    func testTrashSelectionOffersRestoreAndDoesNotRetrashDocuments() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        try stack.library.trash(document.id)
+        let controller = SheetsViewController(library: stack.library, notes: stack.library, textStore: stack.textStore)
+        layoutWriterScreen(controller)
+        controller.select(.trash)
+        controller.setEditing(true, animated: false)
+        let restore = try XCTUnwrap(controller.toolbarItems?.first)
+        XCTAssertEqual(restore.title, "Restore")
+        XCTAssertEqual(controller.toolbarItems?.count, 3)
+
+        let index = IndexPath(item: 0, section: 0)
+        controller.collectionView.selectItem(at: index, animated: false, scrollPosition: [])
+        controller.collectionView(controller.collectionView, didSelectItemAt: index)
+        _ = controller.perform(try XCTUnwrap(restore.action))
+        XCTAssertNil(try stack.library.document(document.id)?.trashedAt)
+        XCTAssertFalse(controller.isEditing)
+    }
+
     // MARK: - The open sheet's highlight (organiser #8)
 
     /// Beside a visible editor column the list must say which sheet is on

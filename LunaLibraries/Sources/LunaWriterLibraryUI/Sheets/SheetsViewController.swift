@@ -41,13 +41,14 @@ public final class SheetsViewController: UICollectionViewController {
     private var nonChapterSort: DocumentSort = .modifiedDescending
     private var chapterOrdinals: [DocumentID: Int] = [:]
     private var searchQuery: String?
+    private var needsScrollToTop = true
     private var pendingResort: DispatchWorkItem?
     /// How long a `.document` change (typing autosave) waits before the list
     /// re-sorts; a reconfigured row updates immediately (organiser #21).
     private static let resortDebounceInterval: TimeInterval = 2
 
     private let searchController = UISearchController(searchResultsController: nil)
-    private let emptyLabel = UILabel()
+    private var groupNames: [GroupID: String] = [:]
     /// The live configuration the list layout was built from — reachable so
     /// a test can pull a swipe action through the SAME provider the real
     /// layout uses, rather than calling `leadingSwipeActions(for:)` directly
@@ -94,8 +95,12 @@ public final class SheetsViewController: UICollectionViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        collectionView.backgroundColor = LunaColors.background
-        configureEmptyState()
+        navigationItem.largeTitleDisplayMode = .never
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        navigationItem.standardAppearance = appearance
+        navigationItem.scrollEdgeAppearance = appearance
+        collectionView.backgroundColor = .systemGroupedBackground
         configureSwipeActionsLayout()
         configureDataSource()
         configureDragAndDrop()
@@ -113,8 +118,8 @@ public final class SheetsViewController: UICollectionViewController {
     /// the providers on `UICollectionLayoutListConfiguration` are the only
     /// place they can live (organiser #18).
     private func configureSwipeActionsLayout() {
-        var configuration = UICollectionLayoutListConfiguration(appearance: isChapterList ? .insetGrouped : .plain)
-        configuration.backgroundColor = LunaColors.background
+        var configuration = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
+        configuration.backgroundColor = .systemGroupedBackground
         configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
             guard let self, case .document(let id) = self.dataSource.itemIdentifier(for: indexPath)
             else { return nil }
@@ -136,6 +141,8 @@ public final class SheetsViewController: UICollectionViewController {
         let changedScope = currentSelection != selection
         currentSelection = selection
         if changedScope {
+            needsScrollToTop = true
+            if isEditing { setEditing(false, animated: false) }
             searchQuery = nil
             searchController.searchBar.text = nil
             searchController.isActive = false
@@ -148,11 +155,8 @@ public final class SheetsViewController: UICollectionViewController {
         if wasChapterList && !isChapterList { currentSort = nonChapterSort }
         if isViewLoaded && wasChapterList != isChapterList { configureSwipeActionsLayout() }
         navigationItem.largeTitleDisplayMode = .never
-        if navigationController?.topViewController === self {
-            navigationController?.navigationBar.prefersLargeTitles = false
-        }
         title = titleText(for: selection)
-        navigationItem.leftBarButtonItem = selection == .notes ? nil : editButtonItem
+        navigationItem.leftBarButtonItem = nil
         searchController.searchBar.placeholder = selection == .notes ? L10n.string("WriterLibrary_polish_searchNotes") : L10n.string("WriterLibrary_polish_searchDocuments")
         navigationItem.rightBarButtonItems = trailingBarButtons()
         reload()
@@ -163,15 +167,30 @@ public final class SheetsViewController: UICollectionViewController {
     /// collapsed, where the list is what the writer came back to.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.navigationBar.prefersLargeTitles = false
         clearsSelectionOnViewWillAppear = splitViewController?.isCollapsed ?? false
+        navigationController?.setToolbarHidden(!isEditing, animated: animated)
         reselectOpenDocument()
+    }
+
+    public override func viewIsAppearing(_ animated: Bool) {
+        super.viewIsAppearing(animated)
+        if needsScrollToTop {
+            view.layoutIfNeeded()
+            collectionView.setContentOffset(CGPoint(x: 0, y: -collectionView.adjustedContentInset.top), animated: false)
+            needsScrollToTop = false
+        }
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isEditing { setEditing(false, animated: false) }
+        navigationController?.setToolbarHidden(true, animated: animated)
     }
 
     /// Puts `openDocumentID`'s highlight back after a snapshot rebuild,
     /// which otherwise drops it (organiser #8).
     private func reselectOpenDocument() {
-        guard isViewLoaded, !(splitViewController?.isCollapsed ?? true) else { return }
+        guard isViewLoaded, !isEditing, !(splitViewController?.isCollapsed ?? true) else { return }
         guard let id = openDocumentID, let indexPath = dataSource.indexPath(for: .document(id))
         else { return }
         collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
@@ -206,6 +225,8 @@ public final class SheetsViewController: UICollectionViewController {
             let chapters = (try? library.documents(in: id, sort: .manual)) ?? []
             chapterOrdinals = Dictionary(uniqueKeysWithValues: chapters.enumerated().map { ($1.id, $0 + 1) })
         } else { chapterOrdinals.removeAll() }
+        groupNames = Dictionary(uniqueKeysWithValues: ((try? library.groups()) ?? [])
+            .filter { $0.kind.isEditable }.map { ($0.id, $0.name) })
         let documents = loadDocuments()
         documentsByID = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
 
@@ -230,42 +251,42 @@ public final class SheetsViewController: UICollectionViewController {
         dataSource.apply(snapshot, animatingDifferences: isChapterList && collectionView.window != nil
                          && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
             self?.reselectOpenDocument()
+            self?.updateSelectionToolbar()
         }
         updateEmptyState(rowCount: snapshot.numberOfItems)
-    }
-
-    private func configureEmptyState() {
-        emptyLabel.font = .preferredFont(forTextStyle: .body)
-        emptyLabel.adjustsFontForContentSizeCategory = true
-        emptyLabel.textColor = LunaColors.secondaryText
-        emptyLabel.textAlignment = .center
-        emptyLabel.numberOfLines = 0
-        emptyLabel.isHidden = true
-        collectionView.backgroundView = emptyLabel
-    }
-
-    /// Says why the list is blank: nothing matched the search, the Trash is
-    /// empty, or this scope has no documents yet.
-    private func updateEmptyState(rowCount: Int) {
-        emptyLabel.isHidden = rowCount > 0
-        guard rowCount == 0 else { contentUnavailableConfiguration = nil; return }
-        if let searchQuery, !searchQuery.isEmpty {
-            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptySearch")
-        } else if currentSelection == .notes {
-            emptyLabel.text = L10n.string("WriterLibrary_polish_notesEmpty")
-        } else if isChapterList {
-            emptyLabel.text = L10n.string("WriterLibrary_polish_bookEmpty")
-        } else if currentSelection == .trash {
-            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyTrash")
-        } else {
-            emptyLabel.text = L10n.string("WriterLibrary_sheets_emptyScope")
+        let count = snapshot.numberOfItems
+        let key = currentSelection == .notes ? "notes" : (isChapterList ? "chapters" : "documents")
+        if #available(iOS 26, *) {
+            navigationItem.subtitle = L10n.string("WriterLibrary_navigation_\(key)\(count == 1 ? "One" : "Many")", count)
         }
-        var empty = UIContentUnavailableConfiguration.empty()
-        empty.text = title
-        empty.secondaryText = emptyLabel.text
-        empty.image = UIImage(systemName: currentSelection == .notes ? "note.text" : "book.closed")
+        navigationItem.rightBarButtonItems = trailingBarButtons()
+    }
+
+    private func updateEmptyState(rowCount: Int) {
+        guard rowCount == 0 else { contentUnavailableConfiguration = nil; return }
+        let searching = !(searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        var empty = searching ? UIContentUnavailableConfiguration.search() : UIContentUnavailableConfiguration.empty()
+        if searching {
+            empty.secondaryText = L10n.string("WriterLibrary_sheets_emptySearch")
+        } else {
+            let key = currentSelection == .notes ? "notes" : (isChapterList ? "chapters" : (currentSelection == .trash ? "trash" : "documents"))
+            empty.text = L10n.string("WriterLibrary_navigation_empty_\(key)")
+            empty.secondaryText = L10n.string(currentSelection == .notes ? "WriterLibrary_polish_notesEmpty"
+                : (isChapterList ? "WriterLibrary_polish_bookEmpty"
+                   : (currentSelection == .trash ? "WriterLibrary_sheets_emptyTrash" : "WriterLibrary_sheets_emptyScope")))
+            empty.image = UIImage(systemName: currentSelection == .notes ? "note.text"
+                : (isChapterList ? "book.closed" : (currentSelection == .trash ? "trash" : "doc.text")))
+            if currentSelection != .trash {
+                empty.button = .borderedProminent()
+                empty.button.title = L10n.string(currentSelection == .notes ? "WriterLibrary_navigation_newNote"
+                    : (isChapterList ? "WriterLibrary_polish_newChapter" : "WriterLibrary_command_newSheet"))
+                empty.buttonProperties.primaryAction = UIAction { [weak self] _ in
+                    guard let self else { return }
+                    if self.currentSelection == .notes { self.createNote() } else { self.createSheet() }
+                }
+            }
+        }
         contentUnavailableConfiguration = empty
-        emptyLabel.isHidden = true
     }
 
     private func loadDocuments() -> [WriterDocument] {
@@ -308,7 +329,11 @@ public final class SheetsViewController: UICollectionViewController {
         let documentCellRegistration = UICollectionView.CellRegistration<SheetCell, SheetsRow> {
             [weak self] cell, _, row in
             guard case .document(let id) = row, let document = self?.documentsByID[id] else { return }
-            cell.configure(with: document, chapterOrdinal: self?.chapterOrdinals[id])
+            let showsLocation: Bool
+            if case .group = self?.currentSelection { showsLocation = false } else { showsLocation = true }
+            cell.configure(with: document, chapterOrdinal: self?.chapterOrdinals[id],
+                           location: showsLocation ? self?.groupNames[document.groupID] : nil)
+            cell.accessories = [.multiselect(displayed: .whenEditing)]
         }
         let noteCellRegistration = UICollectionView.CellRegistration<UnattachedNoteCell, SheetsRow> {
             [weak self] cell, _, row in
@@ -336,36 +361,43 @@ public final class SheetsViewController: UICollectionViewController {
 
     private func configureNavigationItems() {
         navigationItem.rightBarButtonItems = trailingBarButtons()
-        navigationItem.leftBarButtonItem = editButtonItem
-        // On a collapsed (phone) stack this list is pushed over the sidebar;
-        // a leading item alone would replace the back button and strand the
-        // writer here.
         navigationItem.leftItemsSupplementBackButton = true
+        navigationItem.backButtonDisplayMode = .minimal
     }
 
     private func trailingBarButtons() -> [UIBarButtonItem] {
-        if currentSelection == .notes {
-            return [UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newNoteTapped))]
+        if isEditing { return [editButtonItem] }
+        var items: [UIBarButtonItem] = []
+        if currentSelection != .trash {
+            let compose = UIBarButtonItem(barButtonSystemItem: .compose, target: self,
+                action: currentSelection == .notes ? #selector(newNoteTapped) : #selector(newSheetTapped))
+            compose.accessibilityLabel = L10n.string(currentSelection == .notes ? "WriterLibrary_navigation_newNote"
+                : (isChapterList ? "WriterLibrary_polish_newChapter" : "WriterLibrary_command_newSheet"))
+            items.append(compose)
         }
-        if isChapterList {
-            let contents = UIBarButtonItem(image: UIImage(systemName: "list.bullet"), style: .plain, target: self, action: #selector(showContents))
-            contents.accessibilityLabel = L10n.string("WriterLibrary_polish_contents")
-            let add = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newSheetTapped))
-            add.accessibilityLabel = L10n.string("WriterLibrary_polish_newChapter")
-            return [add, contents]
-        }
-        var items = [UIBarButtonItem(
-            image: UIImage(systemName: "arrow.up.arrow.down"), menu: sortMenu())]
-        if currentSelection == .trash {
-            let empty = UIBarButtonItem(
-                title: L10n.string("WriterLibrary_sheets_emptyTrashAction"), style: .plain,
-                target: self, action: #selector(emptyTrashTapped))
-            items.append(empty)
-        } else {
-            items.append(UIBarButtonItem(
-                barButtonSystemItem: .add, target: self, action: #selector(newSheetTapped)))
-        }
+        guard currentSelection != .notes else { return items }
+        let more = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: organizationMenu())
+        more.accessibilityLabel = L10n.string("WriterLibrary_navigation_documentActions")
+        items.append(more)
         return items
+    }
+
+    private func organizationMenu() -> UIMenu {
+        let hasDocuments = !(dataSource?.snapshot().itemIdentifiers.isEmpty ?? true)
+        var actions: [UIMenuElement] = []
+        if isChapterList {
+            actions.append(UIAction(title: L10n.string("WriterLibrary_polish_contents"), image: UIImage(systemName: "list.bullet")) { [weak self] _ in self?.showContents() })
+        }
+        actions.append(UIAction(title: L10n.string("WriterLibrary_navigation_selectDocuments"),
+            image: UIImage(systemName: "checkmark.circle"), attributes: hasDocuments ? [] : [.disabled]) { [weak self] _ in
+            self?.setEditing(true, animated: true)
+        })
+        if !isChapterList { actions.append(sortMenu()) }
+        if currentSelection == .trash {
+            actions.append(UIAction(title: L10n.string("WriterLibrary_sheets_emptyTrashAction"),
+                image: UIImage(systemName: "trash"), attributes: hasDocuments ? [.destructive] : [.destructive, .disabled]) { [weak self] _ in self?.emptyTrashTapped() })
+        }
+        return UIMenu(children: actions)
     }
 
     @objc private func emptyTrashTapped() {
@@ -414,6 +446,9 @@ public final class SheetsViewController: UICollectionViewController {
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchBar.placeholder = L10n.string("WriterLibrary_sheets_searchPlaceholder")
         navigationItem.searchController = searchController
+        navigationItem.preferredSearchBarPlacement = .stacked
+        navigationItem.hidesSearchBarWhenScrolling = false
+        definesPresentationContext = true
     }
 
     /// What `⌘F` on the root focuses.
@@ -492,7 +527,8 @@ public final class SheetsViewController: UICollectionViewController {
     // MARK: - Selection
 
     public override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard !isEditing, let row = dataSource.itemIdentifier(for: indexPath) else { return }
+        if isEditing { updateSelectionToolbar(); return }
+        guard let row = dataSource.itemIdentifier(for: indexPath) else { return }
         let opensASheet: Bool
         if case .document(let id) = row, let document = documentsByID[id] {
             opensASheet = true
@@ -594,23 +630,46 @@ public final class SheetsViewController: UICollectionViewController {
     public override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
         collectionView.allowsMultipleSelectionDuringEditing = editing
-        navigationItem.leftBarButtonItem = editButtonItem
-        navigationController?.setToolbarHidden(!editing, animated: animated)
-        if editing {
-            navigationController?.toolbar?.items = multiSelectToolbarItems()
+        for index in collectionView.indexPathsForSelectedItems ?? [] {
+            collectionView.deselectItem(at: index, animated: false)
         }
+        if !editing { reselectOpenDocument() }
+        navigationItem.leftBarButtonItem = nil
+        navigationItem.rightBarButtonItems = trailingBarButtons()
+        navigationController?.setToolbarHidden(!editing, animated: animated)
+        updateSelectionToolbar()
     }
 
-    private func multiSelectToolbarItems() -> [UIBarButtonItem] {
-        [
-            UIBarButtonItem(
-                title: L10n.string("WriterLibrary_sheets_moveAction"), style: .plain, target: self,
-                action: #selector(moveSelectedTapped)),
-            UIBarButtonItem.flexibleSpace(),
-            UIBarButtonItem(
-                title: L10n.string("Common_delete"), style: .plain, target: self,
-                action: #selector(trashSelectedTapped)),
-        ]
+    public override func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
+        if isEditing { updateSelectionToolbar() }
+    }
+
+    private func updateSelectionToolbar() {
+        guard isEditing else { toolbarItems = nil; return }
+        let count = selectedDocumentIDs().count
+        let action = UIBarButtonItem(title: L10n.string(currentSelection == .trash ? "WriterLibrary_sheets_restoreAction" : "WriterLibrary_sheets_moveAction"),
+            style: .plain, target: self, action: currentSelection == .trash ? #selector(restoreSelectedTapped) : #selector(moveSelectedTapped))
+        action.isEnabled = count > 0
+        let selectionLabel = UILabel()
+        selectionLabel.text = L10n.string("WriterLibrary_navigation_selectedCount", count)
+        selectionLabel.font = .preferredFont(forTextStyle: .footnote)
+        selectionLabel.adjustsFontForContentSizeCategory = true
+        selectionLabel.textColor = .secondaryLabel
+        let status = UIBarButtonItem(customView: selectionLabel)
+        if #available(iOS 26, *) { status.hidesSharedBackground = true }
+        var items = [action, UIBarButtonItem.flexibleSpace(), status]
+        if currentSelection != .trash {
+            let trash = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(trashSelectedTapped))
+            trash.isEnabled = count > 0
+            trash.tintColor = .systemRed
+            items += [.flexibleSpace(), trash]
+        }
+        setToolbarItems(items, animated: false)
+    }
+
+    @objc private func restoreSelectedTapped() {
+        for id in selectedDocumentIDs() { _ = restoreDocument(id) }
+        setEditing(false, animated: true)
     }
 
     private func selectedDocumentIDs() -> [DocumentID] {

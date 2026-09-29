@@ -1386,10 +1386,10 @@
 "WriterLibrary_settings_voiceRow_Luna" = "Voice";
 "WriterLibrary_sheets_attachToTitle_Luna" = "Attach to…";
 "WriterLibrary_sheets_duplicateAction_Luna" = "Duplicate";
-"WriterLibrary_sheets_emptyScope_Luna" = "No documents here yet. Tap + to write one.";
-"WriterLibrary_sheets_emptySearch_Luna" = "No documents match this search.";
-"WriterLibrary_sheets_emptyTrash_Luna" = "The Trash is empty.";
-"WriterLibrary_sheets_emptyTrashAction_Luna" = "Empty";
+"WriterLibrary_sheets_emptyScope_Luna" = "Start a new document to capture your next idea.";
+"WriterLibrary_sheets_emptySearch_Luna" = "Try a different word or phrase.";
+"WriterLibrary_sheets_emptyTrash_Luna" = "Deleted documents will appear here.";
+"WriterLibrary_sheets_emptyTrashAction_Luna" = "Empty Trash";
 "WriterLibrary_sheets_emptyTrashConfirmMessage_Luna" = "%lld documents will be deleted for good.";
 "WriterLibrary_sheets_emptyTrashConfirmMessageOne_Luna" = "1 document will be deleted for good.";
 "WriterLibrary_sheets_emptyTrashConfirmTitle_Luna" = "Empty the Trash?";
@@ -1552,7 +1552,7 @@
 "WriterLibrary_polish_nextChapter_Luna" = "Next Chapter";
 "WriterLibrary_polish_noteText_Luna" = "Note text";
 "WriterLibrary_polish_noteTitle_Luna" = "Note";
-"WriterLibrary_polish_notesEmpty_Luna" = "Keep ideas and research here. Add a note with +.";
+"WriterLibrary_polish_notesEmpty_Luna" = "Keep ideas and research together, ready for your next draft.";
 "WriterLibrary_polish_organizeAsBook_Luna" = "Organize as a Book";
 "WriterLibrary_polish_organizeAsBookDetail_Luna" = "Create a book around this document and add the next chapter.";
 "WriterLibrary_polish_previousChapter_Luna" = "Previous Chapter";
@@ -1566,3 +1566,20 @@
 "WriterLibrary_polish_updateBookError_Luna" = "Couldn’t Update Book";
 
 "Plugins_createPromptCopied_Luna" = "Prompt copied. Paste it into %@, then open the .luna file in its reply.";
+
+/* Writer library navigation */
+"WriterLibrary_navigation_documentsOne_Luna" = "%d document";
+"WriterLibrary_navigation_documentsMany_Luna" = "%d documents";
+"WriterLibrary_navigation_notesOne_Luna" = "%d note";
+"WriterLibrary_navigation_notesMany_Luna" = "%d notes";
+"WriterLibrary_navigation_chaptersOne_Luna" = "%d chapter";
+"WriterLibrary_navigation_chaptersMany_Luna" = "%d chapters";
+"WriterLibrary_navigation_empty_documents_Luna" = "No Documents";
+"WriterLibrary_navigation_empty_notes_Luna" = "No Notes";
+"WriterLibrary_navigation_empty_chapters_Luna" = "No Chapters";
+"WriterLibrary_navigation_empty_trash_Luna" = "Trash Is Empty";
+"WriterLibrary_navigation_newNote_Luna" = "New Note";
+"WriterLibrary_navigation_documentActions_Luna" = "Document Actions";
+"WriterLibrary_navigation_selectDocuments_Luna" = "Select Documents";
+"WriterLibrary_navigation_selectedCount_Luna" = "%d selected";
+"WriterLibrary_navigation_chooseDocument_Luna" = "Choose a document from your library, or start something new.";

@@ -271,6 +271,36 @@ try {
   );
   assert.equal(invoke(["validate", badMarker]).report.ok, false);
 
+  // The CLI must exercise the same host filter and JSON boundary as Luna.
+  const mismatch = invoke(["test", ingest, "https://other.example/"]);
+  assert.equal(mismatch.report.ok, false);
+  assert.match(mismatch.report.errors[0], /does not match/);
+  for (const body of [
+    "const x = {}; x.self = x; return x;",
+    "return {value: 1n};",
+    "return {get then() {throw new Error('bad then');}};",
+    "throw 'plain error';",
+  ]) {
+    const broken = path.join(temp, "boundary.js");
+    writeFileSync(broken, header("test.boundary", '"produces":["article"],"match":{"any":true}')
+      + `luna.register({classify() { ${body} }, ingest() { return null; }});`);
+    const report = invoke(["test", broken, "https://example.com/"]).report;
+    assert.equal(report.ok, false, body);
+    assert.match(report.errors[0], /classify failed/, body);
+  }
+  const document = path.join(temp, "document.js");
+  writeFileSync(document, header("test.document", '"produces":["article"],"match":{"any":true}')
+    + `luna.register({classify: () => ({kind:"article"}), ingest: () => ({kind:"article",title:"Guide",document:{url:"/guide.pdf",type:"pdf"}})});`);
+  assert.equal(invoke(["test", document, "https://example.com/"]).report.ok, true);
+  const bluetooth = path.join(temp, "bluetooth.js");
+  writeFileSync(bluetooth, header("test.bluetooth", '"bluetooth":{"services":["123"]},"capabilities":["bluetooth"]') + "luna.register({});");
+  assert.match(invoke(["validate", bluetooth]).report.errors[0], /onBluetooth/);
+  for (const args of [["--timeout"], ["--timeout", "NaN"], ["--timeout", "0"], ["--hook", "typo"], ["--typo"]]) {
+    const result = spawnSync(process.execPath, [run, "validate", control, ...args], {encoding:"utf8"});
+    assert.notEqual(result.status, 0, args.join(" "));
+    assert.ok(result.stderr.trim(), args.join(" "));
+  }
+
   const hung = path.join(temp, "hung.js");
   writeFileSync(
     hung,
@@ -279,6 +309,9 @@ try {
   const timeout = invoke(["validate", hung, "--timeout", "2500"]);
   assert.equal(timeout.report.ok, false);
   assert.match(timeout.report.errors[0], /timed out/);
+  const defaultTimeout = invoke([hung, "https://example.com/", "--timeout", "1000"]);
+  assert.equal(defaultTimeout.report.ok, false);
+  assert.match(defaultTimeout.report.errors[0], /timed out/);
   console.log("plugin-sim tests passed");
 } finally {
   rmSync(temp, { recursive: true, force: true });

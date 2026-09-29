@@ -262,9 +262,10 @@ public struct ArticleModel: Decodable, Equatable, Sendable {
         publishedAt = try c.optionalPluginString(
             .publishedAt, field: "publishedAt", cap: PluginModelCaps.shortString)
         let transcription = try c.decodeIfPresent(ArticleTranscriptionSpec.self, forKey: .transcription)
-        // `html` is required unless a recording supplies the body.
+        let document = try c.decodeIfPresent(ArticleDocumentSpec.self, forKey: .document)
+        // A document or recording can supply the body without placeholder HTML.
         guard let html = try c.decodeIfPresent(String.self, forKey: .html)
-            ?? (transcription == nil ? nil : "")
+            ?? (transcription == nil && document == nil ? nil : "")
         else {
             throw PluginModelValidationError.missingField("html")
         }
@@ -279,7 +280,7 @@ public struct ArticleModel: Decodable, Equatable, Sendable {
             .excerpt, field: "excerpt", cap: PluginModelCaps.excerpt)
         language = try c.optionalPluginString(
             .language, field: "language", cap: PluginModelCaps.shortString)
-        document = try c.decodeIfPresent(ArticleDocumentSpec.self, forKey: .document)
+        self.document = document
         if document != nil, transcription != nil {
             throw PluginModelValidationError.conflictingFields("document", "transcription")
         }

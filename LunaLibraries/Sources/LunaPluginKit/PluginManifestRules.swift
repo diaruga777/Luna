@@ -49,6 +49,9 @@ public struct PluginManifestRules: Decodable, Equatable, Sendable {
     public let kinds: [String]
     public let capabilities: [String]
     public let exportInputFormats: [String]
+    public let settingTypes: [String]
+    public let hooks: [String]
+    public let exportInputsByKind: [String: [String]]
 
     /// The bundled table. `nil` only when the resource is missing from the
     /// build, which is the one thing the parity test cannot repair.

@@ -1,7 +1,11 @@
 {
-  "comment": "The manifest rules PluginManifestParser enforces, as data. tools/plugin-sim/run.mjs reads this file instead of re-implementing them; PluginManifestRulesParityTests compares every value here to the parser's own constants.",
-  "api": { "current": 1 },
-  "source": { "maxKB": 1024 },
+  "comment": "Manifest limits and enum values shared by PluginManifestParser and tools/plugin-sim/manifest.mjs. Shared acceptance fixtures test behavior as well as constants.",
+  "api": {
+    "current": 1
+  },
+  "source": {
+    "maxKB": 1024
+  },
   "id": {
     "characters": "abcdefghijklmnopqrstuvwxyz0123456789.-",
     "maxLength": 100,
@@ -9,15 +13,89 @@
     "forbidsTrailingDot": true,
     "forbidsDoubleDot": true
   },
-  "name": { "maxLength": 40 },
-  "description": { "maxLength": 200 },
-  "version": { "maxLength": 32, "pattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$" },
-  "kinds": ["article", "media", "product"],
+  "name": {
+    "maxLength": 40
+  },
+  "description": {
+    "maxLength": 200
+  },
+  "version": {
+    "maxLength": 32,
+    "pattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$"
+  },
+  "kinds": [
+    "article",
+    "media",
+    "product"
+  ],
   "capabilities": [
-    "fetch", "html", "page", "storage", "secrets", "files", "crypto", "browser",
-    "downloads", "settings", "ui", "mail", "notifications", "bluetooth", "wifi", "exports"
+    "fetch",
+    "html",
+    "page",
+    "storage",
+    "secrets",
+    "files",
+    "crypto",
+    "browser",
+    "downloads",
+    "settings",
+    "ui",
+    "mail",
+    "notifications",
+    "bluetooth",
+    "wifi",
+    "exports"
   ],
   "exportInputFormats": [
-    "url", "epub", "pdf", "docx", "markdown", "text", "html", "json", "file"
-  ]
+    "url",
+    "epub",
+    "pdf",
+    "docx",
+    "markdown",
+    "text",
+    "html",
+    "json",
+    "file"
+  ],
+  "settingTypes": [
+    "text",
+    "email",
+    "url",
+    "password",
+    "number",
+    "toggle",
+    "choice",
+    "pairedDevice",
+    "action",
+    "info"
+  ],
+  "hooks": [
+    "classify",
+    "ingest",
+    "export",
+    "onBluetooth",
+    "onSettingsChanged",
+    "onAction"
+  ],
+  "exportInputsByKind": {
+    "article": [
+      "url",
+      "epub",
+      "pdf",
+      "docx",
+      "markdown",
+      "text",
+      "html",
+      "json"
+    ],
+    "media": [
+      "url",
+      "json",
+      "file"
+    ],
+    "product": [
+      "url",
+      "json"
+    ]
+  }
 }

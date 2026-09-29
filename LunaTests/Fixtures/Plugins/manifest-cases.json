@@ -1,0 +1,877 @@
+[
+  {
+    "name": "minimal",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1
+    },
+    "valid": true
+  },
+  {
+    "name": "name blank",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "",
+      "version": "1.0.0",
+      "api": 1
+    },
+    "valid": false
+  },
+  {
+    "name": "name bad translation",
+    "manifest": {
+      "id": "test.fixture",
+      "name": {
+        "en": "Valid",
+        "fr": 17
+      },
+      "version": "1.0.0",
+      "api": 1
+    },
+    "valid": false
+  },
+  {
+    "name": "name long translation",
+    "manifest": {
+      "id": "test.fixture",
+      "name": {
+        "en": "Valid",
+        "fr": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "version": "1.0.0",
+      "api": 1
+    },
+    "valid": false
+  },
+  {
+    "name": "description blank",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "description": ""
+    },
+    "valid": false
+  },
+  {
+    "name": "description bad translation",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "description": {
+        "en": "Valid",
+        "fr": 17
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "description long translation",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "description": {
+        "en": "Valid",
+        "fr": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "localized emoji graphemes",
+    "manifest": {
+      "id": "test.fixture",
+      "name": {
+        "en": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦"
+      },
+      "version": "1.0.0",
+      "api": 1
+    },
+    "valid": true
+  },
+  {
+    "name": "capabilities null",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "capabilities": null
+    },
+    "valid": false
+  },
+  {
+    "name": "capabilities boolean",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "capabilities": false
+    },
+    "valid": false
+  },
+  {
+    "name": "capabilities unknown",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "capabilities": [
+        "network"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "trimmed capabilities",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "capabilities": [
+        " fetch ",
+        "html"
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "priority False",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "priority": false
+    },
+    "valid": false
+  },
+  {
+    "name": "priority 1.5",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "priority": 1.5
+    },
+    "valid": false
+  },
+  {
+    "name": "priority 100",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "priority": "100"
+    },
+    "valid": false
+  },
+  {
+    "name": "match {}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"*\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "*"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"*.\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "*."
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"a.*.com\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "a.*.com"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"https://example.com\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "https://example.com"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"example.com:80\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "example.com:80"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"bad host\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "bad host"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"hosts\": [\"x..com\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "hosts": [
+          "x..com"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match {\"any\": 1}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "any": 1
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "match null",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": null
+    },
+    "valid": false
+  },
+  {
+    "name": "match []",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": []
+    },
+    "valid": false
+  },
+  {
+    "name": "any host",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "article"
+      ],
+      "match": {
+        "any": true
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "wildcard host",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "produces": [
+        "media"
+      ],
+      "match": {
+        "hosts": [
+          "*.EXAMPLE.COM"
+        ]
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "settings null",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": null
+    },
+    "valid": false
+  },
+  {
+    "name": "settings false",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": false
+    },
+    "valid": false
+  },
+  {
+    "name": "settings \"fields\"",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": "fields"
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"_key\", \"type\": \"text\", \"label\": \"Key\"}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "_key",
+          "type": "text",
+          "label": "Key"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"key\", \"type\": \"secret\", \"label\": \"Key\"}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "key",
+          "type": "secret",
+          "label": "Key"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"key\", \"type\": \"choice\", \"label\": \"Key\", \"options\": []}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "key",
+          "type": "choice",
+          "label": "Key",
+          "options": []
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"key\", \"type\": \"text\", \"label\": \"Key\", \"required\": 1}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "key",
+          "type": "text",
+          "label": "Key",
+          "required": 1
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"key\", \"type\": \"text\", \"label\": \"Key\", \"secret\": \"true\"}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "key",
+          "type": "text",
+          "label": "Key",
+          "secret": "true"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "settings [{\"key\": \"key\", \"type\": \"text\", \"label\": \"Key\"}, {\"key\": \"key\", \"type\": \"text\", \"label\": \"Key\"}]",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "settings": [
+        {
+          "key": "key",
+          "type": "text",
+          "label": "Key"
+        },
+        {
+          "key": "key",
+          "type": "text",
+          "label": "Key"
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "article export",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "export {\"input\": \"file\"}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "file",
+        "title": "Send"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"kinds\": [\"media\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "media"
+        ],
+        "input": "epub",
+        "title": "Send"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"title\": \"\"}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": ""
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"requiresSettings\": [\"missing\"]}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "requiresSettings": [
+          "missing"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"destination\": 1}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "destination": 1
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"dequeueOnRead\": \"true\"}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "dequeueOnRead": "true"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"inputOptions\": []}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "inputOptions": []
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"inputOptions\": {\"epub\": false}}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "inputOptions": {
+          "epub": false
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"inputOptions\": {\"epub\": {\"images\": 1}}}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "inputOptions": {
+          "epub": {
+            "images": 1
+          }
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "export {\"inputOptions\": {\"epub\": {\"profile\": 7}}}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "inputOptions": {
+          "epub": {
+            "profile": 7
+          }
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "configured export",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "export": {
+        "kinds": [
+          "article"
+        ],
+        "input": "epub",
+        "title": "Send",
+        "requiresSettings": [
+          "device"
+        ]
+      },
+      "settings": [
+        {
+          "key": "device",
+          "type": "text",
+          "label": "Device"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "bluetooth {\"services\": [\"123\"], \"pairing\": false}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "bluetooth": {
+        "services": [
+          "123"
+        ],
+        "pairing": false
+      },
+      "capabilities": [
+        "bluetooth"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bluetooth {\"services\": []}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "bluetooth": {
+        "services": []
+      },
+      "capabilities": [
+        "bluetooth"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bluetooth {\"services\": [\"123\"], \"standingConnect\": 1}",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "bluetooth": {
+        "services": [
+          "123"
+        ],
+        "standingConnect": 1
+      },
+      "capabilities": [
+        "bluetooth"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bluetooth missing grant",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "bluetooth": {
+        "services": [
+          "123"
+        ]
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "bluetooth",
+    "manifest": {
+      "id": "test.fixture",
+      "name": "Fixture",
+      "version": "1.0.0",
+      "api": 1,
+      "bluetooth": {
+        "services": [
+          "123"
+        ]
+      },
+      "capabilities": [
+        "bluetooth"
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "non object None",
+    "manifest": null,
+    "valid": false
+  },
+  {
+    "name": "non object []",
+    "manifest": [],
+    "valid": false
+  },
+  {
+    "name": "non object 3",
+    "manifest": 3,
+    "valid": false
+  }
+]

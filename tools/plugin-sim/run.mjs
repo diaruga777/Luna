@@ -9,124 +9,9 @@ import { createBridge } from "./bridge.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 
-// The manifest rules are DATA, read from the same file `PluginManifestParser`
-// ships as a resource. A hand-kept copy here drifted from the parser twice;
-// `PluginManifestRulesParityTests` now pins the file to the parser's own
-// constants, and this harness reads the file.
-const RULES = JSON.parse(
-  readFileSync(
-    path.join(
-      path.dirname(scriptPath),
-      "..",
-      "..",
-      "LunaLibraries",
-      "Sources",
-      "LunaPluginKit",
-      "Resources",
-      "PluginManifestRules.json",
-    ),
-    "utf8",
-  ),
-);
-const SOURCE_LIMIT = RULES.source.maxKB * 1024;
+import { rules as RULES, parseHeader, manifestErrors, matchesURL } from "./manifest.mjs";
+export { parseHeader } from "./manifest.mjs";
 const KINDS = new Set(RULES.kinds);
-const FORMATS = new Set(RULES.exportInputFormats);
-const CAPS = new Set(RULES.capabilities);
-const ID_PATTERN = new RegExp(`^[${RULES.id.characters.replace(/[.\-]/g, "\\$&")}]+$`);
-const VERSION_PATTERN = new RegExp(RULES.version.pattern);
-
-export function parseHeader(source) {
-  if (Buffer.byteLength(source, "utf8") > SOURCE_LIMIT)
-    throw new Error(`source exceeds ${SOURCE_LIMIT / 1024} KB`);
-  const opening = source.match(/^\s*\/\*/);
-  if (!opening)
-    throw new Error("no /* luna-plugin ... */ header at the top of the file");
-  const start = opening[0].length;
-  const close = source.indexOf("*/", start);
-  if (close < 0)
-    throw new Error("no /* luna-plugin ... */ header at the top of the file");
-  const lines = source.slice(start, close).split("\n");
-  if ((lines.shift() || "").trim() !== "luna-plugin")
-    throw new Error("the first header line must be exactly luna-plugin");
-  try {
-    return JSON.parse(lines.join("\n"));
-  } catch (error) {
-    throw new Error(`manifest JSON is invalid: ${error.message}`);
-  }
-}
-
-function manifestErrors(manifest) {
-  const errors = [];
-  for (const key of ["id", "name", "version", "api"])
-    if (manifest?.[key] === undefined) errors.push(`${key} is required`);
-  if (
-    typeof manifest?.id !== "string" ||
-    !ID_PATTERN.test(manifest.id || "") ||
-    (RULES.id.forbidsLeadingDot && manifest.id.startsWith(".")) ||
-    (RULES.id.forbidsTrailingDot && manifest.id.endsWith(".")) ||
-    (RULES.id.forbidsDoubleDot && manifest.id.includes(".."))
-  )
-    errors.push("id must use lower-case letters, digits, dots and hyphens");
-  if (typeof manifest?.id === "string" && manifest.id.length > RULES.id.maxLength)
-    errors.push(`id must be at most ${RULES.id.maxLength} characters`);
-  const name =
-    typeof manifest?.name === "string" ? manifest.name : manifest?.name?.en;
-  if (typeof name !== "string")
-    errors.push("name must be a string or localized object with en");
-  else if (name.length > RULES.name.maxLength)
-    errors.push(`name must be at most ${RULES.name.maxLength} characters`);
-  const description =
-    typeof manifest?.description === "string"
-      ? manifest.description
-      : manifest?.description?.en;
-  if (
-    typeof description === "string" &&
-    description.length > RULES.description.maxLength
-  )
-    errors.push(
-      `description must be at most ${RULES.description.maxLength} characters`,
-    );
-  if (
-    typeof manifest?.version !== "string" ||
-    !VERSION_PATTERN.test(manifest.version || "")
-  )
-    errors.push("version must look like 1.0.0");
-  if (manifest?.api !== RULES.api.current)
-    errors.push(`api must be ${RULES.api.current}`);
-  if (
-    manifest?.capabilities &&
-    (!Array.isArray(manifest.capabilities) ||
-      manifest.capabilities.some((x) => !CAPS.has(x)))
-  )
-    errors.push("capabilities contains an unknown name");
-  const produces = manifest?.produces;
-  if (
-    produces !== undefined &&
-    (!Array.isArray(produces) ||
-      !produces.length ||
-      produces.some((x) => !KINDS.has(x)))
-  )
-    errors.push(
-      "produces must be a non-empty list of article, media or product",
-    );
-  if (Array.isArray(produces) && produces.length && !manifest.match)
-    errors.push("match is required for an ingest plugin");
-  if (manifest?.match && typeof manifest.match !== "object")
-    errors.push("match must be an object");
-  if (manifest?.export) {
-    const e = manifest.export;
-    if (
-      !Array.isArray(e.kinds) ||
-      !e.kinds.length ||
-      e.kinds.some((x) => !KINDS.has(x))
-    )
-      errors.push("export.kinds must contain valid Model kinds");
-    if (!FORMATS.has(e.input)) errors.push("export.input is not supported");
-    if (typeof e.title !== "string" && !e.title?.en)
-      errors.push("export.title must be a string or localized object with en");
-  }
-  return errors;
-}
 
 function fixturePath(dir, url) {
   if (!dir || !existsSync(dir)) return null;
@@ -180,12 +65,19 @@ function options(argv) {
     positional: [],
   };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--fixture") out.fixture = argv[++i];
-    else if (argv[i] === "--hook") out.hook = argv[++i];
-    else if (argv[i] === "--intent") out.intent = argv[++i];
-    else if (argv[i] === "--timeout") out.timeout = Number(argv[++i]);
-    else out.positional.push(argv[i]);
+    const arg = argv[i];
+    if (["--fixture", "--hook", "--intent", "--timeout"].includes(arg)) {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) throw new Error(`${arg} needs a value`);
+      out[arg.slice(2)] = arg === "--timeout" ? Number(value) : value;
+    } else if (arg.startsWith("--")) throw new Error(`unknown option ${arg}`);
+    else out.positional.push(arg);
   }
+  if (!Number.isFinite(out.timeout) || out.timeout < 1 || out.timeout > 2_147_483_647)
+    throw new Error("--timeout must be between 1 and 2147483647 milliseconds");
+  if (out.hook && !["classify", "ingest", "export"].includes(out.hook))
+    throw new Error("--hook must be classify, ingest or export");
+  if (out.intent && out.intent !== "transcribe") throw new Error("--intent must be transcribe");
   return out;
 }
 
@@ -197,7 +89,7 @@ function load(pluginPath, opts) {
   const luna = createBridge({
     pluginId: manifest.id,
     version: manifest.version,
-    capabilities: manifest.capabilities || [],
+    capabilities: (manifest.capabilities || []).map((name) => name.trim()),
     settingsSchema: manifest.settings,
     fetchImpl: opts.fixture ? fixtureFetch(opts.fixture) : undefined,
   });
@@ -222,6 +114,8 @@ function load(pluginPath, opts) {
     errors.push("ingest plugins must register ingest");
   if (manifest.export && typeof hooks?.export !== "function")
     errors.push("export declarations must register export");
+  if (manifest.bluetooth && typeof hooks?.onBluetooth !== "function")
+    errors.push("bluetooth declarations must register onBluetooth");
   return { source, manifest, errors, hooks, luna };
 }
 
@@ -234,7 +128,7 @@ function claimError(value, manifest) {
     return "classify.itemId must be a string when provided";
   if (
     value.confidence !== undefined &&
-    (typeof value.confidence !== "number" ||
+    (!Number.isFinite(value.confidence) ||
       value.confidence < 0 ||
       value.confidence > 1)
   )
@@ -271,8 +165,17 @@ function modelError(value, manifest) {
         return "article.document and article.transcription cannot both be set";
       if (value.html !== undefined && typeof value.html !== "string")
         return "article.html must be a string when provided";
-    } else if (typeof value.html !== "string" || !value.html.trim())
-      return "article.html must be a non-empty string";
+    }
+    if (value.document != null) {
+      const doc = value.document;
+      if (!doc || typeof doc.url !== "string" || !doc.url.trim())
+        return "article.document.url must be a non-empty string";
+      if (!["pdf", "epub", "docx", "rtf", "html", "md", "txt"].includes(doc.type))
+        return "article.document.type is not supported";
+    }
+    if (value.html != null && typeof value.html !== "string") return "article.html must be a string";
+    if (value.html == null && !value.document && !value.transcription)
+      return "article needs html, document or transcription";
   } else if (value.kind === "media") {
     if (
       !Array.isArray(value.assets) ||
@@ -377,17 +280,29 @@ export async function evaluate(mode, pluginPath, url, opts) {
     (loaded.manifest.export && !loaded.manifest.produces?.length
       ? "export"
       : "classify");
+  // Match the native host filter, which runs before classify/ingest.
+  if (hook !== "export" && !matchesURL(loaded.manifest, url)) {
+    report.ok = false;
+    report.errors.push("URL does not match the manifest; Luna would not run this plugin");
+    return report;
+  }
+  // Cross the same JSON boundary as the native runtime. This also detects
+  // cycles/BigInt inside the hook's error handler rather than breaking stdout.
+  const invoke = async (name, input) => {
+    const value = await loaded.hooks[name](input);
+    return JSON.parse(JSON.stringify(value) ?? "null");
+  };
   try {
     addEvent(report, hook, "started");
     if (hook === "classify") {
-      const value = await loaded.hooks.classify(
+      const value = await invoke("classify",
         hookInput({ url, context: "app" }, opts),
       );
       report.result = { hook, value };
       const error = claimError(value, loaded.manifest);
       if (error) report.errors.push(error);
       if (!error && value && loaded.hooks.ingest) {
-        const model = await loaded.hooks.ingest(
+        const model = await invoke("ingest",
           hookInput(
             {
               url,
@@ -403,7 +318,7 @@ export async function evaluate(mode, pluginPath, url, opts) {
         if (modelIssue) report.errors.push(modelIssue);
       }
     } else if (hook === "ingest") {
-      const value = await loaded.hooks.ingest(
+      const value = await invoke("ingest",
         hookInput(
           {
             url,
@@ -418,7 +333,7 @@ export async function evaluate(mode, pluginPath, url, opts) {
       const error = modelError(value, loaded.manifest);
       if (error) report.errors.push(error);
     } else if (hook === "export") {
-      const value = await loaded.hooks.export({
+      const value = await invoke("export", {
         kind: loaded.manifest.export?.kinds?.[0] || "article",
         format: loaded.manifest.export?.input || "text",
         saveId: "00000000-0000-0000-0000-000000000000",
@@ -438,7 +353,7 @@ export async function evaluate(mode, pluginPath, url, opts) {
     );
   } catch (error) {
     addEvent(report, hook, "threw an error");
-    report.errors.push(`${hook} failed: ${error.message}`);
+    report.errors.push(`${hook} failed: ${error?.message ?? String(error)}`);
   }
   report.ok = report.errors.length === 0;
   return report;
@@ -475,6 +390,10 @@ function bounded(mode, pluginPath, url, opts) {
       },
       Math.max(1, opts.timeout),
     );
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, mode, errors: [error.message], events: [] });
+    });
     child.on("close", () => {
       clearTimeout(timer);
       if (timedOut)
@@ -518,78 +437,16 @@ async function main() {
     argv[0] === "validate" || argv[0] === "test" ? argv.shift() : "run";
   const opts = options(argv);
   const [pluginPath, url] = opts.positional;
-  if (!pluginPath || (mode === "test" && !url)) {
+  if (!pluginPath || (mode !== "validate" && !url)) {
     console.error(
       "usage: run.mjs validate <plugin.js> [--timeout ms]\n       run.mjs test <plugin.js> <url> [--fixture dir] [--hook classify|ingest|export] [--intent transcribe]\n       run.mjs <plugin.js> <url> [--fixture dir] [--hook classify|ingest] [--intent transcribe]",
     );
     process.exitCode = 2;
     return;
   }
-  if (mode !== "run") {
-    const report = await bounded(mode, pluginPath, url, opts);
-    console.log(JSON.stringify(report, null, 2));
-    process.exitCode = report.ok ? 0 : 1;
-    return;
-  }
-  const loaded = load(pluginPath, opts);
-  if (loaded.errors.length) throw new Error(loaded.errors.join("; "));
-  console.log(
-    `plugin: ${loaded.manifest.id} v${loaded.manifest.version} (api ${loaded.manifest.api})`,
-  );
-  const hook = opts.hook || "classify";
-  if (hook === "classify") {
-    const claim = await loaded.hooks.classify(
-      hookInput({ url, context: "app" }, opts),
-    );
-    console.log("classify:", JSON.stringify(claim, null, 2));
-    if (claim && loaded.hooks.ingest)
-      console.log(
-        "ingest:",
-        JSON.stringify(
-          await loaded.hooks.ingest(
-            hookInput({ url, claim, context: "app", reason: "save" }, opts),
-          ),
-          null,
-          2,
-        ),
-      );
-  } else if (hook === "ingest")
-    console.log(
-      "ingest:",
-      JSON.stringify(
-        await loaded.hooks.ingest(
-          hookInput(
-            {
-              url,
-              claim: { kind: loaded.manifest.produces?.[0] || "article" },
-              context: "app",
-              reason: "save",
-            },
-            opts,
-          ),
-        ),
-        null,
-        2,
-      ),
-    );
-  else if (hook === "export")
-    console.log(
-      "export:",
-      JSON.stringify(
-        await loaded.hooks.export({
-          kind: loaded.manifest.export?.kinds?.[0] || "article",
-          format: loaded.manifest.export?.input || "text",
-          saveId: "00000000-0000-0000-0000-000000000000",
-          url,
-          title: "Fixture",
-          text: "Fixture text",
-          json: {},
-        }),
-        null,
-        2,
-      ),
-    );
-  else throw new Error(`unsupported hook ${hook}`);
+  const report = await bounded(mode, pluginPath, url, opts);
+  console.log(JSON.stringify(report, null, 2));
+  process.exitCode = report.ok ? 0 : 1;
 }
 
 main().catch((error) => {

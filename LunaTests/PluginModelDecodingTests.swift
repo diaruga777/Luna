@@ -60,6 +60,15 @@ final class PluginModelDecodingTests: XCTestCase {
         XCTAssertNil(media.assets.first?.url.scheme)
     }
 
+    func testDocumentCanSupplyArticleBodyWithoutPlaceholderHTML() throws {
+        let model = try decode("""
+            {"kind":"article","title":"Guide","document":{"url":"/guide.pdf","type":"pdf"}}
+            """)
+        guard case .article(let article) = model else { return XCTFail("expected article") }
+        XCTAssertEqual(article.html, "")
+        XCTAssertEqual(article.document?.url.relativeString, "/guide.pdf")
+    }
+
     func testArticleModelDecodesBodyAndDocument() throws {
         let model = try decode("""
             {"kind":"article","title":"A piece","html":"<p>body</p>","excerpt":"short",

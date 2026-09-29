@@ -245,6 +245,14 @@ public enum PluginManifestParser {
                         detail: "\"\(host)\" is not a host pattern — a \"*\" may only lead "
                             + "it as \"*.\"; use \"any\": true to match every host")
                 }
+                let plain = lowered.hasPrefix("*.") ? String(lowered.dropFirst(2)) : lowered
+                guard !plain.isEmpty, !plain.contains(where: { $0.isWhitespace }),
+                      !plain.contains(where: { "/:#?@".contains($0) }),
+                      !plain.hasPrefix("."), !plain.hasSuffix("."), !plain.contains("..") else {
+                    throw PluginManifestError.invalidField(
+                        field: "match.hosts", line: lines.line(of: "hosts"),
+                        detail: "\"\(host)\" is not a hostname — omit the scheme, port and path")
+                }
                 if !hosts.contains(lowered) { hosts.append(lowered) }
             }
         }
@@ -339,19 +347,17 @@ public enum PluginManifestParser {
             languages: languages)
         var epubProfile: String?
         var epubImages = true
-        if let options = export["inputOptions"] as? [String: Any],
-           let epub = options["epub"] as? [String: Any] {
-            if let profile = epub["profile"] as? String {
-                guard profile == "standard" || profile == "compact" else {
+        if let options = try objectField(export, "inputOptions", field: "export.inputOptions", lines),
+           let epub = try objectField(options, "epub", field: "export.inputOptions.epub", lines) {
+            if let value = epub["profile"] {
+                guard let profile = value as? String, profile == "standard" || profile == "compact" else {
                     throw PluginManifestError.invalidField(
                         field: "export.inputOptions.epub.profile", line: lines.line(of: "profile"),
                         detail: "it must be \"standard\" or \"compact\"")
                 }
                 epubProfile = profile
             }
-            if let images = epub["images"] as? NSNumber, isBoolean(images) {
-                epubImages = images.boolValue
-            }
+            epubImages = try flag(epub, "export.inputOptions.epub.images", lines, key: "images") ?? true
         }
         var requires: [String] = []
         if let raw = export["requiresSettings"] {
@@ -362,8 +368,8 @@ public enum PluginManifestParser {
             }
             requires = list
         }
-        let destination = (export["destination"] as? NSNumber).map(\.boolValue) ?? false
-        let dequeueOnRead = (export["dequeueOnRead"] as? NSNumber).map(\.boolValue) ?? false
+        let destination = try flag(export, "export.destination", lines, key: "destination") ?? false
+        let dequeueOnRead = try flag(export, "export.dequeueOnRead", lines, key: "dequeueOnRead") ?? false
         return PluginExportSummary(
             kinds: kinds, input: input, epubProfile: epubProfile, epubImages: epubImages,
             title: title, symbol: export["symbol"] as? String, isDestination: destination,
@@ -488,18 +494,30 @@ public enum PluginManifestParser {
                 field: "bluetooth.services", line: lines.line(of: "services"),
                 detail: "list the GATT service UUIDs the plugin talks to")
         }
-        let rawPairing = (declaration["pairing"] as? String) ?? "none"
-        guard let pairing = PluginBluetoothDeclaration.Pairing(rawValue: rawPairing) else {
+        let rawPairing = declaration["pairing"] ?? "none"
+        guard let name = rawPairing as? String,
+              let pairing = PluginBluetoothDeclaration.Pairing(rawValue: name) else {
             throw PluginManifestError.invalidField(
                 field: "bluetooth.pairing", line: lines.line(of: "pairing"),
                 detail: "it must be \"accessorySetupKit\" or \"none\"")
         }
         return PluginBluetoothDeclaration(
             services: services, pairing: pairing,
-            standingConnect: (declaration["standingConnect"] as? NSNumber)?.boolValue ?? false)
+            standingConnect: try flag(declaration, "bluetooth.standingConnect", lines, key: "standingConnect") ?? false)
     }
 
     // MARK: - Helpers
+
+    private static func objectField(
+        _ object: [String: Any], _ key: String, field: String, _ lines: Header
+    ) throws -> [String: Any]? {
+        guard let value = object[key] else { return nil }
+        guard let dictionary = value as? [String: Any] else {
+            throw PluginManifestError.invalidField(
+                field: field, line: lines.line(of: key), detail: "it must be an object")
+        }
+        return dictionary
+    }
 
     private static func boundedString(
         _ object: [String: Any], _ field: String, limit: Int, lines: Header, required: Bool

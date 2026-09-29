@@ -84,6 +84,30 @@ final class PluginManifestRulesParityTests: XCTestCase {
         }
     }
 
+    func testSettingsHooksAndExportAvailabilityMatchNativeEnums() throws {
+        let rules = try bundledRules()
+        XCTAssertEqual(Set(rules.settingTypes), Set(PluginSettingFieldType.allCases.map(\.rawValue)))
+        XCTAssertEqual(Set(rules.hooks), Set(PluginHook.allCases.map(\.rawValue)))
+        for kind in PluginModelKind.allCases {
+            XCTAssertEqual(Set(rules.exportInputsByKind[kind.rawValue] ?? []),
+                           Set(PluginExportInputAvailability.formats(for: kind).map(\.rawValue)))
+        }
+    }
+
+    func testSharedAuthoringManifestCases() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Plugins/manifest-cases.json")
+        let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
+        for fixture in cases {
+            let data = try JSONSerialization.data(withJSONObject: fixture["manifest"]!, options: [.fragmentsAllowed])
+            let source = "/* luna-plugin\n" + String(decoding: data, as: UTF8.self) + "\n*/"
+            let result = PluginManifestParser.parse(source: source)
+            let valid: Bool
+            switch result { case .success: valid = true; case .failure: valid = false }
+            XCTAssertEqual(valid, fixture["valid"] as? Bool, "\(fixture["name"] ?? "fixture"): \(result)")
+        }
+    }
+
     private func matches(_ regex: NSRegularExpression, _ text: String) -> Bool {
         regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
             != nil
@@ -95,11 +119,11 @@ final class PluginManifestRulesParityTests: XCTestCase {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("tools/plugin-sim/run.mjs")
+            .appendingPathComponent("tools/plugin-sim/manifest.mjs")
         let source = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(source.contains("PluginManifestRules.json"))
         XCTAssertFalse(
             source.contains("\"notifications\""),
-            "run.mjs still spells the capability list out by hand")
+            "manifest.mjs still spells the capability list out by hand")
     }
 }

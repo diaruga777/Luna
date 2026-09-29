@@ -85,6 +85,31 @@ final class SafariPluginHostTests: XCTestCase {
         XCTAssertEqual(dict["itemId"] as? String, "abc")
     }
 
+    func testParseURLReturnsNullForInvalidInput() {
+        loadPlugin(capabilities: [], source: "luna.register({});")
+        XCTAssertEqual(js.evaluate("window.__lunaTestLuna.parseURL('not a url') === null") as? Bool, true)
+        XCTAssertEqual(js.evaluate("window.__lunaTestLuna.parseURL('/path', 'bad base') === null") as? Bool, true)
+    }
+
+    func testRegistrationValidatesAndCapturesHooks() {
+        loadPlugin(capabilities: [], source: """
+            let reads = 0;
+            luna.register({ get classify() { reads++; return () => reads; } });
+            """)
+        XCTAssertEqual(js.evaluate("window.__lunaTestLuna.__registeredHooks.classify()") as? Int, 1)
+        XCTAssertEqual(js.evaluate("Object.isFrozen(window.__lunaTestLuna.__registeredHooks)") as? Bool, true)
+        for value in ["[]", "{ingest: 42}", "{classify: {}}"] {
+            let code = js.evaluate("""
+                (() => {
+                    const fresh = LunaPluginHost.createBridge({}, () => Promise.resolve({}));
+                    try { fresh.register(\(value)); return "accepted"; }
+                    catch (error) { return error.code; }
+                })()
+                """) as? String
+            XCTAssertEqual(code, "invalid-hooks", value)
+        }
+    }
+
     /// `luna.register`'s own refusals carry their CODE first, the order every
     /// bundled plugin and `docs/plugins/api.md` use. Reading the message as
     /// the code is what made a plugin branching on `error.code` behave

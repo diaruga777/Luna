@@ -62,6 +62,29 @@ final class PluginContext {
               const stringify = JSON.stringify.bind(JSON);
               const keys = Object.keys.bind(Object);
               const freeze = Object.freeze.bind(Object);
+              const resolve = Promise.resolve.bind(Promise);
+              const then = Function.prototype.call.bind(Promise.prototype.then);
+              function settle(value, fulfilled, rejected) {
+                then(resolve(value), function (answer) {
+                  try { fulfilled(stringify(answer) ?? "null"); }
+                  catch (error) { rejected(error); }
+                }, rejected);
+              }
+              function captureHooks(value, names) {
+                if (!value || typeof value !== "object" || Array.isArray(value)) {
+                  throw new luna.LunaError("invalid-hooks", "luna.register needs an object of hooks");
+                }
+                const captured = {};
+                names.forEach(function (name) {
+                  const hook = value[name];
+                  if (hook === undefined) return;
+                  if (typeof hook !== "function") {
+                    throw new luna.LunaError("invalid-hooks", name + " must be a function");
+                  }
+                  captured[name] = hook;
+                });
+                return freeze(captured);
+              }
               function deepFreeze(value, seen) {
                 if (!value || (typeof value !== "object" && typeof value !== "function")) return value;
                 seen = seen || [];
@@ -72,7 +95,8 @@ final class PluginContext {
                 return value;
               }
               return { parse: parse, stringify: stringify, keys: keys,
-                       freeze: freeze, deepFreeze: deepFreeze };
+                       freeze: freeze, deepFreeze: deepFreeze,
+                       settle: settle, captureHooks: captureHooks };
             })()
             """)!
         context.exceptionHandler = { [weak self] _, exception in
@@ -209,11 +233,14 @@ final class PluginContext {
             return
         }
         registerCount += 1
-        guard let value, value.isObject else { return }
-        hooks = value
+        guard let value,
+              let captured = trustedBuiltins.objectForKeyedSubscript("captureHooks")?
+                .call(withArguments: [value, PluginHook.allCases.map(\.rawValue)]),
+              pendingException == nil, captured.isObject
+        else { return }
+        hooks = captured
         registeredHooks = Set(PluginHook.allCases.filter { hook in
-            let function = value.objectForKeyedSubscript(hook.rawValue)
-            return function?.isUndefined == false && function?.isNull == false
+            captured.objectForKeyedSubscript(hook.rawValue)?.isUndefined == false
         })
     }
 
@@ -258,14 +285,12 @@ final class PluginContext {
             settle(.success("null"))
             return
         }
-        guard isThenable(result) else {
-            settle(.success(stringify(result)))
-            return
-        }
         attach(to: result, hook: hook, settle: settle)
     }
 
-    /// Attaches native settle handlers to a returned Promise.
+    /// Assimilates plain values, Promises and thenables through captured native
+    /// Promise methods. Serialization failures and throwing `then` getters
+    /// reject immediately instead of becoming a silent decline or a timeout.
     ///
     /// `luna.browser.open` rejects with `code === "browser-deferred"` where no
     /// browser can be shown, and the plugin lets that propagate — so a rejection
@@ -276,22 +301,30 @@ final class PluginContext {
         settle: @escaping (Result<String, PluginJSFailure>) -> Void
     ) {
         let onFulfilled: @convention(block) (JSValue?) -> Void = { [weak self] value in
-            guard let self else { return }
-            settle(.success(value.map(self.stringify) ?? "null"))
+            guard self != nil else { return }
+            settle(.success(value?.toString() ?? "null"))
         }
         let onRejected: @convention(block) (JSValue?) -> Void = { [weak self] error in
             guard let self else { return }
             settle(.failure(self.failure(fromRejection: error, hook: hook)))
         }
-        promise.invokeMethod("then", withArguments: [onFulfilled, onRejected])
-        pendingException = nil
+        trustedBuiltins.objectForKeyedSubscript("settle")?
+            .call(withArguments: [promise, onFulfilled, onRejected])
+        if let failure = takeException(hook: hook.rawValue) {
+            settle(.failure(failure))
+        }
     }
 
     private func failure(fromRejection error: JSValue?, hook: PluginHook) -> PluginJSFailure {
-        let code = error?.objectForKeyedSubscript("code")?.toString()
-        let message = error?.objectForKeyedSubscript("message")?.toString()
-            ?? error?.toString() ?? "<no error value>"
-        let stack = error?.objectForKeyedSubscript("stack")?.toString()
+        func property(_ name: String) -> String? {
+            guard let error, error.isObject,
+                  let value = error.objectForKeyedSubscript(name),
+                  !value.isUndefined, !value.isNull else { return nil }
+            return value.toString()
+        }
+        let code = property("code")
+        let message = property("message") ?? error?.toString() ?? "<no error value>"
+        let stack = property("stack")
         if code == PluginBrowserDeferral.code {
             return PluginJSFailure(
                 pluginID: pluginID, hook: hook.rawValue, reason: .browserDeferred,
@@ -311,24 +344,6 @@ final class PluginContext {
         let value = parse.call(withArguments: [text])
         if pendingException != nil { pendingException = nil; return nil }
         return value
-    }
-
-    /// `JSON.stringify(value)`. `undefined` stringifies to nothing, which is the
-    /// same answer as `null` for every hook Luna calls.
-    private func stringify(_ value: JSValue) -> String {
-        guard !value.isUndefined, !value.isNull,
-              let stringify = trustedBuiltins.objectForKeyedSubscript("stringify"),
-              let text = stringify.call(withArguments: [value])?.toString(),
-              text != "undefined"
-        else { return "null" }
-        pendingException = nil
-        return text
-    }
-
-    private func isThenable(_ value: JSValue) -> Bool {
-        guard value.isObject else { return false }
-        let then = value.objectForKeyedSubscript("then")
-        return then?.isObject == true && then?.hasProperty("call") == true
     }
 
     private func takeException(hook: String) -> PluginJSFailure? {

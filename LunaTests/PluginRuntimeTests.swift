@@ -363,6 +363,63 @@ final class PluginRuntimeTests: XCTestCase {
         XCTAssertEqual(media.assets.map(\.url.absoluteString), ["https://example.com/v/abc.mp4"])
     }
 
+    func testRegistrationRejectsNonFunctionsAndArrays() throws {
+        for hooks in ["{ classify: 42, ingest() {} }", "{ classify: {}, ingest() {} }", "[]"] {
+            let reports = try runner.load(plugin(body: "luna.register(\(hooks));"), expectingFailures: true)
+            XCTAssertEqual(reports.first?.isLoaded, false, hooks)
+            XCTAssertTrue(reports.first?.failure?.message.contains(hooks == "[]" ? "object of hooks" : "must be a function") == true, hooks)
+        }
+    }
+
+    func testRegistrationCapturesGettersOnce() async throws {
+        try runner.load(plugin(body: """
+            let reads = 0;
+            luna.register({
+                get classify() { reads++; return () => ({kind: "media", itemId: String(reads)}); },
+                ingest() { return null; }
+            });
+            """))
+        let claim = await runner.invoke(.classify, pluginID: "app.luna.test", as: ClassifyClaim.self)
+        XCTAssertEqual(claim?.itemId, "1")
+    }
+
+    func testSerializationAndThenableErrorsAreReportedWithoutTimingOut() async throws {
+        let cases = [
+            "const value = {}; value.self = value; return value;",
+            "return Promise.resolve({value: 1n});",
+            "return {toJSON() { throw new Error('serialization failed'); }};",
+            "return {get then() { throw new Error('then getter failed'); }};",
+            "return {then() { throw new Error('then call failed'); }};",
+            "return Promise.reject('plain rejection');",
+        ]
+        for body in cases {
+            try runner.load(plugin(body: "luna.register({classify() { \(body) }, ingest() { return null; }});"))
+            let failure = await runner.invokeExpectingFailure(
+                .classify, pluginID: "app.luna.test", timeout: 1, as: ClassifyClaim?.self)
+            guard case .exception(let message, _)? = failure else {
+                XCTFail("Expected an exception for \(body), got \(String(describing: failure))")
+                continue
+            }
+            XCTAssertFalse(message.contains("undefined:"), message)
+            if body.contains("plain rejection") { XCTAssertEqual(message, "plain rejection") }
+        }
+    }
+
+    func testThenableSettlesOnlyOnceAndIgnoresLaterThrow() async throws {
+        try runner.load(plugin(body: """
+            luna.register({
+                classify() { return {then(resolve, reject) {
+                    resolve({kind: "media", itemId: "first"});
+                    reject(new Error("late rejection"));
+                    throw new Error("late throw");
+                }}; },
+                ingest() { return null; }
+            });
+            """))
+        let claim = await runner.invoke(.classify, pluginID: "app.luna.test", as: ClassifyClaim.self)
+        XCTAssertEqual(claim?.itemId, "first")
+    }
+
     func testAHookThatThrowsCarriesItsMessageToTheStage() async throws {
         let body = """
         luna.register({

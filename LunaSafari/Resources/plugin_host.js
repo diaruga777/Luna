@@ -585,17 +585,25 @@ var LunaPluginHost = (function () {
             if (registeredHooks) {
                 throw new LunaError("already-registered", "luna.register was called more than once");
             }
-            if (!hooks || typeof hooks !== "object") {
+            if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
                 throw new LunaError("invalid-hooks", "luna.register needs an object of hooks");
             }
-            registeredHooks = hooks;
+            const captured = {};
+            ["classify", "ingest", "export", "onBluetooth", "onSettingsChanged", "onAction"].forEach(function (name) {
+              const hook = hooks[name];
+              if (hook === undefined) return;
+              if (typeof hook !== "function") throw new LunaError("invalid-hooks", name + " must be a function");
+              captured[name] = hook;
+            });
+            registeredHooks = Object.freeze(captured);
         };
         Object.defineProperty(luna, "__registeredHooks", {
             get: function () { return registeredHooks; },
         });
 
         luna.parseURL = function (url, base) {
-            return wrapParsedURL(base ? new URL(url, base) : new URL(url));
+            try { return wrapParsedURL(base ? new URL(url, base) : new URL(url)); }
+            catch (_) { return null; }
         };
 
         luna.log = function (message, data) {

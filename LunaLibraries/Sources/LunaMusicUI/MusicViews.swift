@@ -49,9 +49,9 @@ internal enum MusicStyle {
                               animations: update)
         } else { update() }
     }
-    static func run(from presenter: UIViewController, _ action: @escaping () async throws -> Void) {
+    static func run(from presenter: UIViewController, errorTitle: String = "Unable to Play", _ action: @escaping () async throws -> Void) {
         Task { do { try await action() } catch {
-            let alert = UIAlertController(title: "Unable to Play", message: error.localizedDescription, preferredStyle: .alert)
+            let alert = UIAlertController(title: errorTitle, message: error.localizedDescription, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             presenter.present(alert, animated: true)
         } }
@@ -82,7 +82,7 @@ public class MusicScreenViewController: UIViewController {
             tableTop, table.leadingAnchor.constraint(equalTo: view.leadingAnchor), table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             mini.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), mini.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            mini.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), mini.heightAnchor.constraint(equalToConstant: 48)
+            mini.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), mini.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
         ])
         table.contentInset.bottom = 72
         table.verticalScrollIndicatorInsets.bottom = 72
@@ -119,15 +119,33 @@ public class MusicScreenViewController: UIViewController {
                 guard let self else { return }
                 MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(item) }
             },
-            UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: MusicLibraryController.shared.playlists.map { playlist in
+            UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: [UIAction(title: "New Playlist…", image: UIImage(systemName: "plus")) { [weak self] _ in self?.newPlaylist(items: [item]) }] + MusicLibraryController.shared.playlists.filter { !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
                 UIAction(title: playlist.name ?? "Playlist") { [weak self] _ in
                     guard let self else { return }
-                    MusicStyle.run(from: self) { try await MusicLibraryController.shared.add([item], to: playlist) }
+                    MusicStyle.run(from: self, errorTitle: "Unable to Add Songs") { try await MusicLibraryController.shared.add([item], to: playlist) }
                 }
             }),
             UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) },
             UIAction(title: "Play Last", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playLater(item) }
         ])
+    }
+    func newPlaylist(items: [MPMediaItem] = [], completion: ((MPMediaPlaylist) -> Void)? = nil) {
+        let alert = UIAlertController(title: "New Playlist", message: nil, preferredStyle: .alert)
+        alert.addTextField { $0.placeholder = "Playlist Name" }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        let create = UIAlertAction(title: "Create", style: .default) { [weak self, weak alert] _ in
+            guard let self, let name = alert?.textFields?.first?.text else { return }
+            MusicStyle.run(from: self, errorTitle: "Unable to Create Playlist") {
+                let playlist = try await MusicLibraryController.shared.createPlaylist(name: name, items: items)
+                completion?(playlist)
+            }
+        }
+        create.isEnabled = false
+        alert.addAction(create)
+        alert.textFields?.first?.addAction(UIAction { [weak alert, weak create] _ in
+            create?.isEnabled = !(alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }, for: .editingChanged)
+        present(alert, animated: true)
     }
     func configureSong(_ cell: UITableViewCell, item: MPMediaItem) {
         var config = cell.defaultContentConfiguration()
@@ -135,9 +153,11 @@ public class MusicScreenViewController: UIViewController {
         config.secondaryText = item.artist ?? "Unknown Artist"
         config.image = MusicStyle.image(item, size: 100) ?? UIImage(systemName: "music.note")
         config.imageProperties.maximumSize = CGSize(width: 48, height: 48)
+        config.textProperties.numberOfLines = 1
+        config.secondaryTextProperties.numberOfLines = 1
         config.imageProperties.cornerRadius = 6
-        config.textProperties.font = MusicStyle.font(22)
-        config.secondaryTextProperties.font = MusicStyle.font(19)
+        config.textProperties.font = MusicStyle.font(20)
+        config.secondaryTextProperties.font = MusicStyle.font(17)
         config.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20)
         config.imageToTextPadding = 12
         config.secondaryTextProperties.color = .secondaryLabel
@@ -177,6 +197,10 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         artistLabel.textColor = .secondaryLabel
         [titleLabel, artistLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
         let labels = UIStackView(arrangedSubviews: [titleLabel, artistLabel]); labels.axis = .vertical
+        [titleLabel, artistLabel].forEach {
+            $0.numberOfLines = 1
+            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         let open = UIButton(type: .custom)
         open.addAction(UIAction { [weak self] _ in self?.onOpen?() }, for: .touchUpInside)
         open.accessibilityLabel = "Open Now Playing"
@@ -188,7 +212,7 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         open.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(open)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
-            art.widthAnchor.constraint(equalToConstant: 32), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 40), next.widthAnchor.constraint(equalToConstant: 40),
+            art.widthAnchor.constraint(equalToConstant: 32), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 44), next.widthAnchor.constraint(equalToConstant: 44), play.heightAnchor.constraint(greaterThanOrEqualToConstant: 44), next.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             open.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), open.topAnchor.constraint(equalTo: contentView.topAnchor), open.bottomAnchor.constraint(equalTo: contentView.bottomAnchor), open.trailingAnchor.constraint(equalTo: play.leadingAnchor)
         ])
     }

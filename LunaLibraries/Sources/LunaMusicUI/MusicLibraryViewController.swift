@@ -23,7 +23,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
         search.placeholder = "Your Library"
-        search.searchTextField.font = MusicStyle.font(22)
+        search.searchTextField.font = .preferredFont(forTextStyle: .body)
         search.searchTextField.accessibilityIdentifier = "music.library.search"
         search.delegate = self
         search.autocapitalizationType = .none
@@ -149,14 +149,26 @@ internal enum MusicResult {
     var name: String { switch self { case .song(let item): return item.title ?? "Unknown Song"; case .playlist(let item): return item.name ?? "Playlist"; case .album(let item): return item.representativeItem?.albumTitle ?? "Unknown Album"; case .artist(let item): return item.representativeItem?.artist ?? "Unknown Artist" } }
     var songs: [MPMediaItem] { switch self { case .song(let item): return [item]; case .playlist(let item): return item.items; case .album(let item), .artist(let item): return item.items } }
     var playlist: MPMediaPlaylist? { if case .playlist(let item) = self { return item }; return nil }
+    @MainActor func artwork(size: CGFloat = 600) -> UIImage? {
+        guard case .playlist = self else { return MusicStyle.image(songs.first, size: size) }
+        var seen = Set<MPMediaEntityPersistentID>()
+        let covers = songs.filter { seen.insert($0.albumPersistentID).inserted }
+            .compactMap { MusicStyle.image($0, size: size / 2) }.prefix(4)
+        guard covers.count == 4 else { return MusicStyle.image(songs.first, size: size) }
+        return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
+            for (index, cover) in covers.enumerated() {
+                cover.draw(in: CGRect(x: CGFloat(index % 2) * size / 2, y: CGFloat(index / 2) * size / 2, width: size / 2, height: size / 2))
+            }
+        }
+    }
     @MainActor func configure(_ cell: UITableViewCell, owner: MusicScreenViewController) {
         cell.accessoryView = nil; cell.accessoryType = .disclosureIndicator
         if case .song(let item) = self { owner.configureSong(cell, item: item); cell.accessoryType = .none; return }
         var config = cell.defaultContentConfiguration(); config.text = name
-        config.image = MusicStyle.image(songs.first, size: 120) ?? UIImage(systemName: "music.note.list")
+        config.image = artwork(size: 120) ?? UIImage(systemName: "music.note.list")
         config.imageProperties.maximumSize = CGSize(width: 64, height: 64); config.imageProperties.cornerRadius = 6
-        config.textProperties.font = MusicStyle.font(22)
-        config.secondaryTextProperties.font = MusicStyle.font(19)
+        config.textProperties.font = MusicStyle.font(20)
+        config.secondaryTextProperties.font = MusicStyle.font(17)
         config.directionalLayoutMargins.leading = 20; config.directionalLayoutMargins.trailing = 20
         config.imageToTextPadding = 12
         config.directionalLayoutMargins.top = 8; config.directionalLayoutMargins.bottom = 8

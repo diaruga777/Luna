@@ -1,6 +1,7 @@
 import UIKit
 import MediaPlayer
 import AVKit
+import AVFAudio
 import LunaMusicCore
 
 /// The upper stage changes between artwork and queue. Playback controls never
@@ -29,6 +30,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private let transport = UIStackView()
     private let volume = MPVolumeView()
     private let route = AVRoutePickerView()
+    private let outputLabel = UILabel()
+    private let more = UIButton(type: .system)
     private var play: UIButton!
     private var shuffle: UIButton!
     private var repeatButton: UIButton!
@@ -58,7 +61,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         backdrop.clipsToBounds = true
         shade.backgroundColor = UIColor.black.withAlphaComponent(0.25)
         [backdrop, blur, shade, stage, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, route, grabber, close].forEach(view.addSubview)
-        [art, names, options, sourceLabel, table].forEach(stage.addSubview)
+        [art, names, more, options, sourceLabel, table].forEach(stage.addSubview)
         stage.clipsToBounds = true
         grabber.backgroundColor = UIColor.white.withAlphaComponent(0.4)
         grabber.layer.cornerRadius = 2
@@ -68,8 +71,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
             image.tintColor = UIColor.white.withAlphaComponent(0.55)
             image.contentMode = .scaleAspectFit
         }
-        titleLabel.font = MusicStyle.font(22, weight: .semibold)
-        artistLabel.font = MusicStyle.font(22)
+        titleLabel.font = MusicStyle.font(20, weight: .semibold)
+        artistLabel.font = MusicStyle.font(20)
         artistLabel.textColor = UIColor.white.withAlphaComponent(0.65)
         titleLabel.lineBreakMode = .byTruncatingTail
         artistLabel.lineBreakMode = .byTruncatingTail
@@ -78,6 +81,17 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         names.addArrangedSubview(titleLabel)
         names.addArrangedSubview(artistLabel)
         [titleLabel, artistLabel, sourceLabel, elapsed, remaining].forEach { $0.adjustsFontForContentSizeCategory = true }
+
+        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)), for: .normal)
+        more.tintColor = .white
+        more.accessibilityLabel = "Song Options"
+        more.showsMenuAsPrimaryAction = true
+        outputLabel.font = MusicStyle.font(17, weight: .semibold)
+        outputLabel.textColor = UIColor.white.withAlphaComponent(0.65)
+        outputLabel.textAlignment = .center
+        outputLabel.lineBreakMode = .byTruncatingTail
+        view.addSubview(outputLabel)
+        volume.setVolumeThumbImage(UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }, for: .normal)
 
         shuffle = MusicStyle.plainButton("shuffle", label: "Shuffle") { [weak self] in
             guard let self else { return }
@@ -94,7 +108,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         table.backgroundColor = .clear
         table.delegate = self
         table.dataSource = self
-        table.rowHeight = 74
+        table.rowHeight = UITableView.automaticDimension
+        table.estimatedRowHeight = 74
         table.separatorStyle = .none
         table.contentInsetAdjustmentBehavior = .never
         table.register(UITableViewCell.self, forCellReuseIdentifier: "song")
@@ -177,23 +192,24 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         elapsed.frame = CGRect(x: left, y: timelineY + 25, width: width / 2, height: 20)
         remaining.frame = CGRect(x: left + width / 2, y: timelineY + 25, width: width / 2, height: 20)
         transport.frame = CGRect(x: left, y: timelineY + controlsHeight * 0.23, width: width, height: controlsHeight * 0.34)
-        volume.frame = CGRect(x: left + 24, y: bottom - 88, width: width - 56, height: 32)
-        volumeLow.frame = CGRect(x: left, y: bottom - 84, width: 12, height: 18)
-        volumeHigh.frame = CGRect(x: left + width - 22, y: bottom - 84, width: 22, height: 18)
-        route.frame = CGRect(x: view.bounds.midX - 24, y: bottom - 48, width: 48, height: 44)
-        queueButton.frame = CGRect(x: left + width * 0.84 - 22, y: bottom - 48, width: 44, height: 44)
+        volume.frame = CGRect(x: left + 24, y: bottom - 100, width: width - 56, height: 32)
+        volumeLow.frame = CGRect(x: left, y: bottom - 96, width: 12, height: 18)
+        volumeHigh.frame = CGRect(x: left + width - 22, y: bottom - 96, width: 22, height: 18)
+        route.frame = CGRect(x: view.bounds.midX - 24, y: bottom - 66, width: 48, height: 44)
+        queueButton.frame = CGRect(x: left + width * 0.84 - 22, y: bottom - 66, width: 44, height: 44)
+        outputLabel.frame = CGRect(x: left, y: bottom - 22, width: width, height: 24)
         layoutStage()
     }
 
     private func layoutStage() {
         let width = stage.bounds.width
         let height = stage.bounds.height
-        let namesHeight = min(80, max(54, titleLabel.font.lineHeight + artistLabel.font.lineHeight + 2))
-        let side = max(0, min(width, height - namesHeight - 38))
+        let namesHeight = max(54, titleLabel.font.lineHeight + artistLabel.font.lineHeight + 2)
+        let side = max(0, min(width * (player.isPlaying ? 1 : 0.77), height - namesHeight - 38))
         let expandedArt = CGRect(x: (width - side) / 2, y: max(0, (height - namesHeight - 24 - side) / 2), width: side, height: side)
         let compactArt = CGRect(x: 0, y: 0, width: 72, height: 72)
-        let expandedNames = CGRect(x: 0, y: height - namesHeight, width: width, height: namesHeight)
-        let compactNames = CGRect(x: 84, y: max(0, (72 - namesHeight) / 2), width: max(0, width - 84), height: namesHeight)
+        let expandedNames = CGRect(x: 0, y: height - namesHeight, width: max(0, width - 52), height: namesHeight)
+        let compactNames = CGRect(x: 84, y: max(0, (72 - namesHeight) / 2), width: max(0, width - 84 - 44), height: namesHeight)
         func mix(_ start: CGRect, _ end: CGRect) -> CGRect {
             CGRect(x: start.minX + (end.minX - start.minX) * queueProgress,
                    y: start.minY + (end.minY - start.minY) * queueProgress,
@@ -202,13 +218,19 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         }
         art.frame = mix(expandedArt, compactArt)
         names.frame = mix(expandedNames, compactNames)
-        options.frame = CGRect(x: 0, y: 86, width: width * 0.48, height: 38)
+        more.frame = CGRect(x: width - 44, y: names.frame.midY - 22, width: 44, height: 44)
+        // Never assign frame while a nonidentity transform is installed. UIKit
+        // interprets that frame in transformed coordinates, moving hit regions
+        // over the title and artwork on subsequent layout passes.
+        for child in [options, sourceLabel, table] { child.transform = .identity }
+        let optionsY = max(86, compactNames.maxY + 14)
+        options.frame = CGRect(x: 0, y: optionsY, width: width, height: 38)
         let sourceHeight: CGFloat = player.sourcePlaylistName == nil ? 30 : 58
-        sourceLabel.frame = CGRect(x: 0, y: 142, width: width, height: sourceHeight)
+        sourceLabel.frame = CGRect(x: 0, y: options.frame.maxY + 20, width: width, height: sourceHeight)
         table.frame = CGRect(x: 0, y: sourceLabel.frame.maxY + 12, width: width, height: max(0, height - sourceLabel.frame.maxY - 12))
         for child in [options, sourceLabel, table] {
             child.alpha = queueProgress
-            child.transform = CGAffineTransform(translationX: 0, y: (1 - queueProgress) * 48)
+            child.frame.origin.y += (1 - queueProgress) * 48
             child.isUserInteractionEnabled = showsQueue
             child.accessibilityElementsHidden = !showsQueue
         }
@@ -296,6 +318,19 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
             source.append(NSAttributedString(string: "\nFrom \(name)", attributes: [.font: MusicStyle.font(19), .foregroundColor: UIColor.white.withAlphaComponent(0.6)]))
         }
         sourceLabel.attributedText = source
+        outputLabel.text = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portName).joined(separator: ", ")
+        more.isEnabled = player.nowPlaying != nil
+        if let item = player.nowPlaying {
+            more.menu = UIMenu(children: [
+                UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: MusicLibraryController.shared.playlists.filter { !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
+                    UIAction(title: playlist.name ?? "Playlist") { [weak self] _ in
+                        guard let self else { return }
+                        MusicStyle.run(from: self, errorTitle: "Unable to Add Songs") { try await MusicLibraryController.shared.add([item], to: playlist) }
+                    }
+                }),
+                UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) }
+            ])
+        }
         table.reloadData()
         if upcomingCount == 0 {
             var config = UIContentUnavailableConfiguration.empty()
@@ -328,11 +363,15 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         var config = cell.defaultContentConfiguration()
         config.text = item.title ?? "Unknown Song"
         config.secondaryText = item.artist
-        config.textProperties.font = MusicStyle.font(22)
-        config.secondaryTextProperties.font = MusicStyle.font(19)
+        config.textProperties.font = MusicStyle.font(20)
+        config.secondaryTextProperties.font = MusicStyle.font(17)
         config.image = MusicStyle.image(item, size: 100) ?? UIImage(systemName: "music.note")
         config.imageProperties.maximumSize = CGSize(width: 48, height: 48)
         config.imageProperties.cornerRadius = 5
+        config.textProperties.numberOfLines = 1
+        config.secondaryTextProperties.numberOfLines = 1
+        config.directionalLayoutMargins.top = 12
+        config.directionalLayoutMargins.bottom = 12
         config.directionalLayoutMargins.leading = 0
         config.imageToTextPadding = 12
         config.secondaryTextProperties.color = .secondaryLabel

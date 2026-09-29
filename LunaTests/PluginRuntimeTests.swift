@@ -836,15 +836,15 @@ final class PluginRuntimeTests: XCTestCase {
     }
 
     func testTheIngestBudgetIsIdleRatherThanWallClock() async throws {
-        // Six 100 ms fetches take longer than the 0.4 s budget in wall-clock
-        // terms, and finish inside it in idle terms.
-        runner.fetcher.delay = 0.1
+        // Eight 250 ms fetches exceed the 1.5 s wall-clock budget. Leave
+        // scheduling headroom when this runs alongside WebKit/simulator tests.
+        runner.fetcher.delay = 0.25
         runner.fetcher.respond(to: "https://example.com/x", body: "ok")
         let body = """
         luna.register({
             classify() { return { kind: "media" }; },
             async ingest() {
-                for (let i = 0; i < 6; i++) {
+                for (let i = 0; i < 8; i++) {
                     await luna.fetch({ url: "https://example.com/x" });
                 }
                 return { kind: "media", title: "slow but alive",
@@ -856,10 +856,10 @@ final class PluginRuntimeTests: XCTestCase {
 
         struct Model: Decodable { let title: String }
         let model = await runner.invoke(
-            .ingest, pluginID: "app.luna.test", timeout: 0.4, as: Model.self)
+            .ingest, pluginID: "app.luna.test", timeout: 1.5, as: Model.self)
 
         XCTAssertEqual(model?.title, "slow but alive")
-        XCTAssertEqual(runner.fetcher.requests.count, 6)
+        XCTAssertEqual(runner.fetcher.requests.count, 8)
     }
 
     // MARK: - Reloading

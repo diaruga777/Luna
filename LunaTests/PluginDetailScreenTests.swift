@@ -41,11 +41,14 @@ final class PluginDetailScreenTests: XCTestCase {
     private final class FakeInvoker: PluginHookInvoking {
         var loadedPlugins: [PluginSummary] = []
         var disabledPlugins: [String: String] = [:]
-        private(set) var invocations: [(hook: PluginHook, pluginID: String)] = []
+        private let lock = NSLock()
+        private var recordedInvocations: [(hook: PluginHook, pluginID: String)] = []
+        private var recordedArguments: [String] = []
+        var invocations: [(hook: PluginHook, pluginID: String)] { lock.withLock { recordedInvocations } }
 
         func matchedPlugins(forHost host: String) -> [PluginSummary] { [] }
 
-        private(set) var argumentJSON: [String] = []
+        var argumentJSON: [String] { lock.withLock { recordedArguments } }
 
         /// `PluginDetailScreen` never reads the settled value of a UI-driven
         /// `onAction`/`onSettingsChanged` call, so this always answers
@@ -55,11 +58,12 @@ final class PluginDetailScreenTests: XCTestCase {
             _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval,
             decode: T.Type
         ) async -> Result<T, PluginInvocationFailure> {
-            invocations.append((hook, pluginID))
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            if let data = try? encoder.encode(EncodableBox(wrapped: argument)) {
-                argumentJSON.append(String(decoding: data, as: UTF8.self))
+            let data = try? encoder.encode(EncodableBox(wrapped: argument))
+            lock.withLock {
+                recordedInvocations.append((hook, pluginID))
+                if let data { recordedArguments.append(String(decoding: data, as: UTF8.self)) }
             }
             return .failure(.missingHook)
         }

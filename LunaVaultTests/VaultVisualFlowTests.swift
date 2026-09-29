@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import LunaVaultUI
+import LunaVaultBEP
 
 @MainActor
 final class VaultVisualFlowTests: XCTestCase {
@@ -53,8 +54,8 @@ final class VaultVisualFlowTests: XCTestCase {
     func testSearchCancelsStaleResultsAndRefreshPreservesQuery() async throws {
         let probe = SearchProbe()
         let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(
-            connectionStatus: { .connected }, recentFiles: { [files] _ in files },
-            search: { query, _ in await probe.search(query) }))
+            connectionStatus: { .connected }, search: { query, _ in await probe.search(query) },
+            children: { [files] _ in files }))
         try await host(root)
         let search = try XCTUnwrap(root.navigationItem.searchController)
         search.searchBar.text = "slow"
@@ -74,7 +75,7 @@ final class VaultVisualFlowTests: XCTestCase {
         XCTAssertEqual(before, after, "Connection updates must not restart search or discard results")
         search.searchBar.text = ""
         root.updateSearchResults(for: search)
-        XCTAssertEqual(root.tableView.numberOfRows(inSection: 1), files.count)
+        XCTAssertEqual(root.tableView.numberOfRows(inSection: 2), files.count)
     }
     func testBrowseSortsFoldersFirstAndReportsFailure() async throws {
         let folder = VaultPresentedFile(id: "Travel", name: "Travel", path: "Travel", modifiedAt: Date(), isDirectory: true)
@@ -95,9 +96,9 @@ final class VaultVisualFlowTests: XCTestCase {
     }
     func testLibraryVisualsAndSearchEmptyState() async throws {
         let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(
-            connectionStatus: { .offline }, recentFiles: { [files] _ in files }))
+            connectionStatus: { .offline }, children: { [files] _ in files }))
         try await host(root)
-        try await waitUntil { root.tableView.numberOfSections == 2 }
+        try await waitUntil { root.tableView.numberOfSections == 3 }
         try await capture("03-library-light")
         window?.overrideUserInterfaceStyle = .dark
         try await capture("04-library-dark")
@@ -116,7 +117,7 @@ final class VaultVisualFlowTests: XCTestCase {
     func testConnectedEmptyLibraryKeepsBrowseAndImport() async throws {
         let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(connectionStatus: { .connected }))
         try await host(root)
-        try await waitUntil { (root.emptyStateConfiguration)?.text == "No Files Yet" }
+        try await waitUntil { (root.emptyStateConfiguration)?.text == "Your Vault Folder Is Empty" }
         XCTAssertNotNil(root.navigationItem.leftBarButtonItem)
         XCTAssertEqual(root.navigationItem.leftBarButtonItem?.menu?.children.map(\.title),
                        ["Import File", "Import Folder", "Select Photos", "Select Photo Album"])
@@ -127,12 +128,12 @@ final class VaultVisualFlowTests: XCTestCase {
         let item = VaultPendingUpload(name: "Archive.zip", totalBytes: 4 * 1_024 * 1_024 * 1_024,
                                       sentBytes: 1 * 1_024 * 1_024 * 1_024,
                                       isDeleting: false, isDirectory: false)
-        let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(
+        let root = VaultTransfersViewController(runtime: VaultPresentationServices(
             connectionStatus: { .connected }, pendingUploads: { [item] }))
         try await host(root)
-        try await waitUntil { root.tableView.numberOfSections == 3 }
-        XCTAssertEqual(root.tableView.numberOfRows(inSection: 1), 1)
-        let cell = root.tableView(root.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        try await waitUntil { root.tableView.visibleCells.contains { $0.accessibilityIdentifier?.hasPrefix("vault.transfer.") == true } }
+        XCTAssertEqual(root.tableView.numberOfRows(inSection: 0), 1)
+        let cell = root.tableView(root.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
         XCTAssertFalse(cell.isAccessibilityElement, "VoiceOver must reach the Cancel button")
         let controls = descendants(of: cell)
         XCTAssertTrue(controls.compactMap { ($0 as? UILabel)?.text }.contains("Archive.zip"))
@@ -142,7 +143,7 @@ final class VaultVisualFlowTests: XCTestCase {
         try await capture("10-pending-transfer")
         root.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         root.tableView.layoutIfNeeded()
-        root.tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
+        root.tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: false)
         try await capture("10-pending-transfer-large-text")
     }
     func testDownloadsAreAccessibleOfflineAndExplainEmptyState() async throws {
@@ -160,6 +161,43 @@ final class VaultVisualFlowTests: XCTestCase {
         try await host(empty)
         try await waitUntil { empty.emptyStateConfiguration?.text == "No Downloads Yet" }
         try await capture("14-downloads-empty")
+    }
+
+    func testMacBrowserIsReadOnlyAndOpensNestedDirectories() async throws {
+        let runtime = VaultPresentationServices(macDirectory: { path, _, _ in
+            if path == nil {
+                return VaultMacBrowseResponse(entries: [VaultMacBrowseEntry(path: "/Users/test", name: "Home", isDirectory: true, size: 0, modifiedAt: Date())])
+            }
+            return VaultMacBrowseResponse(entries: [
+                VaultMacBrowseEntry(path: "/Users/test/notes.txt", name: "notes.txt", isDirectory: false, size: 512, modifiedAt: Date()),
+                VaultMacBrowseEntry(path: "/Users/test/Documents", name: "Documents", isDirectory: true, size: 0, modifiedAt: Date())])
+        })
+        let root = VaultMacBrowseViewController(runtime: runtime)
+        try await host(root)
+        try await waitUntil { root.emptyStateConfiguration == nil }
+        try await capture("15-mac-locations")
+        root.tableView(root.tableView, didSelectRowAt: IndexPath(row: 0, section: 0))
+        try await Task.sleep(for: .milliseconds(400))
+        let folder = try XCTUnwrap(root.navigationController?.topViewController as? VaultMacBrowseViewController)
+        try await waitUntil { folder.tableView.numberOfRows(inSection: 0) == 2 }
+        XCTAssertEqual(folder.path, "/Users/test")
+        let first = folder.tableView(folder.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertEqual((first.contentConfiguration as? UIListContentConfiguration)?.text, "Documents")
+        XCTAssertNil(folder.tableView.delegate?.tableView?(folder.tableView, trailingSwipeActionsConfigurationForRowAt: IndexPath(row: 1, section: 0)))
+        XCTAssertNil(folder.navigationItem.leftBarButtonItem)
+        try await capture("16-mac-files-read-only")
+        window?.overrideUserInterfaceStyle = .dark
+        try await capture("17-mac-files-dark")
+    }
+
+    func testHomeRoutesTransfersAwayFromFileRows() async throws {
+        let root = VaultSyncthingHomeViewController(runtime: VaultPresentationServices(connectionStatus: { .connected }))
+        try await host(root)
+        try await waitUntil { root.tableView.numberOfSections == 3 }
+        let activity = root.tableView(root.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertEqual(activity.accessibilityIdentifier, "vault.transfers")
+        root.tableView(root.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertTrue(root.navigationController?.topViewController is VaultTransfersViewController)
     }
 
     private func descendants(of view: UIView) -> [UIView] {

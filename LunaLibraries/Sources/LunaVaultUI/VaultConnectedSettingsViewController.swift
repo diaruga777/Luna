@@ -103,7 +103,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         let steps = UIStackView(arrangedSubviews: [
             step("1", "Open Luna Vault on your Mac.", "Keep both devices on the same network."),
             step("2", "Copy the pairing code.", "Paste it below to connect this iPhone."),
-            step("3", "Approve on your Mac.", "Your files will appear automatically.")
+            step("3", "Approve on your Mac.", "Browse your Mac read only. The Vault folder supports search and uploads.")
         ]); steps.axis = .vertical; steps.spacing = 20
         let stack = UIStackView(arrangedSubviews: [intro, steps]); stack.axis = .vertical; stack.spacing = 30
         stack.translatesAutoresizingMaskIntoConstraints = false

@@ -9,20 +9,21 @@ public extension VaultAccessibilityID {
     static let pairingDeviceID = "vault.pairing.local-device-id"
 }
 
-/// Native, search-first file library. Connection state determines the next useful action.
+/// File-browser landing page with separate locations and transfer activity.
 public final class VaultSyncthingHomeViewController: UITableViewController, UISearchResultsUpdating {
     private let runtime: any VaultPresentationProviding
     private let importHandler: (() -> Void)?
     private let importFolderHandler: (() -> Void)?
     private let importPhotosHandler: (() -> Void)?
     private let importPhotoAlbumHandler: (() -> Void)?
+    private let macOpenHandler: ((String) -> Void)?
     private let openHandler: ((String) -> Void)?
     private let settingsController: (() -> UIViewController)?
     private let search = UISearchController(searchResultsController: nil)
     private var status: VaultConnectionStatus = .notPaired
     private var pendingUploads: [VaultPendingUpload] = []
     private var queuedImportCount = 0
-    private var recents: [VaultPresentedFile] = []
+    private var rootFiles: [VaultPresentedFile] = []
     private var results: [VaultPresentedFile] = []
     private var loaded = false
     private var searching = false
@@ -38,7 +39,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     public init(runtime: any VaultPresentationProviding, importHandler: (() -> Void)? = nil,
                 importFolderHandler: (() -> Void)? = nil,
                 importPhotosHandler: (() -> Void)? = nil, importPhotoAlbumHandler: (() -> Void)? = nil,
-                openHandler: ((String) -> Void)? = nil,
+                openHandler: ((String) -> Void)? = nil, macOpenHandler: ((String) -> Void)? = nil,
                 settingsController: (() -> UIViewController)? = nil) {
         self.runtime = runtime
         self.importHandler = importHandler
@@ -46,6 +47,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         self.importPhotosHandler = importPhotosHandler
         self.importPhotoAlbumHandler = importPhotoAlbumHandler
         self.openHandler = openHandler
+        self.macOpenHandler = macOpenHandler
         self.settingsController = settingsController
         super.init(style: .insetGrouped)
     }
@@ -55,19 +57,18 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Vault"
+        title = "Browse"
         navigationItem.largeTitleDisplayMode = .always
         navigationItem.backButtonDisplayMode = .minimal
         tableView.accessibilityIdentifier = VaultAccessibilityID.content
         tableView.keyboardDismissMode = .onDrag
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "file")
-        tableView.register(VaultPendingUploadCell.self, forCellReuseIdentifier: "upload")
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 76
         definesPresentationContext = true
         search.obscuresBackgroundDuringPresentation = false
         search.searchResultsUpdater = self
-        search.searchBar.placeholder = "Search files and contents"
+        search.searchBar.placeholder = "Search Vault files and contents"
         search.searchBar.searchTextField.accessibilityIdentifier = VaultAccessibilityID.search
         search.searchBar.searchTextField.accessibilityLabel = "Search your Vault"
         navigationItem.hidesSearchBarWhenScrolling = false
@@ -95,12 +96,15 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             async let connection = runtime.connectionStatus()
             async let pending = vaultAsyncResult { try await runtime.pendingUploads() }
             async let queued = vaultAsyncResult { try await runtime.queuedImportCount() }
-            let files = await vaultAsyncResult { try await runtime.recentFiles(limit: 30) }
+            let files = await vaultAsyncResult { try await runtime.children(of: "").sorted {
+                if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            } }
             let state = await connection
             let uploadCount = await pending
             let queuedCount = await queued
             guard let self, !Task.isCancelled, generation == loadGeneration else { return }
-            let previous = recents
+            let previous = rootFiles
             let previousStatus = status
             let previousPending = pendingUploads
             let previousQueued = queuedImportCount
@@ -111,32 +115,22 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             if case .success(let count) = queuedCount { queuedImportCount = count }
             loaded = true
             switch files {
-            case .success(let items): recents = items; loadError = false
+            case .success(let items): rootFiles = items; loadError = false
             case .failure: loadError = true
             }
             let sameTransfers = previousPending.map(\.name) == pendingUploads.map(\.name)
                 && zip(previousPending, pendingUploads).allSatisfy { $0.isDeleting == $1.isDeleting && $0.isDirectory == $1.isDirectory }
-            if previous != recents || previousStatus != status || !sameTransfers || previousQueued != queuedImportCount || !wasLoaded || hadError != loadError {
+            if previous != rootFiles || previousStatus != status || !sameTransfers || previousQueued != queuedImportCount || !wasLoaded || hadError != loadError {
                 updatePresentation()
-            } else if previousPending != pendingUploads, let section = uploadSection {
-                // Byte progress must not reload the table or interrupt scrolling,
-                // VoiceOver focus, a swipe action, or the open import menu.
-                for path in tableView.indexPathsForVisibleRows ?? [] where path.section == section {
-                    guard pendingUploads.indices.contains(path.row),
-                          let cell = tableView.cellForRow(at: path) as? VaultPendingUploadCell else { continue }
-                    let item = pendingUploads[path.row]
-                    cell.configure(item, connected: status == .connected) { [weak self] in self?.confirmCancel(item) }
-                }
             }
             // Preserve search results and keyboard during background connection updates.
         }
     }
     private var query: String { (search.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasQuery: Bool { !query.isEmpty }
-    private var needsSetup: Bool { loaded && status == .notPaired && recents.isEmpty && !loadError }
-    private var visibleFiles: [VaultPresentedFile] { hasQuery ? results : recents }
-    private var uploadSection: Int? { !hasQuery && (!pendingUploads.isEmpty || queuedImportCount > 0) ? 1 : nil }
-    private var recentSection: Int { uploadSection == nil ? 1 : 2 }
+    private var needsSetup: Bool { loaded && status == .notPaired && rootFiles.isEmpty && !loadError }
+    private var visibleFiles: [VaultPresentedFile] { hasQuery ? results : rootFiles }
+    private var filesSection: Int { 2 }
 
     @objc private func settingsTapped() {
         guard let controller = settingsController?() else { return }
@@ -231,9 +225,9 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
                 empty.button.title = "Try Again"
                 empty.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.scheduleSearch(delay: 0) }
             }
-        } else if !hasQuery && recents.isEmpty {
+        } else if !hasQuery && rootFiles.isEmpty {
             empty.image = UIImage(systemName: loadError ? "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90" : "folder")
-            empty.text = loadError ? "Couldn’t Load Files" : "No Files Yet"
+            empty.text = loadError ? "Couldn’t Load Files" : "Your Vault Folder Is Empty"
             empty.secondaryText = loadError ? "Pull down to refresh your library." : "Add a file from this iPhone or put files in your Mac’s Vault folder."
             if #available(iOS 26.0, *) { empty.button = loadError ? .glass() : .prominentGlass() }
             else { empty.button = .filled() }
@@ -249,47 +243,45 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         emptyStateConfiguration = empty
     }
     public override func numberOfSections(in tableView: UITableView) -> Int {
-        !loaded || needsSetup || hasQuery ? 1 : (uploadSection == nil ? 2 : 3)
+        !loaded || needsSetup || hasQuery ? 1 : 3
     }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !loaded || needsSetup { return 1 }
         if !hasQuery && section == 0 { return 3 }
-        if uploadSection == section { return pendingUploads.count + (queuedImportCount > 0 ? 1 : 0) }
+        if !hasQuery && section == 1 { return 1 }
         return max(1, visibleFiles.count)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        guard loaded, !needsSetup else { return nil }
         if hasQuery { return visibleFiles.isEmpty ? nil : "\(visibleFiles.count) Results" }
-        if uploadSection == section { return "Transfers" }
-        return section == recentSection && !recents.isEmpty ? "Recent Files" : nil
+        if section == 0 { return "Locations" }
+        if section == 1 { return "Activity" }
+        return section == filesSection ? "Vault Folder" : nil
     }
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if uploadSection == indexPath.section {
-            if indexPath.row == pendingUploads.count {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "file", for: indexPath)
-                var content = cell.defaultContentConfiguration()
-                content.image = UIImage(systemName: "tray.full")
-                content.text = queuedImportCount == 1 ? "1 file queued" : "\(queuedImportCount) files queued"
-                content.secondaryText = "Preparing to send to your Mac"
-                cell.contentConfiguration = content
-                cell.accessoryType = .none
-                cell.accessibilityIdentifier = "vault.transfer.queued"
-                return cell
-            }
-            let cell = tableView.dequeueReusableCell(withIdentifier: "upload", for: indexPath) as! VaultPendingUploadCell
-            let item = pendingUploads[indexPath.row]
-            cell.configure(item, connected: status == .connected) { [weak self] in self?.confirmCancel(item) }
+        if !hasQuery && !needsSetup && loaded && indexPath.section == 1 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "file", for: indexPath)
+            var content = cell.defaultContentConfiguration()
+            content.text = "Transfers"
+            let count = pendingUploads.count + queuedImportCount
+            content.secondaryText = count == 0 ? "No uploads in progress" : "\(count) item\(count == 1 ? "" : "s") · \(status == .connected ? "Sending to Vault" : "Waiting for Mac")"
+            content.image = UIImage(systemName: "arrow.up.arrow.down.circle")
+            content.imageProperties.tintColor = .tintColor
+            cell.contentConfiguration = content; cell.accessoryType = .disclosureIndicator
+            cell.accessibilityIdentifier = "vault.transfers"
+            cell.accessibilityLabel = nil; cell.accessibilityHint = "View upload progress and cancel transfers"
             return cell
         }
-        if let emptyStateConfiguration, !loaded || needsSetup || hasQuery || indexPath.section == recentSection {
+        if let emptyStateConfiguration, !loaded || needsSetup || hasQuery || indexPath.section == filesSection {
             return vaultEmptyCell(configuration: emptyStateConfiguration, minimumHeight: max(280,
                 tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom - (needsSetup || hasQuery ? 0 : 260)))
         }
         let cell = tableView.dequeueReusableCell(withIdentifier: "file", for: indexPath)
         if !hasQuery && indexPath.section == 0 {
             var content = cell.defaultContentConfiguration()
-            content.text = ["My Mac", "Browse Folders", "Downloads"][indexPath.row]
+            content.text = ["Mac Files", "Vault Folder", "Downloads"][indexPath.row]
             content.secondaryText = indexPath.row == 0 ? connectionDescription :
-                indexPath.row == 2 ? "Available on this iPhone" : nil
+                indexPath.row == 2 ? "Available on this iPhone" : "Indexed · Uploads saved here"
             content.secondaryTextProperties.numberOfLines = 0
             content.image = UIImage(systemName: ["desktopcomputer", "folder", "arrow.down.circle"][indexPath.row])
             content.imageProperties.tintColor = .tintColor
@@ -297,19 +289,14 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             cell.accessoryType = .disclosureIndicator
             cell.accessibilityIdentifier = [VaultAccessibilityID.connectionStatus, VaultAccessibilityID.browse, VaultAccessibilityID.downloads][indexPath.row]
             cell.accessibilityLabel = nil
-            cell.accessibilityHint = ["Connection and storage settings", "Browse Vault folders", "Browse downloaded files"][indexPath.row]
+            cell.accessibilityHint = ["Browse your Mac, read only", "Browse Vault folders", "Browse downloaded files"][indexPath.row]
             cell.selectionStyle = .default
-        } else { configureVaultFileCell(cell, item: visibleFiles[indexPath.row], prefix: hasQuery ? "vault.result" : "vault.recent") }
+        } else { configureVaultFileCell(cell, item: visibleFiles[indexPath.row], prefix: hasQuery ? "vault.result" : "vault.root.item") }
         return cell
     }
     private var connectionDescription: String {
-        if !pendingUploads.isEmpty || queuedImportCount > 0 {
-            let total = pendingUploads.count + queuedImportCount
-            let count = "\(total) item\(total == 1 ? "" : "s")"
-            return status == .connected ? "\(count) syncing to Mac" : "\(count) waiting for Mac · Reconnect to resume"
-        }
         switch status {
-        case .connected: return "Connected"
+        case .connected: return "Connected · Read only"
         case .syncing: return "Syncing files…"
         case .offline: return "Offline · Downloaded files available"
         case .notPaired: return "Connect your Mac"
@@ -319,34 +306,21 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         tableView.deselectRow(at: indexPath, animated: true)
         guard loaded, !needsSetup else { return }
         if !hasQuery && indexPath.section == 0 {
-            if indexPath.row == 0 { settingsTapped() }
+            if indexPath.row == 0 {
+                navigationController?.pushViewController(VaultMacBrowseViewController(runtime: runtime, openHandler: macOpenHandler), animated: true)
+            }
             else if indexPath.row == 1 { openFolder("") }
             else {
                 navigationController?.pushViewController(VaultBrowseViewController(runtime: runtime,
                     path: "", downloadsOnly: true, openHandler: openHandler), animated: true)
             }
-        } else if uploadSection == indexPath.section {
-            return
+        } else if !hasQuery && indexPath.section == 1 {
+            navigationController?.pushViewController(VaultTransfersViewController(runtime: runtime), animated: true)
         } else {
             guard visibleFiles.indices.contains(indexPath.row) else { return }
             let file = visibleFiles[indexPath.row]
             if file.isDirectory { openFolder(file.path) } else { openHandler?(file.id) }
         }
-    }
-
-    private func confirmCancel(_ item: VaultPendingUpload) {
-        guard !item.isDeleting else { return }
-        let alert = UIAlertController(title: "Cancel \((item.name as NSString).lastPathComponent)?",
-            message: "Vault will stop this transfer and delete its local copy. If the Mac already saved it, Vault will remove that copy too.",
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Keep", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Cancel and Delete", style: .destructive) { [weak self, runtime] _ in
-            Task {
-                do { try await runtime.cancelPendingUpload(named: item.name); self?.refresh() }
-                catch { self?.showTransferError(error) }
-            }
-        })
-        present(alert, animated: true)
     }
 
     private func confirmDelete(_ item: VaultPresentedFile) {
@@ -373,8 +347,8 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     public override func tableView(_ tableView: UITableView,
                                    trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
         -> UISwipeActionsConfiguration? {
-        guard loaded, !needsSetup, uploadSection != indexPath.section,
-              (hasQuery || indexPath.section == recentSection),
+        guard loaded, !needsSetup,
+              (hasQuery || indexPath.section == filesSection),
               visibleFiles.indices.contains(indexPath.row) else { return nil }
         let item = visibleFiles[indexPath.row]
         let action = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
@@ -408,7 +382,7 @@ public final class VaultBrowseViewController: UITableViewController {
     deinit { loadTask?.cancel() }
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = downloadsOnly ? "Downloads" : path.isEmpty ? "Browse" : (path as NSString).lastPathComponent
+        title = downloadsOnly ? "Downloads" : path.isEmpty ? "Vault Folder" : (path as NSString).lastPathComponent
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         tableView.accessibilityIdentifier = "vault.browse.list"
@@ -521,7 +495,7 @@ public final class VaultBrowseViewController: UITableViewController {
     }
 }
 
-private final class VaultPendingUploadCell: UITableViewCell {
+final class VaultPendingUploadCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let detailLabel = UILabel()
     private let progressBar = UIProgressView(progressViewStyle: .default)
@@ -599,7 +573,7 @@ private final class VaultPendingUploadCell: UITableViewCell {
 /// Empty configurations in table rows stay in the accessibility tree and can
 /// scroll at large text sizes; UIViewController's overlay is swallowed by an
 /// empty UITableView's “Empty list” accessibility element on iOS 26.
-private func vaultEmptyCell(configuration: UIContentUnavailableConfiguration, minimumHeight: CGFloat) -> UITableViewCell {
+func vaultEmptyCell(configuration: UIContentUnavailableConfiguration, minimumHeight: CGFloat) -> UITableViewCell {
     let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
     cell.contentConfiguration = configuration
     cell.backgroundConfiguration = .clear()
@@ -609,7 +583,7 @@ private func vaultEmptyCell(configuration: UIContentUnavailableConfiguration, mi
     return cell
 }
 
-private func configureVaultFileCell(_ cell: UITableViewCell, item: VaultPresentedFile, prefix: String) {
+func configureVaultFileCell(_ cell: UITableViewCell, item: VaultPresentedFile, prefix: String) {
     var content = cell.defaultContentConfiguration()
     content.text = item.name
     content.textProperties.numberOfLines = 2

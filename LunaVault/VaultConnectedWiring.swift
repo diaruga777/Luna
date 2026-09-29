@@ -45,7 +45,7 @@ import LunaVaultUI
         let root = VaultSyncthingHomeViewController(runtime: runtime,
             importHandler: { files.importFile() }, importFolderHandler: { files.importFolder() },
             importPhotosHandler: { files.importPhotos() }, importPhotoAlbumHandler: { files.importPhotoAlbum() },
-            openHandler: { files.open($0) },
+            openHandler: { files.open($0) }, macOpenHandler: { files.open($0, macFile: true) },
             settingsController: { settingsController(runtime: runtime) })
         files.presenter = root; presenter = files; home = root
         transfers.didChange = { [weak root] in root?.refresh() }
@@ -210,12 +210,24 @@ import LunaVaultUI
             work = nil
         }
     }
-    func open(_ name: String) {
+    func open(_ name: String, macFile: Bool = false) {
         guard work == nil else { return }
         showProgress(title: "Opening File", filename: (name as NSString).lastPathComponent)
         work = Task {
             var prepared: URL?
             do {
+                if macFile {
+                    let target = try await runtime.macFileURL(path: name)
+                    prepared = target
+                    try Task.checkCancellation()
+                    await hideProgress()
+                    try Task.checkCancellation()
+                    removePreview(); previewURL = target
+                    let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
+                    visiblePresenter?.present(preview, animated: true)
+                    work = nil
+                    return
+                }
                 let source = try await runtime.fileURL(named: name)
                 try Task.checkCancellation()
                 // Quick Look needs the original extension; the durable cache uses

@@ -4,13 +4,13 @@ The active iPhone surface is `VaultSyncthingHomeViewController`, composed by
 `VaultConnectedWiring`. Legacy `VaultRootViewController` and its device/iCloud
 setup screens are not the active app and were not redesigned in this pass.
 
-## Library
+## Browser
 
 - Native large-title navigation, system glass controls, and `UISearchController`.
   iOS chooses the search bar placement. No custom glass backgrounds or animations.
 - First launch offers **Connect Mac**, with no empty Recent/Results sections or
   import action that cannot succeed before pairing.
-- Connected/offline libraries show the Mac connection, folder browsing, and
+- Connected/offline libraries show the Mac connection, Mac Files, Vault Folder, Downloads, a Transfers activity row, and
   reusable file rows with type symbols, dates, and sizes. Offline wording makes
   clear that downloaded files remain available.
 - Search is debounced and cancellable. Late responses cannot replace a newer
@@ -48,11 +48,11 @@ once on a stale or failed block connection. The sheet labels the transfer as a
 download from the Mac and Cancel stops the in-flight request. Quick Look uses a
 hard link to the downloaded cache when possible, avoiding another full copy of
 large files.
-The import sheet covers local preparation, then closes so Home can show each
-pending file in Transfers with bytes sent,
+The import sheet covers local preparation, then closes so the dedicated Transfers screen can show each
+pending file with bytes sent,
 total bytes, and a progress bar; reaching the byte total means Vault is waiting
 for the Mac to save and confirm it. A pending file or folder can be cancelled from
-that row. Recent, search, and folder rows offer swipe to delete, with confirmation.
+that row. Vault root, search, and folder rows offer swipe to delete, with confirmation.
 Deletion remains pending until the Mac acknowledges it; the same name cannot be
 reimported before that acknowledgement. Import errors appear after the document
 picker has dismissed.
@@ -134,3 +134,22 @@ are not implied by these automated checks.
 Validation: 30 connection tests and 11 UI/intake tests on iOS 26.2; UI attachments
 cover light/dark, setup, offline downloads, empty states, and accessibility text.
 Physical-device throughput and live user-Mac pairing were not measured in this pass.
+
+## Mac file browser — 29 September 2026
+
+Browse leads with locations and the Vault root, sorted folders first. Uploads
+have their own Transfers screen with byte progress, queued preparation, waiting
+for Mac confirmation, offline states, and cancellation. Progress updates change
+visible cells in place. The Browse activity row shows the pending count.
+
+Mac Files has Home, Desktop, Documents, Downloads, Macintosh HD (`/`), and Volumes.
+Folder screens show their path, date/size rows, name/date sorting, paging,
+pull-to-refresh, Show Hidden Files, and Go to Folder. These screens have no
+upload or delete action, including when navigating into the Vault via Mac Files.
+Open downloads a temporary file for Quick Look and sharing. The existing Vault
+Folder surface retains indexing, durable downloads, imports, and deletion.
+Search explicitly says “Search Vault files and contents.”
+
+Permissions, a missing disk/folder, and an outdated companion produce explicit
+errors with retry. First-run setup and the Mac’s pairing explanation describe
+the read-only Mac scope and the writable Vault folder.

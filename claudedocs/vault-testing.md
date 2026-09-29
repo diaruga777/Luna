@@ -112,3 +112,24 @@ window using 4 MiB of data and 20 ms simulated latency per request. It reports
 both durations without asserting a wall-clock speed threshold. A local iOS 26.2
 run measured approximately 0.69 s serial versus 0.087 s windowed (7.9x); this
 isolates request latency and is not a device/network throughput guarantee.
+
+## Mac file browser regressions (29 September 2026)
+
+The connection scheme covers a real loopback TLS download larger than two
+browser chunks from outside the Vault root, with Unicode names, and asserts
+that the file is unchanged and absent from the iPhone mirror, search, cache,
+and pending writes. Invalid external upload/delete paths are rejected.
+Additional tests cover 256-entry pagination, hidden files, directory symlinks,
+changed-file rejection, read-size/range limits, special-file rejection,
+missing paths, pairing authorization, and ignored browser-namespace indexes.
+
+`VaultVisualFlowTests` exercises Mac location/folder navigation without write
+actions and the separate Transfers route, alongside progress, search, offline,
+empty, dark-mode, and accessibility-size states. Its retained attachments are
+used for visual inspection.
+
+Verified on iOS 26.2: 33 connection tests and 11 UI tests, zero failures.
+`swift build --package-path LunaVaultTailscale --product LunaVaultMacCompanion`
+also passes. This covers the production companion file helper and encrypted
+loopback connection; it does not claim live macOS permission-prompt testing or
+physical-device throughput measurements.

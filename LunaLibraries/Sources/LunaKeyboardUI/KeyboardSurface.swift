@@ -14,6 +14,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public var globe: ((UIView, UIEvent) -> Void)?
   public var heightChanged: ((CGFloat) -> Void)?
   public var hasFullAccess = false
+  public var hasPasteableText: () -> Bool = { UIPasteboard.general.hasStrings }
   public var fieldAllowsAutocorrect = true
   private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
   public var store: KeyboardStore?
@@ -30,6 +31,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private let suggestionScroll = UIScrollView()
   private let tools = UIButton(type: .system)
   private var suggestionButtons: [UIButton] = []
+  private let pasteControl = UIPasteControl()
+  private var pasteRequest: UUID?
   private var suggestions: [KeyboardSuggestion] = []
   private var timer: Timer?
   private var shiftDate = Date.distantPast
@@ -65,6 +68,11 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     addSubview(board)
     addSubview(suggestionScroll)
     addSubview(tools)
+    pasteConfiguration = UIPasteConfiguration(forAccepting: String.self)
+    pasteControl.target = self
+    pasteControl.accessibilityIdentifier = "keyboard.paste"
+    pasteControl.isHidden = true
+    suggestionScroll.addSubview(pasteControl)
     countdown.backgroundColor = .systemBlue
     countdown.isUserInteractionEnabled = false
     suggestionScroll.addSubview(countdown)
@@ -116,6 +124,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     timer?.invalidate()
     timer = nil
     board.reset()
+    pasteRequest = nil
+    pasteControl.isHidden = true
     predictionStorage?.releaseMemory()
     predictionStorage = nil
     clearCorrection()
@@ -130,6 +140,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private func predict() {
     guard panel == nil else { return }
     let context = before()
+    pasteControl.isHidden = !hasFullAccess || !context.isEmpty || !after().isEmpty || !hasPasteableText()
     suggestions = prediction.suggestions(
       before: context, preferences: preferences, store: store, lexicon: lexicon)
     if let reversal, reversal.canUndo(before: context, now: now()) {
@@ -161,6 +172,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     while suggestionButtons.count < min(12, suggestions.count) {
       let b = UIButton(type: .system)
       b.titleLabel?.font = .systemFont(ofSize: 16)
+      b.addInteraction(UIContextMenuInteraction(delegate: self))
       b.addAction(
         UIAction { [weak self, weak b] _ in
           guard let self, let b, let i = self.suggestionButtons.firstIndex(of: b),
@@ -177,13 +189,18 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
         b.setTitle(suggestions[i].title, for: .normal)
         b.accessibilityLabel = suggestions[i].accessibilityLabel
         b.accessibilityIdentifier = "keyboard.suggestion.\(i)"
-      } else { b.setTitle(nil, for: .normal); b.accessibilityLabel = nil }
+        let suggestion = suggestions[i]
+        b.accessibilityCustomActions = canForget(suggestion) ? [UIAccessibilityCustomAction(name: "Remove from Personal Dictionary") { [weak self] _ in
+          self?.forget(suggestion); return true
+        }] : nil
+      } else { b.setTitle(nil, for: .normal); b.accessibilityLabel = nil; b.accessibilityCustomActions = nil }
       b.tintColor = board.dark ? .white : .black
     }
     layoutSuggestions()
   }
   private func layoutSuggestions() {
-    var x: CGFloat = 0
+    pasteControl.frame = CGRect(x: 4, y: 2, width: 100, height: 40)
+    var x: CGFloat = pasteControl.isHidden ? 0 : 108
     let minWidth = max(70, suggestionScroll.bounds.width / 3)
     for (i, b) in suggestionButtons.enumerated() where !b.isHidden {
       let width = max(minWidth, min(220, b.intrinsicContentSize.width + 28))
@@ -205,9 +222,20 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       refresh()
       return
     }
+    if !automatic, suggestion.kind == .word, let store {
+      let word = suggestion.text.styleErased
+      if word.count <= 64, KeyboardTextContext(before: word).word == word,
+        !KeyboardEditing.protectsFromCorrection(word) {
+        do {
+          try store.setWord(word, language: suggestion.dictionaryLanguage ?? preferences.language, included: true)
+          UITextChecker.learnWord(word)
+        } catch { showStatus("Couldn’t save this word.") }
+      }
+    }
     for _ in suggestion.replacing { delete() }
-    let output =
-      (suggestion.kind == .word) ? board.textStyle.style(suggestion.text) : suggestion.text
+    let usesStyle = suggestion.kind == .word
+      || (board.textStyle == .spongeBob && suggestion.kind == .shortcut)
+    let output = usesStyle ? board.textStyle.style(suggestion.text, preceding: before()) : suggestion.text
     insert(output)
     if automatic {
       reversal = .init(original: suggestion.replacing, replacement: output, created: now())
@@ -225,6 +253,14 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     if preferences.enabled("sound") { UIDevice.current.playInputClick() }
     if preferences.enabled("haptics"), hasFullAccess, value != "delete" || !before().isEmpty {
       haptic.impactOccurred(intensity: 0.45)
+    }
+    if value == "Dashes" || value == "Spaces" {
+      board.dashesMode = value == "Dashes"
+      spaceDate = .distantPast
+      clearCorrection()
+      board.page = 0
+      refresh()
+      return
     }
     if value == "tab" { insert("\t"); recordEdit(); refresh(); return }
     if value == "123" {
@@ -262,12 +298,19 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       if !board.capsLock { board.uppercase = false }
       return
     }
+    if value == " " && board.dashesMode {
+      clearCorrection()
+      insert("-")
+      spaceDate = .distantPast
+      if board.page != 0 { board.page = 0 }
+      recordEdit(); refresh(); return
+    }
     if value == "delete" {
       if let reversal, reversal.canUndo(before: before(), now: now()) {
         for _ in reversal.replacement + reversal.suffix { delete() }
-        // A word separator is removed, but punctuation is retained when undoing.
-        let punctuation = reversal.suffix.filter { !$0.isWhitespace }
-        insert(reversal.original + punctuation)
+        // Undo only the corrected word, retaining every trailing nonletter.
+        insert(reversal.original + reversal.suffix)
+        spaceDate = .distantPast
         self.reversal = nil
       } else {
         delete()
@@ -287,6 +330,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       {
         delete()
         insert(". ")
+        if reversal?.suffix == " " { reversal?.suffix = ". " }
         spaceDate = .distantPast
       } else {
         let separator = value == "return" ? "\n" : " "
@@ -313,12 +357,14 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
         if KeyboardEditing.isClosingPunctuation(text) {
           if before().hasSuffix(" "), before().dropLast().last?.isWhitespace == false {
             delete()
-            if reversal?.suffix == " " { reversal?.suffix = "" }
+            if reversal?.suffix.hasSuffix(" ") == true { reversal?.suffix.removeLast() }
           } else { applyPendingCorrection() }
-          if reversal != nil { reversal?.suffix += text }
-        } else { reversal = nil }
-      } else { reversal = nil }
-      insert(board.textStyle.style(text))
+        }
+      }
+      let output = board.textStyle.style(text, preceding: before())
+      if output.contains(where: { $0.isLetter || $0.isNumber }) { reversal = nil }
+      else if reversal != nil { reversal?.suffix += output }
+      insert(output)
       rejectedContext = nil
       if !board.capsLock { board.uppercase = false }
     }
@@ -356,12 +402,15 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       before().hasSuffix(candidate.replacing) { apply(candidate, automatic: true) }
   }
   private func recordEdit() {
+    if (reversal?.suffix.count ?? 0) > 16 { reversal = nil }
+    pasteRequest = nil
     lastContext = before()
     lastAfter = after()
     editedAt = now()
     onEdit?()
   }
   public func clearCorrection() {
+    pasteRequest = nil
     reversal = nil
     rejectedContext = nil
     countdown.layer.removeAllAnimations()
@@ -409,12 +458,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       automaticShift = false
       return
     }
-    let preceding = before()
-    let trimmed = preceding.trimmingCharacters(in: .whitespaces)
-    automaticShift =
-      preceding.isEmpty || preceding.hasSuffix("\n")
-      || (preceding.last?.isWhitespace == true
-        && [".", "!", "?"].contains(trimmed.last.map(String.init) ?? ""))
+    automaticShift = KeyboardEditing.startsSentence(after: before())
     board.uppercase = automaticShift
   }
   private func swipe(_ samples: [SwipeSample], centers: [Character: CGPoint]) {
@@ -424,10 +468,12 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     guard let first = words.first else { return }
     let word = board.uppercase ? first.prefix(1).uppercased() + first.dropFirst() : first
     let prefix = before().last.map { !$0.isWhitespace && $0.isLetter } == true ? " " : ""
-    insert(prefix + board.textStyle.style(word))
+    let output = board.textStyle.style(word, preceding: before() + prefix)
+    insert(prefix + output)
     reversal = nil
+    recordEdit()
     suggestions = words.dropFirst().map {
-      .init(text: board.textStyle.style($0), replacing: board.textStyle.style(word))
+      .init(text: $0, replacing: output)
     }
     renderSuggestions()
     if !board.capsLock { board.uppercase = false }
@@ -463,6 +509,38 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     heightChanged?(requiredHeight)
     setNeedsLayout()
     refresh()
+  }
+  public override func paste(itemProviders: [NSItemProvider]) {
+    guard hasFullAccess, before().isEmpty, after().isEmpty,
+      let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return }
+    let context = (before(), after())
+    let request = UUID()
+    pasteRequest = request
+    provider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
+      guard let text = object as? String, text.utf8.count <= 1024 * 1024 else { return }
+      DispatchQueue.main.async {
+        guard let self, self.hasFullAccess, self.pasteRequest == request, self.before() == context.0, self.after() == context.1 else { return }
+        self.pasteRequest = nil
+        self.clearCorrection()
+        self.insert(text)
+        self.recordEdit()
+        self.refresh()
+      }
+    }
+  }
+  private func canForget(_ suggestion: KeyboardSuggestion) -> Bool {
+    guard suggestion.kind == .word, let language = suggestion.dictionaryLanguage,
+      let words = try? store?.dictionary(language: language, prefix: suggestion.text, limit: 1) else { return false }
+    return words.contains { $0.caseInsensitiveCompare(suggestion.text) == .orderedSame }
+  }
+  private func forget(_ suggestion: KeyboardSuggestion) {
+    guard canForget(suggestion), let language = suggestion.dictionaryLanguage else { return }
+    do {
+      try store?.setWord(suggestion.text, language: language, included: false)
+      UITextChecker.unlearnWord(suggestion.text)
+      refresh()
+      showStatus("Removed from Personal Dictionary.")
+    } catch { showStatus("Couldn’t remove this word.") }
   }
   private func copy(_ shortcut: KeyboardShortcut) {
     guard hasFullAccess else {
@@ -501,6 +579,21 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     status?.isHidden = false
     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
       self?.status?.isHidden = true
+    }
+  }
+}
+
+extension KeyboardSurface: UIContextMenuInteractionDelegate {
+  public func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+    configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+    guard let button = interaction.view as? UIButton,
+      let index = suggestionButtons.firstIndex(of: button), index < suggestions.count else { return nil }
+    let suggestion = suggestions[index]
+    guard canForget(suggestion) else { return nil }
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+      UIMenu(children: [UIAction(title: "Remove from Personal Dictionary", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+        self?.forget(suggestion)
+      }])
     }
   }
 }

@@ -35,6 +35,7 @@ final class KeyboardDictionaryController: KeyboardTableController {
         guard let self, let word = a?.textFields?.first?.text else { return }
         do {
           try self.store.setWord(word, language: self.language, included: true)
+          UITextChecker.learnWord(word)
           self.reload()
         } catch { self.failure(error) }
       })
@@ -52,6 +53,7 @@ final class KeyboardDictionaryController: KeyboardTableController {
   ) {
     do {
       try store.setWord(words[indexPath.row], language: language, included: false)
+      UITextChecker.unlearnWord(words[indexPath.row])
       reload()
     } catch { failure(error) }
   }

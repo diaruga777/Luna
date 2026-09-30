@@ -26,6 +26,7 @@ public enum TextStyle: String, CaseIterable {
   case doubleStroke
   case zalgo
   case ransom
+  case spongeBob = "SpongeBob"
 }
 
 extension TextStyle {
@@ -44,7 +45,26 @@ extension TextStyle {
 
 extension TextStyle {
 
-  public func style(_ str: String) -> String {
+  public func style(_ str: String, preceding: String = "") -> String {
+    if self == .spongeBob {
+      var history = Array(String(preceding.suffix(256)).styleErased.filter { $0.isUppercase || $0.isLowercase }.suffix(2))
+      var result = ""
+      func appendCased(_ letter: Character) {
+        guard letter.isUppercase || letter.isLowercase else { result.append(letter); return }
+        let forceOpposite = history.count == 2 && history[0].isUppercase == history[1].isUppercase
+          && history[1].isUppercase == letter.isUppercase
+        let output = forceOpposite ? (letter.isUppercase ? String(letter).lowercased() : String(letter).uppercased()) : String(letter)
+        // Unicode case mappings can expand into several letters (ß, ﬃ).
+        if output.count > 1 { for expanded in output { appendCased(expanded) }; return }
+        result += output
+        history = Array((history + Array(output)).suffix(2))
+      }
+      for character in str.styleErased {
+        let output = Bool.random() ? String(character).uppercased() : String(character).lowercased()
+        for letter in output { appendCased(letter) }
+      }
+      return result
+    }
     guard str.count == 1 else {
       return str.asArray.map({ style($0) }).joined()
     }
@@ -52,7 +72,7 @@ extension TextStyle {
       return TextStyle.reverseMap[str] ?? str
     }
     if self == .ransom {
-      return (TextStyle.allCases.filter { $0 != .ransom }.randomElement() ?? .regular).style(str)
+      return (TextStyle.allCases.filter { $0 != .ransom && $0 != .spongeBob }.randomElement() ?? .regular).style(str)
     }
     guard let index = TextStyle.stylables.firstIndex(of: str.styleErased) else {
       return str
@@ -121,7 +141,7 @@ extension TextStyle {
       let root = stylables[i]
       map[root] = root
       for style in TextStyle.allCases {
-        guard style != .regular && style != .ransom else {
+        guard style != .regular && style != .ransom && style != .spongeBob else {
           continue
         }
         map[stylableMaps[style]![i]] = root

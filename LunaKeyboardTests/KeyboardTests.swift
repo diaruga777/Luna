@@ -60,7 +60,7 @@ final class KeyboardTests: XCTestCase {
     XCTAssertEqual(sqlite3_column_int(s, 0), 0)
   }
   func testStylesRoundTrip() {
-    for style in TextStyle.allCases where ![.boxed, .inverseBoxed, .ransom].contains(style) {
+    for style in TextStyle.allCases where ![.boxed, .inverseBoxed, .ransom, .spongeBob].contains(style) {
       let styled = style.style("Hello 123")
       XCTAssertEqual(styled.styleErased, "Hello 123", style.rawValue)
     }
@@ -240,9 +240,9 @@ extension KeyboardTests {
     for key in ["t", "e", "h", " "] { s.key(key) }
     XCTAssertEqual(text(), "the ")
     s.key("delete")
-    XCTAssertEqual(text(), "teh")
-    s.key(" ")
     XCTAssertEqual(text(), "teh ")
+    s.key(" ")
+    XCTAssertEqual(text(), "teh  ")
     s.releaseMemory()
     let (p, punctuated) = editor()
     for key in ["t", "e", "h", " ", "?"] { p.key(key) }
@@ -432,5 +432,206 @@ extension KeyboardTests {
       if step < 3 { next.sendActions(for: .touchUpInside) }
     }
     controller.surface.releaseMemory()
+  }
+}
+
+extension KeyboardTests {
+  func testOrdinalsAndDeliberateRepeatsNeverAutocorrect() {
+    let prediction = KeyboardPrediction()
+    for word in ["1st", "21st", "42nd", "3rd", "4th", "babyyyyyy", "nooooo", "aAaA"] {
+      XCTAssertEqual(KeyboardTextContext(before: word).word, word)
+      let results = prediction.suggestions(before: word, preferences: .init(), store: nil,
+        lexicon: [word.lowercased(): "replacement", "st": "street"])
+      XCTAssertFalse(results.contains(where: \.autoApply), word)
+    }
+    XCTAssertFalse(KeyboardEditing.protectsFromCorrection("baby"))
+  }
+  @MainActor func testCorrectionUndoRetainsMultipleNonlettersAndFollowingSpace() {
+    for suffix in [[" "], ["?", "!", " "], [".", " ", "\""], [")", "]", " "], [" ", " "]] {
+      let (surface, text) = editor()
+      for key in ["t", "e", "h"] + suffix { surface.key(key) }
+      XCTAssertTrue(text().hasPrefix("the"))
+      let ending = String(text().dropFirst(3))
+      surface.key("delete")
+      XCTAssertEqual(text(), "teh" + ending)
+      surface.releaseMemory()
+    }
+  }
+  @MainActor func testCorrectionSuffixStillTrackedWithoutSmartPunctuation() {
+    let (surface, text) = editor()
+    surface.fieldAllowsSmartPunctuation = false
+    for key in ["t", "e", "h", " ", "?", "!", " "] { surface.key(key) }
+    surface.key("delete")
+    XCTAssertEqual(text(), "teh ?! ")
+    surface.releaseMemory()
+  }
+  @MainActor func testNewWordInvalidatesUndo() {
+    let (surface, text) = editor()
+    for key in ["t", "e", "h", "?", " ", "a", "delete"] { surface.key(key) }
+    XCTAssertEqual(text(), "the? ")
+    surface.releaseMemory()
+  }
+  func testAbbreviationsDoNotStartSentences() {
+    for text in ["e.g. ", "Try e.g. ", "i.e. ", "Dr. ", "vs. "] {
+      XCTAssertFalse(KeyboardEditing.startsSentence(after: text), text)
+    }
+    for text in ["", "Done. ", "Done! ", "Next\n", "leg. "] {
+      XCTAssertTrue(KeyboardEditing.startsSentence(after: text), text)
+    }
+  }
+  @MainActor func testTypingAfterEGStaysLowercase() {
+    let (surface, text) = editor("Try e.g.")
+    surface.preferences.values["autoCapitalize"] = "true"
+    surface.key(" "); surface.key("a")
+    XCTAssertEqual(text(), "Try e.g. a")
+    surface.releaseMemory()
+  }
+  func testStyleSuggestionsDisappearAfterApplicationAndQuotesAreNotNoOps() throws {
+    let prediction = KeyboardPrediction()
+    let preferences = KeyboardPreferences(values: ["autocomplete": "false", "spellcheck": "false"])
+    let style = try XCTUnwrap(prediction.suggestions(before: "*hello*", preferences: preferences, store: nil).first { $0.kind == .style })
+    XCTAssertEqual(style.text, TextStyle.bold.style("hello"))
+    XCTAssertFalse(prediction.suggestions(before: style.text, preferences: preferences, store: nil).contains { $0.kind == .style })
+    for text in ["\"hello\"", "'hello'"] {
+      XCTAssertFalse(prediction.suggestions(before: text, preferences: preferences, store: nil).contains { $0.kind == .style })
+    }
+  }
+  func testCalculatorPrecedenceParenthesesAndInvalidInput() {
+    let cases = ["2+3*4": "14", "(2+3)*4=": "20", "-2.5×4": "-10", "100*20%": "20", "8÷2": "4", "0.1+0.2": "0.3", "Total 2 + 3": "5"]
+    for (expression, result) in cases {
+      let suggestion = KeyboardCalculator.suggestion(before: expression)
+      XCTAssertEqual(suggestion?.text, result, expression)
+      XCTAssertEqual(suggestion?.autoApply, false)
+    }
+    XCTAssertEqual(KeyboardCalculator.suggestion(before: "Total 2 + 3")?.replacing, "2 + 3")
+    for expression in ["1st", "21st", "42", "1/0", "(2+3", "2+", "1 2+3", "name2+3", "https://1+2", "pow(2,3)", String(repeating: "1+", count: 100)] {
+      XCTAssertNil(KeyboardCalculator.suggestion(before: expression), expression)
+    }
+  }
+  func testSpongeBobHasNoThreeSameCasesAcrossChunks() {
+    var output = ""
+    for _ in 0..<100 {
+      output += TextStyle.spongeBob.style("Baby ß! ﬃ wow ", preceding: output)
+    }
+    let letters = Array(output.filter { $0.isLowercase || $0.isUppercase })
+    for i in 2..<letters.count {
+      XCTAssertFalse(letters[i].isUppercase == letters[i-1].isUppercase && letters[i].isUppercase == letters[i-2].isUppercase)
+    }
+    XCTAssertEqual(TextStyle.spongeBob.style("c", preceding: "AB "), "c")
+    XCTAssertEqual(TextStyle.spongeBob.style("c", preceding: "ab "), "C")
+  }
+  @MainActor func testSpongeBobTypingAcrossKeystrokes() {
+    let (surface, text) = editor()
+    surface.board.textStyle = .spongeBob
+    for key in "this is a long sentence".map(String.init) { surface.key(key) }
+    let letters = Array(text().filter(\.isLetter))
+    for i in 2..<letters.count {
+      XCTAssertFalse(letters[i].isUppercase == letters[i-1].isUppercase && letters[i].isUppercase == letters[i-2].isUppercase)
+    }
+    surface.releaseMemory()
+  }
+  @MainActor func testDashPopupModeAndExitKeepLiteralHyphens() {
+    let (surface, text) = editor()
+    XCTAssertTrue(surface.board.holdAlternatives(for: "-").contains("Dashes"))
+    surface.key("Dashes")
+    XCTAssertTrue(surface.board.dashesMode)
+    surface.board.textStyle = .bold
+    for key in ["a", " ", " ", "b"] { surface.key(key) }
+    XCTAssertEqual(text(), TextStyle.bold.style("a") + "--" + TextStyle.bold.style("b"))
+    XCTAssertTrue(surface.board.holdAlternatives(for: "-").contains("Spaces"))
+    surface.key("Spaces"); surface.key(" ")
+    XCTAssertTrue(text().hasSuffix(" "))
+    XCTAssertFalse(surface.board.dashesMode)
+    surface.releaseMemory()
+  }
+  @MainActor private func suggestionButton(_ title: String, surface: KeyboardSurface) async throws -> UIButton {
+    surface.refresh()
+    try await Task.sleep(nanoseconds: 100_000_000)
+    func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
+    return try XCTUnwrap(descendants(surface).compactMap { $0 as? UIButton }.first { !$0.isHidden && $0.title(for: .normal) == title })
+  }
+  @MainActor func testSelectionLearnsAndLongPressRemovalUnlearns() async throws {
+    let word = "lunazorbium"
+    defer { UITextChecker.unlearnWord(word) }
+    let (surface, text) = editor(word)
+    surface.store = store
+    surface.preferences.values["autocomplete"] = "true"
+    let button = try await suggestionButton(word, surface: surface)
+    button.sendActions(for: .touchUpInside)
+    XCTAssertEqual(text(), word)
+    XCTAssertTrue(try store.dictionary(language: "en").contains(word))
+    XCTAssertTrue(UITextChecker.hasLearnedWord(word))
+    let learned = try await suggestionButton(word, surface: surface)
+    let interaction = try XCTUnwrap(learned.interactions.compactMap { $0 as? UIContextMenuInteraction }.first)
+    XCTAssertNotNil(surface.contextMenuInteraction(interaction, configurationForMenuAtLocation: .zero))
+    let removal = try XCTUnwrap(learned.accessibilityCustomActions?.first)
+    XCTAssertTrue(removal.actionHandler?(removal) == true)
+    XCTAssertFalse(try store.dictionary(language: "en").contains(word))
+    XCTAssertFalse(UITextChecker.hasLearnedWord(word))
+    surface.releaseMemory()
+  }
+  @MainActor func testCalculatorSuggestionAppliesWithoutEatingPrecedingSpace() async throws {
+    let (surface, text) = editor("Total 2 + 3")
+    let button = try await suggestionButton("= 5", surface: surface)
+    button.sendActions(for: .touchUpInside)
+    XCTAssertEqual(text(), "Total 5")
+    surface.releaseMemory()
+  }
+  @MainActor func testPasteSuggestionOnlyInEmptyEditorAndRequiresFullAccess() async throws {
+    let (surface, text) = editor()
+    surface.hasFullAccess = true
+    surface.hasPasteableText = { true }
+    surface.refresh()
+    try await Task.sleep(nanoseconds: 100_000_000)
+    func findPaste(_ view: UIView) -> UIPasteControl? {
+      if let paste = view as? UIPasteControl { return paste }
+      return view.subviews.compactMap(findPaste).first
+    }
+    let paste = try XCTUnwrap(findPaste(surface))
+    XCTAssertFalse(paste.isHidden)
+    surface.hasPasteableText = { false }
+    surface.refresh()
+    try await Task.sleep(nanoseconds: 100_000_000)
+    XCTAssertTrue(paste.isHidden)
+    surface.hasPasteableText = { true }
+    surface.paste(itemProviders: [NSItemProvider(object: "hello from paste" as NSString)])
+    try await Task.sleep(nanoseconds: 200_000_000)
+    XCTAssertEqual(text(), "hello from paste")
+    XCTAssertTrue(paste.isHidden)
+    surface.releaseMemory()
+    let (restricted, empty) = editor()
+    restricted.paste(itemProviders: [NSItemProvider(object: "private" as NSString)])
+    try await Task.sleep(nanoseconds: 100_000_000)
+    XCTAssertEqual(empty(), "")
+    restricted.releaseMemory()
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testSpongeBobSwipeAlternativeReplacesActualRandomCasing() throws {
+    let centers = Dictionary(uniqueKeysWithValues: Array("qwertyuiopasdfghjklzxcvbnm").compactMap { c in
+      KeyboardRanking.center(c).map { (c, CGPoint(x: $0.x * 30, y: $0.y * 45)) }
+    })
+    let samples = Array("hello").map { SwipeSample(point: centers[$0]!, letter: $0) }
+    let words = KeyboardSwipeDecoder.decode(samples, catalog: KeyboardCatalog(), language: "en", centers: centers)
+    XCTAssertGreaterThan(words.count, 1)
+    let (surface, text) = editor("AB ")
+    surface.board.textStyle = .spongeBob
+    surface.board.onSwipe?(samples, centers)
+    func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
+    let alternative = try XCTUnwrap(descendants(surface).compactMap { $0 as? UIButton }.first { !$0.isHidden && $0.title(for: .normal) == words[1] })
+    alternative.sendActions(for: .touchUpInside)
+    XCTAssertEqual(text().lowercased(), "ab " + words[1])
+    XCTAssertTrue(text().dropFirst(3).first?.isLowercase == true)
+    surface.releaseMemory()
+  }
+  @MainActor func testPasteArrivingAfterTypingIsDiscarded() async throws {
+    let (surface, text) = editor()
+    surface.hasFullAccess = true
+    surface.paste(itemProviders: [NSItemProvider(object: "old clipboard" as NSString)])
+    surface.key("a")
+    try await Task.sleep(nanoseconds: 100_000_000)
+    XCTAssertEqual(text(), "a")
+    surface.releaseMemory()
   }
 }

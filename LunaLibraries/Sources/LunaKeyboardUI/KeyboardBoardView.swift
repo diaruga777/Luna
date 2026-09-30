@@ -24,6 +24,7 @@ public final class KeyboardBoardView: UIView {
   public var uppercase = false { didSet { updateAccessibility(); setNeedsDisplay() } }
   public var capsLock = false { didSet { updateAccessibility(); setNeedsDisplay() } }
   public var blank = false { didSet { setNeedsDisplay() } }
+  public var dashesMode = false { didSet { updateAccessibility(); setNeedsDisplay() } }
   public var preview = true
   public var swipeEnabled = true
   public var textStyle: TextStyle = .regular { didSet { updateAccessibility(); setNeedsDisplay() } }
@@ -185,6 +186,13 @@ public final class KeyboardBoardView: UIView {
       element.accessibilityLabel = accessibilityName(key.value)
       element.accessibilityHint = textStyle == .regular ? nil : "Inserts \(textStyle.rawValue) text"
       element.accessibilityTraits = .keyboardKey
+      if key.value == "-" || key.value == " " {
+        element.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Toggle dashes mode") { [weak self] _ in
+          guard let self else { return false }
+          self.onKey?(self.dashesMode ? "Spaces" : "Dashes")
+          return true
+        }]
+      }
       element.accessibilityFrameInContainerSpace = key.frame
       element.action = { [weak self] in
         guard let self else { return }
@@ -212,6 +220,7 @@ public final class KeyboardBoardView: UIView {
     case "styles": return "Text styles"
     case "dismiss": return "Hide keyboard"
     case "tab": return "Tab"
+    case " ": return dashesMode ? "Dash" : label(value)
     default: return label(value).styleErased
     }
   }
@@ -232,7 +241,7 @@ public final class KeyboardBoardView: UIView {
     case "tab": return "⇥"
     case "dismiss": return "⌄"
     case "return": return returnTitle
-    case " ": return language.hasPrefix("es") ? "espacio" : language == "it" ? "spazio" : "space"
+    case " ": return dashesMode ? "-" : language.hasPrefix("es") ? "espacio" : language == "it" ? "spazio" : "space"
     default: return uppercase ? value.uppercased() : value
     }
   }
@@ -333,8 +342,14 @@ public final class KeyboardBoardView: UIView {
       return
     }
     if value == "globe" { return }
+    alternatives = holdAlternatives(for: value)
+    guard !alternatives.isEmpty else { return }
+    alternativeIndex = 0
+    showPopup(index: i, options: alternatives)
+  }
+  public func holdAlternatives(for value: String) -> [String] {
     let title = label(value)
-    alternatives = Accents.accents(for: title)
+    var alternatives = Accents.accents(for: title)
     if alternatives.isEmpty { alternatives = NumbersAndSymbols.altSymbols(for: value) }
     if value == ".", keyboardType == .URL || keyboardType == .emailAddress {
       alternatives = [".com", ".net", ".edu", ".org"]
@@ -342,9 +357,8 @@ public final class KeyboardBoardView: UIView {
     if let index = Array("qwertyuiop").firstIndex(of: value.first ?? " "), page == 0 {
       alternatives.insert(String(Array("1234567890")[index]), at: 0)
     }
-    guard !alternatives.isEmpty else { return }
-    alternativeIndex = 0
-    showPopup(index: i, options: alternatives)
+    if value == "-" { alternatives.append(dashesMode ? "Spaces" : "Dashes") }
+    return alternatives
   }
   public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard let touch = touches.first, let active else { return }
@@ -492,7 +506,7 @@ private final class KeyboardPopupView: UIView {
     selected = 0
     key = CGRect(origin: .zero, size: keyFrame.size)
     if options.count > 1 {
-      let width = min(parentWidth - 8, CGFloat(options.count) * max(32, key.width))
+      let width = min(parentWidth - 8, CGFloat(options.count) * max(32, key.width, options.contains(where: { $0.count > 4 }) ? 68 : 0))
       shape =
         keyFrame.midX > parentWidth / 2
         ? .expandLeft(menuWidth: width) : .expandRight(menuWidth: width)
@@ -543,7 +557,7 @@ private final class KeyboardPopupView: UIView {
       }
       drawText(
         text, in: r, color: dark || (options.count > 1 && i == selected) ? .white : .black,
-        size: options.count > 1 ? 22 : 30)
+        size: text.count > 4 ? 15 : options.count > 1 ? 22 : 30)
     }
   }
 }

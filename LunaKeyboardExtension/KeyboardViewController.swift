@@ -88,7 +88,7 @@ final class KeyboardViewController: UIInputViewController {
     case .join: surface.board.returnTitle = "join"
     default: surface.board.returnTitle = "return"
     }
-    surface.fieldAllowsCapitalization = textDocumentProxy.autocapitalizationType != .none
+    surface.fieldAllowsCapitalization = textDocumentProxy.autocapitalizationType != UITextAutocapitalizationType.none
       && textDocumentProxy.keyboardType != .URL && textDocumentProxy.keyboardType != .emailAddress
     surface.fieldAllowsSmartPunctuation = textDocumentProxy.smartQuotesType != .no
       && textDocumentProxy.keyboardType != .URL && textDocumentProxy.keyboardType != .emailAddress

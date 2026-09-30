@@ -3,18 +3,21 @@ import LunaStorage
 import UIKit
 
 public struct KeyboardSuggestion: Equatable {
-  public enum Kind: Equatable { case word, shortcut, emoji, link, video, media }
+  public enum Kind: Equatable { case word, shortcut, emoji, link, video, media, style, calculation }
   public let title: String
   public let text: String
   public let replacing: String
   public let kind: Kind
   public let shortcut: KeyboardShortcut?
   public let accessibilityLabel: String
+  public let dictionaryLanguage: String?
   public let autoApply: Bool
   public init(
     title: String? = nil, text: String, replacing: String = "", kind: Kind = .word,
-    shortcut: KeyboardShortcut? = nil, autoApply: Bool = false, accessibilityLabel: String? = nil
+    shortcut: KeyboardShortcut? = nil, autoApply: Bool = false, accessibilityLabel: String? = nil,
+    dictionaryLanguage: String? = nil
   ) {
+    self.dictionaryLanguage = dictionaryLanguage
     self.title = title ?? text
     self.text = text
     self.replacing = replacing
@@ -82,7 +85,7 @@ public struct KeyboardTextContext {
     var start = chars.count
     while start > 0 {
       let i = start - 1
-      if chars[i].isLetter { start -= 1; continue }
+      if chars[i].isLetter || chars[i].isNumber { start -= 1; continue }
       if (chars[i] == "'" || chars[i] == "’"), i > 0, i + 1 < chars.count,
         chars[i - 1].isLetter, chars[i + 1].isLetter { start -= 1; continue }
       break
@@ -105,20 +108,23 @@ public final class KeyboardPrediction {
     let context = KeyboardTextContext(before: before.styleErased)
     let originalWord = String(before.suffix(context.word.count))
     var result: [KeyboardSuggestion] = []
+    if let calculation = KeyboardCalculator.suggestion(before: before) { result.append(calculation) }
+    let protected = KeyboardEditing.protectsFromCorrection(context.word)
     // Longest shortcut suffix first, including multiword and punctuation keys.
     let chunks = before.split(separator: " ", omittingEmptySubsequences: false)
     for length in (1...max(1, min(5, chunks.count))).reversed() {
       let suffix = chunks.suffix(length).joined(separator: " ")
       guard !suffix.isEmpty else { continue }
+      let countBeforeShortcuts = result.count
       for entry in (try? store?.shortcuts(matching: suffix, limit: 8, forTyping: true)) ?? []
         where store?.mediaIsMissing(entry) != true {
         result.append(
           .init(
             title: entry.text, text: entry.text, replacing: suffix,
             kind: entry.kind == "text" ? .shortcut : .media, shortcut: entry,
-            autoApply: entry.kind == "text" && !entry.isCosmetic))
+            autoApply: entry.kind == "text" && !entry.isCosmetic && !protected))
       }
-      if !result.isEmpty { break }
+      if result.count > countBeforeShortcuts { break }
     }
     let rawToken =
       before.last?.isWhitespace == true
@@ -128,14 +134,14 @@ public final class KeyboardPrediction {
         .init(title: $0.text, text: $0.text, replacing: rawToken, kind: .emoji, accessibilityLabel: $0.name)
       }
       let (unwrapped, styler) = MarkdownStyler.removeBoundingStylers(from: rawToken)
-      if let styler {
+      if let styler, MarkdownStyler.style(unwrapped, with: styler) != rawToken {
         result.append(
           .init(
             text: MarkdownStyler.style(unwrapped, with: styler), replacing: rawToken,
-            kind: .shortcut, autoApply: true))
+            kind: .style, autoApply: true))
       }
     }
-    guard !context.word.isEmpty else {
+    guard !context.word.isEmpty, !protected else {
       return fallback(result, preferences: preferences, store: store)
     }
     if let text = lexicon[context.word.lowercased()], text != context.word {
@@ -146,8 +152,8 @@ public final class KeyboardPrediction {
     for language in languages {
       let learned =
         (try? store?.dictionary(language: language, prefix: context.word, limit: 6)) ?? []
-      result += learned.filter { $0 != context.word }.map {
-        .init(text: $0, replacing: originalWord)
+      result += learned.map {
+        .init(text: $0, replacing: originalWord, dictionaryLanguage: language)
       }
     }
     if preferences.enabled("autocomplete") || preferences.enabled("spellcheck") {
@@ -188,10 +194,13 @@ public final class KeyboardPrediction {
             .init(
               text: $0, replacing: originalWord,
               autoApply: misspelled && !isPersonal
-                && KeyboardRanking.distance(context.word, $0) < 1.1)
+                && KeyboardRanking.distance(context.word, $0) < 1.1, dictionaryLanguage: language)
           }
         }
       }
+    }
+    if preferences.enabled("autocomplete"), !result.contains(where: { $0.text == context.word }) {
+      result.append(.init(text: context.word, replacing: originalWord, dictionaryLanguage: preferences.language))
     }
     var seen = Set<String>()
     result = result.filter { seen.insert($0.text).inserted }

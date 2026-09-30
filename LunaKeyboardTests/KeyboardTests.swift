@@ -221,3 +221,96 @@ final class KeyboardTests: XCTestCase {
     XCTAssertEqual(result.first?.replacing, word)
   }
 }
+
+extension KeyboardTests {
+  @MainActor private func editor(_ initial: String = "", clock: @escaping () -> TimeInterval = { 100 }) -> (KeyboardSurface, () -> String) {
+    let surface = KeyboardSurface()
+    var text = initial
+    surface.before = { text }
+    surface.insert = { text += $0 }
+    surface.delete = { if !text.isEmpty { text.removeLast() } }
+    surface.now = clock
+    surface.preferences = .init(values: ["autoCapitalize": "false", "sound": "false", "spellcheck": "false", "autocomplete": "false"])
+    surface.lexicon = ["teh": "the"]
+    surface.refresh()
+    return (surface, { text })
+  }
+  @MainActor func testRejectedCorrectionDoesNotReapplyAndPunctuationIsPreserved() {
+    let (s, text) = editor()
+    for key in ["t", "e", "h", " "] { s.key(key) }
+    XCTAssertEqual(text(), "the ")
+    s.key("delete")
+    XCTAssertEqual(text(), "teh")
+    s.key(" ")
+    XCTAssertEqual(text(), "teh ")
+    s.releaseMemory()
+    let (p, punctuated) = editor()
+    for key in ["t", "e", "h", " ", "?"] { p.key(key) }
+    XCTAssertEqual(punctuated(), "the?")
+    p.key("delete")
+    XCTAssertEqual(punctuated(), "teh?")
+    p.releaseMemory()
+  }
+  @MainActor func testDelayedBackspaceDeletesAndExpiredCandidateDoesNotApply() {
+    var time: TimeInterval = 100
+    let (s, text) = editor(clock: { time })
+    for key in ["t", "e", "h", " "] { s.key(key) }
+    time += 1.1
+    s.key("delete")
+    XCTAssertEqual(text(), "the")
+    s.releaseMemory()
+    let (p, pending) = editor(clock: { time })
+    for key in ["t", "e", "h"] { p.key(key) }
+    time += 3
+    p.key(" ")
+    XCTAssertEqual(pending(), "teh ")
+    p.releaseMemory()
+  }
+  @MainActor func testQuotesCanBeTypedRepeatedlyAndURLTextStaysLiteral() {
+    let (s, text) = editor()
+    for key in ["\"", "h", "i", "\"", " ", "\"", "o", "k", "\""] { s.key(key) }
+    XCTAssertEqual(text(), "“hi” “ok”")
+    s.releaseMemory()
+    let (u, url) = editor()
+    u.fieldAllowsAutocorrect = false
+    u.fieldAllowsSmartPunctuation = false
+    for key in ["t", "e", "h", " ", "?", "'"] { u.key(key) }
+    XCTAssertEqual(url(), "teh ?'")
+    u.releaseMemory()
+  }
+  func testPunctuationIsNotPartOfWord() {
+    XCTAssertEqual(KeyboardTextContext(before: "…hello").word, "hello")
+    XCTAssertEqual(KeyboardTextContext(before: "hello…").word, "")
+    XCTAssertEqual(KeyboardTextContext(before: "“hello").word, "hello")
+    XCTAssertEqual(KeyboardTextContext(before: "hello’").word, "")
+    XCTAssertEqual(KeyboardTextContext(before: "don't").word, "don't")
+  }
+  @MainActor func testDeleteDragRestoresTextAndStopsAtBounds() {
+    let (s, text) = editor("dragonloser")
+    s.updateDeleteDrag(5)
+    XCTAssertEqual(text(), "dragon")
+    s.updateDeleteDrag(2)
+    XCTAssertEqual(text(), "dragonlos")
+    s.updateDeleteDrag(0)
+    XCTAssertEqual(text(), "dragonloser")
+    s.updateDeleteDrag(100)
+    XCTAssertEqual(text(), "")
+    s.finishDeleteDrag()
+    s.updateDeleteDrag(100)
+    XCTAssertEqual(text(), "")
+    s.releaseMemory()
+  }
+  @MainActor func testPadKeysAndAccessibleStyledLetters() {
+    let board = KeyboardBoardView(frame: CGRect(x: 0, y: 0, width: 1024, height: 340))
+    board.isPad = true
+    board.textStyle = .bold
+    board.layoutIfNeeded()
+    let names = (board.accessibilityElements as? [UIAccessibilityElement])?.compactMap(\.accessibilityLabel) ?? []
+    XCTAssertTrue(names.contains("Tab"))
+    XCTAssertTrue(names.contains("Hide keyboard"))
+    XCTAssertTrue(names.contains("Delete"))
+    XCTAssertTrue(names.contains("q"))
+    XCTAssertEqual(board.firstAlternative(for: "q"), "1")
+    XCTAssertEqual(board.firstAlternative(for: "a"), "@")
+  }
+}

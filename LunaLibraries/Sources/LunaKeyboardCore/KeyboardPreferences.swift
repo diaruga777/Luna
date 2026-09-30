@@ -10,6 +10,7 @@ public struct KeyboardPreferences {
     ("periodShortcut", "Double-Space Period", true), ("spellcheck", "Check Spelling", true),
     ("autocomplete", "Predictive Text", true), ("swipeTyping", "Slide to Type", true),
     ("haptics", "Haptic Feedback", false), ("sound", "Key Sounds", true),
+    ("smartPunctuation", "Smart Quotes and Punctuation", true),
     ("rememberStyle", "Remember Text Style", true),
     ("compactSearch", "Compact Media Search", false),
     ("blankKeycaps", "Blank Keycaps", false),

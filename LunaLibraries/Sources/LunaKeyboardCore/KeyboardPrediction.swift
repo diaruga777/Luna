@@ -74,7 +74,18 @@ public struct KeyboardTextContext {
   public let range: NSRange
   public init(before: String) {
     text = String(before.suffix(256))
-    word = String(text.reversed().prefix { $0.isLetter || $0 == "'" || $0 == "’" }.reversed())
+    // Quotes belong to a word only when surrounded by letters (don't, l'acqua).
+    // Closing quotes and punctuation must never become replacement characters.
+    let chars = Array(text)
+    var start = chars.count
+    while start > 0 {
+      let i = start - 1
+      if chars[i].isLetter { start -= 1; continue }
+      if (chars[i] == "'" || chars[i] == "’"), i > 0, i + 1 < chars.count,
+        chars[i - 1].isLetter, chars[i + 1].isLetter { start -= 1; continue }
+      break
+    }
+    word = String(chars[start...])
     range = NSRange(location: text.utf16.count - word.utf16.count, length: word.utf16.count)
   }
 }

@@ -1,4 +1,3 @@
-import AudioToolbox
 import LunaKeyboardCore
 import LunaStorage
 import UIKit
@@ -6,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// The same surface drives the extension and the containing app's tryout.
 /// Only the host adapter owns the text document proxy.
-public final class KeyboardSurface: UIView {
+public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public var before: () -> String = { "" }
   public var after: () -> String = { "" }
   public var insert: (String) -> Void = { _ in }
@@ -29,7 +28,22 @@ public final class KeyboardSurface: UIView {
   private var timer: Timer?
   private var shiftDate = Date.distantPast
   private var spaceDate = Date.distantPast
-  private var reversal: (original: String, replacement: String)?
+  public var enableInputClicksWhenVisible: Bool { preferences.enabled("sound") }
+  public var now: () -> TimeInterval = { Date.timeIntervalSinceReferenceDate }
+  public var fieldAllowsSmartPunctuation = true
+  public var fieldAllowsCapitalization = true
+  private var reversal: KeyboardCorrection?
+  private var rejectedContext: String?
+  private var lastContext = ""
+  private var lastAfter = ""
+  private var editedAt: TimeInterval = 0
+  private let correctionWindow: TimeInterval = 2
+  private let countdown = UIView()
+  private var editingDepth = 0
+  private var dragOriginal: String?
+  private var dragAfter = ""
+  private var dragRemoved = ""
+  public var onEdit: (() -> Void)?
   private var panel: KeyboardToolsPanel?
   private var status: UILabel?
   public var boardHeight: CGFloat = 220 { didSet { setNeedsLayout() } }
@@ -42,12 +56,18 @@ public final class KeyboardSurface: UIView {
     addSubview(board)
     addSubview(suggestionScroll)
     addSubview(tools)
+    countdown.backgroundColor = .systemBlue
+    countdown.isUserInteractionEnabled = false
+    suggestionScroll.addSubview(countdown)
     tools.setImage(UIImage(systemName: "face.smiling"), for: .normal)
     tools.accessibilityLabel = "Emoji, shortcuts, GIFs and images"
     tools.accessibilityIdentifier = "keyboard.tools"
     tools.addAction(UIAction { [weak self] _ in self?.toggleTools() }, for: .touchUpInside)
+    board.onDeleteDrag = { [weak self] count in self?.updateDeleteDrag(count) }
+    board.onDeleteDragEnd = { [weak self] in self?.finishDeleteDrag() }
     board.onKey = { [weak self] in self?.key($0) }
     board.onCursor = { [weak self] in
+      self?.clearCorrection()
       self?.moveCursor($0)
       self?.refresh()
     }
@@ -76,6 +96,7 @@ public final class KeyboardSurface: UIView {
   }
   public func refresh() {
     timer?.invalidate()
+    if editingDepth == 0 { synchronizeContext() }
     updateCasing()
     timer = Timer.scheduledTimer(withTimeInterval: 0.045, repeats: false) { [weak self] _ in
       self?.predict()
@@ -86,7 +107,7 @@ public final class KeyboardSurface: UIView {
     timer = nil
     board.reset()
     prediction.releaseMemory()
-    reversal = nil
+    clearCorrection()
     panel?.removeFromSuperview()
     panel = nil
     suggestions = []
@@ -98,13 +119,28 @@ public final class KeyboardSurface: UIView {
     let context = before()
     suggestions = prediction.suggestions(
       before: context, preferences: preferences, store: store, lexicon: lexicon)
-    if let reversal, context.hasSuffix(reversal.replacement) {
+    if let reversal, reversal.canUndo(before: context, now: now()) {
       suggestions.insert(
         .init(
-          title: "↶ " + reversal.original, text: reversal.original, replacing: reversal.replacement),
+          title: "↶ " + reversal.original, text: reversal.original + reversal.suffix,
+          replacing: reversal.replacement + reversal.suffix, kind: .shortcut),
         at: 0)
     }
     renderSuggestions()
+    countdown.layer.removeAllAnimations()
+    countdown.isHidden = true
+    if fieldAllowsAutocorrect, preferences.enabled("autocorrect"), rejectedContext != context,
+      let i = suggestions.firstIndex(where: { $0.autoApply }), i < suggestionButtons.count {
+      let remaining = correctionWindow - (now() - editedAt)
+      if remaining > 0 {
+        let frame = suggestionButtons[i].frame
+        countdown.frame = CGRect(x: frame.minX, y: 41, width: frame.width * remaining / correctionWindow, height: 3)
+        countdown.isHidden = false
+        UIView.animate(withDuration: remaining, delay: 0, options: [.curveLinear, .beginFromCurrentState]) {
+          self.countdown.frame.size.width = 0
+        }
+      }
+    }
   }
   private func renderSuggestions() {
     // Reuse at most twelve buttons. No per-keystroke observation graphs,
@@ -126,7 +162,7 @@ public final class KeyboardSurface: UIView {
       b.isHidden = i >= suggestions.count
       if i < suggestions.count {
         b.setTitle(suggestions[i].title, for: .normal)
-        b.accessibilityLabel = suggestions[i].title
+        b.accessibilityLabel = suggestions[i].title.styleErased
         b.accessibilityIdentifier = "keyboard.suggestion.\(i)"
       }
       b.tintColor = board.dark ? .white : .black
@@ -144,7 +180,9 @@ public final class KeyboardSurface: UIView {
     }
     suggestionScroll.contentSize = CGSize(width: x, height: 44)
   }
-  private func apply(_ suggestion: KeyboardSuggestion) {
+  private func apply(_ suggestion: KeyboardSuggestion, automatic: Bool = false) {
+    editingDepth += 1
+    defer { editingDepth -= 1 }
     if suggestion.kind == .media, let shortcut = suggestion.shortcut {
       copy(shortcut)
       return
@@ -158,16 +196,24 @@ public final class KeyboardSurface: UIView {
     let output =
       (suggestion.kind == .word) ? board.textStyle.style(suggestion.text) : suggestion.text
     insert(output)
-    if suggestion.kind == .word {
-      reversal = (suggestion.replacing, output)
+    if automatic {
+      reversal = .init(original: suggestion.replacing, replacement: output, created: now())
     } else {
       reversal = nil
     }
+    recordEdit()
     refresh()
   }
   public func key(_ value: String) {
-    if preferences.enabled("sound"), hasFullAccess { AudioServicesPlaySystemSound(1104) }
-    if preferences.enabled("haptics"), hasFullAccess { haptic.impactOccurred(intensity: 0.45) }
+    if value != "delete" { board.cancelRepeatingDelete() }
+    synchronizeContext()
+    editingDepth += 1
+    defer { editingDepth -= 1 }
+    if preferences.enabled("sound") { UIDevice.current.playInputClick() }
+    if preferences.enabled("haptics"), hasFullAccess, value != "delete" || !before().isEmpty {
+      haptic.impactOccurred(intensity: 0.45)
+    }
+    if value == "tab" { insert("\t"); recordEdit(); refresh(); return }
     if value == "123" {
       board.page = 1
       return
@@ -203,25 +249,23 @@ public final class KeyboardSurface: UIView {
       return
     }
     if value == "delete" {
-      if let reversal, before().hasSuffix(reversal.replacement) {
-        for _ in reversal.replacement { delete() }
-        insert(reversal.original)
+      if let reversal, reversal.canUndo(before: before(), now: now()) {
+        for _ in reversal.replacement + reversal.suffix { delete() }
+        // A word separator is removed, but punctuation is retained when undoing.
+        let punctuation = reversal.suffix.filter { !$0.isWhitespace }
+        insert(reversal.original + punctuation)
         self.reversal = nil
       } else {
         delete()
         reversal = nil
       }
+      rejectedContext = before()
+      recordEdit()
       refresh()
       return
     }
     if value == " " || value == "return" {
-      predict()
-      if fieldAllowsAutocorrect, preferences.enabled("autocorrect"),
-        let candidate = suggestions.first(where: { $0.autoApply }), !candidate.replacing.isEmpty,
-        before().hasSuffix(candidate.replacing)
-      {
-        apply(candidate)
-      }
+      applyPendingCorrection()
       if value == " ", preferences.enabled("periodShortcut"),
         Date().timeIntervalSince(spaceDate) < 0.4, before().hasSuffix(" "),
         before().dropLast().last?.isLetter == true
@@ -234,20 +278,86 @@ public final class KeyboardSurface: UIView {
         insert(separator)
         spaceDate = Date()
         if let previous = reversal {
-          reversal = (previous.original, previous.replacement + separator)
+          reversal = previous
+          reversal?.suffix += separator
         }
       }
       if board.page != 0 { board.page = 0 }
     } else {
-      let text = board.uppercase ? value.uppercased() : value
+      var text = board.uppercase ? value.uppercased() : value
+      if fieldAllowsSmartPunctuation && preferences.enabled("smartPunctuation") {
+        text = KeyboardEditing.smartQuote(text, before: before())
+        if KeyboardEditing.isClosingPunctuation(text) {
+          if before().hasSuffix(" "), before().dropLast().last?.isWhitespace == false {
+            delete()
+            if reversal?.suffix == " " { reversal?.suffix = "" }
+          } else { applyPendingCorrection() }
+          if reversal != nil { reversal?.suffix += text }
+        } else { reversal = nil }
+      } else { reversal = nil }
       insert(board.textStyle.style(text))
-      reversal = nil
+      rejectedContext = nil
       if !board.capsLock { board.uppercase = false }
     }
+    recordEdit()
     refresh()
   }
+  private func applyPendingCorrection() {
+    guard fieldAllowsAutocorrect, preferences.enabled("autocorrect"),
+      rejectedContext != before(), now() - editedAt < correctionWindow,
+      after().first?.isLetter != true else { return }
+    predict()
+    if let candidate = suggestions.first(where: { $0.autoApply }), !candidate.replacing.isEmpty,
+      before().hasSuffix(candidate.replacing) { apply(candidate, automatic: true) }
+  }
+  private func recordEdit() {
+    lastContext = before()
+    lastAfter = after()
+    editedAt = now()
+    onEdit?()
+  }
+  public func clearCorrection() {
+    reversal = nil
+    rejectedContext = nil
+    countdown.layer.removeAllAnimations()
+    countdown.isHidden = true
+  }
+  private func synchronizeContext() {
+    if before() != lastContext || after() != lastAfter {
+      clearCorrection()
+      editedAt = now()
+      lastContext = before()
+      lastAfter = after()
+    }
+  }
+  /// Drag preview uses reversible deletion because UITextDocumentProxy has no
+  /// API for setting a selection. Moving right restores only our own removed text.
+  public func updateDeleteDrag(_ count: Int) {
+    editingDepth += 1
+    defer { editingDepth -= 1 }
+    if dragOriginal == nil {
+      clearCorrection()
+      dragOriginal = String(before().suffix(256))
+      dragAfter = after()
+      dragRemoved = ""
+    }
+    guard let original = dragOriginal, after() == dragAfter,
+      before().hasSuffix(String(original.dropLast(dragRemoved.count))) else {
+      finishDeleteDrag(); return
+    }
+    let removed = KeyboardEditing.deleteSuffix(original, count: count)
+    guard removed != dragRemoved else { return }
+    if removed.count > dragRemoved.count {
+      for _ in 0..<(removed.count - dragRemoved.count) { delete() }
+    } else { insert(String(dragRemoved.prefix(dragRemoved.count - removed.count))) }
+    dragRemoved = removed
+    if preferences.enabled("haptics"), hasFullAccess { haptic.impactOccurred(intensity: 0.45) }
+    recordEdit()
+    refresh()
+  }
+  public func finishDeleteDrag() { dragOriginal = nil; dragRemoved = "" }
   private func updateCasing() {
-    guard !board.capsLock, preferences.enabled("autoCapitalize") else { return }
+    guard !board.capsLock, fieldAllowsCapitalization, preferences.enabled("autoCapitalize") else { return }
     let preceding = before()
     let trimmed = preceding.trimmingCharacters(in: .whitespaces)
     board.uppercase =

@@ -13,6 +13,11 @@ extension CGPoint {
 public final class KeyboardBoardView: UIView {
   public var onKey: ((String) -> Void)?
   public var onSwipe: (([SwipeSample], [Character: CGPoint]) -> Void)?
+  public var onDeleteDrag: ((Int) -> Void)?
+  public var onDeleteDragEnd: (() -> Void)?
+  public var onDismiss: (() -> Void)?
+  public var onNextKeyboard: (() -> Void)?
+  public var isPad = UIDevice.current.userInterfaceIdiom == .pad { didSet { rebuild() } }
   public var onCursor: ((Int) -> Void)?
   public var onGlobe: ((UIView, UIEvent) -> Void)?
   public var language = "en" { didSet { rebuild() } }
@@ -39,6 +44,8 @@ public final class KeyboardBoardView: UIView {
   private var trace: [SwipeSample] = []
   private var swiping = false
   private var cursorDragging = false
+  private var deleteDragging = false
+  private var flick: String?
   private var alternatives: [String] = []
   private var alternativeIndex = 0
   private var longPress: Timer?
@@ -64,12 +71,12 @@ public final class KeyboardBoardView: UIView {
     super.didMoveToSuperview()
     if let superview { superview.addSubview(popup) } else { popup.removeFromSuperview() }
   }
-  private var gap: CGFloat { UIDevice.current.userInterfaceIdiom == .pad ? 8 : 6 }
+  private var gap: CGFloat { isPad ? 8 : 6 }
   private func rebuild() {
     guard bounds.width > 0, bounds.height > 0 else { return }
     let portrait = bounds.width < 600
     let rowGap: CGFloat =
-      UIDevice.current.userInterfaceIdiom == .pad ? (portrait ? 8 : 11) : (portrait ? 10 : 8)
+      isPad ? (portrait ? 8 : 11) : (portrait ? 10 : 8)
     let h = (bounds.height - 6 - rowGap * 3) / 4
     let w = (bounds.width - 7 - gap * 9) / 10
     var all: [Key] = []
@@ -148,16 +155,63 @@ public final class KeyboardBoardView: UIView {
       .init(
         value: "return", frame: CGRect(x: x, y: y, width: max(w, bounds.width - x - 4), height: h),
         special: true))
+    // Full-width iPad boards have punctuation and Tab available on letters.
+    if isPad && page == 0 {
+      let firstRow: [String] = ["tab"] + top.map(String.init) + ["delete"]
+      let secondRow: [String] = mid.map(String.init) + ["return"]
+      let thirdRow: [String] = ["shift"] + bottom.map(String.init) + [",", ".", "shift"]
+      var lastRow = ["123", "styles"]
+      if needsGlobe { lastRow.append("globe") }
+      lastRow += [" ", "dismiss"]
+      let rows = [firstRow, secondRow, thirdRow, lastRow]
+      all = []
+      for (r, values) in rows.enumerated() {
+        let units = CGFloat(values.count + (r == 3 ? 5 : 0))
+        let unit = (bounds.width - 6 - gap * CGFloat(values.count - 1)) / units
+        var x: CGFloat = 3
+        for v in values {
+          let width = v == " " ? unit * 6 : unit
+          all.append(.init(value: v, frame: CGRect(x: x, y: 2 + CGFloat(r) * (h + rowGap), width: width, height: h), special: v.count > 1))
+          x += width + gap
+        }
+      }
+    }
     keys = all
     accessibilityElements = all.map { key in
       let element = KeyboardKeyAccessibility(accessibilityContainer: self)
-      element.accessibilityLabel = label(key.value)
+      element.accessibilityLabel = accessibilityName(key.value)
+      element.accessibilityHint = textStyle == .regular ? nil : "Inserts \(textStyle.rawValue) text"
       element.accessibilityTraits = .keyboardKey
       element.accessibilityFrameInContainerSpace = key.frame
-      element.action = { [weak self] in self?.onKey?(key.value) }
+      element.action = { [weak self] in
+        guard let self else { return }
+        self.cancelRepeatingDelete()
+        if key.value == "globe" { self.onNextKeyboard?() }
+        else if key.value == "dismiss" { self.onDismiss?() }
+        else { self.onKey?(key.value) }
+      }
       return element
     }
     setNeedsDisplay()
+  }
+  private func accessibilityName(_ value: String) -> String {
+    switch value {
+    case "shift": return capsLock ? "Caps lock" : "Shift"
+    case "delete": return "Delete"
+    case "globe": return "Next keyboard"
+    case "styles": return "Text styles"
+    case "dismiss": return "Hide keyboard"
+    case "tab": return "Tab"
+    default: return label(value).styleErased
+    }
+  }
+  public func firstAlternative(for value: String) -> String? {
+    if page == 0, let i = Array("qwertyuiop").firstIndex(of: value.first ?? " "), value.count == 1 {
+      return String(Array("1234567890")[i])
+    }
+    let padSymbols = Dictionary(uniqueKeysWithValues: zip(Array("asdfghjklzxcvbnm").map(String.init), Array(#"@#$&*()'"%_-+=/;"#).map(String.init)))
+    if isPad, page == 0, let symbol = padSymbols[value] { return symbol }
+    return Accents.accents(for: value).first ?? NumbersAndSymbols.altSymbols(for: value).first
   }
   private func label(_ value: String) -> String {
     switch value {
@@ -165,6 +219,8 @@ public final class KeyboardBoardView: UIView {
     case "delete": return "⌫"
     case "globe": return "◎"
     case "styles": return "Aa"
+    case "tab": return "⇥"
+    case "dismiss": return "⌄"
     case "return": return returnTitle
     case " ": return language.hasPrefix("es") ? "espacio" : language == "it" ? "spazio" : "space"
     default: return uppercase ? value.uppercased() : value
@@ -188,6 +244,9 @@ public final class KeyboardBoardView: UIView {
       let title = key.special || key.value == " " ? text : textStyle.style(text)
       let size: CGFloat = key.special || key.value == " " ? 16 : 22
       drawText(title, in: key.frame, color: dark ? .white : .black, size: size)
+      if isPad, !key.special, let alt = firstAlternative(for: key.value), key.value != " " {
+        drawText(alt, in: CGRect(x: key.frame.maxX - 20, y: key.frame.minY + 2, width: 16, height: 14), color: .secondaryLabel, size: 11)
+      }
     }
     if swiping, trace.count > 1 {
       UIColor.systemBlue.withAlphaComponent(0.55).setStroke()
@@ -219,7 +278,7 @@ public final class KeyboardBoardView: UIView {
       onGlobe?(self, event)
       return
     }
-    if key.value == "delete" { onKey?("delete") }
+
     if let c = key.value.first, key.value.count == 1, c.isLetter, page == 0 {
       trace = [.init(point: startPoint, letter: c)]
     }
@@ -235,6 +294,7 @@ public final class KeyboardBoardView: UIView {
     guard let i = active else { return }
     let value = keys[i].value
     if value == "delete" {
+      onKey?("delete")
       repeating = Timer.scheduledTimer(withTimeInterval: 0.065, repeats: true) { [weak self] _ in
         self?.onKey?("delete")
       }
@@ -249,6 +309,7 @@ public final class KeyboardBoardView: UIView {
     if value == "globe" { return }
     let title = label(value)
     alternatives = Accents.accents(for: title)
+    if alternatives.isEmpty { alternatives = NumbersAndSymbols.altSymbols(for: value) }
     if value == ".", keyboardType == .URL || keyboardType == .emailAddress {
       alternatives = [".com", ".net", ".edu", ".org"]
     }
@@ -262,6 +323,21 @@ public final class KeyboardBoardView: UIView {
   public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard let touch = touches.first, let active else { return }
     let p = touch.location(in: self)
+    if keys[active].value == "delete", p.x < startPoint.x - 18 || deleteDragging {
+      deleteDragging = true
+      cancelRepeatingDelete()
+      onDeleteDrag?(max(0, Int((startPoint.x - p.x) / 14)))
+      return
+    }
+    if isPad, !keys[active].special, p.y - startPoint.y > 20,
+      abs(p.x - startPoint.x) < 30, let alternative = firstAlternative(for: keys[active].value) {
+      flick = alternative
+      swiping = false
+      longPress?.invalidate()
+      showPopup(index: active, options: [alternative])
+      return
+    }
+    if flick != nil { return }
     if cursorDragging {
       let delta = Int((p.x - cursorPoint.x) / 9)
       if delta != 0 {
@@ -303,6 +379,13 @@ public final class KeyboardBoardView: UIView {
   public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
     defer { reset() }
     guard let i = active, !cursorDragging else { return }
+    if deleteDragging { onDeleteDragEnd?(); return }
+    if let flick { onKey?(flick); return }
+    if keys[i].value == "dismiss" { onDismiss?(); return }
+    if keys[i].value == "delete" {
+      if repeating == nil { onKey?("delete") }
+      return
+    }
     if !alternatives.isEmpty {
       onKey?(alternatives[min(alternativeIndex, alternatives.count - 1)])
       return
@@ -318,7 +401,16 @@ public final class KeyboardBoardView: UIView {
     if keys[i].value != "delete" && keys[i].value != "globe" { onKey?(keys[i].value) }
   }
   public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { reset() }
+  public func cancelRepeatingDelete() {
+    longPress?.invalidate()
+    longPress = nil
+    repeating?.invalidate()
+    repeating = nil
+  }
   public func reset() {
+    if deleteDragging { onDeleteDragEnd?() }
+    deleteDragging = false
+    flick = nil
     longPress?.invalidate()
     longPress = nil
     repeating?.invalidate()

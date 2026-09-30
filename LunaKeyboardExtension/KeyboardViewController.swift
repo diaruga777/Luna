@@ -29,6 +29,8 @@ final class KeyboardViewController: UIInputViewController {
     surface.moveCursor = { [weak self] in
       self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: $0)
     }
+    surface.board.onDismiss = { [weak self] in self?.dismissKeyboard() }
+    surface.board.onNextKeyboard = { [weak self] in self?.advanceToNextInputMode() }
     surface.globe = { [weak self] v, event in self?.handleInputModeList(from: v, with: event) }
     requestSupplementaryLexicon { [weak self] lexicon in
       var entries: [String: String] = [:]
@@ -86,6 +88,10 @@ final class KeyboardViewController: UIInputViewController {
     case .join: surface.board.returnTitle = "join"
     default: surface.board.returnTitle = "return"
     }
+    surface.fieldAllowsCapitalization = textDocumentProxy.autocapitalizationType != .none
+      && textDocumentProxy.keyboardType != .URL && textDocumentProxy.keyboardType != .emailAddress
+    surface.fieldAllowsSmartPunctuation = textDocumentProxy.smartQuotesType != .no
+      && textDocumentProxy.keyboardType != .URL && textDocumentProxy.keyboardType != .emailAddress
     surface.fieldAllowsAutocorrect =
       textDocumentProxy.autocorrectionType != .no && textDocumentProxy.keyboardType != .URL
       && textDocumentProxy.keyboardType != .emailAddress

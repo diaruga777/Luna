@@ -127,3 +127,40 @@ The project contains the final 1024 px asset and a smaller in-app artwork export
 
 Live checks: GIPHY returned results; the old Qwant endpoint returned HTTP 403,
 so image search falls back to Openverse, which returned results in the same check.
+
+## Clack todo implementation (30 September 2026)
+
+The item-by-item record is [keyboard-todo-audit.md](keyboard-todo-audit.md), including
+platform limits and checks that still need a physical device.
+
+Schema 16 adds separate shortcut options (suggest while typing and cosmetic) and
+an expiring media-search metadata cache. Existing schema-15 shortcuts retain their
+previous defaults. The additive tables use foreign keys and preserve ownership.
+Portable `.lunakeyboard` files carry media bytes rather than device-local paths;
+imports validate their version, sizes and types and allocate fresh identifiers.
+Shortcuts can be imported from Photos, marked lookup-only, shared, repaired after
+missing-file detection, or explicitly removed by the cleanup action.
+
+Corrections have a two-second eligibility window with a shrinking indicator and a
+one-second undo window. Rejection suppresses immediate reapplication. Undo keeps
+punctuation, closing punctuation removes a separator, and URL/email traits disable
+automatic prose transformations. Quotes recognize interior apostrophes. Only words
+this keyboard automatically capitalized are eligible for sentence-insertion case
+adjustment; at most eight words are retained and cleared on release.
+
+Backspace dragging removes up to 256 preceding characters and restores them while
+moving right. The proxy cannot set a host selection, so this is a reversible edit
+preview, not a highlighted host selection. Haptics occur only when text changes.
+Letters cancel repeating delete. Keyboard click sound uses the supported system API.
+
+iPad has its own letter layout and downward flick alternatives. Preferences adds
+System, Moonlight, Ocean and High Contrast themes. Keyboard Quest uses the production
+surface against a disposable editor for deletion, number holds, swipe typing and
+cursor movement. Its pixel sprites are drawn directly, and Show Me demonstrates the
+actions. Try It Out includes the system Paste control.
+
+Debug launch argument `--keyboard-tutorial` opens Keyboard Quest. Interactive
+inspection was limited by the locked Mac; hosted tests exercise all demonstrations.
+
+Final verification: **37 hosted tests passed, 0 failures** on iPhone 17 Pro,
+iOS 26.2, using Xcode 26.2. The suite builds both the app and extension.

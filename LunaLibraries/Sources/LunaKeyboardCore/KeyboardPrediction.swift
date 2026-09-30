@@ -108,12 +108,13 @@ public final class KeyboardPrediction {
     for length in (1...max(1, min(5, chunks.count))).reversed() {
       let suffix = chunks.suffix(length).joined(separator: " ")
       guard !suffix.isEmpty else { continue }
-      for entry in (try? store?.shortcuts(matching: suffix, limit: 8)) ?? [] {
+      for entry in (try? store?.shortcuts(matching: suffix, limit: 8, forTyping: true)) ?? []
+        where store?.mediaIsMissing(entry) != true {
         result.append(
           .init(
             title: entry.text, text: entry.text, replacing: suffix,
             kind: entry.kind == "text" ? .shortcut : .media, shortcut: entry,
-            autoApply: entry.kind == "text"))
+            autoApply: entry.kind == "text" && !entry.isCosmetic))
       }
       if !result.isEmpty { break }
     }

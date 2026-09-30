@@ -129,7 +129,19 @@ final class KeyboardToolsPanel: UIView, UITableViewDataSource, UITableViewDelega
       searchLabel.text = "Searching…"
       searchTask = Task { [weak self] in
         do {
-          let found = try await KeyboardMediaSearch.search(query, gifs: gifs)
+          let cacheKey = (gifs ? "gif:" : "image:") + query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          let cached = try? self?.store?.cachedMediaSearch(cacheKey)
+          let decoded = cached.flatMap { $0.data(using: .utf8) }.flatMap {
+            try? JSONDecoder().decode([KeyboardMediaSearch.Result].self, from: $0)
+          }
+          var seen = Set<URL>()
+          let fetched: [KeyboardMediaSearch.Result]
+          if let decoded { fetched = decoded }
+          else { fetched = try await KeyboardMediaSearch.search(query, gifs: gifs) }
+          let found = Array(fetched.filter { $0.url.scheme == "https" && seen.insert($0.url).inserted }.prefix(24))
+          if decoded == nil, let data = try? JSONEncoder().encode(found), let payload = String(data: data, encoding: .utf8) {
+            try? self?.store?.cacheMediaSearch(cacheKey, payload: payload)
+          }
           guard !Task.isCancelled, let self, self.generation == gen else { return }
           self.items = found.map {
             Item(
@@ -156,6 +168,7 @@ final class KeyboardToolsPanel: UIView, UITableViewDataSource, UITableViewDelega
     var content = cell.defaultContentConfiguration()
     content.text = item.title
     content.secondaryText = item.subtitle
+    cell.accessibilityLabel = item.style?.rawValue ?? (item.subtitle.isEmpty ? item.title.styleErased : item.subtitle)
     content.textProperties.numberOfLines = 1
     content.secondaryTextProperties.numberOfLines = 1
     cell.contentConfiguration = content
@@ -227,7 +240,7 @@ private final class MediaRow: UITableViewCell {
 }
 
 private enum KeyboardMediaSearch {
-  struct Result {
+  struct Result: Codable {
     let title: String
     let url: URL
     let thumbnail: URL?
@@ -255,7 +268,7 @@ private enum KeyboardMediaSearch {
       components.queryItems?.append(.init(name: "locale", value: "en_us"))
       components.queryItems?.append(.init(name: "offset", value: "0"))
     }
-    let (data, response) = try await session.data(from: components.url!)
+    let (data, response) = try await limitedData(from: components.url!)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
       data.count < 2 * 1024 * 1024
     else {
@@ -292,7 +305,7 @@ private enum KeyboardMediaSearch {
       .init(name: "q", value: query), .init(name: "page_size", value: "24"),
       .init(name: "license", value: "cc0,pdm"),
     ]
-    let (data, response) = try await session.data(from: url.url!)
+    let (data, response) = try await limitedData(from: url.url!)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
       data.count < 2 * 1024 * 1024
     else { throw URLError(.badServerResponse) }
@@ -306,6 +319,17 @@ private enum KeyboardMediaSearch {
     }
   }
 
+  static func limitedData(from url: URL) async throws -> (Data, URLResponse) {
+    let (bytes, response) = try await session.bytes(from: url)
+    guard response.expectedContentLength <= 2 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+    var data = Data()
+    for try await byte in bytes {
+      try Task.checkCancellation()
+      guard data.count < 2 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+      data.append(byte)
+    }
+    return (data, response)
+  }
   static func download(_ url: URL, maxBytes: Int) async throws -> URL {
     guard url.scheme == "https" else { throw URLError(.unsupportedURL) }
     let (local, response) = try await session.download(from: url)

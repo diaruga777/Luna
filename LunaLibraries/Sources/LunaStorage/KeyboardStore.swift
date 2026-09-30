@@ -6,16 +6,20 @@ public struct KeyboardShortcut: Identifiable, Equatable {
   public var keywords: [String]
   public var text: String
   public var kind: String
+  public var suggestWhileTyping: Bool
+  public var isCosmetic: Bool
   public var relativePath: String?
   public init(
     id: String = UUID().uuidString, keywords: [String], text: String, kind: String = "text",
-    relativePath: String? = nil
+    relativePath: String? = nil, suggestWhileTyping: Bool = true, isCosmetic: Bool = false
   ) {
     self.id = id
     self.keywords = keywords
     self.text = text
     self.kind = kind
     self.relativePath = relativePath
+    self.suggestWhileTyping = suggestWhileTyping
+    self.isCosmetic = isCosmetic
   }
 }
 
@@ -42,6 +46,13 @@ public final class KeyboardStore {
     CREATE TABLE IF NOT EXISTS keyboard_shortcuts (
         id TEXT PRIMARY KEY, text TEXT NOT NULL, kind TEXT NOT NULL,
         relative_path TEXT, updated_at REAL NOT NULL
+    ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS keyboard_shortcut_options (
+        shortcut_id TEXT PRIMARY KEY REFERENCES keyboard_shortcuts(id) ON DELETE CASCADE,
+        suggest_while_typing INTEGER NOT NULL DEFAULT 1, is_cosmetic INTEGER NOT NULL DEFAULT 0
+    ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS keyboard_search_cache (
+        query TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at REAL NOT NULL
     ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS keyboard_keywords (
         shortcut_id TEXT NOT NULL REFERENCES keyboard_shortcuts(id) ON DELETE CASCADE,
@@ -77,20 +88,23 @@ public final class KeyboardStore {
       }
     }
   }
-  public func shortcuts(matching query: String = "", limit: Int = 100) throws -> [KeyboardShortcut]
+  public func shortcuts(matching query: String = "", limit: Int = 100, forTyping: Bool = false) throws -> [KeyboardShortcut]
   {
     try saves.keyboardRead { db in
       var result: [KeyboardShortcut] = []
       try db.query(
         """
-        SELECT s.id,s.text,s.kind,s.relative_path FROM keyboard_shortcuts s
-        WHERE ? = '' OR EXISTS (SELECT 1 FROM keyboard_keywords k WHERE k.shortcut_id=s.id AND k.keyword=? COLLATE NOCASE)
+        SELECT s.id,s.text,s.kind,s.relative_path,COALESCE(o.suggest_while_typing,1),COALESCE(o.is_cosmetic,0)
+        FROM keyboard_shortcuts s LEFT JOIN keyboard_shortcut_options o ON o.shortcut_id=s.id
+        WHERE (? = '' OR EXISTS (SELECT 1 FROM keyboard_keywords k WHERE k.shortcut_id=s.id AND k.keyword=? COLLATE NOCASE))
+        AND (? = 0 OR COALESCE(o.suggest_while_typing,1) = 1)
         ORDER BY s.updated_at DESC, s.id LIMIT ?
         """,
         {
           try $0.bind(1, query)
           try $0.bind(2, query)
-          try $0.bind(3, max(1, min(limit, 500)))
+          try $0.bind(3, forTyping ? 1 : 0)
+          try $0.bind(4, max(1, min(limit, 500)))
         }
       ) { row in
         guard let id = row.string(0), let text = row.string(1), let kind = row.string(2) else {
@@ -104,7 +118,8 @@ public final class KeyboardStore {
           if let key = $0.string(0) { keys.append(key) }
         }
         result.append(
-          .init(id: id, keywords: keys, text: text, kind: kind, relativePath: row.string(3)))
+          .init(id: id, keywords: keys, text: text, kind: kind, relativePath: row.string(3),
+                suggestWhileTyping: row.int64(4) == 1, isCosmetic: row.int64(5) == 1))
       }
       return result
     }
@@ -159,6 +174,11 @@ public final class KeyboardStore {
           try $0.bind(4, relative)
           try $0.bind(5, date: Date())
         }
+        try db.run("INSERT INTO keyboard_shortcut_options(shortcut_id,suggest_while_typing,is_cosmetic) VALUES(?,?,?) ON CONFLICT(shortcut_id) DO UPDATE SET suggest_while_typing=excluded.suggest_while_typing,is_cosmetic=excluded.is_cosmetic") {
+          try $0.bind(1, shortcut.id)
+          try $0.bind(2, shortcut.suggestWhileTyping ? 1 : 0)
+          try $0.bind(3, shortcut.isCosmetic ? 1 : 0)
+        }
         try db.run("DELETE FROM keyboard_keywords WHERE shortcut_id=?") {
           try $0.bind(1, shortcut.id)
         }
@@ -205,6 +225,39 @@ public final class KeyboardStore {
     saves.reapPendingDeletes()
   }
 
+  public func mediaIsMissing(_ shortcut: KeyboardShortcut) -> Bool {
+    guard shortcut.kind != "text", shortcut.relativePath != nil else { return false }
+    guard let url = fileURL(for: shortcut) else { return true }
+    return !FileManager.default.fileExists(atPath: url.path)
+  }
+  /// Explicit cleanup leaves missing entries available for repair until requested.
+  public func removeMissingMedia() throws -> Int {
+    var removed = 0
+    for shortcut in try shortcuts(limit: 500) where mediaIsMissing(shortcut) {
+      try delete(id: shortcut.id)
+      removed += 1
+    }
+    return removed
+  }
+  public func cachedMediaSearch(_ query: String, maxAge: TimeInterval = 86400) throws -> String? {
+    try saves.keyboardRead { db in
+      var result: String?
+      try db.query("SELECT payload FROM keyboard_search_cache WHERE query=? AND updated_at>?", {
+        try $0.bind(1, query)
+        try $0.bind(2, date: Date().addingTimeInterval(-maxAge))
+      }) { result = $0.string(0) }
+      return result
+    }
+  }
+  public func cacheMediaSearch(_ query: String, payload: String) throws {
+    guard payload.utf8.count <= 128 * 1024 else { return }
+    try saves.keyboardWrite { db in
+      try db.run("INSERT INTO keyboard_search_cache(query,payload,updated_at) VALUES(?,?,?) ON CONFLICT(query) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at") {
+        try $0.bind(1, query); try $0.bind(2, payload); try $0.bind(3, date: Date())
+      }
+      try db.run("DELETE FROM keyboard_search_cache WHERE query NOT IN (SELECT query FROM keyboard_search_cache ORDER BY updated_at DESC LIMIT 20)")
+    }
+  }
   public func fileURL(for shortcut: KeyboardShortcut) -> URL? {
     guard let path = shortcut.relativePath, path.hasPrefix("KeyboardMedia/"), !path.contains(".."),
       let container

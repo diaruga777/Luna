@@ -314,3 +314,60 @@ extension KeyboardTests {
     XCTAssertEqual(board.firstAlternative(for: "a"), "@")
   }
 }
+
+extension KeyboardTests {
+  func testLookupOnlyAndCosmeticShortcuts() throws {
+    try store.save(.init(keywords: ["quiet"], text: "secret phrase", suggestWhileTyping: false))
+    try store.save(.init(keywords: ["shrug"], text: "¯\\_(ツ)_/¯", isCosmetic: true))
+    XCTAssertEqual(try store.shortcuts(matching: "quiet").count, 1)
+    XCTAssertTrue(try store.shortcuts(matching: "quiet", forTyping: true).isEmpty)
+    let results = KeyboardPrediction().suggestions(before: "shrug", preferences: .init(), store: store)
+    XCTAssertEqual(results.first?.kind, .shortcut)
+    XCTAssertEqual(results.first?.autoApply, false)
+  }
+  func testPortableShortcutRoundTripWithMediaAndFlags() throws {
+    let source = directory.appendingPathComponent("input.gif")
+    try Data([1, 2, 3]).write(to: source)
+    let entry = KeyboardShortcut(keywords: ["wave"], text: "Wave", kind: "gif", suggestWhileTyping: false, isCosmetic: true)
+    try store.save(entry, importing: source)
+    let saved = try XCTUnwrap(store.shortcuts().first)
+    let archive = try KeyboardShortcutArchive(shortcut: saved, store: store)
+    let file = directory.appendingPathComponent("shared.lunakeyboard")
+    try JSONEncoder().encode(archive).write(to: file)
+    try KeyboardShortcutArchive.read(file).save(to: store)
+    let copies = try store.shortcuts()
+    XCTAssertEqual(copies.count, 2)
+    XCTAssertNotEqual(copies[0].id, copies[1].id)
+    XCTAssertNotEqual(copies[0].relativePath, copies[1].relativePath)
+    XCTAssertTrue(copies.allSatisfy { !$0.suggestWhileTyping && $0.isCosmetic })
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(store.fileURL(for: copies[0]))), Data([1, 2, 3]))
+  }
+  func testCorruptSharedShortcutRejected() throws {
+    let file = directory.appendingPathComponent("bad.lunakeyboard")
+    try Data(#"{"version":99,"keywords":["a"],"text":"bad","kind":"text","suggestWhileTyping":true,"isCosmetic":false}"#.utf8).write(to: file)
+    XCTAssertThrowsError(try KeyboardShortcutArchive.read(file))
+  }
+  func testMissingMediaCanBeRepairedOrRemoved() throws {
+    let source = directory.appendingPathComponent("input.gif")
+    try Data([1]).write(to: source)
+    try store.save(.init(keywords: ["photo"], text: "Photo", kind: "gif"), importing: source)
+    let entry = try XCTUnwrap(store.shortcuts().first)
+    let url = try XCTUnwrap(store.fileURL(for: entry))
+    try FileManager.default.removeItem(at: url)
+    XCTAssertTrue(store.mediaIsMissing(entry))
+    let p = KeyboardPreferences(values: ["autocomplete": "false", "spellcheck": "false"])
+    XCTAssertFalse(KeyboardPrediction().suggestions(before: "photo", preferences: p, store: store).contains { $0.kind == .media })
+    try store.save(entry, importing: source)
+    let repaired = try XCTUnwrap(store.shortcuts().first)
+    XCTAssertFalse(store.mediaIsMissing(repaired))
+    try FileManager.default.removeItem(at: XCTUnwrap(store.fileURL(for: repaired)))
+    XCTAssertEqual(try store.removeMissingMedia(), 1)
+    XCTAssertTrue(try store.shortcuts().isEmpty)
+  }
+  func testSearchCacheExpiresAndHasBoundedEntries() throws {
+    for i in 0..<25 { try store.cacheMediaSearch("query\(i)", payload: "[]") }
+    XCTAssertNil(try store.cachedMediaSearch("query0"))
+    XCTAssertEqual(try store.cachedMediaSearch("query24"), "[]")
+    XCTAssertNil(try store.cachedMediaSearch("query24", maxAge: -1))
+  }
+}

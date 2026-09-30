@@ -35,7 +35,9 @@ public struct KeyboardShortcutArchive: Codable {
       !result.text.isEmpty, result.text.count <= 16000, !result.keywords.isEmpty,
       result.keywords.count <= 100, result.keywords.allSatisfy({ !$0.isEmpty && $0.count <= 256 }),
       (result.media?.count ?? 0) <= 8 * 1024 * 1024 else { throw CocoaError(.fileReadCorruptFile) }
-    if result.kind != "text" {
+    if result.kind == "text" {
+      guard result.media == nil, result.mediaExtension == nil else { throw CocoaError(.fileReadCorruptFile) }
+    } else {
       guard result.media != nil, ["png", "jpg", "jpeg", "gif", "heic", "webp"].contains(result.mediaExtension ?? "")
       else { throw CocoaError(.fileReadCorruptFile) }
     }

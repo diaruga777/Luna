@@ -129,6 +129,8 @@ public final class KeyboardStore {
     var relative: String? = shortcut.relativePath
     var copied: URL?
     if let source {
+      guard (try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 8 * 1024 * 1024
+      else { throw CocoaError(.fileReadTooLarge) }
       let directory = container.appendingPathComponent("KeyboardMedia", isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       let ext = source.pathExtension.lowercased()

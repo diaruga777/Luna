@@ -14,6 +14,7 @@
 		0E364F037900DFE8EE05D301 /* MusicForegroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EC366961D0DDCA274FF600 /* MusicForegroundTests.swift */; };
 		1035975DE5BA12AD4041AB68 /* LunaVaultMacPeer in Frameworks */ = {isa = PBXBuildFile; productRef = 2AE6B0FB3D19E5D48DF97533 /* LunaVaultMacPeer */; };
 		1090D4F7EBA5D174EF0AB0E9 /* LaunchPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB76A6ED9BF11562981FC803 /* LaunchPerformanceTests.swift */; };
+		13EB79D6051BD6FB8560A610 /* KeyboardHomeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA948151DC749DBE99D8C2A7 /* KeyboardHomeController.swift */; };
 		15C9B45A3E78445980FFF42E /* VaultSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */; };
 		16CDCA5D67AE1A17858F0FD4 /* LunaMusicKit in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 1D3B744686E24603C334E243 /* LunaMusicKit */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		17D5FE6EC29B660966A3228D /* LunaWriterEditor in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000016 /* LunaWriterEditor */; };
@@ -24,6 +25,7 @@
 		21A50219B927800768D78660 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		258AE1AFA80892591C7B2849 /* MusicControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED88FFD5482D03E424F7D149 /* MusicControlIntents.swift */; };
 		276A0B6AAB63C0A1C9B3A8E5 /* LunaMusicKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D3B744686E24603C334E243 /* LunaMusicKit */; };
+		2D5A4C222C00E7537CAC5CAC /* KeyboardTryoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C68A6BFC4C2D194AC31E27 /* KeyboardTryoutController.swift */; };
 		2D98AFF43DA1A898FDBA3325 /* LunaSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2E0606129D1F018397CE5875 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		2FCEEE0E754F48AEF869D38D /* LunaDownloaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9B829B800C039DF421D27266 /* LunaDownloaderKit */; };
@@ -31,11 +33,13 @@
 		37DF3A722475ECA29774A6C2 /* LunaKit in Frameworks */ = {isa = PBXBuildFile; productRef = BDABD95163ABBB5F515E81B7 /* LunaKit */; };
 		3BC736AD047C058356A991EF /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		3BD4B7FF6D1D7A6697072D3B /* MusicCarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F39CBC1578D474BE0097ADC3 /* MusicCarPlaySceneDelegate.swift */; };
+		3D66E035BBD6D1B51B8B048D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 388343A72275F965587F465B /* AppDelegate.swift */; };
 		3EFF1B92B5A10E6FCCAC0E16 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C1 /* LunaVaultTailscale */; };
 		3F7F3136F480965FB7A218AE /* LunaVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 03209A3839713E5B2151D087 /* LunaVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4142DF31BCC07DF42F077D2C /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		41F9B3D2649287666761B8DF /* LunaWriterStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000014 /* LunaWriterStorage */; };
 		427AFF7133679C5D90475470 /* LunaMusicKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D3B744686E24603C334E243 /* LunaMusicKit */; };
+		42BF70C01E5E45F82042F3C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4DBDC5123246D26C00187E9A /* Assets.xcassets */; };
 		4663BAD84A2B1B18249DE3D3 /* VaultConnectedWiring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 133CAEF0DAC38FA08C8812D9 /* VaultConnectedWiring.swift */; };
 		48EF776FCFF8EEF269195133 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C2 /* LunaVaultTailscale */; };
 		4B7C9CBB600CABB1A3F8A356 /* LunaWriterText in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000013 /* LunaWriterText */; };
@@ -46,13 +50,17 @@
 		4C1000000000000000000004 /* LunaVaultSync in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000014 /* LunaVaultSync */; };
 		4C1000000000000000000005 /* LunaVaultSearch in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000015 /* LunaVaultSearch */; };
 		4C1000000000000000000006 /* LunaVaultSetup in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000016 /* LunaVaultSetup */; };
+		4E956AC5D4BABEF9C0266685 /* KeyboardPreferencesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B38A5A10C7268574C091A8 /* KeyboardPreferencesController.swift */; };
 		4F79C2BC707D182410347251 /* LunaPriceTrackerShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E34729A9C0FBABDE05C923C3 /* LunaPriceTrackerShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		51B6B2D5D43F2B4C0B2096FB /* LunaDownloaderSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB94D412ABEBAB217EB72608 /* LunaDownloaderSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		51C0D35A23BA17C0C5708DE9 /* LunaKeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = F30021B489EEC5A84775B78F /* LunaKeyboardKit */; };
 		522414A3F6234C76954EC310 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5C570000000000000000001A /* LunaModels */; };
 		527DF44F71A8EC837036E840 /* MusicActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD9C5C572546B8D3BF4625A /* MusicActivityAttributes.swift */; };
+		55AAE76265B6C2DF3EB6038D /* LunaKeyboardKit in Embed Frameworks */ = {isa = PBXBuildFile; productRef = F30021B489EEC5A84775B78F /* LunaKeyboardKit */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		5797E264941DA0861AD0C231 /* KindWiring+Vault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */; };
 		5951A172E608045346475C6D /* LunaDownloaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 95592CF9D1C7686E5B67FDAA /* LunaDownloaderKit */; };
 		59D99347D691E19DABADECE7 /* LunaReaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 40AE6DDE8BA438A86926A6E6 /* LunaReaderKit */; };
+		59E1AE305275AE8E1E31CBA7 /* KeyboardTableController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62442E29D1E601BD6D0B8F64 /* KeyboardTableController.swift */; };
 		5A80AAAB158C791FD6810795 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 29F14A58F74AD046A0000536 /* Assets.xcassets */; };
 		5AA9C073279AA1EC7BF08501 /* VaultTestKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA3816329641750C54CDDCBC /* VaultTestKit */; };
 		5C5700000000000000000021 /* LunaGaze in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000011 /* LunaGaze */; };
@@ -73,6 +81,7 @@
 		67D4C5B16C25808134D16A2E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22DB1BEDC1002F12193CB04F /* Foundation.framework */; };
 		6A478E3BCBFFB9DB678B80DA /* MusicQueueSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74CD6EE98F165406B6FB1A7D /* MusicQueueSnapshotTests.swift */; };
 		6BD155B7BD7DEF85EF40FC2E /* LunaVaultMac in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0000000000000000000002 /* LunaVaultMac */; };
+		6FEA8DD79862977038F927E8 /* KeyboardLanguagesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46DFFEC14EB21148FD191F3 /* KeyboardLanguagesController.swift */; };
 		720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = AF2F0183AA25D456A5323A04 /* LunaVaultUI */; };
 		732AF64462E98D911E23F8AA /* VaultConnectedPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF4B9FD1E144B1F942AFC45 /* VaultConnectedPairingTests.swift */; };
 		78F8CA2D8D526E87CFADAF26 /* LunaDownloaderAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3B0961D49B070035B3E0FD1 /* LunaDownloaderAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -83,6 +92,7 @@
 		7AAE22CEE7CAE3CA2D9CBEE5 /* LunaWriterModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000012 /* LunaWriterModels */; };
 		7FDF28174BC2EEE3792B0C41 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		8303A4312137B53868D93591 /* LunaMusicWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40CA8E8A0227E7A33DD6B6FD /* LunaMusicWidgets.swift */; };
+		86C8A7F05BC4B523AD06CF2B /* LunaKeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = F30021B489EEC5A84775B78F /* LunaKeyboardKit */; };
 		87F1A6430D0543F2EC6EA1D6 /* MusicSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A547025C57FFBE1A744CA00A /* MusicSceneDelegate.swift */; };
 		8D980F4255F624165969EED7 /* LunaPriceTrackerKit in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 0AF70D4C396AA310D4155D2C /* LunaPriceTrackerKit */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		8E3FD3469C1ECDF7A2D75DE7 /* LunaDownloaderLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DCB0B589CD5F645564BBD14 /* LunaDownloaderLiveActivityWidget.swift */; };
@@ -95,14 +105,19 @@
 		9F90A5BF3BC669C7F06F7B88 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000019 /* LunaDesignSystem */; };
 		A23391B1FBB3B047A8791833 /* LunaMusicWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0720FC508ED4A905749EBF51 /* LunaMusicWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A5189E94CA8DCC97591BC9C9 /* LunaDownloaderShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A6D81D66F0C930BC84308C83 /* KeyboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8DA89BB9EE0E210FEDE607A /* KeyboardTests.swift */; };
 		A873135AAE02566C6ED7D3CD /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		AA0100000000000000000001 /* LunaReaderSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* LunaReaderSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000003 /* LunaReaderShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* LunaReaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AC6B88817AF63B654ECFFF03 /* LunaKeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = F30021B489EEC5A84775B78F /* LunaKeyboardKit */; };
 		ACE9FA813DF9E38DBF3D16FD /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
+		AE94378D77E8A3EBBD3AC797 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414F90EC8ADE4B67C6804138 /* KeyboardViewController.swift */; };
 		AED348B7C3D48C1C9602EAF4 /* LunaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 13DEE2A88425ECF9503F1EF9 /* LunaKit */; };
 		B028B1CB47A4A8FE950FED3D /* MusicActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD9C5C572546B8D3BF4625A /* MusicActivityAttributes.swift */; };
 		B2C9795DA5B653422286D54C /* LunaVaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = AF2F0183AA25D456A5323A04 /* LunaVaultUI */; };
 		B469D4B71F54E117796103A7 /* LunaGaze in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000011 /* LunaGaze */; };
+		B7D4D809D79EEEBDF3917CFD /* LunaKeyboardExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 792607BC9C838F5A24AFF73A /* LunaKeyboardExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		BB0871C494FB5482159BEA16 /* KeyboardDictionaryController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69AF455E9C5227EF4F09A5AB /* KeyboardDictionaryController.swift */; };
 		BC73C93AA28D53F0F80B6533 /* LunaDownloaderKit in Frameworks */ = {isa = PBXBuildFile; productRef = FBD9A9848E7F387881CB8519 /* LunaDownloaderKit */; };
 		BEF3A839BE0590558E350922 /* LunaVaultSearch in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000015 /* LunaVaultSearch */; };
 		C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746380049BFBCA632316E778 /* VaultShareViewController.swift */; };
@@ -143,6 +158,7 @@
 		F85EEE55415883E924E2B7F0 /* LunaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32A235C0C77E05B550B9849D /* LunaKit */; };
 		F87CA3D2CEE13AD893C48665 /* MusicControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED88FFD5482D03E424F7D149 /* MusicControlIntents.swift */; };
 		F93AB620C2214228B585BCF9 /* LunaWriterReadAlong in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000017 /* LunaWriterReadAlong */; };
+		FB950E259D3BCCE8086784D0 /* KeyboardShortcutsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9902E4E5BD4291F7145229C2 /* KeyboardShortcutsController.swift */; };
 		FDAADF201763CAFF39798A60 /* LunaPriceTrackerAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3C0179E7326B416352FD04AE /* LunaPriceTrackerAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FE32AC608EC551DA7216DB1A /* LunaPriceTrackerSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FFE7ACC143D51759C89110F9 /* LunaPriceTrackerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 68FB1B77C1B3144B9580CD16 /* LunaPriceTrackerKit */; };
@@ -163,6 +179,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 96905778435E3C7F63FA5E07;
 			remoteInfo = LunaDownloaderShare;
+		};
+		2501843FF28B3A74CD49E6FC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D7CA72A0B5CDB82D3301E03F;
+			remoteInfo = LunaKeyboard;
 		};
 		2B09AB1589E4BC6D99F07912 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -205,6 +228,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 5C570000000000000000AA01;
 			remoteInfo = LunaWriter;
+		};
+		673006ED86E4A1AAAD01F091 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 91FC136BD709CC2AD4149ACD;
+			remoteInfo = LunaKeyboardExtension;
 		};
 		6733E376D16F3E63B8CEC461 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -356,6 +386,28 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4F9D11A2896EA4C5C7A540C6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B7D4D809D79EEEBDF3917CFD /* LunaKeyboardExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		56B4E65D05E3914DC74AEF19 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				55AAE76265B6C2DF3EB6038D /* LunaKeyboardKit in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7073B85B8CEB9BEDFF550419 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -461,6 +513,7 @@
 		0720FC508ED4A905749EBF51 /* LunaMusicWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaMusicWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0DC010933954C5745AAD543D /* LunaMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		133CAEF0DAC38FA08C8812D9 /* VaultConnectedWiring.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultConnectedWiring.swift; sourceTree = "<group>"; };
+		17B38A5A10C7268574C091A8 /* KeyboardPreferencesController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardPreferencesController.swift; sourceTree = "<group>"; };
 		17C57D675E0712054ACE6584 /* LunaPriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaPriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1AF4B9FD1E144B1F942AFC45 /* VaultConnectedPairingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultConnectedPairingTests.swift; sourceTree = "<group>"; };
 		1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "KindWiring+Vault.swift"; sourceTree = "<group>"; };
@@ -473,19 +526,26 @@
 		3003C6B47040D86EA7FDF019 /* LunaVaultTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaVaultTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		321A524CE357583A60D01100 /* LunaShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultAppDelegate.swift; sourceTree = "<group>"; };
+		388343A72275F965587F465B /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		3C0179E7326B416352FD04AE /* LunaPriceTrackerAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		40CA8E8A0227E7A33DD6B6FD /* LunaMusicWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LunaMusicWidgets.swift; sourceTree = "<group>"; };
+		414F90EC8ADE4B67C6804138 /* KeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		4DBDC5123246D26C00187E9A /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = LunaKeyboard/Assets.xcassets; sourceTree = "<group>"; };
 		558A27BF87F234F8DF5CAB1A /* LunaMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C57000000000000000000BA /* LunaWriterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaWriterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C57000000000000000000BC /* WriterFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriterFlowUITests.swift; sourceTree = "<group>"; };
 		5C570000000000000000AA02 /* LunaWriter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaWriter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		62442E29D1E601BD6D0B8F64 /* KeyboardTableController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardTableController.swift; sourceTree = "<group>"; };
 		644462699E3679C7B4128524 /* LunaLaunchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaLaunchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		69AF455E9C5227EF4F09A5AB /* KeyboardDictionaryController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardDictionaryController.swift; sourceTree = "<group>"; };
 		6C4F85534CCAA1A696A83832 /* MusicSystemIntegration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicSystemIntegration.swift; path = Integrations/MusicSystemIntegration.swift; sourceTree = "<group>"; };
 		70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		746380049BFBCA632316E778 /* VaultShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultShareViewController.swift; sourceTree = "<group>"; };
 		74B0259E128466C14EF8AA28 /* MusicAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicAppIntents.swift; path = Integrations/MusicAppIntents.swift; sourceTree = "<group>"; };
 		74CD6EE98F165406B6FB1A7D /* MusicQueueSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicQueueSnapshotTests.swift; sourceTree = "<group>"; };
+		779796B9295EA073B753939F /* LunaKeyboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaKeyboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		792607BC9C838F5A24AFF73A /* LunaKeyboardExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaKeyboardExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		7C6B19F2E508AE162AD00073 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = LunaMusic/Assets.xcassets; sourceTree = "<group>"; };
@@ -493,15 +553,19 @@
 		87D85E90CBCD9CC02CBB18D9 /* LunaVaultConnectionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaVaultConnectionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		889D6F24F2D1C20E6A73A72D /* MusicLaunchRouteTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicLaunchRouteTests.swift; sourceTree = "<group>"; };
 		8CFBE7B0FE2FDF0DD3C246B2 /* LunaDownloaderLiveActivityBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LunaDownloaderLiveActivityBundle.swift; path = LunaDownloaderLiveActivity/LunaDownloaderLiveActivityBundle.swift; sourceTree = "<group>"; };
+		96C68A6BFC4C2D194AC31E27 /* KeyboardTryoutController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardTryoutController.swift; sourceTree = "<group>"; };
+		9902E4E5BD4291F7145229C2 /* KeyboardShortcutsController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutsController.swift; sourceTree = "<group>"; };
 		9CD9C5C572546B8D3BF4625A /* MusicActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicActivityAttributes.swift; sourceTree = "<group>"; };
 		9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultSceneDelegate.swift; sourceTree = "<group>"; };
 		A547025C57FFBE1A744CA00A /* MusicSceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicSceneDelegate.swift; sourceTree = "<group>"; };
 		A57870A0D223D2CB75BC7281 /* Luna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luna.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A8DA89BB9EE0E210FEDE607A /* KeyboardTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardTests.swift; sourceTree = "<group>"; };
 		A9EC366961D0DDCA274FF600 /* MusicForegroundTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicForegroundTests.swift; sourceTree = "<group>"; };
 		AA0200000000000000000001 /* LunaReader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* LunaReaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000003 /* LunaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000004 /* LunaReaderShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B46DFFEC14EB21148FD191F3 /* KeyboardLanguagesController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardLanguagesController.swift; sourceTree = "<group>"; };
 		B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB6AF54C76F1BE6A11E2A551 /* LunaMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB94D412ABEBAB217EB72608 /* LunaDownloaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -510,6 +574,7 @@
 		E13583D77605D977B0A8FDD3 /* LunaDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E34729A9C0FBABDE05C923C3 /* LunaPriceTrackerShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E459B44FC08543F90F313429 /* MusicAppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicAppDelegate.swift; sourceTree = "<group>"; };
+		EA948151DC749DBE99D8C2A7 /* KeyboardHomeController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardHomeController.swift; sourceTree = "<group>"; };
 		EB76A6ED9BF11562981FC803 /* LaunchPerformanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchPerformanceTests.swift; sourceTree = "<group>"; };
 		ED88FFD5482D03E424F7D149 /* MusicControlIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicControlIntents.swift; sourceTree = "<group>"; };
 		F10C825E0000000000000003 /* VaultIncomingQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultIncomingQueue.swift; sourceTree = "<group>"; };
@@ -518,6 +583,7 @@
 		F39CBC1578D474BE0097ADC3 /* MusicCarPlaySceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicCarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		F70000000000000000000000 /* SharedIconAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = SharedIconAssets.xcassets; sourceTree = "<group>"; };
 		FB2058296382A195E386F5C8 /* LunaReaderLaunchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaReaderLaunchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB9905F9A0D497FECE90F903 /* LunaKeyboardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaKeyboardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF703AF04B63ED294953F60F /* LunaVault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		LDLA0000000000000000002 /* LunaDownloaderLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		QZ00000000000000000001 /* Luna.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Luna.xcconfig; path = Config/Luna.xcconfig; sourceTree = "<group>"; };
@@ -1079,6 +1145,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		74622F2C976C03CA56587ED6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86C8A7F05BC4B523AD06CF2B /* LunaKeyboardKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79583DF92FE0BAD100C775CA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1205,6 +1279,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E177777223DC7419E13F3F3C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AC6B88817AF63B654ECFFF03 /* LunaKeyboardKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E8A1C231FD34FAB9D3079585 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1231,6 +1313,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				AED348B7C3D48C1C9602EAF4 /* LunaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FBC0A94CA9B642FAAD1609DC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				51C0D35A23BA17C0C5708DE9 /* LunaKeyboardKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1270,6 +1360,15 @@
 			);
 			name = LunaVaultConnectionTests;
 			path = LunaVaultConnectionTests;
+			sourceTree = "<group>";
+		};
+		5ACFEEADA90C34E3EC5EDB44 /* LunaKeyboardExtension */ = {
+			isa = PBXGroup;
+			children = (
+				414F90EC8ADE4B67C6804138 /* KeyboardViewController.swift */,
+			);
+			name = LunaKeyboardExtension;
+			path = LunaKeyboardExtension;
 			sourceTree = "<group>";
 		};
 		5C57000000000000000000BB /* LunaWriterUITests */ = {
@@ -1361,6 +1460,10 @@
 				644BF23FB632F152B0695C0E /* LunaMusicTests */,
 				FA8F8B0A96D2F9672D072576 /* LunaMusicUITests */,
 				7C6B19F2E508AE162AD00073 /* Assets.xcassets */,
+				C513AECE1F804839B26B1604 /* LunaKeyboard */,
+				5ACFEEADA90C34E3EC5EDB44 /* LunaKeyboardExtension */,
+				B292E99EC6F65ABE0EFE72A6 /* LunaKeyboardTests */,
+				4DBDC5123246D26C00187E9A /* Assets.xcassets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1399,8 +1502,36 @@
 				0720FC508ED4A905749EBF51 /* LunaMusicWidgets.appex */,
 				558A27BF87F234F8DF5CAB1A /* LunaMusicTests.xctest */,
 				0DC010933954C5745AAD543D /* LunaMusicUITests.xctest */,
+				779796B9295EA073B753939F /* LunaKeyboard.app */,
+				792607BC9C838F5A24AFF73A /* LunaKeyboardExtension.appex */,
+				FB9905F9A0D497FECE90F903 /* LunaKeyboardTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B292E99EC6F65ABE0EFE72A6 /* LunaKeyboardTests */ = {
+			isa = PBXGroup;
+			children = (
+				A8DA89BB9EE0E210FEDE607A /* KeyboardTests.swift */,
+			);
+			name = LunaKeyboardTests;
+			path = LunaKeyboardTests;
+			sourceTree = "<group>";
+		};
+		C513AECE1F804839B26B1604 /* LunaKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				388343A72275F965587F465B /* AppDelegate.swift */,
+				69AF455E9C5227EF4F09A5AB /* KeyboardDictionaryController.swift */,
+				EA948151DC749DBE99D8C2A7 /* KeyboardHomeController.swift */,
+				B46DFFEC14EB21148FD191F3 /* KeyboardLanguagesController.swift */,
+				17B38A5A10C7268574C091A8 /* KeyboardPreferencesController.swift */,
+				9902E4E5BD4291F7145229C2 /* KeyboardShortcutsController.swift */,
+				62442E29D1E601BD6D0B8F64 /* KeyboardTableController.swift */,
+				96C68A6BFC4C2D194AC31E27 /* KeyboardTryoutController.swift */,
+			);
+			name = LunaKeyboard;
+			path = LunaKeyboard;
 			sourceTree = "<group>";
 		};
 		C9AB4EE4BCCB87307D89635E /* LunaVault */ = {
@@ -1594,6 +1725,29 @@
 			productName = LunaSafari;
 			productReference = 70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		4E4FA77C2AB6DBA1EBC394C7 /* LunaKeyboardTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 94175FEA237920ED83C18E69 /* Build configuration list for PBXNativeTarget "LunaKeyboardTests" */;
+			buildPhases = (
+				E88EDC7841C66131A8069E89 /* Sources */,
+				E177777223DC7419E13F3F3C /* Frameworks */,
+				BB26199223786192F70CB874 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6C7C84CD9267C73D4F891575 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = LunaKeyboardTests;
+			packageProductDependencies = (
+				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
+			);
+			productName = LunaKeyboardTests;
+			productReference = FB9905F9A0D497FECE90F903 /* LunaKeyboardTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		5C57000000000000000000B1 /* LunaWriterUITests */ = {
 			isa = PBXNativeTarget;
@@ -1881,6 +2035,28 @@
 			);
 			productName = LunaPriceTrackerSafari;
 			productReference = 7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		91FC136BD709CC2AD4149ACD /* LunaKeyboardExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A59C85585B35F1EDC032DD60 /* Build configuration list for PBXNativeTarget "LunaKeyboardExtension" */;
+			buildPhases = (
+				C15EEFC4056F67DFF8143A38 /* Sources */,
+				FBC0A94CA9B642FAAD1609DC /* Frameworks */,
+				9E855613CFBBB330D680BBAF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = LunaKeyboardExtension;
+			packageProductDependencies = (
+				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
+			);
+			productName = LunaKeyboardExtension;
+			productReference = 792607BC9C838F5A24AFF73A /* LunaKeyboardExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		96905778435E3C7F63FA5E07 /* LunaDownloaderShare */ = {
@@ -2175,6 +2351,32 @@
 			productReference = FB2058296382A195E386F5C8 /* LunaReaderLaunchTests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		D7CA72A0B5CDB82D3301E03F /* LunaKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 608EC1477509BE58FF10BC6F /* Build configuration list for PBXNativeTarget "LunaKeyboard" */;
+			buildPhases = (
+				7637EEE75506FB0D20EA2AAF /* Sources */,
+				74622F2C976C03CA56587ED6 /* Frameworks */,
+				8F455DC431383734BEF004B8 /* Resources */,
+				56B4E65D05E3914DC74AEF19 /* Embed Frameworks */,
+				4F9D11A2896EA4C5C7A540C6 /* Embed Foundation Extensions */,
+				BF659EB65BD02E80F3C5A5CC /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FF8673C362493AE635C21E41 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = LunaKeyboard;
+			packageProductDependencies = (
+				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
+			);
+			productName = LunaKeyboard;
+			productReference = 779796B9295EA073B753939F /* LunaKeyboard.app */;
+			productType = "com.apple.product-type.application";
+		};
 		F25D6A2C6A63EAD849DD9F4F /* LunaMusicWidgets */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 25ED20BCDA16FED688B08243 /* Build configuration list for PBXNativeTarget "LunaMusicWidgets" */;
@@ -2258,6 +2460,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					4E4FA77C2AB6DBA1EBC394C7 = {
+						TestTargetID = D7CA72A0B5CDB82D3301E03F;
+					};
 					5C57000000000000000000B1 = {
 						CreatedOnToolsVersion = 16.2;
 						DevelopmentTeam = MM5QBNLXR6;
@@ -2351,6 +2556,9 @@
 				F25D6A2C6A63EAD849DD9F4F /* LunaMusicWidgets */,
 				8C45059E4307D7E17BDE42B5 /* LunaMusicTests */,
 				9A9A61A66FCA7CE6A9652AD6 /* LunaMusicUITests */,
+				D7CA72A0B5CDB82D3301E03F /* LunaKeyboard */,
+				91FC136BD709CC2AD4149ACD /* LunaKeyboardExtension */,
+				4E4FA77C2AB6DBA1EBC394C7 /* LunaKeyboardTests */,
 			);
 		};
 /* End PBXProject section */
@@ -2513,7 +2721,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8F455DC431383734BEF004B8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42BF70C01E5E45F82042F3C7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		93E6686C80B8A13755E7FB6E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E855613CFBBB330D680BBAF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -2575,6 +2798,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				21A50219B927800768D78660 /* SharedIconAssets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB26199223786192F70CB874 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2723,6 +2953,25 @@
 			inputPaths = (
 			);
 			name = "Re-sign embedded extensions (debug)";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		BF659EB65BD02E80F3C5A5CC /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -3097,6 +3346,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7637EEE75506FB0D20EA2AAF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3D66E035BBD6D1B51B8B048D /* AppDelegate.swift in Sources */,
+				BB0871C494FB5482159BEA16 /* KeyboardDictionaryController.swift in Sources */,
+				13EB79D6051BD6FB8560A610 /* KeyboardHomeController.swift in Sources */,
+				6FEA8DD79862977038F927E8 /* KeyboardLanguagesController.swift in Sources */,
+				4E956AC5D4BABEF9C0266685 /* KeyboardPreferencesController.swift in Sources */,
+				FB950E259D3BCCE8086784D0 /* KeyboardShortcutsController.swift in Sources */,
+				59E1AE305275AE8E1E31CBA7 /* KeyboardTableController.swift in Sources */,
+				2D5A4C222C00E7537CAC5CAC /* KeyboardTryoutController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79583DF82FE0BAD100C775CA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -3177,6 +3441,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C15EEFC4056F67DFF8143A38 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE94378D77E8A3EBBD3AC797 /* KeyboardViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E88EDC7841C66131A8069E89 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A6D81D66F0C930BC84308C83 /* KeyboardTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		LDLA0000000000000000009 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -3240,6 +3520,12 @@
 			name = LunaWriter;
 			target = 5C570000000000000000AA01 /* LunaWriter */;
 			targetProxy = 5C57000000000000000000B9 /* PBXContainerItemProxy */;
+		};
+		6C7C84CD9267C73D4F891575 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunaKeyboard;
+			target = D7CA72A0B5CDB82D3301E03F /* LunaKeyboard */;
+			targetProxy = 2501843FF28B3A74CD49E6FC /* PBXContainerItemProxy */;
 		};
 		6E64EDCBBC2206AEBBE8ACAA /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -3321,6 +3607,12 @@
 			name = LunaAction;
 			target = 892513B3F00DED1B930AD2AE /* LunaAction */;
 			targetProxy = D4EB256BD6383A0A4197B512 /* PBXContainerItemProxy */;
+		};
+		FF8673C362493AE635C21E41 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunaKeyboardExtension;
+			target = 91FC136BD709CC2AD4149ACD /* LunaKeyboardExtension */;
+			targetProxy = 673006ED86E4A1AAAD01F091 /* PBXContainerItemProxy */;
 		};
 		LDLA0000000000000000006 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -3768,6 +4060,39 @@
 			};
 			name = Release;
 		};
+		4A643D64D28EA3BAD29A21A4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconKeyboard;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaKeyboard/LunaKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaKeyboard/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Keyboard";
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		5034FB2E94978B3F04C41F5C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -3857,6 +4182,34 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		526A5F82A67C16148B33991B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LunaKeyboard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LunaKeyboard";
 			};
 			name = Debug;
 		};
@@ -4207,6 +4560,38 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		71B220751F85C8D8AE2DB48F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaKeyboardExtension/LunaKeyboardExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaKeyboardExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Keyboard";
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard.extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
 		};
 		79583E0C2FE0BAD200C775CA /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -4953,6 +5338,66 @@
 			};
 			name = Release;
 		};
+		AE09EBCE804A937AE9B99995 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LunaKeyboard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LunaKeyboard";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AFABE13BADAC14FBD5E8BCD2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaKeyboardExtension/LunaKeyboardExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaKeyboardExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Keyboard";
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard.extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		B5440A428C307FFCD5228E1F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -5055,6 +5500,38 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BE89FF276CE38FD0BB5E1239 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconKeyboard;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaKeyboard/LunaKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaKeyboard/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Keyboard";
+				INFOPLIST_KEY_UIBackgroundModes = "";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).keyboard";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -5479,6 +5956,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		608EC1477509BE58FF10BC6F /* Build configuration list for PBXNativeTarget "LunaKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A643D64D28EA3BAD29A21A4 /* Release */,
+				BE89FF276CE38FD0BB5E1239 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		65CC8E353E396283FCEE0898 /* Build configuration list for PBXNativeTarget "LunaPriceTracker" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -5538,6 +6024,24 @@
 			buildConfigurations = (
 				5034FB2E94978B3F04C41F5C /* Debug */,
 				35ADED14E097DC33B9F69C7F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		94175FEA237920ED83C18E69 /* Build configuration list for PBXNativeTarget "LunaKeyboardTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE09EBCE804A937AE9B99995 /* Release */,
+				526A5F82A67C16148B33991B /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A59C85585B35F1EDC032DD60 /* Build configuration list for PBXNativeTarget "LunaKeyboardExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				71B220751F85C8D8AE2DB48F /* Release */,
+				AFABE13BADAC14FBD5E8BCD2 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -5915,6 +6419,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaReaderKit;
+		};
+		F30021B489EEC5A84775B78F /* LunaKeyboardKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaKeyboardKit;
 		};
 		FBD9A9848E7F387881CB8519 /* LunaDownloaderKit */ = {
 			isa = XCSwiftPackageProductDependency;

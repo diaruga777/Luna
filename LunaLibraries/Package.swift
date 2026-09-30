@@ -11,6 +11,7 @@ let package = Package(
     // a `swift build` on the Mac still compiles the Foundation-only tiers.
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
+        .library(name: "LunaKeyboardKit", type: .dynamic, targets: ["LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig"]),
         .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI"]),
         // MARK: - Per-app kits
         //
@@ -145,6 +146,8 @@ let package = Package(
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
     ],
     targets: [
+        .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
+        .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicCore"),
         .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore"]),
         // Single source of truth for the shared App Group / iCloud container ids,

@@ -14,11 +14,16 @@ final class KeyboardPreferencesController: KeyboardTableController {
     tableView.reloadData()
   }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    KeyboardPreferences.toggles.count
+    KeyboardPreferences.toggles.count + 1
   }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath)
     -> UITableViewCell
   {
+    if indexPath.row == KeyboardPreferences.toggles.count {
+      let c = cell("Theme", detail: KeyboardPreferences(values: values).theme.rawValue)
+      c.accessoryType = .disclosureIndicator
+      return c
+    }
     let setting = KeyboardPreferences.toggles[indexPath.row]
     let c = cell(setting.1)
     let toggle = UISwitch()
@@ -37,5 +42,21 @@ final class KeyboardPreferencesController: KeyboardTableController {
     c.accessoryView = toggle
     c.selectionStyle = .none
     return c
+  }
+  override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    guard indexPath.row == KeyboardPreferences.toggles.count else { return }
+    let menu = UIAlertController(title: "Keyboard Theme", message: nil, preferredStyle: .actionSheet)
+    for theme in KeyboardTheme.allCases {
+      menu.addAction(UIAlertAction(title: theme.rawValue, style: .default) { [weak self] _ in
+        guard let self else { return }
+        do {
+          try self.store.setPreference("theme", value: theme.rawValue)
+          self.values["theme"] = theme.rawValue; self.tableView.reloadData()
+        } catch { self.failure(error) }
+      })
+    }
+    menu.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    menu.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath)
+    present(menu, animated: true)
   }
 }

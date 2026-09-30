@@ -371,3 +371,66 @@ extension KeyboardTests {
     XCTAssertNil(try store.cachedMediaSearch("query24", maxAge: -1))
   }
 }
+
+extension KeyboardTests {
+  @MainActor func testDisplacedAutomaticCapitalizationAndPreservedManualCapitalization() {
+    let s = KeyboardSurface()
+    var text = ""
+    var cursor = 0
+    s.before = { String(text.prefix(cursor)) }
+    s.after = { String(text.dropFirst(cursor)) }
+    s.insert = { value in text.insert(contentsOf: value, at: text.index(text.startIndex, offsetBy: cursor)); cursor += value.count }
+    s.delete = { if cursor > 0 { cursor -= 1; text.remove(at: text.index(text.startIndex, offsetBy: cursor)) } }
+    s.moveCursor = { cursor = max(0, min(text.count, cursor + $0)) }
+    s.preferences = .init(values: ["sound": "false", "autocorrect": "false"])
+    s.refresh()
+    for key in ["h", "e", "l", "l", "o"] { s.key(key) }
+    XCTAssertEqual(text, "Hello")
+    cursor = 0; s.refresh()
+    for key in ["w", "e", "l", "l", " "] { s.key(key) }
+    XCTAssertEqual(text, "Well hello")
+    XCTAssertEqual(cursor, 5)
+    s.releaseMemory()
+  }
+  @MainActor func testThemePreferencesAndEmojiSpeech() throws {
+    try store.setPreference("theme", value: "Ocean")
+    let s = KeyboardSurface(); s.store = store; s.reloadSettings()
+    XCTAssertEqual(s.board.theme, .ocean)
+    let suggestion = KeyboardPrediction().suggestions(before: "shrug", preferences: .init(), store: nil).first { $0.kind == .emoji }
+    XCTAssertFalse(try XCTUnwrap(suggestion).accessibilityLabel.contains("¯"))
+    s.releaseMemory()
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testCorrectionAppliesBeforeKeyboardSend() {
+    let (s, text) = editor()
+    for key in ["t", "e", "h", "return"] { s.key(key) }
+    XCTAssertEqual(text(), "the\n")
+    s.releaseMemory()
+  }
+}
+
+@testable import LunaKeyboard
+
+extension KeyboardTests {
+  @MainActor func testQuestDemonstrationsCompleteAllFourLessons() async throws {
+    let controller = KeyboardTutorialController()
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+    controller.view.layoutIfNeeded()
+    controller.surface.layoutIfNeeded()
+    controller.surface.board.layoutIfNeeded()
+    func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
+    let buttons = descendants(controller.view).compactMap { $0 as? UIButton }
+    let demo = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "keyboard.tutorial.demo" })
+    let next = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "keyboard.tutorial.nextLesson" })
+    for step in 0..<4 {
+      demo.sendActions(for: .touchUpInside)
+      try await Task.sleep(nanoseconds: 2_400_000_000)
+      XCTAssertTrue(next.isEnabled, "Lesson \(step + 1): \(controller.editor.text ?? "")")
+      if step < 3 { next.sendActions(for: .touchUpInside) }
+    }
+    controller.surface.releaseMemory()
+  }
+}

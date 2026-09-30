@@ -25,7 +25,7 @@ final class KeyboardHomeController: KeyboardTableController {
   }
   override func numberOfSections(in tableView: UITableView) -> Int { 2 }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    section == 0 ? 2 : 4
+    section == 0 ? 3 : 4
   }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String?
   { section == 0 ? "GET STARTED" : "MAKE IT YOURS" }
@@ -43,6 +43,7 @@ final class KeyboardHomeController: KeyboardTableController {
       ? [
         ("Set Up Keyboard", "Add Luna Keyboard in Settings", "keyboard"),
         ("Try It Out", "Type, slide, and explore text styles", "text.cursor"),
+        ("Keyboard Quest", "Learn gestures with a knight and dragon", "gamecontroller"),
       ]
       : [
         ("Shortcuts", "Words, emoji, images and GIFs", "text.badge.plus"),
@@ -63,7 +64,7 @@ final class KeyboardHomeController: KeyboardTableController {
     }
     let controller: UIViewController
     if indexPath.section == 0 {
-      controller = KeyboardTryoutController()
+      controller = indexPath.row == 2 ? KeyboardTutorialController() : KeyboardTryoutController()
     } else {
       switch indexPath.row {
       case 0: controller = KeyboardShortcutsController()

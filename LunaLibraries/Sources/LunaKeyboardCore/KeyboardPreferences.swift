@@ -19,6 +19,7 @@ public struct KeyboardPreferences {
   public func enabled(_ key: String) -> Bool {
     values[key].map { $0 == "true" } ?? Self.toggles.first { $0.0 == key }?.2 ?? false
   }
+  public var theme: KeyboardTheme { KeyboardTheme(rawValue: values["theme"] ?? "") ?? .system }
   public var language: String { values["language"] ?? "en" }
   public var secondaryLanguage: String? {
     guard let v = values["secondaryLanguage"], !v.isEmpty else { return nil }
@@ -56,4 +57,8 @@ public enum KeyboardResources {
   public static func url(_ name: String, extension ext: String) -> URL? {
     Bundle.module.url(forResource: name, withExtension: ext)
   }
+}
+
+public enum KeyboardTheme: String, CaseIterable {
+  case system = "System", moonlight = "Moonlight", ocean = "Ocean", highContrast = "High Contrast"
 }

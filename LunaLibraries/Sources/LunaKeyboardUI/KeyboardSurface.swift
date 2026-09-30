@@ -20,7 +20,13 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public var lexicon: [String: String] = [:]
   public var preferences = KeyboardPreferences()
   public let board = KeyboardBoardView()
-  private let prediction = KeyboardPrediction()
+  private var predictionStorage: KeyboardPrediction?
+  private var prediction: KeyboardPrediction {
+    if let predictionStorage { return predictionStorage }
+    let value = KeyboardPrediction()
+    predictionStorage = value
+    return value
+  }
   private let suggestionScroll = UIScrollView()
   private let tools = UIButton(type: .system)
   private var suggestionButtons: [UIButton] = []
@@ -40,6 +46,9 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private let correctionWindow: TimeInterval = 2
   private let countdown = UIView()
   private var editingDepth = 0
+  private var automaticShift = false
+  private var capitalizedWord: String?
+  private var capitalizedWords: [String] = []
   private var dragOriginal: String?
   private var dragAfter = ""
   private var dragRemoved = ""
@@ -92,6 +101,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     board.preview = preferences.enabled("characterPopup")
     board.swipeEnabled = preferences.enabled("swipeTyping")
     board.textStyle = preferences.style
+    board.theme = preferences.theme
     refresh()
   }
   public func refresh() {
@@ -106,8 +116,11 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     timer?.invalidate()
     timer = nil
     board.reset()
-    prediction.releaseMemory()
+    predictionStorage?.releaseMemory()
+    predictionStorage = nil
     clearCorrection()
+    capitalizedWord = nil
+    capitalizedWords = []
     panel?.removeFromSuperview()
     panel = nil
     suggestions = []
@@ -162,9 +175,9 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       b.isHidden = i >= suggestions.count
       if i < suggestions.count {
         b.setTitle(suggestions[i].title, for: .normal)
-        b.accessibilityLabel = suggestions[i].title.styleErased
+        b.accessibilityLabel = suggestions[i].accessibilityLabel
         b.accessibilityIdentifier = "keyboard.suggestion.\(i)"
-      }
+      } else { b.setTitle(nil, for: .normal); b.accessibilityLabel = nil }
       b.tintColor = board.dark ? .white : .black
     }
     layoutSuggestions()
@@ -227,6 +240,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       return
     }
     if value == "shift" {
+      automaticShift = false
       let double = Date().timeIntervalSince(shiftDate) < 0.32
       board.capsLock = double && preferences.enabled("capsLock") && !board.capsLock
       board.uppercase = board.capsLock || !board.uppercase
@@ -265,6 +279,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       return
     }
     if value == " " || value == "return" {
+      rememberCapitalizedWord()
       applyPendingCorrection()
       if value == " ", preferences.enabled("periodShortcut"),
         Date().timeIntervalSince(spaceDate) < 0.4, before().hasSuffix(" "),
@@ -276,6 +291,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       } else {
         let separator = value == "return" ? "\n" : " "
         insert(separator)
+        if value == " " { lowercaseDisplacedSentenceWord() }
         spaceDate = Date()
         if let previous = reversal {
           reversal = previous
@@ -285,6 +301,13 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       if board.page != 0 { board.page = 0 }
     } else {
       var text = board.uppercase ? value.uppercased() : value
+      if text.count == 1, text.first?.isLetter == true {
+        if automaticShift, value.first?.isLowercase == true, board.uppercase, !board.capsLock {
+          capitalizedWord = text
+        } else if let word = capitalizedWord, before().hasSuffix(word) {
+          capitalizedWord = String((word + text).prefix(64))
+        } else { capitalizedWord = nil }
+      } else { rememberCapitalizedWord() }
       if fieldAllowsSmartPunctuation && preferences.enabled("smartPunctuation") {
         text = KeyboardEditing.smartQuote(text, before: before())
         if KeyboardEditing.isClosingPunctuation(text) {
@@ -301,6 +324,28 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     }
     recordEdit()
     refresh()
+  }
+  private func rememberCapitalizedWord() {
+    if let word = capitalizedWord, word.count > 1, !capitalizedWords.contains(word) {
+      capitalizedWords.append(word)
+      capitalizedWords = Array(capitalizedWords.suffix(8))
+    }
+    capitalizedWord = nil
+  }
+  private func lowercaseDisplacedSentenceWord() {
+    guard fieldAllowsCapitalization, preferences.enabled("autoCapitalize"),
+      let word = capitalizedWords.first(where: {
+        after().hasPrefix($0) && after().dropFirst($0.count).first?.isLetter != true
+      }), let first = word.first, String(first).utf16.count == 1,
+      before().dropLast().last?.isLetter == true else { return }
+    // Change only a word this keyboard itself capitalized, in this session.
+    // Names and existing pasted text are never inferred from capitalization alone.
+    moveCursor(1)
+    guard before().last == first else { moveCursor(-1); return }
+    delete()
+    insert(String(first).lowercased())
+    moveCursor(-1)
+    capitalizedWords.removeAll { $0 == word }
   }
   private func applyPendingCorrection() {
     guard fieldAllowsAutocorrect, preferences.enabled("autocorrect"),
@@ -324,6 +369,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   private func synchronizeContext() {
     if before() != lastContext || after() != lastAfter {
+      rememberCapitalizedWord()
       clearCorrection()
       editedAt = now()
       lastContext = before()
@@ -357,13 +403,19 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   public func finishDeleteDrag() { dragOriginal = nil; dragRemoved = "" }
   private func updateCasing() {
-    guard !board.capsLock, fieldAllowsCapitalization, preferences.enabled("autoCapitalize") else { return }
+    guard !board.capsLock else { return }
+    guard fieldAllowsCapitalization, preferences.enabled("autoCapitalize") else {
+      if automaticShift { board.uppercase = false }
+      automaticShift = false
+      return
+    }
     let preceding = before()
     let trimmed = preceding.trimmingCharacters(in: .whitespaces)
-    board.uppercase =
+    automaticShift =
       preceding.isEmpty || preceding.hasSuffix("\n")
       || (preceding.last?.isWhitespace == true
         && [".", "!", "?"].contains(trimmed.last.map(String.init) ?? ""))
+    board.uppercase = automaticShift
   }
   private func swipe(_ samples: [SwipeSample], centers: [Character: CGPoint]) {
     guard panel == nil else { return }

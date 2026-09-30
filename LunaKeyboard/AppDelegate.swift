@@ -28,7 +28,9 @@ final class KeyboardSceneDelegate: UIResponder, UIWindowSceneDelegate {
     window.tintColor = UIColor(red: 0.66, green: 0.60, blue: 1, alpha: 1)
     let nav = UINavigationController(rootViewController: KeyboardHomeController())
     #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("--keyboard-tryout") {
+      if ProcessInfo.processInfo.arguments.contains("--keyboard-tutorial") {
+        nav.setViewControllers([KeyboardHomeController(), KeyboardTutorialController()], animated: false)
+      } else if ProcessInfo.processInfo.arguments.contains("--keyboard-tryout") {
         nav.setViewControllers(
           [KeyboardHomeController(), KeyboardTryoutController()], animated: false)
       }

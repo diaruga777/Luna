@@ -9,10 +9,11 @@ public struct KeyboardSuggestion: Equatable {
   public let replacing: String
   public let kind: Kind
   public let shortcut: KeyboardShortcut?
+  public let accessibilityLabel: String
   public let autoApply: Bool
   public init(
     title: String? = nil, text: String, replacing: String = "", kind: Kind = .word,
-    shortcut: KeyboardShortcut? = nil, autoApply: Bool = false
+    shortcut: KeyboardShortcut? = nil, autoApply: Bool = false, accessibilityLabel: String? = nil
   ) {
     self.title = title ?? text
     self.text = text
@@ -20,6 +21,7 @@ public struct KeyboardSuggestion: Equatable {
     self.kind = kind
     self.shortcut = shortcut
     self.autoApply = autoApply
+    self.accessibilityLabel = accessibilityLabel ?? (title ?? text).styleErased
   }
 }
 
@@ -123,7 +125,7 @@ public final class KeyboardPrediction {
       ? "" : String(before.split(whereSeparator: { $0.isWhitespace }).last ?? "")
     if !rawToken.isEmpty {
       result += catalog.glyphs(for: rawToken, limit: 6).map {
-        .init(title: $0.text, text: $0.text, replacing: rawToken, kind: .emoji)
+        .init(title: $0.text, text: $0.text, replacing: rawToken, kind: .emoji, accessibilityLabel: $0.name)
       }
       let (unwrapped, styler) = MarkdownStyler.removeBoundingStylers(from: rawToken)
       if let styler {

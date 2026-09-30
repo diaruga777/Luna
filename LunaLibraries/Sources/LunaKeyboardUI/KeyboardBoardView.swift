@@ -20,16 +20,19 @@ public final class KeyboardBoardView: UIView {
   public var isPad = UIDevice.current.userInterfaceIdiom == .pad { didSet { rebuild() } }
   public var onCursor: ((Int) -> Void)?
   public var onGlobe: ((UIView, UIEvent) -> Void)?
-  public var language = "en" { didSet { rebuild() } }
-  public var uppercase = false { didSet { setNeedsDisplay() } }
-  public var capsLock = false { didSet { setNeedsDisplay() } }
+  public var language = "en" { didSet { if oldValue != language { rebuild() } } }
+  public var uppercase = false { didSet { updateAccessibility(); setNeedsDisplay() } }
+  public var capsLock = false { didSet { updateAccessibility(); setNeedsDisplay() } }
   public var blank = false { didSet { setNeedsDisplay() } }
   public var preview = true
   public var swipeEnabled = true
-  public var textStyle: TextStyle = .regular { didSet { setNeedsDisplay() } }
-  public var needsGlobe = true { didSet { rebuild() } }
-  public var keyboardType: UIKeyboardType = .default { didSet { rebuild() } }
+  public var textStyle: TextStyle = .regular { didSet { updateAccessibility(); setNeedsDisplay() } }
+  public var needsGlobe = true { didSet { if oldValue != needsGlobe { rebuild() } } }
+  public var keyboardType: UIKeyboardType = .default { didSet { if oldValue != keyboardType { rebuild() } } }
   public var returnTitle = "return" { didSet { setNeedsDisplay() } }
+  public var theme: KeyboardTheme = .system { didSet { setNeedsDisplay() } }
+  public var demonstrationKey: String? { didSet { setNeedsDisplay() } }
+  public func frameForKey(_ key: String) -> CGRect? { keys.first { $0.value == key }?.frame }
   public var dark = false { didSet { setNeedsDisplay() } }
   public var page = 0 { didSet { rebuild() } }
   private struct Key {
@@ -194,6 +197,13 @@ public final class KeyboardBoardView: UIView {
     }
     setNeedsDisplay()
   }
+  private func updateAccessibility() {
+    guard let elements = accessibilityElements as? [UIAccessibilityElement], elements.count == keys.count else { return }
+    for (element, key) in zip(elements, keys) {
+      element.accessibilityLabel = accessibilityName(key.value)
+      element.accessibilityHint = textStyle == .regular ? nil : "Inserts \(textStyle.rawValue) text"
+    }
+  }
   private func accessibilityName(_ value: String) -> String {
     switch value {
     case "shift": return capsLock ? "Caps lock" : "Shift"
@@ -228,24 +238,40 @@ public final class KeyboardBoardView: UIView {
   }
   public override func draw(_ rect: CGRect) {
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    let normal = dark ? UIColor(white: 0.36, alpha: 1) : .white
-    let special =
+    var normal: UIColor = dark ? UIColor(white: 0.36, alpha: 1) : .white
+    var special: UIColor =
       dark ? UIColor(white: 0.22, alpha: 1) : UIColor(red: 0.67, green: 0.70, blue: 0.74, alpha: 1)
+    var foreground: UIColor = dark ? .white : .black
+    switch theme {
+    case .system: break
+    case .moonlight:
+      normal = UIColor(red: 0.25, green: 0.22, blue: 0.42, alpha: 1)
+      special = UIColor(red: 0.40, green: 0.32, blue: 0.58, alpha: 1)
+      foreground = .white
+    case .ocean:
+      normal = UIColor(red: 0.05, green: 0.30, blue: 0.40, alpha: 1)
+      special = UIColor(red: 0.04, green: 0.20, blue: 0.29, alpha: 1)
+      foreground = .white
+    case .highContrast:
+      normal = dark ? .black : .white; special = normal; foreground = dark ? .white : .black
+    }
     for (i, key) in keys.enumerated() {
       ctx.saveGState()
       ctx.setShadow(
         offset: CGSize(width: 0, height: 1), blur: 0,
         color: UIColor.black.withAlphaComponent(0.3).cgColor)
-      (i == active ? special : key.special ? special : normal).setFill()
-      UIBezierPath(roundedRect: key.frame, cornerRadius: 6).fill()
+      (i == active || key.value == demonstrationKey ? UIColor.systemBlue : key.special ? special : normal).setFill()
+      let outline = UIBezierPath(roundedRect: key.frame, cornerRadius: 6)
+      outline.fill()
+      if theme == .highContrast { foreground.setStroke(); outline.lineWidth = 2; outline.stroke() }
       ctx.restoreGState()
       guard !cursorDragging && (!blank || key.special) else { continue }
       let text = label(key.value)
       let title = key.special || key.value == " " ? text : textStyle.style(text)
       let size: CGFloat = key.special || key.value == " " ? 16 : 22
-      drawText(title, in: key.frame, color: dark ? .white : .black, size: size)
+      drawText(title, in: key.frame, color: foreground, size: size)
       if isPad, !key.special, let alt = firstAlternative(for: key.value), key.value != " " {
-        drawText(alt, in: CGRect(x: key.frame.maxX - 20, y: key.frame.minY + 2, width: 16, height: 14), color: .secondaryLabel, size: 11)
+        drawText(alt, in: CGRect(x: key.frame.maxX - 20, y: key.frame.minY + 2, width: 16, height: 14), color: foreground.withAlphaComponent(0.8), size: 11)
       }
     }
     if swiping, trace.count > 1 {

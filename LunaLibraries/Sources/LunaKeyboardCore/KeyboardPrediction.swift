@@ -3,7 +3,7 @@ import LunaStorage
 import UIKit
 
 public struct KeyboardSuggestion: Equatable {
-  public enum Kind: Equatable { case word, shortcut, emoji, link, video, media, style, calculation }
+  public enum Kind: Equatable { case word, shortcut, emoji, link, video, media, style, calculation, undoCorrection }
   public let title: String
   public let text: String
   public let replacing: String

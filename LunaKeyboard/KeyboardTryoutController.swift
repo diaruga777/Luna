@@ -46,6 +46,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
       guard let self else { return "" }
       return (self.editor.text as NSString).substring(from: NSMaxRange(self.editor.selectedRange))
     }
+    surface.hasSelection = { [weak self] in (self?.editor.selectedRange.length ?? 0) > 0 }
     surface.insert = { [weak self] in self?.editor.insertText($0) }
     surface.delete = { [weak self] in self?.editor.deleteBackward() }
     surface.moveCursor = { [weak self] offset in

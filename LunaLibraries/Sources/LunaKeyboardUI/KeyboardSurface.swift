@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public var before: () -> String = { "" }
   public var after: () -> String = { "" }
+  public var hasSelection: () -> Bool = { false }
   public var insert: (String) -> Void = { _ in }
   public var delete: () -> Void = {}
   public var moveCursor: (Int) -> Void = { _ in }
@@ -124,6 +125,11 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     timer?.invalidate()
     timer = nil
     board.reset()
+    finishDeleteDrag()
+    lastContext = ""
+    lastAfter = ""
+    shiftDate = .distantPast
+    spaceDate = .distantPast
     pasteRequest = nil
     pasteControl.isHidden = true
     predictionStorage?.releaseMemory()
@@ -139,6 +145,13 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   private func predict() {
     guard panel == nil else { return }
+    guard !hasSelection() else {
+      suggestions = []
+      pasteControl.isHidden = true
+      clearCorrection()
+      renderSuggestions()
+      return
+    }
     let context = before()
     pasteControl.isHidden = !hasFullAccess || !context.isEmpty || !after().isEmpty || !hasPasteableText()
     suggestions = prediction.suggestions(
@@ -147,7 +160,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       suggestions.insert(
         .init(
           title: "↶ " + reversal.original, text: reversal.original + reversal.suffix,
-          replacing: reversal.replacement + reversal.suffix, kind: .shortcut),
+          replacing: reversal.replacement + reversal.suffix, kind: .undoCorrection),
         at: 0)
     }
     renderSuggestions()
@@ -215,6 +228,12 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     defer { editingDepth -= 1 }
     if suggestion.kind == .media, let shortcut = suggestion.shortcut {
       copy(shortcut)
+      return
+    }
+    guard !hasSelection() else { refresh(); return }
+    if suggestion.kind == .undoCorrection {
+      if undoCorrection() { recordEdit() }
+      refresh()
       return
     }
     let current = before()
@@ -306,13 +325,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       recordEdit(); refresh(); return
     }
     if value == "delete" {
-      if let reversal, reversal.canUndo(before: before(), now: now()) {
-        for _ in reversal.replacement + reversal.suffix { delete() }
-        // Undo only the corrected word, retaining every trailing nonletter.
-        insert(reversal.original + reversal.suffix)
-        spaceDate = .distantPast
-        self.reversal = nil
-      } else {
+      if !undoCorrection() {
         delete()
         reversal = nil
       }
@@ -324,7 +337,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     if value == " " || value == "return" {
       rememberCapitalizedWord()
       applyPendingCorrection()
-      if value == " ", preferences.enabled("periodShortcut"),
+      if value == " ", !hasSelection(), fieldAllowsSmartPunctuation,
+        preferences.enabled("periodShortcut"),
         Date().timeIntervalSince(spaceDate) < 0.4, before().hasSuffix(" "),
         before().dropLast().last?.isLetter == true
       {
@@ -336,11 +350,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
         let separator = value == "return" ? "\n" : " "
         insert(separator)
         if value == " " { lowercaseDisplacedSentenceWord() }
-        spaceDate = Date()
-        if let previous = reversal {
-          reversal = previous
-          reversal?.suffix += separator
-        }
+        spaceDate = value == " " ? Date() : .distantPast
+        reversal?.suffix += separator
       }
       if board.page != 0 { board.page = 0 }
     } else {
@@ -354,7 +365,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       } else { rememberCapitalizedWord() }
       if fieldAllowsSmartPunctuation && preferences.enabled("smartPunctuation") {
         text = KeyboardEditing.smartQuote(text, before: before())
-        if KeyboardEditing.isClosingPunctuation(text) {
+        if !hasSelection(), KeyboardEditing.isClosingPunctuation(text) {
           if before().hasSuffix(" "), before().dropLast().last?.isWhitespace == false {
             delete()
             if reversal?.suffix.hasSuffix(" ") == true { reversal?.suffix.removeLast() }
@@ -379,7 +390,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     capitalizedWord = nil
   }
   private func lowercaseDisplacedSentenceWord() {
-    guard fieldAllowsCapitalization, preferences.enabled("autoCapitalize"),
+    guard !hasSelection(), fieldAllowsCapitalization, preferences.enabled("autoCapitalize"),
       let word = capitalizedWords.first(where: {
         after().hasPrefix($0) && after().dropFirst($0.count).first?.isLetter != true
       }), let first = word.first, String(first).utf16.count == 1,
@@ -394,12 +405,21 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     capitalizedWords.removeAll { $0 == word }
   }
   private func applyPendingCorrection() {
-    guard fieldAllowsAutocorrect, preferences.enabled("autocorrect"),
+    guard !hasSelection(), fieldAllowsAutocorrect, preferences.enabled("autocorrect"),
       rejectedContext != before(), now() - editedAt < correctionWindow,
       after().first?.isLetter != true else { return }
     predict()
     if let candidate = suggestions.first(where: { $0.autoApply }), !candidate.replacing.isEmpty,
       before().hasSuffix(candidate.replacing) { apply(candidate, automatic: true) }
+  }
+  private func undoCorrection() -> Bool {
+    guard !hasSelection(), let reversal, reversal.canUndo(before: before(), now: now()) else { return false }
+    for _ in reversal.replacement + reversal.suffix { delete() }
+    insert(reversal.original + reversal.suffix)
+    self.reversal = nil
+    rejectedContext = before()
+    spaceDate = .distantPast
+    return true
   }
   private func recordEdit() {
     if (reversal?.suffix.count ?? 0) > 16 { reversal = nil }
@@ -417,7 +437,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     countdown.isHidden = true
   }
   private func synchronizeContext() {
-    if before() != lastContext || after() != lastAfter {
+    if hasSelection() || before() != lastContext || after() != lastAfter {
       rememberCapitalizedWord()
       clearCorrection()
       editedAt = now()
@@ -428,6 +448,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   /// Drag preview uses reversible deletion because UITextDocumentProxy has no
   /// API for setting a selection. Moving right restores only our own removed text.
   public func updateDeleteDrag(_ count: Int) {
+    guard !hasSelection() else { finishDeleteDrag(); return }
     editingDepth += 1
     defer { editingDepth -= 1 }
     if dragOriginal == nil {
@@ -450,7 +471,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     recordEdit()
     refresh()
   }
-  public func finishDeleteDrag() { dragOriginal = nil; dragRemoved = "" }
+  public func finishDeleteDrag() { dragOriginal = nil; dragAfter = ""; dragRemoved = "" }
   private func updateCasing() {
     guard !board.capsLock else { return }
     guard fieldAllowsCapitalization, preferences.enabled("autoCapitalize") else {
@@ -467,7 +488,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       samples, catalog: prediction.catalog, language: preferences.language, centers: centers)
     guard let first = words.first else { return }
     let word = board.uppercase ? first.prefix(1).uppercased() + first.dropFirst() : first
-    let prefix = before().last.map { !$0.isWhitespace && $0.isLetter } == true ? " " : ""
+    let prefix = !hasSelection() && before().last.map { !$0.isWhitespace && $0.isLetter } == true ? " " : ""
     let output = board.textStyle.style(word, preceding: before() + prefix)
     insert(prefix + output)
     reversal = nil
@@ -511,7 +532,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     refresh()
   }
   public override func paste(itemProviders: [NSItemProvider]) {
-    guard hasFullAccess, before().isEmpty, after().isEmpty,
+    guard hasFullAccess, !hasSelection(), before().isEmpty, after().isEmpty,
       let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return }
     let context = (before(), after())
     let request = UUID()
@@ -519,7 +540,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     provider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
       guard let text = object as? String, text.utf8.count <= 1024 * 1024 else { return }
       DispatchQueue.main.async {
-        guard let self, self.hasFullAccess, self.pasteRequest == request, self.before() == context.0, self.after() == context.1 else { return }
+        guard let self, self.hasFullAccess, !self.hasSelection(), self.pasteRequest == request, self.before() == context.0, self.after() == context.1 else { return }
         self.pasteRequest = nil
         self.clearCorrection()
         self.insert(text)

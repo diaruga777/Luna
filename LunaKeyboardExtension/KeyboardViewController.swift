@@ -24,6 +24,7 @@ final class KeyboardViewController: UIInputViewController {
     surface.heightChanged = { [weak self] height in self?.height?.constant = height }
     surface.before = { [weak self] in self?.textDocumentProxy.documentContextBeforeInput ?? "" }
     surface.after = { [weak self] in self?.textDocumentProxy.documentContextAfterInput ?? "" }
+    surface.hasSelection = { [weak self] in self?.textDocumentProxy.selectedText?.isEmpty == false }
     surface.insert = { [weak self] in self?.textDocumentProxy.insertText($0) }
     surface.delete = { [weak self] in self?.textDocumentProxy.deleteBackward() }
     surface.moveCursor = { [weak self] in

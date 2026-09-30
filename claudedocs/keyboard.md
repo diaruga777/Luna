@@ -189,3 +189,20 @@ to return. Cursor dragging remains available on the wide key.
 Follow-up verification: **53 hosted tests passed, 0 failures** on iPhone 17 Pro /
 iOS 26.2 using Xcode 26.2. Both app and extension built. Live gesture inspection
 was limited by the locked Mac; see the audit for the remaining manual checks.
+
+## Code review fixes (30 September 2026)
+
+The host adapters now report nonempty text selections. Corrections, stale
+suggestion replacements and reversible delete dragging require a collapsed
+cursor, so replacing selected text cannot delete the preceding word. Paste
+suggestions also stay hidden when the editor's contents are selected.
+
+Backspace and the undo suggestion use the same correction-undo operation,
+including its expiry check and double-space reset. URL/email fields keep double
+spaces literal. Disappearance and memory cleanup discard delete-drag snapshots
+and preceding/following text contexts.
+
+Verification: all **59 hosted keyboard tests passed** on iPhone 17 Pro / iOS 26.2
+with Xcode 26.2, including regressions for selected text, stale suggestion taps,
+undo followed by Space, URL punctuation and drag cleanup. Both app and extension
+built successfully.

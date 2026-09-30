@@ -635,3 +635,73 @@ extension KeyboardTests {
     surface.releaseMemory()
   }
 }
+
+extension KeyboardTests {
+  @MainActor func testSpaceReplacesSelectionWithoutCorrectingAdjacentWord() {
+    let controller = KeyboardTryoutController()
+    controller.loadViewIfNeeded()
+    let surface = controller.surface
+    surface.preferences = .init(values: ["autoCapitalize": "false", "sound": "false", "spellcheck": "false", "autocomplete": "false"])
+    surface.lexicon = ["teh": "the"]
+    controller.editor.text = "tehSELECT end"
+    controller.editor.selectedRange = NSRange(location: 3, length: 6)
+    surface.refresh()
+    surface.key(" ")
+    XCTAssertEqual(controller.editor.text, "teh  end")
+    surface.releaseMemory()
+  }
+
+  @MainActor func testPunctuationReplacesSelectionWithoutDeletingAdjacentSpace() {
+    let controller = KeyboardTryoutController()
+    controller.loadViewIfNeeded()
+    controller.surface.preferences.values["autocorrect"] = "false"
+    controller.editor.text = "hello SELECT end"
+    controller.editor.selectedRange = NSRange(location: 6, length: 6)
+    controller.surface.refresh()
+    controller.surface.key("?")
+    XCTAssertEqual(controller.editor.text, "hello ? end")
+    controller.surface.releaseMemory()
+  }
+
+  @MainActor func testStaleSuggestionDoesNotDeleteSelection() async throws {
+    let controller = KeyboardTryoutController()
+    controller.loadViewIfNeeded()
+    let surface = controller.surface
+    surface.preferences.values["autoCapitalize"] = "false"
+    surface.lexicon = ["teh": "the"]
+    controller.editor.text = "tehSELECT end"
+    controller.editor.selectedRange = NSRange(location: 3, length: 0)
+    let suggestion = try await suggestionButton("the", surface: surface)
+    controller.editor.selectedRange = NSRange(location: 3, length: 6)
+    suggestion.sendActions(for: .touchUpInside)
+    XCTAssertEqual(controller.editor.text, "tehSELECT end")
+    surface.releaseMemory()
+  }
+
+  @MainActor func testDoubleSpaceStaysLiteralWhenProsePunctuationIsDisabled() {
+    let (surface, text) = editor("example")
+    surface.fieldAllowsSmartPunctuation = false
+    surface.key(" "); surface.key(" ")
+    XCTAssertEqual(text(), "example  ")
+    surface.releaseMemory()
+  }
+
+  @MainActor func testUndoSuggestionResetsDoubleSpacePeriod() async throws {
+    let (surface, text) = editor()
+    for key in ["t", "e", "h", " "] { surface.key(key) }
+    let undo = try await suggestionButton("↶ teh", surface: surface)
+    undo.sendActions(for: .touchUpInside)
+    surface.key(" ")
+    XCTAssertEqual(text(), "teh  ")
+    surface.releaseMemory()
+  }
+
+  @MainActor func testReleaseMemoryEndsDeleteDrag() {
+    let (surface, text) = editor("dragonloser")
+    surface.updateDeleteDrag(5)
+    surface.releaseMemory()
+    surface.updateDeleteDrag(0)
+    XCTAssertEqual(text(), "dragon")
+    surface.releaseMemory()
+  }
+}

@@ -149,9 +149,13 @@ public final class KeyboardPrediction {
         .init(text: text, replacing: originalWord, kind: .shortcut, autoApply: true), at: 0)
     }
     let languages = [preferences.language, preferences.secondaryLanguage].compactMap { $0 }
+    var isPersonal = false
     for language in languages {
       let learned =
         (try? store?.dictionary(language: language, prefix: context.word, limit: 6)) ?? []
+      isPersonal = isPersonal || learned.contains {
+        $0.caseInsensitiveCompare(context.word) == .orderedSame
+      }
       result += learned.map {
         .init(text: $0, replacing: originalWord, dictionaryLanguage: language)
       }
@@ -159,18 +163,21 @@ public final class KeyboardPrediction {
     if preferences.enabled("autocomplete") || preferences.enabled("spellcheck") {
       if checker == nil { checker = UITextChecker() }
       if let checker {
-        for language in languages {
-          let code = language == "en" ? "en_US" : language.replacingOccurrences(of: "-", with: "_")
-          guard
-            UITextChecker.availableLanguages.contains(code)
-              || UITextChecker.availableLanguages.contains(language)
-          else { continue }
-          let selected = UITextChecker.availableLanguages.contains(code) ? code : language
-          let misspelled =
-            checker.rangeOfMisspelledWord(
-              in: context.text, range: context.range, startingAt: context.range.location,
-              wrap: false, language: selected
-            ).location != NSNotFound
+        let available = UITextChecker.availableLanguages
+        let checks = languages.compactMap { language -> (language: String, code: String, misspelled: Bool)? in
+          let preferred = ["en": "en_US", "es": "es_ES", "es-419": "es_MX", "it": "it_IT"][language]
+            ?? language.replacingOccurrences(of: "-", with: "_")
+          guard let selected = ([preferred, language] + available.filter { $0.hasPrefix(String(language.prefix(2)) + "_") })
+            .first(where: { available.contains($0) }) else { return nil }
+          let misspelled = checker.rangeOfMisspelledWord(
+            in: context.text, range: context.range, startingAt: context.range.location,
+            wrap: false, language: selected).location != NSNotFound
+          return (language, selected, misspelled)
+        }
+        // A word recognized in either selected language must stay literal.
+        let canAutocorrect = !isPersonal && checks.allSatisfy { $0.misspelled }
+        for check in checks {
+          let (language, selected, misspelled) = check
           var candidates: [String] = []
           if preferences.enabled("spellcheck") && misspelled {
             candidates += Array(
@@ -183,17 +190,12 @@ public final class KeyboardPrediction {
                 forPartialWordRange: context.range, in: context.text, language: selected) ?? [])
                 .prefix(24))
           }
-          let personal =
-            (try? store?.dictionary(language: language, prefix: context.word, limit: 1)) ?? []
-          let isPersonal = personal.contains {
-            $0.caseInsensitiveCompare(context.word) == .orderedSame
-          }
           result += KeyboardRanking.rank(candidates, for: context.word).prefix(8).filter {
             $0 != context.word
           }.map {
             .init(
               text: $0, replacing: originalWord,
-              autoApply: misspelled && !isPersonal
+              autoApply: canAutocorrect
                 && KeyboardRanking.distance(context.word, $0) < 1.1, dictionaryLanguage: language)
           }
         }

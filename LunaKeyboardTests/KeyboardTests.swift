@@ -705,3 +705,48 @@ extension KeyboardTests {
     surface.releaseMemory()
   }
 }
+
+extension KeyboardTests {
+  func testSecondaryLanguageDoesNotCorrectValidPrimaryWords() {
+    let prediction = KeyboardPrediction()
+    let preferences = KeyboardPreferences(values: ["language": "en", "secondaryLanguage": "es"])
+    for word in ["you", "yes", "she", "we", "are", "cat"] {
+      let results = prediction.suggestions(before: word, preferences: preferences, store: nil)
+      XCTAssertFalse(results.contains { $0.kind == .word && $0.autoApply }, word)
+    }
+  }
+
+  func testPrimaryLanguageDoesNotCorrectValidSecondaryWords() {
+    let prediction = KeyboardPrediction()
+    let preferences = KeyboardPreferences(values: ["language": "en", "secondaryLanguage": "es"])
+    for word in ["hola", "gato", "eres", "gracias"] {
+      let results = prediction.suggestions(before: word, preferences: preferences, store: nil)
+      XCTAssertFalse(results.contains { $0.kind == .word && $0.autoApply }, word)
+    }
+  }
+
+  func testPersonalWordIsProtectedAcrossSelectedLanguages() throws {
+    try store.setWord("gell", language: "en", included: true)
+    let results = KeyboardPrediction().suggestions(before: "gell",
+      preferences: .init(values: ["language": "en", "secondaryLanguage": "es"]), store: store)
+    XCTAssertFalse(results.contains { $0.kind == .word && $0.autoApply })
+  }
+
+  @MainActor func testToolsPanelTabDoesNotEditDocument() {
+    let (surface, text) = editor("hello")
+    surface.key("styles")
+    surface.key("tab")
+    XCTAssertEqual(text(), "hello")
+    surface.releaseMemory()
+  }
+
+  @MainActor func testToolsPanelHidesAndRejectsDocumentSuggestions() async throws {
+    let (surface, text) = editor("teh")
+    let suggestion = try await suggestionButton("the", surface: surface)
+    surface.key("styles")
+    XCTAssertTrue(suggestion.isHidden)
+    suggestion.sendActions(for: .touchUpInside)
+    XCTAssertEqual(text(), "teh")
+    surface.releaseMemory()
+  }
+}

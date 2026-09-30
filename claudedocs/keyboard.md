@@ -202,7 +202,17 @@ including its expiry check and double-space reset. URL/email fields keep double
 spaces literal. Disappearance and memory cleanup discard delete-drag snapshots
 and preceding/following text contexts.
 
-Verification: all **59 hosted keyboard tests passed** on iPhone 17 Pro / iOS 26.2
+Verification: all **64 hosted keyboard tests passed** on iPhone 17 Pro / iOS 26.2
 with Xcode 26.2, including regressions for selected text, stale suggestion taps,
 undo followed by Space, URL punctuation and drag cleanup. Both app and extension
 built successfully.
+
+Prediction resolves Spanish and Italian settings to available system locales and
+checks both selected dictionaries before allowing automatic word correction. A
+word recognized in either language, including a personal dictionary entry, stays
+literal. The tools panel hides document suggestions and routes Tab into its
+search text instead of inserting it in the host document.
+
+Live accessibility inspection returned an empty simulator hierarchy; gesture
+verification remains a manual check. Hosted tests exercise the production surface
+and real UITextView selections.

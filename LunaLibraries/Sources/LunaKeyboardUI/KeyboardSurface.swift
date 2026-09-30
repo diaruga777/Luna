@@ -224,6 +224,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     suggestionScroll.contentSize = CGSize(width: x, height: 44)
   }
   private func apply(_ suggestion: KeyboardSuggestion, automatic: Bool = false) {
+    guard panel == nil else { return }
     editingDepth += 1
     defer { editingDepth -= 1 }
     if suggestion.kind == .media, let shortcut = suggestion.shortcut {
@@ -281,7 +282,6 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       refresh()
       return
     }
-    if value == "tab" { insert("\t"); recordEdit(); refresh(); return }
     if value == "123" {
       board.page = 1
       return
@@ -312,11 +312,12 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       } else if value == "return" {
         panel.searchNow()
       } else {
-        panel.appendSearch(board.uppercase ? value.uppercased() : value)
+        panel.appendSearch(value == "tab" ? "\t" : board.uppercase ? value.uppercased() : value)
       }
       if !board.capsLock { board.uppercase = false }
       return
     }
+    if value == "tab" { insert("\t"); recordEdit(); refresh(); return }
     if value == " " && board.dashesMode {
       clearCorrection()
       insert("-")
@@ -505,6 +506,10 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       panel = nil
       refresh()
     } else {
+      clearCorrection()
+      suggestions = []
+      pasteControl.isHidden = true
+      renderSuggestions()
       let p = KeyboardToolsPanel(
         catalog: prediction.catalog, store: store, fullAccess: hasFullAccess, styles: styles)
       p.onText = { [weak self] text in

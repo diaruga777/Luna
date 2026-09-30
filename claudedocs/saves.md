@@ -46,6 +46,10 @@ is the test seam that waits for them.
 
 ## The schema
 
+Schema 15 also adds Luna Keyboard preferences, shortcuts, keyword mappings and its
+personal dictionary. Shortcut media uses the same ownership edges and reaper;
+see [keyboard.md](keyboard.md).
+
 `LunaStorage/SavesSchema.swift` holds every table, index and trigger, created
 idempotently at open and stamped into `PRAGMA user_version`. **Every field is a
 typed column — there is no payload blob**, so a reader never has to understand a

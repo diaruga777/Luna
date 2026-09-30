@@ -16,6 +16,10 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
   social / video / audio links + friend-sharing (CloudKit public-DB, `iCloud.com.hsanabria.luna`).
 - **Luna Price Tracker** (`com.hsanabria.luna.pricetracker`, target `LunaPriceTracker`) —
   product price tracking.
+- **Luna Keyboard** (`com.hsanabria.luna.keyboard`, target `LunaKeyboard`) —
+  standalone keyboard, shortcuts, swipe typing, emoji and recent Luna link/video
+  suggestions. Its extension uses the shared App Group and saves database. See
+  `claudedocs/keyboard.md`.
 - **Luna Music** (`com.hsanabria.luna.music`, target `LunaMusic`) — a standalone
   MusicKit/MediaPlayer library player with search on foreground, playlist-aware
   shuffle continuation, Siri, widgets and a queue Live Activity. See

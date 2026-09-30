@@ -35,7 +35,7 @@ line of the two-page list, including its examples and memory observations.
 | Firefox URL bar / Mail typing | URL/email fields disable automatic correction, smart punctuation and automatic capitalization. Context changes invalidate pending correction state. Real Firefox/Mail extension behavior remains a device check. |
 | Cannot type original after backspacing (“Hi em”) | Backspace rejects the current correction; entering a separator does not immediately reapply it. |
 | Autocomplete broken | Added deterministic tests for lexicon corrections, rejection, timing, Return, quotes, punctuation and field restrictions. Existing adjacent-key ranking remains. |
-| Preserve punctuation after correction undo | Undo restores the original spelling while retaining punctuation. A separator space is removed. |
+| Preserve punctuation after correction undo | Undo restores the original spelling while retaining punctuation. The autocomplete follow-up now retains separator spaces too; see [keyboard-autocomplete-audit.md](keyboard-autocomplete-audit.md). |
 | Ellipsis without a space treated as word | Tokenizer excludes punctuation and closing quotes; only interior apostrophes belong to words. |
 | Lowercase sentence word when inserting before it | Bounded session history tracks words Luna automatically capitalized. Inserting a word and space before one lowercases its first letter. Existing pasted or manually capitalized text is not inferred from case alone. |
 | Memory findings Google Doc | Linked document could not be retrieved. No claims are made about its unobserved contents. Current architecture and limits are recorded above. |

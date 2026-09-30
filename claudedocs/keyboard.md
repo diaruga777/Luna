@@ -143,7 +143,7 @@ missing-file detection, or explicitly removed by the cleanup action.
 
 Corrections have a two-second eligibility window with a shrinking indicator and a
 one-second undo window. Rejection suppresses immediate reapplication. Undo keeps
-punctuation, closing punctuation removes a separator, and URL/email traits disable
+punctuation and trailing spaces, closing punctuation removes a separator, and URL/email traits disable
 automatic prose transformations. Quotes recognize interior apostrophes. Only words
 this keyboard automatically capitalized are eligible for sentence-insertion case
 adjustment; at most eight words are retained and cleared on release.
@@ -162,5 +162,30 @@ actions. Try It Out includes the system Paste control.
 Debug launch argument `--keyboard-tutorial` opens Keyboard Quest. Interactive
 inspection was limited by the locked Mac; hosted tests exercise all demonstrations.
 
-Final verification: **37 hosted tests passed, 0 failures** on iPhone 17 Pro,
+Original todo verification: **37 hosted tests passed, 0 failures** on iPhone 17 Pro,
 iOS 26.2, using Xcode 26.2. The suite builds both the app and extension.
+
+
+## Autocomplete follow-up (30 September 2026)
+
+See [keyboard-autocomplete-audit.md](keyboard-autocomplete-audit.md) for all twelve
+items in **Clack autocomplete improvements.pdf** and the dashes-mode addition.
+
+Selected words now teach Luna’s personal dictionary and Apple’s spell checker;
+long-press a learned suggestion to remove it. Ordinals and emphatic repeated
+letters stay literal. Correction undo preserves trailing punctuation and spaces.
+Abbreviations such as `e.g.` do not trigger sentence capitalization. Applied
+markdown style suggestions and no-op quote wrappers disappear.
+
+Empty editors offer the system Paste control when clipboard text is available
+and Full Access is enabled. Arithmetic expressions offer a result that is applied
+only when selected. Neither feature reads clipboard content while typing.
+
+Choose **Aa → Styles → SpongeBob** for random casing with at most two successive
+cased letters in the same case. On **123**, hold **-** and slide to **Dashes** to
+turn the spacebar into a literal hyphen key; choose **Spaces** in the same popup
+to return. Cursor dragging remains available on the wide key.
+
+Follow-up verification: **53 hosted tests passed, 0 failures** on iPhone 17 Pro /
+iOS 26.2 using Xcode 26.2. Both app and extension built. Live gesture inspection
+was limited by the locked Mac; see the audit for the remaining manual checks.

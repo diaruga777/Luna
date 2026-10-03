@@ -5,8 +5,9 @@ Each `*.js` file here is one plugin Luna ships with, in the shape
 comment holding the manifest JSON, then a body that calls `luna.register`.
 
 `BundledPluginCatalog` (LunaPluginKit) enumerates this directory through
-`LunaBundledPluginsBundle.bundle`. The seven media plugins are here, and
-`kindle.js` is the first EXPORT plugin: it declares no `produces` and no
+`LunaBundledPluginsBundle.bundle`. The NYTimes article plugin fetches on its
+trailing-dot hostname and hands the response to Luna's shared article extractor.
+The media plugins are here, and `kindle.js` is the first EXPORT plugin: it declares no `produces` and no
 `match`, registers only `export`, and takes over the `kindle` destination in
 central Luna (`PluginDestinationLegacyIDs`), which is why every article Luna
 already sent stays recorded as sent. Luna Reader keeps the Swift destination.

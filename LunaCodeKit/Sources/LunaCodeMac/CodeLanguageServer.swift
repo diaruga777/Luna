@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import LunaCodeCore
 
 /// One SourceKit-LSP process per selected Xcode scheme. Unsaved buffers are
@@ -12,6 +13,8 @@ final class CodeLanguageServer: @unchecked Sendable {
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<Any, Error>] = [:]
     private var versions: [String: Int] = [:]
+    private var buffers: [String: String] = [:]
+    private var lastCompletion: (uri: String, start: CodePosition, context: String)?
     private var published: [String: [CodeDiagnostic]] = [:]
     private var ended = false
     private var stderr: FileHandle?
@@ -43,8 +46,12 @@ final class CodeLanguageServer: @unchecked Sendable {
         DispatchQueue(label: "LunaCode.SourceKit.read").async { [weak self] in
             var buffer = Data()
             do {
-                while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
-                    buffer.append(chunk)
+                while true {
+                    var bytes = [UInt8](repeating: 0, count: 64 * 1024)
+                    let count = bytes.withUnsafeMutableBytes { Darwin.read(handle.fileDescriptor, $0.baseAddress, $0.count) }
+                    if count == 0 { break }
+                    if count < 0 { if errno == EINTR { continue }; throw CodeFailure("Cannot read SourceKit output.") }
+                    buffer.append(contentsOf: bytes.prefix(count))
                     while let separator = buffer.range(of: Data("\r\n\r\n".utf8)) {
                         let header = String(decoding: buffer[..<separator.lowerBound], as: UTF8.self)
                         guard let line = header.components(separatedBy: "\r\n").first(where: { $0.lowercased().hasPrefix("content-length:") }),
@@ -72,13 +79,14 @@ final class CodeLanguageServer: @unchecked Sendable {
     }
     func update(path: String, text: String, version: Int) throws {
         let uri = URL(fileURLWithPath: path).absoluteString
-        let old = lock.withCriticalScope { () -> Int? in
-            let old = versions[uri]
-            if old == nil || version > old! { versions[uri] = version }
-            return old
+        let previous = lock.withCriticalScope { () -> (Int?, String?) in
+            let old = versions[uri]; let buffer = buffers[uri]
+            if old == nil || version > old! { versions[uri] = version; buffers[uri] = text }
+            return (old, buffer)
         }
-        if let old, version <= old { return }
-        if old == nil {
+        if let old = previous.0, version <= old { return }
+        if previous.1 == text { return }
+        if previous.0 == nil {
             let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
             let language = ["m": "objective-c", "mm": "objective-cpp", "h": "c", "cpp": "cpp", "c": "c"][ext] ?? "swift"
             try notify("textDocument/didOpen", ["textDocument": ["uri": uri, "languageId": language, "version": version, "text": text]])
@@ -86,6 +94,7 @@ final class CodeLanguageServer: @unchecked Sendable {
             try notify("textDocument/didChange", ["textDocument": ["uri": uri, "version": version], "contentChanges": [["text": text]]])
         }
     }
+
     func diagnostics(path: String) async throws -> [CodeDiagnostic] {
         let uri = URL(fileURLWithPath: path).absoluteString
         do {
@@ -97,10 +106,30 @@ final class CodeLanguageServer: @unchecked Sendable {
         }
     }
     func complete(path: String, position: CodePosition) async throws -> [CodeCompletion] {
-        let response = try await request("textDocument/completion", ["textDocument": ["uri": URL(fileURLWithPath: path).absoluteString],
+        let uri = URL(fileURLWithPath: path).absoluteString
+        let text = lock.withCriticalScope { buffers[uri] ?? "" }
+        let source = text as NSString
+        let offset = min((position.offset(in: text) ?? source.length), source.length)
+        var start = offset
+        while start > 0, let scalar = UnicodeScalar(source.character(at: start - 1)),
+              CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_")).contains(scalar) { start -= 1 }
+        let tokenPosition = CodePosition.at(utf16Offset: start, in: text)
+        let context = source.substring(to: start) + "\u{0}" + source.substring(from: offset)
+        // Swift 6.2 reuses completion sessions by URI/position/compile flags,
+        // even after didChange/didClose changes the receiver's type. Move the
+        // session once when surrounding code changes at the same token start.
+        // Ordinary typing in the filter retains the fast existing session.
+        if let last = lastCompletion, last.uri == uri, last.start == tokenPosition, last.context != context {
+            let alternate = start == 0 ? CodePosition.at(utf16Offset: source.length, in: text) : CodePosition(line: 0, character: 0)
+            _ = try await request("textDocument/completion", ["textDocument": ["uri": uri],
+                "position": ["line": alternate.line, "character": alternate.character]])
+        }
+        lastCompletion = (uri, tokenPosition, context)
+        let response = try await request("textDocument/completion", ["textDocument": ["uri": uri],
             "position": ["line": position.line, "character": position.character], "context": ["triggerKind": 1]])
         let items = response as? [[String: Any]] ?? (response as? [String: Any])?["items"] as? [[String: Any]] ?? []
-        return items.prefix(60).compactMap { item in
+        let ranked = items.sorted { ($0["sortText"] as? String ?? $0["label"] as? String ?? "") < ($1["sortText"] as? String ?? $1["label"] as? String ?? "") }
+        return ranked.prefix(512).compactMap { item in
             guard let label = item["label"] as? String else { return nil }
             let edit = item["textEdit"] as? [String: Any]
             let range = edit?["range"] as? [String: Any] ?? edit?["replace"] as? [String: Any]

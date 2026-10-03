@@ -19,11 +19,11 @@ public final class CodeFiles: @unchecked Sendable {
         NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinated in
             result = Result {
                 let current = try read(coordinated.path)
-                guard current.document.version == expected else { return (current.document, true) }
                 guard let bytes = encode(text, as: current.document.encoding), bytes.count <= CodeWire.maxFileBytes else {
                     throw CodeFailure("The file is too large or cannot be represented in its original encoding.")
                 }
                 if bytes == current.bytes { return (current.document, false) } // retry after lost acknowledgement
+                guard current.document.version == expected else { return (current.document, true) }
                 let temporary = coordinated.deletingLastPathComponent().appendingPathComponent(".luna-code-" + UUID().uuidString)
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 try bytes.write(to: temporary, options: .withoutOverwriting)

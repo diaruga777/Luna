@@ -85,7 +85,7 @@ public actor CodeJobs {
                     directory: project.root, log: log, timeout: 7200)
             } else {
                 exit = try await process.run("/usr/bin/xcodebuild", project.xcodeArguments + ["-configuration", "Debug",
-                    "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", derivedData(project).path, "build"],
+                    "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", derivedData(project).path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path, "build"],
                     directory: project.root, log: log)
             }
             completed.state = exit == 0 ? .succeeded : .failed

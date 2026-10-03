@@ -7,6 +7,7 @@ public actor CodeService {
     private let root: URL
     private var language: Task<CodeLanguageServer, Error>?
     private var projectKey: String?
+    private var intelligenceTail: Task<Void, Never>?
     private var savedReplies: [String: (Data, Data)] = [:]
     public init(root: URL) throws { self.root = root; jobs = try CodeJobs(root: root.appendingPathComponent("Jobs")) }
     public func handle(_ data: Data) async -> Data {
@@ -14,8 +15,10 @@ public actor CodeService {
         do {
             guard data.count <= CodeWire.maxPayloadBytes else { throw CodeFailure("Request too large.") }
             let request = try JSONDecoder().decode(CodeRequest.self, from: data)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            let canonical = try encoder.encode(request)
             if let previous = savedReplies[request.id] {
-                guard previous.0 == data else { throw CodeFailure("A request ID was reused with different content.") }
+                guard previous.0 == canonical else { throw CodeFailure("A request ID was reused with different content.") }
                 return previous.1
             }
             switch request.operation {
@@ -57,15 +60,25 @@ public actor CodeService {
                 let server: CodeLanguageServer
                 do { server = try await language!.value }
                 catch { language = nil; throw error }
-                try server.update(path: request.path, text: request.text, version: request.bufferVersion)
-                if request.operation == .complete {
-                    response.completions = try await server.complete(path: request.path, position: request.position ?? CodePosition(line: 0, character: 0))
-                } else { response.diagnostics = try await server.diagnostics(path: request.path) }
+                // Keep each buffer update and its response together. Actors may
+                // reenter while awaiting LSP, including requests from both apps.
+                let previous = intelligenceTail
+                let operation = Task<CodeResponse, Error> {
+                    await previous?.value
+                    try server.update(path: request.path, text: request.text, version: request.bufferVersion)
+                    var reply = CodeResponse()
+                    if request.operation == .complete {
+                        reply.completions = try await server.complete(path: request.path, position: request.position ?? CodePosition(line: 0, character: 0))
+                    } else { reply.diagnostics = try await server.diagnostics(path: request.path) }
+                    return reply
+                }
+                intelligenceTail = Task { _ = try? await operation.value }
+                response = try await operation.value
             }
             let encoded = try JSONEncoder().encode(response)
             if request.operation == .save {
                 if savedReplies.count > 64 { savedReplies.removeAll() }
-                savedReplies[request.id] = (data, encoded)
+                savedReplies[request.id] = (canonical, encoded)
             }
             return encoded
         } catch { response.error = error.localizedDescription }

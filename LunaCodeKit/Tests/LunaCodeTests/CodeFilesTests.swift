@@ -59,6 +59,9 @@ final class CodeFilesTests: XCTestCase {
         var request = CodeRequest(.save, path: file.path); request.text = "two"; request.version = opened.document!.version
         let first = try await client.call(request); let again = try await client.call(request)
         XCTAssertEqual(first.document, again.document)
+        let restarted = try CodeService(root: directory.appendingPathComponent("restarted"))
+        let retry = try await CodeClient { await restarted.handle($0) }.call(request)
+        XCTAssertFalse(retry.conflict)
         request.text = "three"
         do { _ = try await client.call(request); XCTFail("Reused ID must fail") } catch { XCTAssertTrue(error.localizedDescription.contains("reused")) }
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "two")

@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-@testable import LunaFetch
+import LunaFetch
 import XCTest
 @testable import Luna
 
@@ -52,19 +52,6 @@ final class ArticleFetcherTests: XCTestCase {
     }
 
     // MARK: - hard-paywall hosts
-
-    func testNYTimesNetworkRequestUsesRootDottedHostWithoutChangingOtherSites() {
-        let article = url("https://www.nytimes.com/2026/09/29/us/story.html?source=share")
-        XCTAssertEqual(
-            ArticleFetcher.networkRequestURL(for: article).absoluteString,
-            "https://www.nytimes.com./2026/09/29/us/story.html?source=share")
-        XCTAssertEqual(
-            ArticleFetcher.networkRequestURL(for: url("https://www.wsj.com/story")).absoluteString,
-            "https://www.wsj.com/story")
-        XCTAssertEqual(
-            ArticleFetcher.networkRequestURL(for: url("https://www.nytimes.com./story")).absoluteString,
-            "https://www.nytimes.com./story")
-    }
 
     func testHardPaywallHostMatchesDomainAndSubdomain() {
         XCTAssertTrue(ArticleFetcher.isHardPaywallHost(url("https://www.wsj.com/tech/x")))

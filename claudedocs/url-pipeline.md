@@ -90,11 +90,13 @@ The ONE `HTML → ArticleContent` component + the ONE readable predicate.
 
 `fetchHTML(from:)` is single-UA (Safari), no fallback chain — reproducible, reader-served bytes. Googlebot is demoted to the explicit `.userAgent(.googlebotDesktop)` bypass strategy; the duplicate Googlebot UA string is gone. The legacy `fetchArchivedHTML`/`fetchArchiveTodayHTML` (the duplicate Wayback hit + near-always-failing archive.ph GET — the NYT/WSJ slowness) were removed from `HTMLFetching` and every conformer; `.waybackRaw` already covers Wayback and archive.today is the WKWebView terminal flow.
 
-NYTimes requests use a trailing-dot hostname on the wire (for example,
-`www.nytimes.com.`) because its normal hostname can return a long privacy/consent
-document that passes the generic readability check. The original canonical URL is
-still saved and passed to extraction, so article links and deduplication keep the
-normal hostname.
+The bundled `app.luna.nytimes` JavaScript ingest plugin claims NYTimes article URLs
+before the generic fetch path. It requests the trailing-dot hostname (for example,
+`www.nytimes.com.`) without cookies because the normal hostname can return a long
+privacy/consent document that passes generic readability checks. It runs Luna's
+shared article extractor using the canonical URL as the base, so stored links and
+deduplication keep the normal hostname. The Swift `ArticleFetcher` itself has no
+NYTimes-specific URL rewrite.
 
 ### `ReaderKit/ProductMetadataExtractor.swift`
 

@@ -17,6 +17,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../LunaLibraries"),
+        .package(path: "../LunaCodeKit"),
     ],
     targets: [
         // The Go tsnet core, prebuilt as static archives. Go's darwin runtime
@@ -38,6 +39,7 @@ let package = Package(
             "LunaVaultTailscale",
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
+            .product(name: "LunaCodeMac", package: "LunaCodeKit"),
         ]),
     ],
     // Swift 5 language mode to match LunaLibraries and the app targets.

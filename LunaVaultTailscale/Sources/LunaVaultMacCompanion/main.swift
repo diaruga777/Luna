@@ -1,3 +1,4 @@
+import LunaCodeMac
 import AppKit
 import Foundation
 import LunaVaultBEP
@@ -27,10 +28,10 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         controller = CompanionController()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Luna Vault"; window.isReleasedWhenClosed = false
-        let heading = NSTextField(labelWithString: "Luna Vault on Mac")
+        window.title = "Luna Mac"; window.isReleasedWhenClosed = false
+        let heading = NSTextField(labelWithString: "Luna Mac")
         heading.font = .systemFont(ofSize: 24, weight: .semibold)
-        let instructions = NSTextField(wrappingLabelWithString: "Choose a folder, copy the pairing code, and paste it in Vault Settings on your iPhone. Accept the request here to browse this Mac from your iPhone. Only the Vault folder is indexed and writable; other folders are read only.")
+        let instructions = NSTextField(wrappingLabelWithString: "One connection for Luna Vault and Luna Code. Choose the Vault sync folder, then pair once from either iPhone app. Code can edit source files across this Mac and run Xcode builds using your existing developer setup.")
         codeField.isSelectable = true; codeField.maximumNumberOfLines = 4
         codeField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         let copy = NSButton(title: "Copy pairing code", target: self, action: #selector(copyCode))
@@ -48,12 +49,12 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
             statusField.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "Luna Vault"
+        statusItem.button?.title = "Luna Mac"
         let menu = NSMenu()
-        for (title, selector) in [("Open Luna Vault", #selector(showWindow)),
+        for (title, selector) in [("Open Luna Mac", #selector(showWindow)),
                                    ("Copy pairing code", #selector(copyCode)),
                                    ("Choose folder…", #selector(chooseFolder)),
-                                   ("Quit Luna Vault", #selector(quit))] {
+                                   ("Quit Luna Mac", #selector(quit))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         statusItem.menu = menu
@@ -91,7 +92,8 @@ private final class CompanionController: @unchecked Sendable {
     private var code: String?
     private var pairingUntil = Date.distantPast
     private var listener: LunaVaultGoListener?
-    private var active: (BEPConnection, CompanionBEPDelegate)?
+    private var active: [UUID: (BEPConnection, CompanionBEPDelegate)] = [:]
+    private var codeService: CodeService?
     private var trustedID: String?
     private var selectedGeneration = 0
 
@@ -110,8 +112,8 @@ private final class CompanionController: @unchecked Sendable {
         lock.withLock { folderURL = url; selectedGeneration += 1; status = "Folder selected: \(url.lastPathComponent). Reconnect the iPhone to refresh." }
         UserDefaults.standard.set(url, forKey: "LunaVaultCompanion.folder")
         Task {
-            let old = lock.withLock { () -> (BEPConnection, CompanionBEPDelegate)? in defer { active = nil }; return active }
-            if let old { await old.0.close(reason: "Shared folder changed") }
+            let old = lock.withLock { let old = Array(active.values); active.removeAll(); return old }
+            for connection in old { await connection.0.close(reason: "Shared folder changed") }
         }
     }
     func start() {
@@ -121,6 +123,7 @@ private final class CompanionController: @unchecked Sendable {
                 let folder = lock.withLock { folderURL }
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let localID = try transport.identity()
+                codeService = try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true))
                 let listener: LunaVaultGoListener
                 do {
                     // Syncthing commonly already owns 22000 on the user's Mac.
@@ -153,17 +156,19 @@ private final class CompanionController: @unchecked Sendable {
             let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
             // A fresh scan each connection guarantees reconnect sees changed files.
             let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
-            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault")
+            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", codeHandler: { [codeService] data in
+                guard let codeService else { return Data() }; return await codeService.handle(data)
+            })
             let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
-                localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Vault", clientVersion: "1.0"),
+                localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Mac", clientVersion: "1.0"),
                 delegate: delegate)
             let hello = try await connection.start()
             if !lock.withLock({ trustedID == accepted.device.description }) {
                 let approved = await MainActor.run {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
-                    alert.messageText = "Allow this iPhone to browse your Mac?"
-                    alert.informativeText = "\(hello.deviceName) can read files throughout this Mac, subject to macOS permissions. Only \(folder.path) is indexed and can receive uploads or deletions.\n\nDevice: \(accepted.device.description)"
+                    alert.messageText = "Pair this iPhone with Luna Mac?"
+                    alert.informativeText = "\(hello.deviceName) can read files throughout this Mac, subject to macOS permissions. Vault syncs \(folder.path). Luna Code can save text files and run Xcode builds and TestFlight deployments using this Mac’s configured account.\n\nDevice: \(accepted.device.description)"
                     alert.addButton(withTitle: "Accept"); alert.addButton(withTitle: "Reject")
                     return alert.runModal() == .alertFirstButtonReturn
                 }
@@ -174,10 +179,10 @@ private final class CompanionController: @unchecked Sendable {
             guard lock.withLock({ generation == selectedGeneration }) else {
                 await connection.close(reason: "Shared folder changed"); return
             }
-            let old = lock.withLock { () -> (BEPConnection, CompanionBEPDelegate)? in
-                let old = active; active = (connection, delegate); return old
-            }
-            if let old { await old.0.close(reason: "iPhone reconnected") }
+            let connectionID = UUID()
+            guard lock.withLock({ active.count < 8 }) else { await connection.close(reason: "Too many connections"); return }
+            lock.withLock { active[connectionID] = (connection, delegate) }
+            defer { _ = lock.withLock { active.removeValue(forKey: connectionID) } }
             let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID)
             let existing = Dictionary(uniqueKeysWithValues: try index.all().map { ($0.name, $0) })
             try index.reconcileScan(scanner.scan(previous: existing), deviceShortID: localID.shortID)
@@ -193,7 +198,7 @@ private final class CompanionController: @unchecked Sendable {
             var lastScan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: files.map { ($0.name, $0) }))
             while !(await connection.isClosed) {
                 try await Task.sleep(for: .seconds(5))
-                guard lock.withLock({ active?.0 === connection && generation == selectedGeneration }) else { return }
+                guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }) else { return }
                 let indexed = try index.all()
                 let scan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: indexed.map { ($0.name, $0) }))
                 if scan != lastScan {
@@ -205,7 +210,7 @@ private final class CompanionController: @unchecked Sendable {
                 }
             }
             lock.withLock {
-                if active?.0 === connection { active = nil; status = "iPhone offline · \(folder.path)" }
+                if active[connectionID]?.0 === connection { active.removeValue(forKey: connectionID); status = "iPhone offline · \(folder.path)" }
             }
         } catch {
             accepted.stream.close()

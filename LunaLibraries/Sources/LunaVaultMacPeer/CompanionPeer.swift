@@ -207,10 +207,13 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private let folderID: String
     private let transferLock = NSLock()
     private var authorized = false
+    private let codeHandler: (@Sendable (Data) async -> Data)?
     private var pending: [BEPIndex] = []
     private var transferTask: Task<Void, Never>?
 
-    public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String) {
+    public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String,
+                codeHandler: (@Sendable (Data) async -> Data)? = nil) {
+        self.codeHandler = codeHandler
         self.rootURL = rootURL.standardizedFileURL
         self.index = index
         self.localDevice = localDevice
@@ -452,6 +455,14 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
 
     public func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
         guard transferLock.withLock({ authorized }) else { return .failure(.noSuchFile) }
+        if request.folder == "luna-code-v1" {
+            guard let codeHandler, request.offset == 0, request.size == 0, request.hash.isEmpty,
+                  !request.fromTemporary, request.name.utf8.count <= 16 * 1024 * 1024,
+                  let data = Data(base64Encoded: request.name), data.count <= 12 * 1024 * 1024 else { return .failure(.invalidFile) }
+            let response = await codeHandler(data)
+            guard response.count <= 12 * 1024 * 1024 else { return .failure(.generic) }
+            return .success(response)
+        }
         if request.folder == VaultMacBrowseProtocol.folder {
             return await Task.detached(priority: .userInitiated) { CompanionMacBrowser().respond(to: request) }.value
         }

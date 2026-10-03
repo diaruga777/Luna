@@ -23,7 +23,10 @@ final class CodeLanguageServer: @unchecked Sendable {
         let config = URL(fileURLWithPath: project.root).appendingPathComponent("buildServer.json")
         let existing = (try? Data(contentsOf: config)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         if existing == nil || existing?["lunaCodeManaged"] as? Bool == true {
-            guard let server = Bundle.module.url(forResource: "BuildServer", withExtension: nil)?.appendingPathComponent("xcode-build-server") else {
+            let packaged = Bundle.main.resourceURL?.appendingPathComponent("LunaCodeKit_LunaCodeMac.bundle/BuildServer")
+            let resources = packaged.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+                ?? Bundle.module.url(forResource: "BuildServer", withExtension: nil)
+            guard let server = resources?.appendingPathComponent("xcode-build-server") else {
                 throw CodeFailure("The bundled Xcode build server is missing.")
             }
             let workspace = project.path.hasSuffix(".xcodeproj") ? project.path + "/project.xcworkspace" : project.path
@@ -39,6 +42,9 @@ final class CodeLanguageServer: @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["sourcekit-lsp", "--default-workspace-type", "buildServer"]
         process.currentDirectoryURL = URL(fileURLWithPath: project.root)
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        process.environment = environment
         process.standardInput = input; process.standardOutput = output; process.standardError = stderr
         process.terminationHandler = { [weak self] _ in self?.finish(CodeFailure("SourceKit stopped. Reopen the project to reconnect.")) }
         try process.run()

@@ -168,6 +168,13 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         throw error
     }
 
+    public func codeRequest(_ payload: Data) async throws -> Data {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        return try await connection.codeRequest(payload)
+    }
+
     public func browseMac(_ request: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
         if !isConnected { try await start() }
         try await waitForInitialIndex()

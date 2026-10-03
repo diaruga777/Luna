@@ -102,6 +102,25 @@ final class VaultConnectedPairingTests: XCTestCase {
         streams.0.close(); streams.1.close()
     }
 
+    func testCodeRequestsRequireSharedPairingAndStopAfterDisconnect() async throws {
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("index.sqlite"))
+        let payload = Data("code request".utf8)
+        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault", codeHandler: { $0 })
+        let streams = PipeByteStream.pair()
+        let connection = BEPConnection(stream: streams.0, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+        let request = BEPRequest(id: 1, folder: "luna-code-v1", name: payload.base64EncodedString(), offset: 0, size: 0, hash: Data())
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran before pairing approval") }
+        delegate.startServing(connection)
+        let result = await delegate.connection(connection, serve: request)
+        switch result { case .success(let bytes): XCTAssertEqual(bytes, payload); case .failure: XCTFail("Approved Code request failed") }
+        await delegate.connection(connection, didCloseWith: nil)
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran after disconnect") }
+        streams.0.close(); streams.1.close()
+    }
+
     func testInvalidBlockLayoutsFailBeforeRequestOrWrite() async throws {
         let hash = SHA256Digest.hash(Data([1]))
         let invalid: [[BlockInfo]] = [

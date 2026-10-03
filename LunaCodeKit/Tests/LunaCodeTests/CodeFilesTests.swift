@@ -66,6 +66,20 @@ final class CodeFilesTests: XCTestCase {
         do { _ = try await client.call(request); XCTFail("Reused ID must fail") } catch { XCTAssertTrue(error.localizedDescription.contains("reused")) }
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "two")
     }
+    func testCancellingCommandStopsItsChildren() async throws {
+        let process = CodeProcess()
+        let marker = directory.appendingPathComponent("child-survived")
+        let ready = directory.appendingPathComponent("ready")
+        let child = "import time,pathlib; time.sleep(1); pathlib.Path(\"" + marker.path + "\").touch()"
+        let parent = "import subprocess,sys,time,pathlib; subprocess.Popen([sys.executable,'-c',sys.argv[1]]); pathlib.Path(sys.argv[2]).touch(); time.sleep(30)"
+        let task = Task { try await process.run("/usr/bin/python3", ["-c", parent, child, ready.path], directory: directory.path, log: directory.appendingPathComponent("process.log")) }
+        for _ in 0..<50 { if FileManager.default.fileExists(atPath: ready.path) { break }; try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
+        process.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") } catch is CancellationError { }
+        try await Task.sleep(for: .milliseconds(1100))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
     func testInvalidDeploymentCannotLaunchAProcess() async throws {
         let jobs = try CodeJobs(root: directory)
         var request = CodeRequest(.deploy); request.project = CodeProject(path: "/does/not/exist.xcodeproj", scheme: "Fake")

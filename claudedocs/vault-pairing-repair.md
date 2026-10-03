@@ -87,3 +87,10 @@ xcodebuild test -project Luna.xcodeproj -scheme LunaVaultConnectionTests \
 ```
 
 The active UI flows and icon sources are documented in [vault-ui.md](vault-ui.md).
+
+## Shared Luna Code companion
+
+The companion now displays **Luna Mac**, retaining Vault’s identity, pairing and
+state paths. Luna Code uses the same approved BEP connection for explicit text
+edits, SourceKit checks and Mac build/TestFlight commands. Concurrent Code and
+Vault sessions are supported. See [Luna Code](code.md) for the additional scope.

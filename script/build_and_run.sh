@@ -3,29 +3,34 @@ set -euo pipefail
 MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="LunaVaultMacCompanion"
-BUNDLE="$ROOT_DIR/.build-vault-mac/Luna Vault.app"
+BUNDLE="$ROOT_DIR/.build-vault-mac/Luna Mac.app"
 cd "$ROOT_DIR/LunaVaultTailscale"
 swift build --product "$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
-mkdir -p "$BUNDLE/Contents/MacOS"
+mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 # Stop only after the replacement binary has built successfully.
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+if [[ "$MODE" != "--build-only" ]]; then pkill -x "$APP_NAME" >/dev/null 2>&1 || true; fi
 cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
+# The Code bridge checks application resources before the SwiftPM build path.
+for resource in "$BUILD_DIR"/*.bundle; do
+  [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
+done
 cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>LunaVaultMacCompanion</string>
 <key>CFBundleIdentifier</key><string>com.hsanabria.luna.vault.mac</string>
-<key>CFBundleName</key><string>Luna Vault</string>
+<key>CFBundleName</key><string>Luna Mac</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
-<key>NSLocalNetworkUsageDescription</key><string>Luna Vault connects with your paired iPhone to sync your folder.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Luna Mac connects to Luna Vault and Luna Code on your paired iPhone.</string>
 </dict></plist>
 PLIST
 codesign --force --sign - "$BUNDLE"
 case "$MODE" in
+  --build-only) exit 0 ;;
   run) open -n "$BUNDLE" ;;
   --verify|verify) open -n "$BUNDLE"; sleep 2; pgrep -x "$APP_NAME" >/dev/null ;;
   --debug|debug) lldb -- "$BUNDLE/Contents/MacOS/$APP_NAME" ;;
@@ -33,5 +38,5 @@ case "$MODE" in
     open -n "$BUNDLE"
     /usr/bin/log stream --info --style compact --predicate 'process == "LunaVaultMacCompanion"'
     ;;
-  *) echo "usage: $0 [run|--verify|--debug|--logs|--telemetry]" >&2; exit 2 ;;
+  *) echo "usage: $0 [run|--build-only|--verify|--debug|--logs|--telemetry]" >&2; exit 2 ;;
 esac

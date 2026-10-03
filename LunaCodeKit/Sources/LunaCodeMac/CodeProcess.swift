@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import LunaCodeCore
 
 /// No shell interpolation. Output goes to disk so a full pipe cannot stall a build.
@@ -9,7 +10,13 @@ public final class CodeProcess: @unchecked Sendable {
     public init() {}
     public func cancel() {
         lock.lock(); cancelled = true; let p = process; lock.unlock()
-        if let p, p.isRunning { p.interrupt(); p.terminate() }
+        if let p { stop(p) }
+    }
+    private func stop(_ process: Process) {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        if getpgid(pid) == pid { kill(-pid, SIGINT); kill(-pid, SIGTERM) }
+        else { process.interrupt(); process.terminate() }
     }
     public func run(_ executable: String, _ arguments: [String], directory: String,
                     log: URL, timeout: TimeInterval = 3600) async throws -> Int32 {
@@ -19,8 +26,10 @@ public final class CodeProcess: @unchecked Sendable {
                 let output = try FileHandle(forWritingTo: log)
                 defer { try? output.close() }
                 try output.seekToEnd()
-                let p = Process(); p.executableURL = URL(fileURLWithPath: executable)
-                p.arguments = arguments; p.currentDirectoryURL = URL(fileURLWithPath: directory)
+                let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+                // Isolate the command tree so Cancel also stops xcodebuild and
+                // upload subprocesses launched by asc, without affecting Xcode.
+                p.arguments = ["-c", "import os,sys; os.setsid() if os.getpgrp() != os.getpid() else None; os.execv(sys.argv[1], sys.argv[1:])", executable] + arguments; p.currentDirectoryURL = URL(fileURLWithPath: directory)
                 var environment = ProcessInfo.processInfo.environment
                 environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "")
                 p.environment = environment; p.standardOutput = output; p.standardError = output
@@ -30,7 +39,7 @@ public final class CodeProcess: @unchecked Sendable {
                 }
                 let deadline = Date().addingTimeInterval(timeout)
                 while p.isRunning {
-                    if Date() > deadline { p.interrupt(); p.terminate(); throw CodeFailure("The command timed out. See the build log.") }
+                    if Date() > deadline { stop(p); throw CodeFailure("The command timed out. See the build log.") }
                     try await Task.sleep(for: .milliseconds(100))
                 }
                 p.waitUntilExit()

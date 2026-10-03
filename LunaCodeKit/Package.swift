@@ -23,6 +23,6 @@ let package = Package(
             .product(name: "TreeSitterJSONRunestone", package: "TreeSitterLanguages", condition: .when(platforms: [.iOS])),
             .product(name: "TreeSitterJavaScriptRunestone", package: "TreeSitterLanguages", condition: .when(platforms: [.iOS])),
             .product(name: "TreeSitterCRunestone", package: "TreeSitterLanguages", condition: .when(platforms: [.iOS]))
-        ]),
+        ], resources: [.copy("Resources/Acknowledgements.txt")]),
         .testTarget(name: "LunaCodeTests", dependencies: ["LunaCodeCore", "LunaCodeMac"])
     ], swiftLanguageModes: [.v5])

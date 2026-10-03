@@ -1,6 +1,24 @@
 {
-  "originHash" : "bd2e362965c082b727bd103242d44c92ae90928372d32c4334da32ea58edc5a1",
+  "originHash" : "abe4dadca689eeb79bb06bdb398e2b647c5b3a8090b73b262aa7e3831ba7de4f",
   "pins" : [
+    {
+      "identity" : "runestone",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/simonbs/Runestone.git",
+      "state" : {
+        "revision" : "592434a103a4d1ab83e14f87ac6eef569dd7a99d",
+        "version" : "0.5.2"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
+        "version" : "602.0.0"
+      }
+    },
     {
       "identity" : "swiftsoup",
       "kind" : "remoteSourceControl",
@@ -8,6 +26,24 @@
       "state" : {
         "revision" : "49dcadd93161f4a44b4994d3a3e8de9f085aface",
         "version" : "2.13.5"
+      }
+    },
+    {
+      "identity" : "tree-sitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter",
+      "state" : {
+        "revision" : "98be227227af10cc7a269cb3ffb23686c0610b17",
+        "version" : "0.20.9"
+      }
+    },
+    {
+      "identity" : "treesitterlanguages",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/simonbs/TreeSitterLanguages.git",
+      "state" : {
+        "revision" : "635bf6a95eed5a65de313a6c4de6fcb21e00694e",
+        "version" : "0.1.9"
       }
     }
   ],

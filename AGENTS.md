@@ -29,6 +29,11 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
   (with optional local eviction), or on a user-owned Mac. AWS/S3-compatible
   providers and hosted Luna infrastructure are deferred.
 
+- **Luna Code** (`com.hsanabria.luna.code`, target `LunaCode`) — native source
+  editor with local drafts/syntax checks, Mac SourceKit completion, explicit saves,
+  and Mac build/TestFlight jobs. Shares Vault pairing and the unified **Luna Mac**
+  companion. See `claudedocs/code.md`; implementation is in `LunaCodeKit`.
+
 Vault-to-Mac reachability may use the user's separately installed Tailscale
 client (MagicDNS/Tailscale IP) or same-LAN discovery. Tailscale is transport
 and discovery only; Vault still pairs/authenticates an app-level encrypted

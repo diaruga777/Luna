@@ -72,6 +72,11 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
     }
 
     private var scrollObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    /// A card resize changes the reader's TextKit layout and content offset.
+    /// Those programmatic offsets arrive while UIKit still reports the user's
+    /// pan/deceleration as active, so they must not be counted as another
+    /// direction change during the card's reflow animation.
+    private var ignoreScrollOffsetsUntil: TimeInterval = 0
     /// Per scroll view: the last seen offset and the directional run since the
     /// last direction flip (positive = scrolling down the article).
     private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
@@ -138,6 +143,14 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
         }
     }
 
+    /// Ignores transient content-offset changes caused by a host layout
+    /// transition. The next real scroll seeds a fresh directional baseline.
+    func suppressScrollDrivenImmersion(for duration: TimeInterval) {
+        ignoreScrollOffsetsUntil = max(
+            ignoreScrollOffsetsUntil, ProcessInfo.processInfo.systemUptime + max(0, duration))
+        scrollRuns = [:]
+    }
+
     /// Direction-driven, not position-driven: scrolling down (reading on)
     /// fades the carousel chrome away; scrolling up — from anywhere in the
     /// article — fades it back in. Travel accumulates per direction and
@@ -146,6 +159,10 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
     /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
         let key = ObjectIdentifier(scrollView)
+        guard ProcessInfo.processInfo.systemUptime >= ignoreScrollOffsetsUntil else {
+            scrollRuns[key] = nil
+            return
+        }
         guard isActive, allowsScrollDrivenImmersion,
               scrollView.isDragging || scrollView.isDecelerating
         else {

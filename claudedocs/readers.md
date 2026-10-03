@@ -103,7 +103,9 @@ fraction of the VIEWPORT measured from the end of the CONTENT: on an article onl
 little longer than one screen the uncapped zone covered the entire scroll range, so no
 downward gesture anywhere in the article could dismiss the chrome at all — every card
 read as permanently surfaced. A long article is unaffected (the cap sits far above half
-a viewport). Tests: `ScrollDirectionImmersionTrackerTests`.
+a viewport). Offsets produced by the 0.32s card-resize/TextKit reflow are ignored
+briefly after an immersion change; UIKit can still report the initiating pan as
+decelerating while those layout offsets arrive. Tests: `ScrollDirectionImmersionTrackerTests`.
 
 **Wide Scroll can open from a tap or a vertical reading gesture on a rail card.**
 Once expanded, iPad and wider-than-tall hosts keep chrome dismissed while scrolling;

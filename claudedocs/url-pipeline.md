@@ -90,6 +90,12 @@ The ONE `HTML → ArticleContent` component + the ONE readable predicate.
 
 `fetchHTML(from:)` is single-UA (Safari), no fallback chain — reproducible, reader-served bytes. Googlebot is demoted to the explicit `.userAgent(.googlebotDesktop)` bypass strategy; the duplicate Googlebot UA string is gone. The legacy `fetchArchivedHTML`/`fetchArchiveTodayHTML` (the duplicate Wayback hit + near-always-failing archive.ph GET — the NYT/WSJ slowness) were removed from `HTMLFetching` and every conformer; `.waybackRaw` already covers Wayback and archive.today is the WKWebView terminal flow.
 
+NYTimes requests use a trailing-dot hostname on the wire (for example,
+`www.nytimes.com.`) because its normal hostname can return a long privacy/consent
+document that passes the generic readability check. The original canonical URL is
+still saved and passed to extraction, so article links and deduplication keep the
+normal hostname.
+
 ### `ReaderKit/ProductMetadataExtractor.swift`
 
 `HTML(classified .product) → ProductMetadata` with a MANDATORY price from ONE source (no detect-then-refetch). Extensible `[ProductPriceRule]` table: `AmazonPriceRule` (buy-box `priceAmount`/`displayPrice`, then buy-box-scoped `.a-offscreen` — never the first list-price span; strict `isAmazonHost`; TLD→currency), `TargetPriceRule`/`WalmartPriceRule` (`__NEXT_DATA__`), generic JSON-LD/OG/microdata/embedded fallback. Currency per-rule (no silent USD). The WebView `render` tier runs ONLY when `render != nil`; `ArticleIngestDecider` defaults it to nil ⇒ **structurally unreachable in extensions** (the "spins forever" fix); the main app injects `WebViewPriceRenderer`. Detection stays in the classifier/`ProductPageDetector`; this only EXTRACTS once classified.

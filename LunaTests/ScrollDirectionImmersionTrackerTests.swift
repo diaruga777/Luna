@@ -102,6 +102,14 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertEqual(events.first?.extendsCard, true, "the scroll reader extends the card on immersion")
     }
 
+    func testOffsetsDuringHostViewportTransitionDoNotStartAnotherImmersion() {
+        tracker.suppressScrollDrivenImmersion(for: 60)
+        drag(to: 40)
+        drag(to: 90)
+        drag(to: 150)
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testTravelAccumulatesAcrossMultipleSmallDeltasNotJustTheLastOne() {
         drag(to: 0)
         drag(to: 30)  // run 30

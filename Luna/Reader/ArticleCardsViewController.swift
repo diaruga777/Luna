@@ -1285,6 +1285,11 @@ final class ReaderCardContentViewController: CardContentViewController,
         // reaching the article's end owes the content a compensating slide.
         let restoringAtArticleEnd = !immersed && extendsCard && isFocusedContentAtEnd
         let extensionBeforeRestore = immersionBottomExtension
+        // The card's 0.32s immersion animation reflows TextKit and can adjust
+        // contentOffset while the original pan is still decelerating. Ignore
+        // those synthetic offsets so they cannot reverse this transition and
+        // start an endless sequence of width animations.
+        tracker.suppressScrollDrivenImmersion(for: 0.45)
         delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
         if restoringAtArticleEnd {
             keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)

@@ -558,7 +558,12 @@ public struct ArticleFetcher: HTMLFetching {
         xForwardedFor: String? = nil, timeout: TimeInterval = 20, session: URLSession = .shared
     ) async throws -> String {
         try LiveNetworkPolicy.check(url, context: "ArticleFetcher.fetch")
-        var request = URLRequest(url: url, timeoutInterval: timeout)
+        // NYTimes currently serves a consent/privacy document to the normal
+        // hostname in some reader fetches. Safari can reach the article through
+        // the same fully-qualified hostname with its final DNS dot; keep the
+        // saved/canonical URL unchanged and use that spelling only on the wire.
+        let requestURL = Self.networkRequestURL(for: url)
+        var request = URLRequest(url: requestURL, timeoutInterval: timeout)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         // Some sites still serve fuller content to visitors arriving from Google.
@@ -617,6 +622,21 @@ public struct ArticleFetcher: HTMLFetching {
                 + "\(html.count)ch in \(elapsed())ms",
             category: "fetch")
         return html
+    }
+
+    /// Request spelling for hosts that need an alternate DNS name to return the
+    /// same page content. This does not change the URL stored for the article or
+    /// the base URL used by the extractor.
+    static func networkRequestURL(for url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let host = components.host?.lowercased()
+        else { return url }
+        let hostWithoutRootDot = host.hasSuffix(".") ? String(host.dropLast()) : host
+        guard HostMatching.hostSuffixMatches(hostWithoutRootDot, "nytimes.com"),
+              !host.hasSuffix(".")
+        else { return url }
+        components.host = host + "."
+        return components.url ?? url
     }
 
     /// Names a request's identity without quoting it: the recognized crawler, or

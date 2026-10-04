@@ -209,7 +209,7 @@ public enum MediaAutoDownloader {
             sourceExtension: String? = nil
         ) -> String {
             let titleStem = title.flatMap(sanitizedStem)
-            let fallbackStem = PlatformRecognizer.recognize(sourceURLString)?.platform.rawValue
+            let fallbackStem = (URLBehaviorPolicy.pluginsOnly ? nil : PlatformRecognizer.recognize(sourceURLString)?.platform.rawValue)
                 ?? URL(string: sourceURLString).flatMap(hostStem)
                 ?? "media"
             let stem = titleStem ?? sanitizedStem(fallbackStem) ?? "media"

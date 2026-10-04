@@ -979,7 +979,7 @@ public final class LiveMediaDownloadManager: NSObject {
                     startRedditMux(jobID: job.id)
                 } else if FileManager.default.fileExists(atPath: videoFile.path) {
                     startTask(
-                        Self.redditRequest(audioURL), jobID: job.id,
+                        Self.redditRequest(audioURL, pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)), jobID: job.id,
                         role: .redditAudio, attempt: job.mediaAttempts)
                 } else {
                     startTask(
@@ -1259,10 +1259,11 @@ public final class LiveMediaDownloadManager: NSObject {
         return request
     }
 
-    private static func redditRequest(_ url: URL) -> URLRequest {
+    private static func redditRequest(_ url: URL, pluginHeaders: [String: String] = [:]) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
+        if !URLBehaviorPolicy.pluginsOnly { request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer") }
+        for (name, value) in pluginHeaders { request.setValue(value, forHTTPHeaderField: name) }
         return request
     }
 
@@ -1622,7 +1623,7 @@ public final class LiveMediaDownloadManager: NSObject {
         }) else { return }
         guard let sourceURL = URL(string: job.sourceURLString) else { return }
         startTask(
-            Self.mediaAssetRequest(assetURL: videoURL, sourceURL: sourceURL),
+            Self.mediaAssetRequest(assetURL: videoURL, sourceURL: sourceURL, pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)),
             jobID: job.id, role: .redditVideo, attempt: job.mediaAttempts,
             expectedByteCount: job.expectedByteCount)
     }
@@ -1657,7 +1658,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 finishRedditWithoutAudio(jobID: job.id)
                 return
             }
-            startTask(Self.redditRequest(audio), jobID: job.id, role: .redditAudio, attempt: 0)
+            startTask(Self.redditRequest(audio, pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)), jobID: job.id, role: .redditAudio, attempt: 0)
         } catch {
             startTrackedBackgroundWork {
                 await self.failJob(job, message: MediaDownloadError.downloadFailed.message)
@@ -1681,7 +1682,7 @@ public final class LiveMediaDownloadManager: NSObject {
             $0.mediaAttempts += 1
         }) else { return }
         startTask(
-            Self.mediaAssetRequest(assetURL: video, sourceURL: source),
+            Self.mediaAssetRequest(assetURL: video, sourceURL: source, pluginHeaders: Self.headers(fromJSON: retried.requestHeadersJSON)),
             jobID: retried.id, role: .redditVideo, attempt: retried.mediaAttempts,
             expectedByteCount: retried.expectedByteCount)
     }
@@ -1720,6 +1721,10 @@ public final class LiveMediaDownloadManager: NSObject {
     private func finishRedditManifest(
         job: LiveMediaDownloadJob, location: URL, response: URLResponse?
     ) {
+        guard !URLBehaviorPolicy.pluginsOnly else {
+            Task { await self.failJob(job, message: "The plugin must resolve the audio track.") }
+            return
+        }
         guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
               let data = try? Data(contentsOf: location),
               let xml = String(data: data, encoding: .utf8),
@@ -1734,7 +1739,7 @@ public final class LiveMediaDownloadManager: NSObject {
         guard let current = store.mutate(id: job.id, {
             $0.audioURLString = audio.absoluteString
         }) else { return }
-        startTask(Self.redditRequest(audio), jobID: current.id, role: .redditAudio, attempt: 1)
+        startTask(Self.redditRequest(audio, pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)), jobID: current.id, role: .redditAudio, attempt: 1)
     }
 
     private func startRedditMux(jobID: String) {
@@ -1790,6 +1795,10 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
+        guard !URLBehaviorPolicy.pluginsOnly else {
+            Task { await self.failJob(job, message: "This legacy download needs to be resolved by an installed plugin.") }
+            return
+        }
         var job = job
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
@@ -2157,7 +2166,7 @@ public final class LiveMediaDownloadManager: NSObject {
             }) else { return }
             freshJob = updated
             startTask(
-                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL, pluginHeaders: Self.headers(fromJSON: freshJob.requestHeadersJSON)),
                 jobID: freshJob.id, role: .media, attempt: freshJob.mediaAttempts,
                 expectedByteCount: freshJob.expectedByteCount)
             return

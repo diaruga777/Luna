@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaURLClassification
 
 /// Asks for Photos access BEFORE a long batch of downloads starts, rather than
@@ -54,7 +55,9 @@ public enum MediaPhotosPreflight {
     /// alone: a recognized social platform, or a link that already names a media
     /// file.
     static func couldBeDownloadable(_ urlString: String) -> Bool {
-        PlatformRecognizer.recognize(urlString) != nil
+        // Core asks after a plugin has actually declared a media asset.
+        guard !URLBehaviorPolicy.pluginsOnly else { return false }
+        return PlatformRecognizer.recognize(urlString) != nil
             || DirectMediaURL.kind(for: urlString) != nil
     }
 }

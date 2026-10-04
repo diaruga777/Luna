@@ -17,7 +17,7 @@ public struct MediaDownloadService {
     private let resolver: SocialMediaResolving
     private let saver: PhotoLibrarySaving
 
-    public init(resolver: SocialMediaResolving = SocialMediaResolver(),
+    public init(resolver: SocialMediaResolving = MediaAssetResolution.resolver,
          saver: PhotoLibrarySaving = PhotoLibrarySaver()) {
         self.resolver = resolver
         self.saver = saver
@@ -160,7 +160,7 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         let downloaded: URL
         if let audioURL = asset.audioURL {
             downloaded = try await downloadAndMux(
-                videoURL: asset.url, audioURL: audioURL, dashManifestURL: asset.dashManifestURL,
+                asset: asset, audioURL: audioURL,
                 referer: referer, onProgress: onProgress)
         } else {
             let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
@@ -177,26 +177,31 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    /// Reddit hosts video and audio as two separate files — downloads the
-    /// video, resolves+downloads the audio via `RedditAudioFetcher` (its URL
-    /// is a guess, not one Reddit hands back directly, so that tries a couple
-    /// of fallbacks), and muxes them with `MediaMuxer`. If the audio still
-    /// can't be fetched, degrades gracefully to the silent video rather than
-    /// failing the whole download.
+    /// Transfers declared video/audio tracks and muxes them. Sibling apps retain
+    /// their legacy Reddit audio discovery; Core receives the resolved URL from
+    /// the plugin. A failed companion preserves the playable silent video.
     private static func downloadAndMux(
-        videoURL: URL, audioURL: URL, dashManifestURL: URL?, referer: String?,
+        asset: MediaAsset, audioURL: URL, referer: String?,
         onProgress: @escaping (Double) -> Void
     ) async throws -> URL {
         let videoFile = try await MediaFileDownloader(
-            asset: MediaAsset(url: videoURL, kind: .video),
+            asset: asset,
             onProgress: { onProgress($0 * 0.4) }
         ).run(referer: referer)
         onProgress(0.4)
 
-        guard let audioFile = await RedditAudioFetcher.fetch(
-            primaryAudioURL: audioURL, dashManifestURL: dashManifestURL,
-            referer: referer ?? "https://www.reddit.com/")
-        else {
+        let audioFile: URL?
+        if URLBehaviorPolicy.pluginsOnly {
+            // The plugin has already selected the track; native code only transfers it.
+            audioFile = try? await MediaFileDownloader(
+                asset: MediaAsset(url: audioURL, kind: .audio, requestHeaders: asset.requestHeaders),
+                onProgress: { onProgress(0.4 + $0 * 0.4) }).run(referer: referer)
+        } else {
+            audioFile = await RedditAudioFetcher.fetch(
+                primaryAudioURL: audioURL, dashManifestURL: asset.dashManifestURL,
+                referer: referer ?? "https://www.reddit.com/")
+        }
+        guard let audioFile else {
             onProgress(1)
             return videoFile
         }
@@ -230,6 +235,7 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         var request = URLRequest(url: asset.url, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         if let referer { request.setValue(referer, forHTTPHeaderField: "Referer") }
+        for (name, value) in asset.requestHeaders { request.setValue(value, forHTTPHeaderField: name) }
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let task = session.downloadTask(with: request)

@@ -47,16 +47,27 @@ URL rescue, and source-site resolution of unresolved durable downloads. Missing
 price owners leave the last observed value/history intact. Legacy trackers need
 an explicit re-save with a supported plugin; no owner is assigned by guessing.
 
+Follow-up (2026-10-05): foreground media services and preflight use the composed
+plugin resolver. `reddit.js` selects audio from DASH manifests and declares request
+headers; Core transfers declared tracks without native manifest discovery. Plugin
+headers also survive the foreground, preflight, muxed, and resumed transfer paths.
+Native callbacks from pre-upgrade resolving jobs stop in Core. Saved-media helpers
+no longer infer source platform/identity from Core URLs. Core Intent prechecks accept
+valid URLs without native classification, and the share surface no longer unwraps
+Facebook-specific deep links before plugin dispatch.
+
 This is a migration checkpoint, not completion of every parity item in the
 handoff. Full native seller discovery/Google Shopping, the broader paywall
-strategy set, Reddit audio-manifest discovery, additional secondary-path auditing,
+strategy set, additional secondary-path auditing,
 and complete disabled-catalog/recovery coverage still require follow-up. Native
 implementations remain for siblings. The sections below retain historical API
 detail; this ownership boundary supersedes their statements about native fallbacks
 and the four retired semantic helpers.
 
-Validation: 38 targeted iOS 26.2 simulator tests pass (X plugin, Safari X eligibility,
-plugin ingestion), plus Node migration fixtures and runtime primitive checks.
+Validation: 53 targeted iOS 26.2 simulator tests pass (X/Reddit plugins, Safari X
+eligibility, plugin ingestion, media re-resolution and no-plugin foreground
+defaults), plus Node migration fixtures and the complete plugin-sim suite
+(runtime/manifest/examples, 108 semantic cases, and authoring type checks).
 The complete legacy suite has not been rerun or migrated to the new ownership policy.
 
 ## 1. Architecture

@@ -198,6 +198,7 @@ public enum PendingResolvedMediaDownloads {
         store: SavesStore = .shared,
         completions: PendingIngestCompletions = .shared
     ) -> Bool {
+        guard !URLBehaviorPolicy.pluginsOnly else { return false }
         let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty, let recognized = PlatformRecognizer.recognize(urlString),
               store.savePlatformMetadata(

@@ -314,3 +314,9 @@ Core plugin-only baseline, plain links, bounded rewrites, X Safari regression,
 plugin-owned X articles, general web/product/document plugin and NYTimes
 extraction have landed. See claudedocs/plugins.md for exact scope, API changes,
 validation and remaining parity/audit work. This handoff is not fully complete.
+
+2026-10-05 follow-up: Reddit audio-manifest interpretation is plugin-owned;
+foreground resolution/preflight now use the composed plugin resolver, and old
+native resolution callbacks stop in Core. Download headers and stored identity
+helpers were audited. Seller discovery/Google Shopping, broader paywall parity,
+and the remaining acceptance matrix are still outstanding.

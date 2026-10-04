@@ -188,7 +188,7 @@ public final class SavedMediaStore {
         if let index = items.firstIndex(where: { $0.id == id || $0.sourceURLString == sourceURLString }) {
             return index
         }
-        guard let recognized = PlatformRecognizer.recognize(sourceURLString),
+        guard let recognized = URLBehaviorPolicy.pluginsOnly ? nil : PlatformRecognizer.recognize(sourceURLString),
               let itemID = recognized.itemID
         else { return nil }
         return items.firstIndex {
@@ -211,7 +211,7 @@ public final class SavedMediaStore {
         kind: MediaAsset.Kind? = nil,
         dateSaved: Date = Date()
     ) throws -> SavedMediaItem {
-        let recognized = PlatformRecognizer.recognize(sourceURLString)
+        let recognized = URLBehaviorPolicy.pluginsOnly ? nil : PlatformRecognizer.recognize(sourceURLString)
         if let matched = matchedItem(id: id, sourceURLString: sourceURLString) {
             discardSaveWithDeletedPhotosBacking(matched.id)
         }
@@ -264,7 +264,7 @@ public final class SavedMediaStore {
         dateSaved: Date = Date(),
         requiringItemID: UUID? = nil
     ) async throws -> SavedMediaItem {
-        let recognized = PlatformRecognizer.recognize(sourceURLString)
+        let recognized = URLBehaviorPolicy.pluginsOnly ? nil : PlatformRecognizer.recognize(sourceURLString)
         let (existing, protectedItemID, id) = try lock.withLock {
             () -> (SavedMediaItem?, UUID?, UUID) in
             let items = loadUnlocked()

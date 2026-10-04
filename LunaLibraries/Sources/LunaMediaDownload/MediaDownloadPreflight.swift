@@ -60,7 +60,7 @@ public enum IntentMediaDownloadPolicy {
 public enum MediaDownloadPreflight {
     public static func inspect(
         sourceURL: URL,
-        resolver: SocialMediaResolving = SocialMediaResolver()
+        resolver: SocialMediaResolving = MediaAssetResolution.resolver
     ) async -> MediaDownloadInspection? {
         guard let asset = await resolver.resolveAssets(for: sourceURL).first else {
             return nil
@@ -81,13 +81,16 @@ public enum MediaDownloadPreflight {
         request.httpMethod = "HEAD"
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         let host = sourceURL.host?.lowercased() ?? ""
-        if HostMatching.hostSuffixMatches(host, "tiktok.com") {
-            request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
-        } else if HostMatching.hostSuffixMatches(host, anyOf: ["reddit.com", "redd.it"]) {
-            request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
-        } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .youtube {
-            request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+        if !URLBehaviorPolicy.pluginsOnly {
+            if HostMatching.hostSuffixMatches(host, "tiktok.com") {
+                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+            } else if HostMatching.hostSuffixMatches(host, anyOf: ["reddit.com", "redd.it"]) {
+                request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
+            } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .youtube {
+                request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+            }
         }
+        for (name, value) in asset.requestHeaders { request.setValue(value, forHTTPHeaderField: name) }
         guard let (_, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse,
               (200..<400).contains(http.statusCode),

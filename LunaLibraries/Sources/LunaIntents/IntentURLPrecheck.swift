@@ -45,6 +45,7 @@ public enum IntentURLPrecheck {
         guard let url = URLUnwrapper.ingestURL(from: urlString),
               url.host?.isEmpty == false
         else { return .invalid }
+        if current == .luna { return .handleable(urlString: url.absoluteString) }
         let owner = predictedOwner(
             forKind: Classifier.classify(url: url))
         switch SurfaceSupport.evaluate(owner: owner, current: current) {

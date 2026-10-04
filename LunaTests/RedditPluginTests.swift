@@ -45,7 +45,11 @@ final class RedditPluginTests: XCTestCase {
             let swift = await swiftResolvedAssets(
                 for: Self.postURL, answering: [(needle: "comments/abc123.json", body: body)])
 
-            XCTAssertEqual(plugin.shapes, swift.shapes, name)
+            XCTAssertEqual(plugin.map(\.url), swift.map(\.url), name)
+            XCTAssertEqual(plugin.map(\.kind), swift.map(\.kind), name)
+            XCTAssertEqual(plugin.map(\.audioURL), swift.map(\.audioURL), name)
+            XCTAssertEqual(plugin.map(\.thumbnailURL), swift.map(\.thumbnailURL), name)
+            XCTAssertTrue(plugin.allSatisfy { $0.dashManifestURL == nil })
         }
     }
 
@@ -60,10 +64,24 @@ final class RedditPluginTests: XCTestCase {
         XCTAssertEqual(assets.count, 1)
         XCTAssertEqual(
             assets.first?.audioURL?.absoluteString, "https://v.redd.it/abc123def456/audio")
-        XCTAssertEqual(
-            assets.first?.dashManifestURL?.absoluteString,
-            "https://v.redd.it/abc123def456/DASHPlaylist.mpd?a=1")
+        XCTAssertNil(assets.first?.dashManifestURL)
         XCTAssertEqual(assets.first?.quality, "1080p")
+    }
+
+    func testPluginResolvesAudioManifestAndDeclaresTransferHeaders() async throws {
+        harness.fetcher.respond(to: Self.listingURL, body: try fixture("video-with-audio.json"))
+        harness.fetcher.respond(
+            to: "https://v.redd.it/abc123def456/DASHPlaylist.mpd?a=1",
+            body: """
+            <MPD><Period><AdaptationSet mimeType="audio/mp4">
+            <Representation><BaseURL>tracks/actual.m4a?x=1&amp;y=2</BaseURL></Representation>
+            </AdaptationSet></Period></MPD>
+            """)
+        let assets = await harness.resolve(Self.postURL)
+        XCTAssertEqual(assets.first?.audioURL?.absoluteString,
+                       "https://v.redd.it/abc123def456/tracks/actual.m4a?x=1&y=2")
+        XCTAssertEqual(assets.first?.requestHeaders["Referer"], "https://www.reddit.com/")
+        XCTAssertNil(assets.first?.dashManifestURL)
     }
 
     /// A post with no hosted video resolves nothing, so the walk falls through

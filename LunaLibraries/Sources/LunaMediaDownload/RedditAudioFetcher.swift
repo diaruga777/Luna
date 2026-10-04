@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// Resolves and downloads a Reddit video's audio track. Reddit doesn't hand
 /// back the audio URL directly for a post with sound: `RedditMediaParser`'s
@@ -21,7 +22,7 @@ public enum RedditAudioFetcher {
     ) async -> URL? {
         if let file = await download(primaryAudioURL, referer: referer) { return file }
 
-        guard let dashManifestURL,
+        guard !URLBehaviorPolicy.pluginsOnly, let dashManifestURL,
               let (data, response) = try? await URLSession.shared.data(
                 for: request(for: dashManifestURL, referer: referer)),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),

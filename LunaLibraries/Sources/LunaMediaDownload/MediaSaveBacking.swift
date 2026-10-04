@@ -33,7 +33,7 @@ enum MediaSaveBacking {
         // wrapper tokens (for example Reddit `/s/`) must reach this boundary as
         // the canonical URL produced by the caller's resolver.
         let normalized = URLUnwrapper.ingestURL(from: urlString)?.absoluteString ?? urlString
-        let recognized = PlatformRecognizer.recognize(normalized)
+        let recognized = URLBehaviorPolicy.pluginsOnly ? nil : PlatformRecognizer.recognize(normalized)
         return store.reserveSaveAttempt(
             urlString: normalized, at: dateSaved,
             platform: recognized?.platform, platformItemID: recognized?.itemID,

@@ -33,3 +33,13 @@ const wrapper=load('url-rewrites','').hooks;
 const url='https://l.facebook.com/l.php?u='+encodeURIComponent('https://unknown.example/p?keep=1');
 assert.equal((await wrapper.ingest({url})).rewriteURL,'https://unknown.example/p?keep=1');
 console.log('Core plugin migration fixtures passed (video/text ownership, article, product, wrappers, intent).');
+
+const redditLuna = createBridge({capabilities:['fetch','html']});
+const listing = [{data:{children:[{data:{secure_media:{reddit_video:{fallback_url:'https://v.redd.it/id/DASH_720.mp4',has_audio:true,dash_url:'https://v.redd.it/id/DASHPlaylist.mpd'}}}}]}}];
+redditLuna.fetch = async request => ({ok:true,text:request.url.includes('comments/') ? JSON.stringify(listing) : '<MPD><AdaptationSet mimeType="audio/mp4"><Representation><BaseURL>tracks/sound.m4a?x=1&amp;y=2</BaseURL></Representation></AdaptationSet></MPD>'});
+vm.runInNewContext(source('reddit'),{luna:redditLuna});
+const redditResult = await redditLuna.__registeredHooks.ingest({url:'https://reddit.com/comments/abc',claim:{itemId:'abc'}});
+assert.equal(redditResult.assets[0].audioURL,'https://v.redd.it/id/tracks/sound.m4a?x=1&y=2');
+assert.equal(redditResult.assets[0].headers.Referer,'https://www.reddit.com/');
+assert.equal(redditResult.assets[0].dashManifestURL,undefined);
+console.log('Plugin-owned Reddit DASH audio fixture passed.');

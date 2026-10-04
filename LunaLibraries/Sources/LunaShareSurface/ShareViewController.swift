@@ -672,6 +672,7 @@ open class ShareViewController: UIViewController {
     /// cannot see the non-http `fbrpc` scheme, so normal link extraction
     /// misses it.
     private static func facebookTargetIfPresent(in text: String) -> URL? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) else { return nil }
         return NewsAggregatorUnwrapper.facebookRedirectTarget(url)

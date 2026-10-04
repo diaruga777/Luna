@@ -20,6 +20,22 @@ final class MediaReresolveTests: XCTestCase {
         MediaAsset(url: URL(string: "https://cdn.test/\(path)")!, kind: kind, quality: quality)
     }
 
+    func testCoreForegroundDefaultsDoNotResolveWithoutPlugins() async throws {
+        guard URLBehaviorPolicy.pluginsOnly else { throw XCTSkip("Core composition test") }
+        let previous = PluginMediaSeams.resolver
+        PluginMediaSeams.resolver = nil
+        defer { PluginMediaSeams.resolver = previous }
+        let url = URL(string: "https://cdn.example.test/video.mp4")!
+        let inspection = await MediaDownloadPreflight.inspect(sourceURL: url)
+        XCTAssertNil(inspection, "a file extension cannot activate the native resolver in Core")
+        do {
+            _ = try await MediaDownloadService().downloadFirstMediaToFile(from: url, onProgress: { _ in })
+            XCTFail("Expected no media without a plugin")
+        } catch MediaDownloadError.noMedia {
+            // No native resolver and no network transfer was reached.
+        }
+    }
+
     // MARK: - Matching
 
     func testAnAssetIsMatchedByKindAndQuality() {

@@ -2,13 +2,13 @@
 {
   "id": "app.luna.reddit",
   "name": "Reddit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": 1,
   "description": "Resolves a Reddit post's hosted video, with its separate audio track.",
   "produces": ["media"],
   "match": { "hosts": ["reddit.com", "*.reddit.com", "redd.it", "*.redd.it"] },
   "priority": 100,
-  "capabilities": ["fetch"]
+  "capabilities": ["fetch", "html"]
 }
 */
 
@@ -16,11 +16,8 @@
 // permalink shape, so the plugin reconstructs one URL from the post id rather
 // than rewriting the shared link.
 //
-// A Reddit-hosted video WITH sound is two DASH files: there is no muxed URL to
-// download. The audio companion rides the asset as `audioURL`, derived from the
-// video URL's sibling `audio` path — the name Reddit's own `DASHPlaylist.mpd`
-// gives it — and `dashManifestURL` carries the manifest the downloader consults
-// when that derivation misses.
+// The plugin resolves the DASH audio track before returning assets. Native
+// downloaders only transfer the declared tracks and mux them.
 
 const LISTING_HOST = "https://www.reddit.com";
 
@@ -110,6 +107,43 @@ function quality(videoURL) {
     return match ? match[1] + "p" : null;
 }
 
+// DASH can put the MIME type on either AdaptationSet or Representation.
+// All interpretation belongs here, including resolving nested relative BaseURLs.
+function manifestAudio(xml, manifestURL) {
+    function blocks(text, tag) {
+        return String(text).match(new RegExp('<' + tag + '\\b[^>]*>[\\s\\S]*?<\\/' + tag + '>', 'gi')) || [];
+    }
+    function base(text, parent) {
+        const match = /<BaseURL(?:\s[^>]*)?>([\s\S]*?)<\/BaseURL>/i.exec(text);
+        if (!match) return parent;
+        const doc = luna.html.parse('<a href="' + match[1].trim().replace(/"/g, '&quot;') + '"></a>', parent);
+        return doc.querySelector('a').absoluteURL('href');
+    }
+    const sets = blocks(xml, 'AdaptationSet');
+    for (const set of sets.length ? sets : [xml]) {
+        const setHead = set.split('<Representation')[0];
+        const setBase = base(setHead, manifestURL);
+        for (const rep of blocks(set, 'Representation')) {
+            if (!/audio\//i.test(rep.split('>')[0] + setHead.split('>')[0]) && !/contentType=["']audio["']/i.test(setHead)) continue;
+            const resolved = base(rep, setBase);
+            if (resolved && resolved !== manifestURL && /^https?:\/\//i.test(resolved)) return resolved;
+        }
+    }
+    return null;
+}
+async function resolveAudio(video) {
+    if (typeof video.dash_url === 'string') {
+        try {
+            const response = await luna.fetch({url:video.dash_url, timeout:8, headers:{Referer:LISTING_HOST + '/'}});
+            if (response.ok && typeof response.text === 'string') {
+                const audio = manifestAudio(response.text, video.dash_url);
+                if (audio) return audio;
+            }
+        } catch (_) { /* Older posts still expose the conventional audio path. */ }
+    }
+    return audioURL(video.fallback_url);
+}
+
 luna.register({
     classify({ url, intent }) {
         // A transcribe intent belongs to the transcript plugin, which sits
@@ -137,7 +171,7 @@ luna.register({
             || ((post.media || {}).reddit_video);
         if (!video || typeof video.fallback_url !== "string") { return null; }
 
-        const asset = { url: video.fallback_url, type: "video" };
+        const asset = { url: video.fallback_url, type: "video", headers: {Referer: LISTING_HOST + "/"} };
         const resolution = quality(video.fallback_url);
         if (resolution) { asset.quality = resolution; }
         // A thumbnail Reddit could not produce is the word "self" or "default",
@@ -146,11 +180,9 @@ luna.register({
             asset.thumbnailURL = post.thumbnail;
         }
         if (video.has_audio === true) {
-            const audio = audioURL(video.fallback_url);
+            const audio = await resolveAudio(video);
             if (audio) { asset.audioURL = audio; }
-            if (typeof video.dash_url === "string") {
-                asset.dashManifestURL = video.dash_url;
-            }
+
         }
         return { kind: "media", platform: "reddit", itemId: id, assets: [asset] };
     },

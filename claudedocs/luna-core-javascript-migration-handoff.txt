@@ -1,0 +1,309 @@
+LUNA CORE: JAVASCRIPT BEHAVIOR OWNERSHIP HANDOFF
+Date: 2026-10-04
+Source audit baseline: main at 971a5dd05
+Scope: central Luna/Core (com.hsanabria.luna), including its share, action,
+Safari, background refresh, recovery and download entry points.
+This is a requested architecture and implementation handoff, not a completed migration.
+Paths below are relative to the repository root.
+
+USER REQUIREMENT
+
+Swift should still drive the flow. It may convert JavaScript return values into
+resolved database objects, fetch images, manage downloads, and provide native
+services. Specific URL -> behavior mapping and content interpretation belong in
+JavaScript plugins. With zero plugins installed, Swift alone should provide only
+very basic handling.
+
+Do not interpret this as moving all Swift parsing, all UI, or the database to JS.
+The boundary is semantic responsibility: a website changing its URL shape, page
+structure, API payload, canonicalization rules or access strategy should normally
+require a plugin update, not a native release.
+
+CURRENT STATE
+
+Core is currently plugin-first, not plugin-dependent. IngestPipeline unwraps URLs
+in Swift, tries plugins, then falls through to the existing native classifier and
+article/product/social processors. Core registers these native processors in
+Luna/KindWiring+Luna.swift. Even a successful plugin may delegate article extraction
+back to Swift through luna.html.article(). Other native paths perform metadata
+enrichment, seller comparison, price refresh and media resolution outside that walk.
+
+Some native parsers intentionally remain for the sibling Reader, Downloader and
+Price Tracker apps. Their presence in the repository does not itself prove Core
+uses them. Preserve sibling behavior unless separately requested; remove or gate
+Core's execution paths first. Follow up with dependency slimming where practical.
+
+WHAT SHOULD REMAIN IN SWIFT
+
+- App/UI lifecycle, user choices, permissions, settings and native presentation.
+- Plugin installation, manifest validation, generic manifest matching, ordering,
+  capability enforcement, JS execution, budgets, cancellation and diagnostics.
+- A generic state machine for classify/ingest/refresh/resume/reresolve; JS chooses
+  content semantics, while Swift schedules and executes the requested work.
+- HTTP transport, standard redirects, cookies, browser presentation/capture,
+  bounded downloads, byte decoding, native file access and platform APIs.
+- Validating plugin result schemas; resolving relative result URLs against an
+  explicit base; converting declared kinds/platform labels to model enums;
+  converting plugin-selected HTML into reader blocks without choosing a new body.
+- Persistence, transactions, file ownership, deduplication using supplied identity,
+  image retrieval/caching, download progress, generic retry/backoff and scheduling.
+- Generic media execution: downloading declared assets, muxing declared tracks,
+  clipping an explicit time range, transcribing a declared source, native playback.
+- Existing local-file/document format conversion (PDF/EPUB/DOCX/etc.) can remain
+  native. A plugin can identify a remote document; Swift can fetch and parse it.
+- Low-level syntax tools such as DOM/CSS access through SwiftSoup, JSON parsing,
+  URL components, entity decoding, cryptography and schema-value validation.
+
+An adapter must not silently reclassify the original URL or scrape missing fields.
+Missing optional plugin values should remain absent or receive neutral defaults.
+The native platform enum may remain for presentation; inferring it from host/path
+when a plugin omitted it is website behavior and should be removed from Core.
+
+PROPOSED ZERO-PLUGIN BASELINE
+
+The user specified "very very basic" rather than an exact UI/data-model contract.
+Use this conservative baseline when implementing:
+
+- Accept an ordinary HTTP(S) URL, validate it, and preserve it as a plain link
+  with its supplied title or URL/host as a neutral display fallback.
+- Retain normal user-driven open/share/delete and existing local file import.
+- Do not infer article/product/social platform, scrape content, discover media,
+  find prices/sellers, unwrap website-specific links, or try paywall strategies.
+- No automatic extraction fetch is needed for the baseline. Generic HTTP redirect
+  handling remains available when an explicit operation actually fetches a URL.
+- Advanced actions without a suitable plugin produce a clear unsupported/plugin
+  required outcome. A Transcribe request must never turn into a download instead.
+- Existing saved articles, files and resolved assets remain usable. Missing plugins
+  prevent new semantic resolution, not access to content already stored.
+- Inspect existing save kinds/statuses before implementing plain links. If no
+  honest generic representation exists, add the smallest compatible representation
+  and migration; do not mislabel a bookmark as a resolved article or product.
+- Test an actually empty effective plugin catalog, including no bundled plugins.
+  Also test all plugins disabled. A shipped default plugin is still a plugin;
+  it must not be resurrected as a hidden fallback when removed or disabled.
+
+MIGRATION INVENTORY
+
+1. Pipeline fallback and native classification -- highest priority
+
+Sources:
+  LunaLibraries/Sources/LunaIngest/IngestPipeline.swift
+  LunaLibraries/Sources/LunaPluginIngest/PluginIngestStage.swift
+  LunaLibraries/Sources/LunaHTMLClassification/Classifier.swift
+  LunaLibraries/Sources/LunaURLClassification/{PlatformRecognizer,KnownSite,
+    NewsSites,ShoppingSites,AmazonStorefronts,DirectMediaURL}.swift
+  Luna/KindWiring+Luna.swift
+  LunaLibraries/Sources/LunaReaderUI/ArticleKindComposition.swift
+  LunaLibraries/Sources/LunaPriceUI/ProductKindComposition.swift
+
+IngestPipeline currently tries plugins around line 266, Classifier around line 300,
+then native social/article/product processing. Move host/path/query/extension rules,
+known publisher/shop/platform lists and content heuristics into plugins. Replace
+Core's all-plugins-passed behavior with the basic baseline. Keep registry-driven
+orchestration and result validation native. Separate Core composition from sibling
+native processing without losing the model adopters both need.
+
+2. URL unwrapping, canonicalization and identity
+
+Sources:
+  LunaLibraries/Sources/LunaURLClassification/{URLUnwrapper,
+    NewsAggregatorUnwrapper,URLCanonicalizer,BlueskyLink,ProductSearchURL}.swift
+  LunaLibraries/Sources/LunaHTMLClassification/GoogleShoppingURL.swift
+  LunaLibraries/Sources/LunaMediaDownload/MediaModelAdopter.swift
+
+URLUnwrapper runs before plugins and contains Facebook, Apple/Google News,
+Google share, shortener and publisher-interstitial handling. Move those rules,
+site-specific tracking cleanup, platform IDs and identity transformations into JS.
+Audit pre-ingest input gates and storage normalization as well as the main walk.
+MediaModelAdopter.platform currently falls back to PlatformRecognizer: remove that
+host-based inference from Core's otherwise legitimate model-conversion step.
+
+Retain syntax validation and ordinary URL resolution in Swift. Do not strip
+potentially meaningful query parameters without a plugin decision.
+Design an explicit plugin result/hook for URL rewriting or redispatch if needed;
+the existing classify/ingest API does not automatically provide this. Swift should
+enforce hop/cycle limits, track original and resolved URLs, invalidate mismatched
+page captures, and rerun manifest matching against a plugin-produced destination.
+
+3. Article interpretation and paywall decisions
+
+Sources:
+  LunaLibraries/Sources/LunaHTMLClassification/{ArticleExtractor,
+    ProductPageDetector,PaywallDetector,TruncationGateDetector,ListingPage,
+    LeadImageExtractor,PublicationDate}.swift
+  LunaLibraries/Sources/LunaArticleIngest/ArticleIngestProcessor.swift
+  LunaLibraries/Sources/LunaPaywallBypass/
+  LunaLibraries/Sources/LunaFetch/ArticleFetcher.swift
+  LunaLibraries/Sources/LunaPluginKit/PluginArticleExtraction.swift
+  LunaLibraries/Sources/LunaPluginRuntime/Bridges/PluginHTMLBridge.swift
+  LunaLibraries/Sources/LunaBundledPlugins/Plugins/nytimes.js
+
+Move body/container selection, readability scoring, boilerplate/recirculation
+removal, JSON-LD body selection, title/author/image selection, listing rejection,
+paywall/truncation detection and site-specific fetch/bypass selection into JS.
+These can live in general article plugins plus site plugins; they need not be
+duplicated in every plugin. Shared extraction code must be plugin-owned, not an
+always-on native or bootstrap fallback that makes an empty catalog intelligent.
+
+The NYTimes plugin currently calls luna.html.article(), which calls Swift's full
+ArticleExtractor. Port this semantic implementation or replace its API with an
+explicit plugin-owned implementation. Update the Safari plugins.article relay too.
+Do not merely move a native extractor behind a differently named bridge.
+
+Keep ArticleModelAdopter and ArticleExtractor.convertTrusted-style conversion:
+the plugin selects the body; Swift translates supplied markup into stored blocks,
+links and images. Keep native fetch/browser capabilities, but let plugins request
+the access strategy rather than Swift selecting it by publisher.
+
+4. Products, prices, sellers and refresh
+
+Sources:
+  LunaLibraries/Sources/LunaPriceIngest/{ProductMetadataExtractor,
+    ProductIngestProcessor}.swift
+  LunaLibraries/Sources/LunaHTMLClassification/ProductPageDetector.swift
+  LunaLibraries/Sources/LunaPriceMetadata/
+  LunaLibraries/Sources/LunaPriceCompare/{LeanProductPageParser,
+    LeanProductURLRules,SellerDirectory,SellerCandidateSelector,SellerFanOut}.swift
+  LunaLibraries/Sources/LunaPriceUI/{PriceFetcher,PriceRefresher,
+    PipelineSellerNetworking}.swift
+
+Move Amazon/Target/Walmart price rules, Google Shopping parsing, retailer title/
+identifier cleanup, JSON-LD/OG/microdata/embedded-state interpretation, seller search
+URL construction and seller-page parsing into JS. Audit seller directory policy and
+category/site selection; host-dependent decisions must be plugin data/behavior.
+Generic comparison of already-normalized products, fan-out scheduling, storage,
+price history, alerts and presentation may remain native.
+
+PriceRefresher.price currently tries an owning plugin and then Swift extraction
+when it returns nothing. Remove that semantic fallback for Core. A missing/failed
+plugin leaves the last observed price intact and reports refresh unavailability;
+it must not append a fabricated observation. Legacy trackers need an explicit
+plugin reassignment/migration policy, not silent native scraping.
+
+5. Social posts and preview metadata
+
+Sources:
+  LunaLibraries/Sources/LunaArticleIngest/{XPostIngestProcessor,XPostPayload,
+    XPostExtractor,XPostHTMLRenderer}.swift
+  LunaLibraries/Sources/LunaPlatforms/{PlatformRegistry,PlatformItemIngestor,
+    XPlatform,YouTubePlatform,InstagramPlatform,TikTokPlatform,RedditPlatform,
+    FacebookPlatform,BlueskyPlatform,OpenGraphScraper}.swift
+  LunaLibraries/Sources/LunaFetch/{PageMetadataFetcher,LinkPreviewFetcher,
+    FailedSaveNaming}.swift
+
+Core registers native XPostIngestProcessor, including fxtwitter endpoint selection,
+payload decoding, thread interpretation and long-form thresholds. Move this behavior
+to plugins (reuse/extend the existing x.js behavior).
+PlatformItemIngestor.platformMetadata dispatches native platform metadata fetchers.
+Audit post-save enrichment and pasteboard previews so they do not fetch/scrape again
+after a plugin returned its model. Plugins select title/author/thumbnail URLs;
+Swift downloads and caches their images. Neutral failure labels are fine; hidden
+site-specific fallback scraping is not. Verify these secondary entry points during
+implementation rather than assuming the main ingest-stage change covers them.
+
+6. Media lifecycle, not only initial resolution
+
+Sources:
+  LunaLibraries/Sources/LunaPluginIngest/PluginMediaResolver.swift
+  LunaLibraries/Sources/LunaMediaResolve/
+  LunaLibraries/Sources/LunaMediaDownload/{MediaAssetResolution,MediaDownloadService,
+    RedditAudioFetcher,LiveMediaDownloadManager,
+    LiveMediaDownloadManager+PluginReresolve}.swift
+
+Core's normal MediaAssetResolution already selects PluginMediaResolver, whereas
+Downloader selects the native resolver. Preserve that useful separation.
+However, the shared durable manager still has resolveRequest, platform-specific
+response parsers, YouTube bootstrap/clip handling, Instagram/Facebook fallback
+ladders, and Reddit DASH audio fallback. Trace entry points, old jobs, retries and
+relaunch recovery; do not claim every listed branch is used by normal plugin jobs.
+Any branch reachable in Core that interprets the source platform must become a
+plugin invocation or consume a fully declared plugin result.
+
+Move URL/API selection, asset/variant selection, source-specific headers/referers,
+and manifest interpretation used to discover audio into JS. Native HTTP defaults,
+system media-framework internals, muxing and transfer mechanics can stay native.
+Persist owning plugin and declared asset information; on expiry ask the owner for
+fresh results. If unavailable, stop resolution clearly instead of invoking native
+site parsers. Already-resolved usable files/assets can still be consumed.
+
+7. Higher-level bridge helpers
+
+Sources:
+  LunaLibraries/Sources/LunaPluginKit/{PluginHTMLMetadata,PluginTextParsing}.swift
+  LunaLibraries/Sources/LunaPluginRuntime/Bridges/{PluginHTMLBridge,
+    PluginTextBridge}.swift
+
+Separate generic syntax primitives from semantic extraction. DOM parsing, selectors,
+JSON decoding and ordinary string operations can stay native. Metadata source
+precedence, document-type selection, JSON-LD interpretation, extracting price/currency
+from arbitrary prose and interpreting publication-date prose belong in shared JS
+helpers used by plugins. Native decoding of a declared decimal/ISO date in a plugin
+result remains appropriate. This boundary should not be used to force trivial
+string/format conversion out of Swift or to keep a hidden extraction engine in it.
+
+8. Safari, alternate entry points and recovery
+
+Sources:
+  LunaSafari/SafariPluginMessages+Luna.swift
+  LunaSafari/Resources/{plugin_host,content,background,
+    platform_hosts.generated,news_hosts.generated,product_rules.generated}.js
+  LunaSafari/{ComparableSellerFinder,SharedProductMatching}.swift
+  LunaShare/ShareEntry+Luna.swift
+  LunaAction/ActionEntry+Luna.swift
+  LunaLibraries/Sources/LunaIntents/
+  LunaLibraries/Sources/LunaURLRescue/
+
+Safari already contains JavaScript, but JavaScript outside the plugin system is
+not automatically plugin-owned behavior. Trace pill detection, native messages,
+product snapshots/comparisons and save fallbacks. Disable semantic behavior with
+the responsible plugin; do not retain an always-on generated ruleset for Core.
+Retain sibling extension functionality through explicit composition/build gating.
+Check App Intents, share/action extensions, retries, background work, browser unlock,
+URL rescue and restored saves for routes around plugin dispatch. Recovery should
+consume explicit resolved instructions or plugins, not restart native site scraping.
+
+IMPLEMENTATION ORDER
+
+1. Add explicit Core-vs-sibling composition and characterize the empty-catalog path.
+2. Define any needed URL-transform, metadata/identity and asset result contracts.
+   Extend existing contracts only where needed; preserve native validation.
+3. Move semantic logic into bundled/general/site plugins with fixture coverage.
+4. Switch Core entry points, helpers, refresh and retries to those contracts; replace
+   native semantic fallbacks with the basic baseline. Preserve locked/deferred and
+   intent-specific outcomes rather than converting them into success.
+5. Migrate existing saved ownership/jobs as needed and gate/remove Core's legacy
+   parser dependencies. Do not delete shared sibling implementations blindly.
+6. Update claudedocs/plugins.md, plugin API/type definitions and authoring guidance;
+   update Safari and node harness counterparts whenever the shared contract changes.
+
+ACCEPTANCE CHECKS
+
+- Empty and fully-disabled catalogs: representative Amazon/Google Shopping,
+  NYTimes/news, X, YouTube, Reddit, Instagram, Facebook, TikTok, wrapper and direct
+  media URLs receive only baseline handling. No semantic extraction/API/bypass
+  requests occur. Test app, share/action, Safari, intents, refresh and job recovery.
+- Installing a plugin enables its behavior; disabling/removing it actually removes
+  that behavior. No Swift, Safari-script or bootstrap backdoor remains.
+- A deliberately unfamiliar host/path is supported by a plugin alone, without
+  editing Swift host tables, platform gates or metadata fetchers.
+- Plugin decline/error/timeout/malformed output never activates native extraction.
+  Deferred browser and transcription requests preserve their distinct outcomes.
+- Model adapters honor declared results without host-based inference, while keeping
+  relative-URL resolution, block conversion, image fetching and DB writes working.
+- Expired media URLs and price refresh invoke the owning plugin; missing owners
+  fail resolution safely while existing content and last observed values remain.
+- URL rewrites are bounded, redispatched and persisted consistently; original URL,
+  resolved identity and page snapshot cannot silently disagree.
+- Relevant fixture tests verify behavior in JSC, Safari and the node harness;
+  regressions to sibling apps are covered by their existing native-path tests.
+- Follow AGENTS.md: isolated worktree, logical verified commits, merge to main and
+  clean up. Never install or use WebDriverAgent on the user's iPhone.
+
+AUDIT LIMITS
+
+This handoff is based on source inspection, not runtime coverage or a build.
+Pipeline fallback, native article bridge, native product rules/price refresh,
+X processor registration, metadata dispatch and Reddit manifest parsing were
+directly inspected. Secondary entry points listed above require call-path tracing
+during implementation. This is a migration inventory, not a claim that every
+native parser runs on every successful plugin save.

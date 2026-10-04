@@ -14,6 +14,8 @@ import Foundation
 public enum PluginIngestVerdict {
     /// Nothing was claimed. Continue with `Classifier.classify`.
     case passed
+    /// Plugin-selected destination; the pipeline validates and redispatches it.
+    case rewrite(URL)
     /// A plugin produced a Model and its kind module adopted it. `pluginID` is
     /// the owner the save is stamped with.
     case outcome(Outcome, pluginID: String)

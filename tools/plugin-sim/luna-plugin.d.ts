@@ -172,7 +172,7 @@ export interface BluetoothSession {
 
 export interface PluginHooks {
   classify?(input: ClassifyInput): ClassifyResult | Promise<ClassifyResult>;
-  ingest?(input: IngestInput): Promise<PluginModel | null>;
+  ingest?(input: IngestInput): Promise<PluginModel | URLRewrite | null>;
   export?(input: ExportInput): Promise<ExportResult>;
   // A hook is called with exactly one JSON argument (the runtime does
   // `JSON.parse` on an encoded string and calls the hook with that one
@@ -643,3 +643,6 @@ export interface Luna {
 declare global {
   const luna: Luna;
 }
+
+/** An ingest hook may instead redispatch an absolute HTTP(S) destination. */
+interface URLRewrite { rewriteURL: string; }

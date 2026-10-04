@@ -37,7 +37,7 @@ public enum IntentSaveVerification {
     public static func failure(forState state: SavedItem.State?) -> Failure? {
         guard let state else { return .nothingSaved }
         switch state {
-        case .ready, .pending, .needsCaptcha: return nil
+        case .link, .ready, .pending, .needsCaptcha: return nil
         case .failed: return .contentUnavailable
         }
     }

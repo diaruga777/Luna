@@ -82,7 +82,7 @@ final class TranscriptPluginHarness {
         case .failure(let failure):
             XCTFail("ingest failed: \(failure)", file: file, line: line)
             return nil
-        case .success(.declined):
+        case .success(.declined), .success(.rewrite):
             return nil
         case .success(.model(let model)):
             guard let source = URL(string: url),

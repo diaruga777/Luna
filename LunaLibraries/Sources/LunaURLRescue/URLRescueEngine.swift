@@ -88,6 +88,7 @@ public final class URLRescueEngine {
         _ request: RescueRequest,
         onProgress: @escaping (RescueStage) -> Void = { _ in }
     ) async -> RescueOutcome {
+        guard !URLBehaviorPolicy.pluginsOnly else { return .unrescuable }
         let host = request.url.host ?? "?"
         // Read the trace BEFORE the first log line. This engine appends its own
         // decisions to the same file, so reading it later would feed the rescue

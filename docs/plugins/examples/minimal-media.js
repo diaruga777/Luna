@@ -28,7 +28,7 @@ luna.register({
         if (!video) return null;
         return {
             kind: "media",
-            title: luna.html.meta(doc).title,
+            title: doc.querySelector('meta[property="og:title"]')?.getAttribute("content") || doc.title,
             itemId: claim.itemId,
             assets: [{ url: video, type: "video" }],
         };

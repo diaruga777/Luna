@@ -33,6 +33,7 @@ public enum ArticleCoverThumbnail {
     /// page HTML, with a short timeout. Returns nil on any failure — the row then
     /// shows no thumbnail.
     public static func coverImageData(html: String, baseURL: URL) async -> Data? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         guard let imageURL = LeadImageExtractor.imageURL(in: html, baseURL: baseURL) else { return nil }
         return await fetchImage(imageURL, refererURL: baseURL)
     }
@@ -69,6 +70,7 @@ public enum ArticleCoverThumbnail {
             return
         }
 
+        guard !URLBehaviorPolicy.pluginsOnly else { return }
         // 2. Fetch the page and pull its og:image.
         guard let html = try? await ArticleFetcher().fetchHTML(from: url),
               let data = await coverImageData(html: html, baseURL: url)

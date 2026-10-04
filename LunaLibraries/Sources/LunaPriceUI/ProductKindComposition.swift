@@ -32,7 +32,7 @@ public enum ProductKindComposition {
     /// handler is built from app-shell types and stays in `KindWiring+*`.
     @MainActor
     public static func install() {
-        IngestKindProcessors.product = ProductIngestProcessor(
+        IngestKindProcessors.product = URLBehaviorPolicy.pluginsOnly ? nil : ProductIngestProcessor(
             fallback: SnapshotProductInfoFallback())
         ShareKindPresenters.product = ExtensionProductPresenter()
         PluginModelAdopters.product = ProductModelAdopter()

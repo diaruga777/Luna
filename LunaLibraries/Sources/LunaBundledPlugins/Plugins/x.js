@@ -2,10 +2,10 @@
 {
   "id": "app.luna.x",
   "name": "X",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": 1,
   "description": "Resolves an X post's photos and video through the keyless fxtwitter mirror.",
-  "produces": ["media"],
+  "produces": ["media", "article"],
   "match": { "hosts": ["x.com", "*.x.com", "twitter.com", "*.twitter.com"] },
   "priority": 100,
   "capabilities": ["fetch"]
@@ -44,15 +44,8 @@ async function getJSON(url) {
 
 /// The numeric status id `/<user>/status/<id>` names, or null.
 function statusID(parsed) {
-    const parts = String(parsed.pathname || "").split("/").filter(function (part) {
-        return part.length > 0;
-    });
-    for (let i = 0; i < parts.length; i++) {
-        if (parts[i] !== "status" && parts[i] !== "statuses") { continue; }
-        const id = parts[i + 1];
-        return id && /^[0-9]+$/.test(id) ? id : null;
-    }
-    return null;
+    const match = /^\/(?:[^/]+\/(?:status|statuses)|i\/web\/status)\/([0-9]+)(?:\/(?:video|photo)\/[0-9]+)?\/?$/.exec(String(parsed.pathname || ""));
+    return match ? match[1] : null;
 }
 
 /// The posts to read: the unrolled thread when the v2 route answered, else
@@ -66,8 +59,9 @@ function postsOf(payload) {
 
 /// The post the shared URL actually named. A thread unrolls from any member, so
 /// this is not always the root, and it is what decides media against text.
-function sharedPost(payload) {
-    return payload.status || payload.tweet || postsOf(payload)[0] || null;
+function sharedPost(payload, id) {
+    const candidates = [payload.status, payload.tweet].concat(postsOf(payload));
+    return candidates.find(function (post) { return post && String(post.id) === String(id); }) || null;
 }
 
 function mediaItems(post) {
@@ -75,7 +69,7 @@ function mediaItems(post) {
 }
 
 function hasMotionMedia(post) {
-    return mediaItems(post).some(function (item) {
+    return assetsOf(post).some(function (item) {
         const type = String(item.type || "").toLowerCase();
         return type === "video" || type === "gif";
     });
@@ -194,8 +188,8 @@ function stripThreadOrnaments(text) {
 
 /// True when the reader would keep this payload as an article, so the plugin
 /// must not claim it as media.
-function readsAsArticle(payload) {
-    const shared = sharedPost(payload);
+function readsAsArticle(payload, id) {
+    const shared = sharedPost(payload, id);
     if (hasMotionMedia(shared)) { return false; }
     const posts = authorThread(payload);
     if (posts.length === 0) { return false; }
@@ -256,6 +250,34 @@ function assetsOf(post) {
     return fallback;
 }
 
+function escapeHTML(value) {
+    return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function articleOf(payload, id) {
+    const shared = sharedPost(payload, id);
+    if (!shared) return null;
+    const posts = authorThread(payload);
+    const hosted = posts.find(function (post) { return post.article && post.article.content && Array.isArray(post.article.content.blocks); });
+    const author = shared.author || payload.author || {};
+    let html, title, lead;
+    if (hosted) {
+        const article = hosted.article;
+        title = article.title;
+        html = article.content.blocks.map(function (block) {
+            const tag = /header/.test(block.type) ? 'h2' : block.type === 'blockquote' ? 'blockquote' : 'p';
+            return '<' + tag + '>' + escapeHTML(block.text) + '</' + tag + '>';
+        }).join('');
+        lead = article.cover_media && article.cover_media.media_info && article.cover_media.media_info.original_img_url;
+    } else {
+        const texts = strippingThreadCounters(posts.map(function (post) { return post.text || ''; }));
+        title = texts[0] && texts[0].split(/\n/)[0];
+        html = texts.map(function (text) { return text.split(/\n+/).filter(Boolean).map(function (line) { return '<p>' + escapeHTML(line) + '</p>'; }).join(''); }).join('');
+    }
+    const model = {kind:'article',title:String(title || 'X post').slice(0,300),html:html,author:author.name || author.screen_name};
+    if (lead) model.leadImageURL = lead;
+    return model;
+}
+
 luna.register({
     classify({ url, intent }) {
         // A transcribe intent belongs to the transcript plugin, which sits
@@ -275,12 +297,12 @@ luna.register({
         const payload = await getJSON(THREAD_ENDPOINT + id)
             || await getJSON(STATUS_ENDPOINT + id);
         if (!payload || postsOf(payload).length === 0) { return null; }
-        if (readsAsArticle(payload)) { return null; }
+        if (readsAsArticle(payload, id)) { return articleOf(payload, id); }
 
-        const assets = assetsOf(sharedPost(payload));
+        const assets = assetsOf(sharedPost(payload, id));
         if (assets.length === 0) { return null; }
         const model = { kind: "media", platform: "x", itemId: id, assets: assets };
-        const title = trimmed((sharedPost(payload) || {}).text);
+        const title = trimmed((sharedPost(payload, id) || {}).text);
         if (title) { model.title = title.slice(0, 300); }
         return model;
     },

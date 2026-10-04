@@ -53,6 +53,8 @@ public final class PluginIngestStage: PluginIngestStaging {
                 switch await ingest(plugin, claim: claim, input: input, page: snapshot) {
                 case .continueWalk:
                     continue
+                case let .rewrite(url):
+                    return .rewrite(url)
                 case let .locked(pluginID):
                     return .locked(pluginID: pluginID)
                 case let .produced(outcome):
@@ -114,6 +116,7 @@ public final class PluginIngestStage: PluginIngestStaging {
         case continueWalk
         case locked(pluginID: String)
         case produced(Outcome)
+        case rewrite(URL)
     }
 
     private func ingest(
@@ -158,6 +161,8 @@ public final class PluginIngestStage: PluginIngestStaging {
             SaveDiagnostics.record(
                 "plugin \(plugin.id): ingest declined after reading the page", category: "plugin")
             return .continueWalk
+        case let .success(.rewrite(url)):
+            return .rewrite(url)
         case let .success(.model(model)):
             return await adopt(model, claim: claim, plugin: plugin, input: input)
         }

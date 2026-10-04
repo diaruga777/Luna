@@ -307,3 +307,10 @@ X processor registration, metadata dispatch and Reddit manifest parsing were
 directly inspected. Secondary entry points listed above require call-path tracing
 during implementation. This is a migration inventory, not a claim that every
 native parser runs on every successful plugin save.
+
+IMPLEMENTATION CHECKPOINT (2026-10-04)
+
+Core plugin-only baseline, plain links, bounded rewrites, X Safari regression,
+plugin-owned X articles, general web/product/document plugin and NYTimes
+extraction have landed. See claudedocs/plugins.md for exact scope, API changes,
+validation and remaining parity/audit work. This handoff is not fully complete.

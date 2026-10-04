@@ -81,6 +81,7 @@ public final class PlatformItemIngestor {
     public func platformMetadata(
         platform: ContentPlatform, itemID: String?, urlString: String
     ) async -> PlatformMetadata? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         let match = PlatformMatch(platform: platform, itemID: itemID)
         return await PlatformRegistry.shared.module(for: match.platform)?
             .metadataFetcher?.fetchMetadata(for: match, urlString: urlString)

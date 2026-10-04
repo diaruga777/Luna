@@ -329,14 +329,14 @@
             if (!resp || !Array.isArray(resp.plugins)) { return null; }
             var fresh = { stamp: resp.stamp || "", plugins: resp.plugins };
             return cachedPromise.then(function (cached) {
-                if (!cached || cached.stamp !== fresh.stamp) { setCachedPluginCatalog(fresh); }
+                if (!cached || cached.stamp !== fresh.stamp) { pluginRuntimeCache = {}; setCachedPluginCatalog(fresh); }
                 return fresh;
             });
         }, function () { return null; });
         return cachedPromise.then(function (cached) {
             if (cached) {
                 refreshed.catch(function () {});
-                return cached;
+                return refreshed;
             }
             return refreshed;
         });
@@ -468,19 +468,20 @@
         });
     }
 
-    function walkClassify(matched, index, outcomes) {
+    function walkClassify(matched, index, outcomes, inputURL) {
+        inputURL = inputURL || location.href;
         outcomes = outcomes || [];
         if (index >= matched.length) { return Promise.resolve(null); }
         var meta = matched[index];
         return loadPluginRuntime(meta).then(function (loaded) {
             if (typeof loaded.hooks.classify !== "function") {
                 recordPluginOutcome(outcomes, meta, "classify", "missing-hook", "plugin has no classify hook");
-                return walkClassify(matched, index + 1, outcomes);
+                return walkClassify(matched, index + 1, outcomes, inputURL);
             }
             return withTimeout(
                 Promise.resolve().then(function () {
                     return loaded.hooks.classify({
-                        url: location.href, page: pageSnapshotForPlugins(), context: "safari"
+                        url: inputURL, page: inputURL === location.href ? pageSnapshotForPlugins() : null, context: "safari"
                     });
                 }),
                 PLUGIN_CLASSIFY_TIMEOUT_MS
@@ -500,16 +501,16 @@
                 } else {
                     recordPluginOutcome(outcomes, meta, "classify", "declined", null);
                 }
-                return walkClassify(matched, index + 1, outcomes);
+                return walkClassify(matched, index + 1, outcomes, inputURL);
             }, function (error) {
                 recordPluginOutcome(outcomes, meta, "classify", "failed", error && error.message);
                 logPluginSkip(meta.id, "classify", error);
-                return walkClassify(matched, index + 1, outcomes);
+                return walkClassify(matched, index + 1, outcomes, inputURL);
             });
         }, function (error) {
             recordPluginOutcome(outcomes, meta, "load", "failed", error && error.message);
             logPluginSkip(meta.id, "load", error);
-            return walkClassify(matched, index + 1, outcomes);
+            return walkClassify(matched, index + 1, outcomes, inputURL);
         });
     }
 
@@ -538,7 +539,7 @@
             return withTimeout(
                 Promise.resolve().then(function () {
                     return loaded.hooks.ingest({
-                        url: url, claim: walk.claim, page: pageSnapshotForPlugins(),
+                        url: url, claim: walk.claim, page: url === location.href ? pageSnapshotForPlugins() : null,
                         context: "safari", reason: reason
                     });
                 }),
@@ -549,8 +550,10 @@
                 recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "declined", null);
                 return null;
             }
+            if (model.rewriteURL) { return { rewriteURL: model.rewriteURL }; }
+            if ((walk.plugin.produces || []).indexOf(model.kind) < 0) { return null; }
             recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "produced", model.kind);
-            return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id };
+            return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id, url: url };
         }, function (error) {
             if (error && error.code === "browser-deferred") { throw error; }
             recordPluginOutcome(
@@ -564,14 +567,28 @@
     /// must not consume the URL. The walk carries on with the NEXT matched
     /// plugin's `classify`, exactly as `PluginIngestStage` does, and resolves
     /// to null only once every one of them has passed.
-    function runPluginIngestForWalk(walk, url, reason) {
+    function runPluginIngestForWalk(walk, url, reason, visited) {
+        visited = visited || [];
+        if (walk.resolvedOutcome) { return Promise.resolve(walk.resolvedOutcome); }
         return runPluginIngestOnce(walk, url, reason).then(function (outcome) {
+            if (outcome && outcome.rewriteURL) {
+                var destination;
+                try { destination = new URL(outcome.rewriteURL); } catch (_) { return null; }
+                if (!/^https?:$/.test(destination.protocol) || visited.length >= 8
+                    || destination.href === url || visited.indexOf(destination.href) >= 0) { return null; }
+                return loadPluginCatalog().then(function (catalog) {
+                    return walkClassify(matchedPluginsForHost(catalog, destination.hostname), 0,
+                        walk.outcomes || [], destination.href);
+                }).then(function (next) {
+                    return next ? runPluginIngestForWalk(next, destination.href, reason, visited.concat([url])) : null;
+                });
+            }
             if (outcome) { return outcome; }
             var matched = walk.matched || [];
             if (walk.index + 1 >= matched.length) { return null; }
-            return walkClassify(matched, walk.index + 1, walk.outcomes || []).then(function (nextWalk) {
+            return walkClassify(matched, walk.index + 1, walk.outcomes || [], url).then(function (nextWalk) {
                 if (!nextWalk) { return null; }
-                return runPluginIngestForWalk(nextWalk, url, reason);
+                return runPluginIngestForWalk(nextWalk, url, reason, visited);
             });
         });
     }
@@ -585,9 +602,9 @@
         return ((resp && resp.scheme) || "") + "://save?url=" + encodeURIComponent(location.href);
     }
 
-    function queueModelAndNavigate(pluginId, modelJSON, resp) {
+    function queueModelAndNavigate(pluginId, modelJSON, resp, resolvedURL) {
         return browser.runtime.sendMessage(
-            { type: "plugins.queueModel", id: pluginId, url: location.href, model: modelJSON }
+            { type: "plugins.queueModel", id: pluginId, url: resolvedURL || location.href, model: modelJSON }
         ).then(function (qr) {
             window.location.href = (qr && qr.deepLink) || pluginSaveDeepLink(resp);
         }, function () {
@@ -614,7 +631,7 @@
                     pill.style.pointerEvents = "none";
                 }
                 runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
-                    if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp); }
+                    if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp, outcome.url); }
                     persistPluginRecoveryHandoff(walk.matched, walk.outcomes).then(function (link) {
                         window.location.href = link || pluginSaveDeepLink(resp);
                     });
@@ -677,6 +694,7 @@
         // declines, so the Model is queued against whichever plugin produced
         // it rather than whichever one claimed the page.
         var pendingModelPluginId = walk.plugin.id;
+        var pendingModelURL = location.href;
         var resolveMedia = function (url) {
             return runPluginIngestForWalk(walk, url, "save").then(function (outcome) {
                 if (!outcome || outcome.model.kind !== "media" || !Array.isArray(outcome.model.assets)) {
@@ -684,6 +702,7 @@
                 }
                 pendingModelJSON = outcome.raw;
                 pendingModelPluginId = outcome.pluginId;
+                pendingModelURL = outcome.url;
                 return {
                     assets: outcome.model.assets.filter(function (asset) {
                         return asset.type === "video" || asset.type === "gif";
@@ -698,7 +717,7 @@
         var performDownload = function () {
             if (!pendingModelJSON) { return Promise.resolve(null); }
             return browser.runtime.sendMessage({
-                type: "plugins.queueModel", id: pendingModelPluginId, url: location.href,
+                type: "plugins.queueModel", id: pendingModelPluginId, url: pendingModelURL,
                 model: pendingModelJSON
             }).then(function (qr) { return (qr && qr.deepLink) || null; }, function () { return null; });
         };
@@ -732,24 +751,59 @@
     /// outright (§2 decision 8 — plugins run first), after X content eligibility;
     /// no claim falls back to
     /// the fixed Swift-parity heuristics in `offerLunaButton` below.
+    var pluginPageGeneration = 0;
+    var pluginPageURL = null;
+    var pluginPageWatcher = null;
     function startPillDecision(resp) {
-        if (isXHost()) { handleXPage(resp); return; }
-        // Reddit's post-owned media gate and split-stream hand-off apply even
-        // when a plugin claims the page. A broad plugin media claim can include
-        // a text or photo post and must never open the in-page player there.
-        if (isRedditHost()) { offerLunaButton(resp); return; }
         if (!(resp && resp.supportsPlugins)) {
             offerLunaButton(resp);
             return;
         }
-        runPluginWalkForPage().then(function (walk) {
-            if (walk && walk.claim) { presentPluginClaim(resp, walk); return; }
-            offerLunaButton(resp);
-        }, function () { offerLunaButton(resp); });
+        // Core has no site rules outside installed plugins. In particular, X's
+        // login shell need not contain a timestamp, article or video element.
+        // The plugin resolves the named status and only its declared video can
+        // open a player. Replies and recommendations never enter this decision.
+        function evaluate() {
+            if (pluginPageURL === location.href) { return; }
+            pluginPageURL = location.href;
+            var sourceURL = location.href;
+            var generation = ++pluginPageGeneration;
+            pluginPageSnapshot = null;
+            removeLunaButton();
+            var overlay = document.getElementById(VIDEO_OVERLAY_ID);
+            if (overlay) { overlay.click(); }
+            videoOverlayDismissed = false;
+            if (resp.mode === "never") { return; }
+            function current() {
+                return generation === pluginPageGeneration && sourceURL === location.href;
+            }
+            runPluginWalkForPage().then(function (walk) {
+                if (!current() || !walk) { return; }
+                if (walk.claim.kind !== "media") {
+                    presentPluginClaim(resp, walk);
+                    return;
+                }
+                return runPluginIngestForWalk(walk, sourceURL, "save").then(function (outcome) {
+                    if (!current() || !outcome) { return; }
+                    if (outcome.model.kind === "media" && !(outcome.model.assets || []).some(function (asset) {
+                        return asset.type === "video" || asset.type === "gif" || asset.type === "audio";
+                    })) { return; }
+                    walk.resolvedOutcome = outcome;
+                    walk.claim = { kind: outcome.model.kind };
+                    presentPluginClaim(resp, walk);
+                });
+            }).catch(function () { /* No native semantic fallback in Core. */ });
+        }
+        if (!pluginPageWatcher) {
+            pluginPageWatcher = setInterval(evaluate, 500);
+            window.addEventListener("popstate", evaluate);
+        }
+        evaluate();
     }
 
     /// Decides which pill (if any) this page earns, from the native context.
     function offerLunaButton(resp) {
+        if (resp && resp.supportsPlugins) { startPillDecision(resp); return; }
         if (isXHost()) { handleXPage(resp); return; }
         var mode = (resp && resp.mode) || "all";
         // "Never" silences PILLS, not the passive product snapshot: extraction

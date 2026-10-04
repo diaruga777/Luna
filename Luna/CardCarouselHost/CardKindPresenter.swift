@@ -347,6 +347,7 @@ enum CardKindPresenters {
     static func presenter(for item: SavedItem) -> CardKindPresenting? {
         switch SavesSectioning.kind(for: item) {
         case .failed: return nil
+        case .link: return PlainLinkCardPresenter.shared
         case .product: return product
         case .media: return media
         case .article: return article
@@ -368,4 +369,53 @@ enum CardKindPresenters {
         product = nil
     }
     #endif
+}
+
+/// A bookmark needs no extractor and remains useful with an empty catalog.
+@MainActor
+private final class PlainLinkCardPresenter: CardKindPresenting {
+    static let shared = PlainLinkCardPresenter()
+    func fingerprint(for item: SavedItem) -> String { item.urlString + (item.title ?? "") }
+    func hasContent(for item: SavedItem) -> Bool { true }
+    func title(for item: SavedItem) -> String? { item.title ?? item.urlString }
+    func cardContent(for item: SavedItem, host: CardPresenterHost) -> CardContentViewController? {
+        PlainLinkCard(item: item)
+    }
+    func itemWasTapped(_ item: SavedItem, cardContent: CardContentViewController?, host: CardPresenterHost) -> Bool {
+        openExternally(item, host: host)
+    }
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
+        guard let url = item.url else { return false }
+        UIApplication.shared.open(url)
+        return true
+    }
+    func share(_ item: SavedItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
+        guard let url = item.url else { return false }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = sourceView
+        host.presentingController.present(sheet, animated: true)
+        return true
+    }
+}
+
+@MainActor
+private final class PlainLinkCard: CardContentViewController {
+    private let item: SavedItem
+    init(item: SavedItem) { self.item = item; super.init() }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .secondarySystemBackground
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.font = .preferredFont(forTextStyle: .title2)
+        label.text = (item.title ?? item.url?.host ?? "Saved link") + "\n\n" + item.urlString
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
 }

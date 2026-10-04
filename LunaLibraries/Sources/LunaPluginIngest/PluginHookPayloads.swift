@@ -151,10 +151,20 @@ public struct PluginIngestHookInput: Encodable, Sendable {
 public enum PluginIngestAnswer: Decodable {
     case declined
     case model(PluginModel)
+    case rewrite(URL)
+
+    private enum CodingKeys: String, CodingKey { case rewriteURL }
 
     public init(from decoder: Decoder) throws {
         if let single = try? decoder.singleValueContainer(), single.decodeNil() {
             self = .declined
+            return
+        }
+        if let container = try? decoder.container(keyedBy: CodingKeys.self),
+           let raw = try container.decodeIfPresent(String.self, forKey: .rewriteURL),
+           let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+           !(url.host ?? "").isEmpty {
+            self = .rewrite(url)
             return
         }
         self = .model(try PluginModel(from: decoder))

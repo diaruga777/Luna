@@ -19,6 +19,7 @@
 //
 
 import Foundation
+import LunaModels
 import SwiftSoup
 
 /// The naming metadata a failed card can show: the page's own title and the
@@ -47,6 +48,7 @@ public struct PageMetadataFetcher {
     /// site's homepage for a publisher name only. Never throws — a failed card
     /// degrades to a slug guess, it doesn't break.
     public func fetchMetadata(for url: URL) async -> PageMetadata {
+        if URLBehaviorPolicy.pluginsOnly { return PageMetadata() }
         var result = PageMetadata()
         if let html = try? await fetcher.fetchHTML(from: url) {
             result = Self.metadata(inHTML: html)

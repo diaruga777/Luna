@@ -60,18 +60,12 @@ The descriptor may also set `url`, `redirected`, or `error` (a transport
 failure). `ok` is always derived from the HTTP status (200–299), matching
 `Response.ok`. Record a page once, then iterate on the plugin offline.
 
-## `luna.html.article` is APPROXIMATE here
+## Plugin-owned web interpretation
 
-The app runs Luna's own `ArticleExtractor` (SwiftSoup) behind
-`luna.html.article`, and the Safari content world relays the call to that same
-native code. There is no port of that pass to Node, so this harness substitutes
-`@mozilla/readability`. Expect a different `html` string, a different
-`excerpt`, and sometimes a different verdict on a borderline page. Use the
-harness to check that your plugin CALLS the helper and handles `null`
-correctly; never compare its output to the app's.
-
-`luna.html.article` answers a `Promise` in every process, here included: Safari
-has to relay it, so a synchronous shape could not hold everywhere.
+Executing plugins must bundle semantic extraction code. The native article/meta
+and price/date helpers are retired; `docs/plugins/lib/web.js` is the source used
+by bundled web and NYTimes plugins. Run `node core-migration-test.mjs` for the
+recorded X video/text, article, product, wrapper and intent regressions.
 
 ## `luna.html` / `luna.text` parity
 

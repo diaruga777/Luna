@@ -223,35 +223,13 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
             return PluginHTMLMetadata.jsonLD(in: handle.element)
         }
 
-        let meta: @convention(block) (JSValue?) -> [String: String] = { value in
-            guard let handle = value?.toObject() as? PluginHTMLNodeHandle,
-                  let document = handle.element as? Document
-            else { return [:] }
-            return PluginHTMLMetadata.read(from: document)
+        let meta: @convention(block) (JSValue?) -> JSValue? = { _ in
+            PluginBridgeValue.raise("Bundle plugin-owned metadata helpers; luna.html.meta is retired", in: JSContext.current() ?? outerContext)
+            return nil
         }
-
-        /// Luna's own readability pass. It answers a Promise in every backing
-        /// because Safari cannot run it in the page — there it is a native
-        /// message, like `luna.fetch` — and one shape a plugin can `await`
-        /// everywhere beats a value that is a document in one process and a
-        /// Promise in another.
-        let article: @convention(block) (JSValue?, JSValue?) -> JSValue? = { source, base in
-            let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID,
-                generationID: generationID)
-            guard let source = PluginBridgeValue.optionalString(source), !source.isEmpty else {
-                box.fail("luna.html.article needs HTML text", code: "bad-argument")
-                return promise
-            }
-            let baseURL = PluginBridgeValue.optionalString(base)
-                .flatMap(URL.init(string:)) ?? URL(string: "about:blank")!
-            guard let found = PluginArticleExtraction.extract(html: source, baseURL: baseURL) else {
-                box.fulfill(NSNull())
-                return promise
-            }
-            box.fulfill(PluginHTMLBridge.jsObject(found))
-            return promise
+        let article: @convention(block) (JSValue?, JSValue?) -> JSValue? = { _, _ in
+            PluginBridgeValue.raise("Bundle plugin-owned article extraction; luna.html.article is retired", in: JSContext.current() ?? outerContext)
+            return nil
         }
 
         html.setObject(parse, forKeyedSubscript: "parse" as NSString)

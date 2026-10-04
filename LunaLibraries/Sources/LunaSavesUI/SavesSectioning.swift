@@ -20,6 +20,7 @@ public enum SavesSectioning {
     public enum Kind: Equatable, Sendable {
         /// A save that failed before it acquired a content kind.
         case failed
+        case link
         case product
         case media
         case article
@@ -34,6 +35,7 @@ public enum SavesSectioning {
     /// no presenter, then product and media payloads own their specialised
     /// cards, and the remaining saves are reader items.
     public static func kind(for item: SavedItem) -> Kind {
+        if item.state == .link { return .link }
         if item.state == .failed && !item.isPriceTracker && item.contentPlatform == nil {
             return .failed
         }
@@ -131,6 +133,8 @@ public extension LunaApp {
         switch SavesSectioning.kind(for: item) {
         case .failed:
             return true
+        case .link:
+            return self == .luna
         case .article:
             return handlesArticles
         case .media:

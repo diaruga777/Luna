@@ -67,6 +67,8 @@ public enum IngestIntent: String, Equatable, Sendable {
 /// or leave a spinner. Invalid states are unrepresentable, since each case
 /// carries exactly what its presenter needs.
 public enum Outcome: Equatable {
+    /// A stored bookmark; no article, product or media content was inferred.
+    case link
     /// A readable article was obtained. Carries the extracted content and the
     /// winning source HTML, for cover-image extraction.
     case article(ArticleContent, html: String)
@@ -110,6 +112,7 @@ public enum Outcome: Equatable {
 
     public static func == (lhs: Outcome, rhs: Outcome) -> Bool {
         switch (lhs, rhs) {
+        case (.link, .link): return true
         case let (.article(lc, lh), .article(rc, rh)):
             return lc.title == rc.title && lc.bodyTextLength == rc.bodyTextLength && lh == rh
         case let (.product(lp, lh), .product(rp, rh)): return lp == rp && lh == rh
@@ -229,6 +232,9 @@ public enum IngestPipeline {
         // The idle deadline returns independently of an uncooperative losing
         // task. A structured task-group race cannot make that guarantee because
         // its scope drains every child before returning.
+        if URLBehaviorPolicy.pluginsOnly {
+            return IngestResult(url: input.url, outcome: .failed(.timedOut))
+        }
         let url = URLUnwrapper.unwrapOffline(input.url).url
         let outcome = ArticleFetcher.isHardPaywallHost(url)
             ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
@@ -251,8 +257,12 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         articleProcessor: ArticleIngestProcessing?,
         productProcessor: ProductIngestProcessing?,
-        socialTextProcessor: SocialTextIngestProcessing?
+        socialTextProcessor: SocialTextIngestProcessing?,
+        visited: Set<URL> = []
     ) async -> IngestResult {
+        if URLBehaviorPolicy.pluginsOnly, let type = input.documentType, input.url.isFileURL {
+            return IngestResult(url: input.url, outcome: .document(type: type))
+        }
         // (1) Unwrap once. Every surface gets the same offline-first,
         // tracking-stripped unwrap (Facebook deep links, Apple/Google News,
         // shorteners).
@@ -275,6 +285,18 @@ public enum IngestPipeline {
                     page: input.page, forceArticle: input.forceArticle, intent: input.intent),
                 fetcher: fetcher)
             {
+            case let .rewrite(destination):
+                guard visited.count < 8, destination != url, !visited.contains(destination),
+                      ["http", "https"].contains(destination.scheme?.lowercased() ?? ""),
+                      !(destination.host ?? "").isEmpty else {
+                    return IngestResult(url: input.url, outcome: .failed(.notContent))
+                }
+                return await runUnbounded(
+                    IngestInput(url: destination, source: input.source,
+                                forceArticle: input.forceArticle, intent: input.intent),
+                    session: session, fetcher: fetcher, productDetector: productDetector,
+                    articleProcessor: articleProcessor, productProcessor: productProcessor,
+                    socialTextProcessor: socialTextProcessor, visited: visited.union([url]))
             case .passed:
                 // A transcribe request only a plugin can serve. The Swift
                 // classifier would turn it into a download, which is the one
@@ -293,6 +315,13 @@ public enum IngestPipeline {
             }
         }
 
+        if URLBehaviorPolicy.pluginsOnly {
+            let valid = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+                && !(url.host ?? "").isEmpty
+            let outcome: Outcome = input.intent == .transcribe ? .failed(.noTranscriptSource)
+                : (valid ? .link : .failed(.notContent))
+            return IngestResult(url: url, outcome: outcome)
+        }
         // (2) Classify deterministically, from the URL only. Platform, video,
         // and document are decided here, before any fetch, so they can never
         // reach HTML article extraction. A social post gets one further

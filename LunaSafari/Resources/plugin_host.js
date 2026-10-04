@@ -641,32 +641,12 @@ var LunaPluginHost = (function () {
             // in the page: it is Luna's own readability pass, relayed to
             // native so one extractor answers in every process. It is a
             // Promise in the app too, for exactly that reason.
-            var articleLimit = 1500000;
-            luna.html = {
-                parse: parseHTML, text: htmlText, jsonScripts: jsonScripts,
-                jsonLD: jsonLD, meta: htmlMeta,
-                article: function (html, baseURL) {
-                    var source = String(html === undefined || html === null ? "" : html);
-                    if (!source) {
-                        return Promise.reject(new LunaError(
-                            "bad-argument", "luna.html.article needs HTML text"));
-                    }
-                    if (source.length > articleLimit) {
-                        return Promise.reject(new LunaError(
-                            "too-large", "that page is too large to send to Luna"));
-                    }
-                    return relay("plugins.article", {
-                        id: config.pluginId, html: source,
-                        baseURL: baseURL === undefined || baseURL === null
-                            ? location.href : String(baseURL),
-                    }).then(function (reply) {
-                        return reply.article === undefined ? null : reply.article;
-                    });
-                },
-            };
-            // `luna.text` rides on the `html` grant, as it does in the app
-            // (`PluginCapabilityName.companionNamespaces`).
-            luna.text = text;
+            function retiredSemanticHelper() {
+                throw new LunaError("unsupported", "Bundle plugin-owned web helpers from docs/plugins/lib/web.js");
+            }
+            luna.html = {parse:parseHTML,text:htmlText,jsonScripts:jsonScripts,jsonLD:jsonLD,
+                meta:retiredSemanticHelper,article:retiredSemanticHelper};
+            luna.text = {clean:textClean,price:retiredSemanticHelper,date:retiredSemanticHelper};
         }
 
         if (declared.page) {

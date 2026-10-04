@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaPluginIngest
 import XCTest
 
 /// `x.js` against the recorded fxtwitter payloads.
@@ -84,7 +85,7 @@ final class XPluginTests: XCTestCase {
     /// The payloads the reader keeps. `note-tweet-long` is the sharp one: it
     /// carries a photo, so a plugin that did not decline would take a readable
     /// essay away from the reader and save its illustration instead.
-    func testEveryPayloadTheReaderKeepsIsDeclined() async throws {
+    func testLongFormPayloadsAreProducedByThePluginAsArticles() async throws {
         for (fixture, id) in [
             ("x-note-tweet-long.json", "2081713721785631202"),
             ("x-long-form-article.json", "2082163285588107752"),
@@ -92,9 +93,15 @@ final class XPluginTests: XCTestCase {
             harness.fetcher.responses = [:]
             try serve(fixture, id: id)
 
-            let assets = await harness.resolve(postURL(id))
-
-            XCTAssertTrue(assets.isEmpty, fixture)
+            let answer = await harness.runner.runtime.invoke(
+                .ingest, pluginID: "app.luna.x",
+                argument: PluginIngestHookInput(url: postURL(id), claim: PluginIngestClaim(kind: .media, itemID: id),
+                                               page: nil, reason: .save, context: .app),
+                timeout: 20, decode: PluginIngestAnswer.self)
+            guard case .success(.model(.article(let article))) = answer else {
+                XCTFail("Expected plugin-owned article for \(fixture)"); continue
+            }
+            XCTAssertFalse(article.html.isEmpty)
         }
     }
 

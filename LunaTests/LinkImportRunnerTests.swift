@@ -69,6 +69,8 @@ final class LinkImportRunnerTests: XCTestCase {
                     store.markFailed(item.id)
                 case .needsCaptcha:
                     store.markNeedsCaptcha(item.id, title: "Locked")
+                case .link:
+                    store.markPlainLink(item.id)
                 case .pending:
                     break
                 }

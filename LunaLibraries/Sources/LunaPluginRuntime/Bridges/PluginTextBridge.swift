@@ -29,21 +29,13 @@ public enum PluginTextBridge {
         let text = namespace.makeNamespaceObject()
 
         /// `{ amount, currency? }`, or null when the string holds no number.
-        let price: @convention(block) (JSValue?) -> Any = { value in
-            guard let raw = PluginBridgeValue.optionalString(value),
-                  let parsed = PluginTextParsing.price(raw)
-            else { return NSNull() }
-            var object: [String: Any] = ["amount": parsed.amount]
-            if let currency = parsed.currency { object["currency"] = currency }
-            return object
+        let price: @convention(block) (JSValue?) -> Any = { _ in
+            PluginBridgeValue.raise("Bundle plugin-owned price parsing; luna.text.price is retired", in: namespace.context)
+            return NSNull()
         }
-
-        /// An ISO 8601 date, or null for a relative or unreadable one.
-        let date: @convention(block) (JSValue?) -> Any = { value in
-            guard let raw = PluginBridgeValue.optionalString(value),
-                  let parsed = PluginTextParsing.date(raw)
-            else { return NSNull() }
-            return parsed
+        let date: @convention(block) (JSValue?) -> Any = { _ in
+            PluginBridgeValue.raise("Bundle plugin-owned date parsing; luna.text.date is retired", in: namespace.context)
+            return NSNull()
         }
 
         let clean: @convention(block) (JSValue?) -> String = { value in

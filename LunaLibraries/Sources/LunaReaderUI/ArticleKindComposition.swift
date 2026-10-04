@@ -44,8 +44,8 @@ public enum ArticleKindComposition {
         // Pipeline processing — the article path, and the social-text path that
         // reads a long-form X post / self-thread as an article. Two processors,
         // one kind: a surface with only the first silently drops X posts.
-        IngestKindProcessors.article = ArticleIngestProcessor()
-        IngestKindProcessors.socialText = XPostIngestProcessor()
+        IngestKindProcessors.article = URLBehaviorPolicy.pluginsOnly ? nil : ArticleIngestProcessor()
+        IngestKindProcessors.socialText = URLBehaviorPolicy.pluginsOnly ? nil : XPostIngestProcessor()
         // Extension presentation — the reader / archive screens.
         ShareKindPresenters.article = ExtensionArticlePresenter()
         PluginModelAdopters.article = ArticleModelAdopter()

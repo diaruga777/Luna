@@ -350,6 +350,48 @@ final class PluginIngestStageTests: XCTestCase {
         _ = await run(invoker)
         XCTAssertEqual(invoker.ingestReasons, ["save"])
     }
+    func testCoreEmptyCatalogPreservesPlainLinksWithoutNativeFetches() async {
+        let savedStage = IngestPipeline.pluginStage
+        let savedPolicy = URLBehaviorPolicy.pluginsOnly
+        defer { IngestPipeline.pluginStage = savedStage; URLBehaviorPolicy.pluginsOnly = savedPolicy }
+        URLBehaviorPolicy.pluginsOnly = true
+        let invoker = FakePluginInvoker()
+        IngestPipeline.pluginStage = stage(invoker)
+        let fetcher = MockArticleFetcher()
+        for raw in ["https://www.amazon.com/dp/B012345678?ref=keep", "https://news.google.com/articles/opaque",
+                    "https://www.nytimes.com/2026/story", "https://x.com/a/status/123?s=20",
+                    "https://youtube.com/watch?v=abc", "https://reddit.com/comments/abc",
+                    "https://instagram.com/reel/abc", "https://facebook.com/watch?v=abc",
+                    "https://tiktok.com/@a/video/123", "https://cdn.example.com/file.mp4"] {
+            let url = URL(string: raw)!
+            let result = await IngestPipeline.processResolved(IngestInput(url: url, source: .manual), fetcher: fetcher)
+            XCTAssertEqual(result.outcome, .link)
+            XCTAssertEqual(result.url, url)
+        }
+        XCTAssertTrue(fetcher.calls.isEmpty)
+        XCTAssertTrue(invoker.calls.isEmpty)
+        let transcription = await IngestPipeline.process(IngestInput(url:url, source:.manual, intent:.transcribe), fetcher:fetcher)
+        XCTAssertEqual(transcription, .failed(.noTranscriptSource))
+    }
+
+    func testRewriteRedispatchesAndDropsOldPageCapture() async {
+        let savedStage = IngestPipeline.pluginStage
+        let savedPolicy = URLBehaviorPolicy.pluginsOnly
+        defer { IngestPipeline.pluginStage = savedStage; URLBehaviorPolicy.pluginsOnly = savedPolicy }
+        URLBehaviorPolicy.pluginsOnly = true
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id:"wrapper"), .fake(id:"destination", hosts:["new.example"])]
+        invoker.classifyAnswers["wrapper"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["wrapper"] = .json(#"{"rewriteURL":"https://new.example/content"}"#)
+        invoker.classifyAnswers["destination"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["destination"] = .json(Self.mediaModel)
+        IngestPipeline.pluginStage = stage(invoker)
+        let result = await IngestPipeline.processResolved(IngestInput(url:url,source:.manual,page:.fetched("old page")),fetcher:MockArticleFetcher())
+        XCTAssertEqual(result.url.absoluteString, "https://new.example/content")
+        XCTAssertEqual(result.pluginID, "destination")
+        XCTAssertTrue(invoker.encodedArguments.filter { $0.pluginID == "destination" }.allSatisfy { $0.json["page"] == nil })
+    }
+
 }
 
 /// Fails adoption for one plugin id and adopts for every other, so a test can
@@ -379,4 +421,5 @@ private final class CapturingMediaAdopter: MediaModelAdopting {
             platform: .web, itemID: model.itemID, title: model.title,
             thumbnailURL: model.thumbnailURL)
     }
+
 }

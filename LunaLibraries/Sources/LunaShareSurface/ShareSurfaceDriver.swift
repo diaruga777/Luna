@@ -185,6 +185,9 @@ public final class ShareSurfaceDriver {
         }
 
         switch outcome {
+        case .link:
+            if let item = store.item(forURLString: url.absoluteString) { store.markPlainLink(item.id) }
+            host.completeSilently()
         case let .article(content, html):
             guard let article = Self.requireArticlePresenter(host: host) else { return }
             persistArticle(content, html: html, url: url, presenter: article)

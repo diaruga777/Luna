@@ -104,6 +104,7 @@ public struct PriceRefresher {
            let answer = await fetcher.price(forStoreURL: url, pluginID: pluginID) {
             return ProductPrice(amount: answer.amount, currency: answer.currency)
         }
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         return await priceFetcher.fetchPrice(
             forURLString: storeListing.urlString, prefetchedHTML: nil)
     }

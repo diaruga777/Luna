@@ -139,6 +139,10 @@ function claimError(value, manifest) {
 }
 function modelError(value, manifest) {
   if (value === null) return null;
+  if (value && typeof value.rewriteURL === "string") {
+    try { return /^https?:$/.test(new URL(value.rewriteURL).protocol) ? null : "rewriteURL must be HTTP(S)"; }
+    catch (_) { return "rewriteURL must be an absolute URL"; }
+  }
   if (!value || typeof value !== "object" || !KINDS.has(value.kind)) {
     return "ingest must return null or a Model with a valid kind";
   }

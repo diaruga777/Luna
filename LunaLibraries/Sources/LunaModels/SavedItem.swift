@@ -14,6 +14,8 @@ import Foundation
 public struct SavedItem: Identifiable, Equatable {
     /// Lifecycle of the item's downloaded content.
     public enum State: String, Codable {
+        /// A plain saved URL, without extracted content or pending extraction.
+        case link
         /// Saved but content not yet downloaded/extracted.
         case pending
         /// Content downloaded and extracted; ready to read.

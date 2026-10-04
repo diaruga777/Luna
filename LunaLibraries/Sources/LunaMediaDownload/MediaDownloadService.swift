@@ -136,6 +136,7 @@ public struct MediaDownloadService {
     /// is exactly as reliable here as the old substring check and doesn't risk a
     /// stray `faketiktok.com` false positive.
     private static func referer(for url: URL) -> String? {
+        if URLBehaviorPolicy.pluginsOnly { return nil }
         let host = url.host?.lowercased() ?? ""
         if HostMatching.hostSuffixMatches(host, "tiktok.com") { return "https://www.tiktok.com/" }
         if HostMatching.hostSuffixMatches(host, anyOf: ["reddit.com", "redd.it"]) {

@@ -80,7 +80,8 @@ public final class PriceFetcher: PriceFetching {
     /// sleeping leg decided what a slow answer was CALLED and never when it
     /// arrived. `TimeLimit.run` runs the resolution unstructured instead.
     public func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
-        await TimeLimit.run(TimeInterval(overallTimeoutSeconds)) {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
+        return await TimeLimit.run(TimeInterval(overallTimeoutSeconds)) {
             await self.resolvePrice(forURLString: urlString, prefetchedHTML: prefetchedHTML)
         } ?? nil
     }
@@ -211,7 +212,7 @@ public enum WebViewPriceRenderer {
     private static func bounded(
         _ timeoutSeconds: UInt64, _ render: @escaping @MainActor @Sendable () async -> String?
     ) async -> String? {
-        await TimeLimit.run(TimeInterval(timeoutSeconds) + renderGrace) {
+        return await TimeLimit.run(TimeInterval(timeoutSeconds) + renderGrace) {
             await render()
         } ?? nil
     }

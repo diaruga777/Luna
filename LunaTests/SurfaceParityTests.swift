@@ -243,7 +243,7 @@ final class SurfaceParityTests: XCTestCase {
         case .article: return .reader
         case .product: return .tracker
         case .video, .social: return .nonTextual
-        case .document: return .savedDocument
+        case .link, .document: return .savedDocument
         case .needsArchive: return .archiveReader
         case .failed: return .error
         case .unsupported: return .error

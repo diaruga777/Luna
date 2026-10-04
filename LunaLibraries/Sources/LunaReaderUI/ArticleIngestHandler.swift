@@ -169,6 +169,7 @@ public final class ArticleIngestHandler {
     /// avoids repeated network work on every foreground transition.
     @MainActor
     func repairBostonGlobeSubscriptionSaves(store: SavesStore) async {
+        guard !URLBehaviorPolicy.pluginsOnly else { return }
         let candidates = store.items().filter { item in
             guard item.state == .ready,
                   !subscriptionRepairAttempted.contains(item.id),

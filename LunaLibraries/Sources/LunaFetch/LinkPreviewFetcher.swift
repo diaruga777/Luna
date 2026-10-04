@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaHTMLClassification
 
 /// What a link looks like before Luna has saved it: the headline, the publisher,
@@ -44,6 +45,7 @@ public struct LinkPreviewFetcher {
     /// caller can tell "this page didn't answer" (leave the row as a URL) from
     /// "there is no network" (stop asking).
     public func fetchPreview(for url: URL) async throws -> LinkPreview {
+        if URLBehaviorPolicy.pluginsOnly { return LinkPreview() }
         let html = try await fetcher.fetchHTML(from: url)
         let metadata = PageMetadataFetcher.metadata(inHTML: html)
         return LinkPreview(

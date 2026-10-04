@@ -967,10 +967,11 @@ export function createBridge(config = {}) {
   luna.LunaError = LunaError;
 
   if (capabilities.has("html")) {
-    luna.html = html;
+    const retiredSemanticHelper = () => { throw new Error("Bundle plugin-owned web helpers from docs/plugins/lib/web.js"); };
+    luna.html = {...html, meta:retiredSemanticHelper, article:retiredSemanticHelper};
     // `luna.text` rides on the `html` grant, as it does in the app
     // (`PluginCapabilityName.companionNamespaces`).
-    luna.text = text;
+    luna.text = {...text, price:retiredSemanticHelper, date:retiredSemanticHelper};
   }
 
   if (capabilities.has("crypto")) {

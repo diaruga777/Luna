@@ -27,6 +27,7 @@ public enum FailedSaveNaming {
         guard let url else { return L10n.string("Common_untitled") }
         // `articleTitleGuess` already falls back to the bare host when the slug
         // holds no words, so this is the end of the chain.
+        if URLBehaviorPolicy.pluginsOnly { return url.host ?? url.absoluteString }
         return ArticleFetcher.articleTitleGuess(from: url)
     }
 

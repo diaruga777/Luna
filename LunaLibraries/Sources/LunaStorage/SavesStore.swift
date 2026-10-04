@@ -1087,6 +1087,17 @@ public final class SavesStore {
     /// Titles a save that is still waiting for its content, so a parked row
     /// reads as the thing it will become rather than as its URL. A readable
     /// item keeps the title its content gave it.
+    public func markPlainLink(_ itemID: UUID) {
+        updateItem(itemID) { item in
+            // A disabled plugin must never discard already-resolved content.
+            guard item.state != .ready, item.priceTracker == nil, item.platform == nil else { return false }
+            item.state = .link
+            if item.title?.isEmpty != false { item.title = item.url?.host ?? item.urlString }
+            return true
+        }
+        Self.clearFailureRecords(itemID)
+    }
+
     public func setPendingTitle(_ itemID: UUID, title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

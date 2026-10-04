@@ -554,7 +554,7 @@ public final class LinkImportRunner {
     /// try it with, and `.imported` when there isn't.
     private func fate(of item: SavedItem) -> ItemFate {
         switch item.state {
-        case .ready: return .imported
+        case .link, .ready: return .imported
         case .needsCaptcha: return Self.articleUnlocker == nil ? .imported : .locked
         case .failed, .pending: return .failed
         }

@@ -270,6 +270,7 @@ final class RecentURLMatcher {
             IngestInput(url: url, source: .manual))
 
         switch result.outcome {
+        case .link: return nil
         case let .article(content, _):
             guard surface.handlesArticles else { return nil }
             return RecentURLPreview(

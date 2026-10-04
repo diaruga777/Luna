@@ -11,6 +11,54 @@ history — it records the design decisions and each wave's departures from
 plan; where the two disagree, this document and the code win. Read the plan
 once for the "why"; read this for the "what, exactly."
 
+## Core URL ownership migration (2026-10-04)
+
+Core now uses an explicit `URLBehaviorPolicy.pluginsOnly` boundary, independent
+of whether the runtime or any plugins are loaded. Its app/share/action pipeline
+preserves unmatched HTTP(S) URLs as `Outcome.link` / `SavedItem.State.link`.
+A link has a neutral bookmark card, opens in the browser, and supports ordinary
+sharing/deletion; it is neither a resolved article nor pending extraction.
+Existing database state is stored as text, so this adds no column migration.
+Sibling apps retain native ingestion and their existing stored content remains usable.
+
+The plugin walk can return `{rewriteURL: "https://…"}`. The pipeline validates
+HTTP(S), rejects cycles, limits rewrites to eight hops, drops the old page snapshot,
+and reruns matching against the destination. Persistence receives the final URL.
+Safari performs the same bounded redispatch and queues the final model URL.
+
+Bundled `web.js` owns general article selection, JSON-LD/metadata interpretation,
+remote document recognition, structured product prices, and basic retailer selectors.
+`url-rewrites.js` owns news/shortener/redirect URL interpretation. `x.js` now owns
+long-form post/thread conversion as well as media, and selects the exact requested
+status ID. Core Safari resolves a media claim before displaying controls; X's DOM
+shape and videos in replies no longer decide whether its player opens. No native
+Safari article/product/media fallback runs when `supportsPlugins` is true.
+
+`docs/plugins/lib/web.js` is plugin-owned source, embedded into opting-in bundled
+plugins by `scripts/bundle_plugin_helpers.py`. NYTimes uses that code directly.
+The old semantic bridge APIs `luna.html.article`, `luna.html.meta`,
+`luna.text.price`, and `luna.text.date` now reject with a migration message in JSC,
+Safari and the Node execution bridge. Imported plugins using those APIs require
+an update to carry their own interpretation code. DOM access, JSON script parsing,
+entity decoding, and trusted result-to-reader-block conversion remain native.
+
+Core refuses native price-refresh fallback, metadata enrichment, seller fan-out,
+URL rescue, and source-site resolution of unresolved durable downloads. Missing
+price owners leave the last observed value/history intact. Legacy trackers need
+an explicit re-save with a supported plugin; no owner is assigned by guessing.
+
+This is a migration checkpoint, not completion of every parity item in the
+handoff. Full native seller discovery/Google Shopping, the broader paywall
+strategy set, Reddit audio-manifest discovery, additional secondary-path auditing,
+and complete disabled-catalog/recovery coverage still require follow-up. Native
+implementations remain for siblings. The sections below retain historical API
+detail; this ownership boundary supersedes their statements about native fallbacks
+and the four retired semantic helpers.
+
+Validation: 38 targeted iOS 26.2 simulator tests pass (X plugin, Safari X eligibility,
+plugin ingestion), plus Node migration fixtures and runtime primitive checks.
+The complete legacy suite has not been rerun or migrated to the new ownership policy.
+
 ## 1. Architecture
 
 ### 1.1 Processes and what runs plugin JS

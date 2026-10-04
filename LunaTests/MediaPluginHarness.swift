@@ -106,7 +106,7 @@ final class MediaPluginHarness {
         case .failure(let failure):
             XCTFail("ingest failed: \(failure)", file: file, line: line)
             return []
-        case .success(.declined):
+        case .success(.declined), .success(.rewrite):
             return []
         case .success(.model(let model)):
             guard let source = URL(string: url),

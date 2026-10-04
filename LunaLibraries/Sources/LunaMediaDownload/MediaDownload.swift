@@ -55,6 +55,10 @@ public enum MediaDownloadablePlatform {
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     public static func supports(_ urlString: String) -> Bool {
+        if URLBehaviorPolicy.pluginsOnly {
+            guard let url = URL(string: urlString) else { return false }
+            return ["http", "https"].contains(url.scheme?.lowercased() ?? "") && url.host != nil
+        }
         if DirectMediaURL.kind(for: urlString) != nil { return true }
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         if platform == .youtube {
@@ -68,6 +72,7 @@ public enum MediaDownloadablePlatform {
     /// direct-download engine: their stream URLs now commonly require YouTube's
     /// per-video Proof-of-Origin attestation. Shorts retain the supported path.
     public static func isPlaybackOnlyYouTube(_ urlString: String) -> Bool {
+        if URLBehaviorPolicy.pluginsOnly { return false }
         guard let link = URL(string: urlString).flatMap(YouTubeLink.init(url:)) else { return false }
         return !link.isShort && !link.isClip
     }

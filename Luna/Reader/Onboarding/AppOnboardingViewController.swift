@@ -1605,7 +1605,7 @@ final class AppOnboardingViewController: UIViewController {
                         self.completeOnboardingWithRealSave(animated: true)
                     }
                 }
-            case .failed, .needsArchive, .locked, .transcription:
+            case .link, .failed, .needsArchive, .locked, .transcription:
                 // A plugin lock needs a browser step onboarding has no room
                 // for, and a transcription finishes minutes later; the paste
                 // reports the same "couldn't load" it does for a paywall.

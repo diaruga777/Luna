@@ -1395,7 +1395,7 @@ final class ReaderCardContentViewController: CardContentViewController,
                 // Unreachable for an article — `isLockedSave` took that above and
                 // the card wears `LockedCardOverlayView` instead of a line of text.
                 case .needsCaptcha: statusLabel.text = nil
-                case .ready: statusLabel.text = nil
+                case .link, .ready: statusLabel.text = nil
                 }
             }
             statusLabel.translatesAutoresizingMaskIntoConstraints = false

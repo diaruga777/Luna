@@ -140,7 +140,7 @@ public enum PluginDraftValidator {
             return failed(
                 describe(error), phase: "ingest", attempts: attempts, warnings: warnings,
                 registeredHooks: registered)
-        case .success(.declined):
+        case .success(.declined), .success(.rewrite):
             return failed(
                 "ingest returned null for the target URL; it must produce a valid Model.",
                 phase: "ingest", attempts: attempts, warnings: warnings,

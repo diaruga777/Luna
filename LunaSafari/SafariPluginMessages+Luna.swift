@@ -271,31 +271,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     /// by the same ~1.5 MB cap a served plugin source is. The page checks the
     /// size first; this refuses again, because the page is not trusted to.
     private func pluginArticle(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String else {
-            return Self.badArgument("no plugin id")
-        }
-        guard pluginDeclares(id: id, capability: .html) else { return Self.notDeclared }
-        guard let html = message?["html"] as? String, !html.isEmpty else {
-            return Self.badArgument("luna.html.article needs HTML text")
-        }
-        guard html.utf8.count <= Self.pluginSourceMaxBytes else {
-            return ["error": "too-large", "message": "that page is too large to send to Luna"]
-        }
-        let baseURL = (message?["baseURL"] as? String).flatMap(URL.init(string:))
-            ?? URL(string: "about:blank")!
-        // An absent `article` field IS "no article body", the same shape
-        // `plugins.storage.get` uses for a key that holds nothing.
-        guard let article = PluginArticleExtraction.extract(html: html, baseURL: baseURL) else {
-            return [:]
-        }
-        var payload: [String: Any] = [
-            "title": article.title, "html": article.html, "text": article.text,
-        ]
-        if let author = article.author { payload["author"] = author }
-        if let publishedAt = article.publishedAt { payload["publishedAt"] = publishedAt }
-        if let leadImageURL = article.leadImageURL { payload["leadImageURL"] = leadImageURL }
-        if let excerpt = article.excerpt { payload["excerpt"] = excerpt }
-        return ["article": payload]
+        ["error": "unsupported", "message": "Bundle plugin-owned article extraction instead of luna.html.article"]
     }
 
     // MARK: - Storage

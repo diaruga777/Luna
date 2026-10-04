@@ -21,6 +21,7 @@ public enum URLClassification {
     ]
 
     public static func canonicalURL(_ url: URL) -> URL {
+        if URLBehaviorPolicy.pluginsOnly { return url }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
         components.fragment = nil
         components.queryItems = components.queryItems?

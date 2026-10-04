@@ -22,6 +22,11 @@ public enum MediaAssetResolution {
     /// The plugin walk where a plugin platform runs, and the Swift resolver
     /// where none does.
     public static var resolver: any SocialMediaResolving {
-        PluginMediaSeams.resolver ?? SocialMediaResolver()
+        if let resolver = PluginMediaSeams.resolver { return resolver }
+        return URLBehaviorPolicy.pluginsOnly ? UnavailablePluginResolver() : SocialMediaResolver()
     }
+}
+
+private struct UnavailablePluginResolver: SocialMediaResolving {
+    func resolveAssets(for url: URL) async -> [MediaAsset] { [] }
 }

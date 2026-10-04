@@ -71,6 +71,6 @@ public struct MediaModelAdopter: MediaModelAdopting {
             if let exact = ContentPlatform(rawValue: name) { return exact }
             if name == "twitter" { return .x }
         }
-        return PlatformRecognizer.recognize(url.absoluteString)?.platform ?? .web
+        return .web
     }
 }

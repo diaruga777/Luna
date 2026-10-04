@@ -297,6 +297,12 @@ public final class LiveMediaDownloadManager: NSObject {
         ownership: LiveMediaDownloadOwnership? = nil,
         manual: Bool = false
     ) async -> LiveMediaDownloadStartResult {
+        if URLBehaviorPolicy.pluginsOnly {
+            guard let url = URL(string: urlString), let resolver = PluginMediaSeams.resolver else { return .unsupported }
+            let assets = await resolver.resolveAssets(for: url)
+            guard !assets.isEmpty else { return .unsupported }
+            return await startResultWithResolvedAssets(sourceURLString: urlString, title: title, assets: assets)
+        }
         // Resolution can cross several awaited gates before the named
         // background URLSession owns a task. If the app is backgrounded during
         // that window, keep the preparation alive long enough to persist and
@@ -900,6 +906,11 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = persistedJob
         switch job.phase {
         case .resolving:
+            if URLBehaviorPolicy.pluginsOnly {
+                if await reresolvePluginJob(job) { return }
+                await failJob(job, message: "A supported plugin is required to resolve this download.")
+                return
+            }
             guard let sourceURL = URL(string: job.sourceURLString)
             else {
                 await failJob(job, message: MediaDownloadError.unsupported.message)
@@ -1201,6 +1212,7 @@ public final class LiveMediaDownloadManager: NSObject {
     /// step here (ensureUndownloaded's dedup key, `resolveRequest`'s `.reddit`
     /// case, etc.) needs a real post id for. A no-op for every other URL shape.
     private static func canonicalRedditURLStringIfNeeded(_ urlString: String) async -> String {
+        if URLBehaviorPolicy.pluginsOnly { return urlString }
         guard let recognized = PlatformRecognizer.recognize(urlString),
               recognized.platform == .reddit, recognized.itemID == nil,
               let url = URL(string: urlString)
@@ -1234,12 +1246,14 @@ public final class LiveMediaDownloadManager: NSObject {
     ) -> URLRequest {
         var request = URLRequest(url: assetURL, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        if !URLBehaviorPolicy.pluginsOnly {
         if HostMatching.hostSuffixMatches(sourceURL.host?.lowercased() ?? "", "tiktok.com") {
             request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
         } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .youtube {
             request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
         } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .reddit {
             request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
+        }
         }
         for (name, value) in pluginHeaders { request.setValue(value, forHTTPHeaderField: name) }
         return request
@@ -1331,6 +1345,7 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return nil }
         let resolveURL: URL
         let kind: ResolveKind
@@ -1689,6 +1704,10 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func startRedditManifestFallback(jobID: String) {
+        if URLBehaviorPolicy.pluginsOnly {
+            if let job = store.job(id: jobID) { Task { await self.failJob(job, message: "The plugin did not provide a usable audio track.") } }
+            return
+        }
         guard let job = store.job(id: jobID), job.phase != .suspended else { return }
         guard let manifest = job.dashManifestURLString.flatMap(URL.init(string:)) else {
             finishRedditWithoutAudio(jobID: jobID)

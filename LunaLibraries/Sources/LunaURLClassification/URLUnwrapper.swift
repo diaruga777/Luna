@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// The canonical result of unwrapping one incoming URL. `url` is always the best
 /// URL to use downstream (the original if nothing matched), already
@@ -69,7 +70,7 @@ public enum URLUnwrapper {
         }
 
         guard let parsed else { return nil }
-        let normalized = unwrapOffline(parsed).url
+        let normalized = URLBehaviorPolicy.pluginsOnly ? parsed : unwrapOffline(parsed).url
         guard let normalizedScheme = normalized.scheme?.lowercased(),
               normalizedScheme == "http" || normalizedScheme == "https"
         else { return nil }
@@ -98,6 +99,7 @@ public enum URLUnwrapper {
     /// offline fast path inline and performs network only when a matched handler
     /// requires it. Always returns a usable, tracking-stripped URL.
     public static func unwrap(_ url: URL, session: URLSession = .shared) async -> UnwrapResult {
+        if URLBehaviorPolicy.pluginsOnly { return UnwrapResult(url: url, didUnwrap: false) }
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased()
         for handler in handlers where handler.matches(scheme, host) {
@@ -120,6 +122,7 @@ public enum URLUnwrapper {
     /// leaves `.fetch` wrappers untouched for the async `unwrap` to finish at the
     /// choke point. Pure.
     public static func unwrapOffline(_ url: URL) -> UnwrapResult {
+        if URLBehaviorPolicy.pluginsOnly { return UnwrapResult(url: url, didUnwrap: false) }
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased()
         for handler in handlers where handler.matches(scheme, host) {

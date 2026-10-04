@@ -64,7 +64,7 @@ public enum SellerComparison {
     public static func begin(
         itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date()
     ) -> Bool {
-        guard SellerComparisonRunner.installed != nil else { return false }
+        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return false }
         guard var tracker = store.item(withID: itemID)?.priceTracker else { return false }
         // A plugin that returned `sellers` owns comparison for this tracker: it
         // already produced more than one store, all stamped with its id, so the
@@ -114,7 +114,7 @@ public enum SellerComparison {
     public static func completePending(
         store: SavesStore, now: Date = Date()
     ) async -> Int {
-        guard SellerComparisonRunner.installed != nil else { return 0 }
+        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return 0 }
         let pending = store.items().compactMap { item -> UUID? in
             guard let tracker = item.priceTracker, tracker.pendingComparison != nil,
                   !tracker.isArchived
@@ -139,7 +139,7 @@ public enum SellerComparison {
         // Every other outcome — found nothing, budget expired, every retailer
         // bot-walled — is a finished run, and a marker that outlives its run is
         // a "checking…" row that never goes away.
-        guard SellerComparisonRunner.installed != nil else { return 0 }
+        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return 0 }
         guard let tracker = store.item(withID: itemID)?.priceTracker,
               let pending = tracker.pendingComparison,
               let sourceURL = URL(string: pending.sourceURLString)

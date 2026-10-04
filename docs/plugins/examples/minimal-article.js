@@ -21,8 +21,9 @@ luna.register({
     // Reuse a supplied page. Otherwise retain the final URL after redirects.
     const source = page?.html ? { ok: true, text: page.html, url: page.url } : await luna.fetch(url);
     if (!source.ok) return null;
-    const article = await luna.html.article(
-      source.text, source.url);
-    return article ? { kind: "article", ...article, baseURL: source.url } : null;
+    const doc = luna.html.parse(source.text, source.url);
+    const body = doc.querySelector('article');
+    if (!body || body.textContent.length < 300) return null;
+    return {kind:"article",title:doc.title,html:body.innerHTML,baseURL:source.url};
   },
 });

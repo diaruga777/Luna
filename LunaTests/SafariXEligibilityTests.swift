@@ -48,7 +48,7 @@ final class SafariXEligibilityTests: XCTestCase {
             XCTAssertFalse(pill, path)
             XCTAssertFalse(player, path)
             XCTAssertEqual(js.number("window.__resolveCalls"), 0)
-            XCTAssertEqual(js.number("window.__pluginCalls"), 0)
+            XCTAssertEqual(js.number("window.__pluginCalls"), 1)
         }
     }
 
@@ -149,4 +149,28 @@ final class SafariXEligibilityTests: XCTestCase {
         offer(tweet(text: String(repeating: "a", count: 600)), context: ", supportsArticles: false")
         XCTAssertFalse(pill)
     }
+    func testCoreResolvesVideoWithoutTweetDOMAndDoesNotOpenTextOrWrongStatus() {
+        let plugin = SafariJSTestHarness.source("LunaLibraries/Sources/LunaBundledPlugins/Plugins/x.js")
+        let host = SafariJSTestHarness.source("LunaSafari/Resources/plugin_host.js")
+        for (id, hasVideo, payloadID) in [("2106513235541377525", true, "2106513235541377525"),
+                                         ("2106475141051945246", false, "2106475141051945246"),
+                                         ("2106475141051945246", true, "999")] {
+            js.load(html: "<html><body><p>Sign in to X</p></body></html>",
+                    urlString: "https://x.com/author/status/\(id)?s=20")
+            js.evaluate("""
+                window.fetch = function () { return Promise.resolve({text: function () { return Promise.resolve(\(SafariJSTestHarness.jsString(host))); }}); };
+                window.browser = {runtime: {getURL: function (p) { return p; }, sendMessage: function (m) {
+                    if (m.type === 'plugins.catalog') return Promise.resolve({plugins:[{id:'app.luna.x',hosts:['x.com'],produces:['media','article'],capabilities:['fetch']}]});
+                    if (m.type === 'plugins.source') return Promise.resolve({source:\(SafariJSTestHarness.jsString(plugin))});
+                    if (m.type === 'plugins.fetch') return Promise.resolve({ok:true,status:200,text:JSON.stringify({tweet:{id:'\(payloadID)',text:'A short post',media:{all:\(hasVideo ? "[{type:'video',url:'https://cdn.example.com/movie.mp4'}]" : "[]")}}})});
+                    return Promise.resolve({});
+                }}};
+                window.__lunaStartPillDecision({scheme:'luna',supportsPlugins:true,supportsMedia:true,supportsArticles:true});
+                void 0
+                """)
+            settle()
+            XCTAssertEqual(player, hasVideo && id == payloadID)
+        }
+    }
+
 }

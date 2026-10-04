@@ -30,7 +30,7 @@ luna.register({
       kind: "product",
       name: product.name.trim(),
       price: { amount, currency: offer.priceCurrency },
-      imageURL: luna.html.meta(doc).image,
+      imageURL: doc.querySelector('meta[property="og:image"]')?.absoluteURL("content") || undefined,
     };
   },
 });

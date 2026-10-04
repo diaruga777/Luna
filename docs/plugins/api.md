@@ -1,3 +1,9 @@
+> Core migration: `luna.html.article`, `luna.html.meta`, `luna.text.price`, and
+> `luna.text.date` are retired in executing plugins. Bundle your interpretation
+> code (see `docs/plugins/lib/web.js`) and use DOM/JSON primitives. An ingest hook
+> may return `{rewriteURL: "https://…"}` for bounded host redispatch; do not return
+> a model alongside a rewrite. See `claudedocs/plugins.md` for migration status.
+
 # `luna.*` API reference
 
 The authoritative typings are [`luna-plugin.d.ts`](../../tools/plugin-sim/luna-plugin.d.ts)

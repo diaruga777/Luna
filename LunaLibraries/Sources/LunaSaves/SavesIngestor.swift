@@ -68,6 +68,8 @@ public struct CurrentProcessIngestGate: IngestSurfaceGating {
 public final class SavesIngestor: PluginLockedSaveResuming {
     public static let shared = SavesIngestor()
 
+    public func persistPlainLink(_ item: SavedItem) { store.markPlainLink(item.id) }
+
     private let store: SavesStore
     private let fetcher = ArticleFetcher()
     /// The per-app content gate over a classified outcome (`SurfaceSupport`).
@@ -866,6 +868,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
 
     public func present(_ outcome: Outcome, for item: SavedItem) async {
         switch outcome {
+        case .link:
+            ingestor.persistPlainLink(item)
         case let .article(content, html):
             await ingestor.persistArticle(content, html: html, for: item, url: url)
         case let .product(product, _):

@@ -150,7 +150,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // (Reader and the central app) enable the Referer ruleset and the
             // in-page reveal; the receiving Luna surface decides how to present
             // the captured article.
-            payload["enabled"] = Self.hostHandlesArticles
+            payload["enabled"] = Self.hostHandlesArticles && SafariPluginMessages.handler == nil
         case "saveContent":
             // The content script hands over the already-unlocked article HTML. The
             // app renders it as prefetched content instead of re-fetching a page
@@ -160,6 +160,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 SafariContentStore.record(urlString, html: html)
             }
         case "resolveMedia":
+            guard SafariPluginMessages.handler == nil else { break }
             // The in-page player's one round trip. It resolves this post to a
             // direct CDN asset with the same `SocialMediaResolver` the app and the
             // share/action extensions run, caches the full result for a possible
@@ -168,11 +169,13 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             resolveMedia(message: message, context: context)
             return
         case "queueResolvedDownload":
+            guard SafariPluginMessages.handler == nil else { break }
             // "Download what you resolved for this page." The assets never left
             // Swift (`ResolvedMediaCache`), so the page hands back only its own
             // URL. The app drains the queue on the deep link that follows.
             payload["queued"] = queueResolvedDownload(message: message)
         case "productSnapshot":
+            guard SafariPluginMessages.handler == nil else { break }
             // Passive product-page data. It is persisted (Feature 1: seeds a
             // tracker's history at save time) and answered against the
             // app-written tracker rows and snapshot tables (Feature 3: the
@@ -192,6 +195,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 }
             }
         case "comparableSellers":
+            guard SafariPluginMessages.handler == nil else { break }
             // "Is this cheaper somewhere else, right now?" Asked once per product
             // page, after `productSnapshot` has already recorded it. This is a
             // second round trip, not a rider on the first, because the answer may

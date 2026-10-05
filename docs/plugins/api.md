@@ -126,7 +126,7 @@ An ingest plugin (`produces` non-empty) must define both `classify` and
 interface ClassifyInput { url: string; page?: PageSnapshot; context: "app"|"share"|"action"|"safari"; intent?: "transcribe" }
 interface IngestInput {
   url: string; claim: { kind: PluginModelKind; itemId?: string }; page?: PageSnapshot;
-  reason: "save"|"resume"|"refresh"|"reresolve"|"rescue"; context: "app"|"share"|"action"|"safari";
+  reason: "save"|"resume"|"refresh"|"reresolve"|"rescue"|"compare"; context: "app"|"share"|"action"|"safari";
   saveId?: string; intent?: "transcribe";
 }
 ```
@@ -236,16 +236,6 @@ luna.html.parse(html: string, baseURL?: string): HTMLDocument;
 luna.html.text(html: string): string;                          // strips tags, decodes entities, skips <script>/<style>
 luna.html.jsonScripts(doc: HTMLDocument, type?: string): unknown[];
 luna.html.jsonLD(doc: HTMLDocument): object[];                 // ld+json only, @graph flattened, bad JSON skipped
-luna.html.meta(doc: HTMLDocument): PageMetadata;
-luna.html.article(html: string, baseURL?: string): Promise<ExtractedArticle | null>;
-interface PageMetadata {
-  title?: string; description?: string; canonical?: string; image?: string;
-  author?: string; published?: string; siteName?: string; language?: string; type?: string;
-}
-interface ExtractedArticle {
-  title: string; html: string; text: string;
-  author?: string; publishedAt?: string; leadImageURL?: string; excerpt?: string;
-}
 interface HTMLElement {
   querySelector(css: string): HTMLElement | null;
   querySelectorAll(css: string): HTMLElement[];                 // a real Array
@@ -282,62 +272,19 @@ JSON blocks). A top-level array is spread, one `@graph` array inside an object
 is spread, a block that does not parse is skipped, and the answer is always an
 array.
 
-`meta` reads the page's own account of itself and omits a key nothing states.
-Per key, the first source that says anything wins:
-
-| Key | Sources, in order |
-| --- | --- |
-| `title` | `og:title`, `twitter:title`, `<title>`, JSON-LD `headline`, JSON-LD `name` |
-| `description` | `og:description`, `twitter:description`, `<meta name=description>` |
-| `canonical` | `og:url`, `<link rel=canonical>` |
-| `image` | `og:image`, `og:image:url`, `twitter:image`, `twitter:image:src`, JSON-LD `image` |
-| `author` | `<meta name=author>`, `article:author`, JSON-LD `author` |
-| `published` | `article:published_time`, `<meta name=date>`, `<meta name=pubdate>`, `itemprop=datePublished`, JSON-LD `datePublished` |
-| `siteName` | `og:site_name`, `<meta name=application-name>` |
-| `language` | `<html lang>`, `<meta http-equiv=content-language>`, JSON-LD `inLanguage` |
-| `type` | `og:type` |
-
-Only JSON-LD objects whose `@type` is `Article`, `NewsArticle`, `BlogPosting`
-or `Product` answer for the document. A JSON-LD `author` may be a string, an
-object with a `name`, or a list of either; an `image` may be a string, an
-`ImageObject` with a `url`, or a list (the first entry wins). Every value is
-whitespace-collapsed and trimmed, and `image`/`canonical` are resolved against
-the document's base. `<meta property=X>` and `<meta name=X>` are both read for
-the same key, because pages write OpenGraph and Twitter cards either way.
-
-`article` runs Luna's own main-content extraction — the same pass Luna's
-article ingest runs — and answers `null` when the page has no article body,
-which is your cue to `return null` and let Luna continue. `html` carries only
-the tags an `ArticleModel` keeps; `publishedAt` is already normalized through
-`luna.text.date`. **It answers a Promise in every process**, including the app:
-Safari has no readability pass of its own and relays the call to Luna, so a
-synchronous shape could not hold everywhere. `await` it. A page over ~1.5 MB
-rejects `too-large` in Safari, where the HTML has to cross the native message
-channel.
+Article body selection, metadata precedence, and structured-data interpretation belong
+in plugin JavaScript. Embed `docs/plugins/lib/web.js` when its general interpretation
+fits your plugin, or use explicit selectors. The retired `html.meta` and
+`html.article` bridge methods reject with a migration error in every runtime.
 
 ## `luna.text` (installed with the `html` capability)
 
 ```ts
-luna.text.price(s: string): { amount: string; currency?: string } | null;
-luna.text.date(s: string): string | null;
 luna.text.clean(s: string): string;
 ```
 
-`price` reads the first run of digits in the string with Luna's own separator
-rules: when both `.` and `,` appear the LATER one is the decimal point
-(`"1.299,00"` → `1299.00`), and a lone comma is a decimal point only before one
-or two digits (`"23,50"` → `23.50`, `"1,234"` → `1234`). `amount` keeps the
-fraction digits the page wrote, which is what `price.amount` on a `ProductModel`
-wants. `currency` is filled only from what TOUCHES the number — one of `$` `£`
-`€` `¥`, or a three upper-case letter code immediately before or after it — so
-a sentence full of capitals does not name a currency. A string with no digits
-answers `null`.
-
-`date` answers ISO 8601: `2024-03-04T09:30:00Z` when the string carried a time
-(converted to UTC; a time with no zone is read as UTC), and `2024-03-04` when it
-did not — the day the page named, not a guess at its hour. It reads ISO 8601,
-`YYYY-MM-DD HH:mm`, `YYYY/MM/DD`, `Month D, YYYY`, `D Month YYYY` and RFC 2822.
-A relative phrase ("2 hours ago") and a day that does not exist answer `null`.
+Price/currency and publication-date interpretation belongs in plugin JavaScript.
+`text.price` and `text.date` reject with a migration error.
 
 `clean` decodes entities, drops tags the way `luna.html.text` does, collapses
 every whitespace run — a `&nbsp;` run included — to one space, and trims.
@@ -440,6 +387,8 @@ interface BrowserRequest {
   cookies?: "persistent" | "ephemeral";         // default "persistent"
   detect: string;                               // evaluated every 350ms; must answer "wait"|"challenge"|"done"|"error"
   title?: string;
+  scripts?: string[];                           // <=16 scripts, <=512 KB total, main frame document end
+  blockURLs?: string[];                         // <=100 WebKit URL-filter regexes, <=2048 bytes each
   timeout?: number;                             // seconds the modal may stay open, default 300
 }
 interface BrowserResult {
@@ -453,6 +402,10 @@ for what actually happens per process. `result.html` is capped at 6 MB. A
 browser step belongs to a save: Luna uses the one your plugin is ingesting.
 Pass `saveId` when your plugin has several `ingest` calls in flight at once —
 without it that case rejects `bad-argument`.
+
+Browser scripts and blocking rules are chosen by the plugin. Luna only validates,
+installs and executes them; it does not choose rules by hostname. Invalid blocking
+rules do not silently load an unfiltered page. Safari defers browser work to the app.
 
 ## `luna.downloads` (capability `downloads`)
 

@@ -232,6 +232,9 @@ public final class SavesStore {
                 return nil
             }
             let previous = stored.item
+            if stored.item.urlString != urlString && stored.item.originalURLString == nil {
+                stored.item.originalURLString = stored.item.urlString
+            }
             stored.item.urlString = urlString
             if stored.item != previous {
                 try self.writeSave(stored, previous: previous, in: db)

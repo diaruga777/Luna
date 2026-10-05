@@ -173,6 +173,8 @@ enum SavesSchema {
     /// fresh database gets.
     private static let pluginColumns: [(String, String, String)] = [
         ("saves", "plugin_id", "TEXT"),
+        ("saves", "original_url_string", "TEXT"),
+        ("pending_plugin_models", "original_url", "TEXT"),
         ("tracker_stores", "plugin_id", "TEXT"),
         ("media_download_jobs", "plugin_id", "TEXT"),
         ("media_download_jobs", "request_headers_json", "TEXT"),
@@ -275,7 +277,8 @@ enum SavesSchema {
             platform                   TEXT,
             platform_item_id           TEXT,
             capture_source             TEXT,
-            plugin_id                  TEXT
+            plugin_id                  TEXT,
+            original_url_string        TEXT
         ) WITHOUT ROWID;
 
         -- The per-destination send dictionaries, normalised: one row per
@@ -622,7 +625,8 @@ enum SavesSchema {
             model_json            TEXT NOT NULL,
             plugin_id             TEXT NOT NULL,
             created_at            REAL NOT NULL,
-            return_to_source_until REAL
+            return_to_source_until REAL,
+            original_url          TEXT
         ) WITHOUT ROWID;
 
         -- A recording a plugin handed over to transcribe, and where its job is

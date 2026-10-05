@@ -56,19 +56,45 @@ no longer infer source platform/identity from Core URLs. Core Intent prechecks a
 valid URLs without native classification, and the share surface no longer unwraps
 Facebook-specific deep links before plugin dispatch.
 
-This is a migration checkpoint, not completion of every parity item in the
-handoff. Full native seller discovery/Google Shopping, the broader paywall
-strategy set, additional secondary-path auditing,
-and complete disabled-catalog/recovery coverage still require follow-up. Native
-implementations remain for siblings. The sections below retain historical API
-detail; this ownership boundary supersedes their statements about native fallbacks
-and the four retired semantic helpers.
+Completion follow-up (2026-10-05): `web.js` now embeds plugin-owned retail
+policy and extraction (`docs/plugins/lib/{retail-data,shop}.js`): Amazon/Target/
+Walmart prices, Google Shopping seller lists, identifier matching, region/category
+selection, seller search URLs and bounded fan-out. `reason: "compare"` asks the
+recorded owner for sellers; Swift validates currency, persists observations and
+settles the pending marker. Explicit Search repeats comparison through that owner;
+pasted sellers run normal plugin ingestion and retain the resulting owner. Legacy
+trackers without an owner require an explicit re-save. Unavailable refreshes report
+`unavailableStoreURLs` and retain the prior observation/history.
 
-Validation: 53 targeted iOS 26.2 simulator tests pass (X/Reddit plugins, Safari X
-eligibility, plugin ingestion, media re-resolution and no-plugin foreground
-defaults), plus Node migration fixtures and the complete plugin-sim suite
-(runtime/manifest/examples, 108 semantic cases, and authoring type checks).
-The complete legacy suite has not been rerun or migrated to the new ownership policy.
+`publisher-access.js` embeds `access-data.js` (publisher rules, blockers and cleanup
+scripts) and `access.js` (AMP, crawler/referrer/cookie selection, archive lookup and
+browser sequence). These are ordinary removable/disableable plugin resources.
+Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 /
+2048 bytes each). Native WebKit validates and executes those declarations without
+choosing publisher rules. Safari preserves browser-deferred outcomes without a save
+ID; the app/share/action browser bridge retains its existing save-scoped lifecycle.
+
+Secondary paths audited and gated: inline/RSVP/rabbit-hole article loading, article
+refresh, archive unlock and unattended recovery, artwork/favicon backfill, recent
+URL identity/listing filters, platform-specific external-open ladders, seller UI,
+foreground media redispatch and durable source-resolution callbacks. Existing
+content/files remain readable. Native implementations remain for sibling apps and
+shared model conversion; binary dependency slimming is not required for this boundary.
+
+Schema 17 adds nullable rewrite provenance: `saves.original_url_string` and
+`pending_plugin_models.original_url`. A rewrite preserves the first source URL while
+`url_string` remains the final identity. Safari carries both URLs through model
+queueing and returns to the original page. Plugin-directed rewrites discard stale
+page captures and enforce cycle/hop limits; expiry cannot switch media owners.
+
+Validation is fixture-based: empty, disabled and removed catalogs in JSC app/share/
+action contexts; Safari empty catalogs with stale caches; unknown-host plugins;
+decline/error/timeout/malformed results; transcription outcomes; media owner/rewrites;
+price preservation; retail fixtures in JSC/Safari/Node; publisher/browser declarations;
+schema upgrade and Safari provenance; and retained native sibling-path fixtures.
+The full legacy/UI snapshot suite and live publisher/retailer availability are not
+claimed by this validation. Later sections retain historical detail; this ownership
+boundary and `docs/plugins/api.md` supersede old native-fallback/helper descriptions.
 
 ## 1. Architecture
 

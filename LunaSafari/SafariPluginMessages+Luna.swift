@@ -474,7 +474,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     /// `pluginmodel` deep link (`KindWiring.drainPendingPluginModels`).
     private func pluginQueueModel(message: [String: Any]?) -> [String: Any] {
         guard let id = message?["id"] as? String,
-              let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
+              let urlString = message?["url"] as? String,
+              let url = URL(string: urlString), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.isEmpty == false,
               let modelJSON = message?["model"] as? String,
               let plugin = enabledPlugin(id: id)
         else { return ["error": "invalid-request"] }
@@ -484,7 +486,13 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return ["error": "malformed-model"] }
         PendingPluginModelStore.shared.put(PendingPluginModel(
             urlString: urlString, modelJSON: modelJSON, pluginID: id, createdAt: Date(),
-            returnToSourceUntil: Date().addingTimeInterval(Self.returnHandoffLifetime)))
+            returnToSourceUntil: Date().addingTimeInterval(Self.returnHandoffLifetime),
+            originalURLString: (message?["originalURL"] as? String).flatMap { raw in
+                guard let original = URL(string: raw),
+                      ["http", "https"].contains(original.scheme?.lowercased() ?? ""),
+                      original.host?.isEmpty == false else { return nil }
+                return raw
+            }))
         return ["deepLink": "\(hostScheme)://pluginmodel?ret=safari"]
     }
 

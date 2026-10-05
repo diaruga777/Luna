@@ -85,6 +85,8 @@ public struct SavedItem: Identifiable, Equatable {
     }
 
     public let id: UUID
+    /// The user-supplied URL before a plugin/native rewrite; nil if never rewritten.
+    public var originalURLString: String?
     public var urlString: String
     public var title: String?
     public var dateAdded: Date

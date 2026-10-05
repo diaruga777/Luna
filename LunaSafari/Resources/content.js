@@ -604,7 +604,7 @@
 
     function queueModelAndNavigate(pluginId, modelJSON, resp, resolvedURL) {
         return browser.runtime.sendMessage(
-            { type: "plugins.queueModel", id: pluginId, url: resolvedURL || location.href, model: modelJSON }
+            { type: "plugins.queueModel", id: pluginId, url: resolvedURL || location.href, originalURL: location.href, model: modelJSON }
         ).then(function (qr) {
             window.location.href = (qr && qr.deepLink) || pluginSaveDeepLink(resp);
         }, function () {

@@ -57,12 +57,13 @@ import SwiftSoup
     // MARK: - Queries
 
     public func querySelector(_ css: String) -> JSValue? {
-        Self.value((try? element.select(css).first()).map(PluginHTMLNodeHandle.init))
+        Self.value((try? element.select(css).array().first { $0 !== element })
+            .flatMap { $0 }.map(PluginHTMLNodeHandle.init))
     }
 
     public func querySelectorAll(_ css: String) -> [PluginHTMLNodeHandle] {
         guard let found = try? element.select(css) else { return [] }
-        return found.array().map(PluginHTMLNodeHandle.init)
+        return found.array().filter { $0 !== element }.map(PluginHTMLNodeHandle.init)
     }
 
     public func matches(_ css: String) -> Bool {
@@ -248,19 +249,6 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
     /// `PluginAPISurfaceTests` builds the expected `.d.ts` surface from it, so
     /// a member added here without its typing fails the build.
     public static let installedMembers = ["parse", "text", "jsonScripts", "jsonLD", "meta", "article"]
-
-    /// An extracted article as the plugin reads it. Absent optional fields are
-    /// omitted rather than sent as null, the same way a Model omits them.
-    private static func jsObject(_ article: PluginArticleExtraction.Article) -> [String: Any] {
-        var object: [String: Any] = [
-            "title": article.title, "html": article.html, "text": article.text,
-        ]
-        if let author = article.author { object["author"] = author }
-        if let publishedAt = article.publishedAt { object["publishedAt"] = publishedAt }
-        if let leadImageURL = article.leadImageURL { object["leadImageURL"] = leadImageURL }
-        if let excerpt = article.excerpt { object["excerpt"] = excerpt }
-        return object
-    }
 
     /// The parsed bodies of the document's JSON script tags. Bad JSON is
     /// skipped: one malformed block on a page must not cost a plugin the rest.

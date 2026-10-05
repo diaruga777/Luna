@@ -43,3 +43,19 @@ assert.equal(redditResult.assets[0].audioURL,'https://v.redd.it/id/tracks/sound.
 assert.equal(redditResult.assets[0].headers.Referer,'https://www.reddit.com/');
 assert.equal(redditResult.assets[0].dashManifestURL,undefined);
 console.log('Plugin-owned Reddit DASH audio fixture passed.');
+
+// Publisher interstitial parity: whole segments, every legacy key and same-site aliases.
+for (const path of ['subscribe','subscriptions','paywall','log-in','register','checkout','remote/check_cookie.html']) {
+  for (const key of ['dest','RETURNURL','return_url','redirecturl','next','targeturl']) {
+    const target='https://news.example/story?edition=au';
+    const wrapped='https://www.news.example/'+path+'?'+key+'='+encodeURIComponent(target);
+    assert.equal((await wrapper.ingest({url:wrapped})).rewriteURL,target,wrapped);
+  }
+}
+for (const url of ['https://news.example/subscriber-report?dest=https://news.example/story',
+  'https://news.example/login?dest=https://evil.example/story',
+  'https://news.example/login?dest=https://news.example/paywall',
+  'https://facebook.com/l.php?u=https://facebook.com/home']) assert.equal(wrapper.classify({url}),false,url);
+const classic=Buffer.concat([Buffer.from([8,19,34]),Buffer.from('https://publisher.test/story'),Buffer.from([0xd2,1,0])]).toString('base64url');
+assert.equal((await wrapper.ingest({url:'https://news.google.com/articles/'+classic})).rewriteURL,'https://publisher.test/story');
+console.log('URL wrapper parity regressions passed.');

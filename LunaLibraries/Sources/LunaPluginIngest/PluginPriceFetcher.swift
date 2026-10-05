@@ -24,6 +24,23 @@ public final class PluginPriceFetcher: PluginPriceFetching {
         self.processKind = processKind
     }
 
+    public func sellers(for url: URL, pluginID: String) async -> [ProductSellerSpec] {
+        guard let host = url.host?.lowercased(),
+              invoker.matchedPlugins(forHost: host).contains(where: {
+                  $0.id == pluginID && $0.produces.contains(.product)
+              }) else { return [] }
+        let answer = await invoker.invoke(
+            .ingest, pluginID: pluginID,
+            argument: PluginIngestHookInput(url: url.absoluteString,
+                claim: PluginIngestClaim(kind: .product, itemID: nil), page: nil,
+                reason: .compare, context: processKind),
+            timeout: PluginIngestStage.ingestTimeout, decode: PluginIngestAnswer.self)
+        guard case let .success(.model(model)) = answer,
+              case let .product(product) = model.resolvingRelativeURLs(against: url)
+        else { return [] }
+        return product.sellers
+    }
+
     public func price(forStoreURL url: URL, pluginID: String) async -> PluginStorePrice? {
         // A tracker stamps its plugin onto every store it owns, alternative
         // sellers included, and those sit on hosts the plugin never claimed.

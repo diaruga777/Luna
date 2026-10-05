@@ -285,6 +285,8 @@ const LunaWeb = (function () {
         return true;
     }
     function article(source, base) {
+        const parsedURL = luna.parseURL(base);
+        if (parsedURL && /\/(search|category|tag|topics|archive)(\/|$)/i.test(parsedURL.pathname)) return null;
         const doc = luna.html.parse(source, base);
         const meta = htmlMeta(doc);
         const linked = jsonLD(doc).find(function (entry) {

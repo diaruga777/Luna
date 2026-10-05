@@ -79,7 +79,7 @@ public enum SellerComparisonRunner {
     public static func run(
         _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult? = nil
     ) async -> SellerFanOutOutcome? {
-        guard let installed else { return nil }
+        guard !URLBehaviorPolicy.pluginsOnly, let installed else { return nil }
         let store = snapshotStore
         guard store != nil || onResult != nil else {
             return await installed.run(request, onResult: nil)

@@ -581,6 +581,23 @@ public final class ProductDetailViewController: UIViewController {
     /// mandatory-price add path.
     private func presentSearchOverlay() {
         guard let tracker else { return }
+        if URLBehaviorPolicy.pluginsOnly {
+            guard let source = store.item(withID: itemID)?.url,
+                  SellerComparison.begin(itemID: itemID, sourceURL: source, store: store, force: true) else {
+                presentPriceMessage(title: L10n.string("PriceTracker_pluginRequiredTitle"), message: L10n.string("PriceTracker_pluginRequiredMessage"))
+                return
+            }
+            reload()
+            Task { [weak self] in
+                guard let self else { return }
+                let added = await SellerComparison.complete(itemID: self.itemID, store: self.store)
+                self.reload()
+                if added == 0 {
+                    self.presentPriceMessage(title: L10n.string("PriceTracker_noNewSellersTitle"), message: L10n.string("PriceTracker_noNewSellersMessage"))
+                }
+            }
+            return
+        }
         let searchURL = ProductSearchURL.googleShoppingURL(forProductName: tracker.productName)
             ?? URL(string: "https://www.google.com")
         guard let searchURL else { return }
@@ -629,11 +646,24 @@ public final class ProductDetailViewController: UIViewController {
         }
         Task { [weak self] in
             guard let self else { return }
-            let price = await self.priceFetcher.fetchPrice(
-                forURLString: urlString, prefetchedHTML: prefetchedHTML)
+            let price: ProductPrice?
+            var resolvedURLString = urlString
+            var owner: String?
+            if URLBehaviorPolicy.pluginsOnly {
+                let suggestion: ProductPageSuggestion?
+                if let url = URLUnwrapper.ingestURL(from: urlString) {
+                    suggestion = await ProductPageSuggestion.resolve(url: url, html: prefetchedHTML)
+                } else { suggestion = nil }
+                price = suggestion?.metadata.price
+                resolvedURLString = suggestion?.url.absoluteString ?? urlString
+                owner = suggestion?.pluginID
+            } else {
+                price = await self.priceFetcher.fetchPrice(
+                    forURLString: urlString, prefetchedHTML: prefetchedHTML)
+            }
             await MainActor.run {
                 guard var current = self.tracker else { return }
-                if current.hasStore(urlString: urlString) {
+                if current.hasStore(urlString: resolvedURLString) {
                     report?(.duplicate)
                     return
                 }
@@ -649,10 +679,12 @@ public final class ProductDetailViewController: UIViewController {
                 }
                 // Adding a seller by hand is the explicit re-add: if this host
                 // was removed once, the user has just asked for it back.
-                current.clearSellerRejection(urlString: urlString)
-                current.upsertStore(PriceTrackerStore(
-                    urlString: urlString, lastPrice: price.amount,
-                    currency: price.currency, lastRefreshed: Date()))
+                current.clearSellerRejection(urlString: resolvedURLString)
+                var listing = PriceTrackerStore(
+                    urlString: resolvedURLString, lastPrice: price.amount,
+                    currency: price.currency, lastRefreshed: Date())
+                listing.pluginID = owner
+                current.upsertStore(listing)
                 self.store.updatePriceTracker(current, for: self.itemID)
                 self.reload()
                 report?(.added)

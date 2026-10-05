@@ -14,6 +14,7 @@ public struct ProductPageSuggestion: Equatable {
     public let url: URL
     public let html: String
     public let metadata: ProductMetadata
+    public var pluginID: String? = nil
 }
 
 /// The one "should this live page be suggested as a seller?" decision.
@@ -47,6 +48,7 @@ public extension ProductPageSuggestion {
                 imageURL: product.imageURL,
                 brand: product.brand,
                 productID: product.productID,
-                identifiers: product.identifiers))
+                identifiers: product.identifiers),
+            pluginID: result.pluginID)
     }
 }

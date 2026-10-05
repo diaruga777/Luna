@@ -1583,3 +1583,9 @@
 "WriterLibrary_navigation_selectDocuments_Luna" = "Select Documents";
 "WriterLibrary_navigation_selectedCount_Luna" = "%d selected";
 "WriterLibrary_navigation_chooseDocument_Luna" = "Choose a document from your library, or start something new.";
+
+/* Plugin-owned product comparison */
+"PriceTracker_pluginRequiredTitle_Luna" = "Plugin required";
+"PriceTracker_pluginRequiredMessage_Luna" = "Re-save this product with an enabled product plugin to find sellers.";
+"PriceTracker_noNewSellersTitle_Luna" = "No new sellers";
+"PriceTracker_noNewSellersMessage_Luna" = "The product plugin did not return any new matching sellers.";

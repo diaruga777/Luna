@@ -51,7 +51,7 @@ final class PluginModelAdopterTests: XCTestCase {
         XCTAssertEqual(title, "A clip")
     }
 
-    func testAnUnknownPlatformNameFallsBackToTheURLThenToWeb() async {
+    func testAnUnknownPlatformNameUsesWebWithoutURLInference() async {
         let model = MediaModel(
             platform: "somewhere-new",
             assets: [MediaAssetSpec(url: URL(string: "https://cdn.test/v.mp4")!, type: .video)])
@@ -65,7 +65,7 @@ final class PluginModelAdopterTests: XCTestCase {
         guard case let .media(_, recognized, _, _, _) =
             await MediaModelAdopter().adopt(model, url: onReddit, pluginID: "p")
         else { return XCTFail("expected .media") }
-        XCTAssertEqual(recognized, .reddit, "the URL answers when the name does not")
+        XCTAssertEqual(recognized, .web, "the adapter must not infer a platform from the URL")
     }
 
     func testTwitterIsSpelledXInternally() async {

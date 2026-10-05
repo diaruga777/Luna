@@ -31,8 +31,10 @@ luna.register({
   async ingest({ url, page }) {
     const source = page?.html ? {ok:true, text:page.html, url:page.url} : await luna.fetch(url);
     if (!source.ok) return null;
-    const article = await luna.html.article(source.text, source.url);
-    return article ? {kind:"article", ...article, baseURL:source.url} : null;
+    const doc = luna.html.parse(source.text, source.url);
+    const body = doc.querySelector('article'); // choose this site's actual body
+    if (!body || body.textContent.length < 300) return null;
+    return {kind:"article", title:doc.title || url, html:body.innerHTML, baseURL:source.url};
   },
 });
 ```
@@ -64,10 +66,10 @@ export(input): {text:string} | {url:string} | {file:FileHandle} | DeliveryStatus
 
 All hooks may be async. `context` is `app`, `share`, `action` or `safari`;
 `page` may supply `{url, html?, title?, source}`. Reuse its HTML if present.
-`reason` is `save`, `resume` or `reresolve`. `classify` should decide cheaply
+`reason` is `save`, `resume`, `refresh`, `compare`, `rescue` or `reresolve`. `classify` should decide cheaply
 from the URL (8-second budget). Ingest has a 30-second idle budget refreshed
 by bridge activity. Return `null` to decline; Luna tries the next plugin and
-then native extraction. Ordinary errors also fall through and are logged.
+then preserves the URL as a plain link. Ordinary errors also fall through and are logged.
 
 Let `browser-deferred` propagate. A blanket catch returning null loses the
 browser handoff. Media extractors should return false when
@@ -152,14 +154,14 @@ doc.querySelector(css); doc.querySelectorAll(css); // element or null; array
 // elements: textContent, innerHTML, outerHTML, children, parentElement, tagName,
 // getAttribute, hasAttribute, attributes, matches, closest, absoluteURL(attr)
 // documents also have title, documentElement, head and body
-luna.html.meta(doc); // title, description, canonical, image, author, published, siteName, language, type
+// Select metadata explicitly with doc.querySelector(...).
 luna.html.jsonLD(doc); // objects; flattens @graph, skips bad JSON
 luna.html.jsonScripts(doc, type); // default: application/ld+json
-await luna.html.article(html, baseURL); // {title,html,text,author?,...} or null; ALWAYS await
+// Select the body with DOM/CSS, or bundle docs/plugins/lib/web.js.
 luna.html.text(html);
 luna.text.clean(text);
-luna.text.price(text); // {amount, currency?} or null
-luna.text.date(text); // ISO date or null
+// Parse prices and dates in your plugin; return declared decimal/ISO values.
+
 ```
 
 Selectors support tags, classes, IDs, attributes, descendant/child
@@ -211,3 +213,9 @@ Check the JSON header, capabilities, hook names, path matching and Model
 fields. Return false on unrelated paths and null on missing content. Keep
 browser deferrals intact. Use saved fixtures when running the Node harness;
 passing validation is not proof of live extraction or delivery. Test in Luna.
+
+Core never supplies native extraction after plugins decline. The retired helpers
+`luna.html.article/meta` and `luna.text.price/date` reject at runtime. Helpers in
+`docs/plugins/lib/` are source to embed in a plugin, not implicit runtime globals.
+For seller discovery handle `reason: "compare"` and return validated product sellers;
+refresh uses the same owner with `reason: "refresh"`.

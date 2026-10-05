@@ -274,10 +274,8 @@ public enum IngestPipeline {
         }
 
         // (1b) Plugins run before the Swift classifier and may claim a host
-        // Swift already knows. A plugin that declines, breaks or times out
-        // falls through to the classifier below, so the Swift path is the
-        // floor under every plugin. Nil in the three sibling apps, which link
-        // no plugin platform.
+        // Swift already knows. Core retains an unmatched URL as a plain link;
+        // only sibling composition can continue into native classification.
         if let pluginStage = pluginStage {
             switch await pluginStage.run(
                 IngestInput(

@@ -41,6 +41,8 @@ public struct PriceRefreshOutcome: Equatable {
     public let displayCurrency: String
     /// The post-refresh discount fraction (for tie-breaking notifications).
     public let discountFraction: Double
+    /// Stores whose owner could not provide a fresh observation on this pass.
+    public var unavailableStoreURLs: [String] = []
 }
 
 /// Re-fetches every non-archived price tracker's store URLs, updates their prices,
@@ -115,9 +117,12 @@ public struct PriceRefresher {
         let wasAlerting = tracker.isAlerting
         var updated = tracker
         let timestamp = now()
+        var unavailableStoreURLs: [String] = []
 
         for storeListing in tracker.stores {
             guard let price = await price(for: storeListing) else {
+                unavailableStoreURLs.append(storeListing.urlString)
+                SharedDiagnosticLog.record("price refresh unavailable: \(storeListing.urlString)", category: "price")
                 // Stamp the attempt time even on failure so it doesn't monopolize
                 // the stalest-first queue every run.
                 updated.setPrice(storeListing.lastPrice, currency: nil,
@@ -147,6 +152,7 @@ public struct PriceRefresher {
             isAlerting: isAlerting,
             newlyAlerting: isAlerting && !wasAlerting,
             displayCurrency: finalTracker.displayCurrency,
-            discountFraction: finalTracker.discountFraction)
+            discountFraction: finalTracker.discountFraction,
+            unavailableStoreURLs: unavailableStoreURLs)
     }
 }

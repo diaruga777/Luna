@@ -23,6 +23,24 @@ private struct StubProductInfoFallback: ProductInfoFallbackProviding {
 }
 
 final class IngestPipelineBrowserFallbackTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // These fixtures exercise the sibling apps' retained native composition.
+        savedURLPolicy = URLBehaviorPolicy.pluginsOnly
+        savedPluginStage = IngestPipeline.pluginStage
+        URLBehaviorPolicy.pluginsOnly = false
+        IngestPipeline.pluginStage = nil
+    }
+
+    override func tearDown() {
+        URLBehaviorPolicy.pluginsOnly = savedURLPolicy
+        IngestPipeline.pluginStage = savedPluginStage
+        super.tearDown()
+    }
+
+    private var savedURLPolicy = false
+    private var savedPluginStage: (any PluginIngestStaging)?
+
 
     /// Amazon often refuses the app/extension URLSession even though Safari's
     /// rendered page already produced a passive snapshot. A known product host
@@ -131,7 +149,7 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .paste),
             timeout: 1,
-            fetcher: fetcher
+            fetcher: fetcher, articleProcessor: ArticleIngestProcessor()
         )
 
         XCTAssertEqual(

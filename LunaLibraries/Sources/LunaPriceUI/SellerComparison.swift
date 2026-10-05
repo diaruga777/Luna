@@ -62,16 +62,19 @@ public enum SellerComparison {
     /// for a run that will never happen.
     @discardableResult
     public static func begin(
-        itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date()
+        itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date(), force: Bool = false
     ) -> Bool {
-        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return false }
+        guard URLBehaviorPolicy.pluginsOnly ? PluginPriceSeams.fetcher != nil : SellerComparisonRunner.installed != nil else { return false }
         guard var tracker = store.item(withID: itemID)?.priceTracker else { return false }
+        if URLBehaviorPolicy.pluginsOnly && tracker.stores.first(where: {
+            $0.urlString == sourceURL.absoluteString
+        })?.pluginID == nil { return false }
         // A plugin that returned `sellers` owns comparison for this tracker: it
         // already produced more than one store, all stamped with its id, so the
         // Swift fan-out would only re-find what the plugin handed over
         // (`claudedocs/plans/plugin-platform.md` §5.3). A plugin product with a
         // single store is compared normally.
-        guard !(tracker.stores.count > 1 && tracker.stores.contains { $0.pluginID != nil })
+        guard force || !(tracker.stores.count > 1 && tracker.stores.contains { $0.pluginID != nil })
         else { return false }
         tracker.beginPendingComparison(sourceURLString: sourceURL.absoluteString, at: now)
         store.updatePriceTracker(tracker, for: itemID)
@@ -114,7 +117,7 @@ public enum SellerComparison {
     public static func completePending(
         store: SavesStore, now: Date = Date()
     ) async -> Int {
-        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return 0 }
+        guard URLBehaviorPolicy.pluginsOnly || SellerComparisonRunner.installed != nil else { return 0 }
         let pending = store.items().compactMap { item -> UUID? in
             guard let tracker = item.priceTracker, tracker.pendingComparison != nil,
                   !tracker.isArchived
@@ -139,11 +142,38 @@ public enum SellerComparison {
         // Every other outcome — found nothing, budget expired, every retailer
         // bot-walled — is a finished run, and a marker that outlives its run is
         // a "checking…" row that never goes away.
-        guard !URLBehaviorPolicy.pluginsOnly, SellerComparisonRunner.installed != nil else { return 0 }
+        guard URLBehaviorPolicy.pluginsOnly || SellerComparisonRunner.installed != nil else { return 0 }
         guard let tracker = store.item(withID: itemID)?.priceTracker,
               let pending = tracker.pendingComparison,
               let sourceURL = URL(string: pending.sourceURLString)
         else { return 0 }
+
+        if URLBehaviorPolicy.pluginsOnly {
+            let owner = tracker.stores.first(where: { $0.urlString == sourceURL.absoluteString })?.pluginID
+            let sellers: [ProductSellerSpec]
+            if let owner, let fetcher = PluginPriceSeams.fetcher {
+                sellers = await fetcher.sellers(for: sourceURL, pluginID: owner)
+            } else { sellers = [] }
+            guard var current = store.item(withID: itemID)?.priceTracker,
+                  !Task.isCancelled, !current.isArchived, current.pendingComparison == pending,
+                  current.stores.first(where: { $0.urlString == sourceURL.absoluteString })?.pluginID == owner
+            else { return 0 }
+            let before = current.stores.count
+            for seller in sellers {
+                guard let price = seller.price, price.amount > 0,
+                      price.currency.uppercased() == current.initialCurrency.uppercased(),
+                      !current.hasStore(urlString: seller.url.absoluteString),
+                      !current.rejectsSeller(urlString: seller.url.absoluteString) else { continue }
+                var listing = PriceTrackerStore(urlString: seller.url.absoluteString,
+                    lastPrice: price.amount, currency: price.currency, lastRefreshed: now)
+                listing.pluginID = owner
+                listing.recordSample(price: price.amount, currency: price.currency, at: now)
+                current.upsertStore(listing)
+            }
+            current.completePendingComparison(at: now)
+            store.updatePriceTracker(current, for: itemID)
+            return max(0, current.stores.count - before)
+        }
 
         let before = tracker.stores.count
         _ = await SellerComparisonRunner.run(

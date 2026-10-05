@@ -14,6 +14,7 @@ import Foundation
 public struct PendingPluginModel: Equatable, Sendable {
     public let id: String
     public let urlString: String
+    public let originalURLString: String?
     public let modelJSON: String
     public let pluginID: String
     public let createdAt: Date
@@ -22,10 +23,12 @@ public struct PendingPluginModel: Equatable, Sendable {
 
     public init(
         id: String = UUID().uuidString, urlString: String, modelJSON: String,
-        pluginID: String, createdAt: Date = Date(), returnToSourceUntil: Date? = nil
+        pluginID: String, createdAt: Date = Date(), returnToSourceUntil: Date? = nil,
+        originalURLString: String? = nil
     ) {
         self.id = id
         self.urlString = urlString
+        self.originalURLString = originalURLString
         self.modelJSON = modelJSON
         self.pluginID = pluginID
         self.createdAt = createdAt
@@ -57,8 +60,8 @@ public final class PendingPluginModelStore {
             try db.run(
                 """
                 INSERT OR REPLACE INTO pending_plugin_models
-                    (id, url, model_json, plugin_id, created_at, return_to_source_until)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (id, url, model_json, plugin_id, created_at, return_to_source_until, original_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
             ) { row in
                 try row.bind(1, model.id)
@@ -67,6 +70,7 @@ public final class PendingPluginModelStore {
                 try row.bind(4, model.pluginID)
                 try row.bind(5, date: model.createdAt)
                 try row.bind(6, date: model.returnToSourceUntil)
+                try row.bind(7, model.originalURLString)
             }
         }
     }
@@ -85,7 +89,7 @@ public final class PendingPluginModelStore {
             var rows: [PendingPluginModel] = []
             try db.query(
                 """
-                SELECT id, url, model_json, plugin_id, created_at, return_to_source_until
+                SELECT id, url, model_json, plugin_id, created_at, return_to_source_until, original_url
                 FROM pending_plugin_models ORDER BY created_at
                 """
             ) { row in
@@ -96,7 +100,7 @@ public final class PendingPluginModelStore {
                 guard now.timeIntervalSince(createdAt) < Self.lifetime else { return }
                 rows.append(PendingPluginModel(
                     id: id, urlString: url, modelJSON: json, pluginID: pluginID,
-                    createdAt: createdAt, returnToSourceUntil: row.date(5)))
+                    createdAt: createdAt, returnToSourceUntil: row.date(5), originalURLString: row.string(6)))
             }
             return rows
         } ?? []

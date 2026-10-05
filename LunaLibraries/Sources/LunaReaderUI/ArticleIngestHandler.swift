@@ -228,6 +228,7 @@ public final class ArticleIngestHandler {
         if let sourceHTML {
             archive = await WebArchiveCapturer.capture(html: sourceHTML, baseURL: url)
         } else {
+            guard !URLBehaviorPolicy.pluginsOnly else { return }
             archive = await WebArchiveCapturer.capture(url: url)
         }
         guard let archive, let current = store.item(withID: item.id) else { return }

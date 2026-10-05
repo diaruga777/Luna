@@ -14,8 +14,15 @@ import Foundation
 /// which is the whole point of `tracker_stores.plugin_id`.
 public protocol PluginPriceFetching {
     /// The store's current price, or nil when the plugin is gone, declined, or
-    /// returned no product. The refresher then falls back to the Swift fetcher.
+    /// returned no product. Core preserves the last observation; sibling apps may
+    /// use their composed native fetcher.
     func price(forStoreURL url: URL, pluginID: String) async -> PluginStorePrice?
+    /// Requests comparison from the recorded owner; no owner means no discovery.
+    func sellers(for url: URL, pluginID: String) async -> [ProductSellerSpec]
+}
+
+public extension PluginPriceFetching {
+    func sellers(for url: URL, pluginID: String) async -> [ProductSellerSpec] { [] }
 }
 
 /// One refreshed price. Kept in LunaModels because `ProductPrice` lives above

@@ -39,11 +39,15 @@ public struct PluginBrowserRequest: Equatable, Codable, Sendable {
     public let detect: String
     public let title: String?
     public let timeout: TimeInterval
+    /// Plugin-declared page behavior; the host never chooses rules by hostname.
+    public let scripts: [String]?
+    public let blockURLs: [String]?
 
     public init(
         url: URL, userAgent: String? = nil, headers: [String: String] = [:],
         cookies: CookieStore = .persistent, detect: String, title: String? = nil,
-        timeout: TimeInterval = PluginBrowserRequest.defaultTimeout
+        timeout: TimeInterval = PluginBrowserRequest.defaultTimeout,
+        scripts: [String]? = nil, blockURLs: [String]? = nil
     ) {
         self.url = url
         self.userAgent = userAgent
@@ -52,15 +56,25 @@ public struct PluginBrowserRequest: Equatable, Codable, Sendable {
         self.detect = detect
         self.title = title
         self.timeout = timeout
+        self.scripts = scripts
+        self.blockURLs = blockURLs
     }
 
     /// Reads the object a plugin passed. Nil for a request Luna cannot act on:
     /// no URL, or no probe to read the page with.
     public init?(jsObject object: [String: Any]) {
         guard let urlText = object["url"] as? String, let url = URL(string: urlText),
-              url.scheme?.hasPrefix("http") == true,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.isEmpty == false,
               let detect = object["detect"] as? String, !detect.isEmpty
         else { return nil }
+        let scripts = object["scripts"] as? [String]
+        let blocks = object["blockURLs"] as? [String]
+        guard object["scripts"] == nil || scripts != nil,
+              object["blockURLs"] == nil || blocks != nil,
+              (scripts?.count ?? 0) <= 16, (blocks?.count ?? 0) <= 100,
+              (scripts ?? []).reduce(0, { $0 + $1.utf8.count }) <= 512 * 1024,
+              (blocks ?? []).allSatisfy({ !$0.isEmpty && $0.utf8.count <= 2048 }) else { return nil }
         let timeout = (object["timeout"] as? NSNumber)?.doubleValue
         self.init(
             url: url,
@@ -71,14 +85,14 @@ public struct PluginBrowserRequest: Equatable, Codable, Sendable {
                 .flatMap(CookieStore.init(rawValue:)) ?? .persistent,
             detect: detect,
             title: object["title"] as? String,
-            timeout: timeout.map { max(5, min($0, 900)) } ?? PluginBrowserRequest.defaultTimeout)
+            timeout: timeout.map { max(5, min($0, 900)) } ?? PluginBrowserRequest.defaultTimeout,
+            scripts: scripts, blockURLs: blocks)
     }
 
     public init?(json: String) {
-        guard let decoded = try? JSONDecoder().decode(
-            PluginBrowserRequest.self, from: Data(json.utf8))
+        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         else { return nil }
-        self = decoded
+        self.init(jsObject: object)
     }
 
     public var jsonText: String? {

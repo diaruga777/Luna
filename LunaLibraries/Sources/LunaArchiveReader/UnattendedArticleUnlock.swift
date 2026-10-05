@@ -51,6 +51,7 @@ public enum UnattendedArticleUnlock {
         store: SavesStore = .shared,
         timeout: TimeInterval = defaultTimeout
     ) async -> Bool {
+        guard !URLBehaviorPolicy.pluginsOnly else { return false }
         guard let url = URL(string: urlString), let host = hostView() else { return false }
 
         let reader = ArchiveWebReaderViewController(

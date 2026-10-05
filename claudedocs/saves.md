@@ -5,6 +5,12 @@ in-app are downloaded, stripped to readable text, and read in two reader modes.
 Every save from every surface lands in ONE store, `saves.sqlite` in the shared App
 Group container, and each app shows the kinds it owns.
 
+Core's unmatched URLs are plain `link` saves; only installed plugins interpret remote
+content. Schema 17 adds nullable `saves.original_url_string` and
+`pending_plugin_models.original_url`. Rewrites preserve the first input for provenance
+while `url_string` holds the final identity; unchanged/legacy saves leave it null.
+The migration adds columns in place and retains existing files and observations.
+
 ## The store
 
 `LunaStorage/SavesStore.swift` is the public API — `items()`, `add`, the targeted

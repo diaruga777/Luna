@@ -1,5 +1,15 @@
 # Alternative-seller price comparison
 
+Central Luna now delegates extraction, retailer policy and discovery to the saved
+product's JavaScript owner (`ingest`, `reason: "compare"`). The bundled web plugin
+owns the retail directory, Google Shopping interpretation and bounded search fan-out.
+Swift retains scheduling, normalized seller validation, storage/history and UI.
+Search repeats that plugin comparison; Paste ingests the seller with the effective
+catalog. Missing owners require an explicit re-save; refresh leaves the last price
+intact and reports the unavailable store. The native engine described below remains
+the sibling Price Tracker implementation. See [plugins.md](plugins.md).
+
+
 **What it is.** Given a product Luna knows about — one being saved, one already
 tracked, one open in Safari — find the SAME product on other retailers' own
 sites and read their prices. Not an aggregator lookup and not a scraped price

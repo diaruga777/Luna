@@ -36,6 +36,6 @@ public enum ProductKindComposition {
             fallback: SnapshotProductInfoFallback())
         ShareKindPresenters.product = ExtensionProductPresenter()
         PluginModelAdopters.product = ProductModelAdopter()
-        SellerComparisonRunner.install()
+        if !URLBehaviorPolicy.pluginsOnly { SellerComparisonRunner.install() }
     }
 }

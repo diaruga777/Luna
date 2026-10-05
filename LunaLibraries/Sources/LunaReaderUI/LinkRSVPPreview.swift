@@ -120,8 +120,7 @@ private enum LinkPreviewLoader {
         if let cached = PreloadStore.shared.articleContent(for: url) {
             content = cached
         } else {
-            guard let html = try? await ArticleFetcher().fetchHTML(from: url),
-                  let extracted = try? ArticleExtractor().extract(html: html, baseURL: url),
+            guard let extracted = await InlineReaderContentLoader.resolve(url: url),
                   extracted.isArticleLike else { return nil }
             content = extracted
         }

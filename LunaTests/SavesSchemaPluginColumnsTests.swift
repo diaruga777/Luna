@@ -194,6 +194,30 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertEqual(reread.quality, "1080p")
     }
 
+    func testRewriteProvenanceMigratesAndSurvivesRepeatedRewrites() throws {
+        var store: SavesStore? = SavesStore(containerURL: container)
+        let original = "https://wrapper.test/x?keep=1"
+        let save = store!.add(urlString: original)
+        store = nil
+        try withDatabase { db in
+            execute("ALTER TABLE saves DROP COLUMN original_url_string", in: db)
+            execute("ALTER TABLE pending_plugin_models DROP COLUMN original_url", in: db)
+            execute("PRAGMA user_version = 16", in: db)
+        }
+        let migrated = SavesStore(containerURL: container)
+        XCTAssertNil(migrated.item(withID: save.id)?.originalURLString)
+        _ = migrated.updateURL("https://middle.test/a", for: save.id)
+        _ = migrated.updateURL("https://destination.test/b?meaningful=2", for: save.id)
+        let fresh = SavesStore(containerURL: container)
+        XCTAssertEqual(fresh.item(withID: save.id)?.originalURLString, original)
+        XCTAssertEqual(fresh.item(withID: save.id)?.urlString, "https://destination.test/b?meaningful=2")
+        let pending = PendingPluginModel(urlString: "https://destination.test/b", modelJSON: "{}",
+                                         pluginID: "p", originalURLString: original)
+        PendingPluginModelStore(saves: migrated).put(pending)
+        XCTAssertEqual(PendingPluginModelStore(saves: fresh).takeAll(), [pending])
+        try withDatabase { db in XCTAssertEqual(userVersion(in: db), 17) }
+    }
+
     // MARK: - Migration
 
     /// A database written by a schema-11 build: the plugin columns and tables
@@ -228,7 +252,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertNil(migrated.items().first?.pluginID)
 
         try withDatabase { db in
-            XCTAssertEqual(userVersion(in: db), 14)
+            XCTAssertEqual(userVersion(in: db), 17)
             XCTAssertTrue(columns(of: "saves", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "tracker_stores", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "media_download_jobs", in: db)

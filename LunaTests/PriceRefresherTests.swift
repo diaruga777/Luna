@@ -7,12 +7,31 @@ import LunaPriceUI
 import LunaStorage
 import LunaHTMLClassification
 import LunaModels
+import LunaIngest
 import XCTest
 @testable import Luna
 
 /// Coverage for `PriceRefresher`: stalest-first processing order, price updates,
 /// newly-alerting detection, and resilience to a failing store fetch.
 final class PriceRefresherTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // These fixtures exercise the sibling apps' retained native composition.
+        savedURLPolicy = URLBehaviorPolicy.pluginsOnly
+        savedPluginStage = IngestPipeline.pluginStage
+        URLBehaviorPolicy.pluginsOnly = false
+        IngestPipeline.pluginStage = nil
+    }
+
+    override func tearDown() {
+        URLBehaviorPolicy.pluginsOnly = savedURLPolicy
+        IngestPipeline.pluginStage = savedPluginStage
+        super.tearDown()
+    }
+
+    private var savedURLPolicy = false
+    private var savedPluginStage: (any PluginIngestStaging)?
+
 
     /// In-memory persistence that records the order trackers were updated in.
     private final class FakeStore: PriceTrackerPersisting {

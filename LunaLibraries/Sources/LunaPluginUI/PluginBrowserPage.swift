@@ -56,6 +56,7 @@ public final class WebKitPluginBrowserPageMaker: PluginBrowserPageMaking {
 public final class WebKitPluginBrowserPage: NSObject, PluginBrowserPageDriving {
 
     private let webView: WKWebView
+    private var loadGeneration = UUID()
 
     public init(cookies: PluginBrowserRequest.CookieStore, userAgent: String?) {
         let configuration = WKWebViewConfiguration()
@@ -80,7 +81,30 @@ public final class WebKitPluginBrowserPage: NSObject, PluginBrowserPageDriving {
         for (name, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
-        webView.load(urlRequest)
+        let generation = UUID()
+        loadGeneration = generation
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.removeAllContentRuleLists()
+        for source in request.scripts ?? [] {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        guard let patterns = request.blockURLs, !patterns.isEmpty else {
+            webView.load(urlRequest)
+            return
+        }
+        let rules: [[String: Any]] = patterns.map {
+            ["trigger": ["url-filter": $0, "resource-type": ["script", "raw"]], "action": ["type": "block"]]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: rules),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let identifier = "plugin-" + generation.uuidString
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: json) { [weak self] list, _ in
+            WKContentRuleListStore.default().removeContentRuleList(forIdentifier: identifier) { _ in }
+            guard let self, self.loadGeneration == generation, let list else { return }
+            controller.add(list)
+            self.webView.load(urlRequest)
+        }
     }
 
     public func probe(_ source: String, completion: @escaping (String?) -> Void) {
@@ -110,6 +134,7 @@ public final class WebKitPluginBrowserPage: NSObject, PluginBrowserPageDriving {
     }
 
     public func stopLoading() {
+        loadGeneration = UUID()
         webView.stopLoading()
     }
 

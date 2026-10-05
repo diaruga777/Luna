@@ -95,7 +95,7 @@ public enum PluginClassifyVerdict: Decodable, Equatable, Sendable {
 
 /// Why the core is calling `ingest`. It travels to the plugin verbatim.
 public enum PluginIngestReason: String, Encodable, Sendable {
-    case save, resume, refresh, reresolve, rescue
+    case save, resume, refresh, reresolve, rescue, compare
 }
 
 public struct PluginIngestClaim: Encodable, Sendable {

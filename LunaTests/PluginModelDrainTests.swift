@@ -143,11 +143,11 @@ final class PluginModelDrainTests: XCTestCase {
             identifiers: ProductIdentifiers(), sellers: [])
     }
 
-    private func row(kind: String, extra: String, pluginID: String = "app.luna.test") -> PendingPluginModel {
+    private func row(kind: String, extra: String, pluginID: String = "app.luna.test", originalURL: String? = nil) -> PendingPluginModel {
         PendingPluginModel(
             urlString: "https://example.com/p/abc",
             modelJSON: #"{"kind":"\#(kind)",\#(extra)}"#,
-            pluginID: pluginID)
+            pluginID: pluginID, originalURLString: originalURL)
     }
 
     // MARK: - Media
@@ -158,7 +158,7 @@ final class PluginModelDrainTests: XCTestCase {
         let media = FakeIngestorMediaHandling()
         IngestorKindHandlers.media = media
 
-        let queued = row(kind: "media", extra: #""assets":[{"url":"https://cdn.test/v.mp4","type":"video"}]"#)
+        let queued = row(kind: "media", extra: #""assets":[{"url":"https://cdn.test/v.mp4","type":"video"}]"#, originalURL: "https://wrapper.test/original")
         await PluginModelDrain.adopt(
             queued, productInfoBuilder: productInfoBuilder, store: store, ingestor: ingestor)
 
@@ -167,6 +167,7 @@ final class PluginModelDrainTests: XCTestCase {
         XCTAssertEqual(media.calls.first?.itemID, "abc")
         let saved = store.itemsByURL(urlString: "https://example.com/p/abc")
         XCTAssertEqual(saved?.pluginID, "app.luna.test")
+        XCTAssertEqual(saved?.originalURLString, "https://wrapper.test/original")
     }
 
     func testAnAudiolessMediaOutcomeBecomesASocialOutcomeNotVideo() {

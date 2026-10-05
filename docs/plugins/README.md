@@ -63,8 +63,10 @@ luna.register({
   async ingest({ url, page }) {
     const source = page?.html ? { ok: true, text: page.html, url: page.url } : await luna.fetch(url);
     if (!source.ok) return null;
-    const article = await luna.html.article(source.text, source.url);
-    return article ? { kind: "article", ...article, baseURL: source.url } : null;
+    const doc = luna.html.parse(source.text, source.url);
+    const body = doc.querySelector('article'); // choose this site's actual body
+    if (!body || body.textContent.length < 300) return null;
+    return {kind:"article", title:doc.title || url, html:body.innerHTML, baseURL:source.url};
   },
 });
 ```
@@ -84,7 +86,7 @@ The header must be the first non-whitespace token. Its first comment line is
   reason, optional save ID and intent. Return a Model or `null`. Bridge
   activity refreshes its 30-second idle budget.
 - A decline, ordinary error or invalid Model lets Luna try the next plugin,
-  then native extraction. Let `browser-deferred` propagate so Luna can pause
+  then preserves the URL as a plain link. Let `browser-deferred` propagate so Luna can pause
   the save for a browser step. Avoid blanket catches that return `null`.
 - `page` may contain already-fetched HTML, including a Safari snapshot.
   Reuse it. When fetching, resolve relative links against the final response
@@ -111,9 +113,9 @@ as another plugin replaces it rather than adding another candidate.
 | Parse a URL safely | `luna.parseURL(url, base?)` → parsed URL or `null`; `searchParams.get("id")` |
 | Read JSON | `await luna.fetch.json(url, options?)` |
 | Read an HTML document | `await luna.fetch.doc(url, options?)` — needs `fetch` and `html` |
-| Extract article text | `await luna.html.article(html, baseURL)` → article or `null` |
-| Read metadata / structured data | `luna.html.meta(doc)` / `luna.html.jsonLD(doc)` |
-| Normalize a price / date / text | `luna.text.price/date/clean` — included with `html` |
+| Select article text | Use DOM selectors or bundle `lib/web.js` into your plugin |
+| Read structured data | `luna.html.jsonScripts(doc)` / `luna.html.jsonLD(doc)`; interpret it in your plugin |
+| Clean text | `luna.text.clean` — price/date interpretation belongs in the plugin |
 | Convert text / bytes | `luna.bytes.utf8Encode/utf8Decode/fromBase64/toBase64` |
 | Inspect a failure | `luna.log(message, data?)`; `error.code` for bridge failures |
 
@@ -152,3 +154,9 @@ Run `npm test --prefix tools/plugin-sim` to check the harness, shared manifest
 and HTML cases, bundled registrations, starters, and their TypeScript types.
 The simulator suite additionally checks native bridges, import/rollback,
 concurrency, adoption, exports, and Safari behavior.
+
+Core never supplies native extraction after plugins decline. The retired helpers
+`luna.html.article/meta` and `luna.text.price/date` reject at runtime. Helpers in
+`docs/plugins/lib/` are source to embed in a plugin, not implicit runtime globals.
+For seller discovery handle `reason: "compare"` and return validated product sellers;
+refresh uses the same owner with `reason: "refresh"`.

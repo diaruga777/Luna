@@ -72,7 +72,8 @@ public enum URLUnwrapper {
         guard let parsed else { return nil }
         let normalized = URLBehaviorPolicy.pluginsOnly ? parsed : unwrapOffline(parsed).url
         guard let normalizedScheme = normalized.scheme?.lowercased(),
-              normalizedScheme == "http" || normalizedScheme == "https"
+              (normalizedScheme == "http" || normalizedScheme == "https"),
+              normalized.host?.isEmpty == false
         else { return nil }
         return normalized
     }

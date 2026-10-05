@@ -16,6 +16,24 @@ import LunaModels
 import XCTest
 
 final class IngestPipelineTimeoutLegTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // These fixtures exercise the sibling apps' retained native composition.
+        savedURLPolicy = URLBehaviorPolicy.pluginsOnly
+        savedPluginStage = IngestPipeline.pluginStage
+        URLBehaviorPolicy.pluginsOnly = false
+        IngestPipeline.pluginStage = nil
+    }
+
+    override func tearDown() {
+        URLBehaviorPolicy.pluginsOnly = savedURLPolicy
+        IngestPipeline.pluginStage = savedPluginStage
+        super.tearDown()
+    }
+
+    private var savedURLPolicy = false
+    private var savedPluginStage: (any PluginIngestStaging)?
+
 
     private func url(_ string: String) -> URL { URL(string: string)! }
 

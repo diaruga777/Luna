@@ -28,6 +28,13 @@ public enum ArchiveUnlockFlow {
         modalPresentationStyle: UIModalPresentationStyle = .automatic,
         onUnlocked: @escaping (SavedItem) -> Void
     ) {
+        if URLBehaviorPolicy.pluginsOnly {
+            Task { @MainActor in
+                await PluginResumeSeams.resumer?.resumePluginLockedSave(id: item.id)
+                if let fresh = store.item(withID: item.id), fresh.state == .ready { onUnlocked(fresh) }
+            }
+            return
+        }
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
         nav.modalPresentationStyle = modalPresentationStyle

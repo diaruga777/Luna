@@ -3,8 +3,7 @@
 A Node harness for iterating on a Luna plugin outside Xcode
 (`claudedocs/plans/plugin-platform.md` §13.4). It implements the `luna.*`
 bridge (`bridge.mjs`) with `undici` for `luna.fetch`, `linkedom` for
-`luna.html` and `luna.text`, `@mozilla/readability` for
-`luna.html.article` (APPROXIMATE — see below), in-memory maps for
+the syntax primitives in `luna.html` and `luna.text`, in-memory maps for
 `luna.storage`/`luna.settings`/`luna.files`
 (so a multipart `file` part and `as: "file"` behave the same as the app),
 `luna.downloads` fed from a fixture's own job list. A declared `luna.browser`
@@ -79,8 +78,8 @@ Runs `LunaTests/Fixtures/Plugins/html-subset.spec.js` — the same file
 specifies `luna.html` and `luna.text` together, because `luna.text` rides on
 the `html` capability and the same three backings answer it. A disagreement is
 a defect in one of the three backings, never a reason to special-case a plugin.
-`luna.html.article` is the one member NOT in the file: it is native everywhere,
-so there is no page-side backing to compare.
+The retired semantic helpers reject in executing plugins. Migration fixtures run
+the shipping plugin-owned interpreters separately from the legacy primitive spec.
 
 ## Manifest rules
 

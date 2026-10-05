@@ -412,6 +412,10 @@ final class MediaCardPresenter: CardKindPresenting {
     @discardableResult
     func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
         let presenter = host.presentingController
+        guard !URLBehaviorPolicy.pluginsOnly else {
+            InAppBrowser.present(urlString: item.urlString, from: presenter)
+            return true
+        }
         guard let platform = item.contentPlatform,
               let module = PlatformRegistry.shared.module(for: platform)
         else {

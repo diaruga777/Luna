@@ -31,6 +31,7 @@ public struct FaviconFetcher {
     /// `pageURL`, or nil when nothing usable is found. Never throws — icon
     /// loading is decorative and failures just mean a fallback badge.
     public func fetchIconData(forPageURL pageURL: URL) async -> Data? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         guard let scheme = pageURL.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = pageURL.host, !host.isEmpty
         else { return nil }

@@ -74,7 +74,7 @@ enum PluginModelDrain {
             }
             guard returningToSource, let opener = returnOpener,
                   (rows[0].returnToSourceUntil ?? .distantPast) > now,
-                  let sourceURL = URL(string: rows[0].urlString),
+                  let sourceURL = URL(string: rows[0].originalURLString ?? rows[0].urlString),
                   sourceURL.scheme?.hasPrefix("http") == true
             else { return }
             await opener.open(sourceURL)
@@ -122,7 +122,8 @@ enum PluginModelDrain {
             await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
             return
         }
-        let reservation = store.reserveSaveAttempt(urlString: row.urlString, at: Date())
+        let reservation = store.reserveSaveAttempt(
+            urlString: row.originalURLString ?? row.urlString, at: Date())
         _ = await ingestor.applyRescued(
             IngestResult(url: url, outcome: outcome, pluginID: row.pluginID),
             forItemID: reservation.item.id, interactive: false)
@@ -130,8 +131,7 @@ enum PluginModelDrain {
 
     /// The Model could not be adopted (a decode failure, a declined outcome,
     /// no adopter for this kind). Re-entering as an ordinary URL keeps the save
-    /// rather than losing it — the Swift classifier is the same floor the
-    /// ingest walk itself falls back to (§7.4).
+    /// rather than losing it. Core keeps a plain link if no plugin handles it.
     @MainActor
     private static func fallBackToNormalIngest(
         urlString: String, store: SavesStore, ingestor: SavesIngestor

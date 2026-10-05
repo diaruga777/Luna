@@ -116,7 +116,7 @@ export interface IngestInput {
   url: string;
   claim: { kind: PluginModelKind; itemId?: string };
   page?: PageSnapshot;
-  reason: "save" | "resume" | "refresh" | "reresolve" | "rescue";
+  reason: "save" | "resume" | "refresh" | "reresolve" | "rescue" | "compare";
   context: "app" | "share" | "action" | "safari";
   saveId?: string;
   intent?: IngestIntent;
@@ -454,6 +454,8 @@ export interface BrowserRequest {
   headers?: Record<string, string>;
   cookies?: "persistent" | "ephemeral";
   detect: string;
+  scripts?: string[];
+  blockURLs?: string[];
   title?: string;
   timeout?: number;
 }

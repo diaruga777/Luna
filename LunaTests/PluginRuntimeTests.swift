@@ -935,6 +935,26 @@ final class PluginRuntimeTests: XCTestCase {
             as: ClassifyClaim?.self)
         XCTAssertEqual(claim ?? nil, ClassifyClaim(kind: "media", itemId: "second"))
     }
+    func testCancelledPendingHookReturnsPromptlyWithoutDisablingPlugin() async throws {
+        try runner.load(plugin(body: """
+            luna.register({classify() { return {kind: 'media'}; }, ingest() { return new Promise(() => {}); }});
+            """))
+        let runtime = runner.runtime
+        for _ in 0..<4 {
+            let task = Task { await runtime.invoke(.ingest, pluginID: "app.luna.test", argument: ["url": "https://example.com"], timeout: 5, decode: String?.self) }
+            try await Task.sleep(nanoseconds: 30_000_000)
+            let started = Date()
+            task.cancel()
+            let answer = await task.value
+            XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+            guard case let .failure(.runtime(message)) = answer else { XCTFail("Expected cancellation"); continue }
+            XCTAssertTrue(message.hasPrefix("cancelled:"))
+        }
+        XCTAssertTrue(runtime.disabledPlugins.isEmpty)
+        let claim: ClassifyClaim? = await runner.invoke(.classify, pluginID: "app.luna.test", argument: ["url": "https://example.com"], as: ClassifyClaim.self)
+        XCTAssertEqual(claim?.kind, "media")
+    }
+
 }
 
 /// Installs its namespace under the wrong name, to prove the runtime reads the
@@ -945,4 +965,5 @@ private final class MisnamingCapabilityBridge: PluginCapabilityInstalling {
     func install(into namespace: PluginCapabilityNamespace) {
         namespace.install([:] as [String: Any], as: "somethingElse")
     }
+
 }

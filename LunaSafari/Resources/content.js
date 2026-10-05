@@ -550,7 +550,10 @@
                 recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "declined", null);
                 return null;
             }
-            if (model.rewriteURL) { return { rewriteURL: model.rewriteURL }; }
+            if (model.rewriteURL) {
+                if (typeof model.rewriteURL !== "string" || Object.prototype.hasOwnProperty.call(model, "kind")) return null;
+                return { rewriteURL: model.rewriteURL };
+            }
             if ((walk.plugin.produces || []).indexOf(model.kind) < 0) { return null; }
             recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "produced", model.kind);
             return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id, url: url };

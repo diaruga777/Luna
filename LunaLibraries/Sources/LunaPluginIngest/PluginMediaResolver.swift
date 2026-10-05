@@ -60,6 +60,7 @@ public final class PluginMediaResolver: SocialMediaResolving, MediaReresolving {
         if let onlyPluginID { matched = matched.filter { $0.id == onlyPluginID } }
 
         for plugin in matched {
+            guard !Task.isCancelled else { return nil }
             guard plugin.hooks.contains(.classify), plugin.hooks.contains(.ingest) else { continue }
             let classified = await invoker.invoke(
                 .classify, pluginID: plugin.id,

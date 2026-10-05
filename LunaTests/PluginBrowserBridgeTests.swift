@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaPluginIngest
 import LunaPluginKit
 import LunaPluginRuntime
@@ -154,5 +155,33 @@ final class PluginBrowserBridgeTests: XCTestCase {
         let answer = await answer(scopedTo: nil)
         XCTAssertEqual(answer, "code:unavailable-here")
         XCTAssertNil(requests.record(for: saveID))
+    }
+
+    @MainActor
+    private final class SlowBrowser: PluginBrowserPresenting {
+        func presentBrowserStep(_ request: PluginBrowserRequest, pluginID: String) async -> PluginBrowserResult? {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            return PluginBrowserResult(url: request.url.absoluteString, html: "complete", title: "", cookieHeader: "", cookies: [])
+        }
+    }
+
+    @MainActor
+    func testBrowserProgressKeepsHookAndOuterPipelineAlive() async throws {
+        install(processKind: .app, presenter: SlowBrowser())
+        try runner.load("""
+        /* luna-plugin
+        {"id":"\(Self.pluginID)","name":"Browse","version":"1.0.1","api":1,"capabilities":["browser"]}
+        */
+        luna.register({async ingest() {
+            const result = await luna.browser.open({url:"\(Self.gateURL)",detect:"'done'",timeout:5});
+            return {value:result.html};
+        }});
+        """)
+        let value = await IdleTimeLimit.run(0.8) { [self] in
+            await PluginIngestScope.run(saveID: saveID, pluginID: Self.pluginID) {
+                await runner.invoke(.ingest, pluginID: Self.pluginID, timeout: 0.8, as: Answer.self)?.value
+            }
+        }
+        XCTAssertEqual(value ?? nil, "complete")
     }
 }

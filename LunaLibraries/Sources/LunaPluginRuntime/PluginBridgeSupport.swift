@@ -264,7 +264,16 @@ public final class PluginPromiseBox {
     /// The worker side of a bridge must check this before performing a side
     /// effect. It becomes false when the hook times out and its promise is
     /// discarded, even if the worker callback arrives much later.
-    public var isOperationValid: Bool { operation?.isValid ?? true }
+    public var isOperationValid: Bool {
+        (operation?.isValid ?? true) && (invocation?.isActive ?? true)
+    }
+
+    /// A bounded native operation (for example an interactive browser step)
+    /// reports progress without settling its promise.
+    public func noteActivity() {
+        guard isOperationValid else { return }
+        scheduler.notePluginActivity(pluginID: pluginID, generationID: generationID)
+    }
 
     /// Fulfils with JavaScript `undefined` rather than `null`. A key that holds
     /// nothing and a key holding a stored `null` must answer differently.
@@ -293,6 +302,7 @@ public final class PluginPromiseBox {
     private func settle(_ value: Any, rejecting: Bool) {
         scheduler.notePluginActivity(pluginID: pluginID, generationID: generationID)
         scheduler.schedulePluginCallback({ [self] in
+            guard isOperationValid else { discard(); return }
             lock.lock()
             let function = rejecting ? reject : resolve
             let context = function?.context

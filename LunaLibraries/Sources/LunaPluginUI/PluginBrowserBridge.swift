@@ -162,6 +162,18 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
         // later launch into offering an unlock for a step already taken.
         requests.clear(saveID: saveID)
         Task { @MainActor in
+            guard box.isOperationValid else { return }
+            // Awaiting a person is useful work, bounded by the browser request's
+            // own deadline. Keep both ingestion idle clocks alive during it.
+            let deadline = Date().addingTimeInterval(request.timeout)
+            let heartbeat = Task {
+                while !Task.isCancelled && box.isOperationValid && Date() < deadline {
+                    box.noteActivity()
+                    do { try await Task.sleep(nanoseconds: 250_000_000) }
+                    catch { return }
+                }
+            }
+            defer { heartbeat.cancel() }
             let result = await presenter.presentBrowserStep(request, pluginID: pluginID)
             guard let result else {
                 box.fail("the browser step was cancelled", code: "cancelled")

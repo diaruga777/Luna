@@ -555,6 +555,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         _ hook: PluginHook, pluginID: String, argument: Encodable, timeout: TimeInterval,
         invocation: PluginInvocationDiagnostics
     ) async -> Result<String, PluginJSFailure> {
+        guard !Task.isCancelled else {
+            return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
+                reason: .runtime, message: "cancelled: the caller cancelled this hook"))
+        }
         lock.lock()
         let entry = ordered.first { $0.plugin.id == pluginID }
         let disabledReason = disabledReasons[pluginID]
@@ -598,6 +602,13 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         let enqueuedAt = Date()
         var neverStarted = false
         while true {
+            if Task.isCancelled {
+                if !item.hasReturned { executionQueue.abandon(item) }
+                call.abandon()
+                endCall(pluginID: pluginID, generationID: entry.generationID, call: call)
+                return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
+                    reason: .runtime, message: "cancelled: the caller cancelled this hook"))
+            }
             if let outcome = call.outcome {
                 noteSettled(pluginID, generationID: entry.generationID, call: call)
                 return outcome
@@ -864,6 +875,9 @@ final class PluginPendingCall {
     private var settled: Result<String, PluginJSFailure>?
     private var abandoned = false
     private var lastActivity = Date()
+    // Capture on the caller's task: JSC and URLSession callbacks do not inherit
+    // task locals, but must keep the outer ingestion watchdog alive too.
+    private let pipelineActivity = IdleTimeLimit.activity
 
     var outcome: Result<String, PluginJSFailure>? {
         lock.lock()
@@ -887,8 +901,10 @@ final class PluginPendingCall {
 
     func touch() {
         lock.lock()
+        guard !abandoned else { lock.unlock(); return }
         lastActivity = Date()
         lock.unlock()
+        pipelineActivity?.touch()
     }
 
     /// The caller gave up. A later settle is dropped rather than delivered to

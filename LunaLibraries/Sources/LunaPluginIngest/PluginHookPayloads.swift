@@ -153,7 +153,7 @@ public enum PluginIngestAnswer: Decodable {
     case model(PluginModel)
     case rewrite(URL)
 
-    private enum CodingKeys: String, CodingKey { case rewriteURL }
+    private enum CodingKeys: String, CodingKey { case rewriteURL, kind }
 
     public init(from decoder: Decoder) throws {
         if let single = try? decoder.singleValueContainer(), single.decodeNil() {
@@ -164,6 +164,9 @@ public enum PluginIngestAnswer: Decodable {
            let raw = try container.decodeIfPresent(String.self, forKey: .rewriteURL),
            let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
            !(url.host ?? "").isEmpty {
+            guard !container.contains(.kind) else {
+                throw PluginModelValidationError.missingField("return either rewriteURL or a model, not both")
+            }
             self = .rewrite(url)
             return
         }

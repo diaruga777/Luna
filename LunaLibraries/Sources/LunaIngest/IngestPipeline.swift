@@ -260,6 +260,9 @@ public enum IngestPipeline {
         socialTextProcessor: SocialTextIngestProcessing?,
         visited: Set<URL> = []
     ) async -> IngestResult {
+        guard !Task.isCancelled else {
+            return IngestResult(url: input.url, outcome: .failed(.timedOut))
+        }
         if URLBehaviorPolicy.pluginsOnly, let type = input.documentType, input.url.isFileURL {
             return IngestResult(url: input.url, outcome: .document(type: type))
         }

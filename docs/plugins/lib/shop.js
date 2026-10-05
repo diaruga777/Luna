@@ -28,6 +28,44 @@ const LunaShop = (() => {
         }
         return null;
     }
+    function currencyCode(value) {
+        if(typeof value==='string' && /^[A-Z]{3}$/i.test(value))return value.toUpperCase();
+        if(value && typeof value==='object')return currencyCode(value.code || value.isoCode || value.currencyCode);
+        return null;
+    }
+    // Interpret JSON data only; page scripts are never evaluated in the plugin VM.
+    function embeddedData(doc) {
+        const values=luna.html.jsonScripts(doc,'application/json');
+        for(const script of doc.querySelectorAll('script:not([src])')) {
+            if(/(?:application\/(?:ld\+)?json)/i.test(script.getAttribute('type')||''))continue;
+            const source=script.innerHTML;
+            if(!/(?:window\.|__NEXT_DATA__|__INITIAL_STATE__|__PRELOADED_STATE__)/.test(source))continue;
+            let start=-1,depth=0,quoted=false,escaped=false;
+            for(let i=0;i<source.length;i++) {
+                const ch=source[i];
+                if(start<0){if(ch==='{'){start=i;depth=1;}continue;}
+                if(quoted){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')quoted=false;continue;}
+                if(ch==='"'){quoted=true;continue;}
+                if(ch==='{')depth++;
+                if(ch==='}') {depth--;if(depth===0){try{values.push(JSON.parse(source.slice(start,i+1)));}catch(_){}start=-1;}}
+            }
+        }
+        return values;
+    }
+    function embeddedPrice(value,depth=0) {
+        if(!value || typeof value!=='object' || depth>16)return null;
+        const currency=currencyCode(value.priceCurrency || value.currencyCode || value.currencyIso || value.currencyUnit || value.currency);
+        const price=amount(value.price || value.currentPrice || value.salePrice || value.value || value.amount);
+        if(currency && price)return {amount:price,currency};
+        // Stable preference; a former/list price or installment cannot become today's price.
+        const preferred=['product','currentPrice','salePrice','price','prices','base'];
+        const keys=[...preferred,...Object.keys(value).sort().filter(k=>!preferred.includes(k))];
+        for(const key of keys) {
+            if(/wasprice|listprice|regularprice|reg_retail|installment|instalment|paymentoption|recommend|related/i.test(key))continue;
+            const found=embeddedPrice(value[key],depth+1);if(found)return found;
+        }
+        return null;
+    }
     function shoppingURL(url) {
         const u = luna.parseURL(url);
         return u && hostMatches(u.hostname, 'google.com') && u.pathname === '/search'
@@ -76,10 +114,10 @@ const LunaShop = (() => {
         if (shoppingURL(url)) return googleProduct(doc,url);
         const meta = LunaWeb.meta(doc), host = luna.parseURL(url).hostname;
         const linked = LunaWeb.jsonLD(doc).find(v => v && [].concat(v['@type'] || []).includes('Product'));
-        const offers = linked ? [].concat(linked.offers || []).flatMap(o => o.offers ? [].concat(o.offers) : [o]) : [];
-        let offer = offers.find(o => o && amount(o.price)) || {};
-        let value = amount(offer.price), currency = offer.priceCurrency;
-        const embedded = luna.html.jsonScripts(doc,'application/json');
+        const offers = linked ? [].concat(linked.offers || []).flatMap(o => o && o.offers ? [].concat(o.offers) : [o]) : [];
+        let offer = offers.find(o => o && amount(o.price || o.lowPrice)) || {};
+        let value = amount(offer.price || offer.lowPrice), currency = offer.priceCurrency;
+        const embedded = embeddedData(doc);
         const next = attr(doc,'script#__NEXT_DATA__');
         if (next) { try { embedded.unshift(JSON.parse(next)); } catch (_) {} }
         const amazon = Object.keys(data.amazon).find(d => hostMatches(host,d));
@@ -101,6 +139,12 @@ const LunaShop = (() => {
         }
         if (!value) value = amount(attr(doc,'meta[property="product:price:amount"], meta[property="og:price:amount"], [itemprop="price"]','content') || attr(doc,'[itemprop="price"]'));
         currency = currency || attr(doc,'meta[property="product:price:currency"], meta[property="og:price:currency"], [itemprop="priceCurrency"]','content');
+        if (!value || !currency) {
+            for (const blob of embedded) {
+                const price=embeddedPrice(blob);
+                if(price){value=value||price.amount;currency=currency||price.currency;break;}
+            }
+        }
         const name = clean(linked && linked.name || attr(doc,'#productTitle, h1[itemprop="name"], h1') || meta.title);
         if (!name || !value || !/^[A-Z]{3}$/i.test(currency || '')) return null;
         const model = {kind:'product',name:name.slice(0,300),price:{amount:value,currency:currency.toUpperCase()},sellers:[]};
@@ -111,10 +155,14 @@ const LunaShop = (() => {
             ['gtin','gtin8','gtin12','gtin13','gtin14','mpn','sku'].forEach(k => { if(linked[k]) model.identifiers[k.startsWith('gtin')?'gtin':k]=String(linked[k]); });
             if (linked.productID || linked.sku) model.productId=String(linked.productID || linked.sku);
         }
+        if(amazon) {
+            const asin=/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:[/?]|$)/i.exec(luna.parseURL(url).pathname);
+            if(asin){model.productId=asin[1].toUpperCase();model.identifiers=Object.assign({},model.identifiers,{sku:model.productId});}
+        }
         const image = linked && [].concat(linked.image || [])[0];
-        const imageURL = absolute(typeof image==='object'?image.url:image || meta.image,url);
-        if (imageURL) model.imageURL=imageURL;
-        model.sellers=offers.filter(o => o.url && amount(o.price) && o.priceCurrency).slice(0,20).map(o => ({url:absolute(o.url,url),price:{amount:amount(o.price),currency:o.priceCurrency}}));
+        const imageURL = absolute(typeof image==='object'?image.url:image || (amazon && (attr(doc,'#landingImage','data-old-hires') || attr(doc,'#landingImage','src'))) || meta.image,url);
+        if (imageURL && /^https?:/i.test(imageURL)) model.imageURL=imageURL;
+        model.sellers=offers.filter(o => o && o.url && amount(o.price) && o.priceCurrency).slice(0,20).map(o => ({url:absolute(o.url,url),price:{amount:amount(o.price),currency:o.priceCurrency}}));
         return model;
     }
     function tokens(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9-]+/g,' ').trim().split(/\s+/).filter(Boolean); }

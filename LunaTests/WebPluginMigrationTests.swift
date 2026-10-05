@@ -42,4 +42,44 @@ final class WebPluginMigrationTests: XCTestCase {
         XCTAssertTrue(article.html.contains("complete recovered"))
         XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == url+"?amp" })
     }
+
+    struct ArticleParityCase: Decodable {
+        let name: String
+        let url: String
+        let html: String
+        let contains: [String]
+        let excludes: [String]
+        let isNull: Bool
+    }
+    func testLegacyArticleFixturesThroughShippingJavaScriptCorePlugin() async throws {
+        try load("web")
+        let data = try Data(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Plugins/web-parity.json"))
+        for fixture in try JSONDecoder().decode([ArticleParityCase].self, from: data) {
+            let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.web",
+                argument: PluginIngestHookInput(url: fixture.url, claim: .init(kind: .article, itemID: nil),
+                    page: .init(url: fixture.url, html: fixture.html, source: "fetch"), reason: .save, context: .app), as: PluginIngestAnswer.self)
+            if fixture.isNull {
+                guard case .declined = answer else { XCTFail("Expected decline: \(fixture.name)"); continue }
+            } else {
+                guard case let .model(.article(article)) = answer else { XCTFail("No article: \(fixture.name)"); continue }
+                // DOM serializers differ in whitespace; compare normalized markup.
+                func normalize(_ text: String) -> String { text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression) }
+                for value in fixture.contains { XCTAssertTrue(normalize(article.html).contains(normalize(value)), fixture.name) }
+                for value in fixture.excludes { XCTAssertFalse(article.html.contains(value), fixture.name) }
+            }
+        }
+    }
+    func testGenericEmbeddedRetailFixtures() async throws {
+        try load("web")
+        for (fixture, expected) in [("bunnings-nextdata", "99"), ("nested-currency-state", "49.9")] {
+            let url = "https://shop.example/products/thing"
+            let html = try String(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Products/\(fixture).html"), encoding: .utf8)
+            runner.fetcher.respond(to: url, body: html)
+            let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.web",
+                argument: PluginIngestHookInput(url: url, claim: .init(kind: .product, itemID: nil), page: nil, reason: .refresh, context: .app), as: PluginIngestAnswer.self)
+            guard case let .model(.product(product)) = answer else { XCTFail("No product: \(fixture)"); continue }
+            XCTAssertEqual(product.price.amount, Decimal(string: expected))
+            XCTAssertEqual(product.price.currency, "AUD")
+        }
+    }
 }

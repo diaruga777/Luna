@@ -60,4 +60,29 @@ final class CoreSafariOwnershipTests: XCTestCase {
             XCTAssertTrue(js.bool("failure===null"), fixture)
         }
     }
+
+    func testSharedArticleParityFixturesInSafari() {
+        let source = SafariJSSource.read("LunaLibraries/Sources/LunaBundledPlugins/Plugins/web.js")
+        let fixtures = SafariJSSource.read("LunaTests/Fixtures/Plugins/web-parity.json")
+        js.load(html: SafariJSTestHarness.blankPage, urlString: "https://example.test/story",
+                scripts: [SafariJSSource.read("LunaSafari/Resources/plugin_host.js")])
+        js.evaluate("""
+            window.plugin=new Function('var luna=LunaPluginHost.createBridge({capabilities:["html"]},function(){throw Error("Unexpected network");});'
+                + \(SafariJSTestHarness.jsString(source)) + ';return luna;')();
+            window.parityDone=false;window.parityFailures=[];
+            (async function(){
+                for(const c of \(fixtures)){
+                    const result=await plugin.__registeredHooks.ingest({url:c.url,page:{url:c.url,html:c.html},context:'safari'});
+                    if(c.isNull){if(result!==null)parityFailures.push(c.name+' did not decline');continue;}
+                    if(!result||result.kind!=='article'){parityFailures.push(c.name+' missing article');continue;}
+                    for(const text of c.contains)if(!result.html.includes(text))parityFailures.push(c.name+' missing content');
+                    for(const text of c.excludes)if(result.html.includes(text))parityFailures.push(c.name+' retained unrelated content');
+                }
+            })().catch(e=>parityFailures.push(String(e))).finally(()=>{window.parityDone=true;});void 0
+            """)
+        let deadline = Date().addingTimeInterval(5)
+        while !js.bool("parityDone") && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertTrue(js.bool("parityDone"))
+        XCTAssertEqual(js.string("JSON.stringify(parityFailures)"), "[]")
+    }
 }

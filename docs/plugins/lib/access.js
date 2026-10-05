@@ -30,7 +30,7 @@ const LunaAccess = (() => {
         return Object.assign({kind:'article',baseURL:url},value);
     }
     async function fetchArticle(url,original,options={}) {
-        try {const r=await luna.fetch(Object.assign({url,timeout:5,cookies:'none'},options));return r.ok&&typeof r.text==='string'?article(r.text,original):null;}catch(_){return null;}
+        try {const r=await luna.fetch(Object.assign({url,timeout:5,cookies:'none'},options));return r.ok&&typeof r.text==='string'&&!LunaWeb.isInterstitial(r.url||url)?article(r.text,original):null;}catch(_){return null;}
     }
     function blockers(url,rule) {
         const patterns=[...(rule && rule.blockRegex || [])];

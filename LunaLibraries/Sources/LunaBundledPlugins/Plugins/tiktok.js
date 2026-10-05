@@ -2,7 +2,7 @@
 {
   "id": "app.luna.tiktok",
   "name": "TikTok",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": 1,
   "description": "Resolves a TikTok video or photo carousel from the watch page's own JSON.",
   "produces": ["media"],
@@ -156,6 +156,7 @@ luna.register({
             if (!video) { return null; }
             assets.push(video);
         }
+        assets.forEach(asset => { asset.headers = { Referer: "https://www.tiktok.com/" }; });
         const model = { kind: "media", platform: "tiktok", assets: assets };
         if (typeof item.id === "string" && item.id.length > 0) { model.itemId = item.id; }
         if (typeof item.desc === "string" && item.desc.length > 0) {

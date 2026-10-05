@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.web","name":"Web articles and products","version":"1.1.0","api":1,
+{"id":"app.luna.web","name":"Web articles and products","version":"1.1.1","api":1,
  "description":"Reads articles, remote documents and structured product pages using plugin-owned rules.",
  "produces":["article","product"],"match":{"any":true},"priority":-100,"capabilities":["fetch","html"]}
 */
@@ -273,75 +273,118 @@ const LunaWeb = (function () {
         return collapseWhitespace(luna.html.text(String(raw === undefined || raw === null ? "" : raw)));
     }
 
-    var text = { price: textPrice, date: textDate, clean: textClean };
+    var text = { price: textPrice, isInterstitial: isInterstitial, date: textDate, clean: textClean };
 
 
-    const noise = /(?:^|[\s_-])(comment|related|recirc|recommend|newsletter|subscribe|paywall|advert|social|share|menu|nav|footer|cookie|promo|breadcrumb)(?:$|[\s_-])/i;
-    function excluded(node) {
-        if (!node) return false;
-        if (["SCRIPT", "STYLE", "NAV", "FOOTER", "ASIDE", "FORM", "BUTTON", "NOSCRIPT"].indexOf(node.tagName) >= 0) return true;
-        return node.hasAttribute('hidden') || node.getAttribute('aria-hidden') === 'true'
-            || noise.test((node.getAttribute('class') || '') + ' ' + (node.getAttribute('id') || ''));
+    const gateMarkers = ["to continue reading", "continue reading this article", "continue reading with", "login or signup to continue", "log in or sign up to continue", "sign in to continue reading", "log in to continue reading", "subscribe to continue", "subscribe to read", "register to continue", "sign up to continue reading", "subscribe now for unlimited", "subscribe for unlimited access", "this article is for subscribers", "this story is for subscribers", "this content is for subscribers", "available to subscribers", "subscribers only", "subscriber exclusive", "to read the full article", "to read the full story", "for full access", "already a subscriber? log in", "already a subscriber? sign in", "unlock this article", "this article is reserved for subscribers"];
+    const weakMarkers = ["try unlimited access", "unlimited digital access", "complete digital access", "digital access to quality", "cancel anytime", "subscriber agreement", "personal, non-commercial use", "sign in to read", "become a subscriber", "start your free trial", "supporter subscription", "subscribe now", "create a free account", "support local journalism", "your subscription"];
+    const gateName = /paywall|pay-wall|regwall|reg-wall|registration-wall|subscribe-wall|subscription-wall|subscriber-wall|article-gate|content-gate|premium-gate|meter-gate|piano-gate/i;
+    const noise = /(?:^|[\s_-])(comments?|related|recirc|recommend|newsletter|subscribe|advert|social|share|menu|nav|footer|cookie|promo|breadcrumb)(?:$|[\s_-])/i;
+    const structural = new Set(['SCRIPT','STYLE','NAV','FOOTER','ASIDE','FORM','BUTTON','NOSCRIPT']);
+    const blockTags = new Set(['P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','FIGURE','IMG','PRE','TABLE']);
+    const containerTags = new Set(['DIV','SECTION','ARTICLE','MAIN','UL','OL']);
+    function isInterstitial(url) {
+        const parsed=luna.parseURL(url);
+        return !!parsed && parsed.pathname.toLowerCase().split('/').some(p =>
+            ['subscribe','subscribes','subscription','subscriptions','paywall','signin','sign-in','login','log-in','register','checkout','check_cookie.html'].includes(p));
     }
-    function visible(node, root) {
-        for (let n = node; n; n = n.parentElement) {
-            if (excluded(n)) return false;
-            if (n.outerHTML === root.outerHTML) break;
+    // Keep identity, ancestry and document order in JavaScript. Comparing outerHTML
+    // loses repeated paragraphs and repeatedly serializes entire article subtrees.
+    function articleTree(node, parent, entries) {
+        const value={node,parent,index:entries.length,tag:node.tagName,children:[]};
+        entries.push(value);
+        value.label=(node.getAttribute('class')||'')+' '+(node.getAttribute('id')||'');
+        value.hidden=node.hasAttribute('hidden') || node.getAttribute('aria-hidden')==='true'
+            || /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(node.getAttribute('style')||'');
+        value.marker=node.getAttribute('itemprop')==='articleBody' || /(?:^|\s)(article-body|entry-content|post-content)(?:\s|$)/.test(value.label);
+        for(const child of node.children) value.children.push(articleTree(child,value,entries));
+        value.text=node.textContent;
+        value.prose=value.tag==='P' ? value.text.length : value.children.reduce((n,c)=>n+c.prose,0);
+        value.skip=value.hidden || structural.has(value.tag) ||
+            (!['HTML','BODY'].includes(value.tag) && noise.test(value.label)) ||
+            (gateName.test(value.label) && value.prose<800);
+        return value;
+    }
+    function inside(value,root) { for(let n=value;n;n=n.parent)if(n===root)return true;return false; }
+    function visible(value,root) { for(let n=value;n;n=n.parent){if(n.skip)return false;if(n===root)break;}return true; }
+    function truncation(entries) {
+        const paragraphs=entries.filter(n=>n.tag==='P' && n.text.length>=40 && !n.hidden);
+        for(const gate of entries.filter(n=>gateName.test(n.label) && !n.hidden && n.prose<800)) {
+            const text=gate.text.toLowerCase();
+            if(!gateMarkers.concat(['already a subscriber','sign in','subscribe']).some(m=>text.includes(m)))continue;
+            for(let scope=gate.parent;scope;scope=scope.parent) {
+                let before=0,after=0;
+                for(const p of paragraphs)if(inside(p,scope)&&!inside(p,gate)){
+                    if(p.index<gate.index)before+=p.text.length;else after+=p.text.length;
+                }
+                if(before>=1200){if(after<=before*.2)return true;break;}
+            }
         }
-        return true;
+        return false;
     }
     function article(source, base) {
-        const parsedURL = luna.parseURL(base);
-        if (parsedURL && /\/(search|category|tag|topics|archive)(\/|$)/i.test(parsedURL.pathname)) return null;
-        const doc = luna.html.parse(source, base);
-        const meta = htmlMeta(doc);
-        const linked = jsonLD(doc).find(function (entry) {
-            return entry && /Article|BlogPosting/.test(String(entry['@type']));
-        });
-        // Select a single body; do not concatenate unrelated cards and replies.
-        const candidates = doc.querySelectorAll('article, main, [role="main"], [itemprop="articleBody"], .article-body, .entry-content, .post-content');
-        if (candidates.length === 0 && doc.body) candidates.push(doc.body);
-        let winner = null, best = 0;
-        candidates.forEach(function (candidate) {
-            if (excluded(candidate)) return;
-            const paragraphs = candidate.querySelectorAll('p').filter(function (p) { return visible(p, candidate); });
-            const textLength = paragraphs.reduce(function (n, p) { return n + p.textContent.length; }, 0);
-            const linkedLength = candidate.querySelectorAll('a').reduce(function (n, a) { return n + a.textContent.length; }, 0);
-            const score = textLength - linkedLength * 1.5;
-            if (score > best) { best = score; winner = candidate; }
-        });
-        let html = '', body = '';
-        if (winner && best >= 300) {
-            const nodes = winner.querySelectorAll('p, h2, h3, h4, li, blockquote, figure, img');
-            const selected = [];
-            nodes.forEach(function (node) {
-                if (!visible(node, winner)) return;
-                // Keep only the outer selected block (figure owns its image,
-                // blockquote its paragraph). DOM handles have no stable identity.
-                if (selected.some(function (parent) { return parent.outerHTML.indexOf(node.outerHTML) >= 0; })) return;
-                selected.push(node);
-            });
-            html = selected.map(function (n) { return n.outerHTML; }).join('\n');
-            body = selected.map(function (n) { return n.textContent; }).join('\n').trim();
+        const parsedURL=luna.parseURL(base);
+        if(isInterstitial(base) || (parsedURL && /\/(search|category|tag|topics|archive)(\/|$)/i.test(parsedURL.pathname)))return null;
+        const doc=luna.html.parse(source,base), meta=htmlMeta(doc), entries=[];
+        const root=doc.body && articleTree(doc.body,null,entries);
+        if(!root)return null;
+        const linked=jsonLD(doc).find(entry=>entry && /Article|BlogPosting/.test(String(entry['@type'])));
+        // A publisher explicitly withholding the body is stronger than page length.
+        if(doc.querySelector('script[data-component-name="Article"]') && luna.html.jsonScripts(doc,'application/json').some(v=>v && v.article && v.article.access==='locked' && v.article.fullText===null))return null;
+        if(truncation(entries))return null;
+        function length(n) {
+            if(n.skip)return 0;
+            if(n.tag==='P' || (['DIV','SECTION'].includes(n.tag) && !n.children.some(c=>containerTags.has(c.tag)||blockTags.has(c.tag))))return n.text.length;
+            return n.children.reduce((sum,c)=>sum+length(c),0);
         }
-        if (linked && typeof linked.articleBody === 'string' && linked.articleBody.length > body.length) {
-            body = linked.articleBody;
-            html = body.split(/\n+/).filter(Boolean).map(function (p) { return '<p>' + escape(p) + '</p>'; }).join('');
+        let candidates=entries.filter(n=>visible(n,root) && (n.tag==='ARTICLE'||n.marker));
+        // Explicit body containers outrank unrelated discussion within an article.
+        // Repeated leaf markers represent paragraphs, so use their common container.
+        const bodies=candidates.filter(n=>n.marker && n.children.some(c=>containerTags.has(c.tag)||blockTags.has(c.tag)) && length(n)>=300);
+        if(bodies.length)candidates=bodies;
+        else {
+            const articles=candidates.filter(n=>n.tag==='ARTICLE');
+            if(articles.length)candidates=articles.filter(n=>!articles.some(other=>other!==n && inside(other,n) && length(other)>=300));
+            else candidates=entries.filter(n=>visible(n,root) && (n.tag==='MAIN'||n.node.getAttribute('role')==='main'));
         }
-        if (body.length < 300 || !html) return null;
-        // Visible subscription teasers must not be saved as a complete article.
-        const locked = /subscribe to (continue|read)|already a subscriber|unlock this article|sign in to continue/i.test(body);
-        if (locked || (linked && linked.isAccessibleForFree === false && body.length < 1200)) return null;
-        const heading = winner && winner.querySelector('h1');
-        const result = {title: meta.title || (heading && heading.textContent) || base, html: html, text: body};
-        if (meta.author) result.author = meta.author;
-        if (meta.image) result.leadImageURL = meta.image;
-        if (meta.description) result.excerpt = meta.description.slice(0, 1000);
-        if (meta.published) result.publishedAt = textDate(meta.published) || undefined;
+        if(!candidates.length)candidates=[root];
+        let winner=null,best=0;
+        for(const n of candidates){
+            const linkedLength=entries.filter(a=>a.tag==='A'&&inside(a,n)&&visible(a,n)).reduce((sum,a)=>sum+a.text.length,0);
+            const score=length(n)-linkedLength*1.5;
+            if(score>best){winner=n;best=score;}
+        }
+        const selected=[];
+        function collect(n) {
+            if(n.skip)return;
+            if(blockTags.has(n.tag)) { selected.push(n);return; }
+            if(['DIV','SECTION'].includes(n.tag) && !n.children.some(c=>containerTags.has(c.tag)||blockTags.has(c.tag)) && n.text.trim()) {
+                selected.push(n);return;
+            }
+            n.children.forEach(collect);
+        }
+        if(winner && best>=300)collect(winner);
+        let html=selected.map(n=>['DIV','SECTION'].includes(n.tag)?'<p>'+n.node.innerHTML+'</p>':n.node.outerHTML).join('\n');
+        let body=selected.map(n=>n.text).join('\n').trim();
+        if(linked && typeof linked.articleBody==='string' && linked.articleBody.length>2*body.length){
+            body=linked.articleBody;
+            html=body.split(/\n+/).filter(Boolean).map(p=>'<p>'+escape(p)+'</p>').join('');
+        }
+        if(body.length<300 || !html)return null;
+        const lower=body.toLowerCase();
+        const tier=doc.querySelector('meta[property="article:content_tier"],meta[name="article:content_tier"],meta[name="article:content-tier"]');
+        const declaredLocked=(linked && [false,'false'].includes(linked.isAccessibleForFree)) || (tier && /locked|metered|premium/i.test(tier.getAttribute('content')||''));
+        if(gateMarkers.some(m=>lower.includes(m)) || (body.length<2500 && (declaredLocked || weakMarkers.some(m=>lower.includes(m)))))return null;
+        const heading=winner && winner.node.querySelector('h1');
+        const result={title:meta.title || (heading && heading.textContent) || base,html,text:body};
+        if(meta.author)result.author=meta.author;
+        if(meta.image)result.leadImageURL=meta.image;
+        if(meta.description)result.excerpt=meta.description.slice(0,1000);
+        if(meta.published)result.publishedAt=textDate(meta.published)||undefined;
         return result;
     }
     return {article: article, meta: htmlMeta, jsonLD: jsonLD, price: textPrice,
-        date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
+        isInterstitial: isInterstitial, date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
 })();
 // END BUNDLED WEB HELPER
 
@@ -381,6 +424,44 @@ const LunaShop = (() => {
         for (const key of Object.keys(value).sort()) {
             const found = walk(value[key], names, depth + 1);
             if (found !== null) return found;
+        }
+        return null;
+    }
+    function currencyCode(value) {
+        if(typeof value==='string' && /^[A-Z]{3}$/i.test(value))return value.toUpperCase();
+        if(value && typeof value==='object')return currencyCode(value.code || value.isoCode || value.currencyCode);
+        return null;
+    }
+    // Interpret JSON data only; page scripts are never evaluated in the plugin VM.
+    function embeddedData(doc) {
+        const values=luna.html.jsonScripts(doc,'application/json');
+        for(const script of doc.querySelectorAll('script:not([src])')) {
+            if(/(?:application\/(?:ld\+)?json)/i.test(script.getAttribute('type')||''))continue;
+            const source=script.innerHTML;
+            if(!/(?:window\.|__NEXT_DATA__|__INITIAL_STATE__|__PRELOADED_STATE__)/.test(source))continue;
+            let start=-1,depth=0,quoted=false,escaped=false;
+            for(let i=0;i<source.length;i++) {
+                const ch=source[i];
+                if(start<0){if(ch==='{'){start=i;depth=1;}continue;}
+                if(quoted){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')quoted=false;continue;}
+                if(ch==='"'){quoted=true;continue;}
+                if(ch==='{')depth++;
+                if(ch==='}') {depth--;if(depth===0){try{values.push(JSON.parse(source.slice(start,i+1)));}catch(_){}start=-1;}}
+            }
+        }
+        return values;
+    }
+    function embeddedPrice(value,depth=0) {
+        if(!value || typeof value!=='object' || depth>16)return null;
+        const currency=currencyCode(value.priceCurrency || value.currencyCode || value.currencyIso || value.currencyUnit || value.currency);
+        const price=amount(value.price || value.currentPrice || value.salePrice || value.value || value.amount);
+        if(currency && price)return {amount:price,currency};
+        // Stable preference; a former/list price or installment cannot become today's price.
+        const preferred=['product','currentPrice','salePrice','price','prices','base'];
+        const keys=[...preferred,...Object.keys(value).sort().filter(k=>!preferred.includes(k))];
+        for(const key of keys) {
+            if(/wasprice|listprice|regularprice|reg_retail|installment|instalment|paymentoption|recommend|related/i.test(key))continue;
+            const found=embeddedPrice(value[key],depth+1);if(found)return found;
         }
         return null;
     }
@@ -432,10 +513,10 @@ const LunaShop = (() => {
         if (shoppingURL(url)) return googleProduct(doc,url);
         const meta = LunaWeb.meta(doc), host = luna.parseURL(url).hostname;
         const linked = LunaWeb.jsonLD(doc).find(v => v && [].concat(v['@type'] || []).includes('Product'));
-        const offers = linked ? [].concat(linked.offers || []).flatMap(o => o.offers ? [].concat(o.offers) : [o]) : [];
-        let offer = offers.find(o => o && amount(o.price)) || {};
-        let value = amount(offer.price), currency = offer.priceCurrency;
-        const embedded = luna.html.jsonScripts(doc,'application/json');
+        const offers = linked ? [].concat(linked.offers || []).flatMap(o => o && o.offers ? [].concat(o.offers) : [o]) : [];
+        let offer = offers.find(o => o && amount(o.price || o.lowPrice)) || {};
+        let value = amount(offer.price || offer.lowPrice), currency = offer.priceCurrency;
+        const embedded = embeddedData(doc);
         const next = attr(doc,'script#__NEXT_DATA__');
         if (next) { try { embedded.unshift(JSON.parse(next)); } catch (_) {} }
         const amazon = Object.keys(data.amazon).find(d => hostMatches(host,d));
@@ -457,6 +538,12 @@ const LunaShop = (() => {
         }
         if (!value) value = amount(attr(doc,'meta[property="product:price:amount"], meta[property="og:price:amount"], [itemprop="price"]','content') || attr(doc,'[itemprop="price"]'));
         currency = currency || attr(doc,'meta[property="product:price:currency"], meta[property="og:price:currency"], [itemprop="priceCurrency"]','content');
+        if (!value || !currency) {
+            for (const blob of embedded) {
+                const price=embeddedPrice(blob);
+                if(price){value=value||price.amount;currency=currency||price.currency;break;}
+            }
+        }
         const name = clean(linked && linked.name || attr(doc,'#productTitle, h1[itemprop="name"], h1') || meta.title);
         if (!name || !value || !/^[A-Z]{3}$/i.test(currency || '')) return null;
         const model = {kind:'product',name:name.slice(0,300),price:{amount:value,currency:currency.toUpperCase()},sellers:[]};
@@ -467,10 +554,14 @@ const LunaShop = (() => {
             ['gtin','gtin8','gtin12','gtin13','gtin14','mpn','sku'].forEach(k => { if(linked[k]) model.identifiers[k.startsWith('gtin')?'gtin':k]=String(linked[k]); });
             if (linked.productID || linked.sku) model.productId=String(linked.productID || linked.sku);
         }
+        if(amazon) {
+            const asin=/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:[/?]|$)/i.exec(luna.parseURL(url).pathname);
+            if(asin){model.productId=asin[1].toUpperCase();model.identifiers=Object.assign({},model.identifiers,{sku:model.productId});}
+        }
         const image = linked && [].concat(linked.image || [])[0];
-        const imageURL = absolute(typeof image==='object'?image.url:image || meta.image,url);
-        if (imageURL) model.imageURL=imageURL;
-        model.sellers=offers.filter(o => o.url && amount(o.price) && o.priceCurrency).slice(0,20).map(o => ({url:absolute(o.url,url),price:{amount:amount(o.price),currency:o.priceCurrency}}));
+        const imageURL = absolute(typeof image==='object'?image.url:image || (amazon && (attr(doc,'#landingImage','data-old-hires') || attr(doc,'#landingImage','src'))) || meta.image,url);
+        if (imageURL && /^https?:/i.test(imageURL)) model.imageURL=imageURL;
+        model.sellers=offers.filter(o => o && o.url && amount(o.price) && o.priceCurrency).slice(0,20).map(o => ({url:absolute(o.url,url),price:{amount:amount(o.price),currency:o.priceCurrency}}));
         return model;
     }
     function tokens(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9-]+/g,' ').trim().split(/\s+/).filter(Boolean); }
@@ -550,7 +641,12 @@ luna.register({
         if (!html) {
             const response = await luna.fetch({url:url,userAgent:'safari',timeout:15});
             if (!response.ok || typeof response.text !== 'string') return null;
-            if (response.url && response.url !== url) return {rewriteURL:response.url};
+            if (response.url && response.url !== url) {
+                if (LunaWeb.isInterstitial(response.url)) return null;
+                // Refresh/compare are owner-scoped operations, not pipeline redispatches.
+                if (reason !== 'refresh' && reason !== 'compare' && reason !== 'reresolve') return {rewriteURL:response.url};
+                url = response.url;
+            }
             html = response.text;
         }
         const model = interpret(html, url);

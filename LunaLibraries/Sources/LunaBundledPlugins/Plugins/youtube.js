@@ -2,7 +2,7 @@
 {
   "id": "app.luna.youtube",
   "name": "YouTube",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": 1,
   "description": "Resolves a YouTube video, Short or clip to a progressive MP4 with sound.",
   "produces": ["media"],
@@ -312,7 +312,8 @@ function assetFrom(response, videoID, timeRange) {
     });
     if (!best) { return null; }
 
-    const asset = { url: best.format.url, type: "video", thumbnailURL: thumbnail };
+    const asset = { url: best.format.url, type: "video", thumbnailURL: thumbnail,
+        headers: { Referer: "https://www.youtube.com/" } };
     if (best.bytes !== null) { asset.estimatedBytes = best.bytes; }
     if (best.height > 0) { asset.quality = best.height + "p"; }
     if (timeRange) { asset.timeRange = timeRange; }

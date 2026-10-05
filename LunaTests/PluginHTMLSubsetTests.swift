@@ -82,16 +82,19 @@ final class PluginHTMLSubsetTests: XCTestCase {
     /// A plugin that runs one case's script and answers its JSON.
     private func pluginSource(for spec: SubsetCase) -> String {
         let base = spec.baseURL ?? Self.defaultBaseURL
+        let helperURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("docs/plugins/lib/web.js")
+        let helper = (try? String(contentsOf: helperURL, encoding: .utf8)) ?? ""
         return """
         /* luna-plugin
         { "id": "app.luna.htmlsubset", "name": "HTML subset", "version": "1.0.0", "api": 1,
           "capabilities": ["html"] }
         */
+        \(helper)
         luna.register({
             async onAction() {
                 const doc = luna.html.parse(\(jsString(spec.html)), \(jsString(base)));
-                const run = new Function("doc", "luna", \(jsString(spec.script)));
-                return { answer: run(doc, luna) };
+                const run = new Function("doc", "luna", "LunaWeb", \(jsString(spec.script)));
+                return { answer: run(doc, luna, LunaWeb) };
             }
         });
         """

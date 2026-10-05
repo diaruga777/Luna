@@ -341,11 +341,10 @@ export interface LunaHTML {
   /// Every `<script type="application/ld+json">`, `@graph` flattened one
   /// level and bad JSON skipped. Always an array.
   jsonLD(doc: HTMLDocument): Record<string, unknown>[];
-  meta(doc: HTMLDocument): PageMetadata;
-  /// A Promise in EVERY process: Safari has no readability pass of its own
-  /// and relays the call to Luna, so the shape cannot be synchronous there.
-  /// `null` when the page has no article body.
-  article(html: string, baseURL?: string): Promise<ExtractedArticle | null>;
+  /** @deprecated Retired. Bundle docs/plugins/lib/web.js and call LunaWeb.meta. */
+  meta(doc: HTMLDocument): never;
+  /** @deprecated Retired. Bundle plugin-owned extraction such as LunaWeb.article. */
+  article(html: string, baseURL?: string): never;
 }
 
 // ---- luna.text (rides on the `html` capability) ----
@@ -358,10 +357,10 @@ export interface ParsedPrice {
 }
 
 export interface LunaText {
-  price(s: string): ParsedPrice | null;
-  /// An absolute date as ISO 8601 — `2024-03-04T09:30:00Z` when the string
-  /// carried a time, `2024-03-04` when it did not. A relative phrase is null.
-  date(s: string): string | null;
+  /** @deprecated Retired. Use plugin-owned LunaWeb.price or your own parser. */
+  price(s: string): never;
+  /** @deprecated Retired. Use plugin-owned LunaWeb.date or your own parser. */
+  date(s: string): never;
   /// Entities decoded, tags dropped, whitespace collapsed, trimmed.
   clean(s: string): string;
 }

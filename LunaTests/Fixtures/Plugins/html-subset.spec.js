@@ -440,45 +440,45 @@
     name: "meta reads OpenGraph first",
     html: "<html><head><title>Tag title</title>" +
       "<meta property='og:title' content='OG title'></head><body><p>x</p></body></html>",
-    script: "return luna.html.meta(doc).title;",
+    script: "return LunaWeb.meta(doc).title;",
     expected: "OG title"
   },
   {
     name: "meta falls back to a twitter card, then to the title tag",
     html: "<html><head><title>Tag title</title>" +
       "<meta name='twitter:title' content='Card title'></head><body><p>x</p></body></html>",
-    script: "return luna.html.meta(doc).title;",
+    script: "return LunaWeb.meta(doc).title;",
     expected: "Card title"
   },
   {
     name: "meta falls back to the title tag",
     html: "<html><head><title>Tag title</title></head><body><p>x</p></body></html>",
-    script: "return luna.html.meta(doc).title;",
+    script: "return LunaWeb.meta(doc).title;",
     expected: "Tag title"
   },
   {
     name: "meta omits a key the page never states",
     html: "<p>x</p>",
-    script: "return Object.keys(luna.html.meta(doc));",
+    script: "return Object.keys(LunaWeb.meta(doc));",
     expected: []
   },
   {
     name: "meta resolves a relative image against the document base",
     html: "<meta property='og:image' content='/img/lead.png'>",
-    script: "return luna.html.meta(doc).image;",
+    script: "return LunaWeb.meta(doc).image;",
     expected: "https://example.com/img/lead.png"
   },
   {
     name: "meta resolves a relative canonical link",
     html: "<link rel='canonical' href='other.html'>",
-    script: "return luna.html.meta(doc).canonical;",
+    script: "return LunaWeb.meta(doc).canonical;",
     expected: "https://example.com/dir/other.html"
   },
   {
     name: "meta prefers og:url over link rel=canonical",
     html: "<meta property='og:url' content='https://example.com/og'>" +
       "<link rel='canonical' href='https://example.com/link'>",
-    script: "return luna.html.meta(doc).canonical;",
+    script: "return LunaWeb.meta(doc).canonical;",
     expected: "https://example.com/og"
   },
   {
@@ -486,25 +486,25 @@
     html: "<meta name='author' content='A. Writer'>" +
       "<meta property='article:published_time' content='2024-03-04T09:30:00Z'>" +
       "<meta property='og:site_name' content='Example'>",
-    script: "const m = luna.html.meta(doc); return [m.author, m.published, m.siteName];",
+    script: "const m = LunaWeb.meta(doc); return [m.author, m.published, m.siteName];",
     expected: ["A. Writer", "2024-03-04T09:30:00Z", "Example"]
   },
   {
     name: "meta reads the html lang attribute",
     html: "<html lang='pt-BR'><head></head><body><p>x</p></body></html>",
-    script: "return luna.html.meta(doc).language;",
+    script: "return LunaWeb.meta(doc).language;",
     expected: "pt-BR"
   },
   {
     name: "meta reads og:type",
     html: "<meta property='og:type' content='article'>",
-    script: "return luna.html.meta(doc).type;",
+    script: "return LunaWeb.meta(doc).type;",
     expected: "article"
   },
   {
     name: "meta collapses whitespace in a value",
     html: "<meta property='og:title' content='  A   long\n  title '>",
-    script: "return luna.html.meta(doc).title;",
+    script: "return LunaWeb.meta(doc).title;",
     expected: "A long title"
   },
   {
@@ -512,7 +512,7 @@
     html: "<script type='application/ld+json'>{\"@type\":\"NewsArticle\"," +
       "\"headline\":\"LD headline\",\"author\":{\"name\":\"LD Author\"}," +
       "\"datePublished\":\"2024-03-04\",\"inLanguage\":\"fr\"}</script>",
-    script: "const m = luna.html.meta(doc); " +
+    script: "const m = LunaWeb.meta(doc); " +
       "return [m.title, m.author, m.published, m.language];",
     expected: ["LD headline", "LD Author", "2024-03-04", "fr"]
   },
@@ -520,28 +520,28 @@
     name: "a JSON-LD author may be a bare string",
     html: "<script type='application/ld+json'>" +
       "{\"@type\":\"BlogPosting\",\"author\":\"Plain Name\"}</script>",
-    script: "return luna.html.meta(doc).author;",
+    script: "return LunaWeb.meta(doc).author;",
     expected: "Plain Name"
   },
   {
     name: "a JSON-LD image may be a list, and the first entry wins",
     html: "<script type='application/ld+json'>{\"@type\":\"Product\",\"name\":\"P\"," +
       "\"image\":[\"https://cdn.test/1.jpg\",\"https://cdn.test/2.jpg\"]}</script>",
-    script: "const m = luna.html.meta(doc); return [m.title, m.image];",
+    script: "const m = LunaWeb.meta(doc); return [m.title, m.image];",
     expected: ["P", "https://cdn.test/1.jpg"]
   },
   {
     name: "a JSON-LD type Luna does not read answers for nothing",
     html: "<script type='application/ld+json'>" +
       "{\"@type\":\"BreadcrumbList\",\"name\":\"Crumbs\"}</script>",
-    script: "return Object.keys(luna.html.meta(doc)).length;",
+    script: "return Object.keys(LunaWeb.meta(doc)).length;",
     expected: 0
   },
   {
     name: "a page meta always outranks JSON-LD",
     html: "<meta property='og:title' content='OG'>" +
       "<script type='application/ld+json'>{\"@type\":\"Article\",\"headline\":\"LD\"}</script>",
-    script: "return luna.html.meta(doc).title;",
+    script: "return LunaWeb.meta(doc).title;",
     expected: "OG"
   },
 
@@ -549,67 +549,67 @@
   {
     name: "price reads a dollar amount with a thousands comma",
     html: "<p>x</p>",
-    script: "return luna.text.price('$1,299.00');",
+    script: "return LunaWeb.price('$1,299.00');",
     expected: { amount: "1299.00", currency: "USD" }
   },
   {
     name: "price reads a European amount with a trailing euro sign",
     html: "<p>x</p>",
-    script: "return luna.text.price('1.299,00 €');",
+    script: "return LunaWeb.price('1.299,00 €');",
     expected: { amount: "1299.00", currency: "EUR" }
   },
   {
     name: "price reads a comma decimal separator",
     html: "<p>x</p>",
-    script: "return luna.text.price('23,50 €');",
+    script: "return LunaWeb.price('23,50 €');",
     expected: { amount: "23.50", currency: "EUR" }
   },
   {
     name: "a lone comma before three digits is a thousands separator",
     html: "<p>x</p>",
-    script: "return luna.text.price('1,234');",
+    script: "return LunaWeb.price('1,234');",
     expected: { amount: "1234" }
   },
   {
     name: "price reads an ISO code before the amount",
     html: "<p>x</p>",
-    script: "return luna.text.price('USD 49.99');",
+    script: "return LunaWeb.price('USD 49.99');",
     expected: { amount: "49.99", currency: "USD" }
   },
   {
     name: "price reads an ISO code after the amount",
     html: "<p>x</p>",
-    script: "return luna.text.price('89.00 AUD');",
+    script: "return LunaWeb.price('89.00 AUD');",
     expected: { amount: "89.00", currency: "AUD" }
   },
   {
     name: "price omits a currency the string never names",
     html: "<p>x</p>",
-    script: "return luna.text.price('1299.00');",
+    script: "return LunaWeb.price('1299.00');",
     expected: { amount: "1299.00" }
   },
   {
     name: "a lower-case word beside the amount is not a currency",
     html: "<p>x</p>",
-    script: "return luna.text.price('now 19.99');",
+    script: "return LunaWeb.price('now 19.99');",
     expected: { amount: "19.99" }
   },
   {
     name: "price keeps the fraction digits the page wrote",
     html: "<p>x</p>",
-    script: "return [luna.text.price('$5.00').amount, luna.text.price('$5').amount];",
+    script: "return [LunaWeb.price('$5.00').amount, LunaWeb.price('$5').amount];",
     expected: ["5.00", "5"]
   },
   {
     name: "price ignores a trailing separator",
     html: "<p>x</p>",
-    script: "return luna.text.price('Was $40. Now less');",
+    script: "return LunaWeb.price('Was $40. Now less');",
     expected: { amount: "40", currency: "USD" }
   },
   {
     name: "price answers null when the string holds no number",
     html: "<p>x</p>",
-    script: "return luna.text.price('Sold out');",
+    script: "return LunaWeb.price('Sold out');",
     expected: null
   },
 
@@ -617,73 +617,73 @@
   {
     name: "date passes an ISO instant through as UTC",
     html: "<p>x</p>",
-    script: "return luna.text.date('2024-03-04T09:30:00Z');",
+    script: "return LunaWeb.date('2024-03-04T09:30:00Z');",
     expected: "2024-03-04T09:30:00Z"
   },
   {
     name: "date converts an offset to UTC",
     html: "<p>x</p>",
-    script: "return luna.text.date('2024-03-04T09:30:00+02:00');",
+    script: "return LunaWeb.date('2024-03-04T09:30:00+02:00');",
     expected: "2024-03-04T07:30:00Z"
   },
   {
     name: "date drops fractional seconds",
     html: "<p>x</p>",
-    script: "return luna.text.date('2024-03-04T09:30:00.123Z');",
+    script: "return LunaWeb.date('2024-03-04T09:30:00.123Z');",
     expected: "2024-03-04T09:30:00Z"
   },
   {
     name: "a date with no time answers the day the page named",
     html: "<p>x</p>",
-    script: "return luna.text.date('2024-03-04');",
+    script: "return LunaWeb.date('2024-03-04');",
     expected: "2024-03-04"
   },
   {
     name: "a space instead of a T is read as a naive UTC time",
     html: "<p>x</p>",
-    script: "return luna.text.date('2024-03-04 09:30');",
+    script: "return LunaWeb.date('2024-03-04 09:30');",
     expected: "2024-03-04T09:30:00Z"
   },
   {
     name: "date reads Month D, YYYY",
     html: "<p>x</p>",
-    script: "return luna.text.date('March 4, 2024');",
+    script: "return LunaWeb.date('March 4, 2024');",
     expected: "2024-03-04"
   },
   {
     name: "date reads an abbreviated month",
     html: "<p>x</p>",
-    script: "return luna.text.date('Mar 4, 2024');",
+    script: "return LunaWeb.date('Mar 4, 2024');",
     expected: "2024-03-04"
   },
   {
     name: "date reads D Month YYYY",
     html: "<p>x</p>",
-    script: "return luna.text.date('4 March 2024');",
+    script: "return LunaWeb.date('4 March 2024');",
     expected: "2024-03-04"
   },
   {
     name: "date reads RFC 2822",
     html: "<p>x</p>",
-    script: "return luna.text.date('Mon, 04 Mar 2024 09:30:00 GMT');",
+    script: "return LunaWeb.date('Mon, 04 Mar 2024 09:30:00 GMT');",
     expected: "2024-03-04T09:30:00Z"
   },
   {
     name: "date answers null for a relative phrase",
     html: "<p>x</p>",
-    script: "return [luna.text.date('2 hours ago'), luna.text.date('yesterday')];",
+    script: "return [LunaWeb.date('2 hours ago'), LunaWeb.date('yesterday')];",
     expected: [null, null]
   },
   {
     name: "date answers null for a day that does not exist",
     html: "<p>x</p>",
-    script: "return luna.text.date('2023-02-29');",
+    script: "return LunaWeb.date('2023-02-29');",
     expected: null
   },
   {
     name: "date answers null for an empty string",
     html: "<p>x</p>",
-    script: "return luna.text.date('');",
+    script: "return LunaWeb.date('');",
     expected: null
   },
 
@@ -711,5 +711,12 @@
     html: "<p>x</p>",
     script: "return luna.text.clean('');",
     expected: ""
+  }
+
+  ,{
+    name: "element queries exclude the root itself",
+    html: "<article id='root'><article id='child'></article></article>",
+    script: "const root=doc.querySelector('#root'); return [root.querySelector('article').getAttribute('id'),root.querySelectorAll('article').length];",
+    expected: ["child", 1]
   }
 ]

@@ -1,17 +1,38 @@
 /* luna-plugin
-{"id":"app.luna.url-rewrites","name":"Shared link destinations","version":"1.0.0","api":1,
+{"id":"app.luna.url-rewrites","name":"Shared link destinations","version":"1.0.1","api":1,
  "description":"Unwraps news, retailer and social redirect links before redispatching to the destination plugin.",
  "produces":["article"],"match":{"any":true},"priority":1000,"capabilities":["fetch","html"]}
 */
 const shorteners = ['flip.it','trib.al','t.co','bit.ly','buff.ly','apple.co','nyti.ms','wapo.st','on.ft.com','econ.st','reut.rs','cnn.it','bbc.in','nbcnews.to','abcn.ws','cbsn.ws','links.message.bloomberg.com','bloom.bg','amzn.to','amzn.asia','a.co','share.google'];
 function hasHost(host, names) { return names.some(function (n) { return host === n || host.endsWith('.' + n); }); }
+const interstitialSegments = new Set(['subscribe','subscribes','subscription','subscriptions','paywall','signin','sign-in','login','log-in','register','checkout','check_cookie.html']);
+const targetParameters = ['dest','destination','returnurl','return_url','return','redirect','redirecturl','redirect_uri','url','next','targeturl'];
+function interstitial(p) { return p.pathname.toLowerCase().split('/').some(part => interstitialSegments.has(part)); }
+function webTarget(value) {
+    const p = value && luna.parseURL(value);
+    return p && /^https?:$/.test(p.protocol) ? p : null;
+}
+function sameSite(a,b) {
+    a=a.replace(/^www\./,''); b=b.replace(/^www\./,'');
+    return a===b || a.endsWith('.'+b) || b.endsWith('.'+a);
+}
 function destination(url) {
     const p = luna.parseURL(url); if (!p) return null;
-    if (hasHost(p.hostname,['facebook.com']) && p.pathname === '/l.php') return p.searchParams.get('u');
-    if (/\/(subscribe|signin|sign-in|login|cookie)/i.test(p.pathname)) {
-        const value = ['dest','destination','redirect','redirect_uri','return','returnUrl','url'].map(function (key) { return p.searchParams.get(key); }).find(Boolean);
-        const target = value && luna.parseURL(value);
-        if (target && target.hostname === p.hostname) return target.href;
+    if (hasHost(p.hostname,['facebook.com']) && p.pathname.toLowerCase() === '/l.php') {
+        const target=webTarget(p.searchParams.get('u'));
+        return target && !hasHost(target.hostname,['facebook.com','fb.com']) ? target.href : null;
+    }
+    if (interstitial(p)) {
+        // Query keys are case-insensitive here, matching publisher share links.
+        const pairs=p.search.slice(1).split('&').map(pair => {
+            const at=pair.indexOf('=');
+            try { return [decodeURIComponent(at<0?pair:pair.slice(0,at)).toLowerCase(),decodeURIComponent((at<0?'':pair.slice(at+1)).replace(/\+/g,' '))]; }
+            catch (_) { return []; }
+        });
+        for (const key of targetParameters) {
+            const pair=pairs.find(pair=>pair[0]===key), target=webTarget(pair && pair[1]);
+            if(target && sameSite(target.hostname,p.hostname) && !interstitial(target))return target.href;
+        }
     }
     return null;
 }
@@ -27,8 +48,9 @@ luna.register({
             if (!match) return null;
             const id = match[1];
             try {
-                const decoded = luna.bytes.utf8Decode(luna.bytes.fromBase64(id.replace(/-/g,'+').replace(/_/g,'/')));
-                const embedded = /https?:\/\/[^\x00-\x20\x7f-\uffff]+/.exec(decoded);
+                const base64 = id.replace(/-/g,'+').replace(/_/g,'/');
+                const decoded = luna.bytes.utf8Decode(luna.bytes.fromBase64(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+                const embedded = /https?:\/\/[^\x00-\x20\x7f-\uffff"<>\\]+/.exec(decoded);
                 if (embedded) return {rewriteURL:embedded[0]};
             } catch (_) {}
             const page = await luna.fetch({url:'https://news.google.com/rss/articles/' + id,timeout:12});

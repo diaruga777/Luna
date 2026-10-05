@@ -60,6 +60,11 @@ final class PluginIngestStageTests: XCTestCase {
 
     // MARK: - Order and the floor
 
+    func testMixedRewriteAndModelIsRejected() {
+        let data = Data(#"{"rewriteURL":"https://example.test/new","kind":"media","assets":[]}"#.utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode(PluginIngestAnswer.self, from: data))
+    }
+
     func testNoMatchedPluginPassesToTheSwiftClassifier() async {
         let invoker = FakePluginInvoker()
         invoker.loadedPlugins = [.fake(id: "a", hosts: ["other.test"])]

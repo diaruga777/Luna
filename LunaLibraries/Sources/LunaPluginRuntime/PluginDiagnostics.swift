@@ -52,6 +52,12 @@ public final class PluginInvocationDiagnostics: @unchecked Sendable {
         recorder?.record(message, category: category)
     }
 
+    public var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isOpen
+    }
+
     /// Stops late bridge callbacks from writing to the completed save trace.
     public func close() {
         lock.lock()

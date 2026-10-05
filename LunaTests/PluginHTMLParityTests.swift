@@ -40,14 +40,16 @@ final class PluginHTMLParityTests: XCTestCase {
     private func runSpec() -> [(name: String, ok: Bool, detail: String)] {
         let script = """
             (function () {
+                var luna = LunaPluginHost.createBridge({capabilities:["html"]}, function(){throw Error("unexpected network");});
+                \(SafariJSTestHarness.source("docs/plugins/lib/web.js"))
                 var cases = (\(Self.specSource));
                 var defaultBase = "https://example.com/dir/page.html";
                 var results = [];
                 cases.forEach(function (c) {
                     try {
                         var doc = LunaPluginHost.html.parse(c.html, c.baseURL || defaultBase);
-                        var run = new Function("doc", "luna", c.script);
-                        var answer = run(doc, { html: LunaPluginHost.html, text: LunaPluginHost.text });
+                        var run = new Function("doc", "luna", "LunaWeb", c.script);
+                        var answer = run(doc, luna, LunaWeb);
                         var got = JSON.stringify(answer === undefined ? null : answer);
                         var want = JSON.stringify(c.expected === undefined ? null : c.expected);
                         results.push({ name: c.name, ok: got === want, detail: got + " vs " + want });

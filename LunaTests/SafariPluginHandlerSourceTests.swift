@@ -64,7 +64,7 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
     /// so the content script is never trusted to enforce its own grants.
     func testCapabilityGatedMessagesCheckPluginDeclares() {
         let text = lunaVariantSource
-        for capability in ["storage", "fetch", "settings", "browser", "html"] {
+        for capability in ["storage", "fetch", "settings", "browser"] {
             XCTAssertTrue(
                 text.contains("capability: .\(capability)"),
                 "no message checks pluginDeclares(id:capability: .\(capability))")
@@ -120,17 +120,13 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         XCTAssertGreaterThan(uses, 5, "the refusal payload is no longer shared")
     }
 
-    /// The page has no readability pass of its own: `luna.html.article` is
-    /// relayed and answered with `PluginArticleExtraction`, the same type the
-    /// JavaScriptCore bridge calls. A second implementation in `plugin_host.js`
-    /// would be a fourth backing to keep in step.
-    func testTheArticleMessageRunsTheSharedExtractor() {
+    func testRetiredArticleMessageCannotRunANativeExtractor() {
         let text = lunaVariantSource
-        XCTAssertTrue(text.contains("PluginArticleExtraction.extract("))
+        XCTAssertFalse(text.contains("PluginArticleExtraction.extract("))
+        XCTAssertTrue(text.contains("Bundle plugin-owned article extraction"))
         let host = SafariJSTestHarness.source("LunaSafari/Resources/plugin_host.js")
-        XCTAssertTrue(host.contains(#"relay("plugins.article""#))
-        XCTAssertFalse(
-            host.contains("Readability"), "the content script grew a readability pass")
+        XCTAssertFalse(host.contains(#"relay("plugins.article""#))
+        XCTAssertTrue(host.contains("plugin-owned"))
     }
 
     /// A row the store refused for size answers a code, never `ok: false`

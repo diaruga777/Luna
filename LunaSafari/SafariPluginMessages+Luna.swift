@@ -261,15 +261,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
 
     // MARK: - Article
 
-    /// `luna.html.article` relayed out of the page. The content-script world
-    /// has no readability pass of its own, and writing one there would be a
-    /// fourth implementation to keep in step; the page sends its HTML and this
-    /// runs `PluginArticleExtraction` — the same code the JavaScriptCore
-    /// bridge runs in the app and the share/action extensions.
-    ///
-    /// The HTML travels through the native message channel, so it is bounded
-    /// by the same ~1.5 MB cap a served plugin source is. The page checks the
-    /// size first; this refuses again, because the page is not trusted to.
+    /// Old clients receive an explicit migration error; no native extraction runs.
     private func pluginArticle(message: [String: Any]?) -> [String: Any] {
         ["error": "unsupported", "message": "Bundle plugin-owned article extraction instead of luna.html.article"]
     }

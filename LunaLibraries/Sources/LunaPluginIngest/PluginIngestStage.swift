@@ -16,8 +16,8 @@ import LunaPluginKit
 /// matches first, then priority, then id. The first `classify` claim wins and
 /// the walk calls that plugin's `ingest`. Anything short of a Model — a decline,
 /// a timeout, an exception, a Model of an undeclared kind — falls through to the
-/// next matched plugin and finally to the Swift classifier, which is the floor.
-/// A broken plugin must never fail a save Swift could have made.
+/// next matched plugin. Core then saves a plain link; sibling composition may
+/// use native classification. Declining never enables native extraction in Core.
 ///
 /// Every step writes a `SaveDiagnostics` line under the `plugin` category, so a
 /// save's exported trace shows which plugins were asked and what each answered.
@@ -46,6 +46,7 @@ public final class PluginIngestStage: PluginIngestStaging {
 
         let snapshot = Self.snapshot(of: input)
         for plugin in matched {
+            guard !Task.isCancelled else { return .passed }
             switch await claim(plugin, url: input.url, page: snapshot, intent: input.intent) {
             case .none:
                 continue
@@ -63,7 +64,7 @@ public final class PluginIngestStage: PluginIngestStaging {
             }
         }
         SaveDiagnostics.record(
-            "plugins: every matched plugin passed — the Swift classifier decides",
+            "plugins: every matched plugin passed — composition selects the fallback",
             category: "plugin")
         return .passed
     }

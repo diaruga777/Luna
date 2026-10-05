@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { html, text } from "./bridge.mjs";
+import { createBridge, html, text } from "./bridge.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const specPath = path.join(here, "..", "..", "LunaTests", "Fixtures", "Plugins", "html-subset.spec.js");
@@ -21,14 +21,17 @@ const specSource = readFileSync(specPath, "utf8");
 // eslint-disable-next-line no-eval
 const cases = eval(specSource);
 
+const luna = createBridge({capabilities:['html']});
+const helper = readFileSync(path.join(here, '../../docs/plugins/lib/web.js'), 'utf8');
+const web = new Function('luna', helper + '\nreturn LunaWeb;')(luna);
 const DEFAULT_BASE = "https://example.com/dir/page.html";
 let failures = 0;
 
 for (const testCase of cases) {
   try {
     const doc = html.parse(testCase.html, testCase.baseURL || DEFAULT_BASE);
-    const run = new Function("doc", "luna", testCase.script);
-    const answer = run(doc, { html, text });
+    const run = new Function("doc", "luna", "LunaWeb", testCase.script);
+    const answer = run(doc, luna, web);
     const got = JSON.stringify(answer === undefined ? null : answer);
     const want = JSON.stringify(testCase.expected === undefined ? null : testCase.expected);
     if (got !== want) {

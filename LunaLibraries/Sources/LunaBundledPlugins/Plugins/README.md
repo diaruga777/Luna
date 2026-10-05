@@ -6,7 +6,7 @@ comment holding the manifest JSON, then a body that calls `luna.register`.
 
 `BundledPluginCatalog` (LunaPluginKit) enumerates this directory through
 `LunaBundledPluginsBundle.bundle`. The NYTimes article plugin fetches on its
-trailing-dot hostname and hands the response to Luna's shared article extractor.
+trailing-dot hostname and uses its bundled plugin-owned article helper.
 The media plugins are here, and `kindle.js` is the first EXPORT plugin: it declares no `produces` and no
 `match`, registers only `export`, and takes over the `kindle` destination in
 central Luna (`PluginDestinationLegacyIDs`), which is why every article Luna
@@ -33,9 +33,9 @@ Plugins makes transcribing the platform's default.
 `LunaTests/<Platform>TranscriptPluginTests` runs each twin over the same
 fixture directory.
 
-No media plugin sets an asset's `headers`: `LiveMediaDownloadManager` already
-sends the per-platform User-Agent and Referer those CDNs ask for, and a
-plugin's headers would override them.
+Plugins must declare CDN-specific headers on assets. Core supplies generic HTTP
+transport, without inferring a platform referer. TikTok, YouTube and Reddit
+carry their own referers.
 
 The folder is deliberately not called `Resources`: a directory by that name at
 a bundle's root makes `codesign` read the bundle as a framework layout and

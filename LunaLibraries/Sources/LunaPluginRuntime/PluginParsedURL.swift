@@ -78,7 +78,7 @@ public struct PluginParsedURL: Equatable, Sendable {
             pathname: encodedPath,
             search: encodedQuery.map { $0.isEmpty ? "" : "?\($0)" } ?? "",
             queryPairs: Self.queryPairs(from: encodedQuery),
-            hash: fragment.isEmpty ? "" : "#\(formDecode(fragment))")
+            hash: fragment.isEmpty ? "" : "#\(fragment)")
     }
 
     /// First value per name — what a check like `?v=` wants.

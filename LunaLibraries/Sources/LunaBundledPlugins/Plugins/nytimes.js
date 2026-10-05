@@ -2,7 +2,7 @@
 {
   "id": "app.luna.nytimes",
   "name": "New York Times",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "api": 1,
   "description": "Reads New York Times articles through the trailing-dot hostname and plugin-owned article extraction.",
   "produces": ["article"],

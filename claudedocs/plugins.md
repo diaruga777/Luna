@@ -87,7 +87,9 @@ Schema 17 adds nullable rewrite provenance: `saves.original_url_string` and
 queueing and returns to the original page. Plugin-directed rewrites discard stale
 page captures and enforce cycle/hop limits; expiry cannot switch media owners.
 
-Validation is fixture-based: empty, disabled and removed catalogs in JSC app/share/
+Validation: **238 iOS 26.2 simulator tests passed**, plus the complete Node harness
+(runtime, manifest, examples, migration/ownership fixtures, 108 primitive cases and
+authoring type checks). Coverage includes empty, disabled and removed catalogs in JSC app/share/
 action contexts; Safari empty catalogs with stale caches; unknown-host plugins;
 decline/error/timeout/malformed results; transcription outcomes; media owner/rewrites;
 price preservation; retail fixtures in JSC/Safari/Node; publisher/browser declarations;

@@ -189,11 +189,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // this reader IS: it only ever opens for a page the background tier could not
         // read, so the live page in a real browser is the last untried authority and is
         // worth one load before the archive CAPTCHA (see the selector).
-        let plan = BypassPlan.make(
+        let plan = URLBehaviorPolicy.pluginsOnly ? nil : BypassPlan.make(
             for: articleURL, directHTML: nil, silentTierExhausted: true)
-        self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
-        self.directUnlockReferer = Self.directUnlockReferer(for: articleURL)
-        self.webPreStageURLs = plan.webPreStages.compactMap {
+        self.usesDirectUnlock = plan?.webPreStages.contains(.directUnlock) ?? false
+        self.directUnlockReferer = URLBehaviorPolicy.pluginsOnly ? nil : Self.directUnlockReferer(for: articleURL)
+        self.webPreStageURLs = (plan?.webPreStages ?? []).compactMap {
             BypassURLs.loadURL(for: $0, article: articleURL)
         }
         let configuration = WKWebViewConfiguration()
@@ -296,6 +296,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
 
         setUpLoadingOverlay()
 
+        if URLBehaviorPolicy.pluginsOnly {
+            Task { @MainActor [weak self] in
+                guard let self, let id = self.itemID else { return }
+                await PluginResumeSeams.resumer?.resumePluginLockedSave(id: id)
+                if self.store.item(withID: id)?.state == .ready {
+                    self.delegate?.archiveReaderDidUnlockArticle(self)
+                } else { self.giveUp("plugin-required") }
+            }
+            return
+        }
         progress.startAnimating()
         startPolling()
         if !webPreStageURLs.isEmpty {
@@ -457,9 +467,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public static func webPreStageURLs(for articleURL: URL) -> [URL] {
         // A URL already on archive.today goes straight to the snapshot flow.
         guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
-        let plan = BypassPlan.make(
+        let plan = URLBehaviorPolicy.pluginsOnly ? nil : BypassPlan.make(
             for: articleURL, directHTML: nil, silentTierExhausted: true)
-        return plan.webPreStages.compactMap { BypassURLs.loadURL(for: $0, article: articleURL) }
+        return (plan?.webPreStages ?? []).compactMap { BypassURLs.loadURL(for: $0, article: articleURL) }
     }
 
     /// Opens the archive in real Safari (the proven-working path when the embedded

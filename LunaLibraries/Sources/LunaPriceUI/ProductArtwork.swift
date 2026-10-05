@@ -80,6 +80,7 @@ enum ProductTrackerArtwork {
     }
 
     static func fallbackData(for pageURL: URL) async -> Data? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         if let headerURL = await headerImageURL(for: pageURL),
            let data = await imageData(from: headerURL) {
             return data

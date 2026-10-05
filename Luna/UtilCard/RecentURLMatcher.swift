@@ -212,6 +212,7 @@ final class RecentURLMatcher {
     /// KEPT is kept: a real query is what distinguishes one video or product
     /// from the next.
     static func identityKey(for urlString: String) -> String {
+        if URLBehaviorPolicy.pluginsOnly { return urlString }
         guard let url = URL(string: urlString),
               let components = URLComponents(
                 url: URLCanonicalizer.strip(url), resolvingAgainstBaseURL: false)
@@ -236,6 +237,7 @@ final class RecentURLMatcher {
     static func isObviouslyNonContent(
         preview: RecentURLPreview, historyKey: String
     ) -> Bool {
+        guard !URLBehaviorPolicy.pluginsOnly else { return false }
         let urls = [preview.urlString, historyKey].compactMap(URL.init(string:))
         return urls.contains { url in
             if ListingPage.isNonContentPage(url: url, html: nil) { return true }
@@ -333,6 +335,7 @@ final class RecentURLMatcher {
     /// icons the homepage declares, and only then `/favicon.ico` — so a row
     /// shows the same mark the card shows once the link is saved.
     private static func faviconData(for url: URL) async -> Data? {
+        guard !URLBehaviorPolicy.pluginsOnly else { return nil }
         guard let data = await FaviconFetcher().fetchIconData(forPageURL: url) else { return nil }
         return compressedData(UIImage(data: data))
     }

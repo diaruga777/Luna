@@ -8,6 +8,7 @@ import LunaModels
 import LunaPriceCompare
 import LunaStorage
 import Synchronization
+import LunaIngest
 import XCTest
 @testable import LunaPriceUI
 
@@ -15,6 +16,9 @@ import XCTest
 /// (`claudedocs/price-comparison.md`): what the fan-out is ASKED, what happens
 /// to what it finds, and the ordering that keeps the median honest.
 final class SellerComparisonTests: XCTestCase {
+    private var savedURLPolicy = false
+    private var savedPluginStage: (any PluginIngestStaging)?
+
 
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
@@ -24,6 +28,11 @@ final class SellerComparisonTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // These fixtures exercise the sibling apps' retained native composition.
+        savedURLPolicy = URLBehaviorPolicy.pluginsOnly
+        savedPluginStage = IngestPipeline.pluginStage
+        URLBehaviorPolicy.pluginsOnly = false
+        IngestPipeline.pluginStage = nil
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SellerComparisonTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -39,6 +48,8 @@ final class SellerComparisonTests: XCTestCase {
         if let snapshotDirectory { try? FileManager.default.removeItem(at: snapshotDirectory) }
         SellerComparisonRunner.installed = nil
         SellerComparisonRunner.snapshotStore = .shared
+        URLBehaviorPolicy.pluginsOnly = savedURLPolicy
+        IngestPipeline.pluginStage = savedPluginStage
         super.tearDown()
     }
 

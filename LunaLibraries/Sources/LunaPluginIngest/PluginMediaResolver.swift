@@ -49,21 +49,25 @@ public final class PluginMediaResolver: SocialMediaResolving, MediaReresolving {
     /// Runs classify + ingest over the matched plugins and returns the first
     /// `media` Model's assets. Nil means no plugin produced any.
     private func walk(
-        url: URL, reason: PluginIngestReason, saveID: String?, onlyPluginID: String? = nil
+        url: URL, reason: PluginIngestReason, saveID: String?, onlyPluginID: String? = nil,
+        visited: Set<String> = []
     ) async -> [MediaAsset]? {
-        guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        guard !visited.contains(url.absoluteString), visited.count <= 8,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host?.lowercased(), !host.isEmpty else { return nil }
         guard let adopter = PluginModelAdopters.media else { return nil }
         var matched = invoker.matchedPlugins(forHost: host)
         if let onlyPluginID { matched = matched.filter { $0.id == onlyPluginID } }
 
-        for plugin in matched where plugin.produces.contains(.media) {
+        for plugin in matched {
             guard plugin.hooks.contains(.classify), plugin.hooks.contains(.ingest) else { continue }
             let classified = await invoker.invoke(
                 .classify, pluginID: plugin.id,
                 argument: PluginClassifyInput(
                     url: url.absoluteString, page: nil, context: processKind),
                 timeout: PluginIngestStage.classifyTimeout, decode: PluginClassifyVerdict.self)
-            guard case let .success(.claimed(kind, itemID, _)) = classified, kind == .media else {
+            guard case let .success(.claimed(kind, itemID, _)) = classified,
+                  plugin.produces.contains(kind) else {
                 continue
             }
 
@@ -71,10 +75,15 @@ public final class PluginMediaResolver: SocialMediaResolving, MediaReresolving {
                 .ingest, pluginID: plugin.id,
                 argument: PluginIngestHookInput(
                     url: url.absoluteString,
-                    claim: PluginIngestClaim(kind: .media, itemID: itemID),
+                    claim: PluginIngestClaim(kind: kind, itemID: itemID),
                     page: nil, reason: reason, context: processKind, saveID: saveID),
                 timeout: PluginIngestStage.ingestTimeout, decode: PluginIngestAnswer.self)
-            guard case let .success(.model(model)) = ingested,
+            if case let .success(.rewrite(destination)) = ingested {
+                return await walk(url: destination, reason: reason, saveID: saveID,
+                    onlyPluginID: onlyPluginID, visited: visited.union([url.absoluteString]))
+            }
+            guard plugin.produces.contains(.media),
+                  case let .success(.model(model)) = ingested,
                   case let .media(media) = model.resolvingRelativeURLs(against: url)
             else { continue }
 

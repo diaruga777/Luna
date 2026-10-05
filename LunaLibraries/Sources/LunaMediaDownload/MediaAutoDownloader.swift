@@ -18,7 +18,7 @@ public enum MediaAutoDownloader {
     /// share extension to decide whether to stay alive.
     public static func isEnabled(forURLString urlString: String) -> Bool {
         guard isRunningInDownloader else { return false }
-        if DirectMediaURL.kind(for: urlString) != nil { return true }
+        if !URLBehaviorPolicy.pluginsOnly && DirectMediaURL.kind(for: urlString) != nil { return true }
         return MediaDownloadablePlatform.supports(urlString)
     }
 
@@ -73,7 +73,7 @@ public enum MediaAutoDownloader {
         guard handlesMedia,
               MediaDownloadablePlatform.supports(urlString)
         else { return false }
-        if DirectMediaURL.kind(for: urlString) != nil { return true }
+        if !URLBehaviorPolicy.pluginsOnly && DirectMediaURL.kind(for: urlString) != nil { return true }
         return MediaDownloadablePlatform.supports(urlString)
     }
 

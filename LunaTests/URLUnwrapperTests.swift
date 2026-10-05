@@ -5,6 +5,8 @@
 
 import LunaFetch
 import LunaURLClassification
+import LunaModels
+import LunaIngest
 import XCTest
 @testable import Luna
 
@@ -56,6 +58,15 @@ private final class UnwrapMockProtocol: URLProtocol {
 /// new-style, and link shorteners (via a mock session). Also asserts tracking
 /// params are stripped from the result.
 final class URLUnwrapperTests: XCTestCase {
+    override func tearDown() {
+        URLBehaviorPolicy.pluginsOnly = savedURLPolicy
+        IngestPipeline.pluginStage = savedPluginStage
+        super.tearDown()
+    }
+
+    private var savedURLPolicy = false
+    private var savedPluginStage: (any PluginIngestStaging)?
+
 
     private func url(_ string: String) -> URL {
         guard let url = URL(string: string) else { fatalError("bad test URL: \(string)") }
@@ -77,6 +88,11 @@ final class URLUnwrapperTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // These fixtures exercise the sibling apps' retained native composition.
+        savedURLPolicy = URLBehaviorPolicy.pluginsOnly
+        savedPluginStage = IngestPipeline.pluginStage
+        URLBehaviorPolicy.pluginsOnly = false
+        IngestPipeline.pluginStage = nil
         UnwrapMockProtocol.reset()
     }
 

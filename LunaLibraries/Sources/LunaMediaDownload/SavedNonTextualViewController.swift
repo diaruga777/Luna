@@ -568,7 +568,8 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         // second "YouTube video"/title row only adds dead vertical chrome.
         downloadStatus.text = nil
         downloadStatus.isHidden = true
-        guard let thumbnailURL = URL(string: articleURLString).flatMap(YouTubeLink.init(url:))?.thumbnailURL else {
+        guard !URLBehaviorPolicy.pluginsOnly,
+              let thumbnailURL = URL(string: articleURLString).flatMap(YouTubeLink.init(url:))?.thumbnailURL else {
             previewImageView.image = UIImage(systemName: "play.rectangle.fill")
             previewImageView.tintColor = LunaColors.tertiaryText
             previewImageView.contentMode = .center

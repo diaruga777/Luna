@@ -255,9 +255,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         refreshTask?.cancel()
         refreshTask = Task.detached(priority: .utility) {
             guard await Self.isApplicationActive else { return }
-            guard let html = try? await ArticleFetcher().fetchHTML(from: target),
+            guard let fresh = await InlineReaderContentLoader.resolve(url: target),
                   !Task.isCancelled,
-                  let fresh = try? ArticleExtractor().extract(html: html, baseURL: target),
                   fresh.isArticleLike,
                   await Self.isApplicationActive
             else { return }

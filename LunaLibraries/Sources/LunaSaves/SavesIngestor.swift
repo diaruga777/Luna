@@ -300,7 +300,8 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     /// instead of a modal, and the Model it finally returns replaces the locked
     /// placeholder rather than adding a second save.
     public func resumePluginLockedSave(id: UUID) async {
-        guard let item = store.item(withID: id), item.isPluginLocked else { return }
+        guard let item = store.item(withID: id),
+              item.isPluginLocked || (URLBehaviorPolicy.pluginsOnly && item.state == .needsCaptcha) else { return }
         SharedDiagnosticLog.record(
             "plugin: resuming locked save \(id.uuidString.prefix(8))", category: "plugin")
         await ingest(item)

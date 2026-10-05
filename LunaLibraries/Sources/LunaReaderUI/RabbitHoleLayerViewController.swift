@@ -582,8 +582,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                    cached.isArticleLike {
                     return cached
                 }
-                guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
-                return try? ArticleExtractor().extract(html: html, baseURL: target)
+                return await InlineReaderContentLoader.resolve(url: target)
             }.value
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {

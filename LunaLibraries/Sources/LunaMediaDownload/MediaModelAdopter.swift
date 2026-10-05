@@ -62,9 +62,8 @@ public struct MediaModelAdopter: MediaModelAdopting {
     }
 
     /// The `platform` string a plugin wrote, mapped onto the case the cards and
-    /// the Live Activity draw. An unknown name falls back to what the URL itself
-    /// says, and then to `.web`, so a plugin naming a platform Luna has no
-    /// artwork for still saves.
+    /// the Live Activity draw. Missing or unknown names use neutral `.web`
+    /// presentation without interpreting the URL.
     static func platform(named raw: String?, url: URL) -> ContentPlatform {
         if let raw {
             let name = raw.lowercased().trimmingCharacters(in: .whitespaces)

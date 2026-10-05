@@ -26,7 +26,7 @@ platform's internal design, see `claudedocs/plugins.md`.
 | --- | --- | --- | --- |
 | (none — `register`/`parseURL`/`log`/`bytes`/`env`/`LunaError`/`localize`) | yes | yes | yes |
 | `fetch` | yes | yes | relayed |
-| `html` | yes (SwiftSoup) | yes (SwiftSoup) | yes (DOMParser); `article` relayed |
+| `html` | yes (SwiftSoup) | yes (SwiftSoup) | yes (DOMParser); semantic helpers retired |
 | `text` (installed with `html`, never declared) | yes | yes | yes |
 | `page` | no | no | yes |
 | `storage` | yes | yes | relayed |
@@ -44,8 +44,7 @@ platform's internal design, see `claudedocs/plugins.md`.
 | `exports` | yes | no | no |
 
 `luna.text` is the one namespace with no capability of its own: declaring
-`html` installs both, because it is three pure string helpers with nothing to
-grant. Declaring `"text"` in `capabilities` is an error — the manifest will not
+`html` installs both, for the generic `clean` helper; the old `price` and `date` methods throw migration errors. Declaring `"text"` in `capabilities` is an error — the manifest will not
 parse.
 
 A namespace your manifest didn't declare a capability for is `undefined` —
@@ -110,7 +109,7 @@ string.
 ```ts
 interface PluginHooks {
   classify?(input: ClassifyInput): ClassifyResult | Promise<ClassifyResult>;
-  ingest?(input: IngestInput): Promise<PluginModel | null>;
+  ingest?(input: IngestInput): Promise<PluginModel | {rewriteURL: string} | null>;
   export?(input: ExportInput): Promise<ExportResult>;
   onBluetooth?(event: BluetoothEvent): Promise<void>;
   onSettingsChanged?(changes: Record<string, unknown>): Promise<void>;

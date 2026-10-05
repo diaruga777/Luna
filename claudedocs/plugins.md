@@ -1,5 +1,10 @@
 # The Luna plugin platform
 
+> Audit correction (2026-10-06): ownership isolation is not full behavioral parity.
+> See [the ingestion migration audit](reviews/ingestion-plugin-audit-2026-10-06.md)
+> for tested fixes, unresolved media/social/input-contract gaps and runtime limits.
+> Earlier completion language below is not parity certification.
+
 Central Luna (`com.hsanabria.luna`) alone runs a JavaScriptCore plugin
 runtime that extends two of the three ingest pipeline steps — **ingest**
 (URL → Model) and **export** (save → delivered file) — plus Bluetooth/Wi-Fi

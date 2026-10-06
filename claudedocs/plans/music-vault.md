@@ -34,3 +34,11 @@
   most recent play, then stable ID. Never-played playlists are not auto-cached.
 - The cache is local to Luna Music, excluded from backup; eviction never sends a
   Vault delete/tombstone or changes Mac files. Catalog and playlists survive offline.
+
+## Implementation status
+
+All six stages implemented: source-qualified library models, Mac catalog/range
+service, AVPlayer streaming, private local cache and policy, playlist/cache UI,
+and regression coverage. Music unit/layout/playback tests: 31 passed. UI checks: 5 passed. Mac music
+service tests: 7 passed. The full Mac companion builds. See `../music.md` for the
+streaming/cache design and the remaining physical-device validation boundaries.

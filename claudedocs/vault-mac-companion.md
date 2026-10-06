@@ -52,3 +52,12 @@ folder-relative, link-rejecting sync path. The pairing dialog states both scopes
 For protected folders, grant the companion Files and Folders or Full Disk Access
 in macOS Privacy & Security. The app never changes these permissions itself.
 Both the iPhone app and companion need this version for Mac Files browsing.
+
+## Music library
+
+Luna Music uses the same pairing through the read-only `luna-music-v1` service.
+The companion creates `Music` inside the selected Vault root; use artist/album
+subfolders. `CompanionMusicLibrary` indexes native AVFoundation audio metadata,
+keeps a version-keyed metadata cache, and serves paginated catalogs plus bounded,
+version-checked byte ranges. It never writes audio or applies Music cache deletions
+to the Mac. See [music.md](music.md) for formats, playback, and iPhone cache policy.

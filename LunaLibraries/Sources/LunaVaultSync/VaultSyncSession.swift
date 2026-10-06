@@ -168,6 +168,21 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         throw error
     }
 
+    private var musicConnectionTask: Task<Void, Error>?
+    public func musicRequest(_ payload: Data) async throws -> Data {
+        if !isConnected {
+            if let task = musicConnectionTask { try await task.value }
+            else {
+                let task = Task { try await self.start() }; musicConnectionTask = task
+                defer { musicConnectionTask = nil }
+                try await task.value
+            }
+        }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        return try await connection.musicRequest(payload)
+    }
+
     public func codeRequest(_ payload: Data) async throws -> Data {
         if !isConnected { try await start() }
         try await waitForInitialIndex()

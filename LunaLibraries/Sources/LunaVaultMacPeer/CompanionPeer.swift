@@ -1,3 +1,4 @@
+import LunaMusicFiles
 import Foundation
 import LunaVaultBEP
 import Darwin
@@ -207,12 +208,14 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private let folderID: String
     private let transferLock = NSLock()
     private var authorized = false
+    private let music: CompanionMusicLibrary
     private let codeHandler: (@Sendable (Data) async -> Data)?
     private var pending: [BEPIndex] = []
     private var transferTask: Task<Void, Never>?
 
     public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String,
                 codeHandler: (@Sendable (Data) async -> Data)? = nil) {
+        self.music = CompanionMusicLibrary(vaultRoot: rootURL, cacheURL: rootURL.appendingPathComponent(".luna-music-index.json"))
         self.codeHandler = codeHandler
         self.rootURL = rootURL.standardizedFileURL
         self.index = index
@@ -455,6 +458,13 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
 
     public func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
         guard transferLock.withLock({ authorized }) else { return .failure(.noSuchFile) }
+        if request.folder == MusicFileProtocol.folder {
+            guard request.offset == 0, request.size == 0, request.hash.isEmpty, !request.fromTemporary,
+                  request.name.utf8.count <= 32_768, let data = Data(base64Encoded: request.name) else { return .failure(.invalidFile) }
+            let response = await music.handle(data)
+            guard response.count <= MusicFileProtocol.maximumResponseSize else { return .failure(.generic) }
+            return .success(response)
+        }
         if request.folder == "luna-code-v1" {
             guard let codeHandler, request.offset == 0, request.size == 0, request.hash.isEmpty,
                   !request.fromTemporary, request.name.utf8.count <= 16 * 1024 * 1024,

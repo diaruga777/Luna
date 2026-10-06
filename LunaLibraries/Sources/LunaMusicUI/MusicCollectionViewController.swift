@@ -17,7 +17,7 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
             return terms.allSatisfy { text.localizedStandardContains(String($0)) }
         }
     }
-    private var gridAlbums: [MPMediaItemCollection]? {
+    private var gridAlbums: [MusicCollection]? {
         let isArtist: Bool
         if case .artist = collection { isArtist = true } else { isArtist = false }
         guard isArtist || (title == "Albums" && collection == nil) else { return nil }
@@ -65,7 +65,18 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         }
         if let playlist = collection?.playlist {
             let add = UIAction(title: "Add Music", image: UIImage(systemName: "music.note.badge.plus")) { [weak self] _ in self?.addMusic() }
-            navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [add, sort]))
+            var actions: [UIMenuElement] = [add, sort]
+            if playlist.source == .vault {
+                actions.append(UIAction(title: "Delete Playlist", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                    guard let self else { return }
+                    MusicStyle.run(from: self, errorTitle: "Couldn’t Delete Playlist") {
+                        try VaultMusicController.shared.deletePlaylist(playlist)
+                        self.navigationController?.popViewController(animated: true)
+                    }
+                })
+            }
+            navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: actions))
+            navigationItem.rightBarButtonItem?.accessibilityLabel = "Playlist Options"
             observe(.lunaMusicLibraryChanged) { [weak self] in
                 guard let self, let updated = MusicLibraryController.shared.playlists.first(where: { $0.persistentID == playlist.persistentID }) else { return }
                 self.collection = .playlist(updated)
@@ -73,6 +84,14 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
                 self.rebuildHeader()
                 self.reloadResults()
             }
+        }
+        if let collection, (collection.playlist?.source == .vault || collection.songs.contains(where: { $0.source == .vault })) {
+            let download = UIBarButtonItem(image: UIImage(systemName: "arrow.down.circle"), primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                MusicStyle.run(from: self, errorTitle: "Download Unavailable") { try VaultMusicController.shared.cacheSongs(self.collection?.songs ?? []) }
+            })
+            download.accessibilityLabel = "Download All Vault Songs"
+            navigationItem.rightBarButtonItems = [download] + (navigationItem.rightBarButtonItems ?? [])
         }
         reloadResults()
     }
@@ -144,7 +163,16 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     }
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard gridAlbums == nil, case .song(let item) = filteredResults[indexPath.row] else { return nil }
-        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in self?.songMenu(item) })
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            guard let self else { return nil }
+            let menu = self.songMenu(item)
+            guard let playlist = self.collection?.playlist, playlist.source == .vault else { return menu }
+            let remove = UIAction(title: "Remove from Playlist", image: UIImage(systemName: "minus.circle"), attributes: .destructive) { [weak self] _ in
+                guard let self else { return }
+                MusicStyle.run(from: self, errorTitle: "Couldn’t Edit Playlist") { try VaultMusicController.shared.removeSong(item, from: playlist) }
+            }
+            return UIMenu(children: menu.children + [remove])
+        })
     }
 }
 
@@ -216,7 +244,7 @@ internal final class MusicArtworkGridCell: UITableViewCell {
         NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20), row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20), row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10), row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func configure(_ albums: [MPMediaItemCollection], showsYear: Bool = false, select: @escaping (MPMediaItemCollection) -> Void) {
+    func configure(_ albums: [MusicCollection], showsYear: Bool = false, select: @escaping (MusicCollection) -> Void) {
         row.arrangedSubviews.forEach { row.removeArrangedSubview($0); $0.removeFromSuperview() }
         for album in albums {
             let art = MusicStyle.artwork(MusicStyle.image(album.representativeItem))

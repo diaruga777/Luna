@@ -1,44 +1,84 @@
 # Luna Music
 
-Standalone iOS 26 library player: scheme `LunaMusic`, bundle ID
-`$(PRODUCT_BUNDLE_PREFIX).music`, app module `LunaMusicApp`. The host links only
-`LunaMusicKit` (the `LunaMusicCore` service and `LunaMusicUI` UIKit modules). It does
-not initialize the saves database, link-ingest pipeline, CloudKit friends, or
-catalog discovery. Music stays in the device's Apple media library.
+Standalone iOS 26 player: scheme `LunaMusic`, bundle ID
+`$(PRODUCT_BUNDLE_PREFIX).music`, app module `LunaMusicApp`. Apple library songs
+and Luna Vault files coexist in the same songs, artists, albums, search and
+Downloaded screens. Music uses its own library state; it does not use `saves.sqlite`.
+The app links `LunaMusicKit` plus the existing Vault connection/pairing services.
 
 ## Library and playback
 
-MusicKit requests music authorization; MediaPlayer queries expose the complete
-synced/local media library, including imports that are not catalog songs.
-`MPMusicPlayerController.applicationQueuePlayer` plays that library and owns
-system Now Playing, remote transport controls and its queue independently of
-Apple Music's app queue. There is no subscription offer, store, radio, or catalog
-search. Cloud items in the user's library may stream according to Apple's
-account and availability rules. Downloaded filters `isCloudItem == false`.
+MusicKit authorizes Apple music access and MediaPlayer queries the synced/local
+Apple library. Apple-only queues retain `applicationQueuePlayer` and its system
+playback behavior. Denying Apple access does not prevent Vault browsing/playback.
+`MusicSong`, `MusicPlaylist` and source-qualified `MusicID` values keep Apple IDs
+separate from Mac paths. Artist strings are matched case/diacritic-insensitively;
+albums match title plus album artist. Songs from different sources remain distinct.
 
-The library shows playlists, artists, albums, songs and downloaded songs.
-There is no Recently Added section. Search covers song titles, album titles, artist names and
-playlists. Playlist creation and adding songs use the public media-library APIs;
-errors are presented instead of reporting an unsuccessful edit as saved.
+Playlists have exactly one source. New Playlist asks for Apple Music or Luna Vault;
+creation from a song inherits its source. Add Music and destination menus filter
+by source, and the underlying write APIs reject mixed-source changes. Vault
+playlists, ordering, play counts and catalog metadata persist atomically in
+`Application Support/LunaMusic/vault-library.json` in the Music app container.
+Vault playlists can be created, populated, have songs removed, and be deleted
+without modifying the original files on the Mac. Apple playlists still use the
+public media-library APIs and surface write failures.
 
-Selecting a song anywhere starts it first. Among curated playlists containing
-that song, the most recently **successfully played in Luna Music** wins. Smart
-and Genius playlists are excluded from automatic continuation so a broad
-automatic playlist cannot fill the queue with unrelated tracks. A song tapped
-inside a playlist uses that playlist. With no matching
-Luna playback history, the largest matching playlist wins (unique song count;
-stable persistent-ID tie break). Remaining songs are shuffled without duplicates
-or an immediate repeat of the selected song. With no containing playlist, only
-the selected song is queued. Playing an album or pressing a playlist's Play or
-Shuffle button explicitly uses that collection. Recency is local to Luna Music
-and persists across launches. The paused queue, position and playback modes also
-persist; restoring the UI does not start audio. An explicit Resume prepares
-the saved queue, dropping songs no longer present in the library.
+Selecting a song plays it first, then shuffles its most recently successfully
+played containing playlist, excluding Smart/Genius playlists. With no history,
+the largest containing playlist wins, with stable ID ties. Explicit collection
+Play/Shuffle uses that collection. Artist/album queues may span both sources;
+playlists cannot. Queue editing, seeking, shuffle, repeat and the same compact/full
+player work for both sources. Queue snapshots preserve source-qualified identities
+and restore paused; legacy numeric Apple queue IDs still decode.
 
-Queue operations use serialized MediaPlayer transactions. The current song and
-played history stay in place while upcoming entries are reordered, removed or
-inserted. The full player exposes seeking, shuffle, repeat, hardware volume and
-AirPlay route selection. The OS owns the lock-screen playback panel.
+Vault tracks use AVPlayer: downloaded files play directly, and uncached files use
+`AVAssetResourceLoader` over the paired Mac connection. Ranges are 512 KiB, verified
+against the Mac's file version before/after reading, deduplicated in flight and
+retained in a 12 MiB LRU. Startup primes up to 1 MiB. AVFoundation can request the
+end of an MP4 before the beginning and seek without a sequential full download.
+Transient range failures retry twice with backoff; deadlines/reconnects come from
+BEP. Superseded AVFoundation requests are cancelled. A changed file fails cleanly
+instead of mixing versions; refresh the library before retrying that song.
+Custom loaders disable Apple's network-rate predictor; the player maintains a
+20-second forward-buffer preference and resumes a requested playback after a stall
+when at least three seconds (or the remaining track) are buffered.
+An AVPlayer-associated Now Playing session owns Vault metadata/remote commands;
+Apple playback uses MediaPlayer's session. Audio interruptions and unplugged
+routes pause appropriately. Metadata feeds the existing widgets and CarPlay/Siri.
+
+## Mac folder and supported formats
+
+Inside the selected Mac Vault root, place files under
+`Music/<Artist>/<Album>/<file>`. Luna Mac creates Music at startup. Metadata tags
+supply title/artist/album/track/disc with directory and filename fallbacks. The Mac
+scans on catalog requests (at most once per 15 seconds per connection); the iPhone
+refreshes on foreground, manually, and every minute while foregrounded. Unchanged
+files reuse metadata persisted in `.luna-music-index.json`. No transcoding runs.
+Supported extensions are MP3, M4A, MP4, AAC, WAV, AIF/AIFF, CAF and FLAC, provided
+AVFoundation finds playable audio. MP4 video containers contribute their audio.
+Symbolic links and paths escaping Music are rejected. Reads use the existing paired
+TLS/BEP connection, including LAN or the user's separately installed Tailscale.
+Both the app and Mac companion must be updated for the music service.
+
+## Downloads
+
+Song menus and collection download buttons cache Vault songs individually or by
+playlist, artist, or album. Files live in the Music app's private
+`Application Support/LunaMusic/Audio` directory, excluded from backup, with complete
+files installed atomically after all ranges arrive. Temporary partials are removed
+on failure/cancellation and next startup. Cache filenames include source identity
+and file version; truncated/obsolete copies cannot masquerade as the current song.
+
+Settings lists cached songs and size; swipe to remove a local download. This never
+sends a delete or tombstone to the Mac. A removed song is excluded from automatic
+re-download until the user explicitly downloads it again. Automatic caching defaults
+to the top **3** played Vault playlists, configurable from **0 to 10**. Ranking uses
+successful playlist starts, then recency and ID. Never-played playlists are excluded.
+Reconciliation removes obsolete automatic copies and retains manual downloads.
+Downloads are serialized and can be retried in Settings; offline refresh failures
+preserve the last catalog and playlists. iOS may suspend optional downloads when
+backgrounded without active audio; retry/foreground refresh resumes the policy.
 
 ## Foreground behavior
 
@@ -76,7 +116,7 @@ available through this implementation. CarPlay has a separate template scene
 for browsing the device library and uses the system Now Playing template.
 Distribution requires Apple to grant the `com.apple.developer.carplay-audio`
 managed entitlement to the app's signing profile.
-System playback controls remain owned by MediaPlayer. There is no standalone
+Apple playback controls are owned by MediaPlayer; Vault playback uses its AVPlayer Now Playing session. There is no standalone
 watchOS app or independent Apple Watch library.
 
 ## Development
@@ -146,3 +186,28 @@ layout, empty playlist geometry, collection search and multi-selection across
 searches. All 4 foreground/queue UI tests pass. Layout tests use in-memory media
 snapshots and do not write the real library. Real playlist writes, populated
 library artwork, volume and audio routes still require a signed-in device check.
+
+## Vault music verification (2026-10-07)
+
+Xcode 26.2 / iPhone 17 Pro / iOS 26.2: all 31 Music unit/layout/playback tests
+pass. Coverage includes shared artist/album grouping, source guards, persisted
+Vault playlists and cache policy, manual pins and explicit removals, deduplicated
+ranges, version isolation, cancelled/incomplete downloads, and queue transport.
+A generated three-minute MP4 starts through the production resource loader before
+the complete file arrives over a throttled test transport, supports a seek near
+the end, and produces a byte-identical cache that decodes with the server offline.
+The simulator's audio-output restart can time out; offline validation therefore
+uses AVAssetReader decoding rather than relying on simulated speaker output.
+
+The seven Mac music tests pass, covering catalog discovery, metadata fallbacks,
+pagination, source identity, cache policy, path restrictions and
+version-checked range reads. The full LunaVaultMacCompanion product builds.
+A physical iPhone paired to Luna Mac over LAN/Tailscale, signed-in Apple playback,
+source transitions on a populated library, AirPlay, and Siri still require device
+validation before distribution.
+
+All five Music UI checks pass (the four existing checks in the full run, then
+the new focused check after correcting its iOS 26 search-dismiss button label).
+The new check exercises Settings, both policy limits, restoring the default of
+three, choosing the playlist source, and creating/deleting a Vault playlist.
+The settings screenshot was inspected for layout and readable controls.

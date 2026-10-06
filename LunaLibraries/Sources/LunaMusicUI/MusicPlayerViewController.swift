@@ -40,7 +40,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var routeToken: NSObjectProtocol?
     private var timer: Timer?
     private var showsQueue: Bool
-    private var artworkID: UInt64?
+    private var artworkID: MusicID?
     private var queueProgress: CGFloat
     private var panStart: CGFloat = 0
     private var animator: UIViewPropertyAnimator?
@@ -314,7 +314,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
 
     private func refresh() {
         titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
-        artistLabel.text = player.nowPlaying?.artist ?? "Choose music from your library"
+        artistLabel.text = player.errorMessage ?? player.nowPlaying?.artist ?? "Choose music from your library"
         if artworkID != player.nowPlaying?.persistentID {
             let image = MusicStyle.image(player.nowPlaying, size: 800)
             view.backgroundColor = MusicStyle.artworkColor(image) ?? UIColor(white: 0.2, alpha: 1)
@@ -323,8 +323,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
             artworkID = player.nowPlaying?.persistentID
         }
         art.accessibilityLabel = "Album artwork"
-        play.configuration?.image = UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-        play.accessibilityLabel = player.isPlaying ? "Pause" : "Play"
+        play.configuration?.image = UIImage(systemName: (player.isPlaying || player.isBuffering) ? "pause.fill" : "play.fill")
+        play.accessibilityLabel = (player.isPlaying || player.isBuffering) ? "Pause" : "Play"
         MusicStyle.setSelected(player.shuffleEnabled, on: shuffle)
         shuffle.accessibilityValue = player.shuffleEnabled ? "On" : "Off"
         MusicStyle.setSelected(player.repeatMode != .none, on: repeatButton)
@@ -339,14 +339,20 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         more.isEnabled = player.nowPlaying != nil
         if let item = player.nowPlaying {
             more.menu = UIMenu(children: [
-                UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: MusicLibraryController.shared.playlists.filter { !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
+                UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: MusicLibraryController.shared.playlists.filter { $0.source == item.source && !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
                     UIAction(title: playlist.name ?? "Playlist") { [weak self] _ in
                         guard let self else { return }
                         MusicStyle.run(from: self, errorTitle: "Unable to Add Songs") { try await MusicLibraryController.shared.add([item], to: playlist) }
                     }
                 }),
                 UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) }
-            ])
+            ] + (item.source == .vault ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+                guard let self else { return }
+                MusicStyle.run(from: self, errorTitle: "Download Unavailable") {
+                    if VaultMusicController.shared.isCached(item) { try await VaultMusicController.shared.removeCachedSong(item) }
+                    else { try VaultMusicController.shared.cacheSongs([item]) }
+                }
+            }] : []))
         }
         table.reloadData()
         if upcomingCount == 0 {

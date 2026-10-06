@@ -23,6 +23,8 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         session = VaultSyncSession(store: store, dialer: dialer, lookup: lookup, localDevice: localID)
     }
 
+    public func musicRequest(_ payload: Data) async throws -> Data { try await session.musicRequest(payload) }
+
     public func codeRequest(_ payload: Data) async throws -> Data { try await session.codeRequest(payload) }
 
     public func pair(code: String) async throws {

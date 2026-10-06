@@ -12,7 +12,7 @@ import OSLog
     private var worker: Task<Void, Never>?
     private var needsRefresh = false
     private var lastState: MusicActivityAttributes.ContentState?
-    private var lastSongID: MPMediaEntityPersistentID?
+    private var lastSongID: MusicID?
     private let log = Logger(subsystem: "LunaMusic", category: "SystemIntegration")
 
     func start() {

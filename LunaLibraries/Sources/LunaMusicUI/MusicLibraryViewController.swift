@@ -34,6 +34,11 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         observe(.lunaMusicLibraryChanged) { [weak self] in self?.update() }
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "arrow.clockwise"), primaryAction: UIAction { [weak self] _ in Task { await self?.library.reload() } })
         navigationItem.rightBarButtonItem?.accessibilityLabel = "Refresh Library"
+        let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(MusicSettingsViewController(), animated: true)
+        })
+        settings.accessibilityLabel = "Settings"
+        navigationItem.rightBarButtonItems = [settings, navigationItem.rightBarButtonItem!]
         update()
         Task { await library.authorizeAndLoad(); update() }
     }
@@ -80,11 +85,11 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         }
         table.reloadData()
         var configuration: UIContentUnavailableConfiguration?
-        if library.authorizationStatus == .denied || library.authorizationStatus == .restricted {
+        if library.songs.isEmpty && (library.authorizationStatus == .denied || library.authorizationStatus == .restricted) {
             var empty = UIContentUnavailableConfiguration.empty()
             empty.image = UIImage(systemName: "music.note")
             empty.text = "Allow Music Access"
-            empty.secondaryText = "Luna Music needs permission to show and play your music library. You can allow access in Settings."
+            empty.secondaryText = "Allow access for Apple Music, or connect Luna Mac in Luna Music Settings to play your Vault files."
             empty.button.title = "Open Settings"
             empty.buttonProperties.primaryAction = UIAction { _ in if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             configuration = empty
@@ -93,7 +98,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         } else if !query.isEmpty && results.isEmpty {
             var empty = UIContentUnavailableConfiguration.search(); empty.secondaryText = "Try another song, artist, album, or playlist."; configuration = empty
         } else if library.songs.isEmpty && library.authorizationStatus == .authorized {
-            var empty = UIContentUnavailableConfiguration.empty(); empty.image = UIImage(systemName: "music.note.list"); empty.text = "Your Library Is Empty"; empty.secondaryText = library.errorMessage ?? "Music you add to your iPhone’s music library will appear here."; configuration = empty
+            var empty = UIContentUnavailableConfiguration.empty(); empty.image = UIImage(systemName: "music.note.list"); empty.text = "Your Library Is Empty"; empty.secondaryText = library.errorMessage ?? "Add music to your Apple library or connect Luna Mac in Settings to discover Vault songs."; configuration = empty
         }
         table.backgroundView = nil
         table.tableFooterView = nil
@@ -145,13 +150,13 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
 }
 
 internal enum MusicResult {
-    case song(MPMediaItem), playlist(MPMediaPlaylist), album(MPMediaItemCollection), artist(MPMediaItemCollection)
+    case song(MusicSong), playlist(MusicPlaylist), album(MusicCollection), artist(MusicCollection)
     var name: String { switch self { case .song(let item): return item.title ?? "Unknown Song"; case .playlist(let item): return item.name ?? "Playlist"; case .album(let item): return item.representativeItem?.albumTitle ?? "Unknown Album"; case .artist(let item): return item.representativeItem?.artist ?? "Unknown Artist" } }
-    var songs: [MPMediaItem] { switch self { case .song(let item): return [item]; case .playlist(let item): return item.items; case .album(let item), .artist(let item): return item.items } }
-    var playlist: MPMediaPlaylist? { if case .playlist(let item) = self { return item }; return nil }
+    var songs: [MusicSong] { switch self { case .song(let item): return [item]; case .playlist(let item): return item.items; case .album(let item), .artist(let item): return item.items } }
+    var playlist: MusicPlaylist? { if case .playlist(let item) = self { return item }; return nil }
     @MainActor func artwork(size: CGFloat = 600) -> UIImage? {
         guard case .playlist = self else { return MusicStyle.image(songs.first, size: size) }
-        var seen = Set<MPMediaEntityPersistentID>()
+        var seen = Set<MusicID>()
         let covers = songs.filter { seen.insert($0.albumPersistentID).inserted }
             .compactMap { MusicStyle.image($0, size: size / 2) }.prefix(4)
         guard covers.count == 4 else { return MusicStyle.image(songs.first, size: size) }
@@ -172,6 +177,7 @@ internal enum MusicResult {
         config.directionalLayoutMargins.leading = 20; config.directionalLayoutMargins.trailing = 20
         config.imageToTextPadding = 12
         config.directionalLayoutMargins.top = 8; config.directionalLayoutMargins.bottom = 8
+        if case .playlist(let playlist) = self { config.secondaryText = playlist.source == .vault ? "Luna Vault" : "Apple Music" }
         if case .artist = self { config.imageProperties.cornerRadius = 32; config.secondaryText = "Artist" }
         if case .album = self { config.secondaryText = songs.first?.artist }
 
@@ -182,7 +188,7 @@ internal enum MusicResult {
         if case .song(let item) = self { MusicStyle.run(from: owner) { try await MusicPlaybackController.shared.playSong(item) }; return }
         if case .artist(let collection) = self {
             let grouped = Dictionary(grouping: collection.items, by: { $0.albumPersistentID })
-            let albums = grouped.values.map { MusicResult.album(MPMediaItemCollection(items: $0)) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            let albums = grouped.values.map { MusicResult.album(MusicCollection(items: $0)) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: albums, collection: self), animated: true)
         } else { owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: songs.map(MusicResult.song), collection: self), animated: true) }
     }

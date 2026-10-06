@@ -12,6 +12,7 @@ let package = Package(
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(name: "LunaKeyboardKit", type: .dynamic, targets: ["LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig"]),
+        .library(name: "LunaMusicFiles", targets: ["LunaMusicFiles"]),
         .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI"]),
         // MARK: - Per-app kits
         //
@@ -148,7 +149,8 @@ let package = Package(
     targets: [
         .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
-        .target(name: "LunaMusicCore"),
+        .target(name: "LunaMusicFiles"),
+        .target(name: "LunaMusicCore", dependencies: ["LunaMusicFiles"]),
         .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
@@ -403,7 +405,7 @@ let package = Package(
         // Depends on LunaVaultBEP alone so it runs against fake transports in
         // LunaVaultTests; FSEvents is behind `#if os(macOS)`. The executable in
         // the LunaVaultTailscale package wires the real listeners.
-        .target(name: "LunaVaultMacPeer", dependencies: ["LunaVaultBEP"]),
+        .target(name: "LunaVaultMacPeer", dependencies: ["LunaVaultBEP", "LunaMusicFiles"]),
         .target(name: "LunaVaultCrypto", dependencies: [
             "LunaVaultModels", "LunaAppConfig",
         ]),

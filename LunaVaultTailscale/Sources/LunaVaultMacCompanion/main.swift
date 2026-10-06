@@ -31,7 +31,7 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         window.title = "Luna Mac"; window.isReleasedWhenClosed = false
         let heading = NSTextField(labelWithString: "Luna Mac")
         heading.font = .systemFont(ofSize: 24, weight: .semibold)
-        let instructions = NSTextField(wrappingLabelWithString: "One connection for Luna Vault and Luna Code. Choose the Vault sync folder, then pair once from either iPhone app. Code can edit source files across this Mac and run Xcode builds using your existing developer setup.")
+        let instructions = NSTextField(wrappingLabelWithString: "One connection for Luna Vault, Luna Music and Luna Code. Place songs in Music/Artist/Album inside your Vault folder. Choose the Vault sync folder, then pair once from either iPhone app. Code can edit source files across this Mac and run Xcode builds using your existing developer setup.")
         codeField.isSelectable = true; codeField.maximumNumberOfLines = 4
         codeField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         let copy = NSButton(title: "Copy pairing code", target: self, action: #selector(copyCode))
@@ -122,6 +122,7 @@ private final class CompanionController: @unchecked Sendable {
                 try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
                 let folder = lock.withLock { folderURL }
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: folder.appendingPathComponent("Music"), withIntermediateDirectories: true)
                 let localID = try transport.identity()
                 codeService = try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true))
                 let listener: LunaVaultGoListener

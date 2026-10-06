@@ -9,28 +9,35 @@ public extension Notification.Name {
 }
 
 public struct MusicLibrarySearchResults {
-    public let songs: [MPMediaItem]
-    public let albums: [MPMediaItemCollection]
-    public let artists: [MPMediaItemCollection]
-    public let playlists: [MPMediaPlaylist]
+    public let songs: [MusicSong]
+    public let albums: [MusicCollection]
+    public let artists: [MusicCollection]
+    public let playlists: [MusicPlaylist]
 }
 
 @MainActor
 public final class MusicLibraryController: ObservableObject {
     public static let shared = MusicLibraryController()
 
-    @Published public private(set) var songs: [MPMediaItem] = []
-    @Published public private(set) var playlists: [MPMediaPlaylist] = []
-    @Published public private(set) var albums: [MPMediaItemCollection] = []
-    @Published public private(set) var artists: [MPMediaItemCollection] = []
+    @Published public private(set) var songs: [MusicSong] = []
+    @Published public private(set) var playlists: [MusicPlaylist] = []
+    @Published public private(set) var albums: [MusicCollection] = []
+    @Published public private(set) var artists: [MusicCollection] = []
     @Published public private(set) var authorizationStatus = MusicLibraryController.libraryAuthorizationStatus
     @Published public private(set) var isLoading = false
     @Published public private(set) var errorMessage: String?
     private var observer: NSObjectProtocol?
+    private var vaultObserver: NSObjectProtocol?
+    private var appleSongs: [MusicSong] = []
+    private var applePlaylists: [MusicPlaylist] = []
     public private(set) var hasLoaded = false
     private var loadWaiters: [CheckedContinuation<Void, Never>] = []
 
     private init() {
+        vaultObserver = NotificationCenter.default.addObserver(forName: .lunaMusicVaultChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.publish() }
+        }
+        publish()
         MPMediaLibrary.default().beginGeneratingLibraryChangeNotifications()
         observer = NotificationCenter.default.addObserver(forName: .MPMediaLibraryDidChange,
                                                           object: nil, queue: .main) { [weak self] _ in
@@ -48,10 +55,11 @@ public final class MusicLibraryController: ObservableObject {
         await reload()
     }
 
-    public func reload() async {
+    public func reload(refreshVault: Bool = true) async {
         authorizationStatus = Self.libraryAuthorizationStatus
         guard authorizationStatus == .authorized else {
-            songs = []; playlists = []; albums = []; artists = []
+            appleSongs = []; applePlaylists = []; hasLoaded = true; publish()
+            if refreshVault { await VaultMusicController.shared.refresh() }
             NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
             return
         }
@@ -67,10 +75,8 @@ public final class MusicLibraryController: ObservableObject {
         let snapshot = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let snapshot = LibrarySnapshot(
-                    songs: MPMediaQuery.songs().items ?? [],
-                    playlists: (MPMediaQuery.playlists().collections ?? []).compactMap { $0 as? MPMediaPlaylist },
-                    albums: MPMediaQuery.albums().collections ?? [],
-                    artists: MPMediaQuery.artists().collections ?? [])
+                    songs: (MPMediaQuery.songs().items ?? []).map(MusicSong.init),
+                    playlists: (MPMediaQuery.playlists().collections ?? []).compactMap { $0 as? MPMediaPlaylist }.map(MusicPlaylist.init))
                 continuation.resume(returning: snapshot)
             }
         }
@@ -80,15 +86,32 @@ public final class MusicLibraryController: ObservableObject {
             await reload()
             return
         }
-        songs = snapshot.songs
-        playlists = snapshot.playlists.sorted {
-            ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending
-        }
-        albums = snapshot.albums
-        artists = snapshot.artists
+        appleSongs = snapshot.songs
+        applePlaylists = snapshot.playlists
+        publish()
         isLoading = false
         hasLoaded = true
         finishLoadWaiters()
+        if refreshVault { await VaultMusicController.shared.refresh() }
+        NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
+    }
+
+    private func publish() {
+        songs = (appleSongs + VaultMusicController.shared.songs).sorted {
+            ($0.title ?? "").localizedStandardCompare($1.title ?? "") == .orderedAscending
+        }
+        playlists = (applePlaylists + VaultMusicController.shared.playlists).sorted {
+            ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending
+        }
+        albums = Dictionary(grouping: songs, by: \.albumPersistentID).values.map { items in
+            MusicCollection(items: items.sorted {
+                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                if $0.albumTrackNumber != $1.albumTrackNumber { return $0.albumTrackNumber < $1.albumTrackNumber }
+                return ($0.title ?? "") < ($1.title ?? "")
+            })
+        }.sorted { ($0.representativeItem?.albumTitle ?? "") < ($1.representativeItem?.albumTitle ?? "") }
+        artists = Dictionary(grouping: songs, by: \.artistPersistentID).values.map { MusicCollection(items: $0) }
+            .sorted { ($0.representativeItem?.artist ?? "") < ($1.representativeItem?.artist ?? "") }
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
     }
 
@@ -99,7 +122,10 @@ public final class MusicLibraryController: ObservableObject {
     }
 
     @discardableResult
-    public func createPlaylist(name: String, items: [MPMediaItem] = []) async throws -> MPMediaPlaylist {
+    public func createPlaylist(name: String, items: [MusicSong] = [], source: MusicSource = .apple) async throws -> MusicPlaylist {
+        let source = items.first?.source ?? source
+        guard items.allSatisfy({ $0.source == source }) else { throw MusicFileError("A playlist can contain Apple Music songs or Vault songs, but not both.") }
+        if source == .vault { return try VaultMusicController.shared.createPlaylist(name: name, songs: items) }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw MusicLibraryError.missingPlaylistName }
         guard Self.libraryAuthorizationStatus == .authorized else { throw MusicLibraryError.notAuthorized }
@@ -110,16 +136,19 @@ public final class MusicLibraryController: ObservableObject {
                 else { continuation.resume(throwing: MusicLibraryError.playlistCreationFailed) }
             }
         }
-        if !items.isEmpty { try await add(items, to: playlist) }
+        if !items.isEmpty { try await add(items, to: MusicPlaylist(playlist)) }
         else { await reload() }
-        return playlist
+        return MusicPlaylist(playlist)
     }
 
-    public func add(_ items: [MPMediaItem], to playlist: MPMediaPlaylist) async throws {
+    public func add(_ items: [MusicSong], to playlist: MusicPlaylist) async throws {
+        guard items.allSatisfy({ $0.source == playlist.source }) else { throw MusicFileError("A playlist can contain only songs from its own source.") }
+        if playlist.source == .vault { try VaultMusicController.shared.add(items, to: playlist); return }
+        guard let mediaPlaylist = playlist.mediaPlaylist else { throw MusicLibraryError.playlistCreationFailed }
         guard Self.libraryAuthorizationStatus == .authorized else { throw MusicLibraryError.notAuthorized }
         guard !items.isEmpty else { return }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            playlist.add(items) { error in
+            mediaPlaylist.add(items.compactMap(\.mediaItem)) { error in
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume() }
             }
@@ -152,10 +181,8 @@ public final class MusicLibraryController: ObservableObject {
 }
 
 private struct LibrarySnapshot: @unchecked Sendable {
-    let songs: [MPMediaItem]
-    let playlists: [MPMediaPlaylist]
-    let albums: [MPMediaItemCollection]
-    let artists: [MPMediaItemCollection]
+    let songs: [MusicSong]
+    let playlists: [MusicPlaylist]
 }
 
 public enum MusicLibraryError: LocalizedError {

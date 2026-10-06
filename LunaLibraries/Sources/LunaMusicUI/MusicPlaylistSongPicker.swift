@@ -6,24 +6,24 @@ import LunaMusicCore
 /// sheet stays open on an API error so the user can retry without losing work.
 @MainActor
 internal final class MusicPlaylistSongPicker: UITableViewController, UISearchResultsUpdating {
-    private let playlist: MPMediaPlaylist
+    private let playlist: MusicPlaylist
     private let search = UISearchController(searchResultsController: nil)
-    private var selected = Set<MPMediaEntityPersistentID>()
+    private var selected = Set<MusicID>()
     private var isSaving = false
-    private let songProvider: () -> [MPMediaItem]
-    private let addSongs: ([MPMediaItem]) async throws -> Void
-    private var songs: [MPMediaItem] { songProvider() }
-    private var filtered: [MPMediaItem] = []
-    private func matchingSongs() -> [MPMediaItem] {
+    private let songProvider: () -> [MusicSong]
+    private let addSongs: ([MusicSong]) async throws -> Void
+    private var songs: [MusicSong] { songProvider().filter { $0.source == playlist.source } }
+    private var filtered: [MusicSong] = []
+    private func matchingSongs() -> [MusicSong] {
         let terms = (search.searchBar.text ?? "").split(whereSeparator: \.isWhitespace)
         return songs.filter { song in
             let text = [song.title, song.artist, song.albumTitle].compactMap { $0 }.joined(separator: " ")
             return terms.allSatisfy { text.localizedStandardContains(String($0)) }
         }
     }
-    init(playlist: MPMediaPlaylist,
-         songProvider: (() -> [MPMediaItem])? = nil,
-         addSongs: (([MPMediaItem]) async throws -> Void)? = nil) {
+    init(playlist: MusicPlaylist,
+         songProvider: (() -> [MusicSong])? = nil,
+         addSongs: (([MusicSong]) async throws -> Void)? = nil) {
         self.playlist = playlist
         self.songProvider = songProvider ?? { MusicLibraryController.shared.songs }
         self.addSongs = addSongs ?? { try await MusicLibraryController.shared.add($0, to: playlist) }

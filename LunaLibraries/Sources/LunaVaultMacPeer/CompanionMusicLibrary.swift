@@ -84,12 +84,12 @@ public actor CompanionMusicLibrary {
             if let old = metadata[path], old.version == info.version { next.append(old); continue }
             let asset = AVURLAsset(url: url)
             guard (try? await asset.load(.isPlayable)) == true,
-                  !(try await asset.loadTracks(withMediaType: .audio)).isEmpty else { continue }
+                  !((try? await asset.loadTracks(withMediaType: .audio)) ?? []).isEmpty else { continue }
             let tags = (try? await asset.load(.commonMetadata)) ?? []
             func value(_ key: AVMetadataKey) async -> String? {
                 guard let tag = tags.first(where: { $0.commonKey == key }), let text = try? await tag.load(.stringValue),
                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-                return text
+                return String(text.prefix(300))
             }
             let parts = path.split(separator: "/").map(String.init)
             let artist = await value(.commonKeyArtist) ?? parts[0]

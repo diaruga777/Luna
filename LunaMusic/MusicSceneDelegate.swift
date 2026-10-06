@@ -38,6 +38,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        MusicVaultWiring.background()
         enteredBackground = true
         activationWork?.cancel()
     }
@@ -45,6 +46,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         // Permission dialogs and Control Center do not constitute a new foreground.
         guard enteredBackground || pendingRoute != nil else { return }
+        MusicVaultWiring.foreground()
         enteredBackground = false
         activationWork?.cancel()
         let work = DispatchWorkItem { [weak self] in

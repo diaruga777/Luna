@@ -17,7 +17,6 @@ struct LibraryMusicEntity: AppEntity {
 struct LibraryMusicQuery: EntityStringQuery {
     @MainActor private func library() async -> [LibraryMusicEntity] {
         // Entity suggestions never trigger a permission prompt outside the app.
-        guard MPMediaLibrary.authorizationStatus() == .authorized else { return [] }
         let library = MusicLibraryController.shared
         await library.reload()
         return library.playlists.map {
@@ -64,7 +63,6 @@ struct PlayLibraryMusicIntent: AudioPlaybackIntent {
     @MainActor func perform() async throws -> some IntentResult {
         let library = MusicLibraryController.shared
         await library.authorizeAndLoad()
-        guard MPMediaLibrary.authorizationStatus() == .authorized else { throw MusicIntentError.permission }
         if music.id.hasPrefix("playlist:"), let item = library.playlists.first(where: { "playlist:\($0.persistentID)" == music.id }) {
             try await MusicPlaybackController.shared.play(item.items, playlist: item, shuffle: true)
         } else if music.id.hasPrefix("album:"), let album = library.albums.first(where: { "album:\($0.representativeItem?.albumPersistentID ?? 0)" == music.id }) {

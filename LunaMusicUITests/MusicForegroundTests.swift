@@ -15,6 +15,40 @@ final class MusicForegroundTests: XCTestCase {
         }
     }
 
+    func testVaultCacheSettingsAndPlaylistSourceChoice() {
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        XCTAssertTrue(app.staticTexts["Luna Mac"].waitForExistence(timeout: 5))
+        let stepper = app.steppers["Automatically cached playlists"]
+        XCTAssertTrue(stepper.exists)
+        for _ in 0..<10 { if stepper.buttons["Increment"].isEnabled { stepper.buttons["Increment"].tap() } }
+        XCTAssertTrue(app.staticTexts["Top 10 playlists"].exists)
+        for _ in 0..<10 { if stepper.buttons["Decrement"].isEnabled { stepper.buttons["Decrement"].tap() } }
+        XCTAssertTrue(app.staticTexts["Top 0 playlists"].exists)
+        for _ in 0..<3 { stepper.buttons["Increment"].tap() }
+        XCTAssertTrue(app.staticTexts["Top 3 playlists"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Vault music cache settings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.staticTexts["Playlists"].tap()
+        app.navigationBars.buttons["Add"].tap()
+        XCTAssertTrue(app.alerts["New Playlist"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.alerts.buttons["Apple Music"].exists)
+        app.alerts.buttons["Luna Vault"].tap()
+        let name = app.alerts.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 3)); name.typeText("Vault UI Test")
+        app.alerts.buttons["Create"].tap()
+        XCTAssertTrue(app.buttons["music.playlist.addMusic"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Download All Vault Songs"].exists)
+        app.buttons["Playlist Options"].tap()
+        app.buttons["Delete Playlist"].tap()
+        XCTAssertFalse(app.staticTexts["Vault UI Test"].exists)
+    }
+
     func testLaunchFocusesLibrarySearch() {
         let search = app.searchFields["music.library.search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))

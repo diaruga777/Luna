@@ -3,12 +3,12 @@ import Foundation
 /// Pure selection policy, independent of authorization and the media-library service.
 public enum MusicQueuePlanner {
     public struct Playlist: Equatable, Sendable {
-        public let id: UInt64
-        public let songIDs: [UInt64]
+        public let id: MusicID
+        public let songIDs: [MusicID]
         public let lastPlayed: Date?
         public let isAutomatic: Bool
 
-        public init(id: UInt64, songIDs: [UInt64], lastPlayed: Date? = nil, isAutomatic: Bool = false) {
+        public init(id: MusicID, songIDs: [MusicID], lastPlayed: Date? = nil, isAutomatic: Bool = false) {
             self.id = id
             self.songIDs = songIDs
             self.lastPlayed = lastPlayed
@@ -16,7 +16,7 @@ public enum MusicQueuePlanner {
         }
     }
 
-    public static func playlist(containing songID: UInt64, in playlists: [Playlist]) -> Playlist? {
+    public static func playlist(containing songID: MusicID, in playlists: [Playlist]) -> Playlist? {
         playlists.filter { !$0.isAutomatic && $0.songIDs.contains(songID) }.sorted { lhs, rhs in
             if lhs.lastPlayed != rhs.lastPlayed {
                 return (lhs.lastPlayed ?? .distantPast) > (rhs.lastPlayed ?? .distantPast)
@@ -28,10 +28,10 @@ public enum MusicQueuePlanner {
         }.first
     }
 
-    public static func songIDs<R: RandomNumberGenerator>(startingWith selected: UInt64,
+    public static func songIDs<R: RandomNumberGenerator>(startingWith selected: MusicID,
                                                          playlist: Playlist?,
-                                                         using generator: inout R) -> [UInt64] {
-        var seen: Set<UInt64> = [selected]
+                                                         using generator: inout R) -> [MusicID] {
+        var seen: Set<MusicID> = [selected]
         var remaining = (playlist?.songIDs ?? []).filter { seen.insert($0).inserted }
         remaining.shuffle(using: &generator)
         return [selected] + remaining

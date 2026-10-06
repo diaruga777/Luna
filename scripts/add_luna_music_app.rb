@@ -119,6 +119,24 @@ unless app.shell_script_build_phases.any? { |p| p.name == 'Re-sign embedded exte
   phase.shell_script = source.shell_script
   phase.always_out_of_date = source.always_out_of_date
 end
+# Music reuses the family's authenticated connection and pairing settings.
+[['LunaLibraries', 'LunaVaultUI'], ['LunaVaultTailscale', 'LunaVaultTailscale']].each do |path, product|
+  package_ref = project.objects.find { |o| o.isa == 'XCLocalSwiftPackageReference' && o.relative_path == path }
+  abort "Missing #{path}" unless package_ref
+  dep = app.package_product_dependencies.find { |d| d.product_name == product }
+  unless dep
+    dep = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+    dep.package = package_ref; dep.product_name = product
+    app.package_product_dependencies << dep
+    file = project.new(Xcodeproj::Project::Object::PBXBuildFile); file.product_ref = dep
+    app.frameworks_build_phase.files << file
+  end
+end
+Dir.glob(File.join(root, 'LunaMusicTests/Fixtures/*')).each do |path|
+  relative = path.delete_prefix(root + '/')
+  ref = project.files.find { |f| f.path == relative } || project.main_group.new_file(relative)
+  tests.resources_build_phase.add_file_reference(ref, true)
+end
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)

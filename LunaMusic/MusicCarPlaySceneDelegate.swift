@@ -25,7 +25,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
         Task {
             // CarPlay can start the app without a phone scene. Never raise a permission
             // sheet on the car display; browsing becomes available after phone approval.
-            if library.authorizationStatus == .authorized { await library.reload() }
+            await library.reload()
             refreshRoot()
         }
     }
@@ -43,7 +43,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
     }
 
     private func makeRoot() -> CPListTemplate {
-        guard library.authorizationStatus == .authorized else {
+        guard library.authorizationStatus == .authorized || !library.songs.isEmpty else {
             let row = CPListItem(text: "Allow Music Access on iPhone", detailText: "Open Luna Music to enable your library")
             row.isEnabled = false
             return CPListTemplate(title: "Library", sections: [CPListSection(items: [row])])
@@ -67,7 +67,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
     }
 
     private func makePlaylists() -> CPListTemplate {
-        list(title: "Playlists", collections: library.playlists.map { ($0.name ?? "Playlist", $0.items, $0 as MPMediaPlaylist?) })
+        list(title: "Playlists", collections: library.playlists.map { ($0.name ?? "Playlist", $0.items, $0 as MusicPlaylist?) })
     }
 
     private func makeAlbums() -> CPListTemplate {
@@ -78,7 +78,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
         list(title: "Artists", collections: library.artists.map { ($0.representativeItem?.artist ?? "Artist", $0.items, nil) })
     }
 
-    private func list(title: String, collections: [(String, [MPMediaItem], MPMediaPlaylist?)], offset: Int = 0) -> CPListTemplate {
+    private func list(title: String, collections: [(String, [MusicSong], MusicPlaylist?)], offset: Int = 0) -> CPListTemplate {
         let pageSize = max(1, CPListTemplate.maximumItemCount - 1)
         var rows = collections.dropFirst(offset).prefix(pageSize).map { name, songs, playlist in
             let row = CPListItem(text: name, detailText: "\(songs.count) songs")
@@ -104,7 +104,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
         return makeSongList(title: downloadedOnly ? "Downloaded" : "Songs", songs: songs)
     }
 
-    private func makeSongList(title: String, songs: [MPMediaItem], playlist: MPMediaPlaylist? = nil,
+    private func makeSongList(title: String, songs: [MusicSong], playlist: MusicPlaylist? = nil,
                               offset: Int = 0) -> CPListTemplate {
         let pageSize = max(1, CPListTemplate.maximumItemCount - 1)
         var rows = songs.dropFirst(offset).prefix(pageSize).map { song in

@@ -26,8 +26,8 @@ internal enum MusicStyle {
         button.configuration?.cornerStyle = .capsule
         button.accessibilityTraits = selected ? [.button, .selected] : .button
     }
-    static func image(_ item: MPMediaItem?, size: CGFloat = 300) -> UIImage? {
-        item?.artwork?.image(at: CGSize(width: size, height: size))
+    static func image(_ item: MusicSong?, size: CGFloat = 300) -> UIImage? {
+        item?.file?.artwork.flatMap(UIImage.init(data:)) ?? item?.mediaItem?.artwork?.image(at: CGSize(width: size, height: size))
     }
     /// Sample a small palette so artwork contributes a calm background color,
     /// without making the cover itself legible behind controls.
@@ -145,13 +145,13 @@ public class MusicScreenViewController: UIViewController {
         }
         present(controller, animated: true)
     }
-    func songMenu(_ item: MPMediaItem) -> UIMenu {
-        UIMenu(children: [
+    func songMenu(_ item: MusicSong) -> UIMenu {
+        return UIMenu(children: [
             UIAction(title: "Play", image: UIImage(systemName: "play.fill")) { [weak self] _ in
                 guard let self else { return }
                 MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(item) }
             },
-            UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: [UIAction(title: "New Playlist…", image: UIImage(systemName: "plus")) { [weak self] _ in self?.newPlaylist(items: [item]) }] + MusicLibraryController.shared.playlists.filter { !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
+            UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: [UIAction(title: "New Playlist…", image: UIImage(systemName: "plus")) { [weak self] _ in self?.newPlaylist(items: [item]) }] + MusicLibraryController.shared.playlists.filter { $0.source == item.source && !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
                 UIAction(title: playlist.name ?? "Playlist") { [weak self] _ in
                     guard let self else { return }
                     MusicStyle.run(from: self, errorTitle: "Unable to Add Songs") { try await MusicLibraryController.shared.add([item], to: playlist) }
@@ -159,16 +159,30 @@ public class MusicScreenViewController: UIViewController {
             }),
             UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) },
             UIAction(title: "Play Last", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playLater(item) }
-        ])
+        ] + (item.source == .vault ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+            guard let self else { return }
+            MusicStyle.run(from: self, errorTitle: "Download Unavailable") {
+                if VaultMusicController.shared.isCached(item) { try await VaultMusicController.shared.removeCachedSong(item) }
+                else { try VaultMusicController.shared.cacheSongs([item]) }
+            }
+        }] : []))
     }
-    func newPlaylist(items: [MPMediaItem] = [], completion: ((MPMediaPlaylist) -> Void)? = nil) {
+    func newPlaylist(items: [MusicSong] = [], source: MusicSource? = nil, completion: ((MusicPlaylist) -> Void)? = nil) {
+        if items.isEmpty && source == nil {
+            let chooser = UIAlertController(title: "New Playlist", message: "Choose the music source for this playlist.", preferredStyle: .alert)
+            for source in [MusicSource.apple, .vault] {
+                chooser.addAction(UIAlertAction(title: source == .apple ? "Apple Music" : "Luna Vault", style: .default) { [weak self] _ in self?.newPlaylist(source: source, completion: completion) })
+            }
+            chooser.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            present(chooser, animated: true); return
+        }
         let alert = UIAlertController(title: "New Playlist", message: nil, preferredStyle: .alert)
         alert.addTextField { $0.placeholder = "Playlist Name" }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         let create = UIAlertAction(title: "Create", style: .default) { [weak self, weak alert] _ in
             guard let self, let name = alert?.textFields?.first?.text else { return }
             MusicStyle.run(from: self, errorTitle: "Unable to Create Playlist") {
-                let playlist = try await MusicLibraryController.shared.createPlaylist(name: name, items: items)
+                let playlist = try await MusicLibraryController.shared.createPlaylist(name: name, items: items, source: source ?? items.first?.source ?? .apple)
                 completion?(playlist)
             }
         }
@@ -179,7 +193,7 @@ public class MusicScreenViewController: UIViewController {
         }, for: .editingChanged)
         present(alert, animated: true)
     }
-    func configureSong(_ cell: UITableViewCell, item: MPMediaItem) {
+    func configureSong(_ cell: UITableViewCell, item: MusicSong) {
         var config = cell.defaultContentConfiguration()
         config.text = item.title ?? "Unknown Song"
         config.secondaryText = item.artist ?? "Unknown Artist"
@@ -213,7 +227,7 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
     let titleLabel = UILabel()
     let artistLabel = UILabel()
     private var play: UIButton!
-    private var artworkID: UInt64?
+    private var artworkID: MusicID?
     override init(effect: UIVisualEffect? = nil) {
         let background: UIVisualEffect
         if #available(iOS 26, *) {
@@ -254,10 +268,10 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
         artistLabel.text = player.nowPlaying?.artist ?? "Choose a song from your library"
         if artworkID != player.nowPlaying?.persistentID {
-            MusicStyle.changeArtwork(art, to: MusicStyle.image(player.nowPlaying, size: 100), hasArtwork: player.nowPlaying?.artwork != nil)
+            MusicStyle.changeArtwork(art, to: MusicStyle.image(player.nowPlaying, size: 100), hasArtwork: MusicStyle.image(player.nowPlaying) != nil)
             artworkID = player.nowPlaying?.persistentID
         }
-        play.configuration?.image = UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-        play.accessibilityLabel = player.isPlaying ? "Pause" : "Play"
+        play.configuration?.image = UIImage(systemName: (player.isPlaying || player.isBuffering) ? "pause.fill" : "play.fill")
+        play.accessibilityLabel = (player.isPlaying || player.isBuffering) ? "Pause" : "Play"
     }
 }

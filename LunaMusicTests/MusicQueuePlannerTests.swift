@@ -23,7 +23,7 @@ final class MusicQueuePlannerTests: XCTestCase {
 
     func testAutomaticLibraryWidePlaylistDoesNotFillSongQueue() {
         let curated = MusicQueuePlanner.Playlist(id: 10, songIDs: [1, 2])
-        let automatic = MusicQueuePlanner.Playlist(id: 20, songIDs: Array(1...100),
+        let automatic = MusicQueuePlanner.Playlist(id: 20, songIDs: (1...100).map { MusicID("apple:\($0)") },
                                                    lastPlayed: Date(), isAutomatic: true)
         XCTAssertEqual(MusicQueuePlanner.playlist(containing: 1, in: [automatic, curated])?.id, 10)
         XCTAssertNil(MusicQueuePlanner.playlist(containing: 3, in: [automatic]))

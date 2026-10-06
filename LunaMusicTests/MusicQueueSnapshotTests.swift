@@ -109,7 +109,7 @@ final class MusicLayoutTests: XCTestCase {
     }
     func testEmptyPlaylistMessageFollowsHeaderAndAddMusicIsReachable() {
         let playlist = LayoutPlaylist(items: [])
-        let screen = MusicCollectionViewController(title: "Test Playlist", results: [], collection: .playlist(playlist))
+        let screen = MusicCollectionViewController(title: "Test Playlist", results: [], collection: .playlist(MusicPlaylist(playlist)))
         show(UINavigationController(rootViewController: screen))
         screen.view.layoutIfNeeded()
         let header = screen.table.tableHeaderView!
@@ -125,11 +125,11 @@ final class MusicLayoutTests: XCTestCase {
     func testCollectionSearchFiltersAlbumsAndSongs() {
         let first = LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars")
         let second = LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist")
-        for result in [MusicResult.album(MPMediaItemCollection(items: [first, second])), .artist(MPMediaItemCollection(items: [first, second])), .playlist(LayoutPlaylist(items: [first, second]))] {
+        for result in [MusicResult.album(MusicCollection(items: [first, second].map(MusicSong.init))), .artist(MusicCollection(items: [first, second].map(MusicSong.init))), .playlist(MusicPlaylist(LayoutPlaylist(items: [first, second])))] {
             let rows: [MusicResult]
             if case .artist = result {
-                rows = [.album(MPMediaItemCollection(items: [first])), .album(MPMediaItemCollection(items: [second]))]
-            } else { rows = [.song(first), .song(second)] }
+                rows = [.album(MusicCollection(items: [MusicSong(first)])), .album(MusicCollection(items: [MusicSong(second)]))]
+            } else { rows = [.song(MusicSong(first)), .song(MusicSong(second))] }
             let screen = MusicCollectionViewController(title: result.name, results: rows, collection: result)
             show(UINavigationController(rootViewController: screen))
             let search = screen.navigationItem.searchController!
@@ -148,7 +148,7 @@ final class MusicLayoutTests: XCTestCase {
     func testPlaylistPickerKeepsSelectionAcrossSearchAndSavesSelectedSongs() async {
         let songs = [LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars"), LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist")]
         let saved = expectation(description: "Selected songs sent to playlist API")
-        let picker = MusicPlaylistSongPicker(playlist: LayoutPlaylist(items: []), songProvider: { songs }) { items in
+        let picker = MusicPlaylistSongPicker(playlist: MusicPlaylist(LayoutPlaylist(items: [])), songProvider: { songs.map(MusicSong.init) }) { items in
             XCTAssertEqual(items.map(\.persistentID), [1, 2])
             saved.fulfill()
         }

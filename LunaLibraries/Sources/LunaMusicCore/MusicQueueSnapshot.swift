@@ -2,16 +2,16 @@ import Foundation
 
 /// A paused queue can be shown after relaunch without claiming the system audio session.
 struct MusicQueueSnapshot: Codable, Equatable {
-    var songIDs: [UInt64]
+    var songIDs: [MusicID]
     var currentIndex: Int
     var playbackTime: TimeInterval
-    var originalSongIDs: [UInt64]
+    var originalSongIDs: [MusicID]
     var shuffleEnabled: Bool
     var repeatMode: Int
     var sourcePlaylistName: String?
-    var sourcePlaylistID: UInt64?
+    var sourcePlaylistID: MusicID?
 
-    func resolving(availableIDs: Set<UInt64>) -> MusicQueueSnapshot? {
+    func resolving(availableIDs: Set<MusicID>) -> MusicQueueSnapshot? {
         let indexed = songIDs.enumerated().filter { availableIDs.contains($0.element) }
         guard !indexed.isEmpty else { return nil }
         var result = self

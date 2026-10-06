@@ -4,6 +4,7 @@ import CarPlay
 @main
 final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        MusicVaultWiring.install()
         MusicSystemIntegration.shared.start()
         return true
     }

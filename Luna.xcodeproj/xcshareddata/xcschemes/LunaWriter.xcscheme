@@ -22,24 +22,23 @@
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
-<TestAction
-   buildConfiguration = "Debug"
-   selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
-   selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-   shouldUseLaunchSchemeArgsEnv = "YES"
-   systemAttachmentLifetime = "keepNever"
-   userAttachmentLifetime = "keepNever"
-   shouldAutocreateTestPlan = "NO">
-   <TestPlans>
-      <TestPlanReference
-         reference = "container:LunaWriter.xctestplan"
-         default = "YES">
-      </TestPlanReference>
-      <TestPlanReference
-         reference = "container:LunaWriterUI.xctestplan">
-      </TestPlanReference>
-   </TestPlans>
-</TestAction>
+   <TestAction
+      buildConfiguration = "Debug"
+      selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+      selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      shouldUseLaunchSchemeArgsEnv = "YES"
+      systemAttachmentLifetime = "keepNever"
+      userAttachmentLifetime = "keepNever">
+      <TestPlans>
+         <TestPlanReference
+            reference = "container:LunaWriter.xctestplan"
+            default = "YES">
+         </TestPlanReference>
+         <TestPlanReference
+            reference = "container:LunaWriterUI.xctestplan">
+         </TestPlanReference>
+      </TestPlans>
+   </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
@@ -78,8 +77,11 @@
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
-   <AnalyzeAction buildConfiguration = "Debug">
+   <AnalyzeAction
+      buildConfiguration = "Debug">
    </AnalyzeAction>
-   <ArchiveAction buildConfiguration = "Release" revealArchiveInOrganizer = "YES">
+   <ArchiveAction
+      buildConfiguration = "Release"
+      revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

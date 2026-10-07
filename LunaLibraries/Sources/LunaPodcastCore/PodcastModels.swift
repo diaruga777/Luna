@@ -98,6 +98,7 @@ public struct PodcastEpisodeState: Codable, Equatable, Sendable {
     public init() {}
 }
 public struct PodcastCursor: Codable, Equatable, Sendable {
+    public var updatedAt = Date()
     public var episodeID: String
     public var publishedAt: Date
     public init(episode: PodcastEpisode) { episodeID = episode.id; publishedAt = episode.publishedAt }
@@ -136,6 +137,7 @@ public struct PodcastLibraryState: Codable, Equatable, Sendable {
     public var progress: [String: PodcastEpisodeState] = [:]
     public var cursors: [String: PodcastCursor] = [:]
     public var stations: [PodcastStation] = []
+    public var deletedStations: [String: Date] = [:]
     public var settings = PodcastSettings()
     public var currentEpisodeID: String?
     public var lastPlayedEpisodeID: String?

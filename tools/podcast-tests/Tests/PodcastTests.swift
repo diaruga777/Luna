@@ -93,3 +93,71 @@ final class PodcastTests: XCTestCase {
         XCTAssertEqual(PodcastPolicies.stationEpisodes(station, state: state).map(\.title), ["A", "1"])
     }
 }
+
+extension PodcastTests {
+    func testNeverPlayedFollowedShowAndUnfollowedExclusion() {
+        var (state, episodes) = sample(); state.naturallyExhaustedQueue = true
+        state.cursors["a"] = nil
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[0].id))
+        state.shows["a"]?.followed = false
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[7].id))
+    }
+    func testQueueAddedAfterExhaustionWinsOverSubscriptions() {
+        var (state, episodes) = sample(); state.naturallyExhaustedQueue = true; state.queue = [episodes[3].id]
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[3].id))
+    }
+    func testGestureRepeatedBackAndReversedOrder() {
+        var gesture = MediaSkipGesture()
+        XCTAssertEqual(gesture.receive(.forward, at: 1, canSwitch: true), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 2, canSwitch: true), [])
+        XCTAssertEqual(gesture.receive(.backward, at: 2.5, canSwitch: true), [.backward])
+        XCTAssertEqual(gesture.receive(.forward, at: 3, canSwitch: true), [.switchQueue])
+        XCTAssertEqual(gesture.receive(.backward, at: 4, canSwitch: true), [])
+        gesture.cancel(); XCTAssertEqual(gesture.receive(.forward, at: 5, canSwitch: true), [.forward])
+    }
+    @MainActor func testFeedRefreshPreservesFollowSettingsArchiveAndCursor() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try PodcastStore(url: directory.appendingPathComponent("library.json"))
+        var (state, episodes) = sample(); state.shows["a"]?.settings.automaticDownloadLimit = 5
+        try store.update { $0 = state }
+        var show = state.shows["a"]!; show.title = "Updated"; show.followed = false; show.settings.automaticDownloadLimit = 0
+        _ = try store.merge(PodcastFeed(show: show, episodes: [episodes[3]]), existingID: "a")
+        XCTAssertTrue(store.state.shows["a"]!.followed)
+        XCTAssertEqual(store.state.shows["a"]?.settings.automaticDownloadLimit, 5)
+        XCTAssertEqual(store.state.episodes.count, 8)
+        XCTAssertEqual(store.state.cursors["a"], state.cursors["a"])
+        XCTAssertEqual(store.state.shows["a"]?.title, "Updated")
+    }
+    @MainActor func testCorruptStoreIsNotOverwritten() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let invalid = Data("broken".utf8); try invalid.write(to: url)
+        XCTAssertThrowsError(try PodcastStore(url: url)); XCTAssertEqual(try Data(contentsOf: url), invalid)
+    }
+    func testMergeProgressFollowAndStationTombstoneDoesNotReplaceLocalQueue() {
+        var (local, episodes) = sample(); var remote = local
+        local.queue = [episodes[0].id]; remote.queue = [episodes[7].id]
+        remote.shows["a"]?.followed = false; remote.shows["a"]?.updatedAt = Date().addingTimeInterval(100)
+        var progress = PodcastEpisodeState(); progress.position = 42; progress.updatedAt = Date().addingTimeInterval(100); remote.progress[episodes[0].id] = progress
+        let station = PodcastStation(name: "Deleted"); local.stations = [station]; remote.stations = [station]; local.deletedStations[station.id] = Date().addingTimeInterval(100)
+        let merged = PodcastLibraryMerge.merge(local: local, remote: remote)
+        XCTAssertEqual(merged.queue, local.queue); XCTAssertEqual(merged.lastPlayedEpisodeID, local.lastPlayedEpisodeID)
+        XCTAssertEqual(merged.progress[episodes[0].id]?.position, 42); XCTAssertEqual(merged.shows["a"]?.followed, false); XCTAssertTrue(merged.stations.isEmpty)
+    }
+    func testInvalidURLsAtomAndMalformedXML() throws {
+        XCTAssertNil(PodcastIdentity.webURL("file:///private/etc/passwd"))
+        XCTAssertNil(PodcastIdentity.webURL("javascript:alert(1)"))
+        XCTAssertThrowsError(try PodcastFeed.parse(Data("<html><title>No</title></html>".utf8), url: URL(string: "https://example.com/rss")!))
+        let atom = "<feed xmlns='http://www.w3.org/2005/Atom'><title>Atom</title><entry><id>x</id><title>Episode</title><published>2026-10-01T10:00:00Z</published><link rel='enclosure' type='audio/mpeg' href='audio.mp3'/></entry></feed>"
+        let feed = try PodcastFeed.parse(Data(atom.utf8), url: URL(string: "https://example.com/feed")!)
+        XCTAssertEqual(feed.episodes.first?.mediaURL.absoluteString, "https://example.com/audio.mp3")
+        XCTAssertNotEqual(feed.episodes.first?.publishedAt, .distantPast)
+    }
+    func testTTMLAndJSONTranscripts() throws {
+        let ttml = "<tt><body><p begin='1.5s' dur='2500ms'>Hello <span>world</span></p></body></tt>"
+        XCTAssertEqual(try PodcastTranscript.parse(Data(ttml.utf8), type: "application/ttml+xml"), [.init(start: 1.5, end: 4, text: "Hello world")])
+        let json = "{\"segments\":[{\"startTime\":3,\"endTime\":5,\"body\":\"Hello\"}]}"
+        XCTAssertEqual(try PodcastTranscript.parse(Data(json.utf8), type: "application/json").first?.start, 3)
+    }
+}

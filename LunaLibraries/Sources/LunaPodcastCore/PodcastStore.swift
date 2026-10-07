@@ -28,7 +28,7 @@ import Foundation
             let old = state.shows[id]
             var show = feed.show; show.id = id
             if let old {
-                show.followed = old.followed; show.settings = old.settings
+                show.followed = old.followed; show.settings = old.settings; show.updatedAt = old.updatedAt
                 show.directoryID = old.directoryID ?? show.directoryID
                 show.etag = old.etag; show.lastModified = old.lastModified
             } else { show.settings.newestFirst = !show.serial }

@@ -2,6 +2,7 @@ import UIKit
 import MediaPlayer
 import AVKit
 import LunaMusicCore
+import LunaPodcastCore
 
 @MainActor
 internal enum MusicStyle {
@@ -120,6 +121,8 @@ public class MusicScreenViewController: UIViewController {
         table.verticalScrollIndicatorInsets.bottom = 72
         mini.onOpen = { [weak self] in self?.presentPlayer(queue: false) }
         observe(.lunaMusicPlaybackChanged) { [weak self] in self?.mini.refresh() }
+        observe(.lunaPodcastPlaybackChanged) { [weak self] in self?.mini.refresh() }
+        observe(.lunaMediaSurfaceChanged) { [weak self] in self?.mini.refresh() }
         mini.refresh()
     }
     public override func viewDidLayoutSubviews() {
@@ -137,6 +140,7 @@ public class MusicScreenViewController: UIViewController {
     }
     deinit { notificationTokens.forEach(NotificationCenter.default.removeObserver) }
     func presentPlayer(queue: Bool) {
+        if MediaPlaybackCoordinator.shared.active == .podcasts { presentPodcastPlayer(queue: queue); return }
         view.endEditing(true)
         let controller = MusicPlayerViewController(showQueue: queue)
         controller.modalPresentationStyle = .fullScreen
@@ -228,6 +232,8 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
     let artistLabel = UILabel()
     private var play: UIButton!
     private var artworkID: MusicID?
+    private var podcastArtworkID: String?
+    private var nextButton: UIButton!
     override init(effect: UIVisualEffect? = nil) {
         let background: UIVisualEffect
         if #available(iOS 26, *) {
@@ -250,20 +256,35 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         let open = UIButton(type: .custom)
         open.addAction(UIAction { [weak self] _ in self?.onOpen?() }, for: .touchUpInside)
         open.accessibilityLabel = "Open Now Playing"
-        play = MusicStyle.plainButton("play.fill", label: "Play", size: 18) { MusicPlaybackController.shared.togglePlayPause() }
-        let next = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 16) { MusicPlaybackController.shared.next() }
-        play.tintColor = .label; next.tintColor = .label
-        let stack = UIStackView(arrangedSubviews: [art, labels, play, next]); stack.spacing = 8; stack.alignment = .center
+        play = MusicStyle.plainButton("play.fill", label: "Play", size: 18) { Task { try? await MediaPlaybackCoordinator.shared.toggle() } }
+        nextButton = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 16) { MediaPlaybackCoordinator.shared.skip(.forward) }
+        play.tintColor = .label; nextButton.tintColor = .label
+        let stack = UIStackView(arrangedSubviews: [art, labels, play, nextButton]); stack.spacing = 8; stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
         open.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(open)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
-            art.widthAnchor.constraint(equalToConstant: 32), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 44), next.widthAnchor.constraint(equalToConstant: 44), play.heightAnchor.constraint(greaterThanOrEqualToConstant: 44), next.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            art.widthAnchor.constraint(equalToConstant: 32), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.widthAnchor.constraint(equalToConstant: 44), nextButton.widthAnchor.constraint(equalToConstant: 44), play.heightAnchor.constraint(greaterThanOrEqualToConstant: 44), nextButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             open.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), open.topAnchor.constraint(equalTo: contentView.topAnchor), open.bottomAnchor.constraint(equalTo: contentView.bottomAnchor), open.trailingAnchor.constraint(equalTo: play.leadingAnchor)
         ])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func refresh() {
+        if MediaPlaybackCoordinator.shared.active == .podcasts {
+            let player = PodcastPlaybackController.shared
+            titleLabel.text = player.currentEpisode?.title ?? "Not Playing"
+            artistLabel.text = PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""]?.title ?? "Choose a podcast"
+            if podcastArtworkID != player.currentEpisode?.id {
+                podcastArtworkID = player.currentEpisode?.id; artworkID = nil
+                PodcastUI.artwork(player.currentEpisode?.artworkURL, into: art)
+            }
+            play.configuration?.image = UIImage(systemName: player.isPlaying || player.isBuffering ? "pause.fill" : "play.fill")
+            play.accessibilityLabel = player.isPlaying || player.isBuffering ? "Pause" : "Play"
+            nextButton.configuration?.image = UIImage(systemName: "goforward.30"); nextButton.accessibilityLabel = "Skip Forward"
+            return
+        }
+        podcastArtworkID = nil
+        nextButton.configuration?.image = UIImage(systemName: "forward.fill"); nextButton.accessibilityLabel = "Next Song"
         let player = MusicPlaybackController.shared
         titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
         artistLabel.text = player.nowPlaying?.artist ?? "Choose a song from your library"

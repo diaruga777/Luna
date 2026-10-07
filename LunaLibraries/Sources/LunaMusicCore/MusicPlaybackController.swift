@@ -3,6 +3,7 @@ import UIKit
 import Combine
 import Foundation
 import MediaPlayer
+import LunaPodcastCore
 
 @MainActor
 public final class MusicPlaybackController: ObservableObject {
@@ -18,6 +19,10 @@ public final class MusicPlaybackController: ObservableObject {
     @Published public private(set) var shuffleEnabled = false
     @Published public private(set) var repeatMode: MPMusicRepeatMode = .none
     @Published public private(set) var errorMessage: String?
+
+    public var hasRestorableQueue: Bool { nowPlaying != nil || pendingSnapshot != nil || !queue.isEmpty }
+    public var willPlay: (() -> Void)?
+    public var remoteSkip: ((MediaSkipGesture.Direction, TimeInterval) -> Void)?
 
     private let player = MPMusicPlayerController.applicationQueuePlayer
     private let defaults: UserDefaults
@@ -110,6 +115,8 @@ public final class MusicPlaybackController: ObservableObject {
     /// Called by an explicit Play/Resume action, including Shortcuts and playback controls.
     public func resume() async throws {
         await restoreIfNeeded()
+        guard hasRestorableQueue else { throw MusicPlaybackError.emptyQueue }
+        willPlay?()
         if usesFileQueue {
             if advancing { return }
             filePlaybackRequested = true
@@ -117,7 +124,12 @@ public final class MusicPlaybackController: ObservableObject {
             if needsPreparation || (nowPlaying?.source == .vault && (filePlayer.currentItem == nil || filePlayer.currentItem?.status == .failed)) {
                 let time = playbackTime
                 try await selectFileQueueItem(at: currentIndex, time: time)
-            } else if nowPlaying?.source == .vault { filePlayer.play() } else { player.play() }
+            } else if nowPlaying?.source == .vault {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
+                try AVAudioSession.sharedInstance().setActive(true)
+                _ = await fileSession.becomeActiveIfPossible()
+                filePlayer.play()
+            } else { player.play() }
             return
         }
         guard !isPreparing else { return }
@@ -186,6 +198,7 @@ public final class MusicPlaybackController: ObservableObject {
 
     private func start(_ items: [MusicSong], playlist: MusicPlaylist?, shuffled: Bool, originalIDs: [MusicID]) async throws {
         guard !items.isEmpty else { throw MusicPlaybackError.emptyQueue }
+        willPlay?()
         if items.contains(where: { $0.source == .vault }) {
             let generation = UUID(); requestID = generation
             if let queueMutation { await queueMutation.value }
@@ -241,7 +254,17 @@ public final class MusicPlaybackController: ObservableObject {
         }
     }
 
+    public func pause() {
+        let preparing = isPreparing || advancing
+        requestID = UUID(); isPreparing = false; advancing = false
+        filePlaybackRequested = false; isBuffering = false
+        filePlayer.pause(); player.pause(); isPlaying = false
+        if preparing { needsPreparation = true }
+        changed()
+    }
+
     public func togglePlayPause() {
+        if !isPlaying { willPlay?() }
         if usesFileQueue {
             if isPlaying || filePlaybackRequested {
                 filePlaybackRequested = false; isBuffering = false; filePlayer.pause(); player.pause(); isPlaying = false; changed()
@@ -488,8 +511,12 @@ public final class MusicPlaybackController: ObservableObject {
         add(remote.playCommand) { [weak self] _ in Task { do { try await self?.resume() } catch { self?.report(error) } } }
         add(remote.pauseCommand) { [weak self] _ in self?.filePlaybackRequested = false; self?.filePlayer.pause(); self?.refresh() }
         add(remote.togglePlayPauseCommand) { [weak self] _ in self?.togglePlayPause() }
-        add(remote.nextTrackCommand) { [weak self] _ in self?.next() }
-        add(remote.previousTrackCommand) { [weak self] _ in self?.previous() }
+        add(remote.nextTrackCommand) { [weak self] event in
+            if let handler = self?.remoteSkip { handler(.forward, event.timestamp) } else { self?.next() }
+        }
+        add(remote.previousTrackCommand) { [weak self] event in
+            if let handler = self?.remoteSkip { handler(.backward, event.timestamp) } else { self?.previous() }
+        }
         add(remote.changePlaybackPositionCommand) { [weak self] event in
             if let event = event as? MPChangePlaybackPositionCommandEvent { self?.seek(to: event.positionTime) }
         }

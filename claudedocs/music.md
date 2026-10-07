@@ -211,3 +211,119 @@ the new focused check after correcting its iOS 26 search-dismiss button label).
 The new check exercises Settings, both policy limits, restoring the default of
 three, choosing the playlist source, and creating/deleting a Vault playlist.
 The settings screenshot was inspected for layout and readable controls.
+
+## Podcasts (2026-10-08)
+
+Music and Podcasts are separate tabs in Luna Music and retain independent queues.
+The Podcasts surface includes Home (continue/latest/recent), New (public directory
+charts and categories), Library (followed shows/latest/saved/downloaded/played,
+custom stations and favorite categories), and show/episode/library search.
+Apple's public iTunes directory supplies discovery; publisher RSS/Atom feeds
+supply the episodes. A URL entry point accepts private or public feed addresses.
+Podcast access does not depend on Apple Music authorization.
+
+`LunaPodcastCore` contains Foundation-only models, namespace-aware RSS parsing,
+transcript/OPML parsing, atomic persistence, merge policy and continuation/gesture
+rules. `LunaMusicCore` owns the runtime services and `LunaMusicUI` owns UIKit views.
+State lives in `Application Support/LunaMusic/Podcasts/library.json`, independently
+of `saves.sqlite` and the music queue. Corrupt/unknown-version libraries report an
+error instead of replacing the user's file. Feed refresh preserves removed archive
+episodes, listening history and per-show settings. Conditional requests use ETag
+and Last-Modified. Followed feeds poll on foreground and every 15 foreground
+minutes, with opportunistic BGAppRefreshTask polling while backgrounded; iOS does
+not promise a polling interval. Notification opt-in is per show.
+
+Streaming uses AVPlayer with a spoken-audio session, elapsed-time checkpoints,
+interruption/route handling, lock-screen metadata, remote commands and AirPlay.
+Native playback exposes configurable back/forward intervals (15/30 seconds by
+default), speed 0.5–3×, time seeking, sleep timers including end-of-episode, volume,
+video/Picture in Picture, publisher chapters (RSS, JSON or embedded metadata), and
+publisher VTT/SRT/TTML/JSON/plain-text transcripts with search and timed seeking.
+Saved episodes, manual played/unplayed changes, share, Play Next, Add to Queue,
+queue reordering/removal/clear, and per-show continuation are available from episode
+menus. Stations select followed shows, count, order, played state and media type.
+
+Downloads use background URLSession tasks, with AVAssetDownloadURLSession for HLS.
+The persisted manifest reconnects tasks across launches and reports interrupted or
+failed downloads for retry. Completed ordinary files are installed atomically and
+checked against the manifest size before playback. HLS locations remain where
+AVFoundation installs them. The cache is excluded from backup. Settings cover
+cellular streaming/downloads, per-show automatic limits, saved-episode downloads,
+played-file retention (24 hours by default) and storage removal. Explicit deletion
+suppresses automatic re-download until requested again. Failed automatic downloads
+retry on a later poll after 15 minutes. HTTP is permitted because arbitrary
+publisher RSS feeds and enclosures may still use it; Luna's own services retain
+their separate authenticated protocols.
+
+Optional iCloud sync uses a private `LunaPodcastLibrary` record with a CKAsset,
+optimistic conflict retries, timestamp merges and station-deletion tombstones.
+Follows, show settings, episodes, listened/saved/progress state and stations merge;
+local media files, global device settings and active queues remain device-specific.
+A fresh device imports the last-listened identity; an existing device retains its
+own resume identity. OPML export/import provides portable followed-show lists.
+Sync requires the app's CloudKit entitlements, a signed-in account and production
+CloudKit schema deployment for distribution. Local debug entitlement overrides
+must also include the CloudKit container/services keys; the repository's normal
+Music entitlements include them.
+
+### Resume and queue switching contract
+
+`ResumeLastPodcastIntent` is an AudioPlaybackIntent with `openAppWhenRun = false`.
+It resumes the actual last-played episode, preserving position across launches and
+regardless of what media is currently active. Preparation alone does not overwrite
+last-played history: AVPlayer must start playing. An empty history does nothing.
+Only a natural end of the final queue item permits another episode. It refreshes
+followed feeds, then chooses the oldest unplayed episode after each show's saved
+listening cursor and takes the oldest of those candidates, with stable ID ties.
+For the requested example, B/3 yields C versus 4; D/4 yields no playback. Manually
+marking an episode played never grants the fallback permission. Explicit queued
+work added after exhaustion takes priority. A never-played followed show contributes
+its oldest episode when fallback is permitted.
+
+`MediaPlaybackCoordinator` owns active media and transport routing. For app-owned
+sessions, back then forward within **at most two monotonic seconds** consumes both
+skips and switches queues. A standalone back waits two seconds before applying,
+so a chord leaves the source queue/position untouched. No destination means normal
+skip behavior; a failed switch attempts to restore the prior playing source.
+The same policy serves in-app controls, widget commands, podcast and Vault remote
+sessions, and CarPlay. `SwitchMediaQueueIntent` and a CarPlay Now Playing button
+provide an explicit switch as well. CarPlay can browse podcasts with music access
+denied, and exposes followed shows, recent/downloaded/saved episodes, stations and
+Now Playing/queue controls.
+
+### Verification and platform boundaries
+
+The implementation is **not a claim of full Apple Podcasts parity**. Apple's
+application music player owns protected Apple Music hardware-command handling;
+public MediaPlayer APIs do not expose those commands for interception. Consequently
+the two-button chord works through Luna's app-owned podcast/Vault command handlers
+and in-app controls, but cannot be promised while Apple Music owns remote playback.
+Use the explicit CarPlay switch button or Switch Music and Podcasts shortcut there.
+Hardware accessory delivery and entitlement-enabled CarPlay require real-device
+validation; simulator policy tests cannot establish that evidence.
+
+Apple account follows/history, Apple-paid podcast audio, ratings/reviews,
+Apple editorial/personalized recommendations, proprietary Enhance Dialogue, and
+Apple-generated transcripts/chapters are not exposed through the public directory
+and RSS interfaces. Luna uses supplied publisher metadata; it does not fabricate
+those services. CloudKit live multi-device sync, HLS background completion, media
+interruption behavior and actual car/headphone switching remain device checks.
+Queues/global settings are not cross-device synchronized. These limits are tracked
+explicitly rather than labeled a reduced v1.
+
+Validation on Xcode 26.2 / iPhone 17 Pro / iOS 26.2:
+
+- App build succeeds with normal signing and background/CloudKit entitlements.
+- 34 hosted Music unit tests pass, including three podcast runtime restoration,
+  no-history/no-audio-ownership, and playback setting tests.
+- All 16 Foundation policy/feed/store/merge tests pass; run with
+  `swift test --package-path tools/podcast-tests`.
+- Existing five Music UI tests pass. The new Podcasts navigation/settings test
+  passes after correcting a UIKit tab-title propagation issue.
+- The local RSS integration UI test passes for following, automatic media download,
+  saving/unsaving, and marking played. Show and settings screenshots were inspected.
+  Run `python3 tools/podcast-tests/fixture_server.py` and prefix the Xcode UI test
+  command with `TEST_RUNNER_LUNA_PODCAST_FIXTURE_URL=http://127.0.0.1:19265/feed.xml`.
+  Without this opt-in fixture URL, only that integration test is skipped.
+- Live public-directory probes returned show search, episode search and 100 chart
+  results. No Apple account or private credentials were used.

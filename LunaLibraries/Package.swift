@@ -12,8 +12,9 @@ let package = Package(
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(name: "LunaKeyboardKit", type: .dynamic, targets: ["LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig"]),
+        .library(name: "LunaPodcastCore", targets: ["LunaPodcastCore"]),
         .library(name: "LunaMusicFiles", targets: ["LunaMusicFiles"]),
-        .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI"]),
+        .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI", "LunaPodcastCore"]),
         // MARK: - Per-app kits
         //
         // One dynamic kit per content app. The app, every one of its
@@ -150,8 +151,9 @@ let package = Package(
         .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicFiles"),
-        .target(name: "LunaMusicCore", dependencies: ["LunaMusicFiles"]),
-        .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore"]),
+        .target(name: "LunaPodcastCore"),
+        .target(name: "LunaMusicCore", dependencies: ["LunaMusicFiles", "LunaPodcastCore"]),
+        .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore", "LunaPodcastCore"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
         .target(name: "LunaAppConfig"),

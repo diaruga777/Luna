@@ -35,3 +35,17 @@ Verified: shared/widget sources and app integration sources typecheck against th
 - [Creating controls](https://developer.apple.com/documentation/widgetkit/creating-controls-to-perform-actions-across-the-system)
 - [CarPlay entitlement approval](https://developer.apple.com/documentation/carplay/requesting-carplay-entitlements)
 - [Song.hasLyrics](https://developer.apple.com/documentation/musickit/song/haslyrics)
+
+## Podcast integration (2026-10-08)
+
+`ResumeLastPodcastIntent` resumes the exact last-played podcast; it never redirects
+to generic Now Playing. Natural exhaustion of the final queued item alone allows
+the chronological subscription continuation policy documented in `music.md`.
+`SwitchMediaQueueIntent`, the CarPlay switch button and the shared media coordinator
+preserve independent music/podcast positions. Widget transport/status follows the
+active surface. CarPlay includes podcast browsing without Music authorization.
+The back→forward chord is implemented for app-owned remote sessions. Apple's
+application music player internally owns protected Apple Music remote events, so
+that hardware direction remains unsupported by public APIs; explicit switching is
+available. Real accessory/CarPlay validation and the managed CarPlay entitlement
+are still required before claiming hardware compatibility.

@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import LunaPodcastCore
 import MediaPlayer
 @testable import LunaMusicCore
 @testable import LunaMusicUI
@@ -216,5 +217,39 @@ private actor FakeMusicServer {
         }
         readCount += 1; bytesRead += request.length
         return try JSONEncoder().encode(MusicFileResponse(data: bytes.subdata(in: Int(request.offset)..<Int(request.offset) + request.length)))
+    }
+}
+
+@MainActor final class PodcastRuntimeTests: XCTestCase {
+    func testNoHistoryResumeDoesNotTakeAudioOwnership() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = PodcastLibraryController(url: directory.appendingPathComponent("library.json"))
+        let player = PodcastPlaybackController(library: library)
+        var activations = 0; player.willPlay = { activations += 1 }
+        try await player.resumeLastPodcast()
+        XCTAssertEqual(activations, 0); XCTAssertNil(player.currentEpisode); XCTAssertFalse(player.isPlaying)
+    }
+    func testColdRestoreRetainsExactEpisodeAndPositionPaused() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = PodcastLibraryController(url: directory.appendingPathComponent("library.json"))
+        let episode = PodcastEpisode(showID: "show", guid: "last", title: "Last Played", publishedAt: Date(), mediaURL: URL(string: "https://example.com/last.mp3")!)
+        try library.edit { $0.episodes[episode.id] = episode }
+        try library.requireStore().recordPlaybackStarted(episode.id)
+        try library.requireStore().recordPosition(episode.id, position: 123.5)
+        let restored = PodcastLibraryController(url: directory.appendingPathComponent("library.json"))
+        let player = PodcastPlaybackController(library: restored)
+        XCTAssertEqual(player.currentEpisode?.id, episode.id); XCTAssertEqual(player.position, 123.5); XCTAssertFalse(player.isPlaying)
+    }
+    func testRateAndSeekRejectNonFiniteValues() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let player = PodcastPlaybackController(library: PodcastLibraryController(url: directory.appendingPathComponent("library.json")))
+        player.setRate(.nan); player.setRate(0); player.setRate(10); player.seek(to: .infinity)
+        XCTAssertEqual(player.rate, 1); XCTAssertEqual(player.position, 0)
+        player.setRate(1.5); XCTAssertEqual(player.rate, 1.5)
+        player.setSleepTimer(minutes: nil, endOfEpisode: true); XCTAssertTrue(player.sleepAtEpisodeEnd)
+        player.setSleepTimer(minutes: nil); XCTAssertFalse(player.sleepAtEpisodeEnd)
     }
 }

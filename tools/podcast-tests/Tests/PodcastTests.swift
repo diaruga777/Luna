@@ -161,3 +161,17 @@ extension PodcastTests {
         XCTAssertEqual(try PodcastTranscript.parse(Data(json.utf8), type: "application/json").first?.start, 3)
     }
 }
+
+extension PodcastTests {
+    func testPlayedDownloadRetentionAndSavedPins() {
+        var (state, episodes) = sample(); let id = episodes[0].id
+        let now = Date(); var progress = PodcastEpisodeState(); progress.listened = true; progress.completedAt = now
+        state.progress[id] = progress
+        XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now))
+        XCTAssertTrue(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
+        state.progress[id]?.saved = true
+        XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
+        state.progress[id]?.saved = false; state.settings.removePlayedDownloads = false
+        XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
+    }
+}

@@ -40,6 +40,15 @@ public enum PodcastPolicies {
         }
         return result
     }
+    public static func shouldRemoveDownload(episodeID: String, manual: Bool, wanted: Set<String>, state: PodcastLibraryState, now: Date = Date()) -> Bool {
+        let progress = state.progress[episodeID]
+        guard progress?.saved != true else { return false }
+        if progress?.listened == true {
+            guard state.settings.removePlayedDownloads, let completed = progress?.completedAt else { return false }
+            return now.timeIntervalSince(completed) >= state.settings.playedRetentionHours * 3600
+        }
+        return !manual && !wanted.contains(episodeID)
+    }
     public static func stationEpisodes(_ station: PodcastStation, state: PodcastLibraryState) -> [PodcastEpisode] {
         let ids = station.allShows ? state.shows.values.filter(\.followed).map(\.id) : station.showIDs
         let episodes = ids.flatMap { id -> [PodcastEpisode] in

@@ -1,4 +1,5 @@
 import LunaMusicCore
+import LunaPodcastCore
 import ActivityKit
 import MediaPlayer
 import UIKit
@@ -17,7 +18,7 @@ import OSLog
 
     func start() {
         guard observers.isEmpty else { return }
-        for name in [Notification.Name.lunaMusicPlaybackChanged, UIApplication.didBecomeActiveNotification] {
+        for name in [Notification.Name.lunaMusicPlaybackChanged, .lunaPodcastPlaybackChanged, .lunaMediaSurfaceChanged, UIApplication.didBecomeActiveNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.scheduleRefresh() }
             })
@@ -45,6 +46,16 @@ import OSLog
     }
 
     private func refresh() async {
+        if MediaPlaybackCoordinator.shared.active == .podcasts,
+           let episode = PodcastPlaybackController.shared.currentEpisode {
+            let player = PodcastPlaybackController.shared
+            let library = PodcastLibraryController.shared.state
+            let state = MusicActivityAttributes.ContentState(title: episode.title, artist: library.shows[episode.showID]?.title ?? "Podcast", nextTitle: (library.queue + library.continuation).first.flatMap { library.episodes[$0]?.title }, playlist: "Podcasts", isPlaying: player.isPlaying, elapsed: player.position, duration: player.duration, updatedAt: Date())
+            if let url = MusicWidgetSnapshot.storeURL, let data = try? JSONEncoder().encode(MusicWidgetSnapshot(state: state)) {
+                try? data.write(to: url, options: [.atomic]); WidgetCenter.shared.reloadTimelines(ofKind: MusicWidgetSnapshot.kind)
+            }
+            lastState = state; lastSongID = nil; return
+        }
         let player = MusicPlaybackController.shared
         guard let song = player.nowPlaying else {
             lastState = nil

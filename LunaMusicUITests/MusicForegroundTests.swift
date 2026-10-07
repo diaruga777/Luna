@@ -6,6 +6,7 @@ final class MusicForegroundTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication(bundleIdentifier: "com.hsanabria.luna.music")
+        app.launchArguments = ["-LunaMusic.browsingTab", "0"]
         app.launch()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         if springboard.alerts.firstMatch.waitForExistence(timeout: 2) {
@@ -13,6 +14,53 @@ final class MusicForegroundTests: XCTestCase {
             if alert.buttons["Allow"].exists { alert.buttons["Allow"].tap() }
             else if alert.buttons["OK"].exists { alert.buttons["OK"].tap() }
         }
+    }
+
+    func testPodcastsNavigationAndPlaybackSettings() {
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        let podcastTab = app.tabBars.buttons["Podcasts"]
+        XCTAssertTrue(podcastTab.waitForExistence(timeout: 5)); podcastTab.tap()
+        defer { app.tabBars.buttons["Music"].tap() }
+        let sections = app.segmentedControls["podcasts.sections"]
+        XCTAssertTrue(sections.waitForExistence(timeout: 5)); sections.buttons["Library"].tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Downloaded"].exists)
+        sections.buttons["Search"].tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+        sections.buttons["Home"].tap()
+        let more = app.navigationBars.buttons["Podcast Options"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.staticTexts["Skip Back"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["15 seconds"].exists)
+        XCTAssertTrue(app.staticTexts["30 seconds"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast playback settings"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+    }
+
+    func testPodcastFeedFollowAutoDownloadAndEpisodeActions() throws {
+        guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        app.tabBars.buttons["Podcasts"].tap()
+        app.navigationBars.buttons["Podcast Options"].tap()
+        app.buttons["Follow a Show by URL"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap(); field.typeText(feedURL)
+        app.alerts.buttons["Follow"].tap()
+        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars.buttons["Following"].exists)
+        let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
+        XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
+        let episode = app.cells.containing(.staticText, identifier: "Fixture Episode One").firstMatch
+        episode.buttons["Episode Actions"].tap(); app.buttons["Save Episode"].tap()
+        episode.buttons["Episode Actions"].tap(); XCTAssertTrue(app.buttons["Unsave Episode"].waitForExistence(timeout: 3)); app.buttons["Unsave Episode"].tap()
+        episode.buttons["Episode Actions"].tap(); app.buttons["Mark as Played"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Played'")).firstMatch.waitForExistence(timeout: 3))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast followed feed and offline episode"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.navigationBars.buttons["Following"].tap()
+        app.tabBars.buttons["Music"].tap()
     }
 
     func testVaultCacheSettingsAndPlaylistSourceChoice() {

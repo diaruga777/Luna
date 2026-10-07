@@ -15,6 +15,8 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Library"
+        tabBarItem = UITabBarItem(title: "Music", image: UIImage(systemName: "music.note"), tag: 0)
+        navigationController?.tabBarItem = tabBarItem
         navigationController?.navigationBar.prefersLargeTitles = true
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchResultsUpdater = self

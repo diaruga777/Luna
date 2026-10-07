@@ -78,3 +78,20 @@ iOS schedules background polling opportunistically, not on a guaranteed interval
 Record completed checks and unresolved acceptance items here as implementation
 progresses. The original checkout contains unrelated uncommitted project changes;
 preserve them during merge.
+
+## Execution result (2026-10-08)
+
+Implemented steps 1–5 and simulator verification. Core policy/feed/store/merge tests,
+34 hosted Music tests, the five existing Music UI checks and both new podcast UI
+checks have passing runs. The RSS UI fixture caught and verified fixes for an
+asynchronous alert-address lifetime bug and the navigation run caught UIKit
+renaming the Music tab. Download retention has a dedicated regression check.
+
+The deliverable is the implemented public-feed client, **not a verified wholesale
+Apple Podcasts clone**. Remaining gaps are explicit: protected Apple Music remote
+interception is not public; Apple services listed above cannot be reproduced from
+RSS; active queues/device settings do not sync between devices; generated
+transcripts/chapters/Enhance Dialogue are not implemented. Physical CarPlay,
+headphone gesture delivery, HLS background recovery and live CloudKit account/schema
+behavior are not proven by simulator tests. See `claudedocs/music.md` for the exact
+implementation and validation contract.

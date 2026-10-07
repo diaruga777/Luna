@@ -10,9 +10,7 @@ struct ToggleMusicPlaybackIntent: AudioPlaybackIntent {
     static var description = IntentDescription("Play or pause the current Luna Music queue.")
     @MainActor func perform() async throws -> some IntentResult {
         #if LUNA_MUSIC_APP
-        let player = MusicPlaybackController.shared
-        if player.isPlaying { player.togglePlayPause() }
-        else { try await player.resume() }
+        try await MediaPlaybackCoordinator.shared.toggle()
         #endif
         return .result()
     }
@@ -22,7 +20,7 @@ struct NextMusicTrackIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Next Song"
     @MainActor func perform() async throws -> some IntentResult {
         #if LUNA_MUSIC_APP
-        MusicPlaybackController.shared.next()
+        MediaPlaybackCoordinator.shared.skip(.forward)
         #endif
         return .result()
     }
@@ -32,7 +30,7 @@ struct PreviousMusicTrackIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Previous Song"
     @MainActor func perform() async throws -> some IntentResult {
         #if LUNA_MUSIC_APP
-        MusicPlaybackController.shared.previous()
+        MediaPlaybackCoordinator.shared.skip(.backward)
         #endif
         return .result()
     }

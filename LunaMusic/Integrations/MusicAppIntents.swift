@@ -79,8 +79,8 @@ struct PlayLibraryMusicIntent: AudioPlaybackIntent {
 struct PauseMusicIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Pause Music"
     @MainActor func perform() async throws -> some IntentResult {
-        let player = MusicPlaybackController.shared
-        if player.isPlaying { player.togglePlayPause() }
+        MediaPlaybackCoordinator.shared.install()
+        MediaPlaybackCoordinator.shared.pause()
         return .result()
     }
 }
@@ -95,12 +95,14 @@ struct ResumeMusicIntent: AudioPlaybackIntent {
 }
 
 extension Notification.Name {
+    static let lunaPodcastOpenEpisode = Notification.Name("lunaPodcastOpenEpisode")
     static let lunaMusicOpenQueue = Notification.Name("lunaMusicOpenQueue")
     static let lunaMusicOpenSearch = Notification.Name("lunaMusicOpenSearch")
 }
 
 /// Retains cold-start intent routing until the scene has installed its observer.
 @MainActor enum MusicIntentRoute {
+    static var pendingPodcastEpisodeID: String?
     static var pendingURL: URL?
     static func open(_ url: URL) {
         pendingURL = url
@@ -132,11 +134,34 @@ struct SearchMusicLibraryIntent: AppIntent {
 
 struct LunaMusicShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: ResumeLastPodcastIntent(), phrases: ["Resume my last podcast in \(.applicationName)"], shortTitle: "Resume Last Podcast", systemImageName: "dot.radiowaves.left.and.right")
+        AppShortcut(intent: SwitchMediaQueueIntent(), phrases: ["Switch queues in \(.applicationName)"], shortTitle: "Switch Music and Podcasts", systemImageName: "arrow.triangle.swap")
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
         AppShortcut(intent: OpenMusicQueueIntent(), phrases: ["Open my queue in \(.applicationName)"], shortTitle: "Playback Queue", systemImageName: "list.bullet")
         AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Music", systemImageName: "pause.fill")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
+    }
+}
+
+
+struct ResumeLastPodcastIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Resume Last Podcast"
+    static var description = IntentDescription("Resume the exact podcast episode last played. Only after the last queued episode naturally finishes, play the oldest unplayed episode after each followed show's listening cursor. Do nothing when caught up.")
+    static var openAppWhenRun = false
+    @MainActor func perform() async throws -> some IntentResult {
+        MediaPlaybackCoordinator.shared.install()
+        try await PodcastPlaybackController.shared.resumeLastPodcast()
+        return .result()
+    }
+}
+struct SwitchMediaQueueIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Switch Music and Podcasts"
+    static var openAppWhenRun = false
+    @MainActor func perform() async throws -> some IntentResult {
+        MediaPlaybackCoordinator.shared.install()
+        await MediaPlaybackCoordinator.shared.switchQueue()
+        return .result()
     }
 }

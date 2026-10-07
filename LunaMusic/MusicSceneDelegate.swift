@@ -1,11 +1,14 @@
 import UIKit
 import LunaMusicCore
 import LunaMusicUI
+import LunaPodcastCore
 
 /// External navigation wins over the ordinary foreground search, including
 /// URLs delivered after sceneDidBecomeActive during a warm launch.
 final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private var podcasts: PodcastLibraryViewController?
+    private var tabs: UITabBarController?
     private var library: MusicLibraryViewController?
     private var pendingRoute: MusicLaunchRoute?
     private var searchQuery = ""
@@ -19,9 +22,21 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.library = library
         let window = UIWindow(windowScene: scene)
         window.tintColor = .systemPink
-        window.rootViewController = UINavigationController(rootViewController: library)
+        let podcasts = PodcastLibraryViewController(); self.podcasts = podcasts
+        let musicNavigation = UINavigationController(rootViewController: library)
+        musicNavigation.tabBarItem = UITabBarItem(title: "Music", image: UIImage(systemName: "music.note"), tag: 0)
+        let podcastNavigation = UINavigationController(rootViewController: podcasts)
+        podcastNavigation.tabBarItem = UITabBarItem(title: "Podcasts", image: UIImage(systemName: "dot.radiowaves.left.and.right"), tag: 1)
+        let tabs = UITabBarController(); tabs.viewControllers = [musicNavigation, podcastNavigation]
+        tabs.selectedIndex = UserDefaults.standard.integer(forKey: "LunaMusic.browsingTab")
+        self.tabs = tabs; window.rootViewController = tabs
         self.window = window
         window.makeKeyAndVisible()
+        routeObservers.append(NotificationCenter.default.addObserver(forName: .lunaPodcastOpenEpisode, object: nil, queue: .main) { [weak self] notification in
+            guard let id = notification.userInfo?["id"] as? String else { return }
+            Task { @MainActor in self?.tabs?.selectedIndex = 1; self?.podcasts?.openEpisode(id); MusicIntentRoute.pendingPodcastEpisodeID = nil }
+        })
+        if let id = MusicIntentRoute.pendingPodcastEpisodeID { tabs.selectedIndex = 1; podcasts.openEpisode(id); MusicIntentRoute.pendingPodcastEpisodeID = nil }
         let initialURL = options.urlContexts.map(\.url).first ?? MusicIntentRoute.pendingURL
         MusicIntentRoute.pendingURL = nil
         if let initialURL { capture(initialURL) }
@@ -38,6 +53,8 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        UserDefaults.standard.set(tabs?.selectedIndex ?? 0, forKey: "LunaMusic.browsingTab")
+        PodcastBackgroundServices.shared.background()
         MusicVaultWiring.background()
         enteredBackground = true
         activationWork?.cancel()
@@ -46,6 +63,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         // Permission dialogs and Control Center do not constitute a new foreground.
         guard enteredBackground || pendingRoute != nil else { return }
+        PodcastBackgroundServices.shared.foreground()
         MusicVaultWiring.foreground()
         enteredBackground = false
         activationWork?.cancel()
@@ -72,6 +90,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func navigate(_ route: MusicLaunchRoute) {
+        if route == .search { tabs?.selectedIndex = 0 }
         activationWork?.cancel()
         if window?.windowScene?.activationState == .foregroundActive {
             pendingRoute = nil
@@ -83,8 +102,10 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func apply(_ route: MusicLaunchRoute) {
         switch route {
-        case .search: library?.foregroundSearch(query: searchQuery); searchQuery = ""
-        case .queue: library?.showQueue()
+        case .search: if tabs?.selectedIndex == 0 || !searchQuery.isEmpty { tabs?.selectedIndex = 0; library?.foregroundSearch(query: searchQuery) }; searchQuery = ""
+        case .queue:
+            if MediaPlaybackCoordinator.shared.active == .podcasts { tabs?.selectedIndex = 1; podcasts?.showQueue() }
+            else { tabs?.selectedIndex = 0; library?.showQueue() }
         }
     }
 

@@ -97,6 +97,18 @@ final class PluginExportStageTests: XCTestCase {
             presenter: presenter)
     }
 
+    func testReadArticleNeverInvokesADequeueOnReadPlugin() async {
+        let item = readyArticle()
+        store.markFinishedReading(item.id)
+        let stage = stage(PluginExportSummary(
+            kinds: [.article], input: "epub", epubProfile: "compact", epubImages: false,
+            title: "Xteink", symbol: nil, isDestination: true, requiresSettings: [],
+            dequeueOnRead: true))
+        let outcome = await stage.run(pluginID: Self.pluginID, saveID: item.id, auto: true)
+        XCTAssertEqual(outcome, .status(.retry, message: nil, hard: false))
+        XCTAssertTrue(invoker.calls.isEmpty)
+    }
+
     // MARK: - Sinks
 
     func testAUrlResultReachesTheShareSheet() async {

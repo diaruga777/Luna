@@ -53,21 +53,25 @@ public final class XteinkDestination: ArticleDestination {
     ) async throws {
         try await send(
             epubData: epubData, fileName: fileName, title: title,
-            articleID: context.itemID, queuedRemaining: context.queuedRemaining)
+            articleID: context.itemID, queuedRemaining: context.queuedRemaining, store: context.store)
         // The exact sanitized basename the router put on the wire, recorded
         // so a later in-app read can target the same remote file for
         // removal (see `XteinkRemoteDeleteRunner`).
-        SavesStore.shared.recordRemoteDelivery(
+        context.store.recordRemoteDelivery(
             for: context.itemID, destination: id,
             remoteName: XteinkCrossPointTransferRouter.x3FileName(fileName))
     }
 
     private func send(
-        epubData: Data, fileName: String, title: String, articleID: UUID?, queuedRemaining: Int?
+        epubData: Data, fileName: String, title: String, articleID: UUID?, queuedRemaining: Int?,
+        store: SavesStore = .shared
     ) async throws {
         do {
             let router = crossPoint
             try await rendezvousQueue.run {
+                if let articleID, store.item(withID: articleID)?.readState == .read {
+                    throw ArticleSendAlreadyRead()
+                }
                 try await router.send(
                     epubData, fileName: fileName, title: title,
                     articleID: articleID, queuedRemaining: queuedRemaining)

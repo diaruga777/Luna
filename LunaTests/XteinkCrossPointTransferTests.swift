@@ -317,6 +317,28 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         XCTAssertEqual(ble.sentQueuedRemaining, [nil])
     }
 
+    func testDestinationRejectsReadArticleBeforeStartingTransport() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SavesStore(containerURL: directory)
+        let item = store.add(urlString: "https://example.com/finished")
+        store.markFinishedReading(item.id)
+        let ble = BLE()
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must not upload") },
+            notifier: Notifier(), isForeground: { true })
+        let destination = XteinkDestination(crossPoint: router, rendezvousQueue: XteinkRendezvousTransferQueue())
+        do {
+            try await destination.send(
+                epubData: Data("article".utf8), fileName: "a.epub", title: "A",
+                context: ArticleSendContext(itemID: item.id, queuedRemaining: 0, store: store))
+            XCTFail("a read article must be cancelled")
+        } catch is ArticleSendAlreadyRead {}
+        XCTAssertTrue(ble.sent.isEmpty)
+        XCTAssertEqual(ble.wifiRequests, 0)
+        XCTAssertNil(store.item(withID: item.id)?.remoteName(for: destination.id))
+    }
+
     /// The context form is what `ArticleSendCoordinator` actually calls —
     /// this is the wire's real entry point for `article_id`/`queue_remaining`.
     func testDestinationContextFormForwardsItemIDAndQueuedRemaining() async throws {

@@ -11,8 +11,6 @@ import LunaStorage
 /// finished. It serves every destination whose `dequeuesOnRead` is true: such
 /// a receiver files a delivered book away on its own, so a save read to the
 /// end before its send went out is not worth spending a delivery window on.
-/// A send whose immunity flag was recorded at enqueue time (the user
-/// deliberately (re-)sent an already-read save) is exempt and stays queued.
 public enum ReadStateSendReconciler {
     private static var observer: NSObjectProtocol?
 
@@ -43,9 +41,7 @@ public enum ReadStateSendReconciler {
         guard !destinationIDs.isEmpty else { return }
         for item in store.items() where item.readState == .read {
             for destination in destinationIDs {
-                guard item.sendState(for: destination) == .queued,
-                      !item.queuedWhileRead(for: destination)
-                else { continue }
+                guard item.sendState(for: destination) == .queued else { continue }
                 store.clearSendState(for: item.id, destination: destination)
             }
         }

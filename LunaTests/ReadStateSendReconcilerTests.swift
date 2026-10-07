@@ -12,7 +12,7 @@ import XCTest
 final class ReadStateSendReconcilerTests: XCTestCase {
     private var scratchDirectory: URL!
     private var store: SavesStore!
-    private let destination = ArticleDestinationID.xteink
+    private let destination = "plugin.reader"
 
     /// A destination that answers whatever a test needs it to, so the
     /// reconciler is exercised over the `dequeuesOnRead` flag rather than over
@@ -53,12 +53,12 @@ final class ReadStateSendReconcilerTests: XCTestCase {
         XCTAssertNil(store.item(withID: item.id)?.sendState(for: destination))
     }
 
-    func testKeepsAnImmuneSendQueuedEvenWhenRead() {
+    func testDropsAnAlreadyReadSendEvenWithLegacyImmunity() {
         let item = store.add(urlString: "https://example.com/immune")
         store.markReadState(.read, for: item.id)
-        store.setSendState(.queued, for: item.id, destination: destination) // queued WHILE read: immune
+        store.setSendState(.queued, for: item.id, destination: destination) // legacy queue with queuedWhileRead set
         reconcile([destination])
-        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination), .queued)
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: destination))
     }
 
     func testKeepsAnUnreadQueuedSend() {

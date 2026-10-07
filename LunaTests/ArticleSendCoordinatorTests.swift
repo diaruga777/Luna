@@ -20,6 +20,8 @@ private final class MockDestination: ArticleDestination {
     let id: String
     let displayName = "Mock"
     var configured = true
+    var dequeuesOnRead = false
+    var onSend: (() -> Void)?
     var mode: ArticleSendMode = .off
     /// Optional per-source override; when nil, `mode` applies to every source.
     var modeForSource: ((CaptureSource) -> ArticleSendMode)?
@@ -47,6 +49,7 @@ private final class MockDestination: ArticleDestination {
 
     func send(epubData: Data, fileName: String, title: String) async throws {
         attemptCount += 1
+        onSend?()
         if let errorToThrow { throw errorToThrow }
         if shouldHardFail { throw AuthFailure() }
         if shouldDefer { throw DeferralFailure() }
@@ -179,6 +182,53 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
 
     private func sendState(_ item: SavedItem, _ destinationID: String) -> SavedItem.SendState? {
         store.item(withID: item.id)?.sendState(for: destinationID)
+    }
+
+    func testReadArticleIsNeitherAutoQueuedNorExplicitlyDelivered() async {
+        let item = makeReadyItem()
+        second.dequeuesOnRead = true
+        second.mode = .allSaves
+        store.markFinishedReading(item.id)
+
+        coordinator.saveBecameReady(item) // deliberately stale unread snapshot
+        coordinator.retryPendingSends()
+        await drainDeliveries()
+        await coordinator.send(item, toDestinationID: second.id)
+
+        XCTAssertEqual(second.attemptCount, 0)
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: second.id))
+        await coordinator.send(item, toDestinationID: kindle.id)
+        XCTAssertEqual(kindle.attemptCount, 1, "destinations without read gating still send")
+    }
+
+    func testSweepRechecksReadStateBetweenDeliveries() async {
+        let first = makeReadyItem("https://example.com/first")
+        let secondItem = makeReadyItem("https://example.com/second")
+        second.dequeuesOnRead = true
+        for item in [first, secondItem] {
+            store.setSendState(.queued, for: item.id, destination: second.id)
+        }
+        second.onSend = {
+            // Whichever item sorts first, the other became read while it sent.
+            self.store.markFinishedReading(first.id)
+            self.store.markFinishedReading(secondItem.id)
+        }
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+
+        XCTAssertEqual(second.attemptCount, 1)
+        XCTAssertTrue(store.items(sendState: .queued, forDestination: second.id).isEmpty)
+    }
+
+    func testReadDuringFailedTransferDoesNotScheduleAnotherRetry() async {
+        let item = makeReadyItem()
+        second.dequeuesOnRead = true
+        second.shouldFail = true
+        second.onSend = { self.store.markFinishedReading(item.id) }
+        await coordinator.send(item, toDestinationID: second.id)
+
+        XCTAssertEqual(second.attemptCount, 1)
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: second.id))
+        XCTAssertNil(store.item(withID: item.id)?.sendFailureCounts[second.id])
     }
 
     func testSendIsNoOpWhenDestinationNotConfigured() async {

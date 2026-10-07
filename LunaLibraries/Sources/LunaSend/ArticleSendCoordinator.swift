@@ -82,6 +82,11 @@ public enum ArticleDeliveryError: Error, CustomStringConvertible, SendHardFailur
     }
 }
 
+/// The save became read while its payload was being prepared.
+public struct ArticleSendAlreadyRead: Error {
+    public init() {}
+}
+
 public extension ArticleDestination {
     /// Existing third-party conformers remain standard EPUB destinations. The
     /// built-in Xteink id is text-only even while its transport is evolving;
@@ -125,6 +130,9 @@ public extension ArticleDestination {
         let data = EpubBuilder().build(
             content: content, sourceURLString: fresh.urlString,
             imagesDirectory: store.articlesDirectory, profile: epubBuildProfile)
+        if dequeuesOnRead, store.item(withID: item.id)?.readState == .read {
+            throw ArticleSendAlreadyRead()
+        }
         try await send(
             epubData: data, fileName: ArticleSendCoordinator.epubFileName(forTitle: title),
             title: title, context: context)
@@ -424,6 +432,8 @@ public final class ArticleSendCoordinator {
     public func saveBecameReady(_ item: SavedItem) {
         for destination in destinations
         where destination.isConfigured && destination.accepts(item) {
+            guard let current = store.item(withID: item.id),
+                  !dequeueIfRead(current, destination: destination) else { continue }
             let state = item.sendState(for: destination.id)
             let shouldAutoSend = destination.sendMode(for: item) == .allSaves && state == nil
             let shouldSend = state == .queued || shouldAutoSend
@@ -493,7 +503,8 @@ public final class ArticleSendCoordinator {
                 // that an all-saves source needs an automatic send. Reconcile
                 // that missing queue row before sweeping existing work.
                 guard let current = store.item(withID: item.id),
-                      destination.accepts(current) else { continue }
+                      destination.accepts(current),
+                      !dequeueIfRead(current, destination: destination) else { continue }
                 if current.state == .ready,
                    current.sendState(for: destination.id) == nil,
                    destination.sendMode(for: current) == .allSaves {
@@ -527,7 +538,8 @@ public final class ArticleSendCoordinator {
     ) async -> Error? {
         guard destination.isConfigured else { return nil }
         guard let fresh = store.item(withID: item.id) else { return nil }
-        guard destination.accepts(fresh) else { return nil }
+        guard destination.accepts(fresh),
+              !dequeueIfRead(fresh, destination: destination) else { return nil }
         guard shouldAttempt(fresh, destinationID: destination.id, respectBackoff: respectBackoff) else {
             return nil
         }
@@ -537,6 +549,16 @@ public final class ArticleSendCoordinator {
             return nil
         }
         return await deliver(item: fresh, to: destination)
+    }
+
+    /// Re-read for every delivery, since an earlier book can take long enough
+    /// for another process (or a device read report) to finish this one.
+    private func dequeueIfRead(_ item: SavedItem, destination: ArticleDestination) -> Bool {
+        guard destination.dequeuesOnRead, item.readState == .read else { return false }
+        if item.sendState(for: destination.id) == .queued {
+            store.clearSendState(for: item.id, destination: destination.id)
+        }
+        return true
     }
 
     private func shouldAttempt(
@@ -576,6 +598,14 @@ public final class ArticleSendCoordinator {
             store.setSendState(.sent, for: itemID, destination: destination.id)
             logger.info("Sent to \(destination.displayName, privacy: .public): \(title, privacy: .public)")
         } catch {
+            if error is ArticleSendAlreadyRead {
+                if let current = store.item(withID: itemID) {
+                    _ = dequeueIfRead(current, destination: destination)
+                }
+                return nil
+            }
+            if let current = store.item(withID: itemID),
+               dequeueIfRead(current, destination: destination) { return nil }
             recordFailure(error, itemID: itemID, title: title, destination: destination)
             if error is SendDeferralError {
                 logger.info("Deferred send to \(destination.displayName, privacy: .public) (unreachable): \(title, privacy: .public)")

@@ -2268,6 +2268,17 @@ public final class SavesStore {
     private func writeSave(
         _ stored: StoredSave, previous: SavedItem?, in db: SavesDatabase
     ) throws {
+        var stored = stored
+        // Enforce this in the same transaction as the read state, including
+        // writes from extensions and stale retry tasks in another process.
+        let xteink = ArticleDestinationID.xteink
+        if stored.item.readState == .read, stored.item.sendState(for: xteink) == .queued {
+            stored.item.sendStates[xteink] = nil
+            stored.item.sendFailureCounts[xteink] = nil
+            stored.item.sendNextAttemptDates[xteink] = nil
+            stored.item.sendLastErrors[xteink] = nil
+            stored.item.sendQueuedWhileRead[xteink] = nil
+        }
         try db.run(SaveRow.upsertSQL) { try SaveRow.bind(stored.item, seq: stored.seq, to: $0) }
         // Every artifact this save's own columns name, claimed in the same
         // transaction as the columns. A file a column stopped pointing at loses

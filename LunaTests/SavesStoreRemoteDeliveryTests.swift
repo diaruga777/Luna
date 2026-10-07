@@ -15,7 +15,7 @@ import XCTest
 final class SavesStoreRemoteDeliveryTests: XCTestCase {
     private var scratchDirectory: URL!
     private var store: SavesStore!
-    private let destination = "xteink"
+    private let destination = "test.reader"
 
     override func setUp() {
         super.setUp()
@@ -28,6 +28,39 @@ final class SavesStoreRemoteDeliveryTests: XCTestCase {
     override func tearDown() {
         try? FileManager.default.removeItem(at: scratchDirectory)
         super.tearDown()
+    }
+
+    func testXteinkReadTransitionAtomicallyClearsQueueAndRetryMetadata() {
+        for finish in [false, true] {
+            let item = store.add(urlString: "https://example.com/read-\(finish)")
+            store.scheduleSendRetry(
+                for: item.id, destination: ArticleDestinationID.xteink, failureCount: 2,
+                nextAttemptDate: Date(), errorMessage: "offline")
+            store.setSendState(.queued, for: item.id, destination: ArticleDestinationID.kindle)
+            if finish { store.markFinishedReading(item.id) }
+            else { store.markReadState(.read, for: item.id) }
+
+            let fresh = store.item(withID: item.id)
+            XCTAssertEqual(fresh?.readState, .read)
+            XCTAssertNil(fresh?.sendState(for: ArticleDestinationID.xteink))
+            XCTAssertNil(fresh?.sendFailureCounts[ArticleDestinationID.xteink])
+            XCTAssertNil(fresh?.sendNextAttemptDates[ArticleDestinationID.xteink])
+            XCTAssertNil(fresh?.sendLastErrors[ArticleDestinationID.xteink])
+            XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.kindle), .queued)
+        }
+    }
+
+    func testXteinkStaleRetryCannotRequeueAnAlreadyReadArticle() {
+        let item = store.add(urlString: "https://example.com/stale-retry")
+        store.markFinishedReading(item.id)
+        store.setSendState(.queued, for: item.id, destination: ArticleDestinationID.xteink)
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: ArticleDestinationID.xteink))
+        store.markSendAttemptStarted(for: item.id, destination: ArticleDestinationID.xteink)
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: ArticleDestinationID.xteink))
+        store.scheduleSendRetry(
+            for: item.id, destination: ArticleDestinationID.xteink, failureCount: 1,
+            nextAttemptDate: Date(), errorMessage: "late failure")
+        XCTAssertNil(store.item(withID: item.id)?.sendState(for: ArticleDestinationID.xteink))
     }
 
     // MARK: - Immunity flag at enqueue

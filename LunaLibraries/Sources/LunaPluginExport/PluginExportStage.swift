@@ -132,6 +132,9 @@ public final class PluginExportStage {
                 pluginID: pluginID)
         }
 
+        if export.dequeueOnRead, producer.isRead(saveID: saveID) {
+            return .status(.retry, message: nil, hard: false)
+        }
         let answer = await invoker.invoke(
             .export, pluginID: pluginID, argument: input, timeout: Self.timeout,
             decode: PluginExportResult.self)

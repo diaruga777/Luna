@@ -16,8 +16,8 @@ email is involved. Luna builds an image-free, compressed Xteink EPUB and
 delivers it only while the CrossPoint BLE rendezvous is already active — a
 share-row send is **enqueue-only** (below); the reader is what opens the
 window. A window opens from the reader's HOME-menu **Luna Sync** row
-(manual, shows overall progress), first-time pairing, or a short read-report
-ping the reader fires when a Luna-synced book is finished. The **X3 firmware
+(manual, shows overall progress) or first-time pairing. Finishing a book
+persists its read state locally without opening a BLE window. The **X3 firmware
 fork** also wakes from deep sleep twice a day to open a headless automatic
 sync window; the plugin build does not. Over-sized books escalate to
 CrossPoint Wi-Fi inside that same window.
@@ -215,11 +215,11 @@ deferral / failure, delete drains, and an undeliverable `no_work`.
 
 ## Read-state handback
 
-The reader marks a Luna-synced book read when the user reaches its end,
-reports the article id back to Luna over a very short BLE ping, and
-re-reports any still-pending ids at the start of every later window (give up
-fast: a heap gate failure or no phone connecting within ~8 s just leaves the
-id pending for next time).
+The reader marks a Luna-synced book read when the user reaches its end and
+persists the id in `/.crosspoint/luna_books.json`. It returns to the UI without
+starting Bluetooth or waiting for a phone. The next full sync reports pending
+ids after authentication, retrying across disconnects and restarts until
+acknowledged. Older firmware's read-report-only windows remain supported.
 
 - **Wire**: every status the device publishes during a read-report window
   carries `"win":"rr"` (including the hello ack with the nonce);
@@ -250,24 +250,16 @@ id pending for next time).
 
 ## Read-driven queue and delete
 
-Two behaviors key off the save's read state, both governed by one
-**immunity flag**: whether the save was already `.read` at the moment its
-Xteink send was queued. A user who deliberately (re-)sends an already-read
-article is exempt from both — read state drives everything else.
-
-- **Dequeue-on-read** (`ReadStateSendReconciler`): a save whose send is still
-  `.queued`, whose `readState` is `.read`, and whose immunity flag is false
-  gets its queue cleared (`SavesStore.clearSendState`) — sending it would
-  spend a BLE window on something the user has already moved past. It serves
-  every destination whose `ArticleDestination.dequeuesOnRead` is true, which
-  is what makes it work in central Luna: there the Xteink destination is the
-  PLUGIN, which declares `export.dequeueOnRead` in its manifest, not
-  `XteinkDestination`. Runs on every `.savesChanged` (the reconciler installs
-  its own observer via `startObservingSaveChanges()`, called once from
-  `ArticleShellWiring.appDidLaunch()`, which both article apps run) and again
-  inside `ArticleSendCoordinator.deliverQueuedSends(toDestinationID:)`, so a
-  plugin driving its own sweep through `luna.exports.deliverQueued()` gets the
-  same pre-pass.
+- **Dequeue-on-read**: `SavesStore` clears pending Xteink send and retry fields
+  in the same transaction that persists `.read`. It also rejects later attempts
+  to requeue that read save, including writes from extensions and stale retry
+  tasks. Already-read articles are never sent, including legacy queue entries
+  with `queued_while_read` set. Mark an article unread before sending it again.
+  `ReadStateSendReconciler` prunes all destinations declaring `dequeuesOnRead`
+  on save notifications and before each sync sweep. The coordinator checks the
+  current database read state again for each delivery and before auto-enqueueing;
+  native and plugin paths check once more after payload preparation, before
+  invoking the transport. A read transition during a failed send cancels retries.
 - **Remote delete-on-read** (`XteinkRemoteDeleteRunner`, `delete` — the
   existing control op, no new wire surface): on a successful delivery,
   `XteinkDestination` records the exact sanitized remote basename

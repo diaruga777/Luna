@@ -110,6 +110,11 @@ public struct PluginExportInputProducer {
             source: item.effectiveCaptureSource.rawValue, queuedRemaining: queuedRemaining)
     }
 
+    /// Checked after payload preparation, immediately before invoking a destination.
+    func isRead(saveID: UUID) -> Bool {
+        store.item(withID: saveID)?.readState == .read
+    }
+
     // MARK: - Article
 
     /// The three article formats that are a FILE. Images are fetched first —

@@ -73,14 +73,15 @@ final class SettingsHierarchyTests: XCTestCase {
             false)
     }
 
-    func testImportExportIsTwoButtonsAndReachableFromTheTopLevel() {
+    func testImportExportIncludesEpubAndIsReachableFromTheTopLevel() {
         let screen = ImportExportSettingsScreen()
         window = UITestSupport.host(screen)
 
         XCTAssertEqual(screen.tableView.numberOfSections, 1)
         XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Export Links")
         XCTAssertEqual(rowTitle(screen, row: 1, section: 0), "Import Links")
-        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 2)
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 3)
+        XCTAssertEqual(rowTitle(screen, row: 2, section: 0), "Import EPUB Book")
 
         let top = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: true))
         window = UITestSupport.host(UINavigationController(rootViewController: top))

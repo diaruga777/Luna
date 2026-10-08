@@ -12,7 +12,7 @@ import LunaURLClassification
 import UIKit
 import UniformTypeIdentifiers
 
-/// Settings ▸ Import & Export: two buttons (`claudedocs/import-export.md`).
+/// Settings ▸ Import & Export: link lists and, on reading surfaces, EPUB books.
 ///
 /// Export shares every link this app shows as one markdown file: a titled
 /// bullet per link under a `## Links` heading and a `## Archive` heading, so
@@ -25,8 +25,13 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
     private enum Row: Int, CaseIterable {
         case export
         case importFile
+        case importEpub
     }
 
+    private var rows: [Row] {
+        [.export, .importFile] + (LunaApp.current == .luna || LunaApp.current == .reader ? [.importEpub] : [])
+    }
+    private var importingEpub = false
     private let store: SavesStore
 
     static func screenTitle() -> String { L10n.string("Settings_importExport_title") }
@@ -48,7 +53,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
     override func numberOfSections(in _: UITableView) -> Int { 1 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection _: Int) -> Int {
-        Row.allCases.count
+        rows.count
     }
 
     override func tableView(
@@ -63,26 +68,29 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
         content.textProperties.color = view.tintColor ?? .systemBlue
-        switch Row(rawValue: indexPath.row) ?? .export {
+        switch rows[indexPath.row] {
         case .export:
             content.text = L10n.string("Settings_importExport_exportRow")
             content.image = UIImage(systemName: "square.and.arrow.up")
         case .importFile:
             content.text = L10n.string("Settings_importExport_importRow")
             content.image = UIImage(systemName: "square.and.arrow.down")
+        case .importEpub:
+            content.text = L10n.string("Settings_importExport_importEpubRow")
+            content.image = UIImage(systemName: "book")
         }
         cell.contentConfiguration = content
-        cell.accessibilityIdentifier = indexPath.row == Row.export.rawValue
-            ? "importExport.export" : "importExport.import"
+        cell.accessibilityIdentifier = ["importExport.export", "importExport.import", "importExport.importEpub"][indexPath.row]
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let sourceView: UIView = tableView.cellForRow(at: indexPath) ?? tableView
-        switch Row(rawValue: indexPath.row) ?? .export {
+        switch rows[indexPath.row] {
         case .export: presentExport(from: sourceView)
         case .importFile: presentImportPicker()
+        case .importEpub: presentImportPicker(epub: true)
         }
     }
 
@@ -110,11 +118,12 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
 
     // MARK: - Import
 
-    private func presentImportPicker() {
+    private func presentImportPicker(epub: Bool = false) {
+        importingEpub = epub
         // `asCopy` so the picked file is readable without coordinating against a
         // security-scoped original that may live in another app's container.
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: LinkListExport.importableTypes, asCopy: true)
+            forOpeningContentTypes: epub ? [.epub] : LinkListExport.importableTypes, asCopy: true)
         picker.allowsMultipleSelection = false
         picker.delegate = self
         present(picker, animated: true)
@@ -161,6 +170,23 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
         _ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]
     ) {
         guard let url = urls.first else { return }
+        if importingEpub {
+            let store = self.store
+            Task { [weak self] in
+                let succeeded = await Task.detached(priority: .userInitiated) {
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    guard let item = store.addImportedDocument(sourceURL: url, source: .manual) else { return false }
+                    await SavesIngestor(store: store).ingest(item)
+                    return store.item(withID: item.id)?.state == .ready
+                }.value
+                guard let self else { return }
+                self.presentWhenClear(self.infoAlert(
+                    title: L10n.string("Settings_importExport_importEpubRow"),
+                    message: L10n.string(succeeded ? "Settings_importExport_epubImported" : "Settings_importExport_epubFailed")))
+            }
+            return
+        }
         // Read off the main thread: a big export is megabytes, and the picker's
         // dismissal shouldn't wait on the disk.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in

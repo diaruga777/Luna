@@ -5,6 +5,8 @@
 
 import Foundation
 import LunaEpub
+import LunaReaderUI
+import LunaSend
 import LunaModels
 import LunaPluginExport
 import LunaPluginKit
@@ -109,10 +111,8 @@ final class PluginExportInputTests: XCTestCase {
 
     // MARK: - Article
 
-    /// A `compact` profile is the Xteink profile: text only. The image the
-    /// standard profile embeds is absent from the compact book, which is the
-    /// difference the declaration is asking for.
-    func testCompactEpubProfileDropsTheArticleImage() async throws {
+    /// Any plugin can request the same compact banner as the in-app export.
+    func testCompactEpubProfileReplacesOriginalWithBoundedBanner() async throws {
         let (item, imageName) = try readyArticleWithAnImage()
 
         let standard = try await produce(
@@ -127,7 +127,13 @@ final class PluginExportInputTests: XCTestCase {
             "the standard profile embeds the article's image")
         XCTAssertFalse(
             Self.contains(compactBytes, imageName),
-            "the compact profile is text only")
+            "the compact profile never embeds the original image")
+        let archive = try XCTUnwrap(ZipArchiveReader(data: compactBytes))
+        XCTAssertLessThanOrEqual(try XCTUnwrap(archive.data(at: "OEBPS/images/banner.png")).count, 8192)
+        let sharedURL = try ArticleExportService(store: store).write(.compactEpub, for: item)
+        let shared = try XCTUnwrap(ZipArchiveReader(data: Data(contentsOf: sharedURL)))
+        XCTAssertEqual(shared.data(at: "OEBPS/images/banner.png"), archive.data(at: "OEBPS/images/banner.png"))
+        XCTAssertEqual(shared.text(at: "OEBPS/chapter.xhtml"), archive.text(at: "OEBPS/chapter.xhtml"))
         XCTAssertEqual(standard.file?.mime, "application/epub+zip")
         XCTAssertTrue(standard.file?.name.hasSuffix(".epub") == true)
     }
@@ -141,8 +147,30 @@ final class PluginExportInputTests: XCTestCase {
             item, format: .epub,
             options: PluginExportFixtures.export(epubProfile: "standard", epubImages: false))
 
-        XCTAssertFalse(
-            Self.contains(try data(of: try XCTUnwrap(input.file)), imageName))
+        let archive = try XCTUnwrap(ZipArchiveReader(data: data(of: XCTUnwrap(input.file))))
+        XCTAssertFalse(archive.paths.contains { $0.hasPrefix("OEBPS/images/") })
+        XCTAssertFalse(try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml")).contains("<img"))
+        let compact = try await produce(item, format: .epub,
+            options: PluginExportFixtures.export(epubProfile: "compact", epubImages: false))
+        XCTAssertFalse(try XCTUnwrap(ZipArchiveReader(data: data(of: XCTUnwrap(compact.file))))
+            .paths.contains { $0.hasPrefix("OEBPS/images/") })
+    }
+
+    func testImportedEpubBecomesReadableAndExportsThroughAnExternalPlugin() async throws {
+        let (source, _) = try readyArticleWithAnImage()
+        let url = try ArticleExportService(store: store).write(.epub, for: source)
+        let imported = try XCTUnwrap(store.addImportedDocument(sourceURL: url, source: .manual))
+        await ArticleIngestHandler().ingestDocument(imported, store: store)
+        let ready = try XCTUnwrap(store.item(withID: imported.id))
+        XCTAssertEqual(ready.state, .ready)
+        XCTAssertEqual(ready.documentType, "epub")
+        XCTAssertEqual(PluginExportInputProducer.kind(of: ready), .article)
+        XCTAssertTrue(try XCTUnwrap(store.content(for: ready)).blocks.contains { $0.text == "Words." })
+        let input = try await produce(ready, format: .epub,
+            options: PluginExportFixtures.export(epubProfile: "compact"))
+        let archive = try XCTUnwrap(ZipArchiveReader(data: data(of: XCTUnwrap(input.file))))
+        XCTAssertNotNil(archive.data(at: "OEBPS/images/banner.png"))
+        XCTAssertTrue(try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml")).contains("Words."))
     }
 
     func testTextFormatsCarryTextAndNoFile() async throws {

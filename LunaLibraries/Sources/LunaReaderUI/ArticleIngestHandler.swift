@@ -107,7 +107,8 @@ public final class ArticleIngestHandler {
         let sourceURL = store.articlesDirectory
             .appendingPathComponent("\(item.id.uuidString)-source.\(type)")
         guard let content = DocumentParser.parse(
-            fileURL: sourceURL, type: type, title: item.title ?? L10n.string("Common_document"))
+            fileURL: sourceURL, type: type, title: item.title ?? L10n.string("Common_document"),
+            imagesDirectory: store.articlesDirectory)
         else {
             store.markFailed(item.id)
             return

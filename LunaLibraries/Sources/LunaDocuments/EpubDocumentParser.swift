@@ -4,6 +4,8 @@
 //
 
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import LunaModels
 import SwiftSoup
 
@@ -21,7 +23,9 @@ public enum EpubDocumentParser {
     /// explanation than a real book, and the JSON has to be held in memory.
     private static let blockLimit = 40_000
 
-    public static func parse(data: Data, fallbackTitle: String) -> ArticleContent? {
+    public static func parse(
+        data: Data, fallbackTitle: String, imagesDirectory: URL? = nil
+    ) -> ArticleContent? {
         guard let archive = ZipArchiveReader(data: data),
               let packagePath = packagePath(in: archive),
               let package = archive.text(at: packagePath).flatMap(parseXML)
@@ -47,10 +51,54 @@ public enum EpubDocumentParser {
         }
         guard !blocks.isEmpty else { return nil }
 
+        if let imagesDirectory,
+           let cover = importCover(from: archive, package: package, manifest: manifest,
+                                   directory: imagesDirectory) {
+            blocks.insert(cover, at: 0)
+        }
         return ArticleContent(
             title: metadata(in: package, tag: "dc:title") ?? fallbackTitle,
             author: metadata(in: package, tag: "dc:creator"),
             blocks: Array(blocks.prefix(blockLimit)))
+    }
+
+    /// Only one cover/lead image is retained. Archive paths are used solely
+    /// as lookup keys; the output always gets a fresh host-owned filename.
+    private static func importCover(
+        from archive: ZipArchiveReader, package: Document,
+        manifest: [String: String], directory: URL
+    ) -> ArticleContent.Block? {
+        let items = (try? package.getElementsByTag("item").array()) ?? []
+        var path: String?
+        if let cover = items.first(where: {
+            ((try? $0.attr("properties")) ?? "").split(separator: " ").contains("cover-image")
+        }), let id = try? cover.attr("id") {
+            path = manifest[id]
+        }
+        if path == nil,
+           let meta = try? package.select("meta[name=cover]").first(),
+           let id = try? meta.attr("content") {
+            path = manifest[id]
+        }
+        if path == nil {
+            for chapterPath in spinePaths(in: package, manifest: manifest) {
+                guard let html = archive.text(at: chapterPath),
+                      let document = try? SwiftSoup.parse(html),
+                      let image = try? document.select("img[src]").first(),
+                      let src = try? image.attr("src"), !src.isEmpty else { continue }
+                path = resolve(src, in: (chapterPath as NSString).deletingLastPathComponent)
+                break
+            }
+        }
+        guard let path, let bytes = archive.data(at: path, maximumBytes: 4 * 1024 * 1024),
+              let source = CGImageSourceCreateWithData(bytes as CFData, nil),
+              let identifier = CGImageSourceGetType(source),
+              let type = UTType(identifier as String),
+              let ext = type.preferredFilenameExtension else { return nil }
+        let name = ArticleImageFiles.newFileName(fileExtension: ext)
+        guard (try? bytes.write(to: directory.appendingPathComponent(name), options: .atomic)) != nil
+        else { return nil }
+        return ArticleContent.Block(kind: .image, text: "", links: [], imageFileName: name)
     }
 
     // MARK: - Package document

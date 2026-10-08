@@ -19,7 +19,6 @@ import LunaMusicCore
                 .toggle("Follow Show", show.followed) { [self] value in try library.setFollowed(id, value) },
                 .toggle("New Episode Notifications", show.settings.notifications) { [self] value in try await library.setNotifications(id, value) },
                 .toggle("Hide Played Episodes", show.settings.hidePlayed) { [self] value in try editShow { $0.hidePlayed = value } },
-                .toggle("Continuous Playback", show.settings.continuousPlayback) { [self] value in try editShow { $0.continuousPlayback = value } },
                 .choice("Episode Order", show.settings.newestFirst ? "Newest First" : "Oldest First", [("Newest First", { [self] in try editShow { $0.newestFirst = true } }), ("Oldest First", { [self] in try editShow { $0.newestFirst = false } })]),
                 .choice("Automatically Download", limitName(show.settings.automaticDownloadLimit), [0, 1, 2, 3, 5, 10, -1].map { limit in (limitName(limit), { [self] in try editShow { $0.automaticDownloadLimit = limit }; await PodcastDownloads.shared.reconcile() }) }),
                 .choice("Playback Speed", "\(show.settings.playbackRate)×", [Float(0.5), 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3].map { value in ("\(value)×", { [self] in try editShow { $0.playbackRate = value }; if PodcastPlaybackController.shared.currentEpisode?.showID == id { PodcastPlaybackController.shared.setRate(value) } }) })
@@ -28,7 +27,6 @@ import LunaMusicCore
             groups = [("Playback", [
                 .choice("Skip Back", "\(Int(state.settings.skipBack)) seconds", [5, 10, 15, 30, 45, 60].map { value in ("\(value) seconds", { [self] in try library.edit { $0.settings.skipBack = Double(value) } }) }),
                 .choice("Skip Forward", "\(Int(state.settings.skipForward)) seconds", [5, 10, 15, 30, 45, 60].map { value in ("\(value) seconds", { [self] in try library.edit { $0.settings.skipForward = Double(value) } }) }),
-                .toggle("Continuous Playback", state.settings.continuousPlayback) { [self] value in try library.edit { $0.settings.continuousPlayback = value } },
                 .toggle("Hide Played Episodes", state.settings.hidePlayed) { [self] value in try library.edit { $0.settings.hidePlayed = value } },
                 .toggle("Stream over Cellular", state.settings.cellularStreaming) { [self] value in try library.edit { $0.settings.cellularStreaming = value } }
             ]), ("Downloads", [

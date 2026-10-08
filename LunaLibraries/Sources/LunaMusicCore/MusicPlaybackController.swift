@@ -125,7 +125,7 @@ public final class MusicPlaybackController: ObservableObject {
                 let time = playbackTime
                 try await selectFileQueueItem(at: currentIndex, time: time)
             } else if nowPlaying?.source == .vault {
-                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
                 try AVAudioSession.sharedInstance().setActive(true)
                 _ = await fileSession.becomeActiveIfPossible()
                 filePlayer.play()
@@ -534,7 +534,7 @@ public final class MusicPlaybackController: ObservableObject {
         let song = queue[index]
         changed()
         if song.source == .vault {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
             let item: AVPlayerItem
             if let url = vault.localURL(song) { item = AVPlayerItem(url: url) }

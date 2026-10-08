@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-import LunaPodcastCore
+@testable import LunaPodcastCore
 import MediaPlayer
 @testable import LunaMusicCore
 @testable import LunaMusicUI
@@ -252,4 +252,49 @@ private actor FakeMusicServer {
         player.setSleepTimer(minutes: nil, endOfEpisode: true); XCTAssertTrue(player.sleepAtEpisodeEnd)
         player.setSleepTimer(minutes: nil); XCTAssertFalse(player.sleepAtEpisodeEnd)
     }
+}
+
+@MainActor final class PodcastRegressionTests: XCTestCase {
+    func testPlaybackPreparesSpokenAudioAndDoesNotQueueTheShow() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = PodcastLibraryController(url: directory.appendingPathComponent("library.json"))
+        let media = try XCTUnwrap(Bundle(for: VaultMusicTests.self).url(forResource: "streaming", withExtension: "mp4"))
+        let episode = PodcastEpisode(showID: "show", guid: "one", title: "One", publishedAt: Date(), mediaURL: media)
+        let other = PodcastEpisode(showID: "show", guid: "two", title: "Two", publishedAt: .distantPast, mediaURL: media)
+        try library.edit { $0.episodes = [episode.id: episode, other.id: other]; $0.continuation = [other.id] }
+        let player = PodcastPlaybackController(library: library)
+        defer { player.pause() }
+        try await player.play(episode)
+        XCTAssertEqual(AVAudioSession.sharedInstance().category, .playback)
+        XCTAssertEqual(AVAudioSession.sharedInstance().mode, .spokenAudio)
+        XCTAssertFalse(AVAudioSession.sharedInstance().categoryOptions.contains(.allowAirPlay))
+        XCTAssertNotNil(player.player.currentItem)
+        XCTAssertNil(player.errorMessage)
+        XCTAssertTrue(library.state.queue.isEmpty)
+        XCTAssertTrue(library.state.continuation.isEmpty)
+        for _ in 0..<100 {
+            if player.isPlaying || player.errorMessage != nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertNil(player.errorMessage)
+        XCTAssertTrue(player.isPlaying, "The local podcast fixture must actually start playback")
+    }
+
+    func testOldAutomaticBacklogIsDiscardedButExplicitQueueSurvives() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("library.json")
+        let store = try PodcastStore(url: url)
+        let episode = PodcastEpisode(showID: "show", guid: "one", title: "One", publishedAt: Date(), mediaURL: URL(string: "https://example.com/one.mp3")!)
+        try store.update { $0.episodes[episode.id] = episode; $0.currentEpisodeID = episode.id; $0.queue = ["explicit"]; $0.continuation = ["automatic"] }
+        let restored = try PodcastStore(url: url)
+        XCTAssertEqual(restored.state.queue, ["explicit"])
+        XCTAssertTrue(restored.state.continuation.isEmpty)
+        // Also ignore a stale backlog if introduced after loading.
+        try restored.update { $0.queue = []; $0.continuation = [episode.id] }
+        XCTAssertNil(try restored.finishNaturally(episode.id))
+        XCTAssertTrue(restored.state.naturallyExhaustedQueue)
+    }
+
 }

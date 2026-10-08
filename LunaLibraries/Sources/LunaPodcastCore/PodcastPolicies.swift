@@ -14,7 +14,7 @@ public enum PodcastPolicies {
         guard let lastID = state.lastPlayedEpisodeID, state.episodes[lastID] != nil else { return .nothing }
         guard state.naturallyExhaustedQueue else { return .resume(lastID) }
         // Explicitly queued work takes precedence if it was added after exhaustion.
-        if let queued = (state.queue + state.continuation).first(where: { state.episodes[$0] != nil }) { return .start(queued) }
+        if let queued = state.queue.first(where: { state.episodes[$0] != nil }) { return .start(queued) }
         let candidates = state.shows.values.filter(\.followed).compactMap { show -> PodcastEpisode? in
             let cursor = state.cursors[show.id]
             return ordered(state.episodes.values.filter { episode in

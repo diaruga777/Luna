@@ -9,6 +9,9 @@ import Foundation
             state = try JSONDecoder().decode(PodcastLibraryState.self, from: Data(contentsOf: url))
             guard state.schemaVersion == 1 else { throw PodcastError("This podcast library requires a newer version of Luna Music.") }
         } else { state = PodcastLibraryState() }
+        // Discard the automatic show backlog from older versions, preserving
+        // only episodes the listener explicitly queued.
+        if !state.continuation.isEmpty { try update { $0.continuation = [] } }
     }
     /// Write before publishing; a failed save cannot silently lose an acknowledged edit.
     public func update(_ edit: (inout PodcastLibraryState) throws -> Void) throws {
@@ -96,9 +99,8 @@ import Foundation
             progress.listened = true; progress.completedAt = Date(); progress.updatedAt = Date()
             state.progress[id] = progress
             state.queue.removeAll { state.episodes[$0] == nil || $0 == id }
-            state.continuation.removeAll { state.episodes[$0] == nil || $0 == id || state.progress[$0]?.listened == true }
+            state.continuation = []
             if !state.queue.isEmpty { next = state.queue.removeFirst() }
-            else if !state.continuation.isEmpty { next = state.continuation.removeFirst() }
             state.naturallyExhaustedQueue = next == nil
             // Last played remains the completed episode until the next actually plays.
         }

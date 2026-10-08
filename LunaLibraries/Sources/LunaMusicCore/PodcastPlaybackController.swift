@@ -19,6 +19,9 @@ import LunaPodcastCore
     @Published public private(set) var sleepDeadline: Date?
     @Published public private(set) var sleepAtEpisodeEnd = false
     public var willPlay: (() -> Void)?
+    public var hasRestorableQueue: Bool {
+        currentEpisode != nil || library.state.queue.contains { library.state.episodes[$0] != nil }
+    }
     private let library: PodcastLibraryController
     private lazy var session = MPNowPlayingSession(players: [player])
     private var observations: [NSKeyValueObservation] = []
@@ -87,14 +90,9 @@ import LunaPodcastCore
         for (command, target) in remoteTargets { command.removeTarget(target) }
         extrasTask?.cancel(); sleepTask?.cancel()
     }
-    public func play(_ episode: PodcastEpisode, continueShow: Bool = true) async throws {
-        if continueShow {
-            let state = try library.requireStore().state
-            let ordered = library.episodes(for: episode.showID, applySettings: false)
-            let after = ordered.firstIndex(where: { $0.id == episode.id }).map { Array(ordered.dropFirst($0 + 1)) } ?? []
-            let enabled = state.settings.continuousPlayback && state.shows[episode.showID]?.settings.continuousPlayback != false
-            try library.edit { $0.continuation = enabled ? after.filter { state.progress[$0.id]?.listened != true && !state.queue.contains($0.id) }.map(\.id) : [] }
-        }
+    public func play(_ episode: PodcastEpisode) async throws {
+        // A single episode never enrolls the rest of its show in the queue.
+        try library.edit { $0.continuation = [] }
         do { try await select(episode) } catch { fail(error); throw error }
     }
     public func playEpisodes(_ episodes: [PodcastEpisode]) async throws {
@@ -115,7 +113,9 @@ import LunaPodcastCore
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         try library.edit { $0.currentEpisodeID = episode.id; $0.queue.removeAll { $0 == episode.id }; $0.continuation.removeAll { $0 == episode.id } }
         let audio = AVAudioSession.sharedInstance()
-        try audio.setCategory(.playback, mode: .spokenAudio, options: [.allowAirPlay])
+        // Playback already supports AirPlay. Explicit .allowAirPlay is only
+        // valid for .playAndRecord and throws paramErr (-50) here.
+        try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
         let asset: AVURLAsset
         if let local = PodcastDownloads.shared.localURL(episode.id) { asset = AVURLAsset(url: local) }
@@ -139,9 +139,10 @@ import LunaPodcastCore
         publish()
     }
     public func resume() async throws {
-        guard let episode = currentEpisode else { return }
+        guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         willPlay?()
         guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation else { try await select(episode, restorePosition: true); return }
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
         _ = await session.becomeActiveIfPossible()
         requestedPlayback = true; errorMessage = nil; player.playImmediately(atRate: rate); publish()
@@ -160,7 +161,7 @@ import LunaPodcastCore
             guard let episode = store.state.episodes[id] else { return }
             // Only one eligible episode is selected, preserving the intent's
             // deterministic contract rather than populating a recommendation queue.
-            try await play(episode, continueShow: false)
+            try await play(episode)
         }
     }
     public func pause() {
@@ -216,7 +217,7 @@ import LunaPodcastCore
         do {
             if sleepAtEpisodeEnd {
                 try library.requireStore().markListened(episode.id, true)
-                try library.edit { $0.naturallyExhaustedQueue = $0.queue.isEmpty && $0.continuation.isEmpty }
+                try library.edit { $0.naturallyExhaustedQueue = $0.queue.isEmpty }
                 sleepAtEpisodeEnd = false; publish(); return
             }
             let next = try library.requireStore().finishNaturally(episode.id); library.reloadState()

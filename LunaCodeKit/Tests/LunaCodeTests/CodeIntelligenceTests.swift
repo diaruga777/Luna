@@ -3,6 +3,35 @@ import XCTest
 @testable import LunaCodeMac
 
 final class CodeIntelligenceTests: XCTestCase {
+    func testMacServiceListsSchemesAndRunsBuildJob() async throws {
+        guard let root = ProcessInfo.processInfo.environment["LUNA_CODE_INTELLIGENCE_FIXTURE"] else { throw XCTSkip("Run scripts/test_code_intelligence.sh for the live Xcode integration.") }
+        let service = try CodeService(root: URL(fileURLWithPath: root).appendingPathComponent("Service"))
+        let client = CodeClient { await service.handle($0) }
+        let project = CodeProject(path: root + "/Fixture.xcodeproj", scheme: "Fixture")
+        let schemes = try await client.call(CodeRequest(.schemes, path: project.path))
+        XCTAssertTrue(schemes.schemes.contains("Fixture"))
+        var build = CodeRequest(.build); build.project = project
+        let response = try await client.call(build)
+        let started = try XCTUnwrap(response.job)
+        var status = CodeRequest(.job); status.jobID = started.id
+        var job = started
+        for _ in 0..<120 {
+            let response = try await client.call(status)
+            job = try XCTUnwrap(response.job)
+            if job.state != .running { break }
+            try await Task.sleep(for: .seconds(1))
+        }
+        if job.state == .running {
+            var cancel = CodeRequest(.cancel); cancel.jobID = job.id
+            _ = try await client.call(cancel)
+        }
+        XCTAssertEqual(job.state, .succeeded, job.log)
+        XCTAssertTrue(job.log.contains("BUILD SUCCEEDED"), job.log)
+        let restarted = try CodeService(root: URL(fileURLWithPath: root).appendingPathComponent("Service"))
+        let restored = try await CodeClient { await restarted.handle($0) }.call(status)
+        XCTAssertEqual(restored.job?.state, .succeeded)
+    }
+
     /// Opt-in integration test uses a disposable Xcode fixture built by
     /// scripts/test_code_intelligence.sh, never a user's working project.
     func testUIKitAndExternalModuleCompletionAndUnsavedDiagnostic() async throws {

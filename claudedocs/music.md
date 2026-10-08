@@ -2,8 +2,7 @@
 
 Standalone iOS 26 player: scheme `LunaMusic`, bundle ID
 `$(PRODUCT_BUNDLE_PREFIX).music`, app module `LunaMusicApp`. Apple library songs
-and Luna Vault files coexist in the same songs, artists, albums, search and
-Downloaded screens. Music uses its own library state; it does not use `saves.sqlite`.
+and Luna Vault files coexist in the same songs, artists, albums and search views. Music uses its own library state; it does not use `saves.sqlite`.
 The app links `LunaMusicKit` plus the existing Vault connection/pairing services.
 
 ## Library and playback
@@ -63,6 +62,17 @@ Both the app and Mac companion must be updated for the music service.
 
 ## Downloads
 
+The Library root lists Playlists, Artists, Albums, Songs and **Podcasts**, all in one
+navigation stack. There is no tab bar or separate Downloaded root destination.
+**Downloaded** is a checked filter in the root search menu and every music list's
+filter/sort menu, including playlist options and Add Music. It combines with search,
+shows artists/albums/playlists with at least one local track, and carries into opened
+collections. Turning it off restores the complete list without changing the library.
+Apple tracks use MediaPlayer's local/cloud status; Vault tracks require a complete
+current-version cache. Play/Shuffle and song-start playlist continuation respect the
+filter, so a filtered list does not enqueue remote tracks. Playback queues themselves
+remain intact and show their actual contents.
+
 Song menus and collection download buttons cache Vault songs individually or by
 playlist, artist, or album. Files live in the Music app's private
 `Application Support/LunaMusic/Audio` directory, excluded from backup, with complete
@@ -83,7 +93,10 @@ backgrounded without active audio; retry/foreground refresh resumes the policy.
 ## Foreground behavior
 
 `MusicSceneDelegate` focuses a cleared library search at cold launch and every
-return from background. Permission alerts and transient inactive states do not
+return from background while browsing music. Podcast browsing stays open on return
+and is restored on cold launch; the former Podcasts tab preference migrates to this
+navigation state. Explicit search links return to the Library, and podcast episode/queue
+routes open Podcasts within the same stack. Permission alerts and transient inactive states do not
 reset navigation. An incoming `lunamusic://queue` URL takes precedence and opens
 the queue without the keyboard; `lunamusic://search?q=…` supplies a query. App
 Intent routes are retained until a cold-start scene has installed observers.
@@ -214,7 +227,8 @@ The settings screenshot was inspected for layout and readable controls.
 
 ## Podcasts (2026-10-08)
 
-Music and Podcasts are separate tabs in Luna Music and retain independent queues.
+Podcasts opens from the Library root alongside the music categories. Music and
+Podcasts retain independent queues.
 The Podcasts surface includes Home (continue/latest/recent), New (public directory
 charts and categories), Library (followed shows/latest/saved/downloaded/played,
 custom stations and favorite categories), and show/episode/library search.
@@ -319,7 +333,7 @@ Validation on Xcode 26.2 / iPhone 17 Pro / iOS 26.2:
 - All 16 Foundation policy/feed/store/merge tests pass; run with
   `swift test --package-path tools/podcast-tests`.
 - Existing five Music UI tests pass. The new Podcasts navigation/settings test
-  passes after correcting a UIKit tab-title propagation issue.
+  now covers the Library-root Podcasts destination and shared navigation stack.
 - The local RSS integration UI test passes for following, automatic media download,
   saving/unsaving, and marking played. Show and settings screenshots were inspected.
   Run `python3 tools/podcast-tests/fixture_server.py` and prefix the Xcode UI test
@@ -327,3 +341,10 @@ Validation on Xcode 26.2 / iPhone 17 Pro / iOS 26.2:
   Without this opt-in fixture URL, only that integration test is skipped.
 - Live public-directory probes returned show search, episode search and 100 chart
   results. No Apple account or private credentials were used.
+
+Root navigation/filter validation (2026-10-08, same iOS 26.2 simulator): 37 hosted
+Music unit tests pass. All nine Music UI checks pass across the suite and focused
+reruns, including root options, filter toggles in all music categories, podcast
+foreground retention, music search/queue links, settings and the local RSS fixture.
+The fixture check resets an already-played episode and uses navigation back buttons
+so it can repeat against persisted simulator data. The root screenshot was inspected.

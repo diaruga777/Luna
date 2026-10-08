@@ -10,6 +10,9 @@ internal final class MusicPlaylistSongPicker: UITableViewController, UISearchRes
     private let search = UISearchController(searchResultsController: nil)
     private var selected = Set<MusicID>()
     private var isSaving = false
+    var downloadedOnly: Bool {
+        didSet { if isViewLoaded { updateFilterMenu(); updateSearchResults(for: search) } }
+    }
     private let songProvider: () -> [MusicSong]
     private let addSongs: ([MusicSong]) async throws -> Void
     private var songs: [MusicSong] { songProvider().filter { $0.source == playlist.source } }
@@ -17,14 +20,16 @@ internal final class MusicPlaylistSongPicker: UITableViewController, UISearchRes
     private func matchingSongs() -> [MusicSong] {
         let terms = (search.searchBar.text ?? "").split(whereSeparator: \.isWhitespace)
         return songs.filter { song in
+            guard !downloadedOnly || !song.isCloudItem else { return false }
             let text = [song.title, song.artist, song.albumTitle].compactMap { $0 }.joined(separator: " ")
             return terms.allSatisfy { text.localizedStandardContains(String($0)) }
         }
     }
-    init(playlist: MusicPlaylist,
+    init(playlist: MusicPlaylist, downloadedOnly: Bool = false,
          songProvider: (() -> [MusicSong])? = nil,
          addSongs: (([MusicSong]) async throws -> Void)? = nil) {
         self.playlist = playlist
+        self.downloadedOnly = downloadedOnly
         self.songProvider = songProvider ?? { MusicLibraryController.shared.songs }
         self.addSongs = addSongs ?? { try await MusicLibraryController.shared.add($0, to: playlist) }
         super.init(style: .plain)
@@ -44,16 +49,22 @@ internal final class MusicPlaylistSongPicker: UITableViewController, UISearchRes
         definesPresentationContext = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Add", primaryAction: UIAction { [weak self] _ in self?.save() })
+        updateFilterMenu()
         updateSelection()
         updateSearchResults(for: search)
+    }
+    private func updateFilterMenu() {
+        let filter = UIBarButtonItem(image: UIImage(systemName: downloadedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"), menu: MusicListFilter.menu(downloadedOnly: downloadedOnly) { [weak self] in self?.downloadedOnly.toggle() })
+        filter.accessibilityLabel = "Music Filters"
+        navigationItem.rightBarButtonItems = [navigationItem.rightBarButtonItem!, filter]
     }
     func updateSearchResults(for searchController: UISearchController) {
         filtered = matchingSongs()
         tableView.reloadData()
         if filtered.isEmpty {
             var empty = UIContentUnavailableConfiguration.search()
-            empty.text = songs.isEmpty ? "Your Library Is Empty" : "No Results"
-            empty.secondaryText = songs.isEmpty ? "Add songs to your music library, then select them here." : "Try another song, album, or artist."
+            empty.text = downloadedOnly ? "No Downloaded Music" : songs.isEmpty ? "Your Library Is Empty" : "No Results"
+            empty.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : songs.isEmpty ? "Add songs to your music library, then select them here." : "Try another song, album, or artist."
             tableView.backgroundView = UIContentUnavailableView(configuration: empty)
         } else { tableView.backgroundView = nil }
     }

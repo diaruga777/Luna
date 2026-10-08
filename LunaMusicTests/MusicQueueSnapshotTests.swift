@@ -145,6 +145,67 @@ final class MusicLayoutTests: XCTestCase {
             XCTAssertNotNil(screen.table.tableHeaderView)
         }
     }
+    func testDownloadedFilterCombinesWithSearchAndKeepsCollectionMetadata() {
+        let local = MusicSong(LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars"))
+        let cloud = MusicSong(LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist", cloud: true))
+        let mixed = MusicResult.album(MusicCollection(items: [local, cloud]))
+        let remote = MusicResult.album(MusicCollection(items: [cloud]))
+        for (title, rows) in [("Songs", [MusicResult.song(local), .song(cloud)]), ("Artists", [.artist(MusicCollection(items: [local, cloud])), .artist(MusicCollection(items: [cloud]))]), ("Playlists", [.playlist(MusicPlaylist(LayoutPlaylist(items: [local.mediaItem!, cloud.mediaItem!]))), .playlist(MusicPlaylist(LayoutPlaylist(items: [cloud.mediaItem!])))]), ("Albums", [mixed, remote])] {
+            let screen = MusicCollectionViewController(title: title, results: rows, downloadedOnly: true)
+            screen.loadViewIfNeeded()
+            XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 1)
+            let search = screen.navigationItem.searchController!
+            search.searchBar.text = "No Match"
+            screen.updateSearchResults(for: search)
+            XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 0)
+            search.searchBar.text = "Cars"
+            screen.updateSearchResults(for: search)
+            XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 1)
+            screen.downloadedOnly = false
+            search.searchBar.text = ""
+            screen.updateSearchResults(for: search)
+            XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), title == "Albums" ? 1 : 2)
+        }
+        XCTAssertEqual(mixed.songs.count, 2, "Filtering must not mutate the original collection")
+        XCTAssertTrue(mixed.hasDownloadedSongs)
+        XCTAssertFalse(remote.hasDownloadedSongs)
+    }
+
+    func testDownloadedFilterCarriesIntoAlbumDetailAndCanBeTurnedOff() {
+        let songs = [MusicSong(LayoutSong(id: 1, title: "Drive", album: "Album", artist: "Artist")), MusicSong(LayoutSong(id: 2, title: "Cloud Song", album: "Album", artist: "Artist", cloud: true))]
+        let owner = MusicScreenViewController()
+        let navigation = UINavigationController(rootViewController: owner)
+        MusicResult.album(MusicCollection(items: songs)).open(from: owner, downloadedOnly: true)
+        let detail = navigation.topViewController as! MusicCollectionViewController
+        detail.loadViewIfNeeded()
+        XCTAssertTrue(detail.downloadedOnly)
+        XCTAssertEqual(detail.tableView(detail.table, numberOfRowsInSection: 0), 1)
+        detail.downloadedOnly = false
+        XCTAssertEqual(detail.tableView(detail.table, numberOfRowsInSection: 0), 2)
+    }
+
+    func testPickerSelectionSurvivesDownloadedFilterChanges() async {
+        let local = LayoutSong(id: 1, title: "Local", album: "Album", artist: "Artist")
+        let cloud = LayoutSong(id: 2, title: "Remote", album: "Album", artist: "Artist", cloud: true)
+        let saved = expectation(description: "Both selections preserved")
+        let picker = MusicPlaylistSongPicker(playlist: MusicPlaylist(LayoutPlaylist(items: [])), songProvider: { [local, cloud].map(MusicSong.init) }) { items in
+            XCTAssertEqual(items.map(\.persistentID), [1, 2])
+            saved.fulfill()
+        }
+        show(UINavigationController(rootViewController: picker))
+        picker.tableView(picker.tableView, didSelectRowAt: IndexPath(row: 1, section: 0))
+        picker.downloadedOnly = true
+        XCTAssertEqual(picker.tableView(picker.tableView, numberOfRowsInSection: 0), 1)
+        picker.tableView(picker.tableView, didSelectRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertEqual(picker.navigationItem.rightBarButtonItem?.title, "Add (2)")
+        picker.downloadedOnly = false
+        XCTAssertEqual(picker.tableView(picker.tableView, numberOfRowsInSection: 0), 2)
+        let button = UIButton()
+        button.addAction(picker.navigationItem.rightBarButtonItem!.primaryAction!, for: .touchUpInside)
+        button.sendActions(for: .touchUpInside)
+        await fulfillment(of: [saved], timeout: 3)
+    }
+
     func testPlaylistPickerKeepsSelectionAcrossSearchAndSavesSelectedSongs() async {
         let songs = [LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars"), LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist")]
         let saved = expectation(description: "Selected songs sent to playlist API")
@@ -176,14 +237,16 @@ private final class LayoutSong: MPMediaItem {
     private let songTitle: String
     private let album: String
     private let performer: String
-    init(id: UInt64, title: String, album: String, artist: String) {
-        self.id = id; songTitle = title; self.album = album; performer = artist
+    private let cloud: Bool
+    init(id: UInt64, title: String, album: String, artist: String, cloud: Bool = false) {
+        self.id = id; songTitle = title; self.album = album; performer = artist; self.cloud = cloud
         super.init()
     }
     required init?(coder: NSCoder) { fatalError() }
     override func value(forProperty property: String) -> Any? { nil }
     override var persistentID: MPMediaEntityPersistentID { id }
     override var albumPersistentID: MPMediaEntityPersistentID { id }
+    override var isCloudItem: Bool { cloud }
     override var title: String? { songTitle }
     override var albumTitle: String? { album }
     override var artist: String? { performer }

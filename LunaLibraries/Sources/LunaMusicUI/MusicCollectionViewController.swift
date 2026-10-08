@@ -8,11 +8,19 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     private var collection: MusicResult?
     private let searchController = UISearchController(searchResultsController: nil)
     private var collectionHeader: MusicCollectionHeader?
+    var downloadedOnly: Bool {
+        didSet {
+            guard isViewLoaded else { return }
+            configureOptions()
+            rebuildHeader()
+            reloadResults()
+        }
+    }
     private var filteredResults: [MusicResult] = []
     private func matchingResults() -> [MusicResult] {
         let terms = (searchController.searchBar.text ?? "").split(whereSeparator: \.isWhitespace)
-        guard !terms.isEmpty else { return results }
         return results.filter { result in
+            guard !downloadedOnly || result.hasDownloadedSongs else { return false }
             let text = ([result.name] + result.songs.flatMap { [$0.title ?? "", $0.artist ?? "", $0.albumTitle ?? ""] }).joined(separator: " ")
             return terms.allSatisfy { text.localizedStandardContains(String($0)) }
         }
@@ -23,8 +31,8 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         guard isArtist || (title == "Albums" && collection == nil) else { return nil }
         return filteredResults.compactMap { if case .album(let album) = $0 { return album }; return nil }
     }
-    init(title: String, results: [MusicResult], collection: MusicResult? = nil) {
-        self.results = results; self.collection = collection
+    init(title: String, results: [MusicResult], collection: MusicResult? = nil, downloadedOnly: Bool = false) {
+        self.results = results; self.collection = collection; self.downloadedOnly = downloadedOnly
         super.init(nibName: nil, bundle: nil); self.title = title
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -42,30 +50,35 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         definesPresentationContext = true
         table.register(UITableViewCell.self, forCellReuseIdentifier: "row")
         table.register(MusicArtworkGridCell.self, forCellReuseIdentifier: "grid")
+        if collection != nil {
+            navigationItem.largeTitleDisplayMode = .never
+            navigationItem.title = ""
+            rebuildHeader()
+        }
+        observe(.lunaMusicLibraryChanged) { [weak self] in
+            guard let self else { return }
+            if self.title == "Playlists" && self.collection == nil {
+                self.results = MusicLibraryController.shared.playlists.map(MusicResult.playlist)
+            } else if let playlist = self.collection?.playlist,
+                      let updated = MusicLibraryController.shared.playlists.first(where: { $0.persistentID == playlist.persistentID }) {
+                self.collection = .playlist(updated)
+                self.results = updated.items.map(MusicResult.song)
+            }
+            self.rebuildHeader()
+            self.reloadResults()
+        }
+        configureOptions()
+        reloadResults()
+    }
+    private func configureOptions() {
         let sort = UIMenu(title: "Sort By", children: [UIAction(title: "Title", image: UIImage(systemName: "textformat.abc")) { [weak self] _ in
             self?.results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }; self?.reloadResults()
         }, UIAction(title: "Recently Added", image: UIImage(systemName: "clock")) { [weak self] _ in
             self?.results.sort { ($0.songs.first?.dateAdded ?? .distantPast) > ($1.songs.first?.dateAdded ?? .distantPast) }; self?.reloadResults()
         }])
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "line.3.horizontal.decrease"), menu: sort)
-        if title == "Playlists" && collection == nil {
-            let add = UIBarButtonItem(systemItem: .add, primaryAction: UIAction { [weak self] _ in self?.newPlaylist { [weak self] playlist in
-                guard let self else { return }
-                let detail = MusicCollectionViewController(title: playlist.name ?? "Playlist", results: playlist.items.map(MusicResult.song), collection: .playlist(playlist))
-                self.navigationController?.pushViewController(detail, animated: true)
-            } })
-            navigationItem.rightBarButtonItems = [navigationItem.rightBarButtonItem!, add]
-            observe(.lunaMusicLibraryChanged) { [weak self] in self?.results = MusicLibraryController.shared.playlists.map(MusicResult.playlist); self?.reloadResults() }
-        }
-        if collection != nil {
-            navigationItem.largeTitleDisplayMode = .never
-            // The collection title lives in its header until that header scrolls away.
-            navigationItem.title = ""
-            rebuildHeader()
-        }
+        var actions: [UIMenuElement] = [MusicListFilter.menu(downloadedOnly: downloadedOnly) { [weak self] in self?.downloadedOnly.toggle() }, sort]
         if let playlist = collection?.playlist {
-            let add = UIAction(title: "Add Music", image: UIImage(systemName: "music.note.badge.plus")) { [weak self] _ in self?.addMusic() }
-            var actions: [UIMenuElement] = [add, sort]
+            actions.insert(UIAction(title: "Add Music", image: UIImage(systemName: "music.note.badge.plus")) { [weak self] _ in self?.addMusic() }, at: 0)
             if playlist.source == .vault {
                 actions.append(UIAction(title: "Delete Playlist", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
                     guard let self else { return }
@@ -75,15 +88,17 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
                     }
                 })
             }
-            navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: actions))
-            navigationItem.rightBarButtonItem?.accessibilityLabel = "Playlist Options"
-            observe(.lunaMusicLibraryChanged) { [weak self] in
-                guard let self, let updated = MusicLibraryController.shared.playlists.first(where: { $0.persistentID == playlist.persistentID }) else { return }
-                self.collection = .playlist(updated)
-                self.results = updated.items.map(MusicResult.song)
-                self.rebuildHeader()
-                self.reloadResults()
-            }
+        }
+        let options = UIBarButtonItem(image: UIImage(systemName: collection?.playlist != nil ? "ellipsis" : downloadedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease"), menu: UIMenu(children: actions))
+        options.accessibilityLabel = collection?.playlist != nil ? "Playlist Options" : "Music Filters and Sort"
+        navigationItem.rightBarButtonItems = [options]
+        if title == "Playlists" && collection == nil {
+            let add = UIBarButtonItem(systemItem: .add, primaryAction: UIAction { [weak self] _ in self?.newPlaylist { [weak self] playlist in
+                guard let self else { return }
+                let detail = MusicCollectionViewController(title: playlist.name ?? "Playlist", results: playlist.items.map(MusicResult.song), collection: .playlist(playlist), downloadedOnly: self.downloadedOnly)
+                self.navigationController?.pushViewController(detail, animated: true)
+            } })
+            navigationItem.rightBarButtonItems = [options, add]
         }
         if let collection, (collection.playlist?.source == .vault || collection.songs.contains(where: { $0.source == .vault })) {
             let download = UIBarButtonItem(image: UIImage(systemName: "arrow.down.circle"), primaryAction: UIAction { [weak self] _ in
@@ -93,7 +108,6 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
             download.accessibilityLabel = "Download All Vault Songs"
             navigationItem.rightBarButtonItems = [download] + (navigationItem.rightBarButtonItems ?? [])
         }
-        reloadResults()
     }
     private func rebuildHeader() {
         guard let collection else { return }
@@ -102,10 +116,10 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
             view.backgroundColor = color
             view.tintColor = .white
         }
-        let header = MusicCollectionHeader(result: collection)
+        let header = MusicCollectionHeader(result: collection, songs: collection.songs.filter { !downloadedOnly || !$0.isCloudItem })
         header.onPlay = { [weak self] shuffle in
             guard let self, let current = self.collection else { return }
-            MusicStyle.run(from: self) { try await MusicPlaybackController.shared.play(current.songs, playlist: current.playlist, shuffle: shuffle) }
+            MusicStyle.run(from: self) { try await MusicPlaybackController.shared.play(current.songs.filter { !self.downloadedOnly || !$0.isCloudItem }, playlist: current.playlist, shuffle: shuffle) }
         }
         header.onAddMusic = { [weak self] in self?.addMusic() }
         collectionHeader = header
@@ -113,7 +127,7 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     }
     private func addMusic() {
         guard let playlist = collection?.playlist else { return }
-        let picker = MusicPlaylistSongPicker(playlist: playlist)
+        let picker = MusicPlaylistSongPicker(playlist: playlist, downloadedOnly: downloadedOnly)
         present(UINavigationController(rootViewController: picker), animated: true)
     }
     func updateSearchResults(for searchController: UISearchController) { reloadResults() }
@@ -126,8 +140,8 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         table.tableFooterView = nil
         if filteredResults.isEmpty {
             var config = searching ? UIContentUnavailableConfiguration.search() : UIContentUnavailableConfiguration.empty()
-            config.text = searching ? "No Results" : collection?.playlist != nil ? "No Songs" : "No \(title ?? "Music")"
-            config.secondaryText = searching ? "Try another title or artist." : collection?.playlist != nil ? "Add music from your library to this playlist." : "Music in your library will appear here."
+            config.text = downloadedOnly && !searching ? "No Downloaded Music" : searching ? "No Results" : collection?.playlist != nil ? "No Songs" : "No \(title ?? "Music")"
+            config.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : searching ? "Try another title or artist." : collection?.playlist != nil ? "Add music from your library to this playlist." : "Music in your library will appear here."
             let empty = UIContentUnavailableView(configuration: config)
             empty.frame = CGRect(x: 0, y: 0, width: table.bounds.width, height: 160)
             table.tableFooterView = empty
@@ -150,22 +164,22 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         if let albums = gridAlbums {
             let cell = tableView.dequeueReusableCell(withIdentifier: "grid", for: indexPath) as! MusicArtworkGridCell
             let start = indexPath.row * 2
-            cell.configure(Array(albums[start..<min(start + 2, albums.count)]), showsYear: collection != nil) { [weak self] album in guard let self else { return }; MusicResult.album(album).open(from: self) }
+            cell.configure(Array(albums[start..<min(start + 2, albums.count)]), showsYear: collection != nil) { [weak self] album in guard let self else { return }; MusicResult.album(album).open(from: self, downloadedOnly: self.downloadedOnly) }
             return cell
         }
-        let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath); filteredResults[indexPath.row].configure(cell, owner: self); return cell
+        let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath); filteredResults[indexPath.row].configure(cell, owner: self, downloadedOnly: downloadedOnly); return cell
     }
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true); guard gridAlbums == nil else { return }
         if case .song(let song) = filteredResults[indexPath.row], let playlist = collection?.playlist {
-            MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(song, in: playlist) }
-        } else { filteredResults[indexPath.row].open(from: self) }
+            MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(song, in: playlist, downloadedOnly: self.downloadedOnly) }
+        } else { filteredResults[indexPath.row].open(from: self, downloadedOnly: downloadedOnly) }
     }
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard gridAlbums == nil, case .song(let item) = filteredResults[indexPath.row] else { return nil }
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             guard let self else { return nil }
-            let menu = self.songMenu(item)
+            let menu = self.songMenu(item, downloadedOnly: self.downloadedOnly)
             guard let playlist = self.collection?.playlist, playlist.source == .vault else { return menu }
             let remove = UIAction(title: "Remove from Playlist", image: UIImage(systemName: "minus.circle"), attributes: .destructive) { [weak self] _ in
                 guard let self else { return }
@@ -180,7 +194,7 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
 private final class MusicCollectionHeader: UIView {
     var onPlay: ((Bool) -> Void)?
     var onAddMusic: (() -> Void)?
-    init(result: MusicResult) {
+    init(result: MusicResult, songs: [MusicSong]) {
         super.init(frame: .zero)
         let isArtist: Bool
         if case .artist = result { isArtist = true } else { isArtist = false }
@@ -213,8 +227,8 @@ private final class MusicCollectionHeader: UIView {
             shuffle.accessibilityLabel = "Shuffle"
             shuffle.widthAnchor.constraint(equalToConstant: 60).isActive = true
         }
-        play.isEnabled = !result.songs.isEmpty
-        shuffle.isEnabled = !result.songs.isEmpty
+        play.isEnabled = !songs.isEmpty
+        shuffle.isEnabled = !songs.isEmpty
         let stack = UIStackView(arrangedSubviews: [artwork, name, buttons])
         if result.playlist != nil {
             var configuration = UIButton.Configuration.tinted()

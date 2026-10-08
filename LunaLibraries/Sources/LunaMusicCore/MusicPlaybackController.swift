@@ -165,14 +165,14 @@ public final class MusicPlaybackController: ObservableObject {
         changed()
     }
 
-    public func playSong(_ item: MusicSong, in preferredPlaylist: MusicPlaylist? = nil) async throws {
+    public func playSong(_ item: MusicSong, in preferredPlaylist: MusicPlaylist? = nil, downloadedOnly: Bool = false) async throws {
         if !MusicLibraryController.shared.hasLoaded || MusicLibraryController.shared.isLoading {
             await MusicLibraryController.shared.reload(refreshVault: false)
         }
         let playlists = MusicLibraryController.shared.playlists
         let recency = defaults.dictionary(forKey: recencyKey) as? [String: Double] ?? [:]
         let candidates = playlists.map {
-            MusicQueuePlanner.Playlist(id: $0.persistentID, songIDs: $0.items.map(\.persistentID),
+            MusicQueuePlanner.Playlist(id: $0.persistentID, songIDs: $0.items.filter { !downloadedOnly || !$0.isCloudItem }.map(\.persistentID),
                                        lastPlayed: (recency[$0.persistentID.rawValue] ?? recency[$0.persistentID.rawValue.replacingOccurrences(of: "apple:", with: "")]).map(Date.init(timeIntervalSince1970:)),
                                        isAutomatic: !$0.playlistAttributes.intersection([.smart, .genius]).isEmpty)
         }

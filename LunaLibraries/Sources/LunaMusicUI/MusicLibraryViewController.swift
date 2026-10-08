@@ -11,12 +11,12 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     private let library = MusicLibraryController.shared
     private var results: [MusicResult] = []
     private var query: String { search.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
-    private var categories: [(String, String)] { [("Playlists", "music.note.list"), ("Artists", "mic.fill"), ("Albums", "square.stack"), ("Songs", "music.note"), ("Downloaded", "arrow.down.circle")] }
+    private lazy var podcasts = PodcastLibraryViewController()
+    private var downloadedOnly = false
+    private var categories: [(String, String)] { [("Playlists", "music.note.list"), ("Artists", "mic.fill"), ("Albums", "square.stack"), ("Songs", "music.note"), ("Podcasts", "dot.radiowaves.left.and.right")] }
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Library"
-        tabBarItem = UITabBarItem(title: "Music", image: UIImage(systemName: "music.note"), tag: 0)
-        navigationController?.tabBarItem = tabBarItem
         navigationController?.navigationBar.prefersLargeTitles = true
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchResultsUpdater = self
@@ -41,6 +41,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         })
         settings.accessibilityLabel = "Settings"
         navigationItem.rightBarButtonItems = [settings, navigationItem.rightBarButtonItem!]
+        updateFilterMenu()
         update()
         Task { await library.authorizeAndLoad(); update() }
     }
@@ -69,10 +70,38 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             }
         }
     }
+    @discardableResult
+    public func showPodcasts(animated: Bool = true) -> PodcastLibraryViewController {
+        pendingSearchFocus = false
+        loadViewIfNeeded()
+        searchController.isActive = false
+        view.endEditing(true)
+        if presentedViewController != nil { dismiss(animated: false) }
+        guard let navigationController else { return podcasts }
+        if navigationController.viewControllers.contains(where: { $0 === podcasts }) {
+            navigationController.popToViewController(podcasts, animated: false)
+        } else {
+            navigationController.popToRootViewController(animated: false)
+            navigationController.pushViewController(podcasts, animated: animated)
+        }
+        return podcasts
+    }
+    private func updateFilterMenu() {
+        let filter = UIBarButtonItem(image: UIImage(systemName: downloadedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"), menu: MusicListFilter.menu(downloadedOnly: downloadedOnly) { [weak self] in
+            guard let self else { return }
+            self.downloadedOnly.toggle()
+            self.updateFilterMenu()
+            self.update()
+        })
+        filter.accessibilityLabel = "Music Filters"
+        navigationItem.rightBarButtonItems = (navigationItem.rightBarButtonItems ?? []).filter { $0.accessibilityLabel != "Music Filters" } + [filter]
+    }
     public func showQueue() {
         pendingSearchFocus = false
         loadViewIfNeeded()
         if presentedViewController != nil { dismiss(animated: false) }
+        searchController.isActive = false
+        navigationController?.popToRootViewController(animated: false)
         presentPlayer(queue: true)
     }
     public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) { update() }
@@ -85,6 +114,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             results = found.songs.map(MusicResult.song) + found.albums.map(MusicResult.album)
                 + found.artists.map(MusicResult.artist) + found.playlists.map(MusicResult.playlist)
         }
+        if downloadedOnly { results = results.filter { $0.hasDownloadedSongs } }
         table.reloadData()
         var configuration: UIContentUnavailableConfiguration?
         if library.songs.isEmpty && (library.authorizationStatus == .denied || library.authorizationStatus == .restricted) {
@@ -98,7 +128,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         } else if library.isLoading && library.songs.isEmpty {
             var empty = UIContentUnavailableConfiguration.loading(); empty.text = "Loading Your Library"; configuration = empty
         } else if !query.isEmpty && results.isEmpty {
-            var empty = UIContentUnavailableConfiguration.search(); empty.secondaryText = "Try another song, artist, album, or playlist."; configuration = empty
+            var empty = UIContentUnavailableConfiguration.search(); empty.secondaryText = downloadedOnly ? "Try another search or turn off the Downloaded filter." : "Try another song, artist, album, or playlist."; configuration = empty
         } else if library.songs.isEmpty && library.authorizationStatus == .authorized {
             var empty = UIContentUnavailableConfiguration.empty(); empty.image = UIImage(systemName: "music.note.list"); empty.text = "Your Library Is Empty"; empty.secondaryText = library.errorMessage ?? "Add music to your Apple library or connect Luna Mac in Settings to discover Vault songs."; configuration = empty
         }
@@ -126,7 +156,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             config.imageProperties.tintColor = .label; config.imageProperties.reservedLayoutSize = CGSize(width: 34, height: 34)
             config.directionalLayoutMargins.top = 12; config.directionalLayoutMargins.bottom = 12
             cell.contentConfiguration = config; cell.accessoryType = .disclosureIndicator
-        } else { results[indexPath.row].configure(cell, owner: self) }
+        } else { results[indexPath.row].configure(cell, owner: self, downloadedOnly: downloadedOnly) }
         cell.backgroundColor = .clear
         return cell
     }
@@ -134,20 +164,21 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         tableView.deselectRow(at: indexPath, animated: true)
         if !query.isEmpty { open(results[indexPath.row]); return }
         guard indexPath.section == 0 else { return }
+        if indexPath.row == 4 { showPodcasts(); return }
         let items: [MusicResult]
         switch indexPath.row {
         case 0: items = library.playlists.map(MusicResult.playlist)
         case 1: items = library.artists.map(MusicResult.artist)
         case 2: items = library.albums.map(MusicResult.album)
         case 3: items = library.songs.map(MusicResult.song)
-        default: items = library.songs.filter { !$0.isCloudItem }.map(MusicResult.song)
+        default: return
         }
         view.endEditing(true)
-        navigationController?.pushViewController(MusicCollectionViewController(title: categories[indexPath.row].0, results: items), animated: true)
+        navigationController?.pushViewController(MusicCollectionViewController(title: categories[indexPath.row].0, results: items, downloadedOnly: downloadedOnly), animated: true)
     }
     private func open(_ result: MusicResult) {
         view.endEditing(true)
-        result.open(from: self)
+        result.open(from: self, downloadedOnly: downloadedOnly)
     }
 }
 
@@ -155,6 +186,7 @@ internal enum MusicResult {
     case song(MusicSong), playlist(MusicPlaylist), album(MusicCollection), artist(MusicCollection)
     var name: String { switch self { case .song(let item): return item.title ?? "Unknown Song"; case .playlist(let item): return item.name ?? "Playlist"; case .album(let item): return item.representativeItem?.albumTitle ?? "Unknown Album"; case .artist(let item): return item.representativeItem?.artist ?? "Unknown Artist" } }
     var songs: [MusicSong] { switch self { case .song(let item): return [item]; case .playlist(let item): return item.items; case .album(let item), .artist(let item): return item.items } }
+    @MainActor var hasDownloadedSongs: Bool { songs.contains { !$0.isCloudItem } }
     var playlist: MusicPlaylist? { if case .playlist(let item) = self { return item }; return nil }
     @MainActor func artwork(size: CGFloat = 600) -> UIImage? {
         guard case .playlist = self else { return MusicStyle.image(songs.first, size: size) }
@@ -168,9 +200,9 @@ internal enum MusicResult {
             }
         }
     }
-    @MainActor func configure(_ cell: UITableViewCell, owner: MusicScreenViewController) {
+    @MainActor func configure(_ cell: UITableViewCell, owner: MusicScreenViewController, downloadedOnly: Bool = false) {
         cell.accessoryView = nil; cell.accessoryType = .disclosureIndicator
-        if case .song(let item) = self { owner.configureSong(cell, item: item); cell.accessoryType = .none; return }
+        if case .song(let item) = self { owner.configureSong(cell, item: item, downloadedOnly: downloadedOnly); cell.accessoryType = .none; return }
         var config = cell.defaultContentConfiguration(); config.text = name
         config.image = artwork(size: 120) ?? UIImage(systemName: "music.note.list")
         config.imageProperties.maximumSize = CGSize(width: 64, height: 64); config.imageProperties.cornerRadius = 6
@@ -186,12 +218,12 @@ internal enum MusicResult {
         config.secondaryTextProperties.color = .secondaryLabel
         cell.contentConfiguration = config; cell.backgroundColor = .clear
     }
-    @MainActor func open(from owner: MusicScreenViewController) {
-        if case .song(let item) = self { MusicStyle.run(from: owner) { try await MusicPlaybackController.shared.playSong(item) }; return }
+    @MainActor func open(from owner: MusicScreenViewController, downloadedOnly: Bool = false) {
+        if case .song(let item) = self { MusicStyle.run(from: owner) { try await MusicPlaybackController.shared.playSong(item, downloadedOnly: downloadedOnly) }; return }
         if case .artist(let collection) = self {
             let grouped = Dictionary(grouping: collection.items, by: { $0.albumPersistentID })
             let albums = grouped.values.map { MusicResult.album(MusicCollection(items: $0)) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: albums, collection: self), animated: true)
-        } else { owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: songs.map(MusicResult.song), collection: self), animated: true) }
+            owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: albums, collection: self, downloadedOnly: downloadedOnly), animated: true)
+        } else { owner.navigationController?.pushViewController(MusicCollectionViewController(title: name, results: songs.map(MusicResult.song), collection: self, downloadedOnly: downloadedOnly), animated: true) }
     }
 }

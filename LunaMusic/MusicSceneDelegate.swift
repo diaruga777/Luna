@@ -7,8 +7,6 @@ import LunaPodcastCore
 /// URLs delivered after sceneDidBecomeActive during a warm launch.
 final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
-    private var podcasts: PodcastLibraryViewController?
-    private var tabs: UITabBarController?
     private var library: MusicLibraryViewController?
     private var pendingRoute: MusicLaunchRoute?
     private var searchQuery = ""
@@ -22,21 +20,20 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.library = library
         let window = UIWindow(windowScene: scene)
         window.tintColor = .systemPink
-        let podcasts = PodcastLibraryViewController(); self.podcasts = podcasts
-        let musicNavigation = UINavigationController(rootViewController: library)
-        musicNavigation.tabBarItem = UITabBarItem(title: "Music", image: UIImage(systemName: "music.note"), tag: 0)
-        let podcastNavigation = UINavigationController(rootViewController: podcasts)
-        podcastNavigation.tabBarItem = UITabBarItem(title: "Podcasts", image: UIImage(systemName: "dot.radiowaves.left.and.right"), tag: 1)
-        let tabs = UITabBarController(); tabs.viewControllers = [musicNavigation, podcastNavigation]
-        tabs.selectedIndex = UserDefaults.standard.integer(forKey: "LunaMusic.browsingTab")
-        self.tabs = tabs; window.rootViewController = tabs
+        let navigation = UINavigationController(rootViewController: library)
+        window.rootViewController = navigation
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "LunaMusic.browsingPodcasts") == nil {
+            defaults.set(defaults.integer(forKey: "LunaMusic.browsingTab") == 1, forKey: "LunaMusic.browsingPodcasts")
+        }
+        if defaults.bool(forKey: "LunaMusic.browsingPodcasts") { library.showPodcasts(animated: false) }
         self.window = window
         window.makeKeyAndVisible()
         routeObservers.append(NotificationCenter.default.addObserver(forName: .lunaPodcastOpenEpisode, object: nil, queue: .main) { [weak self] notification in
             guard let id = notification.userInfo?["id"] as? String else { return }
-            Task { @MainActor in self?.tabs?.selectedIndex = 1; self?.podcasts?.openEpisode(id); MusicIntentRoute.pendingPodcastEpisodeID = nil }
+            Task { @MainActor in self?.openPodcastEpisode(id) }
         })
-        if let id = MusicIntentRoute.pendingPodcastEpisodeID { tabs.selectedIndex = 1; podcasts.openEpisode(id); MusicIntentRoute.pendingPodcastEpisodeID = nil }
+        if let id = MusicIntentRoute.pendingPodcastEpisodeID { openPodcastEpisode(id) }
         let initialURL = options.urlContexts.map(\.url).first ?? MusicIntentRoute.pendingURL
         MusicIntentRoute.pendingURL = nil
         if let initialURL { capture(initialURL) }
@@ -53,7 +50,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
-        UserDefaults.standard.set(tabs?.selectedIndex ?? 0, forKey: "LunaMusic.browsingTab")
+        UserDefaults.standard.set(browsingPodcasts, forKey: "LunaMusic.browsingPodcasts")
         PodcastBackgroundServices.shared.background()
         MusicVaultWiring.background()
         enteredBackground = true
@@ -69,9 +66,10 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         activationWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let route = self.pendingRoute ?? .search
+            let route = self.pendingRoute
             self.pendingRoute = nil
-            self.apply(route)
+            if let route { self.apply(route) }
+            else if !self.browsingPodcasts { self.library?.foregroundSearch() }
         }
         activationWork = work
         DispatchQueue.main.async(execute: work)
@@ -84,13 +82,22 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         navigate(route)
     }
 
+    private var browsingPodcasts: Bool {
+        library?.navigationController?.viewControllers.contains(where: { $0 is PodcastLibraryViewController }) == true
+    }
+
+    private func openPodcastEpisode(_ id: String) {
+        activationWork?.cancel()
+        library?.showPodcasts(animated: false).openEpisode(id)
+        MusicIntentRoute.pendingPodcastEpisodeID = nil
+    }
+
     private func capture(_ url: URL) {
         pendingRoute = MusicLaunchRoute(url: url)
         searchQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
     }
 
     private func navigate(_ route: MusicLaunchRoute) {
-        if route == .search { tabs?.selectedIndex = 0 }
         activationWork?.cancel()
         if window?.windowScene?.activationState == .foregroundActive {
             pendingRoute = nil
@@ -102,10 +109,10 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func apply(_ route: MusicLaunchRoute) {
         switch route {
-        case .search: if tabs?.selectedIndex == 0 || !searchQuery.isEmpty { tabs?.selectedIndex = 0; library?.foregroundSearch(query: searchQuery) }; searchQuery = ""
+        case .search: library?.foregroundSearch(query: searchQuery); searchQuery = ""
         case .queue:
-            if MediaPlaybackCoordinator.shared.active == .podcasts { tabs?.selectedIndex = 1; podcasts?.showQueue() }
-            else { tabs?.selectedIndex = 0; library?.showQueue() }
+            if MediaPlaybackCoordinator.shared.active == .podcasts { library?.showPodcasts(animated: false).showQueue() }
+            else { library?.showQueue() }
         }
     }
 

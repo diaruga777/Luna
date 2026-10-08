@@ -92,6 +92,15 @@ internal enum MusicStyle {
 }
 
 @MainActor
+internal enum MusicListFilter {
+    static func menu(downloadedOnly: Bool, toggle: @escaping () -> Void) -> UIMenu {
+        UIMenu(options: .displayInline, children: [
+            UIAction(title: "Downloaded", image: UIImage(systemName: "arrow.down.circle"), state: downloadedOnly ? .on : .off) { _ in toggle() }
+        ])
+    }
+}
+
+@MainActor
 public class MusicScreenViewController: UIViewController {
     let table = UITableView(frame: .zero, style: .plain)
     let mini = MusicMiniPlayer()
@@ -149,11 +158,11 @@ public class MusicScreenViewController: UIViewController {
         }
         present(controller, animated: true)
     }
-    func songMenu(_ item: MusicSong) -> UIMenu {
+    func songMenu(_ item: MusicSong, downloadedOnly: Bool = false) -> UIMenu {
         return UIMenu(children: [
             UIAction(title: "Play", image: UIImage(systemName: "play.fill")) { [weak self] _ in
                 guard let self else { return }
-                MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(item) }
+                MusicStyle.run(from: self) { try await MusicPlaybackController.shared.playSong(item, downloadedOnly: downloadedOnly) }
             },
             UIMenu(title: "Add to Playlist", image: UIImage(systemName: "text.badge.plus"), children: [UIAction(title: "New Playlist…", image: UIImage(systemName: "plus")) { [weak self] _ in self?.newPlaylist(items: [item]) }] + MusicLibraryController.shared.playlists.filter { $0.source == item.source && !$0.playlistAttributes.contains(.smart) && !$0.playlistAttributes.contains(.genius) }.map { playlist in
                 UIAction(title: playlist.name ?? "Playlist") { [weak self] _ in
@@ -197,7 +206,7 @@ public class MusicScreenViewController: UIViewController {
         }, for: .editingChanged)
         present(alert, animated: true)
     }
-    func configureSong(_ cell: UITableViewCell, item: MusicSong) {
+    func configureSong(_ cell: UITableViewCell, item: MusicSong, downloadedOnly: Bool = false) {
         var config = cell.defaultContentConfiguration()
         config.text = item.title ?? "Unknown Song"
         config.secondaryText = item.artist ?? "Unknown Artist"
@@ -216,7 +225,7 @@ public class MusicScreenViewController: UIViewController {
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         more.tintColor = .secondaryLabel
         more.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
-        more.menu = songMenu(item)
+        more.menu = songMenu(item, downloadedOnly: downloadedOnly)
         more.showsMenuAsPrimaryAction = true
         more.accessibilityLabel = "More options for \(item.title ?? "song")"
         cell.accessoryView = more

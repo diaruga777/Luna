@@ -2,7 +2,7 @@
 
 A universal, credential-free way to get a saved article out of Luna: build the
 article in the format the user picks and hand the file to the system share sheet.
-Four formats — **EPUB, PDF, Word Document, Text** — offered on any saved article
+Five options — **EPUB, EPUB (Small, Black & White), PDF, Word Document, Text** — offered on any saved article
 whose content is unlocked (extracted and stored). Available in the two apps that
 link `LunaSend`: **Luna** (central) and **Luna Reader**.
 
@@ -199,3 +199,21 @@ of what's wanted here.
   capped geometry, and the share menu offering it while omitting Markdown.
 - `LunaTests/ReaderShareSheetTests.swift` — the export submenu's contents, order,
   and per-format callback, in both the menu and the row list.
+
+## Compact EPUB
+
+The article share menu offers **EPUB (Small, Black & White)** independently of
+any destination integration (`ArticleExportFormat.compactEpub`). It uses the
+same generic `EpubBuilder.Profile.compact` as plugins declaring
+`inputOptions.epub.profile: "compact"`.
+
+Text is DEFLATE-compressed; at most one banner appears below the title. The first
+article image (including a retained EPUB cover) is prepared on iOS, downsampled
+without enlargement to fit 320 × 160 pixels, composited on white, and dithered to
+a one-bit black-and-white PNG capped at 8 KiB. A missing/corrupt picture is omitted.
+Other images are represented by their alternative text; captions remain. Only
+the selected banner is fetched, and its filename is merged back into the complete
+stored content. Full EPUB exports keep all available original images.
+
+These bounds keep image overhead small for Bluetooth. Long books can still
+exceed a destination's transport ceiling; no text is removed to meet it.

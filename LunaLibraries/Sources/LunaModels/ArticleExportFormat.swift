@@ -20,6 +20,8 @@ import Foundation
 public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     /// EPUB 3 — reflowable, images embedded. What Send to Kindle also uses.
     case epub
+    /// Compressed EPUB with one small black-and-white banner.
+    case compactEpub
     /// Paginated PDF — fixed layout, images embedded.
     case pdf
     /// CommonMark text — inline links preserved, images referenced by URL.
@@ -34,19 +36,19 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     case document
 
     /// What the article "Export as…" menu offers, in menu order: EPUB first
-    /// (the ereader-universal default), then PDF, then the Word document, then
+    /// (the ereader-universal default), then the small monochrome EPUB, PDF, Word document, and
     /// plain text. `.markdown` is intentionally absent — a rich document that
     /// keeps images and live links is the more useful thing to hand another
     /// app, and Markdown's own audience is served by the `.docx` every editor
     /// imports.
     public static let shareMenuFormats: [ArticleExportFormat] =
-        [.epub, .pdf, .document, .plainText]
+        [.epub, .compactEpub, .pdf, .document, .plainText]
 
     /// The extension the file is written with; also what the share sheet's
     /// `NSItemProvider` infers the content type from.
     public var fileExtension: String {
         switch self {
-        case .epub: return "epub"
+        case .epub, .compactEpub: return "epub"
         case .pdf: return "pdf"
         case .markdown: return "md"
         case .plainText: return "txt"
@@ -58,6 +60,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     public var displayName: String {
         switch self {
         case .epub: return L10n.string("ExportFormat_epub")
+        case .compactEpub: return L10n.string("ExportFormat_compactEpub")
         case .pdf: return L10n.string("ExportFormat_pdf")
         case .markdown: return L10n.string("ExportFormat_markdown")
         case .plainText: return L10n.string("ExportFormat_text")
@@ -69,6 +72,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     public var systemImage: String {
         switch self {
         case .epub: return "book"
+        case .compactEpub: return "book.closed"
         case .pdf: return "doc.richtext"
         case .markdown: return "chevron.left.forwardslash.chevron.right"
         case .plainText: return "doc.plaintext"

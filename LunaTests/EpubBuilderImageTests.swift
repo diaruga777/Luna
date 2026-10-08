@@ -81,7 +81,7 @@ final class EpubBuilderImageTests: XCTestCase {
         EpubBuilder().build(
             content: ArticleContent(title: "T", author: "A", blocks: blocks),
             sourceURLString: "https://example.com/a", imagesDirectory: scratch,
-            profile: .xteink)
+            profile: .textOnly)
     }
 
     /// The zip's stored entry paths, read straight out of the central directory
@@ -126,7 +126,7 @@ final class EpubBuilderImageTests: XCTestCase {
         XCTAssertTrue(text(in: jpegArchive).contains("media-type=\"image/jpeg\""))
     }
 
-    func testXteinkProfileOmitsEveryImageButKeepsStandaloneCaptions() throws {
+    func testTextOnlyProfileOmitsEveryImageButKeepsStandaloneCaptions() throws {
         let png = encoded(as: .png)!
         let archive = buildXteink([
             block(
@@ -142,6 +142,62 @@ final class EpubBuilderImageTests: XCTestCase {
         XCTAssertFalse(chapter.contains("<img"))
         XCTAssertTrue(chapter.contains("<em>Alt</em>"))
         XCTAssertTrue(chapter.contains("<em>A surviving caption</em>"))
+    }
+
+    func testCompactBannerIsMonochromeBoundedAndOnlyEmbeddedOnce() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let original = UIGraphicsImageRenderer(size: CGSize(width: 1800, height: 1200), format: format).image { ctx in
+            for y in stride(from: 0, to: 1200, by: 10) {
+                for x in stride(from: 0, to: 1800, by: 10) {
+                    UIColor(hue: CGFloat((x * 31 + y * 17) % 360) / 360,
+                            saturation: 1, brightness: 0.8, alpha: 1).setFill()
+                    ctx.fill(CGRect(x: x, y: y, width: 10, height: 10))
+                }
+            }
+        }
+        let first = block(fileName: "large.png", remote: "https://example.com/large.png",
+                          bytes: try XCTUnwrap(original.pngData()), onDiskAs: "large.png")
+        let content = ArticleContent(title: "Banner", blocks: [
+            first, first,
+            .init(kind: .paragraph, text: String(repeating: "A readable sentence. ", count: 1000), links: []),
+            block(fileName: "second.png", remote: "https://example.com/second.png",
+                  bytes: try XCTUnwrap(encoded(as: .png)), onDiskAs: "second.png")
+        ])
+        let bytes = EpubBuilder().build(content: content, sourceURLString: "https://example.com",
+                                        imagesDirectory: scratch, profile: .compact)
+        let archive = try XCTUnwrap(ZipArchiveReader(data: bytes))
+        XCTAssertEqual(archive.paths.filter { $0.hasPrefix("OEBPS/images/") }, ["OEBPS/images/banner.png"])
+        let banner = try XCTUnwrap(archive.data(at: "OEBPS/images/banner.png"))
+        XCTAssertLessThanOrEqual(banner.count, 8192)
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(banner as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertLessThanOrEqual(image.width, 320)
+        XCTAssertLessThanOrEqual(image.height, 160)
+        XCTAssertEqual(image.colorSpace?.model, .monochrome)
+        XCTAssertEqual(banner[24], 1, "PNG IHDR bit depth must be one; ImageIO may expand it when decoding")
+        XCTAssertLessThan(bytes.count, 16 * 1024, "a normal article and banner fit comfortably over BLE")
+        let chapter = try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml"))
+        XCTAssertEqual(chapter.components(separatedBy: "<img ").count - 1, 1)
+        XCTAssertTrue(chapter.contains("A readable sentence."))
+        XCTAssertTrue(try XCTUnwrap(archive.text(at: "OEBPS/content.opf")).contains("images/banner.png"))
+    }
+
+    func testCompactMissingOrCorruptBannerStillExportsAllText() throws {
+        for name in ["absent.png", "corrupt.png"] {
+            try Data("bad image".utf8).write(to: scratch.appendingPathComponent("corrupt.png"))
+            let content = ArticleContent(title: "No banner", blocks: [
+                .init(kind: .image, text: "Alternative", links: [], imageFileName: name),
+                .init(kind: .paragraph, text: "Still readable", links: [])
+            ])
+            let bytes = EpubBuilder().build(content: content, sourceURLString: "https://example.com",
+                                            imagesDirectory: scratch, profile: .compact)
+            let archive = try XCTUnwrap(ZipArchiveReader(data: bytes))
+            XCTAssertFalse(archive.paths.contains { $0.hasPrefix("OEBPS/images/") })
+            let chapter = try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml"))
+            XCTAssertTrue(chapter.contains("Still readable"))
+            XCTAssertTrue(chapter.contains("Alternative"))
+        }
     }
 
     /// An unrecorded image cannot be found by deriving a path from its URL.

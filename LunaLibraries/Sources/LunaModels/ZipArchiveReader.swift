@@ -48,9 +48,11 @@ public struct ZipArchiveReader {
     /// The decompressed bytes of one entry, or nil when it is absent or cannot
     /// be read. Paths are matched exactly — zip paths are already normalized to
     /// forward slashes with no leading one.
-    public func data(at path: String) -> Data? {
-        guard let entry = entries.first(where: { $0.path == path }) else { return nil }
-        return data(for: entry)
+    public func data(at path: String, maximumBytes: Int = 128 * 1024 * 1024) -> Data? {
+        guard let entry = entries.first(where: { $0.path == path }),
+              maximumBytes >= 0, entry.uncompressedSize <= maximumBytes,
+              let result = data(for: entry, maximumBytes: maximumBytes), result.count <= maximumBytes else { return nil }
+        return result
     }
 
     /// The decompressed bytes of one entry as UTF-8 text, tolerating a leading
@@ -64,7 +66,7 @@ public struct ZipArchiveReader {
         return String(data: stripped, encoding: .isoLatin1)
     }
 
-    private func data(for entry: Entry) -> Data? {
+    private func data(for entry: Entry, maximumBytes: Int) -> Data? {
         // The central directory records where the LOCAL header starts, not where
         // its payload does — and the two headers may declare different extra-field
         // lengths, so the payload offset has to come from the local one.
@@ -80,8 +82,8 @@ public struct ZipArchiveReader {
         let payload = bytes[start..<end]
 
         switch entry.compressionMethod {
-        case 0: return Data(payload)
-        case 8: return Self.inflate(payload, expectedSize: entry.uncompressedSize)
+        case 0: return payload.count <= maximumBytes ? Data(payload) : nil
+        case 8: return Self.inflate(payload, expectedSize: entry.uncompressedSize, maximumBytes: maximumBytes)
         default: return nil
         }
     }
@@ -147,17 +149,21 @@ public struct ZipArchiveReader {
     /// right; a writer that left it at zero gets a doubling search instead,
     /// because `compression_decode_buffer` reports a truncated result and a
     /// perfectly-filled buffer identically.
-    private static func inflate(_ payload: ArraySlice<UInt8>, expectedSize: Int) -> Data? {
+    private static func inflate(
+        _ payload: ArraySlice<UInt8>, expectedSize: Int, maximumBytes: Int
+    ) -> Data? {
         if expectedSize > 0 {
             return decode(payload, capacity: expectedSize).flatMap {
                 $0.count == expectedSize ? $0 : nil
             }
         }
-        var capacity = max(payload.count * 4, 64 * 1024)
-        while capacity <= 64 * 1024 * 1024 {
+        let ceiling = min(maximumBytes, 64 * 1024 * 1024)
+        var capacity = min(max(payload.count * 4, 64 * 1024), ceiling + 1)
+        while capacity <= ceiling + 1 {
             guard let decoded = decode(payload, capacity: capacity) else { return nil }
-            if decoded.count < capacity { return decoded }
-            capacity *= 2
+            if decoded.count < capacity { return decoded.count <= ceiling ? decoded : nil }
+            guard capacity < ceiling + 1 else { return nil }
+            capacity = min(capacity * 2, ceiling + 1)
         }
         return nil
     }

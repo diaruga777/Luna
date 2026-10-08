@@ -79,11 +79,12 @@ public struct ArticleExportService {
         _ format: ArticleExportFormat, content: ArticleContent, sourceURLString: String
     ) throws -> Data {
         switch format {
-        case .epub:
+        case .epub, .compactEpub:
             return EpubBuilder().build(
                 content: content,
                 sourceURLString: sourceURLString,
-                imagesDirectory: store.articlesDirectory)
+                imagesDirectory: store.articlesDirectory,
+                profile: format == .compactEpub ? .compact : .standard)
         case .pdf:
             return ArticlePDFBuilder().build(
                 content: content,
@@ -118,7 +119,7 @@ public struct ArticleExportService {
     func writePreparingImages(
         _ format: ArticleExportFormat, for item: SavedItem
     ) async throws -> URL {
-        await prepareImages(for: item)
+        await prepareImages(for: item, profile: format == .compactEpub ? .compact : .standard)
         return try write(format, for: item)
     }
 
@@ -149,12 +150,27 @@ public struct ArticleExportService {
     /// finds the files already recorded. Persisting through `saveContent` is also
     /// what makes the save OWN the new files, which is what keeps them from being
     /// collected as orphans.
-    public func prepareImages(for item: SavedItem) async {
-        guard let content = store.content(for: item),
-              let prepared = await ArticleExportImages.prepared(
-                content, for: item, imagesDirectory: store.articlesDirectory)
-        else { return }
-        _ = store.saveContent(prepared, for: item)
+    public func prepareImages(for item: SavedItem, profile: EpubBuilder.Profile = .standard) async {
+        guard profile.includesImages, let content = store.content(for: item) else { return }
+        if profile == .compact {
+            // Fetch only the first image: full article photography would waste
+            // bandwidth and delay a transfer whose output contains one banner.
+            guard let index = content.blocks.firstIndex(where: { $0.kind == .image }) else { return }
+            var selection = content
+            selection.blocks = [content.blocks[index]]
+            guard let prepared = await ArticleExportImages.prepared(
+                selection, for: item, imagesDirectory: store.articlesDirectory),
+                  let image = prepared.blocks.first,
+                  var fresh = store.item(withID: item.id).flatMap({ store.content(for: $0) }),
+                  fresh.blocks.indices.contains(index),
+                  fresh.blocks[index].imageURLString == content.blocks[index].imageURLString
+            else { return }
+            fresh.blocks[index].imageFileName = image.imageFileName
+            _ = store.saveContent(fresh, for: item)
+        } else if let prepared = await ArticleExportImages.prepared(
+            content, for: item, imagesDirectory: store.articlesDirectory) {
+            _ = store.saveContent(prepared, for: item)
+        }
     }
 
     /// Fetches any missing images, builds the file off the main thread, and
@@ -169,7 +185,7 @@ public struct ArticleExportService {
         from presenter: UIViewController, sourceView: UIView
     ) {
         Task { @MainActor in
-            await self.prepareImages(for: item)
+            await self.prepareImages(for: item, profile: format == .compactEpub ? .compact : .standard)
             self.buildAndPresent(
                 format, for: item, from: presenter, sourceView: sourceView)
         }

@@ -12,7 +12,7 @@ them ever talks to a given window. Every wire behaviour below is shared, and
 side that is not mirrored is a fix that only half the apps get.
 
 Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
-email is involved. Luna builds an image-free, compressed Xteink EPUB and
+email is involved. Luna builds a compressed EPUB with one small monochrome banner and
 delivers it only while the CrossPoint BLE rendezvous is already active — a
 share-row send is **enqueue-only** (below); the reader is what opens the
 window. A window opens from the reader's HOME-menu **Luna Sync** row
@@ -293,17 +293,22 @@ acknowledged. Older firmware's read-report-only windows remain supported.
 
 ## Xteink EPUB profile and routing seam
 
-`EpubBuilder.Profile.xteink` is intentionally different from Kindle and
-generic-export EPUBs. It never resolves, reads, or embeds article-image files:
-there are no `OEBPS/images/` entries, image manifest items, or `<img>` elements.
-Nonempty image alternative text and standalone caption blocks remain ordinary
-italic text. Its XML/XHTML ZIP entries use DEFLATE when that makes them
-smaller, while the required first `mimetype` entry remains stored.
+The plugin declares the generic `inputOptions.epub.profile: "compact"`.
+The iOS host builds the same compact EPUB available from the article share menu:
+compressed text plus at most one banner, drawn from the first article image or
+an imported book cover. ImageIO downsamples the source, composites transparency
+onto white, dithers to black and white, and writes a one-bit PNG bounded to
+320 × 160 pixels and 8 KiB. It never embeds original image bytes or extra inline
+images. Missing/corrupt images are skipped; alternative text and captions remain.
+The first `mimetype` ZIP entry remains stored as required by EPUB.
 
-`ArticleSendCoordinator` chooses that profile for the built-in Xteink
-destination and consequently skips `ArticleExportService.prepareImages` for
-that send. Kindle and generic EPUB exports retain their existing image-bearing,
-stored-entry profile. The coordinator also computes `ArticleSendContext`
+Only the banner is prepared before export; the normal bounded timeout applies.
+External plugins have exactly the same profile and can suppress all pictures
+with `images: false`. The legacy native `XteinkDestination` explicitly selects
+`.compact`; the coordinator's default is `.standard` for every destination ID.
+Kindle and full EPUB exports retain their original image behavior.
+
+The coordinator also computes `ArticleSendContext`
 (the item id, and `queuedRemaining` = the count of OTHER items still
 `.queued` for that destination — its sweep is serial, so this decrements
 naturally) and calls `ArticleDestination.send(epubData:fileName:title:context:)`;
@@ -313,7 +318,7 @@ overrides the context form to thread `article_id`/`queue_remaining` through.
 
 `XteinkTransferSizePolicy` is the shared route-decision API for both transports.
 It evaluates the **final Xteink-profile EPUB bytes** after
-image removal and compression: files at or below 200 KiB use
+banner conversion and text compression: files at or below 200 KiB use
 `.bluetoothLowEnergy`; larger files use `.wifi`. The active CrossPoint router
 consumes this decision after EPUB generation, so the limit applies to the bytes
 actually sent rather than an estimate of the source article.

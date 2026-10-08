@@ -58,9 +58,9 @@ final class ReaderShareSheetTests: XCTestCase {
             onExport: { picked.append($0) })
         let exportChildren = rows.last.map(children) ?? []
         XCTAssertEqual(exportChildren.count, ArticleExportFormat.shareMenuFormats.count)
-        XCTAssertEqual(exportChildren.map(\.title), ["EPUB", "PDF", "Word Document", "Text"])
+        XCTAssertEqual(exportChildren.map(\.title), ["EPUB", "EPUB (Small, Black & White)", "PDF", "Word Document", "Text"])
         exportChildren.forEach(fire)
-        XCTAssertEqual(picked, [.epub, .pdf, .document, .plainText])
+        XCTAssertEqual(picked, [.epub, .compactEpub, .pdf, .document, .plainText])
     }
 
     func testEachRowInvokesItsOwnAction() {
@@ -104,6 +104,6 @@ final class ReaderShareSheetTests: XCTestCase {
         XCTAssertTrue(formatActions.allSatisfy { $0.image != nil })
         for action in formatActions { action.performWithSender(nil, target: nil) }
         XCTAssertEqual(
-            fired.suffix(4), ["export:epub", "export:pdf", "export:document", "export:plainText"])
+            fired.suffix(5), ["export:epub", "export:compactEpub", "export:pdf", "export:document", "export:plainText"])
     }
 }

@@ -64,7 +64,7 @@ public struct PluginExportInputProducer {
     /// generation.
     ///
     /// `options` carries the declaration's `inputOptions`: a `compact` EPUB
-    /// profile is the Xteink profile, and `images: false` skips the image
+    /// profile uses the shared compact encoder, and `images: false` skips the image
     /// preparation an EPUB would otherwise wait for.
     public func makeInput(
         saveID: UUID, format: PluginExportInputFormat, options: PluginExportSummary,
@@ -127,7 +127,7 @@ public struct PluginExportInputProducer {
         guard let scratch else { throw PluginExportInputError.noScratchStore }
         let profile = Self.effectiveEpubProfile(options)
         let wantsImages = format != .epub || profile.includesImages
-        if wantsImages { await images.prepareImages(for: item) }
+        if wantsImages { await images.prepareImages(for: item, profile: format == .epub ? profile : .standard) }
         let fresh = store.item(withID: item.id) ?? item
         guard let content = store.content(for: fresh) else {
             throw PluginExportInputError.noContent
@@ -247,10 +247,9 @@ public struct PluginExportInputProducer {
         }
     }
 
-    /// The declaration's EPUB profile. `compact` is the Xteink profile, which
-    /// is text-only by contract.
+    /// The declaration's generic EPUB profile; no destination identity is consulted.
     public static func epubProfile(_ options: PluginExportSummary) -> EpubBuilder.Profile {
-        options.epubProfile == "compact" ? .xteink : .standard
+        options.epubProfile == "compact" ? .compact : .standard
     }
 
     /// The profile the book is actually built with. `images: false` means the
@@ -258,7 +257,7 @@ public struct PluginExportInputProducer {
     /// book with none — asking for images while embedding whatever happened to
     /// be on disk would answer neither request.
     static func effectiveEpubProfile(_ options: PluginExportSummary) -> EpubBuilder.Profile {
-        options.epubImages ? epubProfile(options) : .xteink
+        options.epubImages ? epubProfile(options) : .textOnly
     }
 
     static func fileExtension(_ format: PluginExportInputFormat) -> String {

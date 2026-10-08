@@ -42,14 +42,16 @@ public enum DocumentParser {
     public static let readableExtensions: Set<String> =
         Set(ReadableDocumentFormat.allCases.map(\.rawValue))
 
-    public static func parse(fileURL: URL, type: String, title: String) -> ArticleContent? {
+    public static func parse(
+        fileURL: URL, type: String, title: String, imagesDirectory: URL? = nil
+    ) -> ArticleContent? {
         let format = ReadableDocumentFormat(extension: type)
         // The container formats carry their own title and author, so they build
         // the whole `ArticleContent` rather than just its blocks.
         switch format {
         case .epub:
             return (try? Data(contentsOf: fileURL)).flatMap {
-                EpubDocumentParser.parse(data: $0, fallbackTitle: title)
+                EpubDocumentParser.parse(data: $0, fallbackTitle: title, imagesDirectory: imagesDirectory)
             }
         case .docx:
             return (try? Data(contentsOf: fileURL)).flatMap {

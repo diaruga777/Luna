@@ -88,12 +88,8 @@ public struct ArticleSendAlreadyRead: Error {
 }
 
 public extension ArticleDestination {
-    /// Existing third-party conformers remain standard EPUB destinations. The
-    /// built-in Xteink id is text-only even while its transport is evolving;
-    /// custom destinations can override this property explicitly.
-    var epubBuildProfile: EpubBuilder.Profile {
-        id == ArticleDestinationID.xteink ? .xteink : .standard
-    }
+    /// Native destinations can explicitly choose a generic EPUB profile.
+    var epubBuildProfile: EpubBuilder.Profile { .standard }
 
     /// Destinations that don't track a receiving-device queue (Kindle,
     /// export) just ignore the context and keep their existing send.
@@ -120,7 +116,7 @@ public extension ArticleDestination {
     func deliver(item: SavedItem, context: ArticleSendContext) async throws {
         let store = context.store
         if epubBuildProfile.includesImages {
-            await ArticleExportService(store: store).prepareImages(for: item)
+            await ArticleExportService(store: store).prepareImages(for: item, profile: epubBuildProfile)
         }
         let fresh = store.item(withID: item.id) ?? item
         guard let content = store.content(for: fresh) else {

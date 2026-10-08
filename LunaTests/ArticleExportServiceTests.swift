@@ -150,6 +150,28 @@ final class ArticleExportServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url).prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
     }
 
+    func testSmallExportPreparesOnlyBannerAndRetainsTheRestOfTheArticle() async throws {
+        let item = itemWithUnfetchedImage(url: "https://example.com/compact")
+        var content = try XCTUnwrap(store.content(for: item))
+        content.blocks.append(.init(kind: .image, text: "Second", links: [],
+                                    imageURLString: "https://example.com/second.png"))
+        let saved = store.saveContent(content, for: item)
+        let preparer = FakeExportImagePreparer { selected in
+            XCTAssertEqual(selected.blocks.count, 1)
+            XCTAssertEqual(selected.blocks.first?.imageURLString, "https://example.com/photo.png")
+            return self.fakeDownload(selected)
+        }
+        ArticleExportImages.preparer = preparer
+        defer { ArticleExportImages.preparer = nil }
+        let url = try await ArticleExportService(store: store).writePreparingImages(.compactEpub, for: saved)
+        let archive = try XCTUnwrap(ZipArchiveReader(data: Data(contentsOf: url)))
+        XCTAssertNotNil(archive.data(at: "OEBPS/images/banner.png"))
+        let stored = try XCTUnwrap(store.content(for: saved))
+        XCTAssertEqual(stored.blocks.count, content.blocks.count)
+        XCTAssertNil(stored.blocks.last?.imageFileName)
+        XCTAssertEqual(stored.blocks.first?.text, "Body text.")
+    }
+
     // MARK: - Every format
 
     /// Each format writes a non-empty file under its own extension, off the one

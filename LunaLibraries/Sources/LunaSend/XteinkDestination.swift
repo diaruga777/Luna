@@ -1,3 +1,4 @@
+import LunaEpub
 //
 //  XteinkDestination.swift
 //  Luna
@@ -14,6 +15,7 @@ import LunaStorage
 /// stays queued at no retry cost. Actual delivery happens only when the
 /// reader opens a window and Luna's `.xteinkRendezvousReady` sweep runs.
 public final class XteinkDestination: ArticleDestination {
+    public var epubBuildProfile: EpubBuilder.Profile { .compact }
     public let id = ArticleDestinationID.xteink
     public let displayName = L10n.string("Common_xteink")
 

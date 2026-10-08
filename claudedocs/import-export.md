@@ -361,3 +361,20 @@ finishes it. Those count as recoverable, and the summary says so.
 leaves and what is accepted back), `LinkImportRunnerTests.swift` (orchestration,
 with both real operations stubbed), `LinkImportPreviewLoaderTests.swift` (the
 rolling window and the row copy).
+
+## Import an EPUB as a readable save
+
+Reader and central Luna offer **Settings → Import & Export → Import EPUB Book**.
+The dedicated Files picker accepts EPUBs and copies them into the normal
+`SavesStore.addImportedDocument` flow, then runs document ingestion. The result
+is one readable save with the book's title, author and chapters in spine order;
+it supports the reader, normal exports, compact EPUB export, and any article
+export plugin, including Xteink. Other app surfaces omit this row. Sharing an
+EPUB into Luna continues to use the same ingestion path.
+
+EPUB import retains one local cover (EPUB 3 `cover-image`, EPUB 2 cover metadata,
+then the first spine image) when readable and at most 4 MiB. It receives a fresh
+host-owned image filename, never an archive-supplied filesystem path, and belongs
+to the save through `saveContent`. A missing cover does not prevent reading.
+Encrypted or unreadable books report an import failure. Import reconstructs
+readable content rather than preserving the original book's layout or DRM.

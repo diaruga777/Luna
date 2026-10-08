@@ -28,6 +28,13 @@ import LunaCodeCore
     private let positionLabel = UILabel()
     private let footer = UIStackView()
     private let empty = UIStackView()
+    private let emptyHeading = UILabel()
+    private let emptyDetail = UILabel()
+    private let browseButton = UIButton(type: .system)
+    private var workspaceGeneration = 0
+    private var openGeneration = 0
+    private var startingJob = false
+    private var loadingSchemes = false
     private let completionTable = UITableView()
     private var completions: [CodeCompletion] = []
     private var completionIndex = 0
@@ -90,10 +97,10 @@ import LunaCodeCore
         ])
         let symbol = UIImageView(image: UIImage(systemName: "curlybraces")); symbol.tintColor = .systemIndigo; symbol.contentMode = .scaleAspectFit
         symbol.heightAnchor.constraint(equalToConstant: 52).isActive = true
-        let heading = UILabel(); heading.text = "Your Mac. Your code."; heading.font = .systemFont(ofSize: 25, weight: .semibold); heading.textAlignment = .center
-        let detail = UILabel(); detail.text = "Open a source file from your Mac.\nDrafts stay here until you save."
+        let heading = emptyHeading; heading.text = "Your Mac. Your code."; heading.font = .systemFont(ofSize: 25, weight: .semibold); heading.textAlignment = .center; heading.numberOfLines = 0
+        let detail = emptyDetail; detail.text = "Open a source file from your Mac.\nDrafts stay here until you save."
         detail.font = .preferredFont(forTextStyle: .body); detail.textColor = .secondaryLabel; detail.numberOfLines = 0; detail.textAlignment = .center
-        let browse = UIButton(type: .system); browse.setTitle("Browse Mac Files", for: .normal); browse.configuration = .tinted(); browse.addTarget(self, action: #selector(files), for: .touchUpInside)
+        let browse = browseButton; browse.setTitle("Browse Mac Files", for: .normal); browse.configuration = .tinted(); browse.addTarget(self, action: #selector(files), for: .touchUpInside)
         empty.axis = .vertical; empty.spacing = 16; [symbol, heading, detail, browse].forEach { empty.addArrangedSubview($0) }
         empty.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(empty)
         NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: container.centerXAnchor), empty.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -104,7 +111,7 @@ import LunaCodeCore
         container.addSubview(completionTable)
         NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(foreground), name: UIApplication.didBecomeActiveNotification, object: nil)
-        foreground()
+        projectDidChange(); updateChrome(); foreground()
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -127,19 +134,45 @@ import LunaCodeCore
         poll = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in await self?.refreshRemote() } }
         if let id = environment.defaults.string(forKey: "Code.job." + environment.peerID()) { Task { await refreshJob(id) } }
     }
+    func resetWorkspace() {
+        workspaceGeneration += 1; openGeneration += 1
+        persistAll(); analysis?.cancel(); draftTask?.cancel(); hideCompletions()
+        for doc in documents { doc.view.resignFirstResponder(); doc.view.removeFromSuperview() }
+        documents = []; active = nil; job = nil
+        if isViewLoaded { empty.isHidden = false; updateChrome(); projectDidChange(); view.setNeedsLayout() }
+    }
+    func projectDidChange() {
+        guard isViewLoaded else { return }
+        let project = environment.project
+        let name = project.map { URL(fileURLWithPath: $0.path).deletingPathExtension().lastPathComponent }
+        emptyHeading.text = name ?? "Your Mac. Your code."
+        emptyDetail.text = project == nil ? "Open an Xcode project or source file from your Mac.\nDrafts stay here until you save." : "Choose a source file from this project to start editing."
+        browseButton.setTitle(project == nil ? "Browse Mac Files" : "Browse Project Files", for: .normal)
+        if active == nil { title = name ?? "Luna Code"; setStatus(project == nil ? "Choose a project or file" : "Project ready · Choose a file") }
+        buildButton.menu = buildMenu()
+        scheduleAnalysis()
+    }
     func open(path: String) {
         loadViewIfNeeded()
-        if let existing = documents.first(where: { $0.draft.base.path == path && $0.peer == environment.peerID() }) { activate(existing); return }
+        openGeneration += 1
+        let generation = openGeneration, workspace = workspaceGeneration, peer = environment.peerID()
+        if let existing = documents.first(where: { $0.draft.base.path == path && $0.peer == peer }) { activate(existing); return }
+        setStatus("Opening " + (path as NSString).lastPathComponent + "…")
         Task {
             do {
-                let peer = environment.peerID()
+                guard workspaceGeneration == workspace, openGeneration == generation, environment.peerID() == peer else { return }
                 let cached = try environment.drafts.load(peer: peer, path: path)
                 if let cached { install(cached, peer: peer) }
                 let response = try await environment.client.call(CodeRequest(.open, path: path))
-                guard let remote = response.document, environment.peerID() == peer else { return }
+                guard workspaceGeneration == workspace, openGeneration == generation, environment.peerID() == peer else { return }
+                guard let remote = response.document else { throw CodeFailure("The Mac did not return this file. Try opening it again.") }
                 if let document = documents.first(where: { $0.draft.base.path == path && $0.peer == peer }) { acceptRemote(remote, for: document) }
                 else { install(CodeDraft(base: remote), peer: peer) }
-            } catch { if active?.draft.base.path == path { setStatus("Offline · draft on iPhone", color: .systemOrange) } else { showError(error) } }
+            } catch {
+                guard workspaceGeneration == workspace, openGeneration == generation, environment.peerID() == peer else { return }
+                if active?.draft.base.path == path { setStatus("Offline · draft on iPhone", color: .systemOrange) }
+                else { setStatus("Couldn’t open file", color: .systemOrange); showError(error) }
+            }
         }
     }
     private func install(_ draft: CodeDraft, peer: String) {
@@ -176,7 +209,7 @@ import LunaCodeCore
         }
     }
     private func activate(_ document: Document) {
-        environment.defaults.set(document.draft.base.path, forKey: "Code.lastFile." + document.peer)
+        environment.session.setLastFile(document.draft.base.path, peer: document.peer)
         if let active { persist(active) }
         let editing = active?.view.isFirstResponder == true
         active?.view.resignFirstResponder(); analysis?.cancel(); hideCompletions(); active = document
@@ -198,8 +231,10 @@ import LunaCodeCore
             button.addAction(UIAction { [weak self, weak doc] _ in if let doc { self?.activate(doc) } }, for: .touchUpInside)
             tabStack.addArrangedSubview(button)
         }
+        navigationItem.rightBarButtonItems?.first?.menu = editorMenu()
+        buildButton.menu = buildMenu()
         saveButton.isEnabled = active?.draft.modified == true && !saving
-        guard let active else { return }
+        guard let active else { positionLabel.text = nil; return }
         let pos = CodePosition.at(utf16Offset: active.view.selectedRange.location, in: active.view.text)
         positionLabel.text = "\(pos.line + 1):\(pos.character + 1)"
         if active.remote != nil { setStatus("Mac changed · Choose a version", color: .systemOrange) }
@@ -242,14 +277,19 @@ import LunaCodeCore
         defer { saving = false; updateChrome() }
         persist(doc)
         let submitted = doc.draft.text
+        let workspace = workspaceGeneration
         var request = CodeRequest(.save, path: doc.draft.base.path); request.text = submitted; request.version = doc.draft.base.version
         do {
             let response = try await environment.client.call(request)
             guard let remote = response.document else { throw CodeFailure("The Mac did not acknowledge the saved file.") }
-            if response.conflict { doc.remote = remote; resolveConflict(doc); return false }
+            if response.conflict {
+                doc.remote = remote
+                if workspaceGeneration == workspace, active === doc { resolveConflict(doc) }
+                return false
+            }
             doc.draft.base = remote; doc.remote = nil; persist(doc)
-            return true
-        } catch { showError(error); return false }
+            return workspaceGeneration == workspace && environment.peerID() == doc.peer
+        } catch { if workspaceGeneration == workspace { showError(error) }; return false }
     }
     private func acceptRemote(_ remote: CodeDocument, for doc: Document) {
         guard remote.version != doc.draft.base.version else { return }
@@ -297,7 +337,7 @@ import LunaCodeCore
             let local = path.hasSuffix(".swift") ? await Task.detached(priority: .utility) { CodeSyntax.diagnostics(text: text) }.value : []
             guard !Task.isCancelled, doc.generation == generation else { return }
             self.showDiagnostics(local, doc: doc, local: true)
-            guard let project = self.environment.project else { return }
+            guard doc.peer == self.environment.peerID(), let project = self.environment.project, !project.scheme.isEmpty else { return }
             var request = CodeRequest(.analyze, path: path); request.project = project; request.text = text
             request.bufferVersion = Int(Date().timeIntervalSince1970 * 1000)
             do {
@@ -326,7 +366,7 @@ import LunaCodeCore
         present(UINavigationController(rootViewController: list), animated: true)
     }
     @objc private func requestCompletion() {
-        guard let doc = active, let project = environment.project else { setStatus("Select a project for completion", color: .systemOrange); return }
+        guard let doc = active, doc.peer == environment.peerID(), let project = environment.project, !project.scheme.isEmpty else { setStatus("Choose a scheme in Project Settings for completion", color: .systemOrange); return }
         completionTask?.cancel(); let generation = doc.generation; let selection = doc.view.selectedRange
         var request = CodeRequest(.complete, path: doc.draft.base.path); request.text = doc.draft.text; request.project = project
         request.position = CodePosition.at(utf16Offset: selection.location, in: request.text); request.bufferVersion = Int(Date().timeIntervalSince1970 * 1000)
@@ -335,7 +375,7 @@ import LunaCodeCore
                 try await Task.sleep(for: .milliseconds(250))
                 try Task.checkCancellation()
                 let response = try await environment.client.call(request)
-                guard !Task.isCancelled, active === doc, doc.generation == generation, doc.view.selectedRange == selection else { return }
+                guard !Task.isCancelled, active === doc, doc.peer == environment.peerID(), doc.generation == generation, doc.view.selectedRange == selection else { return }
                 completions = response.completions; completionIndex = 0; completionGeneration = generation; completionPath = doc.draft.base.path; completionSelection = selection
                 completionTable.reloadData(); completionTable.isHidden = completions.isEmpty; doc.view.hasCompletions = !completions.isEmpty
                 if completions.isEmpty { setStatus("No completions · Build to refresh index") }
@@ -399,15 +439,15 @@ import LunaCodeCore
     }
     private func editorMenu() -> UIMenu {
         UIMenu(children: [
-            UIAction(title: "Find & Replace", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.findInFile() },
-            UIAction(title: "Code Completion", image: UIImage(systemName: "text.cursor")) { [weak self] _ in self?.requestCompletion() },
-            UIAction(title: "Toggle Comment", image: UIImage(systemName: "text.bubble")) { [weak self] _ in self?.comment() },
-            UIAction(title: "Toggle Line Wrapping", image: UIImage(systemName: "arrow.turn.down.left")) { [weak self] _ in self?.wrap() },
+            UIAction(title: "Find & Replace", image: UIImage(systemName: "magnifyingglass"), attributes: active == nil ? .disabled : []) { [weak self] _ in self?.findInFile() },
+            UIAction(title: "Code Completion", image: UIImage(systemName: "text.cursor"), attributes: active == nil ? .disabled : []) { [weak self] _ in self?.requestCompletion() },
+            UIAction(title: "Toggle Comment", image: UIImage(systemName: "text.bubble"), attributes: active == nil ? .disabled : []) { [weak self] _ in self?.comment() },
+            UIAction(title: "Toggle Line Wrapping", image: UIImage(systemName: "arrow.turn.down.left"), attributes: active == nil ? .disabled : []) { [weak self] _ in self?.wrap() },
             UIAction(title: "Larger Text", image: UIImage(systemName: "textformat.size.larger")) { [weak self] _ in self?.resize(1) },
             UIAction(title: "Smaller Text", image: UIImage(systemName: "textformat.size.smaller")) { [weak self] _ in self?.resize(-1) },
             UIAction(title: "Open File…", image: UIImage(systemName: "doc.text.magnifyingglass")) { [weak self] _ in self?.quickOpen() },
             UIAction(title: "Acknowledgements", image: UIImage(systemName: "info.circle")) { [weak self] _ in self?.acknowledgements() },
-            UIAction(title: "Close File", image: UIImage(systemName: "xmark")) { [weak self] _ in self?.closeFile() }
+            UIAction(title: "Close File", image: UIImage(systemName: "xmark"), attributes: active == nil ? .disabled : []) { [weak self] _ in self?.closeFile() }
         ])
     }
     private func acknowledgements() {
@@ -423,9 +463,10 @@ import LunaCodeCore
             UIAction(title: "Build", image: UIImage(systemName: "hammer")) { [weak self] _ in self?.startJob(.build) },
             UIAction(title: "Build & Deploy to TestFlight", image: UIImage(systemName: "paperplane")) { [weak self] _ in self?.startJob(.deploy) },
             UIAction(title: "Prepare Code Intelligence", image: UIImage(systemName: "text.badge.checkmark")) { [weak self] _ in self?.startJob(.prepare) },
+            UIAction(title: "Choose Build Scheme…", image: UIImage(systemName: "list.bullet"), attributes: environment.project == nil ? .disabled : []) { [weak self] _ in self?.chooseScheme() },
             UIAction(title: "Project Settings", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in self?.configureProject() },
-            UIAction(title: "Build Log", image: UIImage(systemName: "terminal")) { [weak self] _ in self?.showBuildLog() },
-            UIAction(title: "Cancel Build", image: UIImage(systemName: "stop")) { [weak self] _ in self?.cancelJob() }
+            UIAction(title: "Build Log", image: UIImage(systemName: "terminal"), attributes: job == nil ? .disabled : []) { [weak self] _ in self?.showBuildLog() },
+            UIAction(title: "Cancel Build", image: UIImage(systemName: "stop"), attributes: job?.state == .running ? [] : .disabled) { [weak self] _ in self?.cancelJob() }
         ])
     }
     @objc private func findInFile() { active?.view.findInteraction?.presentFindNavigator(showingReplace: true) }
@@ -452,54 +493,91 @@ import LunaCodeCore
     }
     @objc private func closeFile() {
         guard let doc = active else { return }; persist(doc)
+        openGeneration += 1; analysis?.cancel(); hideCompletions()
         doc.view.resignFirstResponder(); doc.view.removeFromSuperview(); documents.removeAll { $0 === doc }; active = nil
-        if let next = documents.last { activate(next) } else { title = "Luna Code"; empty.isHidden = false; updateChrome(); view.setNeedsLayout() }
+        if let next = documents.last { activate(next) } else { environment.session.setLastFile(nil, peer: doc.peer); empty.isHidden = false; updateChrome(); projectDidChange(); view.setNeedsLayout(); openFiles?() }
     }
-    func configureProject() {
-        let alert = UIAlertController(title: "Project Settings", message: "Choose the Xcode project and scheme. App and internal group IDs are needed only for TestFlight. API credentials stay on your Mac.", preferredStyle: .alert)
+    func configureProject(from presenter: UIViewController? = nil) {
+        let presenter = presenter ?? self
+        let peer = environment.peerID()
+        let alert = UIAlertController(title: "Project Settings", message: "Select a scheme for builds and code intelligence. TestFlight IDs are optional until you deploy.", preferredStyle: .alert)
         let current = environment.project
-        for (placeholder, value) in [("/path/App.xcodeproj or .xcworkspace", current?.path), ("Scheme", current?.scheme), ("App Store Connect app ID", current?.appID), ("Internal testing group ID", current?.groupID)] {
+        for (placeholder, value) in [("/path/App.xcodeproj or .xcworkspace", current?.path), ("Scheme (leave empty to choose)", current?.scheme), ("App Store Connect app ID", current?.appID), ("Internal testing group ID", current?.groupID)] {
             alert.addTextField { $0.placeholder = placeholder; $0.text = value; $0.autocapitalizationType = .none; $0.autocorrectionType = .no }
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
-            guard let self, let fields = alert.textFields else { return }
-            self.environment.project = CodeProject(path: fields[0].text ?? "", scheme: fields[1].text ?? "", appID: fields[2].text ?? "", groupID: fields[3].text ?? "")
-            if self.environment.project?.scheme.isEmpty == true { self.chooseScheme() } else { self.scheduleAnalysis() }
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak presenter] _ in
+            guard let self, let presenter, let fields = alert.textFields, peer == self.environment.peerID() else { return }
+            let values = fields.map { ($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+            // Complete dismissal before presenting another sheet or replacing the browser.
+            presenter.dismiss(animated: true) {
+                guard values[0].hasPrefix("/"), ["xcodeproj", "xcworkspace"].contains(URL(fileURLWithPath: values[0]).pathExtension) else {
+                    self.showError(CodeFailure("Enter an absolute path ending in .xcodeproj or .xcworkspace."), from: presenter); return
+                }
+                self.environment.project = CodeProject(path: values[0], scheme: values[1], appID: values[2], groupID: values[3])
+                if values[1].isEmpty {
+                    // If the project changed, the old browser may have been removed.
+                    let visible = (self.splitViewController?.viewController(for: .primary) as? UINavigationController)?.topViewController
+                    self.chooseScheme(from: presenter.viewIfLoaded?.window == nil ? (visible ?? self) : presenter)
+                } else { self.scheduleAnalysis() }
+            }
         })
-        present(alert, animated: true)
+        presenter.present(alert, animated: true)
     }
-    private func chooseScheme() {
-        guard let project = environment.project else { return }
-        setStatus("Reading Xcode schemes…")
+    func chooseScheme(from presenter: UIViewController? = nil, completion: (() -> Void)? = nil) {
+        guard let project = environment.project, !loadingSchemes else { return }
+        let presenter = presenter ?? self, peer = environment.peerID()
+        loadingSchemes = true
+        let list = CodeListController(title: "Choose Scheme", rows: [], select: { _ in })
+        list.showLoading()
+        presenter.present(UINavigationController(rootViewController: list), animated: true)
         Task {
+            defer { loadingSchemes = false }
             do {
                 let response = try await environment.client.call(CodeRequest(.schemes, path: project.path))
-                let list = CodeListController(title: "Choose Scheme", rows: response.schemes) { [weak self] index in
-                    self?.environment.project?.scheme = response.schemes[index]; self?.dismiss(animated: true); self?.scheduleAnalysis()
+                guard peer == environment.peerID(), environment.project?.path == project.path, list.presentingViewController != nil || list.navigationController?.presentingViewController != nil else { return }
+                let schemes = response.schemes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                list.setRows(schemes, emptyMessage: "No schemes found. Open this project in Xcode on your Mac and create or share a scheme.") { [weak self, weak list] index in
+                    guard let self, peer == self.environment.peerID(), self.environment.project?.path == project.path else { return }
+                    self.environment.project?.scheme = schemes[index]
+                    list?.dismiss(animated: true) { self.scheduleAnalysis(); completion?() }
                 }
-                present(UINavigationController(rootViewController: list), animated: true)
-            } catch { showError(error) }
+            } catch { list.showMessage(error.localizedDescription + "\nClose this sheet and try again when your Mac is available.") }
         }
     }
     private func startJob(_ operation: CodeRequest.Operation) {
-        guard environment.project != nil else { configureProject(); return }
+        guard let project = environment.project else { configureProject(); return }
+        guard !project.scheme.isEmpty else { chooseScheme { [weak self] in self?.startJob(operation) }; return }
+        guard operation != .deploy || (!project.appID.isEmpty && !project.groupID.isEmpty) else {
+            configureProject(); return
+        }
+        guard !startingJob else { return }
+        startingJob = true
+        let workspace = workspaceGeneration, peer = environment.peerID()
         Task {
+            defer { startingJob = false }
             let original = active
             for doc in documents where doc.draft.modified {
+                guard workspaceGeneration == workspace, environment.peerID() == peer else { return }
                 activate(doc); guard await saveActive() else { return }
             }
+            guard workspaceGeneration == workspace, environment.peerID() == peer, environment.project == project else { return }
             if let original { activate(original) }
-            var request = CodeRequest(operation); request.project = environment.project
+            var request = CodeRequest(operation); request.project = project
             do {
-                let response = try await environment.client.call(request); job = response.job
-                environment.defaults.set(job?.id, forKey: "Code.job." + environment.peerID()); showBuildLog()
-            } catch { showError(error) }
+                let response = try await environment.client.call(request)
+                // Keep the originating Mac association even if the user switches while waiting.
+                environment.defaults.set(response.job?.id, forKey: "Code.job." + peer)
+                guard workspaceGeneration == workspace, environment.peerID() == peer else { return }
+                job = response.job; buildButton.menu = buildMenu(); showBuildLog()
+            } catch { if workspaceGeneration == workspace { showError(error) } }
         }
     }
     private func refreshJob(_ id: String) async {
+        let peer = environment.peerID(), workspace = workspaceGeneration
         var request = CodeRequest(.job); request.jobID = id
-        if let response = try? await environment.client.call(request) { job = response.job }
+        if let response = try? await environment.client.call(request), peer == environment.peerID(), workspace == workspaceGeneration { job = response.job }
+        buildButton?.menu = buildMenu()
         if let log = (presentedViewController as? UINavigationController)?.topViewController as? CodeLogController { log.update(job) }
     }
     private func showBuildLog() {
@@ -510,10 +588,11 @@ import LunaCodeCore
         guard let job else { return }; var request = CodeRequest(.cancel); request.jobID = job.id
         Task { do { self.job = try await environment.client.call(request).job } catch { showError(error) } }
     }
-    private func showError(_ error: Error) {
-        guard presentedViewController == nil else { setStatus(error.localizedDescription, color: .systemRed); return }
+    private func showError(_ error: Error, from presenter: UIViewController? = nil) {
+        let presenter = presenter ?? self
+        guard presenter.presentedViewController == nil else { setStatus(error.localizedDescription, color: .systemRed); return }
         let alert = UIAlertController(title: "Luna Code", message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default)); present(alert, animated: true)
+        alert.addAction(UIAlertAction(title: "OK", style: .default)); presenter.present(alert, animated: true)
     }
     override var keyCommands: [UIKeyCommand]? {
         [("s", UIKeyModifierFlags.command, #selector(saveAction), "Save to Mac"),
@@ -531,10 +610,24 @@ import LunaCodeCore
 }
 
 @MainActor final class CodeListController: UITableViewController {
-    let rows: [String]; let select: (Int) -> Void
+    private var rows: [String]; private var select: (Int) -> Void
     init(title: String, rows: [String], select: @escaping (Int) -> Void) { self.rows = rows; self.select = select; super.init(style: .insetGrouped); self.title = title }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() { super.viewDidLoad(); navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }) }
+    func showLoading() {
+        loadViewIfNeeded()
+        var config = UIContentUnavailableConfiguration.loading(); config.text = "Reading Xcode schemes…"
+        tableView.backgroundView = UIContentUnavailableView(configuration: config)
+    }
+    func showMessage(_ message: String) {
+        var config = UIContentUnavailableConfiguration.empty(); config.text = "Schemes Unavailable"; config.secondaryText = message
+        tableView.backgroundView = UIContentUnavailableView(configuration: config)
+    }
+    func setRows(_ rows: [String], emptyMessage: String, select: @escaping (Int) -> Void) {
+        self.rows = rows; self.select = select; tableView.backgroundView = nil
+        tableView.reloadData()
+        if rows.isEmpty { showMessage(emptyMessage) }
+    }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil); cell.textLabel?.text = rows[indexPath.row]; cell.textLabel?.numberOfLines = 0; return cell

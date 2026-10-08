@@ -14,8 +14,18 @@ Vault identities, so upgrading preserves existing pairing.
    approved Mac, discovery and connection preferences. Use the existing LAN or
    separately installed Tailscale client. There is no second account or relay.
 3. Browse Mac Files; select an `.xcworkspace` (when used by the project) or
-   `.xcodeproj`, then a scheme. Open existing text files from its source folders.
-   Hidden files and absolute-path navigation are available in the browser menu.
+   `.xcodeproj` to open its containing source folder immediately. Navigate folders
+   and open existing text files. Browser Actions offers Project Files, Browse Mac
+   Files, Choose Build Scheme, Project Settings, hidden files, and absolute-path navigation. The gear
+   opens Mac Connection. Scheme setup never blocks browsing: choose a scheme in
+   Choose Build Scheme, Project Settings (leave Scheme empty), or when first
+   starting a build. Loading, empty folders, and failures have explicit states
+   with a Retry action for failures.
+   The last project automatically reopens on launch, along with its last open
+   source file when available. Project/file restoration is isolated by Mac and
+   project; old saved selections migrate automatically. Closing the last file
+   returns to the project browser and keeps it closed on relaunch. Changing
+   projects flushes drafts before replacing the previous project's editor tabs.
 4. **Prepare Code Intelligence** builds the selected Debug simulator scheme. This
    creates the SDK, package modules and compiler arguments needed by SourceKit.
    Re-run after changing dependencies/build settings. Build also refreshes artifacts.
@@ -103,10 +113,14 @@ must already work for the selected project. No private API key is sent to iPhone
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external
   Swift package; verifies completion changes with receiver type, unsaved semantic
-  diagnostics and unchanged on-disk source. Requires Xcode and the repo Ruby gem.
+  diagnostics and unchanged on-disk source. Also exercises scheme listing and a
+  real build through CodeService, with persisted job recovery. Requires Xcode and
+  the repo Ruby gem.
 - `xcodebuild test -scheme LunaCode -destination 'platform=iOS Simulator,id=…'`:
   isolated simulator preview, portrait/landscape typing, explicit Save,
-  draft recovery; iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
+  draft recovery, project/workspace selection and restoration, project switching,
+  scheme selection, browser failure/recovery, and explicit save-conflict resolution;
+  iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
 - `LunaVaultConnectionTests`: approved-peer gate for Code alongside existing pairing,
   browser, index and transport tests. Never use WebDriverAgent on a physical iPhone.
 

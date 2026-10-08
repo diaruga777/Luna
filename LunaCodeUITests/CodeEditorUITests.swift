@@ -16,7 +16,8 @@ final class CodeEditorUITests: XCTestCase {
         attach("Portrait · software keyboard", app)
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(editor.frame.width, editor.frame.height)
+        expectation(for: NSPredicate { _, _ in editor.frame.width > editor.frame.height }, evaluatedWith: editor)
+        waitForExpectations(timeout: 5)
         // UIKit and the simulator screenshot surface finish rotating separately.
         Thread.sleep(forTimeInterval: 1)
         app.typeText("// landscape edit\n")
@@ -44,6 +45,103 @@ final class CodeEditorUITests: XCTestCase {
         expectation(for: NSPredicate(format: "enabled == false"), evaluatedWith: app.buttons["Save to Mac"])
         waitForExpectations(timeout: 5)
     }
+    func testProjectSelectionBrowsingAndRestoration() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        XCUIDevice.shared.orientation = .portrait
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        let folder = app.cells["CodeFile:/Preview/Sources"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts["Project Settings"].exists)
+        attach("Project files", app)
+        app.terminate()
+        app.launchArguments = ["--editor-preview", "--workspace-preview"]
+        app.launch()
+        XCTAssertTrue(folder.waitForExistence(timeout: 10)); folder.tap()
+        app.cells["CodeFile:/Preview/Sources/Detail.swift"].tap()
+        let editor = app.scrollViews.children(matching: .textView).firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap(); app.typeText("// project draft\n")
+        XCUIDevice.shared.press(.home); app.terminate(); app.launch()
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        XCTAssertTrue((editor.value as? String ?? "").contains("project draft"))
+        app.buttons["Editor Actions"].tap(); app.buttons["Close File"].tap()
+        XCTAssertTrue(folder.waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        XCTAssertFalse(editor.exists, "Closing the last file must leave the project browser on relaunch")
+    }
+
+    func testSwitchProjectsAndChooseSchemeWithoutLosingBrowser() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.buttons["Browser Actions"].tap(); app.buttons["Project Settings"].tap()
+        XCTAssertTrue(app.alerts["Project Settings"].waitForExistence(timeout: 5))
+        app.alerts.buttons["Save"].tap()
+        XCTAssertTrue(app.cells.staticTexts["Sample"].waitForExistence(timeout: 10))
+        app.cells.staticTexts["Sample"].tap()
+        XCTAssertTrue(app.cells["CodeFile:/Preview/Welcome.swift"].waitForExistence(timeout: 5))
+        app.buttons["Browser Actions"].tap(); app.buttons["Choose Build Scheme…"].tap()
+        XCTAssertTrue(app.cells.staticTexts["SampleTests"].waitForExistence(timeout: 5))
+        app.cells.staticTexts["SampleTests"].tap()
+        app.cells["CodeFile:/Preview/Sample.xcodeproj"].tap()
+        app.buttons["Browser Actions"].tap(); app.buttons["Project Settings"].tap()
+        XCTAssertEqual(app.alerts.textFields.element(boundBy: 1).value as? String, "SampleTests", "Reopening the current project must preserve its scheme")
+        app.alerts.buttons["Cancel"].tap()
+        app.cells["CodeFile:/Preview/Welcome.swift"].tap()
+        XCTAssertTrue(app.scrollViews.children(matching: .textView).firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Project Files"].tap()
+        app.buttons["Browser Actions"].tap(); app.buttons["Browse Mac Files"].tap()
+        app.cells["CodeFile:/Other/Other.xcworkspace"].tap()
+        XCTAssertTrue(app.cells["CodeFile:/Other/Other.swift"].waitForExistence(timeout: 5))
+        app.terminate(); app.launchArguments = ["--editor-preview", "--workspace-preview"]; app.launch()
+        XCTAssertTrue(app.cells["CodeFile:/Other/Other.swift"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.scrollViews.children(matching: .textView).firstMatch.exists)
+    }
+
+    func testBrowserFailureShowsRecoveryAndRetainsProject() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        XCTAssertTrue(app.cells["CodeFile:/Preview/Sources"].waitForExistence(timeout: 5))
+        app.terminate(); app.launchArguments = ["--editor-preview", "--workspace-preview", "--browser-failure"]; app.launch()
+        XCTAssertTrue(app.staticTexts["Couldn’t Load Files"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Retry"].exists)
+        app.terminate(); app.launchArguments = ["--editor-preview", "--workspace-preview"]; app.launch()
+        XCTAssertTrue(app.cells["CodeFile:/Preview/Sources"].waitForExistence(timeout: 10))
+    }
+
+    func testSaveConflictKeepsDraftUntilExplicitResolution() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--reset-preview", "--save-conflict"]
+        app.launch()
+        let editor = app.scrollViews.children(matching: .textView).firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 15))
+        editor.tap(); app.typeText("// keep my draft\n")
+        app.buttons["Save to Mac"].tap()
+        let conflict = app.alerts["This file changed on your Mac"]
+        XCTAssertTrue(conflict.waitForExistence(timeout: 5))
+        conflict.buttons["Keep Editing"].tap()
+        XCTAssertTrue((editor.value as? String ?? "").contains("keep my draft"))
+        app.buttons["Save to Mac"].tap()
+        XCTAssertTrue(conflict.waitForExistence(timeout: 5))
+        conflict.buttons["Use iPhone Version"].tap()
+        expectation(for: NSPredicate(format: "enabled == false"), evaluatedWith: app.buttons["Save to Mac"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue((editor.value as? String ?? "").contains("keep my draft"))
+    }
+
     private func attach(_ name: String, _ app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }

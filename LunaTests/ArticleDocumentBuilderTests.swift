@@ -458,10 +458,10 @@ final class ArticleDocumentBuilderTests: XCTestCase {
 
     // MARK: - Format descriptors
 
-    func testFormatExtensionsAreDistinct() {
+    func testBothEpubOptionsUseTheEpubExtension() {
         let extensions = ArticleExportFormat.allCases.map(\.fileExtension)
-        XCTAssertEqual(extensions, ["epub", "pdf", "md", "txt", "docx"])
-        XCTAssertEqual(Set(extensions).count, extensions.count)
+        XCTAssertEqual(extensions, ["epub", "epub", "pdf", "md", "txt", "docx"])
+        XCTAssertEqual(Set(extensions).count, extensions.count - 1)
     }
 
     /// The share menu is a SUBSET of the serializers: it offers the same Word
@@ -470,7 +470,7 @@ final class ArticleDocumentBuilderTests: XCTestCase {
     /// menu item reaches.
     func testShareMenuOffersTheDocumentAndOmitsMarkdown() {
         XCTAssertEqual(
-            ArticleExportFormat.shareMenuFormats, [.epub, .pdf, .document, .plainText])
+            ArticleExportFormat.shareMenuFormats, [.epub, .compactEpub, .pdf, .document, .plainText])
         XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.markdown))
     }
 

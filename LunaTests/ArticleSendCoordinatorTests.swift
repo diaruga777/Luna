@@ -254,7 +254,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertNotNil(store.item(withID: item.id)?.dateSent(for: kindle.id))
     }
 
-    func testXteinkBuildIsTextOnlyEvenWithAnArticleImage() async throws {
+    func testDestinationIDDoesNotImplicitlyChooseAnExportProfile() async throws {
         let xteink = MockDestination(id: ArticleDestinationID.xteink)
         coordinator = ArticleSendCoordinator(
             store: store, destinations: [xteink],
@@ -263,7 +263,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         coordinator.deliveryTaskObserver = self
 
         let item = store.add(urlString: "https://example.com/image")
-        let imageName = "reader-image.png"
+        let imageName = ArticleImageFiles.newFileName(fileExtension: "png")
         let image = Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7PgAAAABJRU5ErkJggg==")!
         try image.write(to: store.articlesDirectory.appendingPathComponent(imageName))
@@ -279,9 +279,9 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertEqual(xteink.sentEPUBs.count, 1)
         let epub = try XCTUnwrap(xteink.sentEPUBs.first)
         let archive = try XCTUnwrap(ZipArchiveReader(data: epub))
-        XCTAssertTrue(archive.paths.filter { $0.hasPrefix("OEBPS/images/") }.isEmpty)
+        XCTAssertFalse(archive.paths.filter { $0.hasPrefix("OEBPS/images/") }.isEmpty)
         let chapter = try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml"))
-        XCTAssertFalse(chapter.contains("<img"))
+        XCTAssertTrue(chapter.contains("<img"))
         XCTAssertTrue(chapter.contains("Caption remains"))
     }
 

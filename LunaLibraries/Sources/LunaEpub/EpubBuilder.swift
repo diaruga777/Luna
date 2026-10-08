@@ -15,17 +15,17 @@ public struct EpubBuilder {
 
     public init() {}
 
-    /// The output contract for a particular reading destination.
-    ///
-    /// `.standard` preserves the existing Kindle/export EPUB byte layout.
-    /// `.xteink` is deliberately text-only: it never reads article-image files,
-    /// emits no image entries or OPF manifest items, and uses DEFLATE for its
-    /// XML/XHTML entries to make the small BLE path practical.
+    /// Generic export profiles, available to every destination and plugin.
     public enum Profile: Sendable, Equatable {
         case standard
-        case xteink
+        /// Compressed text with at most one small monochrome banner.
+        case compact
+        /// Compressed text without reading or embedding any image files.
+        case textOnly
 
-        public var includesImages: Bool { self == .standard }
+        /// Source compatibility for older native destinations.
+        public static var xteink: Self { .compact }
+        public var includesImages: Bool { self != .textOnly }
     }
 
     /// Extensions a reading system is guaranteed to render: the EPUB 3 core
@@ -74,18 +74,24 @@ public struct EpubBuilder {
                imagesDirectory: URL, profile: Profile = .standard) -> Data {
         var zip = ZipArchiveWriter()
         zip.addEntry(path: "mimetype", data: Data("application/epub+zip".utf8))
-        let textCompression: ZipArchiveWriter.Compression = profile == .xteink ? .deflate : .stored
+        let textCompression: ZipArchiveWriter.Compression = profile == .standard ? .stored : .deflate
         zip.addEntry(
             path: "META-INF/container.xml", data: Data(Self.containerXML.utf8),
             compression: textCompression)
 
         let (images, entryNames): ([EmbeddedImage], [String: String])
-        if profile.includesImages {
+        var banner: EmbeddedImage?
+        switch profile {
+        case .standard:
             (images, entryNames) = embeddableImages(in: content, imagesDirectory: imagesDirectory)
-        } else {
-            // Do not even resolve image paths for Xteink: the caller may use a
-            // directory that lacks image permissions, and the no-image promise
-            // is a construction invariant rather than best-effort filtering.
+        case .compact:
+            banner = content.blocks.first(where: { $0.kind == .image })
+                .flatMap { ArticleImageFiles.localFile(for: $0, in: imagesDirectory) }
+                .flatMap { CompactEpubBanner.png(at: $0) }
+                .map { EmbeddedImage(fileName: "banner.png", mediaType: "image/png", data: $0) }
+            images = banner.map { [$0] } ?? []
+            entryNames = [:]
+        case .textOnly:
             (images, entryNames) = ([], [:])
         }
         for image in images {
@@ -104,7 +110,7 @@ public struct EpubBuilder {
             data: Data(chapterXHTML(
                 content: content, sourceURLString: sourceURLString,
                 imageEntryNames: entryNames,
-                preservesImageAlternativeText: !profile.includesImages).utf8),
+                preservesImageAlternativeText: profile != .standard, banner: banner).utf8),
             compression: textCompression)
 
         return zip.archiveData()
@@ -229,10 +235,14 @@ public struct EpubBuilder {
 
     private func chapterXHTML(
         content: ArticleContent, sourceURLString: String,
-        imageEntryNames: [String: String], preservesImageAlternativeText: Bool
+        imageEntryNames: [String: String], preservesImageAlternativeText: Bool,
+        banner: EmbeddedImage?
     ) -> String {
         var bodyParts: [String] = []
         bodyParts.append("<h1>\(Self.escapeXML(content.title))</h1>")
+        if let banner {
+            bodyParts.append("<p><img src=\"images/\(banner.fileName)\" alt=\"\(Self.escapeXML(content.blocks.first(where: { $0.kind == .image })?.text ?? ""))\" style=\"max-width:100%;width:320px;height:auto\"/></p>")
+        }
         if let author = content.author {
             bodyParts.append("<p><i>\(Self.escapeXML(author))</i></p>")
         }

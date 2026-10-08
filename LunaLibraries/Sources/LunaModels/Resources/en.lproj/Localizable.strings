@@ -1589,3 +1589,8 @@
 "PriceTracker_pluginRequiredMessage_Luna" = "Re-save this product with an enabled product plugin to find sellers.";
 "PriceTracker_noNewSellersTitle_Luna" = "No new sellers";
 "PriceTracker_noNewSellersMessage_Luna" = "The product plugin did not return any new matching sellers.";
+
+"ExportFormat_compactEpub_Luna" = "EPUB (Small, Black & White)";
+"Settings_importExport_importEpubRow_Luna" = "Import EPUB Book";
+"Settings_importExport_epubImported_Luna" = "Book imported. It is now in your reading list.";
+"Settings_importExport_epubFailed_Luna" = "This EPUB could not be read. Choose an unencrypted book with readable text.";

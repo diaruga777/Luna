@@ -907,8 +907,19 @@ under, which `PluginDestination` records through
 | media | yes | — | — | — | — | — | — | JSON | the downloaded file, via `PluginExportMediaFileLocating` |
 | product | yes | — | — | — | — | — | — | tracker JSON | — |
 
-`inputOptions.epub.profile: "compact"` maps to `EpubBuilder.Profile.xteink`;
-`images: false` maps to the TEXT-ONLY profile (not merely "skip downloading
+`inputOptions.epub.profile: "compact"` maps to the generic `EpubBuilder.Profile.compact`.
+It DEFLATE-compresses the book text and includes only the first article image
+(or an imported EPUB cover) as a black-and-white banner. The iOS host downsamples
+and dithers it to a one-bit PNG, at most 320 × 160 pixels and 8 KiB. Only that
+image is prepared, with the existing bounded image preparation timeout; a missing
+or undecodable image is omitted without losing text. The app's **EPUB (Small,
+Black & White)** export uses exactly the same encoder. Any external plugin can
+request this profile with the same manifest declaration as Xteink; no plugin ID
+or privileged API is involved. Large books can still exceed the transport's size
+threshold: the host does not truncate text to fit Bluetooth.
+
+
+`images: false` maps to `EpubBuilder.Profile.textOnly` (not merely "skip downloading
 new images" — a book already holding on-disk images would otherwise still
 embed them, defeating the request). `PluginDestination.epubBuildProfile`
 reports the DECLARED profile regardless. `PluginExportMediaFileLocating` and

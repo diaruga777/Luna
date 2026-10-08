@@ -56,15 +56,17 @@ import LunaMusicCore
     }
 }
 
-@MainActor private final class PodcastBrowserViewController: PodcastListViewController, UISearchResultsUpdating {
+@MainActor final class PodcastBrowserViewController: PodcastListViewController, UISearchResultsUpdating {
     weak var navigationOwner: UIViewController? { didSet { configureSearch() } }
-    var mode = 0 { didSet { configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
+    var mode = 0 { didSet { cancelDirectoryOpening(); configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
     private let search = UISearchController(searchResultsController: nil)
     private var searchTask: Task<Void, Never>?
     private var results: [PodcastDirectoryResult] = []
     private var charts: [PodcastDirectoryResult] = []
     private var message: String?
     private var searchToken = UUID()
+    private(set) var isSearching = false
+    var directory = PodcastDirectory()
     override func viewDidLoad() {
         super.viewDidLoad(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
         search.searchBar.placeholder = "All Podcasts"; search.searchBar.scopeButtonTitles = ["Shows", "Episodes", "Your Library"]
@@ -113,23 +115,26 @@ import LunaMusicCore
                 sections = [.init(title: "Your Library", rows: state.shows.values.filter { $0.title.localizedStandardContains(query) }.map(Row.show) + PodcastPolicies.ordered(state.episodes.values.filter { $0.title.localizedStandardContains(query) || PodcastUI.text($0.summary).localizedStandardContains(query) }, newestFirst: true).map(Row.episode))]
             } else { sections = [.init(title: search.searchBar.selectedScopeButtonIndex == 1 ? "Episodes" : "Shows", rows: results.map(Row.directory))] }
             if query.isEmpty { empty("Search Podcasts", detail: "Find shows and episodes by title, topic, or creator.") }
+            else if isSearching { loading("Searching Podcasts") }
             else if sections.allSatisfy({ $0.rows.isEmpty }) { empty(message == nil ? "No Results" : "Search Unavailable", detail: message ?? "Try another title or topic.") }
         }
         super.reload()
     }
     func updateSearchResults(for searchController: UISearchController) {
+        cancelDirectoryOpening()
         searchTask?.cancel(); let token = UUID(); searchToken = token
         let query = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        isSearching = !query.isEmpty && searchController.searchBar.selectedScopeButtonIndex != 2
         results = []; message = nil; reload()
-        guard !query.isEmpty, searchController.searchBar.selectedScopeButtonIndex != 2 else { return }
+        guard isSearching else { return }
         let episodes = searchController.searchBar.selectedScopeButtonIndex == 1
         searchTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(300)); guard let self else { return }
-                let results = try await PodcastDirectory().search(query, episodes: episodes, country: podcasts.state.settings.countryCode)
+                let results = try await directory.search(query, episodes: episodes, country: podcasts.state.settings.countryCode)
                 guard !Task.isCancelled, searchToken == token else { return }
-                self.results = results; reload()
-            } catch { guard !Task.isCancelled, let self, searchToken == token else { return }; message = error.localizedDescription; reload() }
+                self.results = results; isSearching = false; reload()
+            } catch { guard !Task.isCancelled, let self, searchToken == token else { return }; message = error.localizedDescription; isSearching = false; reload() }
         }
     }
     private func openEpisodes(title: String, episodes: [PodcastEpisode] = [], shows: [PodcastShow] = []) {

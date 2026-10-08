@@ -297,4 +297,92 @@ private actor FakeMusicServer {
         XCTAssertTrue(restored.state.naturallyExhaustedQueue)
     }
 
+    func testRepeatedDirectoryTapsPushOnlyOnceAndShowLoading() async throws {
+        let controller = DelayedPodcastList()
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.loadViewIfNeeded(); controller.loadViewIfNeeded()
+        let result = PodcastDirectoryResult(id: "test", title: "Test", author: "", collectionID: "test")
+        controller.sections = [.init(title: "Shows", rows: [.directory(result)])]
+        controller.openDirectory(result); controller.openDirectory(result)
+        XCTAssertEqual(controller.openingDirectoryID, result.id)
+        XCTAssertFalse(controller.table.allowsSelection)
+        let cell = controller.tableView(controller.table, cellForRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertEqual(cell.accessoryView?.accessibilityIdentifier, "podcasts.opening")
+        await controller.directoryTask?.value
+        XCTAssertEqual(controller.loads, 1)
+        XCTAssertEqual(navigation.viewControllers.count, 2)
+        XCTAssertNil(controller.openingDirectoryID)
+        XCTAssertTrue(controller.table.allowsSelection)
+    }
+
+    func testCancelledDirectoryLoadDoesNotPush() async throws {
+        let controller = DelayedPodcastList()
+        let navigation = UINavigationController(rootViewController: controller)
+        controller.loadViewIfNeeded()
+        controller.openDirectory(PodcastDirectoryResult(id: "test", title: "Test", author: "", collectionID: "test"))
+        let task = controller.directoryTask
+        controller.cancelDirectoryOpening()
+        await task?.value
+        XCTAssertEqual(navigation.viewControllers.count, 1)
+        XCTAssertTrue(controller.table.allowsSelection)
+    }
+
+    func testPresentedPlayerFollowsQueueSwitchInBothDirections() async throws {
+        let coordinator = MediaPlaybackCoordinator.shared
+        coordinator.install()
+        let previous = coordinator.active
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController(); window.rootViewController = host; window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            if previous == .music { MusicPlaybackController.shared.willPlay?() }
+            else { PodcastPlaybackController.shared.willPlay?() }
+        }
+        MusicPlaybackController.shared.willPlay?()
+        let music = MusicPlayerViewController(showQueue: true)
+        host.present(music, animated: false)
+        // Exercise the same surface notifications sent by a successful switch,
+        // without requiring an Apple Music account in the simulator.
+        PodcastPlaybackController.shared.willPlay?()
+        for _ in 0..<40 {
+            if let navigation = host.presentedViewController as? UINavigationController,
+               navigation.topViewController is PodcastQueueViewController,
+               navigation.topViewController?.viewIfLoaded?.window != nil,
+               !navigation.isBeingPresented { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue((host.presentedViewController as? UINavigationController)?.topViewController is PodcastQueueViewController)
+        MusicPlaybackController.shared.willPlay?()
+        for _ in 0..<40 {
+            if host.presentedViewController is MusicPlayerViewController { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(host.presentedViewController is MusicPlayerViewController)
+        XCTAssertEqual(host.presentedViewController?.view.accessibilityIdentifier, "music.playback.queue")
+        host.dismiss(animated: false)
+    }
+
+    func testSearchShowsHorizonLoadingAndClearingCancelsIt() {
+        let controller = PodcastBrowserViewController()
+        let owner = UIViewController()
+        controller.loadViewIfNeeded(); controller.navigationOwner = owner; controller.mode = 3
+        let search = owner.navigationItem.searchController!
+        search.searchBar.text = "Some More News"
+        controller.updateSearchResults(for: search)
+        XCTAssertTrue(controller.isSearching)
+        XCTAssertEqual(controller.table.tableFooterView?.subviews.first?.accessibilityIdentifier, "podcasts.loading")
+        search.searchBar.text = ""
+        controller.updateSearchResults(for: search)
+        XCTAssertFalse(controller.isSearching)
+    }
+}
+
+@MainActor private final class DelayedPodcastList: PodcastListViewController {
+    var loads = 0
+    override func directoryDestination(_ result: PodcastDirectoryResult) async throws -> UIViewController {
+        loads += 1
+        try await Task.sleep(for: .milliseconds(50))
+        return UIViewController()
+    }
 }

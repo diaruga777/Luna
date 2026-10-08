@@ -20,6 +20,7 @@ extension MusicScreenViewController {
     private var play: UIButton!, speed: UIButton!, sleep: UIButton!, back: UIButton!, forward: UIButton!
     private var subscriptions = Set<AnyCancellable>()
     private let showQueue: Bool
+    private var queueSwitch: MediaPlayerQueueSwitch!
     private var artworkID: String?
     init(showQueue: Bool) { self.showQueue = showQueue; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -48,11 +49,13 @@ extension MusicScreenViewController {
         let transcript = MusicStyle.plainButton("quote.bubble", label: "Transcript") { [weak self] in self?.navigationController?.pushViewController(PodcastTranscriptViewController(), animated: true) }
         let chapters = MusicStyle.plainButton("list.number", label: "Chapters") { [weak self] in self?.navigationController?.pushViewController(PodcastChaptersViewController(), animated: true) }
         let queue = MusicStyle.plainButton("list.bullet", label: "Playing Next") { [weak self] in self?.navigationController?.pushViewController(PodcastQueueViewController(), animated: true) }
-        let switcher = MusicStyle.plainButton("arrow.triangle.swap", label: "Switch to Music") { Task { await MediaPlaybackCoordinator.shared.switchQueue() } }
+        queueSwitch = MediaPlayerQueueSwitch(owner: self, surface: .podcasts, showsQueue: { [weak self] in
+            self?.navigationController?.topViewController is PodcastQueueViewController
+        })
         let route = AVRoutePickerView(); route.tintColor = .label
-        let options = UIStackView(arrangedSubviews: [speed, sleep, transcript, chapters, queue, switcher, route]); options.distribution = .fillEqually
+        let options = UIStackView(arrangedSubviews: [speed, sleep, transcript, chapters, queue, route]); options.distribution = .fillEqually
         let volume = MPVolumeView(); volume.showsRouteButton = false
-        let controls = UIStackView(arrangedSubviews: [titleLabel, showLabel, slider, times, transport, volume, options]); controls.axis = .vertical; controls.spacing = 12
+        let controls = UIStackView(arrangedSubviews: [titleLabel, showLabel, slider, times, transport, volume, options, queueSwitch.button]); controls.axis = .vertical; controls.spacing = 12
         let artContainer = UIView(); artContainer.addSubview(artwork); artwork.translatesAutoresizingMaskIntoConstraints = false
         let stack = UIStackView(arrangedSubviews: [artContainer, controls]); stack.axis = .vertical; stack.spacing = 24; stack.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(stack)
         let artHeight = artwork.heightAnchor.constraint(equalTo: artContainer.heightAnchor); artHeight.priority = .defaultHigh

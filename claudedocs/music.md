@@ -254,8 +254,10 @@ default), speed 0.5–3×, time seeking, sleep timers including end-of-episode, 
 video/Picture in Picture, publisher chapters (RSS, JSON or embedded metadata), and
 publisher VTT/SRT/TTML/JSON/plain-text transcripts with search and timed seeking.
 Saved episodes, manual played/unplayed changes, share, Play Next, Add to Queue,
-queue reordering/removal/clear, and per-show continuation are available from episode
-menus. Stations select followed shows, count, order, played state and media type.
+queue reordering/removal/clear are available from episode menus. A single episode
+never adds the rest of its show: the queue contains only explicit selections and
+shows an empty state when exhausted. Legacy automatic continuation lists are
+discarded on load without changing explicit queue entries or listening history. Stations select followed shows, count, order, played state and media type.
 
 Downloads use background URLSession tasks, with AVAssetDownloadURLSession for HLS.
 The persisted manifest reconnects tasks across launches and reports interrupted or
@@ -301,7 +303,10 @@ so a chord leaves the source queue/position untouched. No destination means norm
 skip behavior; a failed switch attempts to restore the prior playing source.
 The same policy serves in-app controls, widget commands, podcast and Vault remote
 sessions, and CarPlay. `SwitchMediaQueueIntent` and a CarPlay Now Playing button
-provide an explicit switch as well. CarPlay can browse podcasts with music access
+provide an explicit switch as well. Both in-app players and the podcast queue
+show a labeled Music/Podcasts switch. A successful switch replaces the displayed
+player, preserving whether the queue was open; an empty destination is disabled.
+A queued podcast can be started even before there is listening history. CarPlay can browse podcasts with music access
 denied, and exposes followed shows, recent/downloaded/saved episodes, stations and
 Now Playing/queue controls.
 
@@ -348,3 +353,29 @@ reruns, including root options, filter toggles in all music categories, podcast
 foreground retention, music search/queue links, settings and the local RSS fixture.
 The fixture check resets an already-played episode and uses navigation back buttons
 so it can repeat against persisted simulator data. The root screenshot was inspected.
+
+Podcast playback and interaction fixes (2026-10-08):
+
+- The spoken-audio playback session no longer explicitly requests `allowAirPlay`.
+  That option is valid only for `playAndRecord`, causing OSStatus -50 on devices;
+  the playback category already supports AirPlay ([Apple documentation](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/allowairplay)). Resume reapplies spoken-audio
+  mode when returning from music. The same invalid option was removed from Vault
+  music start/resume so it cannot break the return trip.
+- Directory search shows `HorizonSpinnerView` throughout debounce/network loading.
+  Opening a directory row shows the same spinner in its accessory, blocks repeat
+  selections, and discards late navigation after leaving or changing the search.
+- Automatic show continuation and its settings have been removed. The old model
+  fields remain readable for persistence compatibility; only explicit queued
+  episodes advance at natural completion. The Resume Last Podcast intent retains
+  its separately specified deterministic fallback after natural exhaustion.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 42 Music tests passed,
+including real AVPlayer podcast start, legacy queue migration, search loading,
+repeated taps and cancelled navigation; the additional bidirectional player
+presentation test also passed. Focused podcast/Vault playback reruns passed after
+resume changes. All 16 Foundation tests passed. The nine UI tests passed across
+the full run and focused reruns: the fixture now verifies actual podcast playback,
+the empty explicit queue and visible media switch. UI launch arguments isolate
+active-media state so a previous podcast test cannot change a music-route check.
+Queue screenshots were inspected. Physical-device playback, the exact publisher
+stream from the report, and AirPlay have not been verified in this fix.

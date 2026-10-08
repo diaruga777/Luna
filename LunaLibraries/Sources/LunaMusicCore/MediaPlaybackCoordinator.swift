@@ -9,7 +9,7 @@ import LunaPodcastCore
     @Published public private(set) var errorMessage: String?
     private var gesture = MediaSkipGesture()
     private var expiration: Task<Void, Never>?
-    private var switching = false
+    @Published public private(set) var switching = false
     private var installed = false
     private init() { active = Surface(rawValue: UserDefaults.standard.string(forKey: "LunaMusic.activeMedia") ?? "") ?? .music }
     public func install() {
@@ -27,7 +27,7 @@ import LunaPodcastCore
         NotificationCenter.default.post(name: .lunaMediaSurfaceChanged, object: self)
     }
     public var canSwitch: Bool {
-        active == .music ? PodcastPlaybackController.shared.currentEpisode != nil : MusicPlaybackController.shared.hasRestorableQueue
+        active == .music ? PodcastPlaybackController.shared.hasRestorableQueue : MusicPlaybackController.shared.hasRestorableQueue
     }
     public func skip(_ direction: MediaSkipGesture.Direction, timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         install()
@@ -53,9 +53,10 @@ import LunaPodcastCore
     }
     public func switchQueue() async {
         install(); guard !switching else { return }
+        switching = true; errorMessage = nil
+        defer { switching = false }
         if active == .podcasts { await MusicPlaybackController.shared.restoreIfNeeded() }
         guard canSwitch else { return }
-        switching = true; defer { switching = false }
         let previous = active
         let wasPlaying = previous == .music ? MusicPlaybackController.shared.isPlaying : PodcastPlaybackController.shared.isPlaying
         do {

@@ -1,6 +1,7 @@
 import UIKit
 import LunaPodcastCore
 import LunaMusicCore
+import LunaDesignSystem
 
 @MainActor enum PodcastUI {
     static let images = NSCache<NSURL, UIImage>()
@@ -103,6 +104,34 @@ import LunaMusicCore
     struct Section { var title: String; var rows: [Row] }
     var sections: [Section] = []
     let podcasts = PodcastLibraryController.shared
+    private(set) var openingDirectoryID: String?
+    private(set) var directoryTask: Task<Void, Never>?
+    private var directoryToken = UUID()
+    private let loadingSpinner = HorizonSpinnerView(side: 32)
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        cancelDirectoryOpening()
+    }
+
+    func cancelDirectoryOpening() {
+        directoryToken = UUID(); directoryTask?.cancel(); directoryTask = nil
+        openingDirectoryID = nil
+        table.allowsSelection = true
+        table.reloadData()
+    }
+
+    func loading(_ label: String) {
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: table.bounds.width, height: 120))
+        loadingSpinner.accessibilityLabel = label
+        loadingSpinner.accessibilityIdentifier = "podcasts.loading"
+        loadingSpinner.isAccessibilityElement = true
+        loadingSpinner.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(loadingSpinner)
+        NSLayoutConstraint.activate([loadingSpinner.centerXAnchor.constraint(equalTo: footer.centerXAnchor), loadingSpinner.centerYAnchor.constraint(equalTo: footer.centerYAnchor)])
+        loadingSpinner.startAnimating()
+        table.tableFooterView = footer
+    }
     override func viewDidLoad() {
         super.viewDidLoad(); view.tintColor = .systemPurple
         navigationController?.navigationBar.prefersLargeTitles = true
@@ -129,7 +158,15 @@ import LunaMusicCore
         var content = cell.defaultContentConfiguration(); content.textProperties.numberOfLines = 2
         content.textProperties.font = .preferredFont(forTextStyle: .body)
         content.imageProperties.maximumSize = CGSize(width: 56, height: 56); content.imageProperties.cornerRadius = 6
+        cell.accessoryView = nil
         cell.accessoryType = .disclosureIndicator
+        if case .directory(let result) = row, result.id == openingDirectoryID {
+            let spinner = HorizonSpinnerView(side: 26)
+            spinner.accessibilityLabel = "Loading Podcast"
+            spinner.accessibilityIdentifier = "podcasts.opening"
+            spinner.isAccessibilityElement = true
+            spinner.startAnimating(); cell.accessoryView = spinner
+        }
         var url: URL?
         switch row {
         case .show(let show): content.text = show.title; content.secondaryText = show.author; content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); url = show.artworkURL
@@ -151,6 +188,7 @@ import LunaMusicCore
     }
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        guard openingDirectoryID == nil else { return }
         switch sections[indexPath.section].rows[indexPath.row] {
         case .episode(let episode): PodcastUI.run(self) { try await PodcastPlaybackController.shared.play(episode) }
         case .show(let show): navigationController?.pushViewController(PodcastShowViewController(showID: show.id), animated: true)
@@ -159,16 +197,39 @@ import LunaMusicCore
         }
     }
     func openDirectory(_ result: PodcastDirectoryResult) {
-        PodcastUI.run(self) { [self] in
-            let directory = PodcastDirectory()
-            var feed = result.feedURL
-            if feed == nil { feed = try await directory.lookup([result.collectionID], country: podcasts.state.settings.countryCode).first?.feedURL }
-            guard let feed else { throw PodcastError("This publisher does not make its RSS feed available to other podcast apps.") }
-            let id = try await podcasts.addFeed(feed, follow: false, directoryID: result.collectionID)
-            if let media = result.episodeURL, let episode = podcasts.episodes(for: id, applySettings: false).first(where: { $0.mediaURL == media }) {
-                navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
-            } else { navigationController?.pushViewController(PodcastShowViewController(showID: id), animated: true) }
+        guard openingDirectoryID == nil else { return }
+        let token = UUID(); directoryToken = token
+        openingDirectoryID = result.id; table.allowsSelection = false; table.reloadData()
+        directoryTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if directoryToken == token {
+                    openingDirectoryID = nil; directoryTask = nil
+                    table.allowsSelection = true; table.reloadData()
+                }
+            }
+            do {
+                let destination = try await directoryDestination(result)
+                guard !Task.isCancelled, directoryToken == token,
+                      let navigation = navigationController,
+                      navigation.topViewController === self || navigation.topViewController === parent else { return }
+                navigation.pushViewController(destination, animated: true)
+            } catch {
+                guard !Task.isCancelled, directoryToken == token else { return }
+                PodcastUI.showError(error, from: self)
+            }
         }
+    }
+    func directoryDestination(_ result: PodcastDirectoryResult) async throws -> UIViewController {
+        let directory = PodcastDirectory()
+        var feed = result.feedURL
+        if feed == nil { feed = try await directory.lookup([result.collectionID], country: podcasts.state.settings.countryCode).first?.feedURL }
+        guard let feed else { throw PodcastError("This publisher does not make its RSS feed available to other podcast apps.") }
+        let id = try await podcasts.addFeed(feed, follow: false, directoryID: result.collectionID)
+        if let media = result.episodeURL, let episode = podcasts.episodes(for: id, applySettings: false).first(where: { $0.mediaURL == media }) {
+            return PodcastEpisodeViewController(episode: episode)
+        }
+        return PodcastShowViewController(showID: id)
     }
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard case .episode(let episode) = sections[indexPath.section].rows[indexPath.row] else { return nil }

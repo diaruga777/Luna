@@ -4,14 +4,17 @@ import LunaPodcastCore
 import LunaMusicCore
 
 @MainActor final class PodcastQueueViewController: PodcastListViewController {
+    private var queueSwitch: MediaPlayerQueueSwitch!
     override func viewDidLoad() {
         super.viewDidLoad(); title = "Playing Next"; table.isEditing = true; table.allowsSelectionDuringEditing = true
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Clear", primaryAction: UIAction { [weak self] _ in guard let self else { return }; PodcastUI.run(self) { try self.podcasts.edit { $0.queue = []; $0.continuation = [] } } })
+        queueSwitch = MediaPlayerQueueSwitch(owner: self, surface: .podcasts, showsQueue: { true })
+        navigationItem.rightBarButtonItems = [navigationItem.rightBarButtonItem!, UIBarButtonItem(customView: queueSwitch.button)]
         reload()
     }
     override func reload() {
         let state = podcasts.state
-        sections = [.init(title: "Queue", rows: state.queue.compactMap { state.episodes[$0] }.map(Row.episode)), .init(title: "Continue Playing", rows: state.continuation.compactMap { state.episodes[$0] }.map(Row.episode))]
+        sections = [.init(title: "Queue", rows: state.queue.compactMap { state.episodes[$0] }.map(Row.episode))]
         table.tableFooterView = nil
         if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Queue Is Empty", detail: "Use Play Next or Add to Queue on an episode.") }
         super.reload()
@@ -19,17 +22,17 @@ import LunaMusicCore
     func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
     func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
         do { try podcasts.edit { state in
-            var lists = [state.queue, state.continuation]; let id = lists[source.section].remove(at: source.row)
-            lists[destination.section].insert(id, at: min(destination.row, lists[destination.section].count)); state.queue = lists[0]; state.continuation = lists[1]
+            let id = state.queue.remove(at: source.row)
+            state.queue.insert(id, at: min(destination.row, state.queue.count))
         } } catch { PodcastUI.showError(error, from: self) }; reload()
     }
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        do { try podcasts.edit { state in if indexPath.section == 0 { state.queue.remove(at: indexPath.row) } else { state.continuation.remove(at: indexPath.row) } } }
+        do { try podcasts.edit { state in state.queue.remove(at: indexPath.row) } }
         catch { PodcastUI.showError(error, from: self) }; reload()
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard case .episode(let episode) = sections[indexPath.section].rows[indexPath.row] else { return }
-        PodcastUI.run(self) { try await PodcastPlaybackController.shared.play(episode, continueShow: false) }
+        PodcastUI.run(self) { try await PodcastPlaybackController.shared.play(episode) }
     }
 }
 @MainActor final class PodcastTranscriptViewController: UITableViewController, UISearchResultsUpdating {

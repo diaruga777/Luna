@@ -6,7 +6,7 @@ final class MusicForegroundTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication(bundleIdentifier: "com.hsanabria.luna.music")
-        app.launchArguments = ["-LunaMusic.browsingPodcasts", "NO"]
+        app.launchArguments = ["-LunaMusic.browsingPodcasts", "NO", "-LunaMusic.activeMedia", "music"]
         app.launch()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         if springboard.alerts.firstMatch.waitForExistence(timeout: 2) {
@@ -64,6 +64,18 @@ final class MusicForegroundTests: XCTestCase {
         app.buttons["Mark as Played"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Played'")).firstMatch.waitForExistence(timeout: 3))
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast followed feed and offline episode"; screenshot.lifetime = .keepAlways; add(screenshot)
+        episode.tap()
+        app.buttons["Open Now Playing"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Switch to Music"].exists)
+        app.buttons["Playing Next"].tap()
+        XCTAssertTrue(app.staticTexts["Your Queue Is Empty"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Continue Playing"].exists)
+        XCTAssertTrue(app.buttons["Switch to Music"].exists)
+        let queueScreenshot = XCTAttachment(screenshot: app.screenshot())
+        queueScreenshot.name = "Podcast explicit queue and Music switch"; queueScreenshot.lifetime = .keepAlways; add(queueScreenshot)
+        app.navigationBars.buttons["Now Playing"].tap()
+        app.buttons["Close Now Playing"].tap()
         app.navigationBars.buttons["Following"].tap()
         app.navigationBars.buttons["BackButton"].tap()
         app.navigationBars.buttons["BackButton"].tap()
@@ -180,6 +192,7 @@ final class MusicForegroundTests: XCTestCase {
         let play = app.buttons["Play"]
         let volume = app.otherElements["music.playback.volume"]
         XCTAssertTrue(queueButton.isHittable)
+        XCTAssertTrue(app.buttons["Switch to Podcasts"].exists)
         XCTAssertTrue(play.isHittable)
         let playbackFrame = play.frame
         let shuffle = app.buttons["Shuffle"]

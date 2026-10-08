@@ -43,6 +43,7 @@ public struct PodcastShowSettings: Codable, Equatable, Sendable {
     public var automaticDownloadLimit = 1
     public var notifications = false
     public var playbackRate: Float = 1
+    // Retained for decoding older libraries; queues now contain explicit selections only.
     public var continuousPlayback = true
     public init() {}
 }
@@ -124,6 +125,7 @@ public struct PodcastSettings: Codable, Equatable, Sendable {
     public var playedRetentionHours: Double = 24
     public var downloadSavedEpisodes = true
     public var hidePlayed = false
+    // Retained for decoding older libraries; queues now contain explicit selections only.
     public var continuousPlayback = true
     public var syncEnabled = false
     public var countryCode = Locale.current.region?.identifier.lowercased() ?? "us"

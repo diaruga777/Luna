@@ -36,6 +36,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var shuffle: UIButton!
     private var repeatButton: UIButton!
     private var queueButton: UIButton!
+    private var queueSwitch: MediaPlayerQueueSwitch!
     private var token: NSObjectProtocol?
     private var routeToken: NSObjectProtocol?
     private var timer: Timer?
@@ -151,6 +152,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         }
         queueButton.accessibilityIdentifier = "music.playback.queueButton"
         view.addSubview(queueButton)
+        queueSwitch = MediaPlayerQueueSwitch(owner: self, surface: .music, showsQueue: { [weak self] in self?.showsQueue ?? false })
+        view.addSubview(queueSwitch.button)
         queuePan.delegate = self
         stage.addGestureRecognizer(queuePan)
         stage.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Show Queue", actionHandler: { [weak self] _ in
@@ -203,6 +206,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         volumeHigh.frame = CGRect(x: left + width - 22, y: bottom - 96, width: 22, height: 18)
         route.frame = CGRect(x: view.bounds.midX - 24, y: bottom - 66, width: 48, height: 44)
         queueButton.frame = CGRect(x: left + width * 0.84 - 22, y: bottom - 66, width: 44, height: 44)
+        queueSwitch.button.frame = CGRect(x: left - 8, y: bottom - 66, width: width * 0.38, height: 44)
         outputLabel.frame = CGRect(x: left, y: bottom - 22, width: width, height: 24)
         layoutStage()
     }

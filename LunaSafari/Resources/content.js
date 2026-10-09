@@ -750,10 +750,9 @@
         injectLunaButton(pluginSaveTargetFor(resp, walk));
     }
 
-    /// The gate every pill decision passes through: a plugin claim wins
-    /// outright (§2 decision 8 — plugins run first), after X content eligibility;
-    /// no claim falls back to
-    /// the fixed Swift-parity heuristics in `offerLunaButton` below.
+    /// Core's pill decisions belong to installed plugins. Media claims must
+    /// resolve before presentation; standalone extensions use the built-in
+    /// eligibility rules in `offerLunaButton` below.
     var pluginPageGeneration = 0;
     var pluginPageURL = null;
     var pluginPageWatcher = null;
@@ -2853,7 +2852,12 @@
                 if (pendingVideoOverlayResolve !== request) { return; }
                 pendingVideoOverlayResolve = null;
                 if (location.href !== sourceURL) { return; }
-                if (isXHost() && xPageContentKind() !== "media") { return; }
+                // Core's plugin ingest has already verified the opened post's
+                // playable assets. X may still show a loading/login shell or
+                // omit the timestamp that the standalone DOM gate needs.
+                // Keep that gate only for the built-in resolver path.
+                if (!(context && context.supportsPlugins)
+                    && isXHost() && xPageContentKind() !== "media") { return; }
                 var assets = result && Array.isArray(result.assets) ? result.assets : [];
                 var asset = assets.find(function (item) {
                     return item && item.url && (item.kind === "video" || item.kind === "gif");

@@ -72,9 +72,12 @@ guard and not a link edge. `LunaPluginKit` and `LunaBundledPlugins` are in
 `LunaKit` alone, so the three sibling appexes could not reach them either
 way. `content.js`'s pill decision runs a plugin walk FIRST, evaluating a
 matched plugin's `classify`/`ingest` in the page's own isolated world via
-`plugin_host.js`, and falls back to the Swift-parity heuristics below only
-when no plugin claims the page. X first applies its status-owned content gate;
-a broad plugin claim cannot override feed, short-text, or photo-only suppression.
+`plugin_host.js`. Central Luna uses only installed plugins for these decisions;
+the standalone extensions use the Swift-parity heuristics below. For X, the
+central plugin resolves the exact status before offering media controls: a broad
+classification alone cannot open a player, and text/photo-only results cannot
+open one. Once ingest confirms a playable video, the player must not require a
+second DOM-based verdict from X's delayed or missing tweet markup.
 
 **What genuinely has to be JavaScript**, and why:
 
@@ -626,8 +629,13 @@ Downloader-platform flow:
    remains suppressed — the only way to tell would be to re-check the DOM after
    hydration, which only Reddit does today.
 5. **X requires an individual status and evidence from that status itself.**
-   `handleXPage` gates both plugin and built-in decisions before any pill or
-   player can appear. Home, search, profiles, notifications and malformed status
+   Central Luna's X plugin verifies the requested status ID in the resolved
+   payload and uses only that status's assets. Its confirmed video/GIF opens the
+   player even without a rendered tweet or timestamp. Static photos and ordinary
+   short text do not open it; reply/quote videos cannot qualify the opened post.
+   The plugin decision watches URL changes and rejects stale results.
+   In standalone extensions, `handleXPage` gates built-in decisions before any
+   pill or player can appear. Home, search, profiles, notifications and malformed status
    paths get neither control, with no article/product fallback. The opened
    `article[data-testid="tweet"]` is identified by its own timestamp permalink;
    quoted posts, replies, recommendations and page-wide metadata cannot provide
@@ -638,7 +646,7 @@ Downloader-platform flow:
    photo-only tweets earn neither. Text handoffs use the thread resolver instead
    of capturing the surrounding conversation as article HTML.
    A 500ms X-only check handles delayed hydration and SPA navigation, removes
-   stale controls, cleans up the old player and rejects late plugin callbacks.
+   stale controls and cleans up the old player.
    Dismissal holds for the current URL; the pill can reopen its video. Existing
    app capability and suggestion/player settings still apply.
    `SafariXEligibilityTests` exercises these paths through the complete decision.

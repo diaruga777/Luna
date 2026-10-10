@@ -175,3 +175,48 @@ extension PodcastTests {
         XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
     }
 }
+
+final class PodcastRequestCacheTests: XCTestCase {
+    actor Loader {
+        var count = 0
+        func load(fail: Bool = false) async throws -> Int {
+            count += 1
+            try await Task.sleep(for: .milliseconds(40))
+            if fail { throw PodcastError("Offline") }
+            return count
+        }
+    }
+    func testPrefetchAndOpenShareRequestAndCachedValue() async throws {
+        let cache = PodcastRequestCache<Int>(), loader = Loader()
+        async let first = cache.value(for: "feed") { try await loader.load() }
+        async let second = cache.value(for: "feed") { try await loader.load() }
+        let values = try await [first, second]
+        XCTAssertEqual(values, [1, 1])
+        let cached = try await cache.value(for: "feed") { try await loader.load() }
+        XCTAssertEqual(cached, 1)
+        let forced = try await cache.value(for: "feed", force: true) { try await loader.load() }
+        XCTAssertEqual(forced, 2)
+    }
+    func testCancellingPrefetchDoesNotCancelNavigationConsumer() async throws {
+        let cache = PodcastRequestCache<Int>(), loader = Loader()
+        let prefetch = Task { try await cache.value(for: "feed") { try await loader.load() } }
+        try await Task.sleep(for: .milliseconds(10)); prefetch.cancel()
+        let opened = try await cache.value(for: "feed") { try await loader.load() }
+        XCTAssertEqual(opened, 1)
+        _ = try await prefetch.value
+    }
+    func testFailureIsRetriedAndExpiredEntriesReload() async throws {
+        let cache = PodcastRequestCache<Int>(lifetime: 0), loader = Loader()
+        do { _ = try await cache.value(for: "feed") { try await loader.load(fail: true) }; XCTFail("Expected failure") } catch {}
+        let retried = try await cache.value(for: "feed") { try await loader.load() }
+        let expired = try await cache.value(for: "feed") { try await loader.load() }
+        XCTAssertEqual(retried, 2); XCTAssertEqual(expired, 3)
+    }
+    func testCapacityEvictsOldestEntry() async throws {
+        let cache = PodcastRequestCache<Int>(capacity: 1), loader = Loader()
+        _ = try await cache.value(for: "a") { try await loader.load() }
+        _ = try await cache.value(for: "b") { try await loader.load() }
+        let evicted = try await cache.value(for: "a") { try await loader.load() }
+        XCTAssertEqual(evicted, 3)
+    }
+}

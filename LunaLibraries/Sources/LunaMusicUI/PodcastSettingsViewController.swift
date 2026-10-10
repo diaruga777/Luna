@@ -81,7 +81,7 @@ import LunaMusicCore
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel)); alert.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath); present(alert, animated: true)
         }
     }
-    private func perform(_ action: @escaping () async throws -> Void) { Task { do { try await action() } catch { PodcastUI.showError(error, from: self) }; reload() } }
+    private func perform(_ action: @escaping () async throws -> Void) { PodcastUI.run(self) { defer { self.reload() }; try await action() } }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
         perform { [self] in

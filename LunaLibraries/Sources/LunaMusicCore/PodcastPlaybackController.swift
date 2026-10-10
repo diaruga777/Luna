@@ -15,6 +15,10 @@ import LunaPodcastCore
     @Published public private(set) var rate: Float = 1
     @Published public private(set) var chapters: [PodcastChapter] = []
     @Published public private(set) var transcript: [PodcastTranscriptCue] = []
+    @Published public private(set) var isLoadingTranscript = false
+    @Published public private(set) var isLoadingChapters = false
+    @Published public private(set) var transcriptError: String?
+    @Published public private(set) var chaptersError: String?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var sleepDeadline: Date?
     @Published public private(set) var sleepAtEpisodeEnd = false
@@ -36,6 +40,8 @@ import LunaPodcastCore
     private var interruptedPlayback = false
     private var artwork: UIImage?
     private var extrasTask: Task<Void, Never>?
+    private var extrasTimeoutTask: Task<Void, Never>?
+    private var bufferingTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
     private var itemObserver: NSKeyValueObservation?
     private var isSelecting = false
@@ -88,7 +94,7 @@ import LunaPodcastCore
         if let timeToken { player.removeTimeObserver(timeToken) }
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
-        extrasTask?.cancel(); sleepTask?.cancel()
+        extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
     }
     public func play(_ episode: PodcastEpisode) async throws {
         // A single episode never enrolls the rest of its show in the queue.
@@ -104,9 +110,11 @@ import LunaPodcastCore
         persistPosition()
         willPlay?()
         let token = UUID(); generation = token; isSelecting = true
-        defer { if generation == token { isSelecting = false } }
-        player.pause(); requestedPlayback = true; actualStartRecorded = false; ignoreSeekEnd = false
-        errorMessage = nil; isBuffering = true
+        bufferingTask?.cancel(); bufferingTask = nil
+        defer { if generation == token { isSelecting = false; updatePlayback() } }
+        player.currentItem?.cancelPendingSeeks()
+        player.pause(); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; ignoreSeekEnd = false
+        errorMessage = nil; setBuffering(true)
         currentEpisode = episode; duration = episode.duration
         let saved = library.state.progress[episode.id]
         position = !restorePosition && saved?.listened == true ? 0 : max(0, saved?.position ?? 0)
@@ -121,7 +129,9 @@ import LunaPodcastCore
         if let local = PodcastDownloads.shared.localURL(episode.id) { asset = AVURLAsset(url: local) }
         else { asset = AVURLAsset(url: episode.mediaURL, options: [AVURLAssetAllowsCellularAccessKey: library.state.settings.cellularStreaming]) }
         let item = AVPlayerItem(asset: asset); item.audioTimePitchAlgorithm = .timeDomain
-        item.preferredForwardBufferDuration = 30
+        // AVPlayer streams HTTP ranges/HLS incrementally; a short forward target
+        // avoids asking slow publishers for half a minute before playback.
+        item.preferredForwardBufferDuration = 3
         itemObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in
                 guard let self, self.generation == token else { return }
@@ -129,13 +139,14 @@ import LunaPodcastCore
             }
         }
         player.replaceCurrentItem(with: item)
+        loadExtras(episode, token: token)
+        publish()
         _ = await session.becomeActiveIfPossible()
         guard token == generation else { throw CancellationError() }
         if position > 0 { await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
         guard token == generation else { throw CancellationError() }
         needsPreparation = false
         if requestedPlayback { player.playImmediately(atRate: rate) }
-        loadExtras(episode, token: token)
         publish()
     }
     public func resume() async throws {
@@ -144,8 +155,11 @@ import LunaPodcastCore
         guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation else { try await select(episode, restorePosition: true); return }
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
+        let token = generation
+        requestedPlayback = true; errorMessage = nil; setBuffering(true); publish()
         _ = await session.becomeActiveIfPossible()
-        requestedPlayback = true; errorMessage = nil; player.playImmediately(atRate: rate); publish()
+        guard generation == token, requestedPlayback else { return }
+        player.playImmediately(atRate: rate); publish()
     }
     /// No recommendation or unrelated "Now Playing" hand-off is involved.
     public func resumeLastPodcast() async throws {
@@ -165,8 +179,8 @@ import LunaPodcastCore
         }
     }
     public func pause() {
-        requestedPlayback = false; player.pause(); isPlaying = false; isBuffering = false
-        if isSelecting { generation = UUID(); isSelecting = false; needsPreparation = true }
+        requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
+        if isSelecting { generation = UUID(); isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
     }
     public func toggle() { if requestedPlayback { pause() } else { Task { do { try await resume() } catch { fail(error) } } } }
@@ -175,7 +189,11 @@ import LunaPodcastCore
         let target = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
         ignoreSeekEnd = duration > 0 && target >= duration - 0.25
         position = target
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        if requestedPlayback { setBuffering(true) }
+        let token = generation
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor in guard let self, self.generation == token else { return }; self.updatePlayback() }
+        }
         persistPosition(); publish()
     }
     public func skip(backward: Bool) { seek(to: position + (backward ? -library.state.settings.skipBack : library.state.settings.skipForward)) }
@@ -204,16 +222,26 @@ import LunaPodcastCore
     }
     private func updatePlayback() {
         isPlaying = player.timeControlStatus == .playing
-        isBuffering = requestedPlayback && player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        setBuffering(requestedPlayback && (isSelecting || !isPlaying))
         if isPlaying, !actualStartRecorded, let episode = currentEpisode {
             do { try library.requireStore().recordPlaybackStarted(episode.id); actualStartRecorded = true; library.reloadState() }
             catch { fail(error); return }
         }
         publish()
     }
+    private func setBuffering(_ value: Bool) {
+        if isBuffering != value { isBuffering = value }
+        if !value { bufferingTask?.cancel(); bufferingTask = nil; return }
+        guard bufferingTask == nil else { return }
+        bufferingTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.isBuffering, self.requestedPlayback else { return }
+            self.fail(PodcastError("This episode is taking too long to load. Check your connection and tap Play to retry."))
+        }
+    }
     private func ended() async {
         guard actualStartRecorded, !ignoreSeekEnd, let episode = currentEpisode else { pause(); return }
-        persistPosition(); requestedPlayback = false; isPlaying = false; isBuffering = false
+        persistPosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
         do {
             if sleepAtEpisodeEnd {
                 try library.requireStore().markListened(episode.id, true)
@@ -232,7 +260,13 @@ import LunaPodcastCore
     }
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
-        requestedPlayback = false; player.pause(); isPlaying = false; isBuffering = false
+        generation = UUID(); isSelecting = false; needsPreparation = true
+        player.currentItem?.cancelPendingSeeks()
+        extrasTask?.cancel(); extrasTimeoutTask?.cancel()
+        if isLoadingTranscript { transcriptError = error.localizedDescription }
+        if isLoadingChapters { chaptersError = error.localizedDescription }
+        isLoadingTranscript = false; isLoadingChapters = false
+        requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
         errorMessage = error.localizedDescription; publish()
     }
     private func publish() {
@@ -271,40 +305,88 @@ import LunaPodcastCore
         remote.changePlaybackRateCommand.supportedPlaybackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
         add(remote.changePlaybackRateCommand) { [weak self] event in if let event = event as? MPChangePlaybackRateCommandEvent { self?.setRate(event.playbackRate) } }
     }
+    public func prepareExtras() {
+        guard extrasTask == nil, let episode = currentEpisode else { return }
+        loadExtras(episode, token: generation)
+    }
+    public func retryExtras() {
+        guard let episode = currentEpisode else { return }
+        loadExtras(episode, token: generation)
+    }
     private func loadExtras(_ episode: PodcastEpisode, token: UUID) {
-        extrasTask?.cancel(); chapters = episode.chapters; transcript = []; artwork = nil
+        extrasTask?.cancel(); extrasTimeoutTask?.cancel(); chapters = episode.chapters; transcript = []; artwork = nil
+        transcriptError = nil; chaptersError = nil
+        isLoadingTranscript = !episode.transcripts.isEmpty
+        isLoadingChapters = chapters.isEmpty || episode.chaptersURL != nil
+        let asset = player.currentItem?.asset
+        extrasTimeoutTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.generation == token, self.isLoadingTranscript || self.isLoadingChapters else { return }
+            if self.isLoadingTranscript { self.transcriptError = "The transcript is taking too long to load. Please try again." }
+            if self.isLoadingChapters { self.chaptersError = "The chapters are taking too long to load. Please try again." }
+            self.extrasTask?.cancel(); self.isLoadingTranscript = false; self.isLoadingChapters = false
+        }
         extrasTask = Task { [weak self] in
             guard let self else { return }
-            if let url = episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL,
-               let (data, _) = try? await URLSession.shared.data(from: url), data.count < 15_000_000, generation == token {
-                artwork = UIImage(data: data); publish()
+            async let art: Void = loadArtwork(episode, token: token)
+            async let text: Void = loadTranscript(episode, token: token)
+            async let markers: Void = loadChapters(episode, asset: asset, token: token)
+            _ = await (art, text, markers)
+        }
+    }
+    private func extraData(_ url: URL, limit: Int = 5_000_000) async throws -> Data {
+        var request = URLRequest(url: url); request.timeoutInterval = 20
+        let (data, response) = try await PodcastNetwork.session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw PodcastError("The publisher could not be reached. Please try again.") }
+        guard data.count < limit else { throw PodcastError("The publisher’s file is too large.") }
+        return data
+    }
+    private func loadArtwork(_ episode: PodcastEpisode, token: UUID) async {
+        guard let url = episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL,
+              let data = try? await extraData(url, limit: 15_000_000), generation == token, !Task.isCancelled else { return }
+        artwork = UIImage(data: data); publish()
+    }
+    private func loadTranscript(_ episode: PodcastEpisode, token: UUID) async {
+        defer { if generation == token, !Task.isCancelled { isLoadingTranscript = false } }
+        guard let reference = episode.transcripts.first else { return }
+        do {
+            let cache = PodcastLibraryController.directory.appendingPathComponent("transcript-\(PodcastIdentity.hash(reference.url.absoluteString)).json")
+            let cached = await Task.detached { () -> [PodcastTranscriptCue]? in
+                guard let data = try? Data(contentsOf: cache) else { return nil }
+                return try? JSONDecoder().decode([PodcastTranscriptCue].self, from: data)
+            }.value
+            if let cues = cached {
+                guard generation == token, !Task.isCancelled else { return }; transcript = cues
+            } else {
+                let data = try await extraData(reference.url)
+                // Publisher transcripts can be large; parsing must not block transport/UI.
+                let cues = try await Task.detached { try PodcastTranscript.parse(data, type: reference.type) }.value
+                guard generation == token, !Task.isCancelled else { return }
+                transcript = cues; try? JSONEncoder().encode(cues).write(to: cache, options: [.atomic])
             }
+        } catch { if generation == token, !Task.isCancelled { transcriptError = error.localizedDescription } }
+    }
+    private func loadChapters(_ episode: PodcastEpisode, asset: AVAsset?, token: UUID) async {
+        defer { if generation == token, !Task.isCancelled { isLoadingChapters = false } }
+        do {
             if let url = episode.chaptersURL {
                 struct Document: Decodable { struct Chapter: Decodable { var startTime: Double; var title: String?; var url: String?; var img: String? }; var chapters: [Chapter] }
-                if let (data, _) = try? await URLSession.shared.data(from: url), data.count < 5_000_000,
-                   let document = try? JSONDecoder().decode(Document.self, from: data), generation == token {
-                    chapters = document.chapters.filter { $0.startTime.isFinite && $0.startTime >= 0 }.map { .init(start: $0.startTime, title: $0.title ?? "Chapter", url: PodcastIdentity.webURL($0.url), imageURL: PodcastIdentity.webURL($0.img)) }.sorted { $0.start < $1.start }
-                }
-            }
-            if chapters.isEmpty, let asset = player.currentItem?.asset,
-               let locales = try? await asset.load(.availableChapterLocales), let locale = locales.first,
-               let groups = try? await asset.loadChapterMetadataGroups(withTitleLocale: locale, containingItemsWithCommonKeys: [.commonKeyTitle]), generation == token {
+                let data = try await extraData(url)
+                let document = try JSONDecoder().decode(Document.self, from: data)
+                guard generation == token, !Task.isCancelled else { return }
+                chapters = document.chapters.filter { $0.startTime.isFinite && $0.startTime >= 0 }.map { .init(start: $0.startTime, title: $0.title ?? "Chapter", url: PodcastIdentity.webURL($0.url), imageURL: PodcastIdentity.webURL($0.img)) }.sorted { $0.start < $1.start }
+            } else if chapters.isEmpty, let asset {
+                let locales = try await asset.load(.availableChapterLocales)
+                guard let locale = locales.first else { return }
+                let groups = try await asset.loadChapterMetadataGroups(withTitleLocale: locale, containingItemsWithCommonKeys: [.commonKeyTitle])
                 var result: [PodcastChapter] = []
                 for group in groups {
                     let title = try? await group.items.first?.load(.stringValue)
                     result.append(.init(start: group.timeRange.start.seconds, title: title ?? "Chapter"))
                 }
-                if generation == token { chapters = result }
+                guard generation == token, !Task.isCancelled else { return }; chapters = result
             }
-            if let reference = episode.transcripts.first {
-                let cache = PodcastLibraryController.directory.appendingPathComponent("transcript-\(PodcastIdentity.hash(reference.url.absoluteString)).json")
-                if let data = try? Data(contentsOf: cache), let cues = try? JSONDecoder().decode([PodcastTranscriptCue].self, from: data), generation == token { transcript = cues }
-                else if let (data, response) = try? await URLSession.shared.data(from: reference.url),
-                        let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                        let cues = try? PodcastTranscript.parse(data, type: reference.type), generation == token {
-                    transcript = cues; try? JSONEncoder().encode(cues).write(to: cache, options: [.atomic])
-                }
-            }
-        }
+        } catch { if generation == token, !Task.isCancelled { chaptersError = error.localizedDescription } }
     }
 }

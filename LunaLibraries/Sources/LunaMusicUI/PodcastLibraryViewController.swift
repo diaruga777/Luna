@@ -21,7 +21,8 @@ import LunaMusicCore
             UIAction(title: "Settings", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.navigationController?.pushViewController(PodcastSettingsViewController(), animated: true) }
         ]))
         navigationItem.rightBarButtonItem?.accessibilityLabel = "Podcast Options"
-        Task { await PodcastLibraryController.shared.refresh(); await content.discover() }
+        Task { await PodcastLibraryController.shared.refresh() }
+        Task { await content.discover() }
     }
     public func showQueue() { loadViewIfNeeded(); content.presentPodcastPlayer(queue: true) }
     public func openEpisode(_ id: String) {
@@ -38,6 +39,7 @@ import LunaMusicCore
             PodcastUI.run(self) {
                 guard let url = PodcastIdentity.webURL(address) else { throw PodcastError("Enter a valid podcast feed address.") }
                 let id = try await PodcastLibraryController.shared.addFeed(url)
+                guard self.navigationController?.topViewController === self else { return }
                 self.navigationController?.pushViewController(PodcastShowViewController(showID: id), animated: true)
             }
         }); present(alert, animated: true)
@@ -58,10 +60,13 @@ import LunaMusicCore
 
 @MainActor final class PodcastBrowserViewController: PodcastListViewController, UISearchResultsUpdating {
     weak var navigationOwner: UIViewController? { didSet { configureSearch() } }
-    var mode = 0 { didSet { cancelDirectoryOpening(); configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
+    var mode = 0 { didSet { cancelDirectoryOpening(); cancelPrefetching(); configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
     private let search = UISearchController(searchResultsController: nil)
     private var searchTask: Task<Void, Never>?
     private var results: [PodcastDirectoryResult] = []
+    private var discoveryMessage: String?
+    private var categoryPrefetchTask: Task<Void, Never>?
+    private var isDiscovering = false
     private var charts: [PodcastDirectoryResult] = []
     private var message: String?
     private var searchToken = UUID()
@@ -77,29 +82,44 @@ import LunaMusicCore
         navigationOwner?.navigationItem.searchController = mode == 3 ? search : nil
         navigationOwner?.navigationItem.hidesSearchBarWhenScrolling = false
     }
-    func discover() async {
-        guard charts.isEmpty else { return }
-        do { charts = try await PodcastDirectory().charts(country: podcasts.state.settings.countryCode); message = nil }
-        catch { message = error.localizedDescription }
-        reload()
+    func discover(force: Bool = false) async {
+        guard charts.isEmpty, !isDiscovering else { return }
+        isDiscovering = true; reload()
+        defer { isDiscovering = false; reload() }
+        do {
+            charts = try await directory.charts(country: podcasts.state.settings.countryCode, force: force)
+            discoveryMessage = nil; prefetch(Array(charts.prefix(3)))
+            if categoryPrefetchTask == nil {
+                let country = podcasts.state.settings.countryCode
+                let categories = Array((podcasts.state.settings.favoriteCategories + PodcastDirectory.categories.map(\.id)).prefix(3))
+                categoryPrefetchTask = Task { for id in Set(categories) { _ = try? await directory.charts(country: country, genre: id) } }
+            }
+        } catch { discoveryMessage = error.localizedDescription }
+    }
+    override func refreshContent() async {
+        if mode == 1 { charts = []; await discover(force: true) }
+        else if mode == 3 { updateSearchResults(for: search); await searchTask?.value }
+        else { await super.refreshContent() }
     }
     override func reload() {
         let state = podcasts.state
         let followed = state.shows.values.filter(\.followed).sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         let latest = PodcastPolicies.ordered(state.episodes.values.filter { state.shows[$0.showID]?.followed == true && state.progress[$0.id]?.listened != true }, newestFirst: true)
-        table.tableFooterView = nil
+        table.tableFooterView = nil; table.tableHeaderView = nil
         switch mode {
         case 0:
             sections = []
             if let id = state.lastPlayedEpisodeID, let episode = state.episodes[id] { sections.append(.init(title: "Continue Listening", rows: [.episode(episode)])) }
             let recent = state.progress.filter { $0.value.lastPlayedAt != nil }.sorted { $0.value.lastPlayedAt! > $1.value.lastPlayedAt! }.prefix(20).compactMap { state.episodes[$0.key] }
             sections += [.init(title: "Latest Episodes", rows: latest.prefix(30).map(Row.episode)), .init(title: "Recently Played", rows: recent.map(Row.episode))]
-            if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Podcasts", detail: "Find a show in New or Search, then follow it to see new episodes here.") }
+            if podcasts.isRefreshing { loading("Updating Podcasts") }
+            else if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Podcasts", detail: "Find a show in New or Search, then follow it to see new episodes here.") }
         case 1:
             sections = [.init(title: "Top Shows", rows: charts.prefix(20).map(Row.directory)), .init(title: "Browse Categories", rows: PodcastDirectory.categories.map { category in
                 .action(category.name, "square.grid.2x2") { [weak self] in self?.navigationController?.pushViewController(PodcastCategoryViewController(category: category), animated: true) }
             })]
-            if let message { empty("Unable to Load Shows", detail: message) }
+            if isDiscovering { loading("Loading Top Shows", atTop: true) }
+            else if let message = discoveryMessage { empty("Unable to Load Shows", detail: message, atTop: true, retry: { [weak self] in Task { await self?.discover() } }) }
         case 2:
             sections = [.init(title: "Library", rows: [
                 .action("Shows", "dot.radiowaves.left.and.right") { [weak self] in self?.openEpisodes(title: "Shows", shows: followed) },
@@ -116,12 +136,12 @@ import LunaMusicCore
             } else { sections = [.init(title: search.searchBar.selectedScopeButtonIndex == 1 ? "Episodes" : "Shows", rows: results.map(Row.directory))] }
             if query.isEmpty { empty("Search Podcasts", detail: "Find shows and episodes by title, topic, or creator.") }
             else if isSearching { loading("Searching Podcasts") }
-            else if sections.allSatisfy({ $0.rows.isEmpty }) { empty(message == nil ? "No Results" : "Search Unavailable", detail: message ?? "Try another title or topic.") }
+            else if sections.allSatisfy({ $0.rows.isEmpty }) { empty(message == nil ? "No Results" : "Search Unavailable", detail: message ?? "Try another title or topic.", retry: message == nil ? nil : { [weak self] in guard let self else { return }; self.updateSearchResults(for: self.search) }) }
         }
         super.reload()
     }
     func updateSearchResults(for searchController: UISearchController) {
-        cancelDirectoryOpening()
+        cancelDirectoryOpening(); cancelPrefetching()
         searchTask?.cancel(); let token = UUID(); searchToken = token
         let query = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         isSearching = !query.isEmpty && searchController.searchBar.selectedScopeButtonIndex != 2
@@ -133,7 +153,7 @@ import LunaMusicCore
                 try await Task.sleep(for: .milliseconds(300)); guard let self else { return }
                 let results = try await directory.search(query, episodes: episodes, country: podcasts.state.settings.countryCode)
                 guard !Task.isCancelled, searchToken == token else { return }
-                self.results = results; isSearching = false; reload()
+                self.results = results; isSearching = false; reload(); prefetch(Array(results.prefix(3)))
             } catch { guard !Task.isCancelled, let self, searchToken == token else { return }; message = error.localizedDescription; isSearching = false; reload() }
         }
     }
@@ -155,7 +175,9 @@ extension PodcastBrowserViewController: UISearchBarDelegate {
         super.reload()
     }
 }
-@MainActor private final class PodcastCategoryViewController: PodcastListViewController {
+@MainActor final class PodcastCategoryViewController: PodcastListViewController {
+    var directory = PodcastDirectory()
+    private(set) var isLoading = false
     let category: (id: String, name: String)
     init(category: (id: String, name: String)) { self.category = category; super.init(nibName: nil, bundle: nil); title = category.name }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -170,6 +192,17 @@ extension PodcastBrowserViewController: UISearchBarDelegate {
                 self.navigationItem.rightBarButtonItem?.image = UIImage(systemName: self.podcasts.state.settings.favoriteCategories.contains(self.category.id) ? "star.fill" : "star")
             }
         })
-        Task { do { let rows = try await PodcastDirectory().charts(country: podcasts.state.settings.countryCode, genre: category.id); sections = [.init(title: "Top Shows", rows: rows.map(Row.directory))]; reload() } catch { empty("Unable to Load Shows", detail: error.localizedDescription) } }
+        loading("Loading Shows"); Task { await load(force: false) }
+    }
+    override func refreshContent() async { await load(force: true) }
+    private func load(force: Bool) async {
+        guard !isLoading else { return }
+        isLoading = true; loading("Loading Shows")
+        defer { isLoading = false }
+        do {
+            let rows = try await directory.charts(country: podcasts.state.settings.countryCode, genre: category.id, force: force)
+            sections = [.init(title: "Top Shows", rows: rows.map(Row.directory))]
+            table.tableFooterView = nil; reload(); prefetch(Array(rows.prefix(3)))
+        } catch { empty("Unable to Load Shows", detail: error.localizedDescription, retry: { [weak self] in Task { await self?.refreshContent() } }) }
     }
 }

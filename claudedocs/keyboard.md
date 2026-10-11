@@ -87,9 +87,9 @@ Sources and licenses ship beside the catalog.
 - The catalog uses a 256 KB SQLite page cache. Emoji are queried, not all decoded
   into an object graph.
 - The media browser is created only on request. Reused cells load a downsampled
-  first frame, cancel stale requests and do not retain animated GIF frame arrays.
+  current frame, cancel stale requests and do not retain animated GIF frame arrays.
 - Requests use an ephemeral URLSession with no URL cache and three connections
-  per host. Selected media copying is limited to 8 MB; thumbnails to 1 MB.
+  per host. Selected media copying is limited to 8 MB; thumbnails to 2 MB.
 - Disappearance/memory warnings cancel work and release checker, tools and history.
 - Media search sends only explicit search queries to GIPHY/Qwant (with an Openverse CC0/public-domain fallback). Ordinary typed
   text is not sent to these services. Search failures are shown in the panel.
@@ -181,7 +181,7 @@ Empty editors offer the system Paste control when clipboard text is available
 and Full Access is enabled. Arithmetic expressions offer a result that is applied
 only when selected. Neither feature reads clipboard content while typing.
 
-Choose **Aa → Styles → SpongeBob** for random casing with at most two successive
+Choose **𝐁𝘐U̲ → SpongeBob** for random casing with at most two successive
 cased letters in the same case. On **123**, hold **-** and slide to **Dashes** to
 turn the spacebar into a literal hyphen key; choose **Spaces** in the same popup
 to return. Cursor dragging remains available on the wide key.
@@ -245,3 +245,16 @@ contains dependencies only. Both apps were launched and exercised on iPhone 17
 Pro / iOS 26.2. The original has Qwant disabled in its storefront; Luna keeps
 image search with the existing Openverse fallback. Automated verification at
 this stage: **70 hosted keyboard tests passed, 0 failures**.
+
+Follow-up verification: **72 hosted tests passed, 0 failures**. The copied-media
+preview stays pinned and collapses while browsing, survives closing search, and
+updates existing keywords without duplicating shortcuts. Try It Out now accepts
+image/GIF paste and renders GIF attachments with the same bounded-frame decoder.
+The iPhone portrait tryout uses Clack's 210-point board and 75-point bottom inset.
+
+Live image-search diagnosis found that Openverse now rejects anonymous page sizes
+above 20. The fallback uses 20 and an explicit app User-Agent; a live `cat` request
+returned 20 results. GIF results, animated local media, search entry, copy feedback,
+and style-board layouts were inspected in both simulator apps. This is a targeted
+keyboard UX comparison, not a claim that every containing-app screen or every
+possible prediction/gesture sequence has been proven identical.

@@ -836,12 +836,50 @@ extension KeyboardTests {
     panel.collectionView(panel.collection, didSelectItemAt: IndexPath(item: index, section: 0))
     try await Task.sleep(for: .milliseconds(200))
     XCTAssertTrue(UIPasteboard.general.hasImages)
-    let copied = try XCTUnwrap(panel.items.firstIndex { $0.isCopied })
-    panel.collectionView(panel.collection, didSelectItemAt: IndexPath(item: copied, section: 0))
+    panel.beginTagging()
     panel.searchField.text = "confused, what"
     panel.submit()
     let saved = try XCTUnwrap(store.shortcuts(matching: "confused").first)
     XCTAssertEqual(saved.keywords, ["confused", "what"])
     XCTAssertFalse(store.mediaIsMissing(saved))
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testTryoutPastesAnimatedAttachmentWithoutLosingMessageOrGIFData() throws {
+    let editor = KeyboardTryoutTextView()
+    XCTAssertNotNil(editor.textLayoutManager)
+    editor.text = "before after"
+    editor.selectedRange = NSRange(location: 7, length: 5)
+    let data = try Data(contentsOf: XCTUnwrap(KeyboardResources.url("dramatic_chipmunk", extension: "gif")))
+    editor.insertMedia(data)
+    XCTAssertTrue(editor.text.hasPrefix("before "))
+    XCTAssertFalse(editor.text.contains("after"))
+    let attachment = try XCTUnwrap(editor.attributedText.attribute(.attachment, at: 7, effectiveRange: nil) as? NSTextAttachment)
+    XCTAssertEqual(attachment.contents, data)
+    XCTAssertTrue(attachment.usesTextAttachmentView)
+    XCTAssertEqual(attachment.bounds.size, CGSize(width: 80, height: 80))
+    XCTAssertEqual(editor.selectedRange.location, editor.text.utf16.count)
+  }
+
+  @MainActor func testCopiedMediaSurvivesClosingSearchAndCanBeSavedOnce() async throws {
+    let clipboard = KeyboardSearchClipboard()
+    var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    let index = try XCTUnwrap(panel?.items.firstIndex { $0.id == "wat" })
+    panel!.collectionView(panel!.collection, didSelectItemAt: IndexPath(item: index, section: 0))
+    try await Task.sleep(for: .milliseconds(200))
+    weak var released = panel
+    panel = nil
+    XCTAssertNil(released)
+    XCTAssertNotNil(clipboard.file)
+    let reopened = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    reopened.beginTagging()
+    reopened.searchField.text = "wat"
+    reopened.submit()
+    reopened.beginTagging()
+    reopened.searchField.text = "wat, confused"
+    reopened.submit()
+    XCTAssertEqual(try store.shortcuts().count, 1)
+    XCTAssertEqual(try store.shortcuts().first?.keywords, ["confused", "wat"])
   }
 }

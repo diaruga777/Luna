@@ -9,6 +9,7 @@ enum KeyboardMediaSearch {
   static let session: URLSession = {
     let config = URLSessionConfiguration.ephemeral
     config.urlCache = nil
+    config.httpAdditionalHeaders = ["User-Agent": "LunaKeyboard/1.0 (media search)"]
     config.httpMaximumConnectionsPerHost = 3
     config.timeoutIntervalForRequest = 15
     return URLSession(configuration: config)
@@ -63,7 +64,7 @@ enum KeyboardMediaSearch {
   static func openverse(_ query: String) async throws -> [Result] {
     var url = URLComponents(string: "https://api.openverse.org/v1/images/")!
     url.queryItems = [
-      .init(name: "q", value: query), .init(name: "page_size", value: "24"),
+      .init(name: "q", value: query), .init(name: "page_size", value: "20"),
       .init(name: "license", value: "cc0,pdm"),
     ]
     let (data, response) = try await limitedData(from: url.url!)

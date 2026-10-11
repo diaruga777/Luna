@@ -5,7 +5,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 class KeyboardTryoutController: UIViewController, UITextViewDelegate {
-  let editor = UITextView()
+  let editor = KeyboardTryoutTextView()
   let surface = KeyboardSurface()
   var editorTop: NSLayoutConstraint!
   private let input = UIInputView(frame: .zero, inputViewStyle: .keyboard)
@@ -33,8 +33,9 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
     NSLayoutConstraint.activate([
       surface.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       surface.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      surface.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+      surface.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -75),
     ])
+    surface.boardHeight = 210
     let height = surface.heightAnchor.constraint(equalToConstant: surface.requiredHeight)
     height.isActive = true
     surface.heightChanged = { [weak height] value in height?.constant = value }
@@ -59,14 +60,15 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
     surface.onReturnToDocument = { [weak self] in self?.editor.becomeFirstResponder() }
     surface.hasFullAccess = true
     surface.board.needsGlobe = false
+    surface.layer.cornerRadius = 28
+    surface.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
     surface.backgroundColor = UIColor(white: 0.09, alpha: 1)
     surface.board.dark = true
     surface.reloadSettings()
     editor.inputView = input
-    let paste = UIPasteControl()
-    paste.target = editor
-    paste.accessibilityLabel = "Paste into tryout"
-    navigationItem.rightBarButtonItem = UIBarButtonItem(customView: paste)
+    navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Paste", primaryAction: UIAction { [weak self] _ in
+      self?.editor.paste(nil)
+    })
   }
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)

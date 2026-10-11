@@ -61,6 +61,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public var onReturnToDocument: (() -> Void)?
   private var documentReturnTitle = "return"
   private var panel: KeyboardToolsPanel?
+  private var searchClipboard = KeyboardSearchClipboard()
   private var status: UILabel?
   public var boardHeight: CGFloat = 220 { didSet { setNeedsLayout() } }
   public var requiredHeight: CGFloat {
@@ -159,6 +160,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     if panel != nil { board.returnTitle = documentReturnTitle }
     panel?.removeFromSuperview()
     panel = nil
+    searchClipboard = KeyboardSearchClipboard()
     setNeedsLayout()
     suggestions = []
     renderSuggestions()
@@ -536,7 +538,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     board.uppercase = false
     board.capsLock = false
     let p = KeyboardToolsPanel(catalog: prediction.catalog, store: store,
-      fullAccess: hasFullAccess, compact: preferences.enabled("compactSearch"))
+      fullAccess: hasFullAccess, compact: preferences.enabled("compactSearch"), clipboard: searchClipboard)
     p.onText = { [weak self] text in self?.insert(text) }
     p.onClose = { [weak self] in self?.closeTools() }
     p.onReturnTitle = { [weak self] in self?.board.returnTitle = $0 }

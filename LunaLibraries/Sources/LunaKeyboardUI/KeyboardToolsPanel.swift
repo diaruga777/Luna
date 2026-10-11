@@ -29,8 +29,11 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   private var remoteItems: [[Item]] = [[], []]
   private var errors: [String] = []
   private(set) var items: [Item] = []
-  private var copied: Item?
-  private var copiedFile: URL?
+  private let clipboard: KeyboardSearchClipboard
+  private var copied: Item? { get { clipboard.item } set { clipboard.item = newValue } }
+  private var copiedFile: URL? { get { clipboard.file } set { clipboard.file = newValue } }
+  private let copiedPreview = KeyboardMediaPreview()
+  private let copiedButton = UIButton(type: .custom)
   private var tagging = false
   private var previousQuery = ""
   private var loadingID: String?
@@ -53,9 +56,9 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     var isError = false
   }
 
-  init(catalog: KeyboardCatalog, store: KeyboardStore?, fullAccess: Bool, compact: Bool = false,
+  init(catalog: KeyboardCatalog, store: KeyboardStore?, fullAccess: Bool, compact: Bool = false, clipboard: KeyboardSearchClipboard = KeyboardSearchClipboard(),
        fetch: @escaping (String, Bool) async throws -> [KeyboardMediaSearch.Result] = { try await KeyboardMediaSearch.search($0, gifs: $1) }) {
-    self.catalog = catalog; self.store = store; self.fullAccess = fullAccess; self.compact = compact; self.fetch = fetch
+    self.catalog = catalog; self.store = store; self.fullAccess = fullAccess; self.compact = compact; self.fetch = fetch; self.clipboard = clipboard
     let layout = UICollectionViewFlowLayout()
     layout.scrollDirection = .horizontal
     layout.minimumLineSpacing = 8
@@ -99,13 +102,19 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     save.accessibilityIdentifier = "keyboard.saveMedia"
     save.addAction(UIAction { [weak self] _ in self?.saveCopied() }, for: .touchUpInside)
     save.isHidden = true; focusedPreview.isHidden = true
-    [collection, searchField, close, activity, focusedPreview, save].forEach(addSubview)
+    [collection, searchField, close, activity, focusedPreview, save, copiedPreview, copiedButton].forEach(addSubview)
+    copiedButton.accessibilityLabel = "Copied item. Add keywords"
+    copiedButton.accessibilityIdentifier = "keyboard.copiedPreview"
+    copiedButton.addAction(UIAction { [weak self] _ in self?.beginTagging() }, for: .touchUpInside)
+    copiedPreview.layer.borderWidth = 3
+    copiedPreview.layer.borderColor = UIColor.gray.cgColor
+    copiedPreview.load(copiedFile, text: copied?.text)
+    copiedPreview.isHidden = copied == nil; copiedButton.isHidden = copied == nil
     searchNow()
   }
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   deinit {
     tasks.forEach { $0.cancel() }; copyTask?.cancel(); timer?.invalidate()
-    if let copiedFile { try? FileManager.default.removeItem(at: copiedFile) }
   }
   func setDark(_ dark: Bool) {
     searchField.backgroundColor = dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
@@ -122,6 +131,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     activity.frame = CGRect(x: bounds.width - 38, y: 14, width: 24, height: 24)
     focusedPreview.frame = CGRect(x: (bounds.width - cellHeight) / 2, y: 8, width: cellHeight, height: cellHeight)
     save.frame = CGRect(x: bounds.width - 62, y: cellHeight + 16, width: 54, height: 42)
+    layoutCopiedPreview()
   }
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -208,18 +218,31 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     // Clack interleaves local and remote matches instead of making users choose a tab.
     let sources = [localItems] + remoteItems
     items = []
-    if let copied { copied.idForClipboard(&items) }
     for i in 0..<(sources.map(\.count).max() ?? 0) {
       for source in sources where i < source.count { items.append(source[i]) }
     }
     items += errors.map { Item(id: $0, title: $0, text: nil, isError: true) }
     if items.isEmpty, pending == 0 { items = [Item(id: "empty", title: "No results", isError: true)] }
+    collection.contentInset.left = copied == nil ? 0 : (compact ? 85 : 120)
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
     snapshot.appendSections([0])
     snapshot.appendItems(items.map(\.id))
     dataSource.apply(snapshot, animatingDifferences: false)
     updateFeedback()
-    if resetScroll { collection.setContentOffset(.zero, animated: false) }
+    if resetScroll { collection.setContentOffset(CGPoint(x: -collection.contentInset.left, y: 0), animated: false) }
+    layoutCopiedPreview()
+  }
+  func scrollViewDidScroll(_ scrollView: UIScrollView) { layoutCopiedPreview() }
+  private func layoutCopiedPreview() {
+    let height: CGFloat = compact ? 85 : 120
+    let collapse = min(1, max(0, (42 + collection.contentOffset.x) / 42))
+    let size = height * (1 - collapse * 0.5)
+    let frame = CGRect(x: 8, y: 8 + height - size, width: size, height: size)
+    copiedPreview.frame = frame
+    copiedPreview.layer.cornerRadius = size * max(0.2, collapse * 0.5)
+    copiedButton.frame = frame
+    copiedPreview.isHidden = copied == nil || tagging
+    copiedButton.isHidden = copiedPreview.isHidden
   }
   private func updateFeedback() {
     for cell in collection.visibleCells {
@@ -276,6 +299,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
         self.copiedFile = file
         var copied = item; copied.url = file; copied.thumbnail = file; copied.isCopied = true
         self.copied = copied
+        self.copiedPreview.load(file)
         self.loadingID = nil; self.copiedID = item.id
         self.rebuildItems()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -291,9 +315,10 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
       }
     }
   }
-  private func beginTagging() {
+  func beginTagging() {
     guard let copied else { return }
     tagging = true; previousQuery = query
+    layoutCopiedPreview()
     timer?.invalidate(); generation += 1; tasks.forEach { $0.cancel() }; activity.stopAnimating()
     collection.isHidden = true; focusedPreview.isHidden = false; save.isHidden = false
     focusedPreview.load(copied.url, text: copied.text)
@@ -321,14 +346,17 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
       var shortcut = copied.shortcut ?? KeyboardShortcut(keywords: keywords, text: copied.title, kind: copied.gif ? "gif" : "image")
       shortcut.keywords = keywords
       try store.save(shortcut, importing: shortcut.relativePath == nil ? copiedFile : nil)
+      self.copied?.shortcut = try store.shortcuts(matching: keywords[0]).first { $0.id == shortcut.id }
       UIAccessibility.post(notification: .announcement, argument: "Shortcut saved")
       finishTagging()
     } catch { searchField.placeholder = "Couldn’t save. Try again." }
   }
 }
 
-private extension KeyboardToolsPanel.Item {
-  func idForClipboard(_ items: inout [Self]) {
-    items.append(Self(id: "clipboard:" + id, title: title, text: text, shortcut: shortcut, url: url, thumbnail: thumbnail, gif: gif, attribution: attribution, isCopied: true))
-  }
+/// Retains only the explicitly copied item across closing/reopening the storefront.
+/// Its temporary file is released with the keyboard, never imported implicitly.
+final class KeyboardSearchClipboard {
+  var item: KeyboardToolsPanel.Item?
+  var file: URL?
+  deinit { if let file { try? FileManager.default.removeItem(at: file) } }
 }

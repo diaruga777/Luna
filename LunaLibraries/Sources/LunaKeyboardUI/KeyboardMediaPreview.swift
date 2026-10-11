@@ -68,6 +68,12 @@ final class KeyboardMediaPreview: UIView {
       }
     }
   }
+  func load(data: Data) {
+    reset()
+    guard data.count <= 8 * 1024 * 1024 else { return }
+    source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+    displayFrame()
+  }
   private func displayFrame() {
     guard let source, CGImageSourceGetCount(source) > 0 else { return }
     let options: [CFString: Any] = [

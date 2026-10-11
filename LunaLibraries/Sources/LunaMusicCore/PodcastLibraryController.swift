@@ -11,11 +11,13 @@ import LunaPodcastCore
     public private(set) var store: PodcastStore?
     private let feedClient: PodcastFeedClient
     private var observer: NSObjectProtocol?
-    private var refreshTask: Task<Void, Never>?
+    @Published public private(set) var refreshingShowIDs: Set<String> = []
+    private var prefetching: Set<String> = []
+    private var refreshTasks: [String: Task<Void, Never>] = [:]
     nonisolated public static var directory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LunaMusic/Podcasts", isDirectory: true)
     }
-    public init(url: URL = PodcastLibraryController.directory.appendingPathComponent("library.json"), session: URLSession = .shared) {
+    public init(url: URL = PodcastLibraryController.directory.appendingPathComponent("library.json"), session: URLSession = PodcastNetwork.session) {
         feedClient = PodcastFeedClient(session: session)
         do { store = try PodcastStore(url: url); state = store!.state }
         catch { errorMessage = "Your podcast library could not be opened: \(error.localizedDescription)" }
@@ -42,50 +44,68 @@ import LunaPodcastCore
         guard PodcastIdentity.webURL(url.absoluteString) != nil else { throw PodcastError("Enter an http or https podcast feed address.") }
         if let existing = state.shows.values.first(where: { $0.feedURL == url }) {
             if follow { try requireStore().follow(existing.id, true) }
-            await refresh(showIDs: [existing.id], force: true); reloadState(); return existing.id
+            reloadState()
+            Task { await refresh(showIDs: [existing.id]) }
+            return existing.id
         }
         let response = try await feedClient.fetch(PodcastShow(feedURL: url, title: ""))
         guard let feed = response.feed else { throw PodcastError("The podcast feed is empty.") }
+        try Task.checkCancellation()
         let store = try requireStore(); _ = try store.merge(feed)
         try store.update { state in
             state.shows[feed.show.id]?.followed = follow; state.shows[feed.show.id]?.directoryID = directoryID
             state.shows[feed.show.id]?.etag = response.etag; state.shows[feed.show.id]?.lastModified = response.lastModified
         }
-        reloadState(); await PodcastDownloads.shared.reconcile()
+        reloadState(); Task { await PodcastDownloads.shared.reconcile() }
         return feed.show.id
     }
+    /// Warm only metadata. Browsing never follows shows or downloads their audio.
+    public func prefetch(_ result: PodcastDirectoryResult) async {
+        guard prefetching.count < 3, !prefetching.contains(result.collectionID), !Task.isCancelled else { return }
+        prefetching.insert(result.collectionID)
+        defer { prefetching.remove(result.collectionID) }
+        do {
+            var url = result.feedURL
+            if url == nil { url = try await PodcastDirectory().lookup([result.collectionID], country: state.settings.countryCode).first?.feedURL }
+            try Task.checkCancellation()
+            guard let url, !state.shows.values.contains(where: { $0.feedURL == url }) else { return }
+            _ = try await feedClient.fetch(PodcastShow(feedURL: url, title: ""))
+        } catch { /* Speculative failures are retried by an explicit open. */ }
+    }
     public func refresh(showIDs: [String]? = nil, force: Bool = false) async {
-        if let refreshTask { await refreshTask.value; return }
         let ids = showIDs ?? state.shows.values.filter(\.followed).map(\.id)
-        isRefreshing = true
-        let task = Task { [weak self] in
-            guard let self else { return }
-            for id in ids {
-                if Task.isCancelled { break }
-                guard let show = store?.state.shows[id], force || Date().timeIntervalSince(show.lastRefresh ?? .distantPast) >= 900 else { continue }
-                do {
-                    let response = try await feedClient.fetch(show)
-                    try Task.checkCancellation()
-                    var newIDs: [String] = []
-                    if let feed = response.feed { newIDs = try requireStore().merge(feed, existingID: id) }
-                    try edit { state in
-                        state.shows[id]?.etag = response.etag; state.shows[id]?.lastModified = response.lastModified
-                        state.shows[id]?.lastRefresh = Date(); state.shows[id]?.refreshError = nil
-                    }
-                    if show.followed && show.settings.notifications && show.lastRefresh != nil && !newIDs.isEmpty {
-                        await notify(show: show, ids: newIDs)
-                    }
-                } catch {
-                    if Task.isCancelled { break }
-                    try? edit { $0.shows[id]?.refreshError = error.localizedDescription }
-                    report(error)
-                }
+        // Bound publisher traffic, but don't make every show wait for a slow feed.
+        await withTaskGroup(of: Void.self) { group in
+            var iterator = ids.makeIterator()
+            for _ in 0..<3 { if let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force) } } }
+            while await group.next() != nil {
+                if !Task.isCancelled, let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force) } }
             }
-            await PodcastDownloads.shared.reconcile()
         }
-        refreshTask = task
-        await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
-        refreshTask = nil; isRefreshing = false
+        await PodcastDownloads.shared.reconcile()
+    }
+    private func refreshShow(_ id: String, force: Bool) async {
+        if let task = refreshTasks[id] { await task.value; return }
+        guard let show = state.shows[id], force || Date().timeIntervalSince(show.lastRefresh ?? .distantPast) >= 900 else { return }
+        refreshingShowIDs.insert(id); isRefreshing = true
+        let task = Task { [self] in
+            do {
+                let response = try await feedClient.fetch(show, force: force)
+                var newIDs: [String] = []
+                if let feed = response.feed { newIDs = try requireStore().merge(feed, existingID: id) }
+                try edit { state in
+                    state.shows[id]?.etag = response.etag; state.shows[id]?.lastModified = response.lastModified
+                    state.shows[id]?.lastRefresh = Date(); state.shows[id]?.refreshError = nil
+                }
+                if show.followed && show.settings.notifications && show.lastRefresh != nil && !newIDs.isEmpty { await notify(show: show, ids: newIDs) }
+            } catch {
+                try? edit { $0.shows[id]?.refreshError = error.localizedDescription }
+                report(error)
+            }
+        }
+        refreshTasks[id] = task
+        await task.value
+        refreshTasks[id] = nil; refreshingShowIDs.remove(id); isRefreshing = !refreshTasks.isEmpty
     }
     public func setFollowed(_ id: String, _ value: Bool) throws {
         try requireStore().follow(id, value); reloadState()

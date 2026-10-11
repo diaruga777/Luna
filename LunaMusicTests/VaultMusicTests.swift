@@ -386,3 +386,128 @@ private actor FakeMusicServer {
         return UIViewController()
     }
 }
+
+@MainActor final class PodcastLoadingTests: XCTestCase {
+    private func library() -> (PodcastLibraryController, URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PodcastLoadingProtocol.self]
+        return (PodcastLibraryController(url: root.appendingPathComponent("library.json"), session: URLSession(configuration: configuration)), root)
+    }
+    func testPrefetchedShowOpensWithoutSecondFetchOrFollowing() async throws {
+        let (library, root) = library(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = URL(string: "https://podcast.test/\(UUID()).xml")!
+        let result = PodcastDirectoryResult(id: "show", title: "Show", author: "", feedURL: url, collectionID: "show")
+        await library.prefetch(result)
+        XCTAssertTrue(library.state.shows.isEmpty)
+        let id = try await library.addFeed(url, follow: false)
+        XCTAssertEqual(PodcastLoadingProtocol.count(url), 1)
+        XCTAssertEqual(library.state.shows[id]?.followed, false)
+        _ = try await library.addFeed(url, follow: false)
+        XCTAssertEqual(PodcastLoadingProtocol.count(url), 1)
+    }
+    func testTargetedRefreshIsNotLostBehindAnotherShowRefresh() async throws {
+        let (library, root) = library(); defer { try? FileManager.default.removeItem(at: root) }
+        let first = PodcastShow(feedURL: URL(string: "https://podcast.test/\(UUID()).xml")!, title: "First")
+        let second = PodcastShow(feedURL: URL(string: "https://podcast.test/\(UUID()).xml")!, title: "Second")
+        try library.edit { $0.shows = [first.id: first, second.id: second] }
+        async let a: Void = library.refresh(showIDs: [first.id], force: true)
+        async let b: Void = library.refresh(showIDs: [second.id], force: true)
+        _ = await (a, b)
+        XCTAssertNotNil(library.state.shows[first.id]?.lastRefresh)
+        XCTAssertNotNil(library.state.shows[second.id]?.lastRefresh)
+        XCTAssertFalse(library.isRefreshing)
+        XCTAssertTrue(library.refreshingShowIDs.isEmpty)
+    }
+    func testCategoryShowsLoadingImmediately() {
+        let controller = PodcastCategoryViewController(category: ("1303", "Comedy"))
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [PodcastLoadingProtocol.self]
+        controller.directory = PodcastDirectory(session: URLSession(configuration: configuration))
+        controller.loadViewIfNeeded()
+        XCTAssertEqual(controller.table.tableFooterView?.subviews.first?.accessibilityIdentifier, "podcasts.loading")
+    }
+    func testFailedAudioClearsLoadingAndSurfacesError() async throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_STREAM_FIXTURE_URL"], let url = URL(string: base) else { throw XCTSkip("Run with the local podcast fixture.") }
+        let (library, root) = library(); defer { try? FileManager.default.removeItem(at: root) }
+        let episode = PodcastEpisode(showID: "missing", guid: UUID().uuidString, title: "Missing", publishedAt: Date(), mediaURL: url.deletingLastPathComponent().appendingPathComponent("missing.mp4"))
+        try library.edit { $0.episodes[episode.id] = episode }
+        let player = PodcastPlaybackController(library: library); defer { player.pause() }
+        try? await player.play(episode)
+        for _ in 0..<50 {
+            if player.errorMessage != nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertNotNil(player.errorMessage)
+        XCTAssertFalse(player.isBuffering); XCTAssertFalse(player.isPlaying)
+        XCTAssertFalse(player.isLoadingChapters)
+    }
+    func testPauseWhileAudioIsLoadingClearsSpinnerAndDoesNotStartLater() async throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_STREAM_FIXTURE_URL"], let url = URL(string: base) else { throw XCTSkip("Run with the throttled local podcast fixture.") }
+        let (library, root) = library(); defer { try? FileManager.default.removeItem(at: root) }
+        let episode = PodcastEpisode(showID: "delayed", guid: UUID().uuidString, title: "Delayed", publishedAt: Date(), mediaURL: url.deletingLastPathComponent().appendingPathComponent("delayed.mp4"))
+        try library.edit { $0.episodes[episode.id] = episode }
+        let player = PodcastPlaybackController(library: library)
+        let request = Task { try await player.play(episode) }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(player.isBuffering); XCTAssertFalse(player.isPlaying)
+        player.pause(); XCTAssertFalse(player.isBuffering)
+        _ = try? await request.value
+        try await Task.sleep(for: .seconds(2.5))
+        XCTAssertFalse(player.isPlaying); XCTAssertFalse(player.isBuffering)
+    }
+    func testRemoteAudioStartsBeforeWholeFileArrives() async throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_STREAM_FIXTURE_URL"], let url = URL(string: base) else { throw XCTSkip("Run with the throttled local podcast fixture.") }
+        let (library, root) = library(); defer { try? FileManager.default.removeItem(at: root) }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "session", value: UUID().uuidString)]
+        let mediaURL = components.url!
+        var episode = PodcastEpisode(showID: "stream", guid: UUID().uuidString, title: "Incremental stream", publishedAt: Date(), mediaURL: mediaURL)
+        episode.artworkURL = url.deletingLastPathComponent().appendingPathComponent("slow-art.png")
+        episode.chaptersURL = url.deletingLastPathComponent().appendingPathComponent("chapters.json")
+        episode.transcripts = [.init(url: url.deletingLastPathComponent().appendingPathComponent("transcript.vtt"), type: "text/vtt")]
+        try library.edit { $0.episodes[episode.id] = episode }
+        let player = PodcastPlaybackController(library: library); defer { player.pause() }
+        let started = Date()
+        try await player.play(episode)
+        for _ in 0..<150 {
+            if player.isPlaying || player.errorMessage != nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertNil(player.errorMessage); XCTAssertTrue(player.isPlaying)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 15)
+        for _ in 0..<10 {
+            if !player.isLoadingTranscript && !player.isLoadingChapters { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(player.transcript.first?.text.trimmingCharacters(in: .whitespacesAndNewlines), "Ready before artwork.")
+        XCTAssertEqual(player.chapters.first?.title, "Introduction")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "Slow artwork must not delay audio, transcripts, or chapters")
+        components.path = "/stats"
+        let statsURL = components.url!
+        let (data, _) = try await URLSession.shared.data(from: statsURL)
+        let stats = try JSONDecoder().decode([String: Int].self, from: data)
+        XCTAssertLessThan(try XCTUnwrap(stats["bytes"]), try XCTUnwrap(stats["total"]), "Playback must start before the entire asset is delivered")
+        player.pause(); XCTAssertFalse(player.isBuffering)
+    }
+}
+
+private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var requests: [URL: Int] = [:]
+    private var work: DispatchWorkItem?
+    static func count(_ url: URL) -> Int { lock.lock(); defer { lock.unlock() }; return requests[url] ?? 0 }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let url = request.url!
+        Self.lock.lock(); Self.requests[url, default: 0] += 1; Self.lock.unlock()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let data = Data("<rss version=\"2.0\"><channel><title>Fixture</title><item><guid>one</guid><title>Episode</title><enclosure url=\"https://podcast.test/one.mp3\" type=\"audio/mpeg\"/></item></channel></rss>".utf8)
+            self.client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["ETag": "v1"])!, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data); self.client?.urlProtocolDidFinishLoading(self)
+        }
+        self.work = work; DispatchQueue.global().asyncAfter(deadline: .now() + 0.1, execute: work)
+    }
+    override func stopLoading() { work?.cancel() }
+}

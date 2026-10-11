@@ -1,10 +1,26 @@
 import UIKit
+import Combine
 import LunaPodcastCore
 import LunaMusicCore
 import LunaDesignSystem
 
 @MainActor enum PodcastUI {
-    static let images = NSCache<NSURL, UIImage>()
+    static let images: NSCache<NSURL, UIImage> = { let cache = NSCache<NSURL, UIImage>(); cache.totalCostLimit = 32 * 1_024 * 1_024; return cache }()
+    private static var imageTasks: [URL: Task<UIImage?, Never>] = [:]
+    static func image(_ url: URL) async -> UIImage? {
+        if let image = images.object(forKey: url as NSURL) { return image }
+        if let task = imageTasks[url] { return await task.value }
+        let task = Task<UIImage?, Never> {
+            var request = URLRequest(url: url); request.timeoutInterval = 20
+            guard let (data, response) = try? await PodcastNetwork.session.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
+                  data.count < 15_000_000 else { return nil }
+            return await UIImage(data: data)?.byPreparingThumbnail(ofSize: CGSize(width: 600, height: 600))
+        }
+        imageTasks[url] = task
+        let image = await task.value; imageTasks[url] = nil
+        if let image { images.setObject(image, forKey: url as NSURL, cost: Int(image.size.width * image.size.height * 4)) }
+        return image
+    }
     static func text(_ html: String) -> String {
         html.replacingOccurrences(of: "</p>|<br\\s*/?>|</div>", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
@@ -22,9 +38,7 @@ import LunaDesignSystem
         guard let url else { return }
         if let image = images.object(forKey: url as NSURL) { view.image = image; view.contentMode = .scaleAspectFill; return }
         Task { @MainActor [weak view] in
-            guard let (data, response) = try? await URLSession.shared.data(from: url), (response as? HTTPURLResponse)?.statusCode == 200,
-                  data.count < 15_000_000, let image = UIImage(data: data) else { return }
-            images.setObject(image, forKey: url as NSURL)
+            guard let image = await image(url) else { return }
             guard view?.accessibilityIdentifier == url.absoluteString else { return }
             view?.image = image; view?.contentMode = .scaleAspectFill
         }
@@ -35,7 +49,15 @@ import LunaDesignSystem
         alert.addAction(UIAlertAction(title: "OK", style: .default)); controller.present(alert, animated: true)
     }
     static func run(_ controller: UIViewController, action: @escaping () async throws -> Void) {
-        Task { do { try await action() } catch { showError(error, from: controller) } }
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.isAccessibilityElement = true; spinner.accessibilityLabel = "Loading"; spinner.accessibilityIdentifier = "podcasts.actionLoading"
+        spinner.translatesAutoresizingMaskIntoConstraints = false; controller.view.addSubview(spinner)
+        NSLayoutConstraint.activate([spinner.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor), spinner.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 8)])
+        spinner.startAnimating()
+        Task {
+            defer { spinner.removeFromSuperview() }
+            do { try await action() } catch { showError(error, from: controller) }
+        }
     }
     static func episodeMenu(_ episode: PodcastEpisode, from controller: UIViewController) -> UIMenu {
         let library = PodcastLibraryController.shared
@@ -53,7 +75,7 @@ import LunaDesignSystem
         } else if downloads.downloads[episode.id]?.status == "downloading" {
             actions.append(UIAction(title: "Cancel Download", image: UIImage(systemName: "xmark.circle")) { _ in downloads.remove(episode.id) })
         } else {
-            actions.append(UIAction(title: downloads.downloads[episode.id]?.status == "failed" ? "Retry Download" : "Download Episode", image: UIImage(systemName: "arrow.down.circle")) { _ in Task { await downloads.download(episode) } })
+            actions.append(UIAction(title: downloads.downloads[episode.id]?.status == "failed" ? "Retry Download" : "Download Episode", image: UIImage(systemName: "arrow.down.circle")) { _ in run(controller) { await downloads.download(episode) } })
         }
         actions += [
             UIAction(title: "Episode Details", image: UIImage(systemName: "info.circle")) { _ in controller.navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true) },
@@ -93,13 +115,25 @@ import LunaDesignSystem
         let date = episode.publishedAt == .distantPast ? "" : episode.publishedAt.formatted(date: .abbreviated, time: .omitted)
         let time = state?.listened == true ? "Played" : (state?.position ?? 0) > 0 ? "\(PodcastUI.time(max(0, episode.duration - (state?.position ?? 0)))) left" : PodcastUI.time(episode.duration)
         detail.text = [date, time, episode.explicit ? "Explicit" : nil, PodcastDownloads.shared.localURL(episode.id) != nil ? "Downloaded" : nil].compactMap { $0 }.joined(separator: " · ")
+        let download = PodcastDownloads.shared.downloads[episode.id]
+        if download?.status == "downloading" {
+            let progress = PodcastDownloads.shared.progress[episode.id] ?? 0
+            detail.text = (detail.text ?? "") + (progress > 0 ? " · Downloading \(Int(progress * 100))%" : " · Waiting to Download")
+        } else if download?.status == "failed" { detail.text = (detail.text ?? "") + " · Download Failed — Retry in Episode Actions" }
+        let player = PodcastPlaybackController.shared
+        let buffering = player.currentEpisode?.id == episode.id && player.isBuffering
+        if buffering {
+            let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating()
+            spinner.accessibilityLabel = "Loading Audio"; spinner.accessibilityIdentifier = "podcasts.episodeLoading"
+            accessoryView = spinner
+        } else { accessoryView = nil }
         more.menu = PodcastUI.episodeMenu(episode, from: owner)
         PodcastUI.artwork(episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL, into: artwork)
         accessibilityIdentifier = "podcast.episode.\(episode.id)"
     }
 }
 
-@MainActor class PodcastListViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate {
+@MainActor class PodcastListViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate, UITableViewDataSourcePrefetching {
     enum Row { case episode(PodcastEpisode), show(PodcastShow), action(String, String, () -> Void), directory(PodcastDirectoryResult) }
     struct Section { var title: String; var rows: [Row] }
     var sections: [Section] = []
@@ -107,13 +141,38 @@ import LunaDesignSystem
     private(set) var openingDirectoryID: String?
     private(set) var directoryTask: Task<Void, Never>?
     private var directoryToken = UUID()
+    private var loadingSubscriptions = Set<AnyCancellable>()
+    private var prefetchTasks: [String: Task<Void, Never>] = [:]
     private let loadingSpinner = HorizonSpinnerView(side: 32)
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         cancelDirectoryOpening()
+        cancelPrefetching()
     }
 
+    func cancelPrefetching() {
+        prefetchTasks.values.forEach { $0.cancel() }; prefetchTasks.removeAll()
+    }
+    func prefetch(_ results: [PodcastDirectoryResult]) {
+        for result in results where prefetchTasks[result.collectionID] == nil {
+            guard prefetchTasks.count < 3 else { break }
+            prefetchTasks[result.collectionID] = Task { [weak self] in
+                guard let self else { return }
+                await podcasts.prefetch(result)
+                prefetchTasks[result.collectionID] = nil
+            }
+        }
+    }
+    func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
+        prefetch(indexPaths.compactMap { path in
+            guard sections.indices.contains(path.section), sections[path.section].rows.indices.contains(path.row), case .directory(let result) = sections[path.section].rows[path.row] else { return nil }
+            return result
+        })
+    }
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if case .directory(let result) = sections[indexPath.section].rows[indexPath.row] { prefetch([result]) }
+    }
     func cancelDirectoryOpening() {
         directoryToken = UUID(); directoryTask?.cancel(); directoryTask = nil
         openingDirectoryID = nil
@@ -121,7 +180,7 @@ import LunaDesignSystem
         table.reloadData()
     }
 
-    func loading(_ label: String) {
+    func loading(_ label: String, atTop: Bool = false) {
         let footer = UIView(frame: CGRect(x: 0, y: 0, width: table.bounds.width, height: 120))
         loadingSpinner.accessibilityLabel = label
         loadingSpinner.accessibilityIdentifier = "podcasts.loading"
@@ -130,20 +189,30 @@ import LunaDesignSystem
         footer.addSubview(loadingSpinner)
         NSLayoutConstraint.activate([loadingSpinner.centerXAnchor.constraint(equalTo: footer.centerXAnchor), loadingSpinner.centerYAnchor.constraint(equalTo: footer.centerYAnchor)])
         loadingSpinner.startAnimating()
-        table.tableFooterView = footer
+        if atTop { table.tableHeaderView = footer } else { table.tableFooterView = footer }
     }
     override func viewDidLoad() {
         super.viewDidLoad(); view.tintColor = .systemPurple
         navigationController?.navigationBar.prefersLargeTitles = true
         table.register(PodcastEpisodeCell.self, forCellReuseIdentifier: "episode")
         table.register(UITableViewCell.self, forCellReuseIdentifier: "podcastRow")
-        table.dataSource = self; table.delegate = self
+        table.dataSource = self; table.delegate = self; table.prefetchDataSource = self
+        podcasts.$refreshingShowIDs.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &loadingSubscriptions)
+        PodcastDownloads.shared.objectWillChange.debounce(for: .milliseconds(200), scheduler: DispatchQueue.main).sink { [weak self] in self?.refreshVisibleEpisodes() }.store(in: &loadingSubscriptions)
+        PodcastPlaybackController.shared.$isBuffering.sink { [weak self] _ in DispatchQueue.main.async { self?.refreshVisibleEpisodes() } }.store(in: &loadingSubscriptions)
         observe(.lunaPodcastsChanged) { [weak self] in self?.reload() }
         let refresh = UIRefreshControl(); refresh.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            Task { await self.podcasts.refresh(force: true); refresh.endRefreshing(); self.reload() }
+            Task { await self.refreshContent(); refresh.endRefreshing(); self.reload() }
         }, for: .valueChanged); table.refreshControl = refresh
     }
+    private func refreshVisibleEpisodes() {
+        for path in table.indexPathsForVisibleRows ?? [] {
+            guard sections.indices.contains(path.section), sections[path.section].rows.indices.contains(path.row), case .episode(let episode) = sections[path.section].rows[path.row], let cell = table.cellForRow(at: path) as? PodcastEpisodeCell else { continue }
+            cell.configure(episode, owner: self)
+        }
+    }
+    func refreshContent() async { await podcasts.refresh(force: true) }
     func reload() { table.reloadData() }
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].rows.count }
@@ -178,8 +247,7 @@ import LunaDesignSystem
         if let url, let image = PodcastUI.images.object(forKey: url as NSURL) { content.image = image }
         else if let url {
             Task { [weak cell] in
-                guard let (data, _) = try? await URLSession.shared.data(from: url), data.count < 15_000_000, let image = UIImage(data: data) else { return }
-                PodcastUI.images.setObject(image, forKey: url as NSURL)
+                guard let image = await PodcastUI.image(url) else { return }
                 guard let cell, cell.accessibilityIdentifier == url.absoluteString, var current = cell.contentConfiguration as? UIListContentConfiguration else { return }
                 current.image = image; cell.contentConfiguration = current
             }
@@ -244,9 +312,10 @@ import LunaDesignSystem
         }; action.backgroundColor = .systemPurple
         return UISwipeActionsConfiguration(actions: [action])
     }
-    func empty(_ title: String, detail: String) {
+    func empty(_ title: String, detail: String, atTop: Bool = false, retry: (() -> Void)? = nil) {
         var content = UIContentUnavailableConfiguration.empty(); content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); content.text = title; content.secondaryText = detail
+        if let retry { content.button.title = "Try Again"; content.buttonProperties.primaryAction = UIAction { _ in retry() } }
         let view = UIContentUnavailableView(configuration: content); view.frame.size.height = 240
-        table.tableFooterView = view
+        if atTop { table.tableHeaderView = view } else { table.tableFooterView = view }
     }
 }

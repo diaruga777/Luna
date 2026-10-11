@@ -39,6 +39,26 @@ final class MusicForegroundTests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
+    func testPodcastFeedShowsProgressWhileLoading() throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        app.staticTexts["Podcasts"].tap()
+        app.navigationBars.buttons["Podcast Options"].tap()
+        app.buttons["Follow a Show by URL"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap()
+        field.typeText(base + "?loading-test=" + UUID().uuidString)
+        app.alerts.buttons["Follow"].tap()
+        let spinner = app.activityIndicators["podcasts.actionLoading"]
+        XCTAssertTrue(spinner.waitForExistence(timeout: 1))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast feed loading"; screenshot.lifetime = .keepAlways; add(screenshot)
+        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars.buttons["Following"].waitForExistence(timeout: 5))
+        XCTAssertFalse(spinner.exists)
+        app.navigationBars.buttons["Following"].tap()
+    }
+
     func testPodcastFeedFollowAutoDownloadAndEpisodeActions() throws {
         guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }

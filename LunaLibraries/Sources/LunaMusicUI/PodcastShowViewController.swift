@@ -7,6 +7,7 @@ import LunaMusicCore
     private let search = UISearchController(searchResultsController: nil)
     private let filter = UISegmentedControl(items: ["All", "Unplayed", "Downloaded", "Saved"])
     private var header: UIView?
+    private var headerShow: PodcastShow?
     init(showID: String) { self.showID = showID; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
@@ -14,8 +15,9 @@ import LunaMusicCore
         search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false; search.searchBar.placeholder = "Episodes"
         navigationItem.searchController = search
         filter.selectedSegmentIndex = 0; filter.addAction(UIAction { [weak self] _ in self?.reload() }, for: .valueChanged)
-        reload(); Task { await podcasts.refresh(showIDs: [showID], force: true) }
+        reload(); Task { await podcasts.refresh(showIDs: [showID]) }
     }
+    override func refreshContent() async { await podcasts.refresh(showIDs: [showID], force: true) }
     func updateSearchResults(for searchController: UISearchController) { reload() }
     override func reload() {
         guard isViewLoaded, let show = podcasts.state.shows[showID] else { return }
@@ -44,9 +46,11 @@ import LunaMusicCore
             switch filter.selectedSegmentIndex { case 1: return state?.listened != true; case 2: return PodcastDownloads.shared.localURL(episode.id) != nil; case 3: return state?.saved == true; default: return true }
         }
         sections = [.init(title: "Episodes", rows: episodes.map(Row.episode))]
-        buildHeader(show)
+        if headerShow != show { headerShow = show; buildHeader(show) }
         table.tableFooterView = nil
-        if episodes.isEmpty { empty("No Episodes", detail: show.refreshError ?? "No episodes match this filter.") }
+        if podcasts.refreshingShowIDs.contains(showID) { loading("Updating Episodes") }
+        else if let error = show.refreshError { empty("Unable to Update Episodes", detail: error, retry: { [weak self] in Task { await self?.refreshContent() } }) }
+        else if episodes.isEmpty { empty("No Episodes", detail: "No episodes match this filter.") }
         super.reload()
     }
     private func buildHeader(_ show: PodcastShow) {

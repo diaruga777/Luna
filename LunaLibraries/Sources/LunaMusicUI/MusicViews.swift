@@ -282,16 +282,20 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         if MediaPlaybackCoordinator.shared.active == .podcasts {
             let player = PodcastPlaybackController.shared
             titleLabel.text = player.currentEpisode?.title ?? "Not Playing"
-            artistLabel.text = PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""]?.title ?? "Choose a podcast"
+            artistLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""]?.title ?? "Choose a podcast"
             if podcastArtworkID != player.currentEpisode?.id {
                 podcastArtworkID = player.currentEpisode?.id; artworkID = nil
                 PodcastUI.artwork(player.currentEpisode?.artworkURL, into: art)
             }
             play.configuration?.image = UIImage(systemName: player.isPlaying || player.isBuffering ? "pause.fill" : "play.fill")
+            play.configuration?.showsActivityIndicator = player.isBuffering
+            play.accessibilityValue = player.isBuffering ? "Loading Audio" : nil
             play.accessibilityLabel = player.isPlaying || player.isBuffering ? "Pause" : "Play"
             nextButton.configuration?.image = UIImage(systemName: "goforward.30"); nextButton.accessibilityLabel = "Skip Forward"
             return
         }
+        play.configuration?.showsActivityIndicator = false
+        play.accessibilityValue = nil
         podcastArtworkID = nil
         nextButton.configuration?.image = UIImage(systemName: "forward.fill"); nextButton.accessibilityLabel = "Next Song"
         let player = MusicPlaybackController.shared

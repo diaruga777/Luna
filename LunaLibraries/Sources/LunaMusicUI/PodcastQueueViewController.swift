@@ -40,16 +40,20 @@ import LunaMusicCore
     private var subscriptions = Set<AnyCancellable>()
     private var cues: [PodcastTranscriptCue] = []
     override func viewDidLoad() {
-        super.viewDidLoad(); title = "Transcript"; tableView.rowHeight = UITableView.automaticDimension; tableView.estimatedRowHeight = 90
+        super.viewDidLoad(); PodcastPlaybackController.shared.prepareExtras(); title = "Transcript"; tableView.rowHeight = UITableView.automaticDimension; tableView.estimatedRowHeight = 90
         search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false; search.searchBar.placeholder = "Search Transcript"; navigationItem.searchController = search
-        PodcastPlaybackController.shared.$transcript.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &subscriptions)
+        let player = PodcastPlaybackController.shared
+        player.$transcript.map { _ in () }.merge(with: player.$isLoadingTranscript.map { _ in () }, player.$transcriptError.map { _ in () })
+            .receive(on: DispatchQueue.main).sink { [weak self] in self?.reload() }.store(in: &subscriptions)
         reload()
     }
     func updateSearchResults(for searchController: UISearchController) { reload() }
     private func reload() {
         let query = search.searchBar.text ?? ""
         cues = PodcastPlaybackController.shared.transcript.filter { query.isEmpty || $0.text.localizedStandardContains(query) }
-        if cues.isEmpty { var configuration = UIContentUnavailableConfiguration.empty(); configuration.text = "No Transcript"; configuration.secondaryText = query.isEmpty ? "This episode has no available publisher transcript." : "No transcript text matches your search."; tableView.backgroundView = UIContentUnavailableView(configuration: configuration) }
+        if PodcastPlaybackController.shared.isLoadingTranscript { tableView.backgroundView = PodcastUI.supplementaryState(loading: true, error: nil, title: "Loading Transcript") }
+        else if let error = PodcastPlaybackController.shared.transcriptError { tableView.backgroundView = PodcastUI.supplementaryState(loading: false, error: error, title: "Unable to Load Transcript") }
+        else if cues.isEmpty { var configuration = UIContentUnavailableConfiguration.empty(); configuration.text = "No Transcript"; configuration.secondaryText = query.isEmpty ? "This episode has no available publisher transcript." : "No transcript text matches your search."; tableView.backgroundView = UIContentUnavailableView(configuration: configuration) }
         else { tableView.backgroundView = nil }
         tableView.reloadData()
     }
@@ -68,11 +72,16 @@ import LunaMusicCore
     private var chapters: [PodcastChapter] { PodcastPlaybackController.shared.chapters }
     private var subscriptions = Set<AnyCancellable>()
     override func viewDidLoad() {
-        super.viewDidLoad(); title = "Chapters"
-        PodcastPlaybackController.shared.$chapters.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &subscriptions); reload()
+        super.viewDidLoad(); PodcastPlaybackController.shared.prepareExtras(); title = "Chapters"
+        let player = PodcastPlaybackController.shared
+        player.$chapters.map { _ in () }.merge(with: player.$isLoadingChapters.map { _ in () }, player.$chaptersError.map { _ in () })
+            .receive(on: DispatchQueue.main).sink { [weak self] in self?.reload() }.store(in: &subscriptions)
+        reload()
     }
     private func reload() {
-        if chapters.isEmpty { var content = UIContentUnavailableConfiguration.empty(); content.text = "No Chapters"; content.secondaryText = "The publisher has not supplied chapters for this episode."; tableView.backgroundView = UIContentUnavailableView(configuration: content) }
+        if PodcastPlaybackController.shared.isLoadingChapters { tableView.backgroundView = PodcastUI.supplementaryState(loading: true, error: nil, title: "Loading Chapters") }
+        else if let error = PodcastPlaybackController.shared.chaptersError { tableView.backgroundView = PodcastUI.supplementaryState(loading: false, error: error, title: "Unable to Load Chapters") }
+        else if chapters.isEmpty { var content = UIContentUnavailableConfiguration.empty(); content.text = "No Chapters"; content.secondaryText = "The publisher has not supplied chapters for this episode."; tableView.backgroundView = UIContentUnavailableView(configuration: content) }
         else { tableView.backgroundView = nil }; tableView.reloadData()
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { chapters.count }
@@ -81,4 +90,13 @@ import LunaMusicCore
         var content = cell.defaultContentConfiguration(); content.text = chapter.title; content.secondaryText = PodcastUI.time(chapter.start); cell.contentConfiguration = content; return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) { PodcastPlaybackController.shared.seek(to: chapters[indexPath.row].start) }
+}
+
+@MainActor private extension PodcastUI {
+    static func supplementaryState(loading: Bool, error: String?, title: String) -> UIView {
+        var content = loading ? UIContentUnavailableConfiguration.loading() : UIContentUnavailableConfiguration.empty()
+        content.text = title; content.secondaryText = error
+        if !loading { content.button.title = "Try Again"; content.buttonProperties.primaryAction = UIAction { _ in PodcastPlaybackController.shared.retryExtras() } }
+        return UIContentUnavailableView(configuration: content)
+    }
 }

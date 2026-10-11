@@ -379,3 +379,53 @@ the empty explicit queue and visible media switch. UI launch arguments isolate
 active-media state so a previous podcast test cannot change a music-route check.
 Queue screenshots were inspected. Physical-device playback, the exact publisher
 stream from the report, and AirPlay have not been verified in this fix.
+
+### Podcast loading and responsiveness (2026-10-11)
+
+Directory searches, lookups and category charts share a bounded five-minute memory
+cache and coalesce concurrent requests. Feed previews use a separate bounded cache;
+search/chart results and approaching rows warm at most three shows concurrently.
+Discovery also warms up to three favorite/leading category pages. Speculation only
+fetches metadata: it does not follow shows, persist episodes, or download audio.
+Opening a known show immediately displays stored episodes and refreshes stale data
+in the background. Opening a prefetched show reuses its feed response. Cancelled
+navigation cannot push a late destination or cancel a shared request still needed
+by another screen. Explicit feed/chart pull-to-refresh bypasses cached responses.
+Followed-show refreshes run three at a time, with per-show deduplication, so opening
+another show cannot lose its refresh behind unrelated library work.
+
+New, categories, search, show updates, URL entry, import/sync/settings actions,
+transcripts and chapters show loading feedback. Failed requests expose errors and
+retry actions. The New-page indicator appears above categories so it stays visible
+while charts load. Download rows report waiting/progress/failure, and audio buffering
+appears in episode rows, the mini player and the full player; Pause remains usable.
+Cached artwork is downsampled and bounded to 32 MB, and concurrent artwork requests
+are shared. Show headers are reused when their metadata has not changed.
+
+AVPlayer continues to consume remote HTTP ranges/HLS incrementally, using a
+three-second forward buffer target instead of thirty seconds and immediate play.
+Downloaded files still take priority and cellular-streaming policy still applies.
+Preparation, resumed seeks and stalls retain buffering feedback. Thirty seconds of
+continuous buffering produces a retryable error; pausing invalidates pending
+preparation. Artwork, publisher transcripts and chapters load independently, with
+separate loading/error states and retries, without delaying audio. Supplementary
+loads have a thirty-second UI deadline; metadata URLSession requests have a
+forty-five-second total resource deadline. Publisher range support, encoding and
+network throughput still determine actual startup latency.
+
+Validation on Xcode 26.2 / iPhone 17 Pro / iOS 26.2: the full 47-test Music suite
+passed, followed by 15 focused podcast tests after the final loading changes and
+additional cancellation/error cases. All 20 Foundation tests passed. The local
+throttled HTTP test confirms actual AVPlayer playback before the whole MP4 arrives,
+transcript/chapter availability while artwork is delayed, visible buffering until
+readiness, no late playback after Pause, and clearing loading on HTTP failure.
+Run `python3 tools/podcast-tests/streaming_server.py` and prefix the Music test command
+with `TEST_RUNNER_LUNA_PODCAST_STREAM_FIXTURE_URL=http://127.0.0.1:19266/slow.mp4`.
+These transport checks skip without the opt-in local fixture. They do not establish
+publisher-specific or physical-device startup times.
+
+All nine existing Music UI tests passed, including the local RSS follow/download/
+playback flow. A tenth focused UI test passed against a four-second delayed feed,
+verifying that a visible activity indicator remains until navigation completes.
+The loading and populated-show screenshots were inspected. Use the existing
+`TEST_RUNNER_LUNA_PODCAST_FIXTURE_URL` setup for both RSS UI checks.

@@ -11,27 +11,28 @@ public struct PodcastDirectoryResult: Identifiable, Equatable, Sendable {
     public var collectionID: String
 }
 public struct PodcastDirectory: Sendable {
+    private static let cache = PodcastRequestCache<Data>(capacity: 40)
     public var session: URLSession
-    public init(session: URLSession = .shared) { self.session = session }
+    public init(session: URLSession = PodcastNetwork.session) { self.session = session }
     public func search(_ term: String, episodes: Bool = false, country: String = "us") async throws -> [PodcastDirectoryResult] {
         var components = URLComponents(string: "https://itunes.apple.com/search")!
         components.queryItems = [URLQueryItem(name: "term", value: term), URLQueryItem(name: "media", value: "podcast"),
             URLQueryItem(name: "entity", value: episodes ? "podcastEpisode" : "podcast"), URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "country", value: country)]
         return try await results(url: components.url!)
     }
-    public func lookup(_ ids: [String], country: String = "us") async throws -> [PodcastDirectoryResult] {
+    public func lookup(_ ids: [String], country: String = "us", force: Bool = false) async throws -> [PodcastDirectoryResult] {
         guard !ids.isEmpty else { return [] }
         var components = URLComponents(string: "https://itunes.apple.com/lookup")!
         components.queryItems = [URLQueryItem(name: "id", value: ids.prefix(100).joined(separator: ",")), URLQueryItem(name: "entity", value: "podcast"), URLQueryItem(name: "country", value: country)]
-        let values = try await results(url: components.url!)
+        let values = try await results(url: components.url!, force: force)
         let order = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return values.sorted { (order[$0.collectionID] ?? 999) < (order[$1.collectionID] ?? 999) }
     }
-    public func charts(country: String = "us", genre: String? = nil) async throws -> [PodcastDirectoryResult] {
+    public func charts(country: String = "us", genre: String? = nil, force: Bool = false) async throws -> [PodcastDirectoryResult] {
         let safeCountry = country.range(of: "^[a-zA-Z]{2}$", options: .regularExpression) != nil ? country.lowercased() : "us"
         let genrePath = genre.flatMap { Int($0) }.map { "/genre=\($0)" } ?? ""
         let url = URL(string: "https://itunes.apple.com/\(safeCountry)/rss/toppodcasts/limit=100\(genrePath)/json")!
-        let data = try await data(url)
+        let data = try await data(url, force: force)
         struct Chart: Decodable {
             struct Feed: Decodable {
                 struct Entry: Decodable {
@@ -43,9 +44,9 @@ public struct PodcastDirectory: Sendable {
             var feed: Feed
         }
         let chart = try JSONDecoder().decode(Chart.self, from: data)
-        return try await lookup((chart.feed.entry ?? []).map { $0.id.attributes.id }, country: safeCountry)
+        return try await lookup((chart.feed.entry ?? []).map { $0.id.attributes.id }, country: safeCountry, force: force)
     }
-    private func results(url: URL) async throws -> [PodcastDirectoryResult] {
+    private func results(url: URL, force: Bool = false) async throws -> [PodcastDirectoryResult] {
         struct Response: Decodable {
             struct Result: Decodable {
                 var collectionId: Int64?; var trackId: Int64?; var collectionName: String?; var trackName: String?
@@ -54,14 +55,20 @@ public struct PodcastDirectory: Sendable {
             }
             var results: [Result]
         }
-        return try JSONDecoder().decode(Response.self, from: await data(url)).results.compactMap { result in
+        return try JSONDecoder().decode(Response.self, from: await data(url, force: force)).results.compactMap { result in
             guard let id = result.collectionId ?? result.trackId else { return nil }
             return PodcastDirectoryResult(id: String(result.trackId ?? id), title: result.collectionName ?? result.trackName ?? "Podcast", author: result.artistName ?? "",
                 artworkURL: PodcastIdentity.webURL(result.artworkUrl600 ?? result.artworkUrl100), feedURL: PodcastIdentity.webURL(result.feedUrl),
                 episodeURL: PodcastIdentity.webURL(result.episodeUrl), episodeTitle: result.kind == "podcast-episode" ? result.trackName : nil, collectionID: String(id))
         }
     }
-    private func data(_ url: URL) async throws -> Data {
+    private func data(_ url: URL, force: Bool = false) async throws -> Data {
+        let key = "\(ObjectIdentifier(session))|\(url.absoluteString)"
+        let data = try await Self.cache.value(for: key, force: force) { try await requestData(url) }
+        try Task.checkCancellation()
+        return data
+    }
+    private func requestData(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url); request.timeoutInterval = 30
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw PodcastError("The podcast directory is unavailable. Please try again.") }
@@ -77,10 +84,17 @@ public struct PodcastDirectory: Sendable {
 }
 
 public struct PodcastFeedClient: Sendable {
+    private static let cache = PodcastRequestCache<Response>()
     public var session: URLSession
-    public init(session: URLSession = .shared) { self.session = session }
+    public init(session: URLSession = PodcastNetwork.session) { self.session = session }
     public struct Response: Sendable { public var feed: PodcastFeed?; public var etag: String?; public var lastModified: String? }
-    public func fetch(_ show: PodcastShow) async throws -> Response {
+    public func fetch(_ show: PodcastShow, force: Bool = false) async throws -> Response {
+        let key = "\(ObjectIdentifier(session))|\(show.feedURL.absoluteString)|\(show.etag ?? "")|\(show.lastModified ?? "")"
+        let response = try await Self.cache.value(for: key, force: force) { try await request(show) }
+        try Task.checkCancellation()
+        return response
+    }
+    private func request(_ show: PodcastShow) async throws -> Response {
         var request = URLRequest(url: show.feedURL)
         request.timeoutInterval = 45; request.setValue("LunaMusic/1.0", forHTTPHeaderField: "User-Agent")
         if let etag = show.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }

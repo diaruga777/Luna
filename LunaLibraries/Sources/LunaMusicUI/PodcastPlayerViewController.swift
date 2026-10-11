@@ -68,7 +68,7 @@ extension MusicScreenViewController {
         guard isViewLoaded else { return }
         let episode = player.currentEpisode
         titleLabel.text = episode?.title ?? "Not Playing"
-        showLabel.text = player.errorMessage ?? PodcastLibraryController.shared.state.shows[episode?.showID ?? ""]?.title
+        showLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? PodcastLibraryController.shared.state.shows[episode?.showID ?? ""]?.title
         showLabel.textColor = player.errorMessage == nil ? .secondaryLabel : .systemRed
         if artworkID != episode?.id {
             artworkID = episode?.id; PodcastUI.artwork(episode?.artworkURL ?? PodcastLibraryController.shared.state.shows[episode?.showID ?? ""]?.artworkURL, into: artwork)
@@ -79,6 +79,8 @@ extension MusicScreenViewController {
         slider.accessibilityValue = PodcastUI.time(player.position)
         elapsed.text = PodcastUI.time(player.position); remaining.text = "−" + PodcastUI.time(max(0, player.duration - player.position))
         play.configuration?.image = UIImage(systemName: player.isPlaying || player.isBuffering ? "pause.fill" : "play.fill")
+        play.configuration?.showsActivityIndicator = player.isBuffering
+        play.accessibilityValue = player.isBuffering ? "Loading Audio" : nil
         play.accessibilityLabel = player.isPlaying || player.isBuffering ? "Pause" : "Play"
         speed.configuration?.title = "\(player.rate)×"
         sleep.configuration?.image = UIImage(systemName: player.sleepAtEpisodeEnd || player.sleepDeadline != nil ? "moon.fill" : "moon")

@@ -127,7 +127,8 @@ public final class KeyboardBoardView: UIView {
         value: "delete",
         frame: CGRect(x: bounds.width - side - 4, y: 2 + 2 * (h + rowGap), width: side, height: h),
         special: true))
-    var controls = [page == 0 ? "123" : "ABC", "styles"]
+    let allowsStyles = keyboardType == .default || keyboardType == .twitter
+    var controls = page == 3 ? ["123", "ABC"] : [page == 0 ? "123" : "ABC"] + (allowsStyles ? ["styles"] : [])
     if needsGlobe { controls.append("globe") }
     var suffix: [String] = []
     if keyboardType == .emailAddress {
@@ -141,11 +142,12 @@ public final class KeyboardBoardView: UIView {
     }
     var x: CGFloat = 3
     let y = 2 + 3 * (h + rowGap)
+    let controlWidth = needsGlobe ? w : bounds.width * 0.11
     for v in controls {
-      all.append(.init(value: v, frame: CGRect(x: x, y: y, width: w, height: h), special: true))
-      x += w + gap
+      all.append(.init(value: v, frame: CGRect(x: x, y: y, width: controlWidth, height: h), special: true))
+      x += controlWidth + gap
     }
-    let retWidth = w * 2.1
+    let retWidth = bounds.width * 0.22
     let spaceWidth = max(
       w, bounds.width - 4 - x - retWidth - gap - CGFloat(suffix.count) * (w + gap))
     all.append(
@@ -180,6 +182,20 @@ public final class KeyboardBoardView: UIView {
         }
       }
     }
+    if page == 3 {
+      all.removeAll { $0.frame.minY < y }
+      let styleRows: [[TextStyle]] = [
+        [.gothic, .ransom, .boxed, .inverseBoxed, .circled, .zalgo],
+        [.boldItalic, .monospace, .spaced, .script, .superscript, .doubleStroke],
+        [.regular, .bold, .italic, .underscore, .strikethrough],
+      ]
+      for (r, styles) in styleRows.enumerated() {
+        let inset: CGFloat = r == 2 ? side + gap + 3 : 3
+        let width = (bounds.width - inset - 4 - CGFloat(styles.count - 1) * gap) / CGFloat(styles.count)
+        row(styles.map { "style:" + $0.rawValue }, index: r, inset: inset, width: width)
+      }
+      all.append(.init(value: "shift", frame: CGRect(x: 3, y: 2 + 2 * (h + rowGap), width: side, height: h), special: true))
+    }
     keys = all
     accessibilityElements = all.map { key in
       let element = KeyboardKeyAccessibility(accessibilityContainer: self)
@@ -213,6 +229,7 @@ public final class KeyboardBoardView: UIView {
     }
   }
   private func accessibilityName(_ value: String) -> String {
+    if value.hasPrefix("style:") { return String(value.dropFirst(6)) + " style" }
     switch value {
     case "shift": return capsLock ? "Caps lock" : "Shift"
     case "delete": return "Delete"
@@ -233,11 +250,14 @@ public final class KeyboardBoardView: UIView {
     return Accents.accents(for: value).first ?? NumbersAndSymbols.altSymbols(for: value).first
   }
   private func label(_ value: String) -> String {
+    if value.hasPrefix("style:"), let style = TextStyle(rawValue: String(value.dropFirst(6))) {
+      return style.style(uppercase ? "ABC" : "abc")
+    }
     switch value {
     case "shift": return capsLock ? "⇪" : "⇧"
     case "delete": return "⌫"
     case "globe": return "◎"
-    case "styles": return "Aa"
+    case "styles": return "𝐁𝘐U̲"
     case "tab": return "⇥"
     case "dismiss": return "⌄"
     case "return": return returnTitle
@@ -247,9 +267,9 @@ public final class KeyboardBoardView: UIView {
   }
   public override func draw(_ rect: CGRect) {
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    var normal: UIColor = dark ? UIColor(white: 0.36, alpha: 1) : .white
+    var normal: UIColor = dark ? UIColor(red: 121/255, green: 131/255, blue: 128/255, alpha: 1) : .white
     var special: UIColor =
-      dark ? UIColor(white: 0.22, alpha: 1) : UIColor(red: 0.67, green: 0.70, blue: 0.74, alpha: 1)
+      dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
     var foreground: UIColor = dark ? .white : .black
     switch theme {
     case .system: break
@@ -269,16 +289,25 @@ public final class KeyboardBoardView: UIView {
       ctx.setShadow(
         offset: CGSize(width: 0, height: 1), blur: 0,
         color: UIColor.black.withAlphaComponent(0.3).cgColor)
-      (i == active || key.value == demonstrationKey ? UIColor.systemBlue : key.special ? special : normal).setFill()
+      let selected = i == active || key.value == demonstrationKey
+        || (key.value == "shift" && uppercase) || key.value == "style:" + textStyle.rawValue
+      (selected ? (dark ? UIColor(white: 0.85, alpha: 1) : .darkGray) : key.special ? special : normal).setFill()
       let outline = UIBezierPath(roundedRect: key.frame, cornerRadius: 6)
       outline.fill()
       if theme == .highContrast { foreground.setStroke(); outline.lineWidth = 2; outline.stroke() }
       ctx.restoreGState()
       guard !cursorDragging && (!blank || key.special) else { continue }
       let text = label(key.value)
-      let title = key.special || key.value == " " ? text : textStyle.style(text)
+      let title = key.special || key.value == " " || key.value.hasPrefix("style:") ? text : textStyle.style(text)
       let size: CGFloat = key.special || key.value == " " ? 16 : 22
-      drawText(title, in: key.frame, color: foreground, size: size)
+      if key.value == "shift" || key.value == "delete" || key.value == "globe" {
+        let name = key.value == "shift" ? (capsLock ? "capslock.fill" : uppercase ? "shift.fill" : "shift") : key.value == "delete" ? "delete.left" : "globe"
+        let color: UIColor = selected ? (dark ? .black : .white) : foreground
+        let image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))?.withTintColor(color, renderingMode: .alwaysOriginal)
+        image?.draw(in: CGRect(x: key.frame.midX - 12, y: key.frame.midY - 12, width: 24, height: 24))
+      } else {
+        drawText(title, in: key.frame, color: selected ? (dark ? .black : .white) : foreground, size: size)
+      }
       if isPad, !key.special, let alt = firstAlternative(for: key.value), key.value != " " {
         drawText(alt, in: CGRect(x: key.frame.maxX - 20, y: key.frame.minY + 2, width: 16, height: 14), color: foreground.withAlphaComponent(0.8), size: 11)
       }
@@ -348,6 +377,9 @@ public final class KeyboardBoardView: UIView {
     showPopup(index: i, options: alternatives)
   }
   public func holdAlternatives(for value: String) -> [String] {
+    if value == "styles" { return TextStyle.shortcutCases.map { "style:" + $0.rawValue } }
+    if value == "style:gothic" { return ["style:gothic", "style:gothicBold"] }
+    if value == "style:ransom" { return ["style:ransom", "style:SpongeBob"] }
     let title = label(value)
     var alternatives = Accents.accents(for: title)
     if alternatives.isEmpty { alternatives = NumbersAndSymbols.altSymbols(for: value) }
@@ -466,7 +498,7 @@ public final class KeyboardBoardView: UIView {
   private func showPopup(index: Int, options: [String]) {
     guard let parent = superview else { return }
     let frame = convert(keys[index].frame, to: parent)
-    popup.configure(keyFrame: frame, options: options, parentWidth: parent.bounds.width, dark: dark)
+    popup.configure(keyFrame: frame, options: options.map { $0.hasPrefix("style:") ? label($0) : $0 }, parentWidth: parent.bounds.width, dark: dark)
     parent.bringSubviewToFront(popup)
   }
 }

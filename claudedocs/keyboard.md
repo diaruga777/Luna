@@ -216,3 +216,32 @@ search text instead of inserting it in the host document.
 Live accessibility inspection returned an empty simulator hierarchy; gesture
 verification remains a manual check. Hosted tests exercise the production surface
 and real UITextView selections.
+
+## Clack storefront parity (11 October 2026)
+
+The search list and five tabs have been replaced with Clack's single horizontal
+storefront. Saved shortcuts, emoji, GIFs, and images share one query and are
+interleaved. Previews are 120 points tall (85 with Compact Media Search), with
+8-point spacing and a 42-point editable search field below. Search replaces the
+suggestion strip and keeps the typing board visible. Search text, cursor movement,
+and deletion cannot edit the host message. Closing restores the host return key.
+
+GIF thumbnails animate by decoding one downsampled frame at a time, rather than
+retaining frame arrays. Copying uses the actual image format on the pasteboard,
+shows feedback on the tile, and exposes a copied preview for saving keywords.
+Provider failures preserve local results and offer retry. Requests are cancelled
+as soon as the query changes, including the debounce interval. Metadata uses a
+new cache version so older still-image GIF thumbnails are not reused.
+
+The style key now opens Clack's three-row style board inside the existing keyboard
+height. Holding it offers the original quick styles. Gothic Bold and SpongeBob
+are available by holding Gothic and Ransom respectively. Clack's key colors,
+shift/delete symbols, bottom-row proportions, clipboard button, and suggestion
+separators are restored.
+
+Reference: the source in `~/Desktop/clack-1`, with dependencies from
+`~/projects/Clack/Pods`, built in an isolated temporary copy. `~/Desktop/Clack`
+contains dependencies only. Both apps were launched and exercised on iPhone 17
+Pro / iOS 26.2. The original has Qwant disabled in its storefront; Luna keeps
+image search with the existing Openverse fallback. Automated verification at
+this stage: **70 hosted keyboard tests passed, 0 failures**.

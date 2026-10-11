@@ -35,7 +35,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
       surface.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       surface.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
     ])
-    let height = surface.heightAnchor.constraint(equalToConstant: 264)
+    let height = surface.heightAnchor.constraint(equalToConstant: surface.requiredHeight)
     height.isActive = true
     surface.heightChanged = { [weak height] value in height?.constant = value }
     surface.before = { [weak self] in
@@ -56,8 +56,10 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
       self.editor.selectedTextRange = self.editor.textRange(from: position, to: position)
     }
     surface.store = KeyboardStore()
+    surface.onReturnToDocument = { [weak self] in self?.editor.becomeFirstResponder() }
     surface.hasFullAccess = true
     surface.board.needsGlobe = false
+    surface.backgroundColor = UIColor(white: 0.09, alpha: 1)
     surface.board.dark = true
     surface.reloadSettings()
     editor.inputView = input

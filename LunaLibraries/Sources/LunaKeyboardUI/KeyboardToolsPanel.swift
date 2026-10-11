@@ -4,341 +4,331 @@ import LunaStorage
 import UIKit
 import UniformTypeIdentifiers
 
-final class KeyboardToolsPanel: UIView, UITableViewDataSource, UITableViewDelegate {
+/// Clack's storefront: one query, a horizontal row of glyphs, and the search
+/// field directly above the typing keys. The document is never the search buffer.
+final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate {
   var onText: ((String) -> Void)?
-  var onStyle: ((TextStyle) -> Void)?
-  var onMedia: ((KeyboardShortcut) -> Void)?
   var onClose: (() -> Void)?
+  var onReturnTitle: ((String) -> Void)?
+  let searchField = UITextField()
+  let collection: UICollectionView
+  private let close = UIButton(type: .system)
+  private let activity = UIActivityIndicatorView(style: .medium)
   private let catalog: KeyboardCatalog
   private let store: KeyboardStore?
   private let fullAccess: Bool
-  private let segments = UISegmentedControl(items: ["Emoji", "Saved", "GIFs", "Images", "Styles"])
-  private let searchLabel = UILabel()
-  private let table = UITableView(frame: .zero, style: .plain)
-  private let close = UIButton(type: .system)
-  private var text = ""
-  private struct Item {
-    var title: String
-    var subtitle: String = ""
-    var text: String?
-    var shortcut: KeyboardShortcut?
-    var style: TextStyle?
-    var remote: URL?
-    var thumb: URL?
-  }
-  private var items: [Item] = []
-  private var searchTask: Task<Void, Never>?
+  private let compact: Bool
+  private let fetch: (String, Bool) async throws -> [KeyboardMediaSearch.Result]
+  private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
+  private var tasks: [Task<Void, Never>] = []
   private var copyTask: Task<Void, Never>?
   private var timer: Timer?
   private var generation = 0
-  init(catalog: KeyboardCatalog, store: KeyboardStore?, fullAccess: Bool, styles: Bool) {
-    self.catalog = catalog
-    self.store = store
-    self.fullAccess = fullAccess
+  private var pending = 0
+  private var localItems: [Item] = []
+  private var remoteItems: [[Item]] = [[], []]
+  private var errors: [String] = []
+  private(set) var items: [Item] = []
+  private var copied: Item?
+  private var copiedFile: URL?
+  private var tagging = false
+  private var previousQuery = ""
+  private var loadingID: String?
+  private var copiedID: String?
+  private let focusedPreview = KeyboardMediaPreview()
+  private let save = UIButton(type: .system)
+  var query: String { searchField.text ?? "" }
+  var requiredHeight: CGFloat { (compact ? 85 : 120) + 66 }
+
+  struct Item {
+    let id: String
+    let title: String
+    var text: String?
+    var shortcut: KeyboardShortcut?
+    var url: URL?
+    var thumbnail: URL?
+    var gif = false
+    var attribution = "Saved shortcut"
+    var isCopied = false
+    var isError = false
+  }
+
+  init(catalog: KeyboardCatalog, store: KeyboardStore?, fullAccess: Bool, compact: Bool = false,
+       fetch: @escaping (String, Bool) async throws -> [KeyboardMediaSearch.Result] = { try await KeyboardMediaSearch.search($0, gifs: $1) }) {
+    self.catalog = catalog; self.store = store; self.fullAccess = fullAccess; self.compact = compact; self.fetch = fetch
+    let layout = UICollectionViewFlowLayout()
+    layout.scrollDirection = .horizontal
+    layout.minimumLineSpacing = 8
+    layout.sectionInset = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+    collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     super.init(frame: .zero)
-    backgroundColor = .secondarySystemBackground
-    [segments, searchLabel, table, close].forEach(addSubview)
-    segments.selectedSegmentIndex = styles ? 4 : 0
-    segments.addAction(UIAction { [weak self] _ in self?.searchNow() }, for: .valueChanged)
-    searchLabel.font = .systemFont(ofSize: 13)
-    searchLabel.textColor = .secondaryLabel
-    close.setTitle("Done", for: .normal)
-    close.addAction(UIAction { [weak self] _ in self?.onClose?() }, for: .touchUpInside)
-    table.dataSource = self
-    table.delegate = self
-    table.rowHeight = 48
-    table.keyboardDismissMode = .none
-    table.register(MediaRow.self, forCellReuseIdentifier: "row")
+    accessibilityIdentifier = "keyboard.searchPanel"
+    backgroundColor = .clear
+    collection.backgroundColor = .clear
+    collection.showsHorizontalScrollIndicator = false
+    collection.delegate = self
+    dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) { [weak self] collection, index, id in
+      guard let self else { return nil }
+      return self.collectionView(collection, cellForItemAt: index)
+    }
+    collection.register(KeyboardMediaCell.self, forCellWithReuseIdentifier: "glyph")
+    collection.accessibilityIdentifier = "keyboard.searchResults"
+    searchField.font = .systemFont(ofSize: 18)
+    searchField.placeholder = "Search · Powered by GIPHY"
+    searchField.accessibilityLabel = "Search emoji, shortcuts, GIFs and images"
+    searchField.accessibilityIdentifier = "keyboard.searchField"
+    searchField.autocapitalizationType = .none
+    searchField.autocorrectionType = .no
+    searchField.spellCheckingType = .no
+    searchField.returnKeyType = .search
+    searchField.clearButtonMode = .whileEditing
+    searchField.layer.cornerRadius = 8
+    searchField.inputView = UIView(frame: .zero)
+    let inset = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 42))
+    searchField.leftView = inset; searchField.leftViewMode = .always
+    searchField.delegate = self
+    searchField.addAction(UIAction { [weak self] _ in self?.schedule() }, for: .editingChanged)
+    close.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .ultraLight)), for: .normal)
+    close.accessibilityLabel = "Close search"
+    close.accessibilityIdentifier = "keyboard.closeSearch"
+    close.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      if self.tagging { self.finishTagging() } else { self.onClose?() }
+    }, for: .touchUpInside)
+    save.setTitle("Save", for: .normal)
+    save.accessibilityIdentifier = "keyboard.saveMedia"
+    save.addAction(UIAction { [weak self] _ in self?.saveCopied() }, for: .touchUpInside)
+    save.isHidden = true; focusedPreview.isHidden = true
+    [collection, searchField, close, activity, focusedPreview, save].forEach(addSubview)
     searchNow()
   }
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   deinit {
-    searchTask?.cancel()
-    copyTask?.cancel()
-    timer?.invalidate()
+    tasks.forEach { $0.cancel() }; copyTask?.cancel(); timer?.invalidate()
+    if let copiedFile { try? FileManager.default.removeItem(at: copiedFile) }
+  }
+  func setDark(_ dark: Bool) {
+    searchField.backgroundColor = dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
+    searchField.textColor = dark ? .white : .black
+    close.tintColor = dark ? .white : .black
+    save.tintColor = close.tintColor
   }
   override func layoutSubviews() {
     super.layoutSubviews()
-    segments.frame = CGRect(x: 5, y: 2, width: bounds.width - 10, height: 30)
-    searchLabel.frame = CGRect(x: 10, y: 34, width: bounds.width - 70, height: 24)
-    close.frame = CGRect(x: bounds.width - 58, y: 32, width: 55, height: 28)
-    table.frame = CGRect(x: 0, y: 60, width: bounds.width, height: max(0, bounds.height - 60))
+    let cellHeight: CGFloat = compact ? 85 : 120
+    collection.frame = CGRect(x: 0, y: 8, width: bounds.width, height: cellHeight)
+    close.frame = CGRect(x: 0, y: cellHeight + 16, width: 42, height: 42)
+    searchField.frame = CGRect(x: 42, y: cellHeight + 16, width: max(0, bounds.width - 50 - (tagging ? 54 : 0)), height: 42)
+    activity.frame = CGRect(x: bounds.width - 38, y: 14, width: 24, height: 24)
+    focusedPreview.frame = CGRect(x: (bounds.width - cellHeight) / 2, y: 8, width: cellHeight, height: cellHeight)
+    save.frame = CGRect(x: bounds.width - 62, y: cellHeight + 16, width: 54, height: 42)
   }
-  func appendSearch(_ value: String) {
-    text += value
-    schedule()
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { searchField.becomeFirstResponder() }
   }
-  func deleteSearch() {
-    if !text.isEmpty { text.removeLast() }
-    schedule()
+  func appendSearch(_ value: String) { searchField.insertText(value); schedule() }
+  func deleteSearch() { searchField.deleteBackward(); schedule() }
+  func moveCursor(_ offset: Int) {
+    guard let range = searchField.selectedTextRange,
+      let position = searchField.position(from: range.start, offset: offset) else { return }
+    searchField.selectedTextRange = searchField.textRange(from: position, to: position)
   }
+  func textFieldShouldReturn(_ textField: UITextField) -> Bool { submit(); return false }
+  func submit() { if tagging { saveCopied() } else { searchNow() } }
   private func schedule() {
+    // Invalidate immediately: an older request must not win during the debounce.
+    generation += 1
+    tasks.forEach { $0.cancel() }; tasks = []
     timer?.invalidate()
-    searchLabel.text = "Search: " + text
-    timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-      self?.searchNow()
-    }
+    guard !tagging else { return }
+    timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in self?.searchNow() }
   }
   func searchNow() {
-    searchTask?.cancel()
+    guard !tagging else { return }
+    timer?.invalidate(); tasks.forEach { $0.cancel() }; tasks = []
     generation += 1
-    searchLabel.text = text.isEmpty ? "Type on the keyboard to search" : "Search: " + text
-    switch segments.selectedSegmentIndex {
-    case 0:
-      items = catalog.browseGlyphs(query: text).map {
-        Item(title: $0.text, subtitle: $0.name, text: $0.text)
-      }
-    case 1:
-      items = ((try? store?.shortcuts(limit: 100)) ?? []).filter {
-        text.isEmpty || $0.keywords.contains { $0.localizedCaseInsensitiveContains(text) }
-          || $0.text.localizedCaseInsensitiveContains(text)
-      }.map {
-        Item(
-          title: $0.text, subtitle: $0.keywords.joined(separator: ", "),
-          text: $0.kind == "text" ? $0.text : nil, shortcut: $0.kind == "text" ? nil : $0)
-      }
-      if text.isEmpty {
-        items += [
-          Item(
-            title: "Dramatic chipmunk",
-            shortcut: .init(keywords: ["dramatic"], text: "dramatic_chipmunk", kind: "gif")),
-          Item(title: "Wat", shortcut: .init(keywords: ["wat"], text: "wat", kind: "image")),
-        ]
-        items += ((try? store?.recentLinks(limit: 30)) ?? []).map {
-          Item(title: $0.title, subtitle: $0.url, text: $0.url)
-        }
-      }
-    case 4:
-      items = TextStyle.allCases.filter {
-        text.isEmpty || $0.rawValue.localizedCaseInsensitiveContains(text)
-      }.map { Item(title: $0.style($0.rawValue), style: $0) }
-    default:
-      items = []
-      guard fullAccess else {
-        searchLabel.text = "Enable Full Access for media search."
-        table.reloadData()
-        return
-      }
-      guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
-        table.reloadData()
-        return
-      }
-      let query = text
-      let gifs = segments.selectedSegmentIndex == 2
-      let gen = generation
-      searchLabel.text = "Searching…"
-      searchTask = Task { [weak self] in
+    let gen = generation
+    let query = query.trimmingCharacters(in: .whitespacesAndNewlines).styleErased
+    localItems = savedItems(query: query)
+    remoteItems = [[], []]; errors = []; pending = 0
+    if !fullAccess, !query.isEmpty { errors = ["Enable Full Access for GIF and image search."] }
+    rebuildItems(resetScroll: true)
+    guard fullAccess, !query.isEmpty else { activity.stopAnimating(); return }
+    pending = 2; activity.startAnimating()
+    let fetch = self.fetch
+    for index in 0..<2 {
+      let gifs = index == 0
+      tasks.append(Task { [weak self] in
         do {
-          let cacheKey = (gifs ? "gif:" : "image:") + query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-          let cached = try? self?.store?.cachedMediaSearch(cacheKey)
-          let decoded = cached.flatMap { $0.data(using: .utf8) }.flatMap {
-            try? JSONDecoder().decode([KeyboardMediaSearch.Result].self, from: $0)
-          }
-          var seen = Set<URL>()
+          let key = (gifs ? "gif-v2:" : "image-v2:") + query.lowercased()
+          let cached = try? self?.store?.cachedMediaSearch(key)
+          let decoded = cached.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([KeyboardMediaSearch.Result].self, from: $0) }
           let fetched: [KeyboardMediaSearch.Result]
-          if let decoded { fetched = decoded }
-          else { fetched = try await KeyboardMediaSearch.search(query, gifs: gifs) }
-          let found = Array(fetched.filter { $0.url.scheme == "https" && seen.insert($0.url).inserted }.prefix(24))
-          if decoded == nil, let data = try? JSONEncoder().encode(found), let payload = String(data: data, encoding: .utf8) {
-            try? self?.store?.cacheMediaSearch(cacheKey, payload: payload)
-          }
+          if let decoded { fetched = decoded } else { fetched = try await fetch(query, gifs) }
           guard !Task.isCancelled, let self, self.generation == gen else { return }
-          self.items = found.map {
-            Item(
-              title: $0.title,
-              subtitle: gifs ? "GIPHY · tap to copy" : "Image search · tap to copy",
-              remote: $0.url, thumb: $0.thumbnail)
+          var seen = Set<URL>()
+          let found = Array(fetched.filter { $0.url.scheme == "https" && seen.insert($0.url).inserted }.prefix(30))
+          if decoded == nil, let data = try? JSONEncoder().encode(found), let json = String(data: data, encoding: .utf8) {
+            try? self.store?.cacheMediaSearch(key, payload: json)
           }
-          self.searchLabel.text = found.isEmpty ? "No results" : "Search: " + query
-          self.table.reloadData()
+          self.remoteItems[index] = found.map { Item(id: $0.url.absoluteString, title: $0.title, url: $0.url, thumbnail: $0.thumbnail, gif: gifs, attribution: gifs ? "GIPHY · \($0.title)" : "Image · \($0.title)") }
+          self.finishedSearch()
         } catch {
           guard !Task.isCancelled, let self, self.generation == gen else { return }
-          self.searchLabel.text = "Search unavailable. Try again later."
+          self.errors.append(gifs ? "GIF search unavailable. Tap to retry." : "Image search unavailable. Tap to retry.")
+          self.finishedSearch()
         }
-      }
+      })
     }
-    table.reloadData()
   }
-  func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    items.count
+  private func finishedSearch() {
+    pending -= 1
+    if pending == 0 { activity.stopAnimating() }
+    rebuildItems()
   }
-  func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-    let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath) as! MediaRow
-    let item = items[indexPath.row]
-    var content = cell.defaultContentConfiguration()
-    content.text = item.title
-    content.secondaryText = item.subtitle
-    cell.accessibilityLabel = item.style?.rawValue ?? (item.subtitle.isEmpty ? item.title.styleErased : item.subtitle)
-    content.textProperties.numberOfLines = 1
-    content.secondaryTextProperties.numberOfLines = 1
-    cell.contentConfiguration = content
-    cell.load(item.thumb)
+  private func savedItems(query: String) -> [Item] {
+    let tokens = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+    let saved = ((try? store?.shortcuts(limit: 500)) ?? []).filter { shortcut in
+      tokens.isEmpty || tokens.contains { token in shortcut.keywords.contains { $0.localizedCaseInsensitiveContains(token) } || shortcut.text.localizedCaseInsensitiveContains(token) }
+    }.map { shortcut in
+      Item(id: shortcut.id, title: shortcut.text, text: shortcut.kind == "text" ? shortcut.text : nil,
+           shortcut: shortcut, url: store?.fileURL(for: shortcut), gif: shortcut.kind == "gif")
+    }
+    let builtins: [Item] = [
+      Item(id: "wat", title: "Wat", url: KeyboardResources.url("wat", extension: "png")),
+      Item(id: "dramatic", title: "Dramatic chipmunk", url: KeyboardResources.url("dramatic_chipmunk", extension: "gif"), gif: true),
+    ].filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+    let defaults: [Item] = query.isEmpty ? [Item(id: "shrug", title: "Shrug", text: "¯\\_(ツ)_/¯")] : []
+    let glyphs = catalog.browseGlyphs(query: query).map { Item(id: "glyph:" + $0.text, title: $0.name, text: $0.text) }
+    let links = ((try? store?.recentLinks(limit: 20)) ?? []).filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }.map { Item(id: $0.id, title: $0.title, text: $0.url) }
+    return saved + builtins + defaults + glyphs + links
+  }
+  private func rebuildItems(resetScroll: Bool = false) {
+    // Clack interleaves local and remote matches instead of making users choose a tab.
+    let sources = [localItems] + remoteItems
+    items = []
+    if let copied { copied.idForClipboard(&items) }
+    for i in 0..<(sources.map(\.count).max() ?? 0) {
+      for source in sources where i < source.count { items.append(source[i]) }
+    }
+    items += errors.map { Item(id: $0, title: $0, text: nil, isError: true) }
+    if items.isEmpty, pending == 0 { items = [Item(id: "empty", title: "No results", isError: true)] }
+    var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+    snapshot.appendSections([0])
+    snapshot.appendItems(items.map(\.id))
+    dataSource.apply(snapshot, animatingDifferences: false)
+    updateFeedback()
+    if resetScroll { collection.setContentOffset(.zero, animated: false) }
+  }
+  private func updateFeedback() {
+    for cell in collection.visibleCells {
+      guard let index = collection.indexPath(for: cell), index.item < items.count,
+        let cell = cell as? KeyboardMediaCell else { continue }
+      let item = items[index.item]
+      cell.showFeedback(item.id == loadingID ? "Copying…" : item.id == copiedID ? "Copied ✓" : item.isCopied ? "Add keywords" : nil)
+    }
+  }
+  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { items.count }
+  func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+    let height: CGFloat = compact ? 85 : 120
+    let item = items[indexPath.item]
+    let width = item.text.map { min(compact ? 120 : 160, max(height, ($0 as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 20)]).width + 16)) } ?? height
+    return CGSize(width: width, height: height)
+  }
+  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "glyph", for: indexPath) as! KeyboardMediaCell
+    let item = items[indexPath.item]
+    cell.preview.load(item.thumbnail ?? item.url, text: item.url == nil ? (item.text ?? item.title) : nil)
+    cell.accessibilityLabel = item.isCopied ? "Copied \(item.title). Add keywords" : item.title
+    cell.accessibilityIdentifier = "keyboard.result.\(indexPath.item)"
+    cell.accessibilityHint = item.text != nil ? "Insert text" : "Copy, then paste into your message"
+    cell.accessibilityCustomActions = [UIAccessibilityCustomAction(name: item.attribution) { _ in true }]
+    cell.showFeedback(item.id == loadingID ? "Copying…" : item.id == copiedID ? "Copied ✓" : item.isCopied ? "Add keywords" : nil)
     return cell
   }
-  func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    tableView.deselectRow(at: indexPath, animated: true)
-    let item = items[indexPath.row]
-    if let text = item.text {
-      onText?(text)
-    } else if let style = item.style {
-      onStyle?(style)
-    } else if let shortcut = item.shortcut {
-      onMedia?(shortcut)
-    } else if let remote = item.remote {
-      copyTask?.cancel()
-      searchLabel.text = "Copying…"
-      let gif = segments.selectedSegmentIndex == 2
-      copyTask = Task { [weak self] in
-        do {
-          let url = try await KeyboardMediaSearch.download(remote, maxBytes: 8 * 1024 * 1024)
-          defer { try? FileManager.default.removeItem(at: url) }
-          guard !Task.isCancelled, let self else { return }
-          let data = try Data(contentsOf: url, options: .mappedIfSafe)
-          UIPasteboard.general.setData(
-            data, forPasteboardType: gif ? UTType.gif.identifier : UTType.image.identifier)
-          self.searchLabel.text = "Copied. Touch and hold in your message, then Paste."
-        } catch {
-          if !Task.isCancelled { self?.searchLabel.text = "Couldn’t copy this item (8 MB limit)." }
+  func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) { if !collectionView.visibleCells.contains(cell) { (cell as? KeyboardMediaCell)?.preview.reset() } }
+  func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) { select(items[indexPath.item]) }
+  func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+    let item = items[indexPath.item]
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+      UIMenu(title: item.attribution, children: [UIAction(title: item.text == nil ? "Copy" : "Insert", image: UIImage(systemName: "doc.on.doc")) { _ in self?.select(item) }])
+    }
+  }
+  private func select(_ item: Item) {
+    if item.isCopied { beginTagging(); return }
+    if item.isError { searchNow(); return }
+    if let text = item.text { onText?(text); return }
+    guard fullAccess, let url = item.url else { return }
+    copyTask?.cancel(); loadingID = item.id; copiedID = nil; updateFeedback()
+    copyTask = Task { [weak self] in
+      do {
+        let local = url.isFileURL ? url : try await KeyboardMediaSearch.download(url, maxBytes: 8 * 1024 * 1024)
+        defer { if !url.isFileURL { try? FileManager.default.removeItem(at: local) } }
+        let data = try Data(contentsOf: local, options: .mappedIfSafe)
+        guard !Task.isCancelled, let self else { return }
+        guard data.count <= 8 * 1024 * 1024,
+          let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) else { throw URLError(.cannotDecodeContentData) }
+        UIPasteboard.general.setData(data, forPasteboardType: type as String)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(item.gif ? "gif" : "png")
+        try data.write(to: file)
+        if let old = self.copiedFile { try? FileManager.default.removeItem(at: old) }
+        self.copiedFile = file
+        var copied = item; copied.url = file; copied.thumbnail = file; copied.isCopied = true
+        self.copied = copied
+        self.loadingID = nil; self.copiedID = item.id
+        self.rebuildItems()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+          guard self?.copiedID == item.id else { return }
+          self?.copiedID = nil; self?.updateFeedback()
         }
+        UIAccessibility.post(notification: .announcement, argument: "Copied. Paste into your message, or tap the copied preview to add keywords.")
+      } catch {
+        guard !Task.isCancelled, let self else { return }
+        self.loadingID = nil
+        self.errors = ["Couldn’t copy this item. Try another result."]
+        self.rebuildItems()
       }
     }
+  }
+  private func beginTagging() {
+    guard let copied else { return }
+    tagging = true; previousQuery = query
+    timer?.invalidate(); generation += 1; tasks.forEach { $0.cancel() }; activity.stopAnimating()
+    collection.isHidden = true; focusedPreview.isHidden = false; save.isHidden = false
+    focusedPreview.load(copied.url, text: copied.text)
+    searchField.text = copied.shortcut?.keywords.joined(separator: ", ") ?? query
+    searchField.placeholder = "Add keywords, separated by commas"
+    close.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+    close.accessibilityLabel = "Back to search"
+    onReturnTitle?("save"); setNeedsLayout()
+    searchField.becomeFirstResponder()
+  }
+  private func finishTagging() {
+    tagging = false; searchField.text = previousQuery
+    searchField.placeholder = "Search · Powered by GIPHY"
+    collection.isHidden = false; focusedPreview.isHidden = true; save.isHidden = true
+    focusedPreview.reset()
+    close.setImage(UIImage(systemName: "xmark"), for: .normal)
+    close.accessibilityLabel = "Close search"
+    onReturnTitle?("search"); setNeedsLayout(); searchNow()
+  }
+  private func saveCopied() {
+    guard let copied, let store, let copiedFile else { return }
+    let keywords = query.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    guard !keywords.isEmpty else { return }
+    do {
+      var shortcut = copied.shortcut ?? KeyboardShortcut(keywords: keywords, text: copied.title, kind: copied.gif ? "gif" : "image")
+      shortcut.keywords = keywords
+      try store.save(shortcut, importing: shortcut.relativePath == nil ? copiedFile : nil)
+      UIAccessibility.post(notification: .announcement, argument: "Shortcut saved")
+      finishTagging()
+    } catch { searchField.placeholder = "Couldn’t save. Try again." }
   }
 }
 
-private final class MediaRow: UITableViewCell {
-  private var task: Task<Void, Never>?
-  override func prepareForReuse() {
-    super.prepareForReuse()
-    task?.cancel()
-    task = nil
-  }
-  deinit { task?.cancel() }
-  func load(_ url: URL?) {
-    task?.cancel()
-    guard let url else { return }
-    task = Task { [weak self] in
-      guard let local = try? await KeyboardMediaSearch.download(url, maxBytes: 1024 * 1024) else {
-        return
-      }
-      defer { try? FileManager.default.removeItem(at: local) }
-      guard !Task.isCancelled, let self,
-        let source = CGImageSourceCreateWithURL(local as CFURL, nil),
-        let image = CGImageSourceCreateThumbnailAtIndex(
-          source, 0,
-          [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 96,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-          ] as CFDictionary)
-      else { return }
-      guard var config = self.contentConfiguration as? UIListContentConfiguration else { return }
-      config.image = UIImage(cgImage: image)
-      config.imageProperties.maximumSize = CGSize(width: 48, height: 40)
-      self.contentConfiguration = config
-    }
-  }
-}
-
-private enum KeyboardMediaSearch {
-  struct Result: Codable {
-    let title: String
-    let url: URL
-    let thumbnail: URL?
-  }
-  static let session: URLSession = {
-    let config = URLSessionConfiguration.ephemeral
-    config.urlCache = nil
-    config.httpMaximumConnectionsPerHost = 3
-    config.timeoutIntervalForRequest = 15
-    return URLSession(configuration: config)
-  }()
-  static func search(_ query: String, gifs: Bool) async throws -> [Result] {
-    var components = URLComponents(
-      string: gifs
-        ? "https://api.giphy.com/v1/gifs/search" : "https://api.qwant.com/v3/search/images")!
-    components.queryItems = [
-      .init(name: "q", value: query), .init(name: gifs ? "limit" : "count", value: "24"),
-    ]
-    if gifs {
-      components.queryItems?.append(
-        .init(name: "api_key", value: KeyboardServiceConfiguration.giphyKey))
-      components.queryItems?.append(.init(name: "rating", value: "pg-13"))
-    } else {
-      components.queryItems?.append(.init(name: "t", value: "images"))
-      components.queryItems?.append(.init(name: "locale", value: "en_us"))
-      components.queryItems?.append(.init(name: "offset", value: "0"))
-    }
-    let (data, response) = try await limitedData(from: components.url!)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-      data.count < 2 * 1024 * 1024
-    else {
-      if !gifs { return try await openverse(query) }
-      throw URLError(.badServerResponse)
-    }
-    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    if gifs {
-      return (object["data"] as? [[String: Any]] ?? []).compactMap { value in
-        guard let images = value["images"] as? [String: [String: Any]],
-          let original = images["fixed_height"], let text = original["url"] as? String,
-          let url = URL(string: text)
-        else { return nil }
-        return Result(
-          title: value["title"] as? String ?? "GIF", url: url,
-          thumbnail: (images["fixed_height_still"]?["url"] as? String).flatMap(URL.init(string:)))
-      }
-    }
-    let dataObject = object["data"] as? [String: Any]
-    let result = dataObject?["result"] as? [String: Any]
-    return (result?["items"] as? [[String: Any]] ?? []).compactMap { value in
-      guard let text = value["media"] as? String, let url = URL(string: text), url.scheme == "https"
-      else { return nil }
-      return Result(
-        title: value["title"] as? String ?? "Image", url: url,
-        thumbnail: (value["thumbnail"] as? String).flatMap(URL.init(string:)))
-    }
-  }
-  // The legacy Qwant API may reject anonymous requests. Keep image search
-  // usable with a public-domain/CC0 Openverse fallback when that happens.
-  static func openverse(_ query: String) async throws -> [Result] {
-    var url = URLComponents(string: "https://api.openverse.org/v1/images/")!
-    url.queryItems = [
-      .init(name: "q", value: query), .init(name: "page_size", value: "24"),
-      .init(name: "license", value: "cc0,pdm"),
-    ]
-    let (data, response) = try await limitedData(from: url.url!)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-      data.count < 2 * 1024 * 1024
-    else { throw URLError(.badServerResponse) }
-    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    return (object["results"] as? [[String: Any]] ?? []).compactMap { value in
-      guard let path = value["url"] as? String, let url = URL(string: path), url.scheme == "https"
-      else { return nil }
-      return Result(
-        title: value["title"] as? String ?? "Image", url: url,
-        thumbnail: (value["thumbnail"] as? String).flatMap(URL.init(string:)))
-    }
-  }
-
-  static func limitedData(from url: URL) async throws -> (Data, URLResponse) {
-    let (bytes, response) = try await session.bytes(from: url)
-    guard response.expectedContentLength <= 2 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
-    var data = Data()
-    for try await byte in bytes {
-      try Task.checkCancellation()
-      guard data.count < 2 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
-      data.append(byte)
-    }
-    return (data, response)
-  }
-  static func download(_ url: URL, maxBytes: Int) async throws -> URL {
-    guard url.scheme == "https" else { throw URLError(.unsupportedURL) }
-    let (local, response) = try await session.download(from: url)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-      (try local.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= maxBytes
-    else {
-      try? FileManager.default.removeItem(at: local)
-      throw URLError(.dataLengthExceedsMaximum)
-    }
-    return local
+private extension KeyboardToolsPanel.Item {
+  func idForClipboard(_ items: inout [Self]) {
+    items.append(Self(id: "clipboard:" + id, title: title, text: text, shortcut: shortcut, url: url, thumbnail: thumbnail, gif: gif, attribution: attribution, isCopied: true))
   }
 }

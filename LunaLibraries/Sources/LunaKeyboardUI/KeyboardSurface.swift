@@ -30,6 +30,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     return value
   }
   private let suggestionScroll = UIScrollView()
+  private let dividers = [UIView(), UIView()]
   private let tools = UIButton(type: .system)
   private var suggestionButtons: [UIButton] = []
   private let pasteControl = UIPasteControl()
@@ -57,11 +58,14 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private var dragAfter = ""
   private var dragRemoved = ""
   public var onEdit: (() -> Void)?
+  public var onReturnToDocument: (() -> Void)?
+  private var documentReturnTitle = "return"
   private var panel: KeyboardToolsPanel?
+  private var searchClipboard = KeyboardSearchClipboard()
   private var status: UILabel?
   public var boardHeight: CGFloat = 220 { didSet { setNeedsLayout() } }
   public var requiredHeight: CGFloat {
-    boardHeight + 44 + (panel == nil ? 0 : preferences.enabled("compactSearch") ? 124 : 200)
+    boardHeight + (panel?.requiredHeight ?? 56)
   }
   public override init(frame: CGRect) {
     super.init(frame: frame)
@@ -69,6 +73,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     addSubview(board)
     addSubview(suggestionScroll)
     addSubview(tools)
+    for divider in dividers { divider.backgroundColor = UIColor.gray.withAlphaComponent(0.3); addSubview(divider) }
     pasteConfiguration = UIPasteConfiguration(forAccepting: String.self)
     pasteControl.target = self
     pasteControl.accessibilityIdentifier = "keyboard.paste"
@@ -77,7 +82,10 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     countdown.backgroundColor = .systemBlue
     countdown.isUserInteractionEnabled = false
     suggestionScroll.addSubview(countdown)
-    tools.setImage(UIImage(systemName: "face.smiling"), for: .normal)
+    tools.setImage(UIImage(systemName: "doc.on.doc"), for: .normal)
+    tools.backgroundColor = UIColor(red: 180/255, green: 187/255, blue: 198/255, alpha: 0.8)
+    tools.tintColor = .white
+    tools.layer.cornerRadius = 21
     tools.accessibilityLabel = "Emoji, shortcuts, GIFs and images"
     tools.accessibilityIdentifier = "keyboard.tools"
     tools.addAction(UIAction { [weak self] _ in self?.toggleTools() }, for: .touchUpInside)
@@ -85,6 +93,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     board.onDeleteDragEnd = { [weak self] in self?.finishDeleteDrag() }
     board.onKey = { [weak self] in self?.key($0) }
     board.onCursor = { [weak self] in
+      if let panel = self?.panel { panel.moveCursor($0); return }
       self?.clearCorrection()
       self?.moveCursor($0)
       self?.refresh()
@@ -96,12 +105,23 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   deinit { timer?.invalidate() }
   public override func layoutSubviews() {
     super.layoutSubviews()
-    let extra = requiredHeight - boardHeight - 44
-    tools.frame = CGRect(x: 0, y: 0, width: 40, height: 44)
-    suggestionScroll.frame = CGRect(x: 40, y: 0, width: max(0, bounds.width - 40), height: 44)
-    panel?.frame = CGRect(x: 0, y: 44, width: bounds.width, height: extra)
-    board.frame = CGRect(x: 0, y: 44 + extra, width: bounds.width, height: boardHeight)
+    let widgetHeight = panel?.requiredHeight ?? 56
+    tools.isHidden = panel != nil
+    suggestionScroll.isHidden = panel != nil
+    tools.frame = CGRect(x: 8, y: 7, width: 42, height: 42)
+    suggestionScroll.frame = CGRect(x: 56, y: 6, width: max(0, bounds.width - 56), height: 44)
+    panel?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: widgetHeight)
+    panel?.setDark(board.dark)
+    board.frame = CGRect(x: 0, y: widgetHeight, width: bounds.width, height: boardHeight)
+    for (i, divider) in dividers.enumerated() {
+      divider.isHidden = panel != nil
+      divider.frame = CGRect(x: 56 + (bounds.width - 56) / 3 * CGFloat(i + 1), y: 6, width: 1, height: 48)
+    }
     layoutSuggestions()
+  }
+  public func setDocumentReturnTitle(_ title: String) {
+    documentReturnTitle = title
+    if panel == nil { board.returnTitle = title }
   }
   public func reloadSettings() {
     if let values = try? store?.preferences() { preferences = KeyboardPreferences(values: values) }
@@ -137,8 +157,11 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     clearCorrection()
     capitalizedWord = nil
     capitalizedWords = []
+    if panel != nil { board.returnTitle = documentReturnTitle }
     panel?.removeFromSuperview()
     panel = nil
+    searchClipboard = KeyboardSearchClipboard()
+    setNeedsLayout()
     suggestions = []
     renderSuggestions()
     heightChanged?(requiredHeight)
@@ -302,15 +325,18 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       shiftDate = Date()
       return
     }
-    if value == "styles" {
-      toggleTools(styles: true)
+    if value == "styles" { board.page = 3; return }
+    if value.hasPrefix("style:"), let style = TextStyle(rawValue: String(value.dropFirst(6))) {
+      board.textStyle = style
+      try? store?.setPreference("textStyle", value: style.rawValue)
+      board.page = 0
       return
     }
     if let panel {
       if value == "delete" {
         panel.deleteSearch()
       } else if value == "return" {
-        panel.searchNow()
+        panel.submit()
       } else {
         panel.appendSearch(value == "tab" ? "\t" : board.uppercase ? value.uppercased() : value)
       }
@@ -449,7 +475,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   /// Drag preview uses reversible deletion because UITextDocumentProxy has no
   /// API for setting a selection. Moving right restores only our own removed text.
   public func updateDeleteDrag(_ count: Int) {
-    guard !hasSelection() else { finishDeleteDrag(); return }
+    guard panel == nil, !hasSelection() else { finishDeleteDrag(); return }
     editingDepth += 1
     defer { editingDepth -= 1 }
     if dragOriginal == nil {
@@ -474,6 +500,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   public func finishDeleteDrag() { dragOriginal = nil; dragAfter = ""; dragRemoved = "" }
   private func updateCasing() {
+    guard panel == nil else { return }
     guard !board.capsLock else { return }
     guard fieldAllowsCapitalization, preferences.enabled("autoCapitalize") else {
       if automaticShift { board.uppercase = false }
@@ -500,38 +527,32 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     renderSuggestions()
     if !board.capsLock { board.uppercase = false }
   }
-  private func toggleTools(styles: Bool = false) {
-    if panel != nil {
-      panel?.removeFromSuperview()
-      panel = nil
-      refresh()
-    } else {
-      clearCorrection()
-      suggestions = []
-      pasteControl.isHidden = true
-      renderSuggestions()
-      let p = KeyboardToolsPanel(
-        catalog: prediction.catalog, store: store, fullAccess: hasFullAccess, styles: styles)
-      p.onText = { [weak self] text in
-        self?.insert(text)
-        self?.closeTools()
-      }
-      p.onStyle = { [weak self] style in
-        self?.board.textStyle = style
-        try? self?.store?.setPreference("textStyle", value: style.rawValue)
-        self?.closeTools()
-      }
-      p.onMedia = { [weak self] shortcut in self?.copy(shortcut) }
-      p.onClose = { [weak self] in self?.closeTools() }
-      addSubview(p)
-      panel = p
-    }
+  func toggleTools() {
+    if panel != nil { closeTools(); return }
+    clearCorrection()
+    suggestions = []
+    pasteControl.isHidden = true
+    renderSuggestions()
+    documentReturnTitle = board.returnTitle
+    board.returnTitle = "search"
+    board.uppercase = false
+    board.capsLock = false
+    let p = KeyboardToolsPanel(catalog: prediction.catalog, store: store,
+      fullAccess: hasFullAccess, compact: preferences.enabled("compactSearch"), clipboard: searchClipboard)
+    p.onText = { [weak self] text in self?.insert(text) }
+    p.onClose = { [weak self] in self?.closeTools() }
+    p.onReturnTitle = { [weak self] in self?.board.returnTitle = $0 }
+    panel = p
+    addSubview(p)
     heightChanged?(requiredHeight)
     setNeedsLayout()
   }
   private func closeTools() {
+    panel?.searchField.resignFirstResponder()
     panel?.removeFromSuperview()
     panel = nil
+    board.returnTitle = documentReturnTitle
+    onReturnToDocument?()
     heightChanged?(requiredHeight)
     setNeedsLayout()
     refresh()

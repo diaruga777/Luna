@@ -81,13 +81,13 @@ final class KeyboardViewController: UIInputViewController {
     surface.board.needsGlobe = needsInputModeSwitchKey
     surface.board.keyboardType = textDocumentProxy.keyboardType ?? .default
     switch textDocumentProxy.returnKeyType ?? .default {
-    case .go: surface.board.returnTitle = "go"
-    case .search, .google, .yahoo: surface.board.returnTitle = "search"
-    case .send: surface.board.returnTitle = "send"
-    case .done: surface.board.returnTitle = "done"
-    case .next: surface.board.returnTitle = "next"
-    case .join: surface.board.returnTitle = "join"
-    default: surface.board.returnTitle = "return"
+    case .go: surface.setDocumentReturnTitle("go")
+    case .search, .google, .yahoo: surface.setDocumentReturnTitle("search")
+    case .send: surface.setDocumentReturnTitle("send")
+    case .done: surface.setDocumentReturnTitle("done")
+    case .next: surface.setDocumentReturnTitle("next")
+    case .join: surface.setDocumentReturnTitle("join")
+    default: surface.setDocumentReturnTitle("return")
     }
     surface.fieldAllowsCapitalization = textDocumentProxy.autocapitalizationType != UITextAutocapitalizationType.none
       && textDocumentProxy.keyboardType != .URL && textDocumentProxy.keyboardType != .emailAddress

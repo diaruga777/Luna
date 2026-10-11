@@ -734,7 +734,7 @@ extension KeyboardTests {
 
   @MainActor func testToolsPanelTabDoesNotEditDocument() {
     let (surface, text) = editor("hello")
-    surface.key("styles")
+    surface.toggleTools()
     surface.key("tab")
     XCTAssertEqual(text(), "hello")
     surface.releaseMemory()
@@ -743,10 +743,143 @@ extension KeyboardTests {
   @MainActor func testToolsPanelHidesAndRejectsDocumentSuggestions() async throws {
     let (surface, text) = editor("teh")
     let suggestion = try await suggestionButton("the", surface: surface)
-    surface.key("styles")
+    surface.toggleTools()
     XCTAssertTrue(suggestion.isHidden)
     suggestion.sendActions(for: .touchUpInside)
     XCTAssertEqual(text(), "teh")
     surface.releaseMemory()
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testSearchReplacesSuggestionsAndLeavesDocumentUntouched() {
+    let (surface, text) = editor("A message")
+    surface.frame = CGRect(x: 0, y: 0, width: 402, height: 500)
+    surface.hasFullAccess = false
+    surface.setDocumentReturnTitle("send")
+    surface.toggleTools()
+    surface.layoutIfNeeded()
+    let panel = surface.subviews.compactMap { $0 as? KeyboardToolsPanel }.first!
+    XCTAssertEqual(surface.requiredHeight, surface.boardHeight + 186)
+    XCTAssertEqual(panel.frame.minY, 0)
+    XCTAssertEqual(surface.board.frame.minY, panel.requiredHeight)
+    surface.key("c"); surface.key("a"); surface.key("t")
+    surface.board.onCursor?(-1)
+    surface.key("delete")
+    surface.updateDeleteDrag(4)
+    XCTAssertEqual(panel.query, "ct")
+    XCTAssertEqual(text(), "A message")
+    XCTAssertEqual(surface.board.returnTitle, "search")
+    surface.setDocumentReturnTitle("done")
+    XCTAssertEqual(surface.board.returnTitle, "search")
+    surface.toggleTools()
+    XCTAssertEqual(surface.board.returnTitle, "done")
+    XCTAssertEqual(surface.requiredHeight, surface.boardHeight + 56)
+    surface.releaseMemory()
+  }
+
+  @MainActor func testCompactSearchKeepsClackTileAndFieldSizes() {
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false, compact: true)
+    panel.frame = CGRect(x: 0, y: 0, width: 320, height: panel.requiredHeight)
+    panel.layoutIfNeeded()
+    XCTAssertEqual(panel.requiredHeight, 151)
+    XCTAssertEqual(panel.collection.bounds.height, 85)
+    XCTAssertEqual(panel.searchField.bounds.height, 42)
+    XCTAssertEqual(panel.searchField.frame.maxY, 143)
+  }
+
+  @MainActor func testStyleBoardStaysInsideKeyboardAndSelectsStyle() {
+    let (surface, text) = editor("hello")
+    let height = surface.requiredHeight
+    surface.key("styles")
+    XCTAssertEqual(surface.board.page, 3)
+    XCTAssertEqual(surface.requiredHeight, height)
+    XCTAssertFalse(surface.subviews.contains { $0 is KeyboardToolsPanel })
+    surface.key("style:bold")
+    XCTAssertEqual(surface.board.textStyle, .bold)
+    XCTAssertEqual(surface.board.page, 0)
+    XCTAssertEqual(text(), "hello")
+    XCTAssertEqual(surface.board.holdAlternatives(for: "styles"), TextStyle.shortcutCases.map { "style:" + $0.rawValue })
+    surface.releaseMemory()
+  }
+
+  @MainActor func testSearchIgnoresSupersededResponsesAndKeepsLocalResultsWhenOffline() async throws {
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { query, gifs in
+      if query == "old" { try? await Task.sleep(for: .milliseconds(350)) }
+      if !gifs { throw URLError(.notConnectedToInternet) }
+      return [.init(title: query, url: URL(string: "https://example.com/\(query).gif")!, thumbnail: nil)]
+    }
+    panel.searchField.text = "old"; panel.searchNow()
+    panel.searchField.text = "cat"; panel.searchNow()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertTrue(panel.items.contains { $0.title == "cat" })
+    XCTAssertFalse(panel.items.contains { $0.title == "old" })
+    XCTAssertTrue(panel.items.contains { $0.text == "🐱" || $0.text == "😺" })
+    XCTAssertTrue(panel.items.contains { $0.title.contains("Image search unavailable") })
+  }
+
+  @MainActor func testSearchWithoutFullAccessNeverContactsProviders() async throws {
+    var called = false
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false) { _, _ in
+      called = true; return []
+    }
+    panel.searchField.text = "cat"; panel.searchNow()
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertFalse(called)
+    XCTAssertTrue(panel.items.contains { $0.text != nil })
+    XCTAssertTrue(panel.items.contains { $0.title.contains("Full Access") })
+  }
+
+  @MainActor func testMediaSearchCopyAndSaveKeywords() async throws {
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _, _ in [] }
+    let index = try XCTUnwrap(panel.items.firstIndex { $0.id == "wat" })
+    panel.collectionView(panel.collection, didSelectItemAt: IndexPath(item: index, section: 0))
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertTrue(UIPasteboard.general.hasImages)
+    panel.beginTagging()
+    panel.searchField.text = "confused, what"
+    panel.submit()
+    let saved = try XCTUnwrap(store.shortcuts(matching: "confused").first)
+    XCTAssertEqual(saved.keywords, ["confused", "what"])
+    XCTAssertFalse(store.mediaIsMissing(saved))
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testTryoutPastesAnimatedAttachmentWithoutLosingMessageOrGIFData() throws {
+    let editor = KeyboardTryoutTextView()
+    XCTAssertNotNil(editor.textLayoutManager)
+    editor.text = "before after"
+    editor.selectedRange = NSRange(location: 7, length: 5)
+    let data = try Data(contentsOf: XCTUnwrap(KeyboardResources.url("dramatic_chipmunk", extension: "gif")))
+    editor.insertMedia(data)
+    XCTAssertTrue(editor.text.hasPrefix("before "))
+    XCTAssertFalse(editor.text.contains("after"))
+    let attachment = try XCTUnwrap(editor.attributedText.attribute(.attachment, at: 7, effectiveRange: nil) as? NSTextAttachment)
+    XCTAssertEqual(attachment.contents, data)
+    XCTAssertTrue(attachment.usesTextAttachmentView)
+    XCTAssertEqual(attachment.bounds.size, CGSize(width: 80, height: 80))
+    XCTAssertEqual(editor.selectedRange.location, editor.text.utf16.count)
+  }
+
+  @MainActor func testCopiedMediaSurvivesClosingSearchAndCanBeSavedOnce() async throws {
+    let clipboard = KeyboardSearchClipboard()
+    var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    let index = try XCTUnwrap(panel?.items.firstIndex { $0.id == "wat" })
+    panel!.collectionView(panel!.collection, didSelectItemAt: IndexPath(item: index, section: 0))
+    try await Task.sleep(for: .milliseconds(200))
+    weak var released = panel
+    panel = nil
+    XCTAssertNil(released)
+    XCTAssertNotNil(clipboard.file)
+    let reopened = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    reopened.beginTagging()
+    reopened.searchField.text = "wat"
+    reopened.submit()
+    reopened.beginTagging()
+    reopened.searchField.text = "wat, confused"
+    reopened.submit()
+    XCTAssertEqual(try store.shortcuts().count, 1)
+    XCTAssertEqual(try store.shortcuts().first?.keywords, ["confused", "wat"])
   }
 }

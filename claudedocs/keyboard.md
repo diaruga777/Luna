@@ -87,9 +87,9 @@ Sources and licenses ship beside the catalog.
 - The catalog uses a 256 KB SQLite page cache. Emoji are queried, not all decoded
   into an object graph.
 - The media browser is created only on request. Reused cells load a downsampled
-  first frame, cancel stale requests and do not retain animated GIF frame arrays.
+  current frame, cancel stale requests and do not retain animated GIF frame arrays.
 - Requests use an ephemeral URLSession with no URL cache and three connections
-  per host. Selected media copying is limited to 8 MB; thumbnails to 1 MB.
+  per host. Selected media copying is limited to 8 MB; thumbnails to 2 MB.
 - Disappearance/memory warnings cancel work and release checker, tools and history.
 - Media search sends only explicit search queries to GIPHY/Qwant (with an Openverse CC0/public-domain fallback). Ordinary typed
   text is not sent to these services. Search failures are shown in the panel.
@@ -181,7 +181,7 @@ Empty editors offer the system Paste control when clipboard text is available
 and Full Access is enabled. Arithmetic expressions offer a result that is applied
 only when selected. Neither feature reads clipboard content while typing.
 
-Choose **Aa → Styles → SpongeBob** for random casing with at most two successive
+Choose **𝐁𝘐U̲ → SpongeBob** for random casing with at most two successive
 cased letters in the same case. On **123**, hold **-** and slide to **Dashes** to
 turn the spacebar into a literal hyphen key; choose **Spaces** in the same popup
 to return. Cursor dragging remains available on the wide key.
@@ -216,3 +216,45 @@ search text instead of inserting it in the host document.
 Live accessibility inspection returned an empty simulator hierarchy; gesture
 verification remains a manual check. Hosted tests exercise the production surface
 and real UITextView selections.
+
+## Clack storefront parity (11 October 2026)
+
+The search list and five tabs have been replaced with Clack's single horizontal
+storefront. Saved shortcuts, emoji, GIFs, and images share one query and are
+interleaved. Previews are 120 points tall (85 with Compact Media Search), with
+8-point spacing and a 42-point editable search field below. Search replaces the
+suggestion strip and keeps the typing board visible. Search text, cursor movement,
+and deletion cannot edit the host message. Closing restores the host return key.
+
+GIF thumbnails animate by decoding one downsampled frame at a time, rather than
+retaining frame arrays. Copying uses the actual image format on the pasteboard,
+shows feedback on the tile, and exposes a copied preview for saving keywords.
+Provider failures preserve local results and offer retry. Requests are cancelled
+as soon as the query changes, including the debounce interval. Metadata uses a
+new cache version so older still-image GIF thumbnails are not reused.
+
+The style key now opens Clack's three-row style board inside the existing keyboard
+height. Holding it offers the original quick styles. Gothic Bold and SpongeBob
+are available by holding Gothic and Ransom respectively. Clack's key colors,
+shift/delete symbols, bottom-row proportions, clipboard button, and suggestion
+separators are restored.
+
+Reference: the source in `~/Desktop/clack-1`, with dependencies from
+`~/projects/Clack/Pods`, built in an isolated temporary copy. `~/Desktop/Clack`
+contains dependencies only. Both apps were launched and exercised on iPhone 17
+Pro / iOS 26.2. The original has Qwant disabled in its storefront; Luna keeps
+image search with the existing Openverse fallback. Automated verification at
+this stage: **70 hosted keyboard tests passed, 0 failures**.
+
+Follow-up verification: **72 hosted tests passed, 0 failures**. The copied-media
+preview stays pinned and collapses while browsing, survives closing search, and
+updates existing keywords without duplicating shortcuts. Try It Out now accepts
+image/GIF paste and renders GIF attachments with the same bounded-frame decoder.
+The iPhone portrait tryout uses Clack's 210-point board and 75-point bottom inset.
+
+Live image-search diagnosis found that Openverse now rejects anonymous page sizes
+above 20. The fallback uses 20 and an explicit app User-Agent; a live `cat` request
+returned 20 results. GIF results, animated local media, search entry, copy feedback,
+and style-board layouts were inspected in both simulator apps. This is a targeted
+keyboard UX comparison, not a claim that every containing-app screen or every
+possible prediction/gesture sequence has been proven identical.

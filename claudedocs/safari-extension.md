@@ -2,6 +2,37 @@
 
 Tracks the URL of the active Safari tab and persists it so the SaveLink intent can save "the page I'm looking at" without any UI.
 
+## Floating Luna control
+
+The page action is a 52px circle containing the containing app's handmade,
+transparent Action Extension icon. `scripts/update_safari_extension_branding.sh`
+resizes that existing artwork to `luna-action-icon.png`; the content script uses
+its alpha as a `currentColor` mask. Ink and the translucent surface follow
+`prefers-color-scheme`, including changes while the page is open. The circle
+keeps the existing long-press drag placement.
+
+Tapping opens a web popover with **Play Video** (when this target can present a
+video and Play in Safari is enabled), **Open in Luna**, and **Hide**. Play opens
+the existing system-controls video popup. Open invokes the target's save/model
+handoff separately from playback. Hide removes the floating controls and cancels
+pending playback for the whole document, including SPA navigation; refreshing
+restores them. The menu supports keyboard activation, arrow navigation, Escape,
+and outside-tap dismissal, and stays within the visual viewport. Its blurred,
+translucent CSS surface approximates glass; native UIKit Liquid Glass is not
+available in a webpage.
+
+The player and menu use Safari's manual popover top layer so page stacking,
+clipping, and transforms cannot bury them. A video load error keeps the popup
+visible with an explanation and its Open in Luna action, instead of silently
+removing the popup. Core retries failed plugin loading/ingestion at most twice
+with a 1.5-second delay; rejected runtime/bridge loads are evicted from the
+cache. Catalog, bridge, and source loading have eight-second backstops, so
+a native request that never answers also recovers. The initial native context
+also gets bounded retries. Navigation API,
+pageshow, and visibility events supplement the URL timer so returning from a
+player/app handoff promptly evaluates the new URL. Core still resolves through
+installed plugins only, and only media from the exact opened post can play.
+
 ## Flow
 
 ```
@@ -342,13 +373,14 @@ injection used by the Luna action pill.
   popover → suppressed either way. One table test per mechanism covers the localized
   labels, the CMP-specific selectors, the OneTrust two-step and the accept veto.
 
-## "Read in Luna" / "Download in Luna" / "Track in Luna" button
+## Content eligibility and handoffs
 
 The same extension also presents a page button — but ONLY for the page kinds its
-containing app handles, and a tap always deep-links into that app via its own
+containing app handles, and Open in Luna deep-links into that app via its own
 scheme (`claudedocs/surface-support.md`): the central Luna app's extension shows
-all three pill types (via `luna://`); Reader's shows only "Read in Luna",
-Downloader's only "Download in Luna", Price Tracker's only "Track in Luna". The
+all three content kinds (via `luna://`); Reader handles articles, Downloader
+handles media, and Price Tracker handles products. The shared circular menu
+replaces the earlier labeled pills. The
 native handler's `buttonContext` reply carries `scheme` +
 `supportsArticles`/`supportsMedia`/`supportsProducts`, derived from the
 extension's own bundle-id suffix (the bare `<prefix>.safari` id is the central
@@ -372,10 +404,9 @@ central Luna app, the only host that shows all three, colours each pill by the
 save it would make, which is the answer to "which of my apps is this button for".
 So `KIND_TINTS` (article → the Reader's, media → the Downloader's, product → the
 Price Tracker's) hangs off the target factories: `readTarget`/`downloadTargetFor`/
-`trackTargetFor` each name their tint, `injectLunaButton` renders whatever the
-target gave it (and stamps it on `data-luna-tint`), and a target that forgets one
-falls back to the Luna indigo. The video player's Download button takes the tint
-of the pill that opened it; the "Unlocked with Luna" toast takes the article tint
+`trackTargetFor` each name their tint, `injectLunaButton` retains the tint on `data-luna-tint` for the target
+and player, while the circular control itself uses adaptive monochrome ink, and a target that forgets one
+falls back to the Luna indigo. The video player's Open in Luna button takes the target's tint; the "Unlocked with Luna" toast takes the article tint
 (only article-capable hosts unlock at all).
 
 The **setup confirmation** is the exception that proves the rule: it belongs to
@@ -680,9 +711,8 @@ default ON. The app writes `safariVideoPlayerEnabled` into the App Group, the
 appex reads that key by its own literal name — the app shell that writes it is
 not package code either appex compiles — and answers
 `videoPlayer` on the `buttonContext` reply, and `videoOverlayTargetFor` returns
-the plain hand-off target when the answer is `false` — so the pill is exactly
-what it was before the player existed (same label, same tint, same
-`?ret=safari` deep link) and nothing opens over the page. **An absent key means
+the plain hand-off target when the answer is `false` — so the circular menu omits Play Video and keeps Open in Luna with its
+`?ret=safari` deep link and nothing opens over the page. **An absent key means
 ON**: the player is the shipped behavior and a user who has never opened
 Settings has written nothing, so no default is ever written anywhere.
 `SafariMediaPillTests` covers both halves of the off state and
@@ -691,8 +721,8 @@ Settings has written nothing, so no default is ever written anywhere.
 **It opens on its own, and the pill is the way back to it.** On a page whose
 subject is a video, the resolve starts without a tap. The popup appears only
 after the resolver returns a playable video or GIF URL.
-The pill stays where it was: tapping it re-opens a player the user dismissed, and
-on a page that never earns an auto-open it does what it always did.
+The circle stays where it was: its Play Video menu action reopens a dismissed
+player; Open in Luna remains a separate handoff.
 
 Auto-open asks a NARROWER question than pill eligibility, and the two are not the
 same question. Outside X, a bare platform host recognizes (`tiktok.com`) and a
@@ -924,8 +954,9 @@ unmuted, behind the overlay.
 
 **Failed playback leaves the page clear.** An empty or rejected resolve,
 the handler's 20s budget, or the JS 25s backstop never displays the popup.
-A CSP refusal or expired CDN URL that raises a `video` `error` event dismisses
-an open popup immediately. The pill remains available for a later retry.
+A CSP refusal or expired CDN URL that raises a `video` `error` event keeps
+the popup visible with a playback failure message and Open in Luna action.
+The circle remains available for a later Play Video retry after closing it.
 
 **Reddit keeps exactly today's treatment** — the plain pill, navigating into the
 app — and does not enter the overlay path (`evaluateRedditPage` keeps building

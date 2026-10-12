@@ -29,7 +29,7 @@ appearance instead of applying Luna's dark app theme.
 
 English, Spanish, Latin American Spanish and Italian layouts, both symbol pages,
 shift/caps lock, key previews, accents, domain suffixes, repeating backspace,
-spacebar cursor movement, double-space period, sounds, haptics, blank keycaps,
+spacebar cursor movement, double-space search, sounds, haptics, blank keycaps,
 text styles, a personal dictionary, text/phrase/image/GIF shortcuts, supplementary
 lexicon entries, markdown styling and correction reversal are available. The
 original text-style tables and popup Bezier outlines are retained. Top-row holds
@@ -86,13 +86,20 @@ Sources and licenses ship beside the catalog.
 - UITextChecker is lazy; an unused secondary language is never queried.
 - The catalog uses a 256 KB SQLite page cache. Emoji are queried, not all decoded
   into an object graph.
-- The media browser is created only on request. Reused cells load a downsampled
-  current frame, cancel stale requests and do not retain animated GIF frame arrays.
+- The media browser is created only on request. Reused cells display one still,
+  downsampled frame (240-pixel maximum) and release the compressed image source
+  after decoding. File IO and ImageIO decoding run off the main thread. Only the
+  explicitly copied/focused preview animates, one frame at a time; no frame arrays.
+- The extension uses a 256 KB shared-store SQLite page cache and trims reclaimable
+  pages on disappearance/memory warnings. Prediction ranking computes each edit
+  distance once; unchanged board traits do not rebuild accessibility or redraw.
 - Requests use an ephemeral URLSession with no URL cache and three connections
   per host. Selected media copying is limited to 8 MB; thumbnails to 2 MB.
 - Disappearance/memory warnings cancel work and release checker, tools and history.
-- Media search sends only explicit search queries to GIPHY/Qwant (with an Openverse CC0/public-domain fallback). Ordinary typed
-  text is not sent to these services. Search failures are shown in the panel.
+- Media search sends only explicit search queries to GIPHY. Remote static-image
+  search (Qwant/Openverse) has been removed. Saved image shortcuts still work.
+  Ordinary document typing is not sent to the provider. Search failures preserve
+  local results and show a retry tile.
 
 The historical 21.6 MB measurement is not directly comparable to a debug simulator
 process. Physical-device extension memory and a pixel comparison against the
@@ -125,8 +132,8 @@ with the built-in image tool using the current Luna Reader icon as reference:
 keyboard keys and spacebar; no letters; opaque square; match the Luna family.”
 The project contains the final 1024 px asset and a smaller in-app artwork export.
 
-Live checks: GIPHY returned results; the old Qwant endpoint returned HTTP 403,
-so image search falls back to Openverse, which returned results in the same check.
+Historical live checks: GIPHY and the Openverse fallback returned results. Remote
+static-image search was subsequently removed (see the October update below).
 
 ## Clack todo implementation (30 September 2026)
 
@@ -258,3 +265,49 @@ returned 20 results. GIF results, animated local media, search entry, copy feedb
 and style-board layouts were inspected in both simulator apps. This is a targeted
 keyboard UX comparison, not a claim that every containing-app screen or every
 possible prediction/gesture sequence has been proven identical.
+
+
+## Double-space search and memory update (13 October 2026)
+
+Double-tap the spacebar within 0.4 seconds to open the horizontal search row and
+focus its search field. The gesture consumes its two spaces; the first space's
+normal word correction may already have happened. It works at the start of a
+field, after digits/emoji, on symbol pages, and in dashes mode, independent of
+smart-punctuation preferences. Slow spaces remain text. A selection/cursor move
+or intervening key resets the gesture. Typing while search is open edits the query;
+closing it returns to the document. The old search button and double-space-period
+preference have been removed. VoiceOver exposes search as a space-key custom action.
+
+Local matches are rendered immediately on each query edit. Only the remote GIF
+request waits for the 200 ms debounce. Saved shortcuts, bundled media/ASCII art,
+emoji, and saved links all precede remote GIFs in the same horizontal row. Shortcut
+and link filtering happens in SQLite before the result limit: at most 40 shortcuts,
+40 glyphs and 12 links are materialized, followed by at most 24 GIFs. Metadata cache
+reads, JSON parsing and cache writes run off the typing thread. Closing the panel,
+query changes and memory warnings explicitly cancel network/copy/preview work.
+GIF results use GIPHY's small still thumbnails; selecting one copies the GIF itself.
+
+Writer cooperation is best effort because UITextDocumentProxy has no supported
+host-bundle identifier. Writer now has the shared App Group entitlement and publishes
+an atomic timestamp while a scene is active, renewed every two seconds and removed
+when its last active scene resigns/disconnects. The keyboard reads this lease only
+on double-space and forwards the second literal space while the lease is valid;
+Writer's existing palette retains control. A crash expires the lease after six
+seconds. Both apps must run updated builds. Shared-container access must be available
+(Full Access is the supported extension configuration); a missing/unreadable/expired
+lease falls back to keyboard search. In iPad multitasking an active Writer alongside
+another app can suppress the gesture there too; this is a foreground cooperation
+signal, not guaranteed identification of the focused host app.
+
+Verification: **82 hosted keyboard tests passed, 0 failures** on iPhone 17 Pro / iOS
+26.2. Coverage includes double-space contexts, Writer forwarding/lease expiry,
+instant local results, remote ranking, cancellation/release, cache bounds and
+shortcut filtering before limits. Ten local query/result-snapshot updates against
+250 matching shortcuts averaged about 4 ms total (about 0.4 ms per update) in the
+simulator; this excludes visible-cell rendering and network time. Simulator UI
+checks confirmed focused search, typing into the query, local cat emoji first and
+GIFs later in the same horizontal row. A live GIPHY request returned 24 results
+with 24 still thumbnails. Writer's build-for-testing succeeds and all 57 command-palette controller/overlay
+tests pass. Physical-device
+extension memory and host switching remain unmeasured; no numerical RAM reduction
+is asserted from these checks.

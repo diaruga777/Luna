@@ -603,3 +603,22 @@ with a rose tint and a fountain-pen nib. The editable source is
 96/192/288-pixel `LunaAppIconWriter` resources show the same artwork in every
 Luna app. Export instructions are in `Design/IconComposer/README.md`. The old
 placeholder generator has been retired.
+
+
+## Luna Keyboard cooperation (13 October 2026)
+
+Writer now carries the shared App Group entitlement solely to publish the small
+`writer-keyboard-host` foreground lease through `LunaAppConfig.KeyboardHostContext`.
+Scene activation renews it every two seconds; resigning/disconnecting the last active
+scene clears it. It contains only a timestamp and expires after six seconds, so a
+crashed Writer cannot permanently disable Luna Keyboard's double-space search.
+The updated keyboard passes the second literal space to Writer while this lease is
+readable and current, leaving the existing command-palette trigger unchanged.
+Both apps require updated builds and the keyboard needs shared-container access.
+This is best-effort foreground cooperation, with an iPad multitasking limitation:
+Writer and another app may both have active scenes, so the signal cannot prove
+which app currently owns the keyboard. Writer's database remains separate from
+`saves.sqlite`; the new entitlement does not hydrate or write the shared saves store.
+
+Verification: Writer build-for-testing succeeds; 57 command-palette controller and
+overlay tests pass with zero failures on the iOS 26.2 simulator.

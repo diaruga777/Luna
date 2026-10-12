@@ -177,7 +177,7 @@ final class SafariVideoOverlayTests: XCTestCase {
 
     /// The media element itself is the last line: the page's CSP has the final
     /// say on the load, and an expired CDN URL 403s. Either surfaces as `error`.
-    func testAVideoErrorDismissesThePopup() {
+    func testAVideoErrorKeepsThePopupAndOpenInLunaAvailable() {
         present(assets: playableAsset)
         XCTAssertNotNil(videoSource())
         _ = js.evaluate("""
@@ -185,7 +185,9 @@ final class SafariVideoOverlayTests: XCTestCase {
             v.dispatchEvent(new Event("error"));
             "dispatched"
             """)
-        XCTAssertFalse(overlayExists())
+        XCTAssertTrue(overlayExists())
+        XCTAssertTrue(js.bool("!!document.querySelector('[data-luna-playback-error]')"))
+        XCTAssertTrue(js.bool("!!document.getElementById(window.__lunaVideoOverlayID).querySelector('[role=button]')"))
     }
 
     // MARK: - Dismissal

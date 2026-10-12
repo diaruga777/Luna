@@ -84,7 +84,7 @@ final class SafariXEligibilityTests: XCTestCase {
             XCTAssertFalse(player)
             XCTAssertEqual(js.number("window.__resolveCalls"), 0)
             let link = js.awaitAppSchemeNavigation {
-                self.js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
+                self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
             }
             XCTAssertTrue(link?.hasPrefix("luna://read?url=") == true)
             XCTAssertFalse(player)
@@ -138,7 +138,7 @@ final class SafariXEligibilityTests: XCTestCase {
         settle()
         XCTAssertTrue(pill)
         XCTAssertFalse(player)
-        js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
+        js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=playVideo]').click(); void 0")
         XCTAssertTrue(player)
         offer(tweet(media: "<video></video>"), context: ", videoPlayer: false")
         XCTAssertTrue(pill)
@@ -151,26 +151,36 @@ final class SafariXEligibilityTests: XCTestCase {
     }
     /// Use the same host table as Safari: without it, isXHost() is false and
     /// the old DOM veto is never exercised by these plugin-path tests.
-    private func offerCore(_ payload: String, context: String = "", deferred: Bool = false) {
+    private func offerCore(_ payload: String, context: String = "", deferred: Bool = false, failFirstSource: Bool = false, stallFirstSource: Bool = false, url: String = "https://x.com/ZetaPlusCG/status/2108409488554222078") {
         let plugin = SafariJSTestHarness.source("LunaLibraries/Sources/LunaBundledPlugins/Plugins/x.js")
         let host = SafariJSTestHarness.source("LunaSafari/Resources/plugin_host.js")
         js.load(html: "<html><body><p>Loading X</p>\(tweet("999", media: "<video></video>"))</body></html>",
-                urlString: "https://x.com/ZetaPlusCG/status/2108409488554222078",
+                urlString: url,
                 scripts: [SafariJSTestHarness.platformHosts, SafariJSTestHarness.contentScript])
         js.evaluate("""
             window.__payload = \(payload);
+            window.__sourceCalls = 0;
+            window.__fetchCalls = 0;
+            window.__queued = null;
+            window.__catalogCache = {};
             window.__deferred = \(deferred ? "true" : "false");
             window.fetch = function () { return Promise.resolve({text: function () { return Promise.resolve(\(SafariJSTestHarness.jsString(host))); }}); };
             window.browser = {runtime: {getURL: function (p) { return p; }, sendMessage: function (m) {
-                if (m.type === 'plugins.catalog') return Promise.resolve({plugins:[{id:'app.luna.x',hosts:['x.com'],produces:['media','article'],capabilities:['fetch']}]});
-                if (m.type === 'plugins.source') return Promise.resolve({source:\(SafariJSTestHarness.jsString(plugin))});
+                if (m.type === 'plugins.catalog') return Promise.resolve({stamp:'x1',plugins:[{id:'app.luna.x',hosts:['x.com'],produces:['media','article'],capabilities:['fetch']}]});
+                if (m.type === 'plugins.source') {
+                    window.__sourceCalls++;
+                    if (\(stallFirstSource ? "true" : "false") && window.__sourceCalls === 1) return new Promise(function(){});
+                    if (\(failFirstSource ? "true" : "false") && window.__sourceCalls === 1) return Promise.reject(new Error('Cold native bridge'));
+                    return Promise.resolve({source:\(SafariJSTestHarness.jsString(plugin))}); }
                 if (m.type === 'plugins.fetch') {
+                    window.__fetchCalls++;
                     var response = {ok:true,status:200,text:JSON.stringify(window.__payload)};
                     if (window.__deferred) return new Promise(function (resolve) { window.__finishFetch = function () { resolve(response); }; });
                     return Promise.resolve(response);
                 }
+                if (m.type === 'plugins.queueModel') { window.__queued = m; return Promise.resolve({deepLink:'luna://pluginmodel?ret=safari'}); }
                 return Promise.resolve({});
-            }}};
+            }}, storage:{local:{get:function(){return Promise.resolve(window.__catalogCache);},set:function(value){window.__catalogCache=value;return Promise.resolve();}}}};
             window.__lunaStartPillDecision({scheme:'luna',supportsPlugins:true,supportsMedia:true,supportsArticles:true \(context)});
             void 0
             """)
@@ -202,7 +212,7 @@ final class SafariXEligibilityTests: XCTestCase {
         settle()
         XCTAssertFalse(player)
         XCTAssertTrue(pill)
-        js.evaluate("document.getElementById(window.__lunaPillID)?.click(); void 0")
+        js.evaluate("document.getElementById(window.__lunaPillID)?.click(); document.querySelector('[data-luna-action=playVideo]')?.click(); void 0")
         settle()
         XCTAssertTrue(player)
         js.evaluate("window.__payload = {tweet:{id:'456',text:'Just text'}}; history.pushState({}, '', '/alice/status/456'); void 0")
@@ -230,6 +240,84 @@ final class SafariXEligibilityTests: XCTestCase {
         settle()
         XCTAssertFalse(player)
         XCTAssertFalse(pill)
+    }
+
+    func testCoreRetriesAColdPluginBridgeWithoutRefreshing() {
+        offerCore(coreVideoPayload, failFirstSource: true)
+        XCTAssertFalse(pill)
+        let deadline = Date().addingTimeInterval(4)
+        while !player && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertTrue(player)
+        XCTAssertTrue(pill)
+        XCTAssertEqual(js.number("window.__sourceCalls"), 2)
+    }
+
+    func testCoreMenuSeparatesPlaybackOpenAndHideUntilRefresh() {
+        offerCore(coreVideoPayload)
+        js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); document.getElementById(window.__lunaPillID).click(); void 0")
+        XCTAssertFalse(player, "Opening the menu must not immediately start playback")
+        XCTAssertEqual(js.string("Array.from(document.querySelectorAll('[role=menuitem]')).map(x => x.textContent).join('|')"), "Play Video|Open in Luna|Hide")
+        XCTAssertEqual(js.number("document.getElementById(window.__lunaPillID).getBoundingClientRect().width"), 52)
+        XCTAssertEqual(js.number("document.getElementById(window.__lunaPillID).getBoundingClientRect().height"), 52)
+        XCTAssertLessThan(js.number("document.getElementById('luna-action-menu').getBoundingClientRect().bottom"),
+                          js.number("document.getElementById(window.__lunaPillID).getBoundingClientRect().top"),
+                          "The menu should anchor immediately above the circle")
+        js.evaluate("document.querySelector('[data-luna-action=hideLuna]').click(); void 0")
+        XCTAssertFalse(pill)
+        XCTAssertFalse(player)
+        js.evaluate("history.pushState({}, '', '/other/status/456'); void 0")
+        settle()
+        js.evaluate("history.pushState({}, '', '/ZetaPlusCG/status/2108409488554222078'); void 0")
+        settle()
+        XCTAssertFalse(pill, "Hide lasts until a document refresh")
+        XCTAssertFalse(player)
+        offerCore(coreVideoPayload)
+        XCTAssertTrue(pill)
+        XCTAssertTrue(player)
+    }
+
+    func testCoreOpenInLunaQueuesTheAlreadyResolvedVideoWithoutPlaying() {
+        offerCore(coreVideoPayload)
+        js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); void 0")
+        let link = js.awaitAppSchemeNavigation {
+            self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
+        }
+        XCTAssertTrue(link == "luna://pluginmodel?ret=safari")
+        XCTAssertFalse(player)
+        XCTAssertEqual(js.number("window.__fetchCalls"), 1, "Open should reuse the resolved Model")
+        XCTAssertEqual(js.string("window.__queued.id"), "app.luna.x")
+        XCTAssertTrue(js.string("window.__queued.model")?.contains("movie.mp4") == true)
+    }
+
+    func testReportedPostOpensCorePlayerUsingItsResolvedVideo() {
+        // The reported post's media shape, without relying on a live network.
+        offerCore("{tweet:{id:'2109373525043905019',media:{all:[{type:'video',url:'https://video.twimg.com/amplify_video/2109373480454012928/vid/avc1/1280x720/Cac_MDJjXCdgxNKa.mp4?tag=29'}]}}}",
+                  url: "https://x.com/lilifying/status/2109373525043905019?s=20")
+        XCTAssertTrue(player)
+        XCTAssertTrue(pill)
+        XCTAssertTrue(js.string("document.getElementById(window.__lunaVideoOverlayID)?.querySelector('video')?.src")?.contains("2109373480454012928") == true)
+    }
+
+    func testCoreArticleMenuOffersOpenAndHideWithoutPlay() {
+        offerCore("{tweet:{id:'2108409488554222078',text:'" + String(repeating: "Long article text. ", count: 50) + "'}}")
+        XCTAssertTrue(pill)
+        XCTAssertFalse(player)
+        js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
+        XCTAssertFalse(js.bool("!!document.querySelector('[data-luna-action=playVideo]')"))
+        XCTAssertEqual(js.string("Array.from(document.querySelectorAll('[role=menuitem]')).map(x=>x.textContent).join('|')"), "Open in Luna|Hide")
+        js.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true})); void 0")
+        XCTAssertFalse(js.bool("!!document.getElementById('luna-action-menu')"))
+        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillID).getAttribute('aria-expanded')"), "false")
+    }
+
+    func testCoreRecoversFromAStalledSourceRequestWithoutRefreshing() {
+        offerCore(coreVideoPayload, stallFirstSource: true)
+        XCTAssertFalse(pill)
+        let deadline = Date().addingTimeInterval(12)
+        while !player && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertTrue(player)
+        XCTAssertTrue(pill)
+        XCTAssertEqual(js.number("window.__sourceCalls"), 2)
     }
 
 }

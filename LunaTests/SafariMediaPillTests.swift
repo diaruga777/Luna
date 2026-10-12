@@ -101,7 +101,11 @@ final class SafariMediaPillTests: XCTestCase {
     }
 
     private func tapPill() {
-        _ = js.evaluate("document.getElementById(window.__lunaPillID).click(); \"tapped\"")
+        _ = js.evaluate("""
+            document.getElementById(window.__lunaPillID).click();
+            var action = document.querySelector('[data-luna-action=playVideo]') || document.querySelector('[data-luna-action=openInLuna]');
+            action.click(); "tapped"
+            """)
         // The resolve settles on a microtask; a second round trip is past it.
         _ = js.evaluate("void 0")
     }

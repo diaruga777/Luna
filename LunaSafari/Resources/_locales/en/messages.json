@@ -58,5 +58,20 @@
     "sellerLookupFailed": {
         "message": "Unable to find better prices",
         "description": "Non-interactive pill state when the alternative-seller lookup itself failed (the native side never answered, or the round trip was rejected) -- distinct from a completed search that found nothing."
+    },
+    "videoPlaybackFailed": {
+        "message": "Safari couldn’t play this video. You can open it in Luna."
+    },
+    "lunaActions": {
+        "message": "Luna actions"
+    },
+    "playVideo": {
+        "message": "Play Video"
+    },
+    "openInLuna": {
+        "message": "Open in Luna"
+    },
+    "hideLuna": {
+        "message": "Hide"
     }
 }

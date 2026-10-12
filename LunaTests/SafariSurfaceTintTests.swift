@@ -139,7 +139,7 @@ final class SafariSurfaceTintTests: XCTestCase {
 
     /// A pill whose fill is its kind's colour must not also be white-on-pale:
     /// the rendered text colour is the one the fill asks for.
-    func testThePillsTextColourFollowsItsFill() {
+    func testTheCircularControlUsesAdaptiveMonochromeInk() {
         let ink = evaluate("""
             (function () {
                 var pill = document.getElementById(window.__lunaPillID);
@@ -150,9 +150,9 @@ final class SafariSurfaceTintTests: XCTestCase {
                 return getComputedStyle(document.getElementById(window.__lunaPillID)).color;
             })()
             """)
-        XCTAssertFalse(
-            ink.contains("255, 255, 255"),
-            "the Price Tracker's near-neon green pill is still writing in white")
+        let dark = evaluate("String(window.matchMedia('(prefers-color-scheme: dark)').matches)") == "true"
+        XCTAssertEqual(ink.contains("255, 255, 255"), dark,
+                       "the action icon should adapt to the current light/dark theme")
     }
 
     func testPriceTrackerPillStaysInTheApp() {

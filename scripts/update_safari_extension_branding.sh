@@ -9,18 +9,22 @@ case "${PRODUCT_BUNDLE_IDENTIFIER}" in
   *.reader.safari)
     app_name="${DISPLAY_NAME_PREFIX:-Luna} Reader"
     app_icon="AppIconReader"
+    action_icon="ReaderActionExtIcon/ActionIconReaderDark.png"
     ;;
   *.downloader.safari)
     app_name="${DISPLAY_NAME_PREFIX:-Luna} Video"
     app_icon="AppIconVideo"
+    action_icon="VideoActionExtIcon/ActionIconVideoLight.png"
     ;;
   *.pricetracker.safari)
     app_name="${DISPLAY_NAME_PREFIX:-Luna} Price Tracker"
     app_icon="AppIconPriceTracker"
+    action_icon="PriceTrackerActionExtIcon/ActionIconPriceTrackerDark.png"
     ;;
   *)
     app_name="${DISPLAY_NAME_PREFIX:-Luna}"
     app_icon="AppIconLuna"
+    action_icon="LunaCoreActionExtIcon/ActionIconLunaDark(1).png"
     ;;
 esac
 
@@ -66,3 +70,10 @@ for size in 48 64 96 128 256 512; do
   /usr/bin/sips -z "$size" "$size" "$source_icon" \
     --out "$resources/extension-icon-${size}.png" >/dev/null
 done
+
+# Reuse the host's handmade transparent action artwork as an alpha mask. The
+# webpage supplies currentColor so the same artwork adapts to light and dark.
+action_set="${action_icon%%/*}.appiconset"
+action_file="${action_icon#*/}"
+/usr/bin/sips -z 128 128 "${SRCROOT}/SharedIconAssets.xcassets/${action_set}/${action_file}" \
+  --out "${resources}/luna-action-icon.png" >/dev/null

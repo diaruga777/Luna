@@ -14,70 +14,22 @@ enum KeyboardMediaSearch {
     config.timeoutIntervalForRequest = 15
     return URLSession(configuration: config)
   }()
-  static func search(_ query: String, gifs: Bool) async throws -> [Result] {
-    var components = URLComponents(
-      string: gifs
-        ? "https://api.giphy.com/v1/gifs/search" : "https://api.qwant.com/v3/search/images")!
+  static func search(_ query: String) async throws -> [Result] {
+    var components = URLComponents(string: "https://api.giphy.com/v1/gifs/search")!
     components.queryItems = [
-      .init(name: "q", value: query), .init(name: gifs ? "limit" : "count", value: "24"),
+      .init(name: "q", value: String(query.prefix(128))), .init(name: "limit", value: "24"),
+      .init(name: "api_key", value: KeyboardServiceConfiguration.giphyKey),
+      .init(name: "rating", value: "pg-13"),
     ]
-    if gifs {
-      components.queryItems?.append(
-        .init(name: "api_key", value: KeyboardServiceConfiguration.giphyKey))
-      components.queryItems?.append(.init(name: "rating", value: "pg-13"))
-    } else {
-      components.queryItems?.append(.init(name: "t", value: "images"))
-      components.queryItems?.append(.init(name: "locale", value: "en_us"))
-      components.queryItems?.append(.init(name: "offset", value: "0"))
-    }
     let (data, response) = try await limitedData(from: components.url!)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-      data.count < 2 * 1024 * 1024
-    else {
-      if !gifs { return try await openverse(query) }
-      throw URLError(.badServerResponse)
-    }
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
     let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    if gifs {
-      return (object["data"] as? [[String: Any]] ?? []).compactMap { value in
-        guard let images = value["images"] as? [String: [String: Any]],
-          let original = images["fixed_height"], let text = original["url"] as? String,
-          let url = URL(string: text)
-        else { return nil }
-        return Result(
-          title: value["title"] as? String ?? "GIF", url: url,
-          thumbnail: (images["fixed_width_downsampled"]?["url"] as? String).flatMap(URL.init(string:)))
-      }
-    }
-    let dataObject = object["data"] as? [String: Any]
-    let result = dataObject?["result"] as? [String: Any]
-    return (result?["items"] as? [[String: Any]] ?? []).compactMap { value in
-      guard let text = value["media"] as? String, let url = URL(string: text), url.scheme == "https"
-      else { return nil }
-      return Result(
-        title: value["title"] as? String ?? "Image", url: url,
-        thumbnail: (value["thumbnail"] as? String).flatMap(URL.init(string:)))
-    }
-  }
-  // The legacy Qwant API may reject anonymous requests. Keep image search
-  // usable with a public-domain/CC0 Openverse fallback when that happens.
-  static func openverse(_ query: String) async throws -> [Result] {
-    var url = URLComponents(string: "https://api.openverse.org/v1/images/")!
-    url.queryItems = [
-      .init(name: "q", value: query), .init(name: "page_size", value: "20"),
-      .init(name: "license", value: "cc0,pdm"),
-    ]
-    let (data, response) = try await limitedData(from: url.url!)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-      data.count < 2 * 1024 * 1024
-    else { throw URLError(.badServerResponse) }
-    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    return (object["results"] as? [[String: Any]] ?? []).compactMap { value in
-      guard let path = value["url"] as? String, let url = URL(string: path), url.scheme == "https"
-      else { return nil }
-      return Result(
-        title: value["title"] as? String ?? "Image", url: url,
-        thumbnail: (value["thumbnail"] as? String).flatMap(URL.init(string:)))
+    return (object["data"] as? [[String: Any]] ?? []).compactMap { value in
+      guard let images = value["images"] as? [String: [String: Any]],
+        let text = images["fixed_height"]?["url"] as? String, let url = URL(string: text), url.scheme == "https" else { return nil }
+      // Still thumbnails avoid continuously decoding every visible GIF while typing.
+      return Result(title: value["title"] as? String ?? "GIF", url: url,
+        thumbnail: (images["fixed_width_small_still"]?["url"] as? String).flatMap(URL.init(string:)))
     }
   }
 

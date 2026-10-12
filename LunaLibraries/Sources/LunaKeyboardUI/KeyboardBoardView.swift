@@ -12,6 +12,7 @@ extension CGPoint {
 
 public final class KeyboardBoardView: UIView {
   public var onKey: ((String) -> Void)?
+  public var onSearch: (() -> Void)?
   public var onSwipe: (([SwipeSample], [Character: CGPoint]) -> Void)?
   public var onDeleteDrag: ((Int) -> Void)?
   public var onDeleteDragEnd: (() -> Void)?
@@ -21,21 +22,21 @@ public final class KeyboardBoardView: UIView {
   public var onCursor: ((Int) -> Void)?
   public var onGlobe: ((UIView, UIEvent) -> Void)?
   public var language = "en" { didSet { if oldValue != language { rebuild() } } }
-  public var uppercase = false { didSet { updateAccessibility(); setNeedsDisplay() } }
-  public var capsLock = false { didSet { updateAccessibility(); setNeedsDisplay() } }
-  public var blank = false { didSet { setNeedsDisplay() } }
-  public var dashesMode = false { didSet { updateAccessibility(); setNeedsDisplay() } }
+  public var uppercase = false { didSet { if oldValue != uppercase { updateAccessibility(); setNeedsDisplay() } } }
+  public var capsLock = false { didSet { if oldValue != capsLock { updateAccessibility(); setNeedsDisplay() } } }
+  public var blank = false { didSet { if oldValue != blank { setNeedsDisplay() } } }
+  public var dashesMode = false { didSet { if oldValue != dashesMode { updateAccessibility(); setNeedsDisplay() } } }
   public var preview = true
   public var swipeEnabled = true
-  public var textStyle: TextStyle = .regular { didSet { updateAccessibility(); setNeedsDisplay() } }
+  public var textStyle: TextStyle = .regular { didSet { if oldValue != textStyle { updateAccessibility(); setNeedsDisplay() } } }
   public var needsGlobe = true { didSet { if oldValue != needsGlobe { rebuild() } } }
   public var keyboardType: UIKeyboardType = .default { didSet { if oldValue != keyboardType { rebuild() } } }
-  public var returnTitle = "return" { didSet { setNeedsDisplay() } }
+  public var returnTitle = "return" { didSet { if oldValue != returnTitle { setNeedsDisplay() } } }
   public var theme: KeyboardTheme = .system { didSet { setNeedsDisplay() } }
   public var demonstrationKey: String? { didSet { setNeedsDisplay() } }
   public func frameForKey(_ key: String) -> CGRect? { keys.first { $0.value == key }?.frame }
-  public var dark = false { didSet { setNeedsDisplay() } }
-  public var page = 0 { didSet { rebuild() } }
+  public var dark = false { didSet { if oldValue != dark { setNeedsDisplay() } } }
+  public var page = 0 { didSet { if oldValue != page { rebuild() } } }
   private struct Key {
     var value: String
     var frame: CGRect
@@ -207,6 +208,8 @@ public final class KeyboardBoardView: UIView {
           guard let self else { return false }
           self.onKey?(self.dashesMode ? "Spaces" : "Dashes")
           return true
+        }, UIAccessibilityCustomAction(name: "Search emoji, shortcuts and GIFs") { [weak self] _ in
+          self?.onSearch?(); return true
         }]
       }
       element.accessibilityFrameInContainerSpace = key.frame

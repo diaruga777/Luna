@@ -1,8 +1,25 @@
 import UIKit
+import LunaAppConfig
 import LunaDesignSystem
 
 final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private static var activeScenes = Set<String>()
+    private static var keyboardLeaseTimer: Timer?
+    private static func updateKeyboardLease() {
+        keyboardLeaseTimer?.invalidate()
+        let active = !activeScenes.isEmpty
+        KeyboardHostContext.publishWriter(active: active)
+        if active {
+            keyboardLeaseTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                KeyboardHostContext.publishWriter(active: true)
+            }
+        } else { keyboardLeaseTimer = nil }
+    }
+    func sceneDidDisconnect(_ scene: UIScene) {
+        Self.activeScenes.remove(scene.session.persistentIdentifier)
+        Self.updateKeyboardLease()
+    }
 
     func scene(
         _ scene: UIScene,
@@ -34,6 +51,8 @@ final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
+        Self.activeScenes.remove(scene.session.persistentIdentifier)
+        Self.updateKeyboardLease()
         WriterWiring.sceneWillResignActive()
     }
 
@@ -42,6 +61,8 @@ final class WriterSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        Self.activeScenes.insert(scene.session.persistentIdentifier)
+        Self.updateKeyboardLease()
         WriterWiring.sceneDidBecomeActive()
     }
 }

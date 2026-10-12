@@ -1,3 +1,4 @@
+import LunaAppConfig
 import LunaModels
 import SQLite3
 import UIKit
@@ -449,7 +450,10 @@ extension KeyboardTests {
   @MainActor func testCorrectionUndoRetainsMultipleNonlettersAndFollowingSpace() {
     for suffix in [[" "], ["?", "!", " "], [".", " ", "\""], [")", "]", " "], [" ", " "]] {
       let (surface, text) = editor()
-      for key in ["t", "e", "h"] + suffix { surface.key(key) }
+      var clock: TimeInterval = 10
+      surface.now = { clock }
+      // Slow repeated spaces remain document input; fast ones now invoke search.
+      for key in ["t", "e", "h"] + suffix { clock += 0.41; surface.key(key) }
       XCTAssertTrue(text().hasPrefix("the"))
       let ending = String(text().dropFirst(3))
       surface.key("delete")
@@ -536,7 +540,9 @@ extension KeyboardTests {
     surface.key("Dashes")
     XCTAssertTrue(surface.board.dashesMode)
     surface.board.textStyle = .bold
-    for key in ["a", " ", " ", "b"] { surface.key(key) }
+    var clock: TimeInterval = 10
+    surface.now = { clock }
+    for key in ["a", " ", " ", "b"] { clock += 0.41; surface.key(key) }
     XCTAssertEqual(text(), TextStyle.bold.style("a") + "--" + TextStyle.bold.style("b"))
     XCTAssertTrue(surface.board.holdAlternatives(for: "-").contains("Spaces"))
     surface.key("Spaces"); surface.key(" ")
@@ -678,11 +684,12 @@ extension KeyboardTests {
     surface.releaseMemory()
   }
 
-  @MainActor func testDoubleSpaceStaysLiteralWhenProsePunctuationIsDisabled() {
+  @MainActor func testDoubleSpaceSearchWorksWhenProsePunctuationIsDisabled() {
     let (surface, text) = editor("example")
     surface.fieldAllowsSmartPunctuation = false
     surface.key(" "); surface.key(" ")
-    XCTAssertEqual(text(), "example  ")
+    XCTAssertEqual(text(), "example")
+    XCTAssertTrue(surface.subviews.contains { $0 is KeyboardToolsPanel })
     surface.releaseMemory()
   }
 
@@ -804,9 +811,9 @@ extension KeyboardTests {
   }
 
   @MainActor func testSearchIgnoresSupersededResponsesAndKeepsLocalResultsWhenOffline() async throws {
-    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { query, gifs in
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { query in
       if query == "old" { try? await Task.sleep(for: .milliseconds(350)) }
-      if !gifs { throw URLError(.notConnectedToInternet) }
+      if query == "offline" { throw URLError(.notConnectedToInternet) }
       return [.init(title: query, url: URL(string: "https://example.com/\(query).gif")!, thumbnail: nil)]
     }
     panel.searchField.text = "old"; panel.searchNow()
@@ -815,12 +822,16 @@ extension KeyboardTests {
     XCTAssertTrue(panel.items.contains { $0.title == "cat" })
     XCTAssertFalse(panel.items.contains { $0.title == "old" })
     XCTAssertTrue(panel.items.contains { $0.text == "🐱" || $0.text == "😺" })
-    XCTAssertTrue(panel.items.contains { $0.title.contains("Image search unavailable") })
+    let remoteIndex = try XCTUnwrap(panel.items.firstIndex { $0.title == "cat" })
+    XCTAssertTrue(panel.items[..<remoteIndex].allSatisfy { !$0.id.hasPrefix("remote:") })
+    panel.searchField.text = "offline"; panel.searchNow()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertTrue(panel.items.contains { $0.title.contains("GIF search unavailable") })
   }
 
   @MainActor func testSearchWithoutFullAccessNeverContactsProviders() async throws {
     var called = false
-    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false) { _, _ in
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false) { _ in
       called = true; return []
     }
     panel.searchField.text = "cat"; panel.searchNow()
@@ -831,7 +842,7 @@ extension KeyboardTests {
   }
 
   @MainActor func testMediaSearchCopyAndSaveKeywords() async throws {
-    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _, _ in [] }
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _ in [] }
     let index = try XCTUnwrap(panel.items.firstIndex { $0.id == "wat" })
     panel.collectionView(panel.collection, didSelectItemAt: IndexPath(item: index, section: 0))
     try await Task.sleep(for: .milliseconds(200))
@@ -864,7 +875,7 @@ extension KeyboardTests {
 
   @MainActor func testCopiedMediaSurvivesClosingSearchAndCanBeSavedOnce() async throws {
     let clipboard = KeyboardSearchClipboard()
-    var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _ in [] }
     let index = try XCTUnwrap(panel?.items.firstIndex { $0.id == "wat" })
     panel!.collectionView(panel!.collection, didSelectItemAt: IndexPath(item: index, section: 0))
     try await Task.sleep(for: .milliseconds(200))
@@ -872,7 +883,7 @@ extension KeyboardTests {
     panel = nil
     XCTAssertNil(released)
     XCTAssertNotNil(clipboard.file)
-    let reopened = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _, _ in [] }
+    let reopened = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _ in [] }
     reopened.beginTagging()
     reopened.searchField.text = "wat"
     reopened.submit()
@@ -881,5 +892,112 @@ extension KeyboardTests {
     reopened.submit()
     XCTAssertEqual(try store.shortcuts().count, 1)
     XCTAssertEqual(try store.shortcuts().first?.keywords, ["confused", "wat"])
+  }
+}
+
+
+extension KeyboardTests {
+  @MainActor func testDoubleSpaceOpensSearchAtEmptyAndNumericFieldsAndRoutesTyping() {
+    for initial in ["", "123", "hello", "🙂"] {
+      let (surface, text) = editor(initial)
+      surface.board.keyboardType = .numberPad
+      var clock: TimeInterval = 10
+      surface.now = { clock }
+      surface.key(" "); clock += 0.1; surface.key(" ")
+      let panel = surface.subviews.compactMap { $0 as? KeyboardToolsPanel }.first
+      XCTAssertNotNil(panel)
+      surface.key("c"); surface.key("a"); surface.key("t")
+      XCTAssertEqual(panel?.query, "cat")
+      XCTAssertEqual(text(), initial)
+      surface.releaseMemory()
+    }
+  }
+  @MainActor func testWriterReceivesLiteralDoubleSpaceAndNoKeyboardSearch() {
+    let (surface, text) = editor("hello")
+    surface.hostHandlesDoubleSpace = { true }
+    surface.key(" "); surface.key(" ")
+    XCTAssertEqual(text(), "hello  ")
+    XCTAssertFalse(surface.subviews.contains { $0 is KeyboardToolsPanel })
+    surface.releaseMemory()
+  }
+  @MainActor func testSlowOrInterruptedSpacesDoNotOpenSearch() {
+    let (surface, text) = editor("123")
+    var clock: TimeInterval = 10
+    surface.now = { clock }
+    surface.key(" "); clock += 0.5; surface.key(" ")
+    XCTAssertEqual(text(), "123  ")
+    surface.key("delete"); surface.key(" ")
+    XCTAssertFalse(surface.subviews.contains { $0 is KeyboardToolsPanel })
+    surface.releaseMemory()
+  }
+  @MainActor func testLocalSearchUpdatesBeforeDebounceAndGIFsStayLast() async throws {
+    try store.save(.init(keywords: ["cat"], text: "my local cat"))
+    var calls = 0
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { query in
+      calls += 1
+      return [.init(title: "Remote cat", url: URL(string: "https://example.com/cat.gif")!, thumbnail: nil)]
+    }
+    panel.appendSearch("cat")
+    XCTAssertEqual(calls, 0)
+    XCTAssertEqual(panel.items.first?.text, "my local cat")
+    XCTAssertTrue(panel.items.contains { $0.text == "🐱" || $0.text == "😺" })
+    try await Task.sleep(for: .milliseconds(350))
+    XCTAssertEqual(calls, 1)
+    XCTAssertEqual(panel.items.last?.title, "Remote cat")
+    panel.cancelWork()
+  }
+  @MainActor func testClosingSearchCancelsRequestAndReleasesPanel() async throws {
+    weak var released: KeyboardToolsPanel?
+    var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _ in
+      try await Task.sleep(for: .seconds(5)); return []
+    }
+    released = panel
+    panel?.appendSearch("cat")
+    panel?.searchNow()
+    panel?.cancelWork(); panel = nil
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertNil(released)
+  }
+  func testWriterForegroundLeaseExpiresAndClears() {
+    let time = Date(timeIntervalSinceReferenceDate: 100)
+    KeyboardHostContext.publishWriter(active: true, container: directory, now: time)
+    XCTAssertTrue(KeyboardHostContext.writerIsActive(container: directory, now: time.addingTimeInterval(2)))
+    XCTAssertFalse(KeyboardHostContext.writerIsActive(container: directory, now: time.addingTimeInterval(7)))
+    KeyboardHostContext.publishWriter(active: false, container: directory)
+    XCTAssertFalse(KeyboardHostContext.writerIsActive(container: directory, now: time))
+  }
+  func testShortcutSearchFiltersBeforeLimitAndBoundsHydration() throws {
+    for i in 0..<50 { try store.save(.init(keywords: ["other"], text: "Other \(i)")) }
+    try store.save(.init(keywords: ["cat"], text: "Needle"))
+    let results = try store.searchShortcuts("cat", limit: 1)
+    XCTAssertEqual(results.map(\.text), ["Needle"])
+    XCTAssertEqual(results.first?.keywords, ["cat"])
+    XCTAssertLessThanOrEqual(try store.searchShortcuts("").count, 40)
+  }
+}
+
+extension KeyboardTests {
+  @MainActor func testDoubleSpaceSearchAlsoWorksInDashMode() {
+    let (surface, text) = editor("word")
+    surface.key("Dashes"); surface.key(" "); surface.key(" ")
+    XCTAssertEqual(text(), "word")
+    XCTAssertTrue(surface.subviews.contains { $0 is KeyboardToolsPanel })
+    surface.releaseMemory()
+  }
+  func testExtensionSQLiteCacheIsBounded() throws {
+    let lowMemoryStore = KeyboardStore(saves: saves, containerURL: directory, lowMemory: true)
+    let size = try saves.keyboardRead { try $0.scalarInt("PRAGMA cache_size") }
+    XCTAssertEqual(size, -256)
+    lowMemoryStore.trimMemory()
+    XCTAssertNoThrow(try lowMemoryStore.preferences())
+  }
+  @MainActor func testLocalSearchLatencyWithLargeShortcutLibrary() throws {
+    for i in 0..<250 { try store.save(.init(keywords: ["cat"], text: "Cat \(i)")) }
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false)
+    measure(metrics: [XCTClockMetric()]) {
+      for _ in 0..<10 { panel.searchField.text = "cat"; panel.searchNow() }
+    }
+    XCTAssertEqual(panel.items.filter { $0.shortcut != nil }.count, 40)
+    panel.cancelWork()
   }
 }

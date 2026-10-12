@@ -8,6 +8,11 @@ final class KeyboardMediaPreview: UIView {
   private let spinner = UIActivityIndicatorView(style: .medium)
   private var task: Task<Void, Never>?
   private var source: CGImageSource?
+  private var decodeTask: Task<Void, Never>?
+  private var animating = true
+  private var isLoaded = false
+  private var loadedURL: URL?
+  private var loadedText: String?
   private var frameIndex = 0
   private var timer: Timer?
   private var token = UUID()
@@ -29,7 +34,7 @@ final class KeyboardMediaPreview: UIView {
     isUserInteractionEnabled = false
   }
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
-  deinit { task?.cancel(); timer?.invalidate() }
+  deinit { task?.cancel(); decodeTask?.cancel(); timer?.invalidate() }
   override func layoutSubviews() {
     super.layoutSubviews()
     imageView.frame = bounds.insetBy(dx: 2, dy: 2)
@@ -39,14 +44,20 @@ final class KeyboardMediaPreview: UIView {
   func reset() {
     token = UUID()
     task?.cancel(); task = nil
+    decodeTask?.cancel(); decodeTask = nil
+    isLoaded = false
+    loadedURL = nil; loadedText = nil
     timer?.invalidate(); timer = nil
     source = nil; frameIndex = 0
     imageView.image = nil
     message = nil
     spinner.stopAnimating()
   }
-  func load(_ url: URL?, text: String? = nil) {
+  func load(_ url: URL?, text: String? = nil, animating: Bool = true) {
+    guard !isLoaded || loadedURL != url || loadedText != text || self.animating != animating else { return }
     reset()
+    isLoaded = true
+    loadedURL = url; loadedText = text; self.animating = animating
     message = text
     guard let url else { return }
     spinner.startAnimating()
@@ -56,9 +67,16 @@ final class KeyboardMediaPreview: UIView {
         let local = url.isFileURL ? url : try await KeyboardMediaSearch.download(url, maxBytes: 2 * 1024 * 1024)
         defer { if !url.isFileURL { try? FileManager.default.removeItem(at: local) } }
         // Data keeps the compressed source alive after the temporary download is removed.
-        let data = try Data(contentsOf: local, options: .mappedIfSafe)
-        guard data.count <= 8 * 1024 * 1024, !Task.isCancelled, let self, self.token == token else { return }
-        self.source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        let worker = Task.detached(priority: .utility) { () throws -> CGImageSource? in
+          try Task.checkCancellation()
+          let size = try local.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+          guard size <= 8 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+          let data = try Data(contentsOf: local, options: .mappedIfSafe)
+          return CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        }
+        let source = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+        guard !Task.isCancelled, let self, self.token == token else { return }
+        self.source = source
         self.spinner.stopAnimating()
         self.displayFrame()
       } catch {
@@ -75,31 +93,49 @@ final class KeyboardMediaPreview: UIView {
     displayFrame()
   }
   private func displayFrame() {
-    guard let source, CGImageSourceGetCount(source) > 0 else { return }
-    let options: [CFString: Any] = [
-      kCGImageSourceCreateThumbnailFromImageAlways: true,
-      kCGImageSourceThumbnailMaxPixelSize: 240,
-      kCGImageSourceCreateThumbnailWithTransform: true,
-      kCGImageSourceShouldCacheImmediately: true,
-    ]
-    if let cg = CGImageSourceCreateThumbnailAtIndex(source, frameIndex, options as CFDictionary) {
-      imageView.image = UIImage(cgImage: cg)
-    }
-    guard window != nil, !UIAccessibility.isReduceMotionEnabled, CGImageSourceGetCount(source) > 1 else { return }
-    let properties = CGImageSourceCopyPropertiesAtIndex(source, frameIndex, nil) as? [CFString: Any]
-    let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-    let delay = gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double
-      ?? gif?[kCGImagePropertyGIFDelayTime] as? Double ?? 0.1
-    timer = Timer.scheduledTimer(withTimeInterval: max(0.06, delay), repeats: false) { [weak self] _ in
-      guard let self, let source = self.source else { return }
-      self.frameIndex = (self.frameIndex + 1) % CGImageSourceGetCount(source)
-      self.displayFrame()
+    guard let source, decodeTask == nil, CGImageSourceGetCount(source) > 0 else { return }
+    let token = self.token
+    let index = frameIndex
+    decodeTask = Task { [weak self] in
+      let worker = Task.detached(priority: .utility) { () -> (CGImage?, Double) in
+        autoreleasepool {
+          guard !Task.isCancelled else { return (nil, 0.1) }
+          let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 240,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+          ]
+          let image = CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+          let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+          let delay = gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double
+            ?? gif?[kCGImagePropertyGIFDelayTime] as? Double ?? 0.1
+          return (image, max(0.06, delay))
+        }
+      }
+      let (image, delay) = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
+      guard !Task.isCancelled, let self, self.token == token else { return }
+      self.decodeTask = nil
+      if let image { self.imageView.image = UIImage(cgImage: image) }
+      if !self.animating || CGImageSourceGetCount(source) == 1 {
+        self.source = nil // Still cells retain only their downsampled pixels.
+        return
+      }
+      guard self.window != nil, !self.isHidden, !UIAccessibility.isReduceMotionEnabled else { return }
+      self.timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        guard let self, let source = self.source else { return }
+        self.timer = nil
+        self.frameIndex = (self.frameIndex + 1) % CGImageSourceGetCount(source)
+        self.displayFrame()
+      }
     }
   }
   override func didMoveToWindow() {
     super.didMoveToWindow()
     timer?.invalidate(); timer = nil
     if window != nil { displayFrame() }
+    else { decodeTask?.cancel(); decodeTask = nil }
   }
 }
 

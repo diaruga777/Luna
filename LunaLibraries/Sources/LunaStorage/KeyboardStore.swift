@@ -36,9 +36,12 @@ public struct KeyboardSavedLink: Equatable {
 public final class KeyboardStore {
   private let saves: SavesStore
   private let container: URL?
-  public init(saves: SavesStore = .shared, containerURL: URL? = nil) {
+  public init(saves: SavesStore = .shared, containerURL: URL? = nil, lowMemory: Bool = false) {
     self.saves = saves
     self.container = containerURL ?? AppConfig.sharedContainerURL()
+    if lowMemory {
+      try? saves.keyboardRead { try $0.execute("PRAGMA cache_size=-256") }
+    }
   }
 
   static let schema = """
@@ -69,6 +72,9 @@ public final class KeyboardStore {
     END;
     """
 
+  /// Release SQLite's reclaimable page buffers without changing the shared store on disk.
+  public func trimMemory() { try? saves.keyboardRead { try $0.execute("PRAGMA shrink_memory") } }
+
   public func preferences() throws -> [String: String] {
     try saves.keyboardRead { db in
       var values: [String: String] = [:]
@@ -88,23 +94,29 @@ public final class KeyboardStore {
       }
     }
   }
-  public func shortcuts(matching query: String = "", limit: Int = 100, forTyping: Bool = false) throws -> [KeyboardShortcut]
+  public func shortcuts(matching query: String = "", limit: Int = 100, forTyping: Bool = false, searchTokens: [String] = []) throws -> [KeyboardShortcut]
   {
     try saves.keyboardRead { db in
       var result: [KeyboardShortcut] = []
+      let searchClause = searchTokens.map { _ in "(instr(lower(s.text),?)>0 OR EXISTS (SELECT 1 FROM keyboard_keywords k WHERE k.shortcut_id=s.id AND instr(lower(k.keyword),?)>0))" }.joined(separator: " OR ")
       try db.query(
         """
         SELECT s.id,s.text,s.kind,s.relative_path,COALESCE(o.suggest_while_typing,1),COALESCE(o.is_cosmetic,0)
         FROM keyboard_shortcuts s LEFT JOIN keyboard_shortcut_options o ON o.shortcut_id=s.id
         WHERE (? = '' OR EXISTS (SELECT 1 FROM keyboard_keywords k WHERE k.shortcut_id=s.id AND k.keyword=? COLLATE NOCASE))
         AND (? = 0 OR COALESCE(o.suggest_while_typing,1) = 1)
+        AND (\(searchTokens.isEmpty ? "1" : searchClause))
         ORDER BY s.updated_at DESC, s.id LIMIT ?
         """,
         {
           try $0.bind(1, query)
           try $0.bind(2, query)
           try $0.bind(3, forTyping ? 1 : 0)
-          try $0.bind(4, max(1, min(limit, 500)))
+          for (i, token) in searchTokens.enumerated() {
+            try $0.bind(Int32(4 + i * 2), token)
+            try $0.bind(Int32(5 + i * 2), token)
+          }
+          try $0.bind(Int32(4 + searchTokens.count * 2), max(1, min(limit, 500)))
         }
       ) { row in
         guard let id = row.string(0), let text = row.string(1), let kind = row.string(2) else {
@@ -123,6 +135,10 @@ public final class KeyboardStore {
       }
       return result
     }
+  }
+  public func searchShortcuts(_ query: String, limit: Int = 40) throws -> [KeyboardShortcut] {
+    let tokens = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).prefix(8).map { String($0.prefix(64)) }
+    return try shortcuts(limit: min(40, limit), searchTokens: tokens)
   }
   public func save(_ shortcut: KeyboardShortcut, importing source: URL? = nil) throws {
     guard let container else { throw CocoaError(.fileWriteNoPermission) }
@@ -296,7 +312,7 @@ public final class KeyboardStore {
       }
     }
   }
-  public func recentLinks(limit: Int = 12) throws -> [KeyboardSavedLink] {
+  public func recentLinks(limit: Int = 12, query: String = "") throws -> [KeyboardSavedLink] {
     try saves.keyboardRead { db in
       var result: [KeyboardSavedLink] = []
       try db.query(
@@ -306,8 +322,13 @@ public final class KeyboardStore {
         FROM saves s LEFT JOIN media_saves m ON m.save_id=s.id
         WHERE s.archived_at IS NULL AND (m.save_id IS NULL OR m.archived_at IS NULL)
             AND (s.url_string LIKE 'https://%' OR s.url_string LIKE 'http://%')
+        AND (? = '' OR instr(lower(COALESCE(m.title,s.title,s.url_string)),?)>0 OR instr(lower(s.url_string),?)>0)
         ORDER BY s.date_added DESC,s.id LIMIT ?
-        """, { try $0.bind(1, max(1, min(limit, 30))) }
+        """, {
+          let query = String(query.lowercased().prefix(128))
+          try $0.bind(1, query); try $0.bind(2, query); try $0.bind(3, query)
+          try $0.bind(4, max(1, min(limit, 30)))
+        }
       ) { row in
         guard let id = row.string(0), let title = row.string(1), let url = row.string(2) else {
           return

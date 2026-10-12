@@ -31,14 +31,15 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   private let suggestionScroll = UIScrollView()
   private let dividers = [UIView(), UIView()]
-  private let tools = UIButton(type: .system)
   private var suggestionButtons: [UIButton] = []
   private let pasteControl = UIPasteControl()
   private var pasteRequest: UUID?
   private var suggestions: [KeyboardSuggestion] = []
   private var timer: Timer?
   private var shiftDate = Date.distantPast
-  private var spaceDate = Date.distantPast
+  private var spaceTime: TimeInterval?
+  /// Host adapters can leave Writer’s shortcut to its document editor.
+  public var hostHandlesDoubleSpace: () -> Bool = { false }
   public var enableInputClicksWhenVisible: Bool { preferences.enabled("sound") }
   public var now: () -> TimeInterval = { Date.timeIntervalSinceReferenceDate }
   public var fieldAllowsSmartPunctuation = true
@@ -72,7 +73,6 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     isOpaque = false
     addSubview(board)
     addSubview(suggestionScroll)
-    addSubview(tools)
     for divider in dividers { divider.backgroundColor = UIColor.gray.withAlphaComponent(0.3); addSubview(divider) }
     pasteConfiguration = UIPasteConfiguration(forAccepting: String.self)
     pasteControl.target = self
@@ -82,17 +82,12 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     countdown.backgroundColor = .systemBlue
     countdown.isUserInteractionEnabled = false
     suggestionScroll.addSubview(countdown)
-    tools.setImage(UIImage(systemName: "doc.on.doc"), for: .normal)
-    tools.backgroundColor = UIColor(red: 180/255, green: 187/255, blue: 198/255, alpha: 0.8)
-    tools.tintColor = .white
-    tools.layer.cornerRadius = 21
-    tools.accessibilityLabel = "Emoji, shortcuts, GIFs and images"
-    tools.accessibilityIdentifier = "keyboard.tools"
-    tools.addAction(UIAction { [weak self] _ in self?.toggleTools() }, for: .touchUpInside)
+    board.onSearch = { [weak self] in self?.toggleTools() }
     board.onDeleteDrag = { [weak self] count in self?.updateDeleteDrag(count) }
     board.onDeleteDragEnd = { [weak self] in self?.finishDeleteDrag() }
     board.onKey = { [weak self] in self?.key($0) }
     board.onCursor = { [weak self] in
+      self?.spaceTime = nil
       if let panel = self?.panel { panel.moveCursor($0); return }
       self?.clearCorrection()
       self?.moveCursor($0)
@@ -106,16 +101,14 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public override func layoutSubviews() {
     super.layoutSubviews()
     let widgetHeight = panel?.requiredHeight ?? 56
-    tools.isHidden = panel != nil
     suggestionScroll.isHidden = panel != nil
-    tools.frame = CGRect(x: 8, y: 7, width: 42, height: 42)
-    suggestionScroll.frame = CGRect(x: 56, y: 6, width: max(0, bounds.width - 56), height: 44)
+    suggestionScroll.frame = CGRect(x: 0, y: 6, width: bounds.width, height: 44)
     panel?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: widgetHeight)
     panel?.setDark(board.dark)
     board.frame = CGRect(x: 0, y: widgetHeight, width: bounds.width, height: boardHeight)
     for (i, divider) in dividers.enumerated() {
       divider.isHidden = panel != nil
-      divider.frame = CGRect(x: 56 + (bounds.width - 56) / 3 * CGFloat(i + 1), y: 6, width: 1, height: 48)
+      divider.frame = CGRect(x: bounds.width / 3 * CGFloat(i + 1), y: 6, width: 1, height: 48)
     }
     layoutSuggestions()
   }
@@ -136,6 +129,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public func refresh() {
     timer?.invalidate()
     if editingDepth == 0 { synchronizeContext() }
+    guard panel == nil else { return }
     updateCasing()
     timer = Timer.scheduledTimer(withTimeInterval: 0.045, repeats: false) { [weak self] _ in
       self?.predict()
@@ -149,7 +143,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     lastContext = ""
     lastAfter = ""
     shiftDate = .distantPast
-    spaceDate = .distantPast
+    spaceTime = nil
     pasteRequest = nil
     pasteControl.isHidden = true
     predictionStorage?.releaseMemory()
@@ -158,6 +152,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     capitalizedWord = nil
     capitalizedWords = []
     if panel != nil { board.returnTitle = documentReturnTitle }
+    panel?.cancelWork()
     panel?.removeFromSuperview()
     panel = nil
     searchClipboard = KeyboardSearchClipboard()
@@ -291,6 +286,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   public func key(_ value: String) {
     if value != "delete" { board.cancelRepeatingDelete() }
     synchronizeContext()
+    let previousSpaceTime = spaceTime
+    if value != " " { spaceTime = nil }
     editingDepth += 1
     defer { editingDepth -= 1 }
     if preferences.enabled("sound") { UIDevice.current.playInputClick() }
@@ -299,7 +296,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     }
     if value == "Dashes" || value == "Spaces" {
       board.dashesMode = value == "Dashes"
-      spaceDate = .distantPast
+      spaceTime = nil
       clearCorrection()
       board.page = 0
       refresh()
@@ -344,10 +341,22 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
       return
     }
     if value == "tab" { insert("\t"); recordEdit(); refresh(); return }
+    if value == " ", let previousSpaceTime, now() - previousSpaceTime >= 0,
+      now() - previousSpaceTime < 0.4, !hasSelection(), before().hasSuffix(board.dashesMode ? "-" : " ") {
+      spaceTime = nil
+      if hostHandlesDoubleSpace() {
+        // Writer sees the actual second space; its palette decides whether to consume it.
+        clearCorrection(); insert(" "); recordEdit(); refresh()
+      } else {
+        // Remove only the first space generated by this gesture.
+        delete(); recordEdit(); toggleTools()
+      }
+      return
+    }
     if value == " " && board.dashesMode {
       clearCorrection()
       insert("-")
-      spaceDate = .distantPast
+      spaceTime = now()
       if board.page != 0 { board.page = 0 }
       recordEdit(); refresh(); return
     }
@@ -364,22 +373,11 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     if value == " " || value == "return" {
       rememberCapitalizedWord()
       applyPendingCorrection()
-      if value == " ", !hasSelection(), fieldAllowsSmartPunctuation,
-        preferences.enabled("periodShortcut"),
-        Date().timeIntervalSince(spaceDate) < 0.4, before().hasSuffix(" "),
-        before().dropLast().last?.isLetter == true
-      {
-        delete()
-        insert(". ")
-        if reversal?.suffix == " " { reversal?.suffix = ". " }
-        spaceDate = .distantPast
-      } else {
-        let separator = value == "return" ? "\n" : " "
-        insert(separator)
-        if value == " " { lowercaseDisplacedSentenceWord() }
-        spaceDate = value == " " ? Date() : .distantPast
-        reversal?.suffix += separator
-      }
+      let separator = value == "return" ? "\n" : " "
+      insert(separator)
+      if value == " " { lowercaseDisplacedSentenceWord() }
+      spaceTime = value == " " ? now() : nil
+      reversal?.suffix += separator
       if board.page != 0 { board.page = 0 }
     } else {
       var text = board.uppercase ? value.uppercased() : value
@@ -445,7 +443,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     insert(reversal.original + reversal.suffix)
     self.reversal = nil
     rejectedContext = before()
-    spaceDate = .distantPast
+    spaceTime = nil
     return true
   }
   private func recordEdit() {
@@ -465,6 +463,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   private func synchronizeContext() {
     if hasSelection() || before() != lastContext || after() != lastAfter {
+      spaceTime = nil
       rememberCapitalizedWord()
       clearCorrection()
       editedAt = now()
@@ -537,6 +536,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     board.returnTitle = "search"
     board.uppercase = false
     board.capsLock = false
+    spaceTime = nil
+    timer?.invalidate(); timer = nil
     let p = KeyboardToolsPanel(catalog: prediction.catalog, store: store,
       fullAccess: hasFullAccess, compact: preferences.enabled("compactSearch"), clipboard: searchClipboard)
     p.onText = { [weak self] text in self?.insert(text) }
@@ -549,6 +550,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   }
   private func closeTools() {
     panel?.searchField.resignFirstResponder()
+    panel?.cancelWork()
     panel?.removeFromSuperview()
     panel = nil
     board.returnTitle = documentReturnTitle

@@ -1,3 +1,4 @@
+import LunaAppConfig
 import LunaKeyboardCore
 import LunaKeyboardUI
 import LunaStorage
@@ -22,6 +23,7 @@ final class KeyboardViewController: UIInputViewController {
     h.isActive = true
     height = h
     surface.heightChanged = { [weak self] height in self?.height?.constant = height }
+    surface.hostHandlesDoubleSpace = { KeyboardHostContext.writerIsActive() }
     surface.before = { [weak self] in self?.textDocumentProxy.documentContextBeforeInput ?? "" }
     surface.after = { [weak self] in self?.textDocumentProxy.documentContextAfterInput ?? "" }
     surface.hasSelection = { [weak self] in self?.textDocumentProxy.selectedText?.isEmpty == false }
@@ -45,7 +47,9 @@ final class KeyboardViewController: UIInputViewController {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     surface.hasFullAccess = hasFullAccess
-    surface.store = hasFullAccess ? KeyboardStore() : nil
+    if hasFullAccess {
+      if surface.store == nil { surface.store = KeyboardStore(lowMemory: true) }
+    } else { surface.store = nil }
     surface.reloadSettings()
     updateTraits()
   }
@@ -68,10 +72,14 @@ final class KeyboardViewController: UIInputViewController {
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     surface.releaseMemory()
+    let store = surface.store
+    Task.detached(priority: .utility) { store?.trimMemory() }
   }
   override func didReceiveMemoryWarning() {
     super.didReceiveMemoryWarning()
     surface.releaseMemory()
+    let store = surface.store
+    Task.detached(priority: .utility) { store?.trimMemory() }
   }
   private func updateTraits() {
     surface.board.dark =

@@ -63,11 +63,14 @@ public enum KeyboardRanking {
   }
   public static func rank(_ candidates: [String], for typed: String) -> [String] {
     var seen = Set<String>()
-    return candidates.enumerated().filter { seen.insert($0.element.lowercased()).inserted }.sorted {
-      let a = distance(typed, $0.element)
-      let b = distance(typed, $1.element)
-      return abs(a - b) > 0.001 ? a < b : $0.offset < $1.offset
-    }.map(\.element)
+    var scored: [(word: String, offset: Int, cost: Double)] = []
+    for (i, word) in candidates.enumerated() where seen.insert(word.lowercased()).inserted {
+      scored.append((word, i, distance(typed, word)))
+    }
+    scored.sort {
+      abs($0.cost - $1.cost) > 0.001 ? $0.cost < $1.cost : $0.offset < $1.offset
+    }
+    return scored.map { $0.word }
   }
 }
 

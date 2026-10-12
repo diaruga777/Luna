@@ -32,7 +32,7 @@ final class KeyboardHomeController: KeyboardTableController {
   override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String?
   {
     section == 0
-      ? "Add Luna Keyboard in Settings → General → Keyboard → Keyboards. Full Access lets the keyboard read your Luna shortcuts and saved links, and enables GIF and image search. Typing stays on your device. Search terms are sent only when you use media search."
+      ? "Add Luna Keyboard in Settings → General → Keyboard → Keyboards. Full Access lets the keyboard read your Luna shortcuts and saved links, and enables GIF search. Double-tap the spacebar to search emoji, shortcuts and GIFs. Typing stays on your device. Search terms are sent only when you use media search."
       : nil
   }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath)

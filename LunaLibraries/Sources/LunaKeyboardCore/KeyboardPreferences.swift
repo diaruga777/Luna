@@ -7,7 +7,7 @@ public struct KeyboardPreferences {
   public static let toggles: [(String, String, Bool)] = [
     ("autoCapitalize", "Auto-Capitalization", true), ("autocorrect", "Auto-Correction", true),
     ("capsLock", "Enable Caps Lock", true), ("characterPopup", "Character Preview", true),
-    ("periodShortcut", "Double-Space Period", true), ("spellcheck", "Check Spelling", true),
+    ("spellcheck", "Check Spelling", true),
     ("autocomplete", "Predictive Text", true), ("swipeTyping", "Slide to Type", true),
     ("haptics", "Haptic Feedback", false), ("sound", "Key Sounds", true),
     ("smartPunctuation", "Smart Quotes and Punctuation", true),

@@ -49,7 +49,7 @@
     },
     "web_accessible_resources": [
         {
-            "resources": ["plugin_host.js"],
+            "resources": ["plugin_host.js", "luna-action-icon.png"],
             "matches": ["http://*/*", "https://*/*"]
         }
     ]

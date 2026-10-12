@@ -141,6 +141,11 @@
         downloadInLuna: "Open in Luna",
         trackInLuna: "Track in Luna",
         closeVideo: "Close",
+        videoPlaybackFailed: "Safari couldn’t play this video. You can open it in Luna.",
+        lunaActions: "Luna actions",
+        playVideo: "Play Video",
+        openInLuna: "Open in Luna",
+        hideLuna: "Hide",
         setupCompleteTitle: "Nice!\nYou're all set up",
         // `{app}`, NOT `$APP$`: `$NAME$` is WebExtension i18n PLACEHOLDER syntax, and
         // WebKit resolves it by asking the message entry's `placeholders` dictionary
@@ -191,11 +196,23 @@
         "unlock this article", "this article is reserved for subscribers"
     ];
 
+    function requestButtonContext(attempt) {
+        return withTimeout(browser.runtime.sendMessage({ type: "buttonContext" }), 8000)
+            .then(function (context) {
+                if (context && context.scheme) { return context; }
+                throw new Error("Luna's native context is not ready");
+            }).catch(function (error) {
+                if (attempt >= 2) { throw error; }
+                return new Promise(function (resolve) { setTimeout(resolve, 1000); })
+                    .then(function () { return requestButtonContext(attempt + 1); });
+            });
+    }
+
     // Guards every top-level extension-runtime entry point so this file can also
     // be loaded (for its heuristics) in a bare WKWebView with no `browser` global,
     // e.g. from an XCTest — see `window.__lunaLooksLikeArticle` below.
     if (typeof browser !== "undefined") {
-        browser.runtime.sendMessage({ type: "buttonContext" }).then(function (resp) {
+        requestButtonContext(0).then(function (resp) {
             // The one-shot "you're all set up" confirmation takes the whole page,
             // and is deliberately independent of pill eligibility: the app sends
             // the user to an ordinary web page to prove the extension runs, and
@@ -316,23 +333,18 @@
         if (saved && saved.catch) { saved.catch(function () {}); }
     }
 
-    /// One native round trip per page (§12.1): it always asks, but a page that
-    /// already has a catalog cached from an earlier page in this session
-    /// decides against that cache immediately rather than waiting on the round
-    /// trip. The reply carries a stamp naming the enabled set, and the cache is
-    /// rewritten only when that stamp differs — so an unchanged set costs no
-    /// `storage.local` write, and a changed one takes effect on the NEXT page
-    /// rather than mid-decision on this one.
+    /// Ask for the effective enabled set before deciding. A stored catalog is
+    /// only used to compare stamps, never to revive disabled/stale plugins.
     function loadPluginCatalog() {
         var cachedPromise = getCachedPluginCatalog();
-        var refreshed = browser.runtime.sendMessage({ type: "plugins.catalog" }).then(function (resp) {
-            if (!resp || !Array.isArray(resp.plugins)) { return null; }
+        var refreshed = withTimeout(browser.runtime.sendMessage({ type: "plugins.catalog" }), PLUGIN_CLASSIFY_TIMEOUT_MS).then(function (resp) {
+            if (!resp || !Array.isArray(resp.plugins)) { throw new Error("Plugin catalog is not ready"); }
             var fresh = { stamp: resp.stamp || "", plugins: resp.plugins };
             return cachedPromise.then(function (cached) {
                 if (!cached || cached.stamp !== fresh.stamp) { pluginRuntimeCache = {}; setCachedPluginCatalog(fresh); }
                 return fresh;
             });
-        }, function () { return null; });
+        });
         return cachedPromise.then(function (cached) {
             if (cached) {
                 refreshed.catch(function () {});
@@ -379,8 +391,9 @@
     var pluginHostSourcePromise = null;
     function fetchPluginHostSource() {
         if (pluginHostSourcePromise) { return pluginHostSourcePromise; }
-        pluginHostSourcePromise = fetch(browser.runtime.getURL("plugin_host.js"))
-            .then(function (r) { return r.text(); });
+        pluginHostSourcePromise = withTimeout(fetch(browser.runtime.getURL("plugin_host.js"))
+            .then(function (r) { return r.text(); }), PLUGIN_CLASSIFY_TIMEOUT_MS)
+            .catch(function (error) { pluginHostSourcePromise = null; throw error; });
         return pluginHostSourcePromise;
     }
 
@@ -393,10 +406,10 @@
     /// evaluation — a second plugin gets its own `luna`, its own grants.
     function loadPluginRuntime(meta) {
         if (pluginRuntimeCache[meta.id]) { return pluginRuntimeCache[meta.id]; }
-        var promise = Promise.all([
+        var promise = withTimeout(Promise.all([
             fetchPluginHostSource(),
             browser.runtime.sendMessage({ type: "plugins.source", id: meta.id })
-        ]).then(function (parts) {
+        ]), PLUGIN_CLASSIFY_TIMEOUT_MS).then(function (parts) {
             var hostSource = parts[0];
             var sourceResp = parts[1];
             if (!sourceResp || typeof sourceResp.source !== "string") {
@@ -424,6 +437,9 @@
             return { hooks: hooks, meta: meta };
         });
         pluginRuntimeCache[meta.id] = promise;
+        promise.catch(function () {
+            if (pluginRuntimeCache[meta.id] === promise) { delete pluginRuntimeCache[meta.id]; }
+        });
         return promise;
     }
 
@@ -520,8 +536,13 @@
             var matched = matchedPluginsForHost(catalog, location.hostname);
             if (matched.length === 0) { return null; }
             var outcomes = [];
-            return walkClassify(matched, 0, outcomes);
-        }, function () { return null; });
+            return walkClassify(matched, 0, outcomes).then(function (walk) {
+                if (!walk && outcomes.some(function (outcome) { return outcome.result === "failed"; })) {
+                    throw new Error("Plugin walk failed");
+                }
+                return walk;
+            });
+        });
     }
 
     /// Runs ONE plugin's `ingest` hook. Resolves to `{ model, raw, pluginId }`
@@ -626,10 +647,10 @@
             tint: isProduct ? KIND_TINTS.product : KIND_TINTS.article,
             captureContent: false,
             url: function () { return pluginSaveDeepLink(resp); },
-            present: function () {
+            openLuna: function () {
                 var pill = document.getElementById(PILL_ID);
                 if (pill) {
-                    pill.textContent = localizedMessage("openingLuna");
+                    pill.setAttribute("aria-label", localizedMessage("openingLuna"));
                     pill.style.opacity = "0.7";
                     pill.style.pointerEvents = "none";
                 }
@@ -729,6 +750,15 @@
             tint: handoff.tint,
             captureContent: false,
             url: handoff.url,
+            canPlay: !walk.resolvedOutcome || (walk.resolvedOutcome.model.assets || []).some(function (asset) {
+                return asset && asset.url && (asset.type === "video" || asset.type === "gif");
+            }),
+            openLuna: function () {
+                runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
+                    if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp, outcome.url); }
+                    window.location.href = handoff.url();
+                }, function () { window.location.href = handoff.url(); });
+            },
             present: function () {
                 presentVideoOverlay(
                     resp, handoff, { resolveMedia: resolveMedia, performDownload: performDownload });
@@ -753,6 +783,7 @@
     /// Core's pill decisions belong to installed plugins. Media claims must
     /// resolve before presentation; standalone extensions use the built-in
     /// eligibility rules in `offerLunaButton` below.
+    var lunaControlsHidden = false;
     var pluginPageGeneration = 0;
     var pluginPageURL = null;
     var pluginPageWatcher = null;
@@ -765,8 +796,10 @@
         // login shell need not contain a timestamp, article or video element.
         // The plugin resolves the named status and only its declared video can
         // open a player. Replies and recommendations never enter this decision.
-        function evaluate() {
-            if (pluginPageURL === location.href) { return; }
+        function evaluate(attempt) {
+            // Event callbacks pass an Event, while retries pass a number.
+            attempt = typeof attempt === "number" ? attempt : 0;
+            if (attempt === 0 && pluginPageURL === location.href) { return; }
             pluginPageURL = location.href;
             var sourceURL = location.href;
             var generation = ++pluginPageGeneration;
@@ -775,18 +808,24 @@
             var overlay = document.getElementById(VIDEO_OVERLAY_ID);
             if (overlay) { overlay.click(); }
             videoOverlayDismissed = false;
-            if (resp.mode === "never") { return; }
+            if (resp.mode === "never" || lunaControlsHidden) { return; }
             function current() {
                 return generation === pluginPageGeneration && sourceURL === location.href;
             }
+            function retry() {
+                if (!current() || attempt >= 2 || lunaControlsHidden) { return; }
+                setTimeout(function () { if (current()) { evaluate(attempt + 1); } }, 1500);
+            }
             runPluginWalkForPage().then(function (walk) {
-                if (!current() || !walk) { return; }
+                if (!current()) { return; }
+                if (!walk) { return; }
                 if (walk.claim.kind !== "media") {
                     presentPluginClaim(resp, walk);
                     return;
                 }
                 return runPluginIngestForWalk(walk, sourceURL, "save").then(function (outcome) {
-                    if (!current() || !outcome) { return; }
+                    if (!current()) { return; }
+                    if (!outcome) { retry(); return; }
                     if (outcome.model.kind === "media" && !(outcome.model.assets || []).some(function (asset) {
                         return asset.type === "video" || asset.type === "gif" || asset.type === "audio";
                     })) { return; }
@@ -794,11 +833,16 @@
                     walk.claim = { kind: outcome.model.kind };
                     presentPluginClaim(resp, walk);
                 });
-            }).catch(function () { /* No native semantic fallback in Core. */ });
+            }).catch(retry);
         }
         if (!pluginPageWatcher) {
             pluginPageWatcher = setInterval(evaluate, 500);
             window.addEventListener("popstate", evaluate);
+            window.addEventListener("pageshow", evaluate);
+            document.addEventListener("visibilitychange", evaluate);
+            // Navigation events arrive immediately across isolated worlds;
+            // timers alone can be throttled after a player or app handoff.
+            if (window.navigation) { window.navigation.addEventListener("navigatesuccess", evaluate); }
         }
         evaluate();
     }
@@ -2278,6 +2322,7 @@
     // The history pill is informational only -- pointer-events:none, so it
     // never swallows a tap the underlying page would otherwise get.
     function injectHistoryPill(historyResp, stacked) {
+        if (lunaControlsHidden) { return; }
         if (document.getElementById("queue-history-pill")) { return; }
         var label = localizedMessage("wasPriceOnDate")
             .replace("{price}", formatHistoryPrice(historyResp.amount, historyResp.currency))
@@ -2311,6 +2356,7 @@
     // pill (stacked above Track when both show; alone when the page is
     // already tracked) and/or the Track pill (skipped once tracked).
     function renderProductPills(context, historyResp, snapshot) {
+        if (lunaControlsHidden) { return; }
         var hasHistory = !!(historyResp && historyResp.hasHistory);
         var isTracked = !!(historyResp && historyResp.isTracked);
         if (hasHistory) { injectHistoryPill(historyResp, !isTracked); }
@@ -2401,6 +2447,7 @@
     // pulsing dot, so the answer replaces it in place rather than making the
     // page's bottom-right corner jump.
     function injectSellerSpinnerPill(stacked) {
+        if (lunaControlsHidden) { return; }
         if (document.getElementById(SELLER_PILL_ID)) { return; }
         var pill = document.createElement("div");
         pill.id = SELLER_PILL_ID;
@@ -2842,14 +2889,14 @@
     function presentVideoOverlay(context, handoff, options) {
         options = options || {};
         var resolveMedia = options.resolveMedia || requestResolvedMedia;
-        if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
+        if (lunaControlsHidden || document.getElementById(VIDEO_OVERLAY_ID)) { return; }
         var sourceURL = location.href;
         if (pendingVideoOverlayResolve && pendingVideoOverlayResolve.url === sourceURL) { return; }
         var request = { url: sourceURL };
         pendingVideoOverlayResolve = request;
         try {
             Promise.resolve(resolveMedia(sourceURL, document.title || "")).then(function (result) {
-                if (pendingVideoOverlayResolve !== request) { return; }
+                if (lunaControlsHidden || pendingVideoOverlayResolve !== request) { return; }
                 pendingVideoOverlayResolve = null;
                 if (location.href !== sourceURL) { return; }
                 // Core's plugin ingest has already verified the opened post's
@@ -2879,8 +2926,10 @@
 
         var backdrop = document.createElement("div");
         backdrop.id = VIDEO_OVERLAY_ID;
+        backdrop.setAttribute("popover", "manual");
         applyStyle(backdrop, {
             position: "fixed", top: "0", left: "0", right: "0", bottom: "0",
+            width: "auto", height: "auto", border: "none",
             zIndex: "2147483647", background: "rgba(0, 0, 0, 0.78)",
             webkitBackdropFilter: "blur(4px)", backdropFilter: "blur(4px)",
             boxSizing: "border-box", display: "flex", flexDirection: "column",
@@ -3148,6 +3197,9 @@
         // every one of them.
         document.addEventListener("play", pageVideoPlayGuard, true);
         (document.body || document.documentElement).appendChild(backdrop);
+        if (typeof backdrop.showPopover === "function") {
+            try { backdrop.showPopover(); } catch (_) {}
+        }
 
         // In the document, so everything below can measure. The clip's shape is
         // taken from the page if the page happens to know it — most don't, and an
@@ -3211,7 +3263,19 @@
             });
         // The page's CSP has the last word on the media load, and an expired
         // googlevideo URL 403s — either way the element reports it here.
-        video.addEventListener("error", function () { if (!closed) { dismiss(); } }, true);
+        video.addEventListener("error", function () {
+            if (closed || stage.querySelector("[data-luna-playback-error]")) { return; }
+            // Keep the popup and its Open in Luna action visible. Previously an
+            // immediate load error removed it before the user could see it.
+            video.style.display = "none";
+            var failure = document.createElement("div");
+            failure.setAttribute("data-luna-playback-error", "");
+            failure.setAttribute("role", "status");
+            failure.textContent = localizedMessage("videoPlaybackFailed");
+            applyStyle(failure, { color: "#ffffff", padding: "24px", textAlign: "center",
+                font: "400 16px/1.4 -apple-system, system-ui, sans-serif" });
+            stage.appendChild(failure);
+        }, true);
         video.setAttribute("src", asset.url);
         stage.appendChild(video);
         // `preload=metadata` is advisory on iOS. An explicit load starts the
@@ -3407,6 +3471,7 @@
                 timer: setTimeout(function () {
                     if (!lunaPillDrag) { return; }
                     lunaPillDrag.active = true;
+                    closeLunaMenu(false);
                     pill.style.cursor = "grabbing";
                     if (typeof pill.setPointerCapture === "function") {
                         try { pill.setPointerCapture(lunaPillDrag.pointerID); } catch (e) {}
@@ -3463,6 +3528,7 @@
     // harmless: injection, a seller lookup changing its text, and rotation all
     // change the measured dimensions of a stack.
     function updateLunaPillPositioning(animated) {
+        closeLunaMenu(false);
         var pills = renderedLunaPills();
         if (!pills.length) { return; }
         var layout = lunaPillStackLayout(pills);
@@ -3494,64 +3560,188 @@
         return true;
     };
 
+    var LUNA_MENU_ID = "luna-action-menu";
+    var lunaMenuCleanup = null;
+    var lunaThemeQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+    function applyLunaGlass(element) {
+        var dark = lunaThemeQuery && lunaThemeQuery.matches;
+        applyStyle(element, {
+            color: dark ? "#ffffff" : "#12121a",
+            background: dark ? "rgba(30,30,36,0.82)" : "rgba(255,255,255,0.82)",
+            border: dark ? "1px solid rgba(255,255,255,0.22)" : "1px solid rgba(255,255,255,0.8)",
+            webkitBackdropFilter: "blur(24px) saturate(180%)",
+            backdropFilter: "blur(24px) saturate(180%)",
+            boxShadow: "0 8px 28px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.2)"
+        });
+    }
+    if (lunaThemeQuery && lunaThemeQuery.addEventListener) {
+        lunaThemeQuery.addEventListener("change", function () {
+            [PILL_ID, LUNA_MENU_ID].forEach(function (id) {
+                var element = document.getElementById(id);
+                if (element) { applyLunaGlass(element); }
+            });
+        });
+    }
+
+    function closeLunaMenu(restoreFocus) {
+        if (lunaMenuCleanup) { lunaMenuCleanup(); lunaMenuCleanup = null; }
+        var menu = document.getElementById(LUNA_MENU_ID);
+        if (menu) { menu.remove(); }
+        var pill = document.getElementById(PILL_ID);
+        if (pill) {
+            pill.setAttribute("aria-expanded", "false");
+            if (restoreFocus) { pill.focus({ preventScroll: true }); }
+        }
+    }
+
+    function openLunaTarget(target, pill) {
+        pill.setAttribute("aria-label", localizedMessage("openingLuna"));
+        pill.style.opacity = "0.7";
+        pill.style.pointerEvents = "none";
+        if (typeof target.openLuna === "function") { target.openLuna(); return; }
+        var open = function () { window.location.href = target.url(); };
+        if (!target.captureContent) { open(); return; }
+        var html = typeof target.captureHTML === "function" ? target.captureHTML() : capturedHTML();
+        if (html && html.length <= 1500000 && typeof browser !== "undefined") {
+            browser.runtime.sendMessage({ type: "saveContent", url: location.href, html: html })
+                .then(open).catch(open);
+        } else { open(); }
+    }
+
+    function showLunaMenu(pill, target) {
+        if (document.getElementById(LUNA_MENU_ID)) { closeLunaMenu(true); return; }
+        var menu = document.createElement("div");
+        menu.id = LUNA_MENU_ID;
+        menu.setAttribute("role", "menu");
+        menu.setAttribute("aria-label", localizedMessage("lunaActions"));
+        menu.setAttribute("popover", "manual");
+        applyStyle(menu, {
+            position: "fixed", top: "0", bottom: "auto", left: "0", right: "auto",
+            zIndex: "2147483647", boxSizing: "border-box",
+            display: "flex", flexDirection: "column", width: "200px", height: "auto",
+            margin: "0", padding: "6px", borderRadius: "22px", overflow: "hidden",
+            font: "500 16px/1.2 -apple-system, system-ui, sans-serif"
+        });
+        applyLunaGlass(menu);
+        function addAction(key, action) {
+            var item = document.createElement("div");
+            item.setAttribute("role", "menuitem");
+            item.setAttribute("tabindex", "0");
+            item.setAttribute("data-luna-action", key);
+            item.textContent = localizedMessage(key);
+            applyStyle(item, {
+                display: "flex", alignItems: "center", minHeight: "44px", boxSizing: "border-box",
+                margin: "0", padding: "10px 14px", borderRadius: "16px", cursor: "pointer",
+                color: "inherit", background: "transparent", font: "inherit", touchAction: "manipulation"
+            });
+            item.addEventListener("click", function (event) {
+                event.stopPropagation(); closeLunaMenu(false); action();
+            });
+            item.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); item.click(); }
+            });
+            item.addEventListener("focus", function () { item.style.background = "rgba(128,128,128,0.18)"; });
+            item.addEventListener("blur", function () { item.style.background = "transparent"; });
+            menu.appendChild(item);
+        }
+        if (typeof target.present === "function" && target.canPlay !== false) {
+            addAction("playVideo", target.present);
+        }
+        addAction("openInLuna", function () { openLunaTarget(target, pill); });
+        addAction("hideLuna", function () {
+            lunaControlsHidden = true;
+            pendingVideoOverlayResolve = null;
+            var overlay = document.getElementById(VIDEO_OVERLAY_ID);
+            if (overlay) { overlay.click(); }
+            LUNA_PILL_IDS.forEach(function (id) {
+                var element = document.getElementById(id);
+                if (element) { element.remove(); }
+            });
+        });
+        (document.body || document.documentElement).appendChild(menu);
+        if (typeof menu.showPopover === "function") { try { menu.showPopover(); } catch (_) {} }
+        var anchor = pill.getBoundingClientRect();
+        var box = visiblePageBox();
+        var height = menu.getBoundingClientRect().height;
+        var width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+        var leftEdge = window.visualViewport ? window.visualViewport.offsetLeft : 0;
+        var left = lunaPillPosition.side === "left" ? anchor.left : anchor.right - 200;
+        menu.style.left = Math.max(leftEdge + 8, Math.min(left, leftEdge + width - 208)) + "px";
+        menu.style.right = "auto";
+        var top = anchor.top - height - 8;
+        if (top < box.top + 8) { top = anchor.bottom + 8; }
+        menu.style.top = Math.max(box.top + 8, Math.min(top, box.top + box.height - height - 8)) + "px";
+        menu.style.bottom = "auto";
+        pill.setAttribute("aria-expanded", "true");
+        var outside = function (event) {
+            if (!menu.contains(event.target) && !pill.contains(event.target)) { closeLunaMenu(false); }
+        };
+        var keys = function (event) {
+            if (event.key === "Escape") { event.preventDefault(); closeLunaMenu(true); return; }
+            if (["ArrowDown", "ArrowUp", "Home", "End"].indexOf(event.key) < 0) { return; }
+            event.preventDefault();
+            var items = Array.from(menu.children);
+            var index = items.indexOf(document.activeElement);
+            var next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+                : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+            items[next].focus({ preventScroll: true });
+        };
+        var viewportChanged = function () { closeLunaMenu(false); };
+        document.addEventListener("pointerdown", outside, true);
+        document.addEventListener("keydown", keys, true);
+        window.addEventListener("resize", viewportChanged);
+        window.addEventListener("scroll", viewportChanged);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", viewportChanged);
+            window.visualViewport.addEventListener("scroll", viewportChanged);
+        }
+        lunaMenuCleanup = function () {
+            document.removeEventListener("pointerdown", outside, true);
+            document.removeEventListener("keydown", keys, true);
+            window.removeEventListener("resize", viewportChanged);
+            window.removeEventListener("scroll", viewportChanged);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener("resize", viewportChanged);
+                window.visualViewport.removeEventListener("scroll", viewportChanged);
+            }
+        };
+        menu.firstChild.focus({ preventScroll: true });
+    }
+
     function injectLunaButton(target) {
-        if (document.getElementById(PILL_ID)) { return; }
-        // A <div role="button"> (not a <button>) so the host page's `button {…}`
-        // CSS can't clamp its height and cut off the pill. Explicit resets +
-        // inline-flex centering + a fully-rounded radius guarantee the pill shape.
+        if (!target || lunaControlsHidden || document.getElementById(PILL_ID)) { return; }
         var btn = document.createElement("div");
         btn.id = PILL_ID;
         btn.setAttribute("role", "button");
+        btn.setAttribute("tabindex", "0");
+        btn.setAttribute("aria-label", localizedMessage("lunaActions"));
+        btn.setAttribute("aria-haspopup", "menu");
+        btn.setAttribute("aria-expanded", "false");
+        btn.setAttribute("aria-controls", LUNA_MENU_ID);
         btn.setAttribute("data-luna-pill-stack-level", "0");
-        btn.appendChild(document.createTextNode(target.label));
-        // The kind's own colour (see KIND_TINTS) — a target that names none is
-        // not a save, so it falls back to the central app's indigo.
-        var tint = target.tint || QUEUE_INDIGO;
-        btn.setAttribute("data-luna-tint", tint);
+        btn.setAttribute("data-luna-tint", target.tint || QUEUE_INDIGO);
         applyStyle(btn, {
-            position: "fixed", right: "16px",
-            bottom: "calc(20px + env(safe-area-inset-bottom))",
-            zIndex: "2147483647", background: tint, color: tintForeground(tint),
-            font: "600 16px/1 -apple-system, system-ui, sans-serif",
-            boxSizing: "border-box", display: "inline-flex",
-            alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
-            border: "none", borderRadius: "999px", padding: "14px 22px",
-            height: "auto", minHeight: "0", width: "auto", margin: "0",
-            boxShadow: "0 6px 20px rgba(0,0,0,0.30)", cursor: "pointer",
-            webkitTapHighlightColor: "transparent", touchAction: "manipulation",
+            position: "fixed", right: "16px", bottom: "calc(20px + env(safe-area-inset-bottom))",
+            zIndex: "2147483647", boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", borderRadius: "50%", padding: "0",
+            height: "52px", minHeight: "52px", width: "52px", minWidth: "52px", margin: "0",
+            cursor: "pointer", webkitTapHighlightColor: "transparent", touchAction: "manipulation",
             webkitAppearance: "none", appearance: "none"
         });
-        btn.addEventListener("click", function () {
-            // A target that presents something in-page (the video player) stays
-            // here: no navigation, and the pill keeps its label so it still
-            // reads correctly behind the overlay when that overlay is dismissed.
-            if (typeof target.present === "function") {
-                target.present();
-                return;
-            }
-            btn.textContent = target.pressedLabel
-                || localizedMessage("openingLuna");
-            btn.style.opacity = "0.7";
-            btn.style.pointerEvents = "none";
-            var open = function () {
-                window.location.href = target.url();
-            };
-            if (!target.captureContent) {
-                open();
-                return;
-            }
-            // Hand the app the already-unlocked page HTML so it renders that content
-            // instead of re-fetching (which could re-lock outside Safari). Skip when
-            // the page is too large for native messaging; the app then fetches the URL.
-            var html = typeof target.captureHTML === "function"
-                ? target.captureHTML()
-                : capturedHTML();
-            if (html && html.length <= 1500000) {
-                browser.runtime.sendMessage({ type: "saveContent", url: location.href, html: html })
-                    .then(open).catch(open);
-            } else {
-                open();
-            }
+        applyLunaGlass(btn);
+        var icon = document.createElement("span");
+        icon.setAttribute("aria-hidden", "true");
+        var iconURL = typeof browser !== "undefined" && browser.runtime.getURL
+            ? browser.runtime.getURL("luna-action-icon.png") : "luna-action-icon.png";
+        applyStyle(icon, { display: "block", width: "32px", height: "32px", backgroundColor: "currentColor",
+            webkitMaskImage: 'url("' + iconURL + '")', maskImage: 'url("' + iconURL + '")',
+            webkitMaskSize: "contain", maskSize: "contain", webkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+            webkitMaskPosition: "center", maskPosition: "center", pointerEvents: "none" });
+        btn.appendChild(icon);
+        btn.addEventListener("click", function () { showLunaMenu(btn, target); });
+        btn.addEventListener("keydown", function (event) {
+            if (["Enter", " ", "ArrowDown"].indexOf(event.key) >= 0) { event.preventDefault(); showLunaMenu(btn, target); }
         });
         (document.body || document.documentElement).appendChild(btn);
         updateLunaPillPositioning();
@@ -4115,6 +4305,7 @@
     }
 
     function removeLunaButton() {
+        closeLunaMenu(false);
         var existing = document.getElementById(PILL_ID);
         if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
         updateLunaPillPositioning();

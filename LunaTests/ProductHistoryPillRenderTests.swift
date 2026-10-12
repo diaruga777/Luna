@@ -330,13 +330,15 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         finishLookup(historyRespJSON: tracked, sellerRespJSON: Self.foundSeller)
         XCTAssertFalse(trackPillExists)
         XCTAssertTrue(sellerPillExists)
-        XCTAssertEqual(sellerPillStyle("bottom"), "20px")
+        XCTAssertLessThanOrEqual(js.number("document.getElementById(window.__lunaSellerPillID).getBoundingClientRect().bottom"),
+                                 js.number("window.__lunaVisiblePageBox().top + window.__lunaVisiblePageBox().height"))
     }
 
     func testAnUntrackedPagesSellerPillSitsAboveTheTrackPill() {
         beginLookup()
         finishLookup(sellerRespJSON: Self.foundSeller)
-        XCTAssertEqual(sellerPillStyle("bottom"), "70px")
+        XCTAssertLessThan(js.number("document.getElementById(window.__lunaSellerPillID).getBoundingClientRect().bottom"),
+                          js.number("document.getElementById(window.__lunaPillID).getBoundingClientRect().top"))
     }
 
     /// One lookup per page: the flag is set before any DOM work, so a second

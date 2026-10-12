@@ -22,7 +22,7 @@ final class SafariInstagramEligibilityTests: XCTestCase {
     }
 
     private var pillText: String? {
-        js.string("(document.getElementById(window.__lunaPillID) || {}).textContent")
+        js.string("document.getElementById(window.__lunaPillID)?.getAttribute('aria-label')")
     }
 
     private static let reportURL = "https://www.instagram.com/accounts/password/report/p5jutk6/"
@@ -64,10 +64,10 @@ final class SafariInstagramEligibilityTests: XCTestCase {
                      "p/ABC123/embed/", "reel/ABC123?igsh=shared"] {
             offer("<html><body><p>Caption</p></body></html>",
                   at: "https://www.instagram.com/" + path)
-            XCTAssertTrue(pillText?.contains("Open in Luna") == true, path)
+            XCTAssertTrue(pillText?.contains("Luna actions") == true, path)
         }
         offer("<html><body><video></video></body></html>", at: "https://instagr.am/p/ABC123/")
-        XCTAssertTrue(pillText?.contains("Open in Luna") == true)
+        XCTAssertTrue(pillText?.contains("Luna actions") == true)
     }
 
     func testPhotoPostRemainsSuppressedButReelWithSameThumbnailQualifies() {
@@ -78,7 +78,7 @@ final class SafariInstagramEligibilityTests: XCTestCase {
         offer(html, at: "https://www.instagram.com/p/ABC123/")
         XCTAssertNil(pillText)
         offer(html, at: "https://www.instagram.com/reel/ABC123/")
-        XCTAssertTrue(pillText?.contains("Open in Luna") == true)
+        XCTAssertTrue(pillText?.contains("Luna actions") == true)
     }
 
     private static let articleHTML = """
@@ -98,8 +98,8 @@ final class SafariInstagramEligibilityTests: XCTestCase {
     func testArticlesAndPricedProductsOnOtherHostsKeepTheirPills() {
         // Identical utility-looking path text must not become a global blacklist.
         offer(Self.articleHTML, at: "https://example.com/accounts/password/report/guide/")
-        XCTAssertTrue(pillText?.contains("Read in Luna") == true)
+        XCTAssertTrue(pillText?.contains("Luna actions") == true)
         offer(Self.productHTML, at: "https://shop.example.com/accounts/password/report/security-key/")
-        XCTAssertTrue(pillText?.contains("Track in Luna") == true)
+        XCTAssertTrue(pillText?.contains("Luna actions") == true)
     }
 }

@@ -77,8 +77,10 @@ enum AppLaunchTransition {
     /// intro headline sweeps only in the former, and simply stands revealed when
     /// paged back to.
     private(set) static var hasFinished = false
-    static let minimumVisibleDuration: TimeInterval = 0.10
-    static let fadeDuration: TimeInterval = 0.20
+    // The system already displayed the launch artwork. Do not keep an opaque
+    // card over ready content for an additional timed beat.
+    static let minimumVisibleDuration: TimeInterval = 0
+    static let fadeDuration: TimeInterval = 0.08
     /// For a target whose live hierarchy is pixel-identical to the splash
     /// (incomplete onboarding: same starfield, corona, and blank black card),
     /// the crossfade reveals nothing and only needs to mask sub-pixel
@@ -146,7 +148,7 @@ enum AppLaunchTransition {
         let hold = instant ? instantMinimumVisibleDuration : minimumVisibleDuration
         let fade: TimeInterval = instant
             ? instantFadeDuration
-            : (UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration)
+            : (UIAccessibility.isReduceMotionEnabled ? 0 : fadeDuration)
         let reveal = {
             guard overlay.window != nil else { return }
             target?.appLaunchTransitionWillReveal()

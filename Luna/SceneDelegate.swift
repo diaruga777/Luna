@@ -22,6 +22,7 @@ import UIKit
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
+    private var hasEnteredForeground = false
 
     /// The main navigation controller, whichever shape this app's root takes:
     /// wrapped in the audio mini-player host (article apps' normal main UI) or
@@ -65,6 +66,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window.rootViewController = archiveRoot
             self.window = window
             window.makeKeyAndVisible()
+            DispatchQueue.main.async {
+                (UIApplication.shared.delegate as? AppDelegate)?.startLaunchMaintenance()
+            }
             return
         }
         #endif
@@ -343,9 +347,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// hold is taken.)
     func sceneDidEnterBackground(_ scene: UIScene) {
         AppLaunchTransition.releaseHandoffHold()
+        // A Safari hand-off can leave before any reveal completion. Scene
+        // lifecycle apps need this fallback as well as the app delegate's.
+        (UIApplication.shared.delegate as? AppDelegate)?.startLaunchMaintenance()
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        // UIKit sends this on cold launch too. The launch pass already owns
+        // refresh/retry work, and runs it after the first card is revealed.
+        guard hasEnteredForeground else {
+            hasEnteredForeground = true
+            return
+        }
         // A staged run is a frozen world; foregrounding must not re-fetch,
         // re-import or re-purge anything into it.
         guard !LunaStage.isActive else { return }

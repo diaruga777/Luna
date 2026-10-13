@@ -101,3 +101,40 @@ still runs the unit suite. `LunaReader` ran no tests before, so `LaunchPerf` is
 its only plan.
 
 Re-run `ruby scripts/hide_generated_schemes.rb` after touching these targets.
+
+## Startup work ordering
+
+The app installs kind/plugin seams, background-task registrations, remote audio
+commands, and the onboarding/deck state before returning from launch. Bundled
+plugin manifests are parsed once per catalog; individual settings lookups do not
+rescan all bundled scripts. Speech synthesis starts only when audio is requested.
+
+Save retries, mail import, indexing, retention sweeps, weekly refresh and price
+refresh start once after `AppLaunchTransition.didFinish`. A background-only wake
+runs this maintenance after a one-second scene-connection grace period.
+The transient `.background` state inside `didFinishLaunching` is not sufficient
+to classify a launch: ordinary foreground scene launches report it too. The first scene foreground
+callback does not duplicate the launch refresh; later foregrounds refresh normally.
+Safari hand-off routes and their completion observer are installed before deferral.
+Staged launches continue to suppress maintenance.
+
+The normal splash has no timed hold and an 80 ms crossfade (immediate with Reduce
+Motion). It still yields a run-loop turn before revealing the live root. The
+special onboarding reveal and bounded Safari hand-off hold keep their own timing.
+The existing first-run headline animation is separate from process launch.
+
+### Simulator check, October 2026
+
+On iPhone 17 Pro / iOS 26.2, Release, ten measured cold launches per metric
+with an empty saves database:
+
+| Metric | Before, mean | After, mean |
+| --- | ---: | ---: |
+| First frame | 1,059 ms | 980 ms |
+| Responsive | 1,117 ms | 1,030 ms |
+
+Relative standard deviations were 2.5% / 1.9% before and 1.6% / 0.8% after.
+These measurements cover the catalog, speech and reveal changes; the subsequent
+correction to background-launch detection was compile/regression checked. They
+are simulator measurements, not an iPhone launch-time guarantee. Sampling also
+showed substantial Simulator dynamic-loader time before application code runs.

@@ -123,6 +123,9 @@ public struct PodcastSettings: Codable, Equatable, Sendable {
     public var cellularStreaming = true
     public var removePlayedDownloads = true
     public var playedRetentionHours: Double = 24
+    /// Nil preserves compatibility with libraries written before the byte cap.
+    public var downloadByteLimit: Int64?
+    public var maximumDownloadBytes: Int64 { max(0, downloadByteLimit ?? 2_000_000_000) }
     public var downloadSavedEpisodes = true
     public var hidePlayed = false
     // Retained for decoding older libraries; queues now contain explicit selections only.

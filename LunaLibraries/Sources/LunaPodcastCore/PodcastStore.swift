@@ -71,6 +71,7 @@ import Foundation
         try update { state in
             state.queue.removeAll { $0 == id }; state.continuation.removeAll { $0 == id }
             if next { state.queue.insert(id, at: 0) } else { state.queue.append(id) }
+            state.progress[id]?.suppressAutomaticDownload = false
         }
     }
     public func recordPlaybackStarted(_ id: String) throws {
@@ -101,6 +102,7 @@ import Foundation
             state.queue.removeAll { state.episodes[$0] == nil || $0 == id }
             state.continuation = []
             if !state.queue.isEmpty { next = state.queue.removeFirst() }
+            state.currentEpisodeID = next
             state.naturallyExhaustedQueue = next == nil
             // Last played remains the completed episode until the next actually plays.
         }

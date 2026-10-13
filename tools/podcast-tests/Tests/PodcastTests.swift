@@ -220,3 +220,93 @@ final class PodcastRequestCacheTests: XCTestCase {
         XCTAssertEqual(evicted, 3)
     }
 }
+
+extension PodcastTests {
+    func testDownloadPlanPrioritizesCurrentThenQueueBeforeShowAndSavedDownloads() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[0].id
+        state.queue = [episodes[2].id, episodes[4].id]
+        state.progress[episodes[5].id] = PodcastEpisodeState()
+        state.progress[episodes[5].id]?.saved = true
+        state.settings.downloadByteLimit = 300
+        let sizes = Dictionary(uniqueKeysWithValues: episodes.map { ($0.id, Int64(100)) })
+        let plan = PodcastDownloadPlan(state: state, sizes: sizes, manualIDs: [episodes[7].id])
+        XCTAssertEqual(plan.episodeIDs, [episodes[0].id, episodes[2].id, episodes[4].id])
+        XCTAssertEqual(plan.reservedBytes.values.reduce(0, +), 300)
+    }
+    func testDownloadPlanStopsAtFirstQueueEpisodeThatDoesNotFit() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[0].id; state.queue = [episodes[2].id, episodes[4].id]
+        state.settings.downloadByteLimit = 250
+        let sizes: [String: Int64] = [episodes[0].id: 100, episodes[2].id: 200, episodes[4].id: 10]
+        XCTAssertEqual(PodcastDownloadPlan(state: state, sizes: sizes).episodeIDs, [episodes[0].id])
+        state.queue.reverse()
+        XCTAssertEqual(PodcastDownloadPlan(state: state, sizes: sizes).episodeIDs, [episodes[0].id, episodes[4].id])
+    }
+    func testUnknownDownloadReservesRemainingBudgetUntilSizeIsKnown() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[0].id; state.queue = [episodes[2].id, episodes[4].id]
+        state.settings.downloadByteLimit = 300
+        let sizes: [String: Int64] = [episodes[0].id: 100, episodes[4].id: 50]
+        let unknown = PodcastDownloadPlan(state: state, sizes: sizes)
+        XCTAssertEqual(unknown.episodeIDs, [episodes[0].id, episodes[2].id])
+        XCTAssertEqual(unknown.reservedBytes[episodes[2].id], 200)
+        var measured = sizes; measured[episodes[2].id] = 100
+        XCTAssertEqual(PodcastDownloadPlan(state: state, sizes: measured).episodeIDs.prefix(3), [episodes[0].id, episodes[2].id, episodes[4].id])
+    }
+    func testDownloadPlanKeepsPausedEpisodeAfterRelaunchWithoutFollowedShow() {
+        var (state, episodes) = sample()
+        state.shows = [:]; state.lastPlayedEpisodeID = episodes[0].id
+        state.settings.downloadByteLimit = 100
+        XCTAssertEqual(PodcastDownloadPlan(state: state, sizes: [episodes[0].id: 100]).episodeIDs, [episodes[0].id])
+        state.naturallyExhaustedQueue = true
+        XCTAssertTrue(PodcastDownloadPlan(state: state, sizes: [:]).episodeIDs.isEmpty)
+    }
+    func testDownloadPlanHonorsSuppressionAndAllowsExplicitPlayedReplay() {
+        var (state, episodes) = sample(); state.shows = [:]
+        state.currentEpisodeID = episodes[0].id; state.queue = [episodes[6].id, episodes[6].id, "missing"]
+        state.progress[episodes[0].id] = PodcastEpisodeState()
+        state.progress[episodes[0].id]?.suppressAutomaticDownload = true
+        let plan = PodcastDownloadPlan(state: state, sizes: [episodes[6].id: 100])
+        XCTAssertEqual(plan.episodeIDs, [episodes[6].id])
+    }
+    func testCapReductionKeepsOpenAssetButStopsOtherDownloads() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[0].id; state.queue = [episodes[2].id]
+        state.settings.downloadByteLimit = 50
+        let plan = PodcastDownloadPlan(state: state, sizes: [episodes[0].id: 100, episodes[2].id: 10], protectedID: episodes[0].id)
+        XCTAssertEqual(plan.episodeIDs, [episodes[0].id])
+        XCTAssertTrue(PodcastDownloadPlan(state: state, sizes: [episodes[0].id: 100]).episodeIDs.isEmpty)
+    }
+    func testByteCapMigrationPreservesOldSettings() throws {
+        var settings = PodcastSettings(); settings.cellularDownloads = true; settings.playedRetentionHours = 48
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        json.removeValue(forKey: "downloadByteLimit")
+        let decoded = try JSONDecoder().decode(PodcastSettings.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.maximumDownloadBytes, 2_000_000_000)
+        XCTAssertTrue(decoded.cellularDownloads); XCTAssertEqual(decoded.playedRetentionHours, 48)
+        settings.downloadByteLimit = -1; XCTAssertEqual(settings.maximumDownloadBytes, 0)
+    }
+    @MainActor func testFinishingMovesDownloadPriorityAndExplicitRequeueClearsSuppression() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try PodcastStore(url: directory.appendingPathComponent("library.json"))
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[0].id; state.queue = [episodes[2].id, episodes[4].id]
+        state.settings.downloadByteLimit = 200
+        try store.update { $0 = state }
+        XCTAssertEqual(try store.finishNaturally(episodes[0].id), episodes[2].id)
+        XCTAssertEqual(store.state.currentEpisodeID, episodes[2].id)
+        let plan = PodcastDownloadPlan(state: store.state, sizes: [episodes[0].id: 100, episodes[2].id: 100, episodes[4].id: 100])
+        XCTAssertEqual(plan.episodeIDs, [episodes[2].id, episodes[4].id])
+        try store.update { $0.progress[episodes[0].id]?.suppressAutomaticDownload = true }
+        try store.enqueue(episodes[0].id, next: true)
+        XCTAssertEqual(store.state.progress[episodes[0].id]?.suppressAutomaticDownload, false)
+        XCTAssertEqual(store.state.queue.first, episodes[0].id)
+    }
+    func testCompletedSavedEpisodeDoesNotRedownloadAfterFinishing() {
+        var (state, episodes) = sample()
+        state.progress[episodes[6].id]?.saved = true
+        XCTAssertFalse(PodcastPolicies.automaticDownloads(state).contains(episodes[6].id))
+    }
+}

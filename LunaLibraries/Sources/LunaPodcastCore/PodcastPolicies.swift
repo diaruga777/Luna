@@ -36,7 +36,7 @@ public enum PodcastPolicies {
             result.formUnion((limit < 0 ? candidates : Array(candidates.prefix(limit))).map(\.id))
         }
         if state.settings.downloadSavedEpisodes {
-            result.formUnion(state.progress.filter { $0.value.saved && !$0.value.suppressAutomaticDownload }.map(\.key))
+            result.formUnion(state.progress.filter { $0.value.saved && !$0.value.listened && !$0.value.suppressAutomaticDownload }.map(\.key))
         }
         return result
     }

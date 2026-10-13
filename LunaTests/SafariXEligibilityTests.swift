@@ -38,6 +38,13 @@ final class SafariXEligibilityTests: XCTestCase {
     private var pill: Bool { js.bool("!!document.getElementById(window.__lunaPillID)") }
     private var player: Bool { js.bool("!!document.getElementById(window.__lunaVideoOverlayID)") }
 
+    private func playFromMenu() {
+        js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
+        XCTAssertFalse(player, "Opening the pill menu must not open the player")
+        js.evaluate("document.querySelector('[data-luna-action=playVideo]').click(); void 0")
+        settle()
+    }
+
     private func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.7)) }
 
     func testFeedsProfilesSearchAndMalformedStatusesNeverShowControlsEvenWithVideo() {
@@ -65,11 +72,14 @@ final class SafariXEligibilityTests: XCTestCase {
         XCTAssertFalse(player)
     }
 
-    func testOnlyTheOpenedTweetsOwnVideoOpensThePlayer() {
+    func testOnlyTheOpenedTweetsOwnVideoOffersPlayInTheMenu() {
         for url in [postURL, "https://mobile.twitter.com/alice/status/123", "https://x.com/i/web/status/123",
                     "https://x.com/alice/status/123/video/1"] {
             offer(tweet("456", media: "<video></video>") + tweet(media: "<div data-testid='videoPlayer'></div>"), at: url)
             XCTAssertTrue(pill, url)
+            XCTAssertFalse(player, url)
+            XCTAssertEqual(js.number("window.__resolveCalls"), 0)
+            playFromMenu()
             XCTAssertTrue(player, url)
             XCTAssertEqual(js.number("window.__resolveCalls"), 1)
         }
@@ -103,6 +113,8 @@ final class SafariXEligibilityTests: XCTestCase {
         js.evaluate("document.querySelector('article').insertAdjacentHTML('beforeend', '<video></video>'); void 0")
         settle()
         XCTAssertTrue(pill)
+        XCTAssertFalse(player)
+        playFromMenu()
         XCTAssertTrue(player)
         js.evaluate("history.pushState({}, '', '/home'); void 0")
         settle()
@@ -115,9 +127,12 @@ final class SafariXEligibilityTests: XCTestCase {
         XCTAssertFalse(player)
         js.evaluate("document.body.innerHTML = \(SafariJSTestHarness.jsString(tweet("456", media: "<video></video>"))); void 0")
         let deadline = Date().addingTimeInterval(3)
-        while !player && Date() < deadline {
+        while !pill && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
+        XCTAssertTrue(pill)
+        XCTAssertFalse(player)
+        playFromMenu()
         XCTAssertTrue(player)
     }
 
@@ -134,6 +149,7 @@ final class SafariXEligibilityTests: XCTestCase {
 
     func testDismissalAndSettingsAreRespected() {
         offer(tweet(media: "<video></video>"))
+        playFromMenu()
         js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); void 0")
         settle()
         XCTAssertTrue(pill)
@@ -200,13 +216,19 @@ final class SafariXEligibilityTests: XCTestCase {
             ("{thread:[{id:'2108409488554222078',text:'Text only'},{id:'999',media:{all:[{type:'video',url:'https://cdn.example.com/movie.mp4'}]}}]}", false)
         ] {
             offerCore(payload)
-            XCTAssertEqual(player, expected, payload)
+            XCTAssertFalse(player, payload)
             XCTAssertEqual(pill, expected, payload)
+            if expected {
+                playFromMenu()
+                XCTAssertTrue(player, payload)
+            }
         }
     }
 
     func testCoreVideoDismissalSettingsAndNavigationKeepTheirGates() {
         offerCore(coreVideoPayload)
+        XCTAssertFalse(player)
+        playFromMenu()
         XCTAssertTrue(player)
         js.evaluate("document.getElementById(window.__lunaVideoOverlayID)?.click(); void 0")
         settle()
@@ -219,9 +241,12 @@ final class SafariXEligibilityTests: XCTestCase {
         settle()
         XCTAssertFalse(player)
         XCTAssertFalse(pill)
-        // A fresh visit to a video post still opens automatically.
+        // A fresh visit offers playback and waits for another explicit action.
         js.evaluate("window.__payload = \(coreVideoPayload); history.pushState({}, '', '/ZetaPlusCG/status/2108409488554222078'); void 0")
         settle()
+        XCTAssertTrue(pill)
+        XCTAssertFalse(player)
+        playFromMenu()
         XCTAssertTrue(player)
         offerCore(coreVideoPayload, context: ", videoPlayer:false")
         XCTAssertFalse(player)
@@ -246,15 +271,17 @@ final class SafariXEligibilityTests: XCTestCase {
         offerCore(coreVideoPayload, failFirstSource: true)
         XCTAssertFalse(pill)
         let deadline = Date().addingTimeInterval(4)
-        while !player && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-        XCTAssertTrue(player)
+        while !pill && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertFalse(player)
         XCTAssertTrue(pill)
         XCTAssertEqual(js.number("window.__sourceCalls"), 2)
+        playFromMenu()
+        XCTAssertTrue(player)
     }
 
     func testCoreMenuSeparatesPlaybackOpenAndHideUntilRefresh() {
         offerCore(coreVideoPayload)
-        js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); document.getElementById(window.__lunaPillID).click(); void 0")
+        js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
         XCTAssertFalse(player, "Opening the menu must not immediately start playback")
         XCTAssertEqual(js.string("Array.from(document.querySelectorAll('[role=menuitem]')).map(x => x.textContent).join('|')"), "Play Video|Open in Luna|Hide")
         XCTAssertEqual(js.number("document.getElementById(window.__lunaPillID).getBoundingClientRect().width"), 52)
@@ -273,12 +300,12 @@ final class SafariXEligibilityTests: XCTestCase {
         XCTAssertFalse(player)
         offerCore(coreVideoPayload)
         XCTAssertTrue(pill)
-        XCTAssertTrue(player)
+        XCTAssertFalse(player)
     }
 
     func testCoreOpenInLunaQueuesTheAlreadyResolvedVideoWithoutPlaying() {
         offerCore(coreVideoPayload)
-        js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); void 0")
+        XCTAssertFalse(player)
         let link = js.awaitAppSchemeNavigation {
             self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
         }
@@ -293,6 +320,8 @@ final class SafariXEligibilityTests: XCTestCase {
         // The reported post's media shape, without relying on a live network.
         offerCore("{tweet:{id:'2109373525043905019',media:{all:[{type:'video',url:'https://video.twimg.com/amplify_video/2109373480454012928/vid/avc1/1280x720/Cac_MDJjXCdgxNKa.mp4?tag=29'}]}}}",
                   url: "https://x.com/lilifying/status/2109373525043905019?s=20")
+        XCTAssertFalse(player)
+        playFromMenu()
         XCTAssertTrue(player)
         XCTAssertTrue(pill)
         XCTAssertTrue(js.string("document.getElementById(window.__lunaVideoOverlayID)?.querySelector('video')?.src")?.contains("2109373480454012928") == true)
@@ -314,10 +343,12 @@ final class SafariXEligibilityTests: XCTestCase {
         offerCore(coreVideoPayload, stallFirstSource: true)
         XCTAssertFalse(pill)
         let deadline = Date().addingTimeInterval(12)
-        while !player && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-        XCTAssertTrue(player)
+        while !pill && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        XCTAssertFalse(player)
         XCTAssertTrue(pill)
         XCTAssertEqual(js.number("window.__sourceCalls"), 2)
+        playFromMenu()
+        XCTAssertTrue(player)
     }
 
 }

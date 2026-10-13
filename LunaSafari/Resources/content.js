@@ -770,11 +770,6 @@
         if (walk.claim.kind === "media") {
             var target = pluginVideoOverlayTargetFor(resp, walk);
             injectLunaButton(target);
-            // The plugin already classified this URL as media, so resolve it
-            // immediately. The panel only appears if ingest finds video.
-            if (typeof target.present === "function" && !videoOverlayDismissed) {
-                target.present();
-            }
             return;
         }
         injectLunaButton(pluginSaveTargetFor(resp, walk));
@@ -807,7 +802,6 @@
             removeLunaButton();
             var overlay = document.getElementById(VIDEO_OVERLAY_ID);
             if (overlay) { overlay.click(); }
-            videoOverlayDismissed = false;
             if (resp.mode === "never" || lunaControlsHidden) { return; }
             function current() {
                 return generation === pluginPageGeneration && sourceURL === location.href;
@@ -862,19 +856,11 @@
         if (platform === "reddit") { handleReddit(resp); return; }
         if (platform) {
             if (!shouldShowDownloadPillForPlatform(platform)) { return; }
-            // The in-page player opens by ITSELF on a page whose subject is a
-            // video. The pill is then the way back to it after a dismissal —
-            // and on a page that never earns one, it still carries the hand-off
-            // navigation into the app that it always did.
+            // Offer playback through the pill's menu. Recognizing a video page
+            // must not open a player before the user selects Play Video.
             var downloadTarget = videoOverlayTargetFor(resp);
             if (!downloadTarget) { return; }
             injectLunaButton(downloadTarget);
-            // A target with nothing to present is the player turned OFF in
-            // Settings: the pill is then exactly what it was before the player
-            // existed, and nothing opens over the page uninvited.
-            if (typeof downloadTarget.present === "function") {
-                autoPresentVideoOverlay(platform, downloadTarget, 0);
-            }
             return;
         }
         // Reddit feed / listing / comment-history pages are NOT posts: suppress
@@ -2726,8 +2712,8 @@
     window.__lunaSetupCelebrationDuration = SETUP_CELEBRATION_DURATION;
 
     // ── The in-page video player ────────────────────────────────────────────────
-    // On a media host (the central Luna app / Luna Video), a recognized post
-    // page opens a player right here instead of navigating: the native handler
+    // On a media host, selecting Play Video in the pill's menu opens a player
+    // right here instead of navigating: the native handler
     // runs the app's own resolver over this post URL and hands back a direct CDN
     // URL, which a plain <video> streams. The page's own CSP governs that load,
     // which is why this only ever plays a SAME-PLATFORM asset — instagram.com
@@ -2740,12 +2726,6 @@
     // late still wins over this backstop and only a DEAD one trips it.
     var RESOLVE_TIMEOUT = 25000;
     var NIGHT_SURFACE = "#0b0b10";
-    // When the auto-open looks for the page's video, counted from the moment the
-    // pill lands (document_idle). A client-rendered post frequently has neither
-    // its `<video>` nor its video metadata yet at that point, and giving up on
-    // the first look is what would make the player feel unreliable rather than
-    // automatic. The walk stops at the first look that finds a signal.
-    var AUTO_PLAYER_RETRY_DELAYS = [0, 900, 2500];
     // The stage's FLOOR, and the shape it opens at: the 16:9 this panel has
     // always been. A wide clip therefore gets exactly the panel that shipped;
     // only a taller-than-16:9 one grows the popup.
@@ -2766,9 +2746,6 @@
     // the first metadata callback, short enough that a shape which only turns up
     // when the user presses Play settles instead of snapping.
     var PLAYER_INSTANT_SIZING_MS = 700;
-    // A dismissal is the user saying "not this page": it stops any auto-open
-    // still pending. The PILL is unaffected — tapping it re-opens the player.
-    var videoOverlayDismissed = false;
 
     // The native round trip, behind a swappable reference: the WKWebView test
     // harness has no extension host at all (`browser` is undefined), so
@@ -3161,7 +3138,6 @@
         var dismiss = function () {
             if (closed) { return; }
             closed = true;
-            videoOverlayDismissed = true;
             document.removeEventListener("play", pageVideoPlayGuard, true);
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener("scroll", onViewportScroll);
@@ -3284,40 +3260,6 @@
         applyVideoAspect();
     }
 
-    /// Opens the player without being asked, on a recognized post page whose
-    /// subject IS a video — the pill is then how the user gets back to it.
-    ///
-    /// This asks a NARROWER question than pill eligibility, and deliberately: a
-    /// bare platform host recognizes (`tiktok.com`), and a feed
-    /// that slips past the static-image suppression may earn a pill, but covering
-    /// someone's feed with a panel they did not ask for is a different thing from
-    /// offering them a button beside it. It takes the same two authorities
-    /// `shouldShowDownloadPillForPlatform` takes, in the same order. X uses
-    /// its own status-owned gate in `handleXPage` before reaching any player:
-    ///
-    ///  1. the URL SHAPE, where a platform has video-only surfaces
-    ///     (`pathIsInherentlyVideo`). This is load-bearing rather than an
-    ///     optimisation — an Instagram reel carries NO video metadata at all
-    ///     (`og:type` is "article", the only media meta is a JPG) and hydrates
-    ///     its `<video>` well after this file runs, so waiting for a signal
-    ///     there would mean waiting for one that never comes.
-    ///  2. otherwise the video signal — `og:video` / player metadata / a
-    ///     `<video>` / a GIF — looked for again on a short bounded schedule,
-    ///     since a client-rendered post often has none of it yet at
-    ///     `document_idle`.
-    function autoPresentVideoOverlay(platform, target, attempt) {
-        if (videoOverlayDismissed) { return; }
-        if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
-        if (pathIsInherentlyVideo(platform) || hasVideoOrAnimatedImageSignal()) {
-            target.present();
-            return;
-        }
-        var next = attempt + 1;
-        if (next >= AUTO_PLAYER_RETRY_DELAYS.length) { return; }
-        setTimeout(function () { autoPresentVideoOverlay(platform, target, next); },
-                   AUTO_PLAYER_RETRY_DELAYS[next]);
-    }
-
     /// `<scheme>://resolvedmedia?ret=safari` — a payload-free hand-off, exactly
     /// like `rescue`: the assets are already in the App Group, so the app drains
     /// them and bounces back here (`SafariReturnPolicy`).
@@ -3329,7 +3271,6 @@
     // For the WKWebView harness (no extension host) — see SafariVideoOverlayTests.
     window.__lunaPresentVideoOverlay = presentVideoOverlay;
     window.__lunaVideoOverlayID = VIDEO_OVERLAY_ID;
-    window.__lunaAutoPlayerRetryDelays = AUTO_PLAYER_RETRY_DELAYS;
     window.__lunaInstantSizingMilliseconds = PLAYER_INSTANT_SIZING_MS;
 
     var PILL_ID = "queue-read-button";
@@ -3784,8 +3725,8 @@
         };
     }
 
-    // The same pill, tapped to open the in-page player instead of leaving for
-    // the app — with `downloadTargetFor`'s hand-off carried along for a failed
+    // The pill's Play Video action opens the in-page player — with
+    // `downloadTargetFor`'s hand-off carried along for a failed
     // queue operation after the user taps Download.
     //
     // Reddit deliberately does NOT come through here (see `handleReddit`): its
@@ -4090,13 +4031,11 @@
         var kind = resp && resp.mode !== "never" ? xPageContentKind() : null;
         var signature = location.href + "|" + kind + "|" + JSON.stringify(resp);
         if (signature === xPageSignature) { return; }
-        var previousURL = xPageSignature && xPageSignature.split("|")[0];
         xPageSignature = signature;
         var generation = ++xPageGeneration;
         removeLunaButton();
         var overlay = document.getElementById(VIDEO_OVERLAY_ID);
         if (overlay) { overlay.click(); } // run normal player/listener cleanup
-        if (previousURL !== location.href) { videoOverlayDismissed = false; }
         if (!kind || !(kind === "media" ? resp.supportsMedia : resp.supportsArticles)) { return; }
         var sourceURL = location.href;
         var install = function (walk) {
@@ -4121,7 +4060,6 @@
                 else { window.location.href = url(); }
             };
             injectLunaButton(target);
-            if (kind === "media" && present && !videoOverlayDismissed) { target.present(); }
         };
         // A plugin's broad media claim (which can include photos) is never
         // permission to put a player over a feed or ordinary text-only tweet.

@@ -13,7 +13,9 @@ keeps the existing long-press drag placement.
 
 Tapping opens a web popover with **Play Video** (when this target can present a
 video and Play in Safari is enabled), **Open in Luna**, and **Hide**. Play opens
-the existing system-controls video popup. Open invokes the target's save/model
+the existing system-controls video popup. Matching a URL, resolving its video,
+opening the menu, or navigating to another post never opens the player
+automatically. Open invokes the target's save/model
 handoff separately from playback. Hide removes the floating controls and cancels
 pending playback for the whole document, including SPA navigation; refreshing
 restores them. The menu supports keyboard activation, arrow navigation, Escape,
@@ -117,7 +119,7 @@ second DOM-based verdict from X's delayed or missing tweet markup.
 | Page/platform recognition (`recognizedPlatformPage`, `currentRedditIsPost`, `currentYouTubeIsVideo`) | Needs the live URL + DOM at the moment the user is looking at it; the host lists come from Swift | `platform_hosts.generated.js`, generated from `PlatformRecognizer.rules`; `PlatformHostsJSParityTests` |
 | Has-video / static-image signals (`hasVideoOrAnimatedImageSignal`, `redditPostHasMedia`) | Reads the rendered DOM (`<video>`, `og:` tags, `shreddit-post`) | `SafariRedditGatingTests`, `SafariArticleHeuristicTests` |
 | Article / product classification | Same — rendered DOM | `news_hosts.generated.js`, `product_rules.generated.js`; `ProductPageRulesJSParityTests`, `ProductPageJSFixtureParityTests` |
-| The pill and the video overlay | In-page UI has to be in-page | `SafariPillLabelTests`, `SafariVideoOverlayTests` (the overlay, driven directly), `SafariMediaPillTests` (how a page GETS one: which target it earns, the auto-open, the pill as the way back) |
+| The pill and the video overlay | In-page UI has to be in-page | `SafariPillLabelTests`, `SafariVideoOverlayTests` (the overlay, driven directly), `SafariMediaPillTests` (how a page GETS one: which target it earns, playback only after selecting Play Video) |
 
 **The rule for the next platform.** New extraction logic goes into
 `LunaMediaResolve` once and every surface gets it for free — there is no Safari
@@ -628,9 +630,9 @@ Downloader-platform flow:
    text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna" — shown only when
    the host app handles media (Downloader / central Luna). The **in-page video player**
-   (below) opens BY ITSELF on such a page when the page's subject is a video; the pill
-   is then how the user gets back to it after a dismissal, and the route on a page that
-   never earns an auto-open. The deep link `<ownScheme>://read?url=...&ret=safari`
+   (below) opens only after the user taps the pill and selects Play Video.
+   The menu also keeps Open in Luna available independently of playback.
+   The deep link `<ownScheme>://read?url=...&ret=safari`
    remains Reddit's pill action. An unplayable resolve leaves other pages alone.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
    those URLs if the user adds/saves them manually, but the Safari extension only shows
@@ -661,8 +663,9 @@ Downloader-platform flow:
    hydration, which only Reddit does today.
 5. **X requires an individual status and evidence from that status itself.**
    Central Luna's X plugin verifies the requested status ID in the resolved
-   payload and uses only that status's assets. Its confirmed video/GIF opens the
-   player even without a rendered tweet or timestamp. Static photos and ordinary
+   payload and uses only that status's assets. Its confirmed video/GIF offers
+   Play Video even without a rendered tweet or timestamp; selecting that menu
+   action opens the player. Static photos and ordinary
    short text do not open it; reply/quote videos cannot qualify the opened post.
    The plugin decision watches URL changes and rejects stale results.
    In standalone extensions, `handleXPage` gates built-in decisions before any
@@ -670,15 +673,15 @@ Downloader-platform flow:
    paths get neither control, with no article/product fallback. The opened
    `article[data-testid="tweet"]` is identified by its own timestamp permalink;
    quoted posts, replies, recommendations and page-wide metadata cannot provide
-   its video or text evidence. Its own video/player earns the media pill and
-   auto-opens the player (unless disabled). Text over 280 Unicode code points,
+   its video or text evidence. Its own video/player earns the media pill with
+   a Play Video menu action (unless disabled). Text over 280 Unicode code points,
    numbered threads, expanded-text controls and X Article bodies earn a reader
    pill, which opens Luna without presenting a player. Ordinary short text and
    photo-only tweets earn neither. Text handoffs use the thread resolver instead
    of capturing the surrounding conversation as article HTML.
    A 500ms X-only check handles delayed hydration and SPA navigation, removes
    stale controls and cleans up the old player.
-   Dismissal holds for the current URL; the pill can reopen its video. Existing
+   A dismissed player stays closed until Play Video is selected again. Existing
    app capability and suggestion/player settings still apply.
    `SafariXEligibilityTests` exercises these paths through the complete decision.
 6. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
@@ -718,30 +721,17 @@ Settings has written nothing, so no default is ever written anywhere.
 `SafariMediaPillTests` covers both halves of the off state and
 `SafariVideoOverlayContractTests` pins the key across all three processes.
 
-**It opens on its own, and the pill is the way back to it.** On a page whose
-subject is a video, the resolve starts without a tap. The popup appears only
-after the resolver returns a playable video or GIF URL.
-The circle stays where it was: its Play Video menu action reopens a dismissed
-player; Open in Luna remains a separate handoff.
-
-Auto-open asks a NARROWER question than pill eligibility, and the two are not the
-same question. Outside X, a bare platform host recognizes (`tiktok.com`) and a
-feed that slips past the static-image suppression can earn a pill — but covering
-someone's feed with a panel they did not ask for is a different act from offering
-them a button beside it. It takes the same two authorities the pill takes, in the
-same order: **the URL shape** where a platform has video-only surfaces
-(`pathIsInherentlyVideo`), otherwise **the video signal** (`og:video` / player
-metadata / a `<video>` / a GIF). Order matters here rather than being tidiness —
-an Instagram reel carries no video metadata at all and hydrates its `<video>`
-long after this file runs, so on the one platform where the signal never comes,
-the path is the whole answer. Where the signal IS the answer, a client-rendered
-post frequently has none of it at `document_idle`, so it looks again on a bounded
-schedule (`AUTO_PLAYER_RETRY_DELAYS`, three looks inside ~2.5s) instead of giving
-up on the first look. A dismissal cancels whatever is still pending: closing it
-once means this page, not this instant.
+**Playback requires Play Video in the pill menu.** Recognizing a media page
+only offers the Luna pill. Tapping the pill opens its menu; selecting Play Video
+resolves the asset and opens the popup only after a playable video or GIF URL
+is available. Core may ingest a plugin match beforehand to decide whether to
+offer media controls, but that result never opens the player by itself.
+Delayed page hydration, SPA navigation, and a fresh visit also wait for the
+menu action. Closing the popup leaves the pill available for another explicit
+Play Video selection; Open in Luna remains a separate handoff.
 
 ```
-content.js (recognized media page, or a pill tap)
+content.js (pill menu → Play Video)
   → runtime.sendMessage {type:"resolveMedia", url, title}
   → background.js relay → sendNativeMessage
   → SafariWebExtensionHandler: SocialMediaResolver().resolveAssets(for:)   ← the app's own resolver
@@ -945,12 +935,12 @@ ships no `media-src` at all).
 pill appears on autoplays its own video, and an overlay does not stop it — the
 user would hear two soundtracks. The overlay pauses exactly the `<video>`s that
 were playing when it opened and resumes those on dismiss; one the user had
-already paused stays paused. Since the panel now opens BEFORE the page's own
-player necessarily exists, that pause cannot be a one-shot sweep: a capture-phase
+already paused stays paused. The user may request the panel before the page's
+own player exists, so that pause cannot be a one-shot sweep: a capture-phase
 `play` listener on the document (`play` does not bubble) pauses — and remembers —
 anything outside the panel that starts playing for as long as the panel is up.
-Without it, the auto-open's own earliness is what would leave a reel autoplaying,
-unmuted, behind the overlay.
+This also catches a reel that hydrates and starts playing after the requested
+overlay has opened.
 
 **Failed playback leaves the page clear.** An empty or rejected resolve,
 the handler's 20s budget, or the JS 25s backstop never displays the popup.

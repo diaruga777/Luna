@@ -6,20 +6,19 @@
 import XCTest
 
 /// The route from a media page to the in-page player: which target a recognized
-/// platform page earns, when the player opens ITSELF, and what tapping the pill
-/// does once it has.
+/// platform page earns and how its menu requires an explicit Play Video action.
 ///
 /// `SafariVideoOverlayTests` drives `__lunaPresentVideoOverlay` directly with a
 /// hand-built hand-off, so it proves what the overlay does once open and nothing
 /// about how the user gets there. This suite runs the real decision
-/// (`offerLunaButton` -> `videoOverlayTargetFor` -> `injectLunaButton` +
-/// `autoPresentVideoOverlay`) against each platform host that reaches it.
+/// (`offerLunaButton` -> `videoOverlayTargetFor` -> `injectLunaButton`)
+/// against each platform host that reaches it.
 @MainActor
 final class SafariMediaPillTests: XCTestCase {
 
     private lazy var js = SafariJSTestHarness(self)
 
-    /// A post page whose subject is a video — the signal the auto-open waits for.
+    /// A post page whose subject is a video.
     nonisolated private static let videoPost = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <meta property="og:video" content="https://cdn.example.com/v.mp4">
@@ -64,7 +63,9 @@ final class SafariMediaPillTests: XCTestCase {
             html: html, urlString: urlString,
             scripts: [SafariJSTestHarness.platformHosts, SafariJSTestHarness.contentScript])
         _ = js.evaluate("""
+            window.__resolveCalls = 0;
             window.__lunaSetResolveMediaRequest(function () {
+                window.__resolveCalls++;
                 return Promise.resolve({ assets: \(assets) });
             });
             window.__lunaOfferLunaButton({ scheme: "lunadownloader", supportsMedia: true });
@@ -80,8 +81,7 @@ final class SafariMediaPillTests: XCTestCase {
         js.bool("!!document.getElementById(window.__lunaVideoOverlayID)")
     }
 
-    /// Polls for `predicate` — the auto-open's later looks and the resolve both
-    /// land on a timer/microtask, so there is nothing to await directly.
+    /// Polls for hydration and asynchronous media resolution.
     @discardableResult
     private func eventually(_ predicate: String, within seconds: TimeInterval = 2) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
@@ -110,45 +110,40 @@ final class SafariMediaPillTests: XCTestCase {
         _ = js.evaluate("void 0")
     }
 
-    // MARK: - The player opens itself
+    // MARK: - Playback requires the menu action
 
-    /// The whole point: on a post page whose subject is a video, nothing has to
-    /// be tapped.
-    func testThePlayerOpensWithoutATapOnEveryMediaPage() {
+    func testEveryMediaPageWaitsForPlayVideoInThePillMenu() {
         for page in Self.mediaPages {
             offer(at: page)
-            XCTAssertTrue(waitForOverlay(), "no player opened on \(page)")
-            XCTAssertTrue(
-                eventually("""
-                    (function () {
-                        var overlay = document.getElementById(window.__lunaVideoOverlayID);
-                        var video = overlay && overlay.querySelector("video");
-                        return !!video
-                            && video.getAttribute("src") === "https://cdn.example.com/v.mp4";
-                    })()
-                    """),
-                "the resolved video didn't reach the stage on \(page)")
+            XCTAssertTrue(pillExists(), page)
+            XCTAssertFalse(waitForOverlay(within: 0.6), page)
+            XCTAssertEqual(js.number("window.__resolveCalls"), 0, page)
+            _ = js.evaluate("document.getElementById(window.__lunaPillID).click(); void 0")
+            XCTAssertTrue(js.bool("!!document.querySelector('[data-luna-action=playVideo]')"), page)
+            XCTAssertFalse(overlayExists(), "the pill should only open its menu on \(page)")
+            XCTAssertEqual(js.number("window.__resolveCalls"), 0, page)
+            _ = js.evaluate("document.querySelector('[data-luna-action=playVideo]').click(); void 0")
+            XCTAssertTrue(waitForOverlay(), page)
+            XCTAssertEqual(js.number("window.__resolveCalls"), 1, page)
+            XCTAssertEqual(js.string("document.getElementById(window.__lunaVideoOverlayID).querySelector('video').getAttribute('src')"),
+                           "https://cdn.example.com/v.mp4", page)
         }
     }
 
-    /// The pill stays: it is the way back after a dismissal, and the hand-off on
-    /// a page that never resolves.
-    func testThePillIsStillOfferedBehindThePlayer() {
+    func testThePillRemainsAvailableBehindTheRequestedPlayer() {
         offer(at: Self.mediaPages[0])
+        tapPill()
         XCTAssertTrue(waitForOverlay())
         XCTAssertTrue(pillExists())
     }
 
-    /// An Instagram reel carries NO video metadata whatsoever — `og:type` is
-    /// literally "article" and the only media meta is the JPG thumbnail — and
-    /// hydrates its `<video>` well after this file runs. Waiting for a signal
-    /// there is waiting for one that never arrives, so the URL shape has to
-    /// settle it (the same authority the pill itself uses).
-    func testAnInstagramReelOpensThePlayerWithNoVideoMetadataAtAll() {
+    /// A reel can offer Play Video without waiting for Instagram's video DOM.
+    func testAnInstagramReelRequiresPlayEvenWithNoVideoMetadata() {
         offer(Self.instagramReelAsServed, at: "https://www.instagram.com/reel/ABC123/")
         XCTAssertTrue(pillExists())
-        XCTAssertTrue(
-            waitForOverlay(), "a reel whose page says \"article\" still opened no player")
+        XCTAssertFalse(waitForOverlay(within: 0.6))
+        tapPill()
+        XCTAssertTrue(waitForOverlay())
     }
 
     /// …and `/p/`, which carries both photos and videos, stays on the heuristics:
@@ -159,27 +154,18 @@ final class SafariMediaPillTests: XCTestCase {
         XCTAssertFalse(waitForOverlay(within: 0.5))
     }
 
-    /// A client-rendered post often has neither `<video>` nor video metadata at
-    /// `document_idle`; the bounded retry walk is what keeps the auto-open from
-    /// depending on hydration having finished first. (On an X post — a shape whose
-    /// path settles nothing, so the signal is all there is.)
-    func testAVideoThatHydratesAfterThePillStillOpensThePlayer() {
+    func testAVideoThatHydratesLaterOffersThePillWithoutOpeningThePlayer() {
         offer(Self.noVideoSignal, at: "https://x.com/someone/status/1234567890")
-        XCTAssertFalse(overlayExists(), "nothing to play yet — nothing should open")
+        XCTAssertFalse(overlayExists())
         _ = js.evaluate("""
             document.body.innerHTML = '<article data-testid="tweet"><a href="/someone/status/1234567890"><time>Today</time></a><video></video></article>';
             "hydrated"
             """)
-        XCTAssertTrue(
-            waitForOverlay(within: secondLook + 1),
-            "a <video> that appears after the pill should still open the player")
-    }
-
-    /// The walk's second look, in seconds — read from the script rather than
-    /// restated here, so a change to the schedule can't silently slow this suite
-    /// into flakiness.
-    private var secondLook: TimeInterval {
-        js.number("window.__lunaAutoPlayerRetryDelays[1]") / 1000
+        XCTAssertTrue(eventually("!!document.getElementById(window.__lunaPillID)"))
+        XCTAssertFalse(waitForOverlay(within: 1))
+        XCTAssertEqual(js.number("window.__resolveCalls"), 0)
+        tapPill()
+        XCTAssertTrue(waitForOverlay())
     }
 
     /// X feeds never earn a pill or player, even before they hydrate.
@@ -193,7 +179,7 @@ final class SafariMediaPillTests: XCTestCase {
 
     /// Closing it is the user saying "not this page". A later hydration look
     /// must not put the popup back over the page.
-    func testADismissalStopsThePendingAutoOpen() {
+    func testADismissedPlayerStaysClosedAfterHydration() {
         offer(Self.noVideoSignal, at: Self.mediaPages[0])
         tapPill()
         XCTAssertTrue(overlayExists(), "the resolved video should open from the pill")
@@ -201,12 +187,13 @@ final class SafariMediaPillTests: XCTestCase {
         XCTAssertFalse(overlayExists())
         _ = js.evaluate("document.body.appendChild(document.createElement(\"video\")); \"hydrated\"")
         XCTAssertFalse(
-            waitForOverlay(within: secondLook + 1), "a dismissed player reopened itself")
+            waitForOverlay(within: 1), "a dismissed player reopened itself")
     }
 
     /// …but the pill is still the way back to it.
     func testThePillReopensThePlayerAfterADismissal() {
         offer(at: Self.mediaPages[0])
+        tapPill()
         XCTAssertTrue(waitForOverlay())
         dismissOverlay()
         tapPill()
@@ -215,11 +202,12 @@ final class SafariMediaPillTests: XCTestCase {
 
     // MARK: - The page's own player
 
-    /// The panel now opens BEFORE the page's own video necessarily exists, so the
+    /// The requested panel can open BEFORE the page's own video necessarily exists, so the
     /// pause cannot be a one-shot sweep: a post that hydrates and autoplays a
     /// second later would otherwise play, unmuted, behind the panel.
     func testAPageVideoThatStartsAfterThePlayerOpensIsPaused() {
         offer(at: Self.mediaPages[0])
+        tapPill()
         XCTAssertTrue(waitForOverlay())
         _ = js.evaluate("""
             var late = document.createElement("video");
@@ -242,7 +230,7 @@ final class SafariMediaPillTests: XCTestCase {
 
     /// Reddit's video and audio are separate DASH streams, so there is nothing a
     /// single `<video>` can play: its pill keeps the plain hand-off, and it never
-    /// enters the overlay path — auto-open included.
+    /// enters the overlay path.
     func testARedditPostNeverOpensThePlayerAndStillHandsOff() {
         js.load(
             html: """
@@ -294,8 +282,7 @@ final class SafariMediaPillTests: XCTestCase {
             """)
     }
 
-    /// The setting's whole job: a video page the player would have taken over is
-    /// left alone.
+    /// Disabling Play in Safari keeps the player closed.
     func testTheDisabledPlayerNeverOpensItself() {
         offerWithPlayerDisabled(at: Self.mediaPages[0])
         XCTAssertFalse(

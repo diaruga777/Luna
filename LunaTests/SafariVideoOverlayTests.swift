@@ -593,7 +593,7 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         let builder = contentScript
             .components(separatedBy: "function presentVideoOverlay(").last ?? ""
         let panelSection = builder
-            .components(separatedBy: "\n    function autoPresentVideoOverlay(").first ?? ""
+            .components(separatedBy: "\n    function resolvedMediaTarget(").first ?? ""
         XCTAssertFalse(
             panelSection.contains("100vh") || panelSection.contains("100dvh"),
             "the panel is sized in viewport units again — those are the layout viewport, "
@@ -781,14 +781,13 @@ final class SafariVideoOverlayContractTests: XCTestCase {
             "Reddit must not enter the in-page player: its audio is a separate stream")
     }
 
-    /// The overlay is offered from exactly one place — the non-Reddit platform
-    /// branch of `offerLunaButton`.
-    func testTheOverlayIsOfferedFromExactlyOnePillDecision() {
+    /// Built-in playback is offered by the non-Reddit platform branch and X's
+    /// status-owned decision. Both offer the pill menu rather than opening it.
+    func testTheOverlayIsOfferedOnlyFromMediaPillDecisions() {
         let uses = contentScript.components(separatedBy: "videoOverlayTargetFor(").count - 1
-        // The declaration, plus the one call site.
+        // The declaration, plus the platform and X call sites.
         XCTAssertEqual(
-            uses, 2,
-            "videoOverlayTargetFor should be declared once and called once — a second call "
-                + "site is a page kind quietly gaining a player")
+            uses, 3,
+            "videoOverlayTargetFor should only serve platform media and X status pills")
     }
 }

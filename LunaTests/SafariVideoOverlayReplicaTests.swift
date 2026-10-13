@@ -40,7 +40,7 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
             "content.js no longer builds the player panel in presentVideoOverlay")
         let end = try XCTUnwrap(
             content.range(
-                of: "\n    function autoPresentVideoOverlay(",
+                of: "\n    function resolvedMediaTarget(",
                 range: start.upperBound..<content.endIndex))
         return String(content[start.lowerBound..<end.lowerBound])
     }

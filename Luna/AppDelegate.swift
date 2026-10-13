@@ -48,6 +48,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
     private var savesObserver: NSObjectProtocol?
     private var wifiAvailableObserver: NSObjectProtocol?
+    private var launchRevealObserver: NSObjectProtocol?
+    private var hasStartedLaunchMaintenance = false
     /// Price trackers surface only in product-handling apps (Price Tracker and
     /// the central Luna app), so only those install a refresh runner — and only
     /// a target with a runner registers and schedules the price-refresh job.
@@ -100,14 +102,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
-        // Diagnostic-only: the account address just feeds a log line, so defer the
-        // Keychain read off the launch frame (a just-rebooted device's Keychain
-        // query can be slow).
-        DispatchQueue.global(qos: .utility).async {
-            let account = EmailAccountStore.shared.account?.address ?? "none"
-            DiagnosticLog.shared.record("email account: \(account)", category: "mail")
-        }
-
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaSaves can't present UI, so the app shell installs the
         // presenter. This is the same cross-tier protocol-witness pattern as
@@ -125,17 +119,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // row needs.
         WeeklySaveRefresher.metadataFetcher = WeeklyRowMetadataFetcher()
 
-        // The weekly pull starts NOW, not with the end-of-launch housekeeping:
-        // the util card wants its Save of the Week row the moment the deck
-        // appears, and the fetch is a network round-trip that only gets slower
-        // the later it leaves. The task body still runs off the launch frame
-        // (the main actor is busy until didFinishLaunching returns).
-        if !LunaStage.isActive {
-            Task(priority: .userInitiated) { @MainActor in
-                await WeeklySaveRefresher.shared.refreshWeeklySaves()
-            }
-        }
-
         // Diagnostics export header shows the connected email account (which lives
         // above LunaStorage), injected here.
         DiagnosticLog.exportIdentityProvider = ConnectedAccountExportIdentity()
@@ -146,39 +129,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // rescueTrigger is set before the launch re-ingest can surface failures.
         URLRescueWiring.install()
 
-        // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated)
-        // and finish any file deletion a previous run committed but was killed
-        // before it could unlink (`PendingDeleteReaper`).
-        if !LunaStage.isActive {
-            DispatchQueue.global(qos: .utility).async {
-                _ = NetworkReachability.shared
-                SavesStore.shared.reapPendingDeletes()
-            }
-        }
-
-        // Retry any items whose content download didn't finish (e.g. saved from the
-        // background intent without network time).
-        // Both are skipped in staged mode: the re-ingest would resolve the very
-        // saves a stage froze mid-fetch, and the launch sweep would purge the
-        // media a stage just seeded. This is what makes a staged screen HOLD.
-        if !LunaStage.isActive {
-            // Listen for saves a fast surface only had time to RESERVE — Safari's
-            // Download hand-off is the one that does that — so their metadata
-            // runs in the background instead of waiting for someone to open the
-            // app. Installed BEFORE `KindWiring.appDidLaunch()` below, which is
-            // where a cold hand-off launch drains its queue and asks for exactly
-            // this.
-            BackgroundIngestCompletion.install()
-            SavesIngestor.shared.ingestAllPending()
-            // Settle (or finish) anything a previous hand-off left owed — the
-            // sweep above may be doing the same rows, which the runner waits out
-            // rather than duplicating.
-            BackgroundIngestCompletion.runFromLifecycle()
-            // Kind-specific launch resumption: orphaned-media sweep + Live Activity
-            // reattachment (media apps), Spotlight indexing and pending
-            // ereader-send retry (article apps).
-            KindWiring.appDidLaunch()
-        }
+        // The observer must exist before a cold Safari hand-off is routed.
+        // Retrying old saves and lifecycle sweeps wait for the first card.
+        if !LunaStage.isActive { BackgroundIngestCompletion.install() }
 
         // Local notifications: show as banners while open. Launch does NOT ask for
         // authorization — a fresh install has nothing to notify anyone about, so the
@@ -219,8 +172,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // good-enough proxy for both: take out the trash (purge expired saved
             // media) and check whether prices are worth rechecking (reschedule the
             // price refresh). That overlap is not a reason to split the observer.
+            guard let self, self.hasStartedLaunchMaintenance else { return }
             KindWiring.savesDidChange()
-            self?.schedulePriceRefresh(reason: "saves list changed")
+            self.schedulePriceRefresh(reason: "saves list changed")
         }
         // Resume whatever a Wi-Fi-only network policy deferred, the instant
         // Wi-Fi reconnects — the app-launch/foreground and background-refresh
@@ -228,36 +182,28 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // decision (media downloads / article link preloads).
         wifiAvailableObserver = NotificationCenter.default.addObserver(
             forName: NetworkReachability.wifiAvailableNotification, object: nil, queue: nil
-        ) { _ in
-            KindWiring.wifiBecameAvailable()
-        }
-
-        // Read incoming mail (Luna shares + newsletters).
-        if sharesByEmail && !LunaStage.isActive {
-            Task { await IncomingMailImporter.shared.importNewMail() }
-            scheduleMailFetch()
-        }
-        // Both calls start with a full list read
-        // (priceTrackersStalestFirst() -> items()); defer that store read off the
-        // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
-        // each call still runs exactly once per launch — just not synchronously
-        // before didFinishLaunching returns.
-        if schedulesPriceRefresh && !LunaStage.isActive {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                self?.schedulePriceRefresh(reason: "launch")
-                self?.refreshOverduePriceTrackersOnLaunch()
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard self?.hasStartedLaunchMaintenance == true else { return }
+                KindWiring.wifiBecameAvailable()
             }
         }
-        // Off the launch frame too: the proposal check is key-holder-only
-        // housekeeping no visible surface is waiting on. (The weekly pull
-        // itself starts earlier, at user-initiated priority — the card's row
-        // is waiting on that one.)
+
+        // A main-queue task enqueued during didFinishLaunching can still run
+        // before UIKit commits the window. Use the actual reveal completion.
+        // Background-only launches have no window to wait for.
         if !LunaStage.isActive {
-            DispatchQueue.global(qos: .utility).async {
-                WeeklyProposalBackgroundCheck.schedule(reason: "launch")
-                Task { @MainActor in
-                    await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
-                }
+            launchRevealObserver = NotificationCenter.default.addObserver(
+                forName: AppLaunchTransition.didFinish, object: nil, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.async { self?.startLaunchMaintenance() }
+            }
+            // A normal scene launch can still report .background here. Wait
+            // for scene connection before deciding there is no UI to reveal.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard application.connectedScenes.isEmpty,
+                      application.applicationState == .background else { return }
+                self?.startLaunchMaintenance()
             }
         }
         #if DEBUG
@@ -268,11 +214,51 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         return true
     }
 
+    /// Runs once after the launch card is visible, or immediately for a
+    /// background-only wake. Deep links already have all of their wiring.
+    func startLaunchMaintenance() {
+        guard !LunaStage.isActive, !hasStartedLaunchMaintenance else { return }
+        hasStartedLaunchMaintenance = true
+        if let launchRevealObserver {
+            NotificationCenter.default.removeObserver(launchRevealObserver)
+            self.launchRevealObserver = nil
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            let account = EmailAccountStore.shared.account?.address ?? "none"
+            DiagnosticLog.shared.record("email account: \(account)", category: "mail")
+            _ = NetworkReachability.shared
+            SavesStore.shared.reapPendingDeletes()
+            WeeklyProposalBackgroundCheck.schedule(reason: "launch")
+        }
+        Task { @MainActor in
+            await WeeklySaveRefresher.shared.refreshWeeklySaves()
+            await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+        }
+        SavesIngestor.shared.ingestAllPending()
+        BackgroundIngestCompletion.runFromLifecycle()
+        KindWiring.appDidLaunch()
+        // The first scene foreground callback is skipped below; run its
+        // kind-specific resumptions here, after launch installation completes.
+        KindWiring.sceneDidForeground()
+        if sharesByEmail {
+            Task { await IncomingMailImporter.shared.importNewMail() }
+            scheduleMailFetch()
+        }
+        if schedulesPriceRefresh {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.schedulePriceRefresh(reason: "launch")
+                self?.refreshOverduePriceTrackersOnLaunch()
+            }
+        }
+    }
+
     func applicationDidEnterBackground(_ application: UIApplication) {
         // A staged run backgrounds and returns during a screenshot pass; none of
         // this housekeeping should be allowed to reflow the screen it captured
         // (retiring a setup button is exactly that).
         guard !LunaStage.isActive else { return }
+        startLaunchMaintenance()
         // Kind-specific background work: pending-completion promotion + send
         // retry (article apps), Live Activity reattachment (media apps).
         KindWiring.appDidEnterBackground()

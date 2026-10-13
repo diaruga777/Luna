@@ -21,7 +21,9 @@ New SwiftPM module **`LunaAudioPlayback`** in `LunaLibraries/Package.swift`
   `AVAudioPCMBuffer` to one canonical float32 format with `AVAudioConverter`.
   Captures word timings from `willSpeakRangeOfSpeechString` during `write`,
   mapped to sample offsets. Output: `RenderedSegment { blockIndex, buffers,
-  wordMarkers, duration }`.
+  wordMarkers, duration }`. The speech synthesizer is created on the first
+  render, not while the app wires up playback at launch. Remote-command
+  registration still happens at launch for background playback restoration.
 - **`ArticleAudioEngine`** — long-lived `AVAudioPlayerNode` →
   `AVAudioUnitTimePitch` → `mainMixerNode`. User playback rate is
   `timePitch.rate` (rendered audio is never re-synthesized on a rate change).

@@ -74,10 +74,17 @@ trackers without an owner require an explicit re-save. Unavailable refreshes rep
 `publisher-access.js` embeds `access-data.js` (publisher rules, blockers and cleanup
 scripts) and `access.js` (AMP, crawler/referrer/cookie selection, archive lookup and
 browser sequence). These are ordinary removable/disableable plugin resources.
+Crawler probes and the parallel newest/oldest archive lookups accept the first
+readable article immediately; a slow sibling request cannot hold that result.
+Only when every probe declines or fails does the plugin proceed to the next strategy.
 Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 /
 2048 bytes each). Native WebKit validates and executes those declarations without
 choosing publisher rules. Safari preserves browser-deferred outcomes without a save
 ID; the app/share/action browser bridge retains its existing save-scoped lifecycle.
+The app keeps the browser deadline active while capturing a finished page's HTML
+and cookies. Capture has at most ten seconds and cannot extend the request deadline;
+a stalled capture stops the spinner, shows the timeout message and offers Safari.
+Late capture callbacks leave that timeout state intact.
 
 Secondary paths audited and gated: inline/RSVP/rabbit-hole article loading, article
 refresh, archive unlock and unattended recovery, artwork/favicon backfill, recent

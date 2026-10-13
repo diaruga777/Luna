@@ -32,6 +32,19 @@ const LunaAccess = (() => {
     async function fetchArticle(url,original,options={}) {
         try {const r=await luna.fetch(Object.assign({url,timeout:5,cookies:'none'},options));return r.ok&&typeof r.text==='string'&&!LunaWeb.isInterstitial(r.url||url)?article(r.text,original):null;}catch(_){return null;}
     }
+    // A readable response settles the search immediately. Waiting for every
+    // probe can hold a complete article behind a slow or trickling response.
+    // Declines and failures only finish the search after all probes decline.
+    function firstReadable(probes) {
+        return new Promise(resolve => {
+            let remaining=probes.length;
+            if(!remaining){resolve(null);return;}
+            probes.forEach(probe => Promise.resolve(probe).catch(()=>null).then(value => {
+                if(value)resolve(value);
+                if(--remaining===0)resolve(null);
+            }));
+        });
+    }
     function blockers(url,rule) {
         const patterns=[...(rule && rule.blockRegex || [])];
         for(const r of LunaAccessRules.generalBlockers || []) if(!(r.excludedDomains || []).some(d=>matches(host(url),d)))patterns.push(r.blockRegex);
@@ -74,11 +87,11 @@ const LunaAccess = (() => {
         if(rule)requests.push(fetchArticle(url,url,{userAgent:rule.useragentCustom||rule.useragent||'safari',headers:rule.refererCustom||rule.referer?{Referer:rule.refererCustom||'https://www.google.com/'}:{},cookies:rule.allowCookies?'shared':'none'}));
         const declined=/haaretz|themarker|nbcnews|telegraph/.test(host(url))?[1,2,5]:host(url)==='leparisien.fr'?[0,1,2,4,5]:host(url)==='law.com'?[0,3,4]:[];
         identities.filter((_,i)=>!declined.includes(i)).slice(0,4).forEach(userAgent=>requests.push(fetchArticle(url,url,{userAgent})));
-        const results=await Promise.all(requests);const found=results.find(Boolean);if(found)return found;
+        const found=await firstReadable(requests);if(found)return found;
         const published=html&&LunaWeb.meta(luna.html.parse(html,url)).published;
         const recent=published&&Date.now()-Date.parse(published)<180*86400000;
-        const snapshots=await Promise.all([archived(url,false),recent?Promise.resolve(null):archived(url,true)]);
-        if(snapshots.some(Boolean))return snapshots.find(Boolean);
+        const snapshotArticle=await firstReadable([archived(url,false),recent?Promise.resolve(null):archived(url,true)]);
+        if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;
         const live=await luna.browser.open({url,saveId,cookies:rule&&rule.allowCookies?'persistent':'ephemeral',

@@ -26,3 +26,21 @@ console.log('Core ownership fixtures passed: retail prices, shopping sellers, ma
 const safari=plugin('publisher-access',async req=>({ok:true,text:gated,url:req.url}));
 safari.luna.browser={open:async()=>{throw Object.assign(Error('deferred'),{code:'browser-deferred'});}};
 await assert.rejects(safari.hooks.ingest({url:'https://example.test/premium',context:'safari',reason:'save'}),{code:'browser-deferred'});
+
+// A readable archive must not wait for the other snapshot lookup to finish.
+const beastURL='https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing';
+const archived=plugin('publisher-access',async req=>{
+    if(req.url.includes('/cdx/')) {
+        if(!req.url.includes('sort=reverse'))return new Promise(()=>{});
+        return {ok:true,text:JSON.stringify([['timestamp'],['20260307154638']]),url:req.url};
+    }
+    return {ok:true,text:req.url.includes('/web/')?full:gated,url:req.url};
+});
+archived.luna.browser={open:async()=>{throw Error('readable archive must not open a browser');}};
+let archiveTimer;
+const archiveAnswer=await Promise.race([
+    archived.hooks.ingest({url:beastURL,saveId:'test',reason:'save'}),
+    new Promise(resolve=>{archiveTimer=setTimeout(()=>resolve(null),500);})
+]);
+clearTimeout(archiveTimer);
+assert.equal(archiveAnswer?.kind,'article','a stalled oldest lookup must not hold a readable latest snapshot');

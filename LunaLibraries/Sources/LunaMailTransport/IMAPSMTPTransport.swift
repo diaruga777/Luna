@@ -63,6 +63,14 @@ public struct IMAPSMTPTransport: EmailTransport {
             after: cursor, senders: extraSenders, subjects: extraSubjects)
     }
 
+    public func fetchRecentShares(
+        since: Date, extraSenders: [String], extraSubjects: [String]
+    ) async throws -> FetchResult {
+        try await imap.fetchShares(
+            username: imapUsername, password: password, after: .fresh,
+            senders: extraSenders, subjects: extraSubjects, since: since)
+    }
+
     public func markRead(_ messageIDs: [String]) async throws {
         let uids = messageIDs.compactMap(Int.init)
         try await imap.markSeen(username: imapUsername, password: password, uids: uids)

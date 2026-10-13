@@ -14,15 +14,19 @@ public struct GraphMailTransport: EmailTransport {
 
     private let store: EmailAccountStore
     private let clientID: String
+    private let session: URLSession
 
-    public struct GraphError: Error, CustomStringConvertible {
+    public struct GraphError: Error, CustomStringConvertible, LocalizedError {
         public let detail: String
         public var description: String { detail }
+        public var errorDescription: String? { detail }
     }
 
-    public init(store: EmailAccountStore = .shared, clientID: String = MicrosoftOAuth.clientID) {
+    public init(store: EmailAccountStore = .shared, clientID: String = MicrosoftOAuth.clientID,
+                session: URLSession = .shared) {
         self.store = store
         self.clientID = clientID
+        self.session = session
     }
 
     // MARK: - EmailTransport
@@ -121,6 +125,43 @@ public struct GraphMailTransport: EmailTransport {
         return FetchResult(messages: messages, cursor: .graph(token: newestDate))
     }
 
+    public func fetchRecentShares(
+        since: Date, extraSenders: [String], extraSubjects: [String]
+    ) async throws -> FetchResult {
+        let start = ISO8601DateFormatter().string(from: since)
+        var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
+        components.queryItems = [
+            URLQueryItem(name: "$select", value: "id,subject,from,receivedDateTime,body,internetMessageHeaders"),
+            URLQueryItem(name: "$filter", value: "receivedDateTime ge \(start)"),
+            URLQueryItem(name: "$orderby", value: "receivedDateTime asc"),
+            URLQueryItem(name: "$top", value: "100"),
+        ]
+        var nextURL: String? = components.url!.absoluteString
+        var messages: [String: FetchedMessage] = [:]
+        while let pageURL = nextURL {
+            try Task.checkCancellation()
+            let page = try JSONDecoder().decode(MessagesPage.self, from: await get(pageURL))
+            for wire in page.value {
+                var headers = wire.headerMap
+                // Graph bodies are already decoded HTML/plain text, not MIME blobs.
+                headers["content-type"] = wire.body?.contentType?.lowercased() == "html"
+                    ? "text/html; charset=utf-8" : "text/plain; charset=utf-8"
+                headers.removeValue(forKey: "content-transfer-encoding")
+                let body = wire.body?.content ?? ""
+                let message = FetchedMessage(
+                    id: wire.id, uid: nil, from: wire.fromAddress, subject: wire.subject ?? "",
+                    date: wire.receivedDateTime ?? "", headers: headers, bodyText: body,
+                    marker: StreamIMAPClient.marker(headers: headers, body: body))
+                if Self.matches(message, senders: extraSenders, subjects: extraSubjects) {
+                    messages[message.id] = message
+                }
+            }
+            nextURL = page.nextLink
+        }
+        return FetchResult(
+            messages: messages.values.sorted { $0.date < $1.date }, cursor: .graph(token: start))
+    }
+
     /// The IMAP path's interest test: a Luna share marker, a sender match, or a
     /// subject substring match (both case-insensitive substring, like IMAP
     /// FROM/SUBJECT search).
@@ -191,7 +232,7 @@ public struct GraphMailTransport: EmailTransport {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = MicrosoftOAuth.formEncode(
             MicrosoftOAuth.refreshParameters(clientID: clientID, refreshToken: tokens.refreshToken))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             if let http = response as? HTTPURLResponse,
                Self.authenticationFailure(statusCode: http.statusCode, body: data) {
@@ -221,7 +262,7 @@ public struct GraphMailTransport: EmailTransport {
         let token = try await accessToken()
         var request = URLRequest(url: url(string))
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             if let http = response as? HTTPURLResponse,
                Self.authenticationFailure(statusCode: http.statusCode, body: data) {
@@ -235,7 +276,7 @@ public struct GraphMailTransport: EmailTransport {
     }
 
     private func send(_ request: URLRequest, expect status: Int, step: String) async throws {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw GraphError(detail: "\(step): no response")
         }
@@ -274,7 +315,14 @@ public struct GraphMailTransport: EmailTransport {
         let expires_in: Double
     }
 
-    private struct MessagesPage: Decodable { let value: [MessageWire] }
+    private struct MessagesPage: Decodable {
+        let value: [MessageWire]
+        let nextLink: String?
+        enum CodingKeys: String, CodingKey {
+            case value
+            case nextLink = "@odata.nextLink"
+        }
+    }
 
     private struct MessageWire: Decodable {
         let id: String

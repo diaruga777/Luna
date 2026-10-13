@@ -76,6 +76,15 @@ public struct AuthenticationStateTrackingTransport: EmailTransport {
         }
     }
 
+    public func fetchRecentShares(
+        since: Date, extraSenders: [String], extraSubjects: [String]
+    ) async throws -> FetchResult {
+        try await perform {
+            try await base.fetchRecentShares(
+                since: since, extraSenders: extraSenders, extraSubjects: extraSubjects)
+        }
+    }
+
     public func markRead(_ messageIDs: [String]) async throws {
         try await perform { try await base.markRead(messageIDs) }
     }

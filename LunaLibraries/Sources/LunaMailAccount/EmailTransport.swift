@@ -126,9 +126,24 @@ public protocol EmailTransport: Sendable {
         extraSubjects: [String]
     ) async throws -> FetchResult
 
+    /// Reapplies the current filters to messages received since this date,
+    /// ignoring the automatic cursor. The caller must dedupe processed mail.
+    func fetchRecentShares(
+        since: Date, extraSenders: [String], extraSubjects: [String]
+    ) async throws -> FetchResult
+
     /// Marks the given messages read (best-effort; failures are non-fatal).
     func markRead(_ messageIDs: [String]) async throws
 
     /// Installs the Luna inbox filter if the provider supports it.
     func createLunaFilter() async throws -> FilterOutcome
+}
+
+public extension EmailTransport {
+    func fetchRecentShares(
+        since: Date, extraSenders: [String], extraSubjects: [String]
+    ) async throws -> FetchResult {
+        throw NSError(domain: "LunaMail", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Recent email fetching is unavailable."])
+    }
 }

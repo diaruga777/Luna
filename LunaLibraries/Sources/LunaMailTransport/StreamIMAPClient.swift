@@ -11,10 +11,11 @@ import LunaMailAccount
 /// and to flag messages `\Seen`. Reuses `GmailIMAPClient`'s pure parsers.
 struct StreamIMAPClient {
 
-    struct IMAPError: Error, CustomStringConvertible {
+    struct IMAPError: Error, CustomStringConvertible, LocalizedError {
         let step: String
         let detail: String
         var description: String { "IMAP \(step) failed: \(detail)" }
+        var errorDescription: String? { description }
     }
 
     let host: String
@@ -39,7 +40,7 @@ struct StreamIMAPClient {
     /// just anchors the cursor at the current tip (no backlog import).
     func fetchShares(
         username: String, password: String,
-        after cursor: MailCursor, senders: [String], subjects: [String]
+        after cursor: MailCursor, senders: [String], subjects: [String], since: Date? = nil
     ) async throws -> FetchResult {
         let session = try await Session.open(host: host, port: port)
         defer { session.close() }
@@ -61,42 +62,36 @@ struct StreamIMAPClient {
             afterUID = 0
         }
 
-        if afterUID == 0 {
+        if afterUID == 0 && since == nil {
             _ = try? await session.run("LOGOUT", step: "logout")
             return FetchResult(
                 messages: [],
                 cursor: .imap(uid: uidNext - 1, uidValidity: uidValidity))
         }
 
-        let start = afterUID + 1
+        // A recent scan deliberately ignores the high-water mark. Reapply today's
+        // filters to the date window; the importer dedupes individual messages.
+        let minimumUID = since == nil ? afterUID : 0
+        let range = since.map { "SINCE \(Self.searchDate($0))" }
+            ?? "UID \(afterUID + 1):*"
         var matched = Set<Int>()
-        // Luna shares — server-side match on the presence of our header. Also
-        // fall back to the human-readable subject prefix: Gmail's IMAP SEARCH
-        // is backed by its own index rather than a literal RFC 3501 header
-        // scan and can silently miss custom (X-*) headers, so the header
-        // search alone isn't reliable — mirrors GraphMailTransport.matches's
-        // subject-prefix fallback.
         matched.formUnion(try await search(
-            session, "UID SEARCH UID \(start):* HEADER \(GmailIMAPClient.quoted(LunaShareMarker.headerName)) \"\"",
-            afterUID: afterUID))
-        matched.formUnion(try await search(
-            session, "UID SEARCH UID \(start):* SUBJECT \(GmailIMAPClient.quoted(FilterGuide.subjectMatch))",
-            afterUID: afterUID))
-        for sender in senders {
-            matched.formUnion(try await search(
-                session, "UID SEARCH UID \(start):* FROM \(GmailIMAPClient.quoted(sender))",
-                afterUID: afterUID))
-        }
-        for subject in subjects {
-            matched.formUnion(try await search(
-                session, "UID SEARCH UID \(start):* SUBJECT \(GmailIMAPClient.quoted(subject))",
-                afterUID: afterUID))
+            session, "UID SEARCH \(range) HEADER \(GmailIMAPClient.quoted(LunaShareMarker.headerName)) \"\"",
+            afterUID: minimumUID))
+        for (field, value) in [("SUBJECT", FilterGuide.subjectMatch)]
+            + senders.map({ ("FROM", $0) }) + subjects.map({ ("SUBJECT", $0) }) {
+            let command = Self.textSearch(range: range, field: field, value: value)
+            let response = try await session.run(command.line, step: "search", literal: command.literal)
+            matched.formUnion(GmailIMAPClient.newSearchUIDs(response.lines, afterUID: minimumUID))
         }
 
-        let read = try await Self.readMessages(uids: matched.sorted(), afterUID: afterUID) { uid in
+        let read = try await Self.readMessages(uids: matched.sorted(), afterUID: minimumUID) { uid in
             try await session.run(
                 "UID FETCH \(uid) (UID BODY.PEEK[]<0.\(Self.maxFetchBytes)>)", step: "fetch")
                 .literals.first
+        }
+        if since != nil && read.messages.count != matched.count {
+            throw IMAPError(step: "fetch", detail: "A matched email body was unavailable. Please retry the recent scan.")
         }
         _ = try? await session.run("LOGOUT", step: "logout")
         return FetchResult(
@@ -148,6 +143,21 @@ struct StreamIMAPClient {
     }
 
     // MARK: - Helpers
+
+    /// RFC 3501 quoted strings are 7-bit only. The built-in Luna prefix contains
+    /// U+200C, so even accounts with ASCII filters need a UTF-8 literal search.
+    static func textSearch(range: String, field: String, value: String) -> (line: String, literal: Data) {
+        let bytes = Data(value.utf8)
+        return ("UID SEARCH CHARSET UTF-8 \(range) \(field) {\(bytes.count)}", bytes)
+    }
+
+    static func searchDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "dd-MMM-yyyy"
+        return formatter.string(from: date)
+    }
 
     /// Recovers a Luna marker from the header (preferred) or the hidden body block.
     static func marker(headers: [String: String], body: String) -> LunaShareMarker? {
@@ -205,21 +215,41 @@ struct StreamIMAPClient {
         struct Response { let lines: [String]; let literals: [Data] }
 
         @discardableResult
-        func run(_ command: String, step: String) async throws -> Response {
+        func run(_ command: String, step: String, literal: Data? = nil) async throws -> Response {
             tag += 1
             let tagString = "a\(tag)"
-            try await stream.writeLine("\(tagString) \(command)")
+            return try await Self.exchange(
+                command: "\(tagString) \(command)", tag: tagString, step: step, literal: literal,
+                write: { try await self.stream.write($0) },
+                readLine: { try await self.stream.readLine() },
+                readBytes: { try await self.stream.readBytes($0) })
+        }
 
+        /// I/O seam for protocol regression tests, including the continuation
+        /// handshake required before sending a synchronizing literal.
+        static func exchange(
+            command: String, tag: String, step: String, literal: Data?,
+            write: (Data) async throws -> Void,
+            readLine: () async throws -> String,
+            readBytes: (Int) async throws -> Data
+        ) async throws -> Response {
+            try await write(Data((command + "\r\n").utf8))
+            var pendingLiteral = literal
             var lines: [String] = []
             var literals: [Data] = []
             while true {
-                var line = try await stream.readLine()
+                var line = try await readLine()
                 while let count = GmailIMAPClient.trailingLiteralCount(line) {
-                    literals.append(try await stream.readBytes(count))
-                    line += try await stream.readLine()
+                    literals.append(try await readBytes(count))
+                    line += try await readLine()
                 }
-                if line.hasPrefix("\(tagString) ") {
-                    guard line.uppercased().contains(" OK") else {
+                if line.hasPrefix("+"), let bytes = pendingLiteral {
+                    try await write(bytes + Data("\r\n".utf8))
+                    pendingLiteral = nil
+                    continue
+                }
+                if line.hasPrefix("\(tag) ") {
+                    guard line.split(separator: " ").dropFirst().first?.uppercased() == "OK" else {
                         throw IMAPError(step: step, detail: line)
                     }
                     return Response(lines: lines, literals: literals)

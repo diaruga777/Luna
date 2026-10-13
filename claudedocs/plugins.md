@@ -78,6 +78,10 @@ Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 
 2048 bytes each). Native WebKit validates and executes those declarations without
 choosing publisher rules. Safari preserves browser-deferred outcomes without a save
 ID; the app/share/action browser bridge retains its existing save-scoped lifecycle.
+The app keeps the browser deadline active while capturing a finished page's HTML
+and cookies. Capture has at most ten seconds and cannot extend the request deadline;
+a stalled capture stops the spinner, shows the timeout message and offers Safari.
+Late capture callbacks leave that timeout state intact.
 
 Secondary paths audited and gated: inline/RSVP/rabbit-hole article loading, article
 refresh, archive unlock and unattended recovery, artwork/favicon backfill, recent

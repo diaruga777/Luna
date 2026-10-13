@@ -47,6 +47,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     private let clock: () -> Date
     private var deadline: Date?
     private var isProbing = false
+    private var isCapturing = false
     /// Set once nothing may drive the page again — captured, refused, out of
     /// time, or over. It stops the cover being moved by a probe still in flight.
     private var didStop = false
@@ -132,7 +133,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
         }
         // One probe at a time. `evaluateJavaScript` on a busy page can outlast
         // the interval, and two in flight would fight over the cover.
-        guard !isProbing else { return }
+        guard !isProbing, !isCapturing else { return }
         isProbing = true
         page.probe(request.detect) { [weak self] answer in
             guard let self else { return }
@@ -151,10 +152,15 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
             // Luna does behind the cover.
             cover.isHidden = true
         case .done:
-            didStop = true
-            poller.stop()
+            isCapturing = true
+            // WebKit can stop answering while collecting HTML or cookies.
+            // Keep ticking until capture answers, with at most ten seconds
+            // left to collect it (and never extend the request's deadline).
+            let captureDeadline = clock().addingTimeInterval(10)
+            deadline = min(deadline ?? captureDeadline, captureDeadline)
             page.capture { [weak self] result in
-                self?.finish(with: result)
+                guard let self, !self.didStop else { return }
+                self.finish(with: result)
             }
         case .error:
             stop(with: L10n.string("PluginBrowser_failedMessage"))

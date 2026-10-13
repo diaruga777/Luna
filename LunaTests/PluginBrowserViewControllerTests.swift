@@ -21,6 +21,8 @@ final class PluginBrowserViewControllerTests: XCTestCase {
         private(set) var loads = 0
         private(set) var probes = 0
         private(set) var stops = 0
+        var holdCapture = false
+        var captureCompletion: ((PluginBrowserResult?) -> Void)?
 
         let pageView = UIView()
         var currentURL: URL? = URL(string: "https://gate.test/here")
@@ -33,7 +35,8 @@ final class PluginBrowserViewControllerTests: XCTestCase {
         }
 
         func capture(completion: @escaping (PluginBrowserResult?) -> Void) {
-            completion(result)
+            if holdCapture { captureCompletion = completion }
+            else { completion(result) }
         }
 
         func stopLoading() { stops += 1 }
@@ -135,6 +138,41 @@ final class PluginBrowserViewControllerTests: XCTestCase {
     }
 
     // MARK: - Dead ends
+
+    func testStalledCaptureEndsLoadingAndIgnoresALateAnswer() {
+        let controller = makeController()
+        page.holdCapture = true
+        page.stages = ["done", "challenge"]
+        tick(controller)
+        tick(controller)
+        XCTAssertEqual(page.probes, 1, "capturing must not start another probe")
+        XCTAssertTrue(cover(of: controller)?.spinner.isAnimating == true)
+
+        now = now.addingTimeInterval(11)
+        tick(controller)
+        XCTAssertEqual(page.stops, 1)
+        XCTAssertEqual(cover(of: controller)?.spinner.isAnimating, false)
+        XCTAssertEqual(cover(of: controller)?.actionButton.isHidden, false)
+
+        page.captureCompletion?(PluginBrowserResult(
+            url: "https://gate.test/done", html: "<html>late</html>", title: "Late",
+            cookieHeader: "", cookies: []))
+        XCTAssertTrue(legs.finishes.isEmpty, "a late capture must not dismiss the timeout")
+        controller.viewDidDisappear(false)
+        XCTAssertEqual(legs.finishes.count, 1)
+    }
+
+    func testCaptureDoesNotExtendTheRequestDeadline() {
+        let controller = makeController(timeout: 60)
+        page.holdCapture = true
+        page.stages = ["done"]
+        now = now.addingTimeInterval(59)
+        tick(controller)
+        now = now.addingTimeInterval(2)
+        tick(controller)
+        XCTAssertEqual(cover(of: controller)?.spinner.isAnimating, false)
+        XCTAssertEqual(page.stops, 1)
+    }
 
     func testAnErrorStopsTheFlowAndOffersTheWayOut() {
         let controller = makeController()

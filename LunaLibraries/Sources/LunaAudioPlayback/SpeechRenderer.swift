@@ -88,13 +88,14 @@ public final class SpeechRenderer: NSObject {
     /// successful, non-empty render — see `normalize(_:blockIndex:)`.
     public private(set) var canonicalFormat: AVAudioFormat?
 
-    private let synthesizer = AVSpeechSynthesizer()
+    // Wiring read-aloud at launch must not start the speech service. Create it
+    // only for the first render, serialized with the renderer's existing lock.
+    private var synthesizer: AVSpeechSynthesizer?
     private let stateLock = NSLock()
     private var active: ActiveRender?
 
     public override init() {
         super.init()
-        synthesizer.delegate = self
     }
 
     // MARK: - Rendering
@@ -144,6 +145,14 @@ public final class SpeechRenderer: NSObject {
         try await withCheckedThrowingContinuation { continuation in
             let render = ActiveRender(continuation: continuation)
             stateLock.lock()
+            let synthesizer: AVSpeechSynthesizer
+            if let existing = self.synthesizer {
+                synthesizer = existing
+            } else {
+                synthesizer = AVSpeechSynthesizer()
+                synthesizer.delegate = self
+                self.synthesizer = synthesizer
+            }
             active = render
             stateLock.unlock()
             synthesizer.write(utterance) { [weak self] buffer in

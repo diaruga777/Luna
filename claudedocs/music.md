@@ -254,10 +254,29 @@ default), speed 0.5–3×, time seeking, sleep timers including end-of-episode, 
 video/Picture in Picture, publisher chapters (RSS, JSON or embedded metadata), and
 publisher VTT/SRT/TTML/JSON/plain-text transcripts with search and timed seeking.
 Saved episodes, manual played/unplayed changes, share, Play Next, Add to Queue,
-queue reordering/removal/clear are available from episode menus. A single episode
+queue reordering/removal/clear are available. The podcast player uses a dark,
+artwork-colored background and grabber dismissal. Its upper stage animates vertically
+between full artwork/date/title/show and a compact current-episode header plus queue;
+the timeline, five transport buttons (speed, back, play, forward, sleep), volume
+with speaker icons, and transcript/AirPlay/queue row stay fixed. Long current titles
+scroll behind a trailing fade (truncate with Reduce Motion); queue titles and
+date/duration metadata occupy one line each, without descriptions or a delete
+column. Drag handles reorder; long-press menus and VoiceOver actions remove queue
+items. Chapters and the Music queue switch live in the current episode menu. A single episode
 never adds the rest of its show: the queue contains only explicit selections and
 shows an empty state when exhausted. Legacy automatic continuation lists are
 discarded on load without changing explicit queue entries or listening history. Stations select followed shows, count, order, played state and media type.
+
+
+Podcast player layout verification (2026-10-13): 49 Music hosted tests passed,
+with three optional streaming-fixture tests skipped. Layout regressions cover
+long titles, compact queue rows, fixed playback controls across queue toggles,
+320-point portrait, landscape, larger text, queue removal/clear, and preserving
+queue mode across Music/Podcasts switches. The local-fixture UI test passed for
+playback, episode menus, both queue modes, adding and long-press removing an item,
+and dismissal. Simulator tap/swipe checks also verified the vertical artwork/queue
+transition and grabber dismissal. MPVolumeView's actual volume track is supplied
+by iOS on device; the simulator exposes no system volume slider.
 
 Downloads use background URLSession tasks, with AVAssetDownloadURLSession for HLS.
 The persisted manifest reconnects tasks across launches and reports interrupted or
@@ -303,9 +322,10 @@ so a chord leaves the source queue/position untouched. No destination means norm
 skip behavior; a failed switch attempts to restore the prior playing source.
 The same policy serves in-app controls, widget commands, podcast and Vault remote
 sessions, and CarPlay. `SwitchMediaQueueIntent` and a CarPlay Now Playing button
-provide an explicit switch as well. Both in-app players and the podcast queue
-show a labeled Music/Podcasts switch. A successful switch replaces the displayed
-player, preserving whether the queue was open; an empty destination is disabled.
+provide an explicit switch as well. The music player shows a labeled Podcasts
+switch; the podcast player offers Switch to Music in its episode menu in both
+artwork and queue modes. A successful switch replaces the displayed player,
+preserving whether the queue was open; an empty destination is disabled.
 A queued podcast can be started even before there is listening history. CarPlay can browse podcasts with music access
 denied, and exposes followed shows, recent/downloaded/saved episodes, stations and
 Now Playing/queue controls.

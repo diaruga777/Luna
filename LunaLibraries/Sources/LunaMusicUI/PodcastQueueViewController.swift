@@ -3,36 +3,127 @@ import Combine
 import LunaPodcastCore
 import LunaMusicCore
 
-@MainActor final class PodcastQueueViewController: PodcastListViewController {
-    private var queueSwitch: MediaPlayerQueueSwitch!
+/// Embedded in the player's upper stage, without a second navigation bar or
+/// mini player. Editing reserves only the reorder handle, not a delete column.
+@MainActor final class PodcastQueueViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    let table = UITableView(frame: .zero, style: .plain)
+    private let library: PodcastLibraryController
+    private let heading = UILabel()
+    private let clear = UIButton(type: .system)
+    private let empty = UILabel()
+    private var episodes: [PodcastEpisode] = []
+    private var subscriptions = Set<AnyCancellable>()
+
+    init(library: PodcastLibraryController = .shared) {
+        self.library = library; super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
-        super.viewDidLoad(); title = "Playing Next"; table.isEditing = true; table.allowsSelectionDuringEditing = true
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Clear", primaryAction: UIAction { [weak self] _ in guard let self else { return }; PodcastUI.run(self) { try self.podcasts.edit { $0.queue = []; $0.continuation = [] } } })
-        queueSwitch = MediaPlayerQueueSwitch(owner: self, surface: .podcasts, showsQueue: { true })
-        navigationItem.rightBarButtonItems = [navigationItem.rightBarButtonItem!, UIBarButtonItem(customView: queueSwitch.button)]
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        heading.text = "Queue"; heading.font = MusicStyle.font(22, weight: .semibold)
+        clear.setTitle("Clear", for: .normal); clear.titleLabel?.font = MusicStyle.font(22)
+        clear.tintColor = UIColor.white.withAlphaComponent(0.5); clear.accessibilityLabel = "Clear Queue"
+        clear.addAction(UIAction { [weak self] _ in self?.edit { $0.queue = []; $0.continuation = [] } }, for: .touchUpInside)
+        empty.text = "Your Queue Is Empty"; empty.font = MusicStyle.font(18); empty.textColor = UIColor.white.withAlphaComponent(0.5)
+        empty.numberOfLines = 0
+        [heading, empty].forEach { $0.adjustsFontForContentSizeCategory = true }
+        table.backgroundColor = .clear; table.separatorStyle = .none
+        table.contentInsetAdjustmentBehavior = .never; table.sectionHeaderTopPadding = 0
+        table.dataSource = self; table.delegate = self
+        table.rowHeight = UITableView.automaticDimension; table.estimatedRowHeight = 72
+        table.register(PodcastPlayerQueueCell.self, forCellReuseIdentifier: "episode")
+        table.setEditing(true, animated: false); table.allowsSelectionDuringEditing = true
+        table.accessibilityLabel = "Upcoming Episodes"
+        [heading, clear, table, empty].forEach(view.addSubview)
+        library.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &subscriptions)
         reload()
     }
-    override func reload() {
-        let state = podcasts.state
-        sections = [.init(title: "Queue", rows: state.queue.compactMap { state.episodes[$0] }.map(Row.episode))]
-        table.tableFooterView = nil
-        if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Queue Is Empty", detail: "Use Play Next or Add to Queue on an episode.") }
-        super.reload()
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let headerHeight = max(44, heading.font.lineHeight + 12)
+        heading.frame = CGRect(x: 0, y: 0, width: max(0, view.bounds.width - 85), height: headerHeight)
+        clear.frame = CGRect(x: view.bounds.width - 80, y: 0, width: 80, height: headerHeight)
+        table.frame = CGRect(x: 0, y: headerHeight + 8, width: view.bounds.width, height: max(0, view.bounds.height - headerHeight - 8))
+        empty.frame = CGRect(x: 0, y: headerHeight + 20, width: view.bounds.width, height: empty.sizeThatFits(CGSize(width: view.bounds.width, height: .greatestFiniteMagnitude)).height)
     }
+    private func reload() {
+        episodes = library.state.queue.compactMap { library.state.episodes[$0] }
+        empty.isHidden = !episodes.isEmpty; clear.isEnabled = !episodes.isEmpty; table.reloadData()
+    }
+    private func edit(_ action: (inout PodcastLibraryState) -> Void) {
+        do { try library.edit(action) } catch { PodcastUI.showError(error, from: parent ?? self) }
+        reload()
+    }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { episodes.count }
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let episode = episodes[indexPath.row]
+        let cell = tableView.dequeueReusableCell(withIdentifier: "episode", for: indexPath) as! PodcastPlayerQueueCell
+        cell.configure(episode, progress: library.state.progress[episode.id], artworkURL: episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL)
+        cell.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Remove from Queue", actionHandler: { [weak self] _ in
+            self?.edit { $0.queue.removeAll { $0 == episode.id } }; return true
+        })]
+        return cell
+    }
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle { .none }
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool { false }
     func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
     func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
-        do { try podcasts.edit { state in
-            let id = state.queue.remove(at: source.row)
-            state.queue.insert(id, at: min(destination.row, state.queue.count))
-        } } catch { PodcastUI.showError(error, from: self) }; reload()
+        let id = episodes[source.row].id, targetID = episodes[destination.row].id
+        edit { state in
+            guard let from = state.queue.firstIndex(of: id), let to = state.queue.firstIndex(of: targetID) else { return }
+            state.queue.remove(at: from); state.queue.insert(id, at: min(to, state.queue.count))
+        }
     }
-    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        do { try podcasts.edit { state in state.queue.remove(at: indexPath.row) } }
-        catch { PodcastUI.showError(error, from: self) }; reload()
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let episode = episodes[indexPath.row]
+        PodcastUI.run(parent ?? self) { try await PodcastPlaybackController.shared.play(episode) }
     }
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard case .episode(let episode) = sections[indexPath.section].rows[indexPath.row] else { return }
-        PodcastUI.run(self) { try await PodcastPlaybackController.shared.play(episode) }
+    func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        let episode = episodes[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            let remove = UIAction(title: "Remove from Queue", image: UIImage(systemName: "minus.circle"), attributes: .destructive) { [weak self] _ in self?.edit { $0.queue.removeAll { $0 == episode.id } } }
+            return UIMenu(children: [remove] + PodcastUI.episodeMenu(episode, from: self.parent ?? self).children)
+        }
+    }
+}
+
+@MainActor final class PodcastPlayerQueueCell: UITableViewCell {
+    let artwork = UIImageView()
+    let heading = UILabel(), detail = UILabel()
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear; contentView.backgroundColor = .clear
+        artwork.layer.cornerRadius = 4; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
+        heading.font = MusicStyle.font(20); detail.font = MusicStyle.font(18)
+        heading.textColor = .white; detail.textColor = UIColor.white.withAlphaComponent(0.5)
+        [heading, detail].forEach {
+            $0.numberOfLines = 1; $0.lineBreakMode = .byTruncatingTail; $0.adjustsFontForContentSizeCategory = true
+            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        let labels = UIStackView(arrangedSubviews: [heading, detail]); labels.axis = .vertical; labels.spacing = 4
+        let stack = UIStackView(arrangedSubviews: [artwork, labels]); stack.alignment = .center; stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            artwork.widthAnchor.constraint(equalToConstant: 48), artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor)
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func configure(_ episode: PodcastEpisode, progress: PodcastEpisodeState?, artworkURL: URL?) {
+        heading.text = episode.title
+        let sameYear = Calendar.current.isDate(episode.publishedAt, equalTo: Date(), toGranularity: .year)
+        let date = episode.publishedAt == .distantPast ? nil : episode.publishedAt.formatted(sameYear ? .dateTime.month(.wide).day() : .dateTime.month(.wide).day().year())
+        let seconds = max(0, episode.duration - (progress?.position ?? 0))
+        let minutes = Int(seconds / 60)
+        let duration = minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : minutes > 0 ? "\(minutes)m" : "\(Int(seconds))s"
+        let status = progress?.listened == true ? "Played" : duration + ((progress?.position ?? 0) > 0 ? " left" : "")
+        detail.text = [date, status].compactMap { $0 }.joined(separator: " · ")
+        PodcastUI.artwork(artworkURL, into: artwork)
+        accessibilityLabel = [episode.title, detail.text].compactMap { $0 }.joined(separator: ", ")
     }
 }
 @MainActor final class PodcastTranscriptViewController: UITableViewController, UISearchResultsUpdating {

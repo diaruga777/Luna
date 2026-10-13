@@ -347,12 +347,12 @@ private actor FakeMusicServer {
         PodcastPlaybackController.shared.willPlay?()
         for _ in 0..<40 {
             if let navigation = host.presentedViewController as? UINavigationController,
-               navigation.topViewController is PodcastQueueViewController,
+               (navigation.topViewController as? PodcastPlayerViewController)?.showsQueue == true,
                navigation.topViewController?.viewIfLoaded?.window != nil,
                !navigation.isBeingPresented { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertTrue((host.presentedViewController as? UINavigationController)?.topViewController is PodcastQueueViewController)
+        XCTAssertEqual(((host.presentedViewController as? UINavigationController)?.topViewController as? PodcastPlayerViewController)?.showsQueue, true)
         MusicPlaybackController.shared.willPlay?()
         for _ in 0..<40 {
             if host.presentedViewController is MusicPlayerViewController { break }
@@ -510,4 +510,116 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         self.work = work; DispatchQueue.global().asyncAfter(deadline: .now() + 0.1, execute: work)
     }
     override func stopLoading() { work?.cancel() }
+}
+
+@MainActor final class PodcastPlayerLayoutTests: XCTestCase {
+    private var window: UIWindow?
+    private var directory: URL!
+    private var previousSurface: MediaPlaybackCoordinator.Surface!
+    override func setUp() {
+        super.setUp()
+        MediaPlaybackCoordinator.shared.install()
+        previousSurface = MediaPlaybackCoordinator.shared.active
+        PodcastPlaybackController.shared.willPlay?()
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    }
+    override func tearDown() {
+        window?.isHidden = true; window = nil
+        try? FileManager.default.removeItem(at: directory)
+        if previousSurface == .music { MusicPlaybackController.shared.willPlay?() }
+        super.tearDown()
+    }
+    private func fixture(queue: Bool = false, size: CGSize = CGSize(width: 393, height: 852), category: UIContentSizeCategory = .large) throws -> (PodcastPlayerViewController, PodcastLibraryController) {
+        let library = PodcastLibraryController(url: directory.appendingPathComponent("library.json"))
+        let show = PodcastShow(feedURL: URL(string: "https://example.com/feed")!, title: "Odd Lots")
+        let artURL = URL(string: "https://example.com/layout-art")!
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { context in
+            UIColor(red: 0.18, green: 0.03, blue: 0.3, alpha: 1).setFill(); context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+            ("Odd Lots" as NSString).draw(at: CGPoint(x: 35, y: 265), withAttributes: [.font: UIFont.systemFont(ofSize: 65), .foregroundColor: UIColor.white])
+        }
+        PodcastUI.images.setObject(image, forKey: artURL as NSURL)
+        var episode = PodcastEpisode(showID: show.id, guid: "current", title: "How AI Is Upending the World of Work and Everything Else", publishedAt: Date(timeIntervalSince1970: 1791504000), mediaURL: URL(string: "https://example.com/audio.mp3")!)
+        episode.artworkURL = artURL; episode.duration = 3621
+        var next = episode; next.id = "next"; next.title = "Nate Soares on How AI Risk Changes the World"; next.duration = 4571
+        next.summary = String(repeating: "A long description that must not squeeze the queue title. ", count: 20)
+        try library.edit { state in
+            state.shows[show.id] = show; state.episodes[episode.id] = episode; state.episodes[next.id] = next
+            state.lastPlayedEpisodeID = episode.id; state.queue = [next.id]
+        }
+        let controller = PodcastPlayerViewController(showQueue: queue, player: PodcastPlaybackController(library: library), library: library)
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.traitOverrides.preferredContentSizeCategory = category
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene); window.frame = CGRect(origin: .zero, size: size)
+        self.window = window; window.rootViewController = navigation; window.makeKeyAndVisible()
+        navigation.view.layoutIfNeeded(); controller.view.layoutIfNeeded()
+        return (controller, library)
+    }
+    private func descendants<T: UIView>(_ view: UIView, _ type: T.Type) -> [T] {
+        (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, type) }
+    }
+    private func capture(_ name: String) throws {
+        let window = try XCTUnwrap(window)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/\(name).png"))
+    }
+    func testQueueMorphKeepsPlaybackControlsAndNavigationInPlace() throws {
+        let (controller, _) = try fixture()
+        let slider = try XCTUnwrap(descendants(controller.view, UISlider.self).first)
+        let volume = try XCTUnwrap(descendants(controller.view, MPVolumeView.self).first)
+        let button = try XCTUnwrap(descendants(controller.view, UIButton.self).first { $0.accessibilityIdentifier == "podcasts.playback.queueButton" })
+        let sliderFrame = slider.frame, volumeFrame = volume.frame
+        try capture("Podcast-player-artwork")
+        button.sendActions(for: .touchUpInside)
+        controller.setQueue(true, animated: false); controller.view.layoutIfNeeded()
+        XCTAssertTrue(controller.showsQueue)
+        XCTAssertEqual(controller.navigationController?.viewControllers.count, 1)
+        XCTAssertTrue(controller.navigationController?.isNavigationBarHidden == true)
+        XCTAssertEqual(slider.frame, sliderFrame); XCTAssertEqual(volume.frame, volumeFrame)
+        XCTAssertEqual(button.accessibilityValue, "Shown")
+        let queue = try XCTUnwrap(controller.children.first as? PodcastQueueViewController)
+        queue.view.layoutIfNeeded(); queue.table.layoutIfNeeded()
+        let cell = try XCTUnwrap(queue.table.cellForRow(at: IndexPath(row: 0, section: 0)) as? PodcastPlayerQueueCell)
+        XCTAssertEqual(cell.heading.numberOfLines, 1); XCTAssertEqual(cell.detail.numberOfLines, 1)
+        XCTAssertEqual(queue.tableView(queue.table, editingStyleForRowAt: IndexPath(row: 0, section: 0)), .none)
+        XCTAssertFalse(queue.tableView(queue.table, shouldIndentWhileEditingRowAt: IndexPath(row: 0, section: 0)))
+        XCTAssertGreaterThan(cell.heading.bounds.width, 150)
+        try capture("Podcast-player-queue")
+        controller.setQueue(false, animated: false); controller.view.layoutIfNeeded()
+        XCTAssertFalse(controller.showsQueue); XCTAssertEqual(slider.frame, sliderFrame); XCTAssertEqual(volume.frame, volumeFrame)
+    }
+    func testSmallLandscapeAndLargeTextKeepMetadataAboveTimeline() throws {
+        for (size, category) in [(CGSize(width: 320, height: 568), UIContentSizeCategory.large), (CGSize(width: 393, height: 852), .extraExtraExtraLarge), (CGSize(width: 852, height: 393), .large)] {
+            let (controller, _) = try fixture(size: size, category: category)
+            let title = try XCTUnwrap(descendants(controller.view, PodcastPlayerTitleView.self).first)
+            let slider = try XCTUnwrap(descendants(controller.view, UISlider.self).first)
+            let titleRect = title.convert(title.bounds, to: controller.view)
+            XCTAssertGreaterThanOrEqual(title.bounds.height, title.font.lineHeight - 1)
+            XCTAssertGreaterThan(title.bounds.width, 100)
+            if size.width < size.height { XCTAssertLessThan(titleRect.maxY, slider.frame.minY) }
+            for button in descendants(controller.view, UIButton.self).filter({ ["Playback Speed", "Sleep Timer", "Play", "Playing Next"].contains($0.accessibilityLabel ?? "") }) {
+                XCTAssertGreaterThanOrEqual(button.bounds.height, 44)
+            }
+            controller.setQueue(true, animated: false); controller.view.layoutIfNeeded()
+            try capture("Podcast-player-\(Int(size.width))-\(category.rawValue)")
+            window?.isHidden = true
+        }
+    }
+    func testQueueRemovalAndClearEditOnlyUpcomingEpisodes() throws {
+        let (controller, library) = try fixture(queue: true)
+        let queue = try XCTUnwrap(controller.children.first as? PodcastQueueViewController)
+        queue.view.layoutIfNeeded(); queue.table.layoutIfNeeded()
+        let id = try XCTUnwrap(library.state.queue.first)
+        let path = IndexPath(row: 0, section: 0)
+        let cell = queue.tableView(queue.table, cellForRowAt: path)
+        let action = try XCTUnwrap(cell.accessibilityCustomActions?.first)
+        XCTAssertTrue(action.actionHandler?(action) == true)
+        XCTAssertTrue(library.state.queue.isEmpty)
+        XCTAssertNotNil(library.state.lastPlayedEpisodeID)
+        try library.edit { $0.queue = [id] }
+        let clear = try XCTUnwrap(descendants(queue.view, UIButton.self).first { $0.accessibilityLabel == "Clear Queue" })
+        clear.isEnabled = true; clear.sendActions(for: .touchUpInside)
+        XCTAssertTrue(library.state.queue.isEmpty); XCTAssertNotNil(library.state.lastPlayedEpisodeID)
+    }
 }

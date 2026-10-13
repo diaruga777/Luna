@@ -346,15 +346,17 @@ Consequences for the deck:
   button position and the Photos badge stay put and the peeks track the finger instead
   of freezing on the committed card's neighbors. The real slots stay mounted
   (their content stays alive) but hide underneath for the gesture. Each preview
-  shows its thumbnail when available and its title otherwise. Previews are
-  recycled by CARD, not by position — advancing one chip slides the center out
-  to a peek with its thumbnail intact. They never construct or mount a reader,
-  player, or product editor. On release, the selected real card is mounted (or
-  the already-mounted adjacent card is reused), and the preview cards stay up
-  until the real window is laid out
-  beneath them, so nothing blinks (there is no chrome fade-in any more: the
-  chrome was never missing). The Photos control opens that Photos-backed asset
-  in the Photos app.
+  shows its normal content for articles, products, utility and other non-media
+  cards. Media keeps a static thumbnail (or title fallback), without creating a
+  player. The kind presenter selects this independently of strip-chip artwork.
+  New article controllers use the reader's viewport-sized Phase-1 render and
+  defer Phase 2 until centering. Already-mounted cards lend their actual view,
+  retaining scroll position and form state; retiring previews return that view.
+  Previews are recycled by CARD, not position, and only the visible three-card
+  window owns new controllers. On release those controllers are promoted into
+  real slots without rebuilding; discarded previews detach their child controllers.
+  The window is laid out before removing the preview chrome, with no eclipse or
+  chrome fade-in. The Photos control opens that Photos-backed asset in Photos.
 - **Strip artwork is visible-only.** A visible-index callback requests thumbnail,
   badge, utility, and accessory visuals only for the current viewport window;
   async completions carry the reload generation and can update only the cell

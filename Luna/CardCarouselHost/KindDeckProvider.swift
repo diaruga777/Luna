@@ -245,6 +245,11 @@ final class KindDeckProvider: CardDeckProviding {
 
     // MARK: - Cards
 
+    func deckShowsContentWhileScrubbing(forSlot slot: Int) -> Bool {
+        guard let item = item(atSlot: slot) else { return false }
+        return presenter(for: item)?.showsContentWhileScrubbing ?? true
+    }
+
     func deckContentController(forSlot slot: Int) -> CardContentViewController {
         guard let item = item(atSlot: slot) else { return CardContentViewController() }
         // Until ingest classifies and fetches this save, every kind deliberately

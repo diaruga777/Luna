@@ -553,6 +553,53 @@ final class CardCarouselScrubScalingTests: XCTestCase {
         XCTAssertEqual(carousel.currentIndex, target)
     }
 
+    func testContentScrubKeepsOnlyThreePreviewsAndPromotesWithoutRebuilding() throws {
+        let source = LargeScrubDataSource()
+        source.showsContent = true
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 0)
+        let originalChildren = carousel.children.count
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+
+        scrubber.delegate?.scrubber(scrubber, didPreview: 50)
+        let preview = try XCTUnwrap(carousel.children.last as? CenteringSpyCardContentViewController)
+        XCTAssertEqual(carousel.children.count, originalChildren + 3)
+        XCTAssertEqual(preview.centerCount, 0, "A preview must not activate full content or playback")
+        XCTAssertEqual(source.contentRequestCounts[50], 1)
+        scrubber.delegate?.scrubber(scrubber, didPreview: 51)
+        XCTAssertEqual(carousel.children.count, originalChildren + 3)
+        XCTAssertEqual(source.contentRequestCounts[50], 1, "Recycle by card across preview slots")
+        scrubber.delegate?.scrubber(scrubber, didCommit: 51)
+        XCTAssertTrue(carousel.contentController(at: 51) === preview)
+        XCTAssertEqual(source.contentRequestCounts[51], 1, "Promote the rendered preview")
+        XCTAssertEqual(carousel.children.count, 3, "Release retired preview controllers")
+    }
+
+    func testScrubbingMountedContentBorrowsAndRestoresItsView() throws {
+        let source = LargeScrubDataSource()
+        source.showsContent = true
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 5)
+        let content = try XCTUnwrap(carousel.contentController(at: 5))
+        let container = try XCTUnwrap(content.view.superview)
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didPreview: 5)
+        XCTAssertFalse(content.view.superview === container)
+        XCTAssertEqual(source.contentRequestCounts[5], 1)
+        scrubber.delegate?.scrubber(scrubber, didCommit: 5)
+        XCTAssertTrue(content.view.superview === container)
+        XCTAssertTrue(content.parent === carousel)
+        XCTAssertEqual(carousel.children.count, 3)
+    }
+
     /// Releasing a mini-card scrub must settle in place even when the preview
     /// never mounted the card's real content — a media save, whose player the
     /// strip deliberately doesn't build per chip, previewed as its poster.
@@ -602,6 +649,12 @@ private final class LargeScrubDataSource: @preconcurrency CardCarouselDataSource
     let cardCount: Int
     var contentRequestCounts: [Int: Int] = [:]
     var thumbnailRequests: [Int] = []
+    var showsContent = false
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        showsContentWhileScrubbingCardAt index: Int
+    ) -> Bool { showsContent }
 
     init(cardCount: Int = 10_000) { self.cardCount = cardCount }
 

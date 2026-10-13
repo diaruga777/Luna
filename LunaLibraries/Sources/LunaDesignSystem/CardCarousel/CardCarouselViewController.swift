@@ -33,13 +33,19 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController
+    /// Show the normal card during scrubbing. Its content stays uncentered until
+    /// commit, so readers can render only their initial viewport. Media leaves
+    /// this false to show a static poster without constructing a player.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        showsContentWhileScrubbingCardAt index: Int
+    ) -> Bool
     /// Small preview for the scrub strip; call the completion on any queue.
     func carousel(
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void)
-    /// Card title, shown by the big scrub-preview overlay for `.miniCards`
-    /// scrubbers while the finger sweeps the strip.
+    /// Fallback title for a static scrub preview without a thumbnail.
     func carousel(
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
@@ -100,6 +106,11 @@ public protocol CardCarouselDataSource: AnyObject {
 }
 
 public extension CardCarouselDataSource {
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        showsContentWhileScrubbingCardAt index: Int
+    ) -> Bool { false }
+
     func carousel(
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
@@ -1068,15 +1079,17 @@ public final class CardCarouselViewController: UIViewController {
 
     private func mount(index: Int) -> Slot? {
         guard let dataSource else { return nil }
-        let content = dataSource.carousel(self, contentControllerForCardAt: index)
-        addChild(content)
+        let content = scrubPreview.takeContent(at: index)
+            ?? dataSource.carousel(self, contentControllerForCardAt: index)
+        let needsParent = content.parent == nil
+        if needsParent { addChild(content) }
         let card = makeCardView(at: index)
         card.installContentView(content.view)
         content.setMuted(audioSession.isMuted)
         content.audioAvailabilityObserver = self
         content.playbackObserver = self
         (usesReaderGrid ? readerGrid : cardArea).addSubview(card)
-        content.didMove(toParent: self)
+        if needsParent { content.didMove(toParent: self) }
         return Slot(index: index, card: card, content: content)
     }
 
@@ -1100,6 +1113,12 @@ public final class CardCarouselViewController: UIViewController {
     /// they are mounted.
     func makeScrubPreviewCard(at index: Int) -> CarouselCardView {
         makeCardView(at: index)
+    }
+
+    /// Return a borrowed view to its still-mounted card when a preview retires.
+    func restoreScrubContent(_ content: CardContentViewController, at index: Int) {
+        guard let slot = slots[index], slot.content === content else { return }
+        slot.card.installContentView(content.view)
     }
 
     /// Whether the card showing `content` should offer the mute button.
@@ -1615,9 +1634,8 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    /// Commits a lightweight scrub preview. The real target is mounted only
-    /// now that the strip has settled; the preview remains above it until the
-    /// new three-card window is laid out, keeping the handover visually quiet.
+    /// Promotes preview content (or mounts a media player) once the strip
+    /// settles. The preview chrome stays until the real window is laid out.
     private func settleScrubPreview(to target: Int) {
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = target

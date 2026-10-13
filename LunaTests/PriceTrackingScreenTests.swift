@@ -5,6 +5,7 @@
 //  Navigation/layout coverage for the price-tracking editor.
 //
 
+import LunaDesignSystem
 import LunaSavesUI
 @testable import LunaPriceUI
 import LunaShareSurface
@@ -68,6 +69,38 @@ final class PriceTrackingScreenTests: XCTestCase {
             deck's link stand-in
             """)
         _ = window
+    }
+
+    @MainActor
+    func testScrubbingShowsFullProductAndUtilityCards() throws {
+        UITestSupport.seedSharedStore(.priceTracking)
+        let installed = CardKindPresenters.product
+        defer { CardKindPresenters.product = installed }
+        CardKindPresenters.product = ProductCardPresenter()
+        let deck = ArticleCardsViewController()
+        let window = UITestSupport.host(deck)
+        defer { window.isHidden = true }
+        let scrubber = try XCTUnwrap(deck.carousel.view.firstDescendant(ofType: CarouselScrubberView.self))
+        let product = try XCTUnwrap(deck.carousel.contentController(at: 1) as? ProductCardContentViewController)
+        let utility = try XCTUnwrap(deck.carousel.contentController(at: 0) as? UtilCardContentViewController)
+        let originalProductContainer = product.view.superview
+        let originalUtilityContainer = utility.view.superview
+        for (index, name) in [(1, "Product scrub card"), (0, "Utility scrub card")] {
+            scrubber.delegate?.scrubber(scrubber, didPreview: index)
+            deck.carousel.view.layoutIfNeeded()
+            XCTAssertFalse(product.view.superview === originalProductContainer)
+            XCTAssertFalse(utility.view.superview === originalUtilityContainer)
+            let image = UIGraphicsImageRenderer(bounds: deck.carousel.view.bounds).image { context in
+                deck.carousel.view.layer.render(in: context.cgContext)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        scrubber.delegate?.scrubber(scrubber, didCommit: 0)
+        XCTAssertTrue(product.view.superview === originalProductContainer)
+        XCTAssertTrue(utility.view.superview === originalUtilityContainer)
     }
 
     // MARK: - The waiting row while a fan-out is out

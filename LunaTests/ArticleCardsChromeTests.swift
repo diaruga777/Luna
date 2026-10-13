@@ -21,6 +21,52 @@ final class ArticleCardsChromeTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
+    func testScrubRendersArticleViewportAndDefersFullContentUntilCommit() throws {
+        let installed = CardKindPresenters.article
+        defer { CardKindPresenters.article = installed }
+        CardKindPresenters.article = ArticleCardPresenter()
+        let items = (0..<8).map { index in
+            SavedItem(seed: "scrub-article-\(index)",
+                      urlString: "https://example.com/scrub-\(index)",
+                      title: "Rendered article \(index)", dateAdded: Date(), state: .ready,
+                      wordCount: 480)
+        }
+        SavesStore.shared.seedForTesting(items: items, contents: Dictionary(
+            uniqueKeysWithValues: items.map { ($0.id, UITestFixtures.sampleArticleContent(title: $0.title!)) }))
+        let deck = ArticleCardsViewController()
+        let window = UITestSupport.host(deck)
+        defer { window.isHidden = true }
+        deck.carousel.reloadData(centeringAt: 0)
+        deck.carousel.beginAppearanceTransition(true, animated: false)
+        deck.carousel.endAppearanceTransition()
+        let mounted = Set(deck.carousel.children.map(ObjectIdentifier.init))
+        let scrubber = try XCTUnwrap(firstSubview(of: CarouselScrubberView.self, in: deck.carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didPreview: 6)
+        window.layoutIfNeeded()
+        let previews = deck.carousel.children.compactMap { $0 as? ReaderCardContentViewController }
+            .filter { !mounted.contains(ObjectIdentifier($0)) }
+        XCTAssertEqual(previews.count, 3)
+        for card in previews {
+            let reader = try XCTUnwrap(card.rabbitHoleReader?.focusedScrollReader)
+            XCTAssertFalse(card.isCentered)
+            XCTAssertTrue(reader.defersAutomaticFullContentLoad)
+            XCTAssertFalse(reader.didLoadFullContentForTesting)
+            XCTAssertGreaterThan(reader.renderedTextLengthForTesting, 100,
+                                 "The preview must contain rendered body text, not just a title")
+        }
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: deck.carousel.view.bounds).image { context in
+            deck.carousel.view.layer.render(in: context.cgContext)
+        })
+        attachment.name = "Article scrub viewport"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        scrubber.delegate?.scrubber(scrubber, didCommit: 6)
+        let committed = try XCTUnwrap(deck.carousel.contentController(at: 6) as? ReaderCardContentViewController)
+        XCTAssertTrue(previews.contains { $0 === committed })
+        XCTAssertFalse(try XCTUnwrap(committed.rabbitHoleReader?.focusedScrollReader).defersAutomaticFullContentLoad)
+    }
+
     func testModeSwitcherReplacesMiniCarouselOnlyDuringImmersion() throws {
         let item = SavedItem(
             seed: "bottom-mode-switcher",

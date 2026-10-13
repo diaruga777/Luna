@@ -2,15 +2,8 @@
 //  CarouselScrubPreviewController.swift
 //  LunaDesignSystem
 //
-//  The scrub strip's live preview: while the user scrolls the strip, the
-//  carousel's real cards stand aside and this controller draws the previewed
-//  card AND both of its neighbors as lightweight card surfaces — the same
-//  `CarouselCardView` chrome the mounted slots wear (glass rim, mute button,
-//  top-leading accessory, failure glow) at the same resting geometry. The whole
-//  deck therefore tracks the finger: the center shows a thumbnail, the card's
-//  title or poster, and the peeks update in step instead
-//  of staying frozen on the committed card until release.
-//
+//  Three bounded previews reuse normal non-media cards while media keeps its
+//  static poster. Preview content is never centered until the strip commits.
 
 import UIKit
 
@@ -23,6 +16,8 @@ final class CarouselScrubPreviewController {
         let index: Int
         var imageView: UIImageView?
         var titleLabel: UILabel?
+        var content: CardContentViewController?
+        var ownsContent = false
 
         init(card: CarouselCardView, index: Int) {
             self.card = card
@@ -77,18 +72,30 @@ final class CarouselScrubPreviewController {
             guard target >= 0, target < cardCount else { continue }
             let preview = previews[offset] ?? makePreview(at: target)
             previews[offset] = preview
-            configure(preview, atSlotOffset: offset)
+            configure(preview)
         }
         layout()
     }
 
-    /// Every preview carries the same three layers, whatever the strip style:
-    /// the card's thumbnail and its title. A media save previews as its poster
-    /// while an article neighbour previews as title text; no reader, player, or
-    /// product editor is constructed while the finger is moving.
+    /// Mount only the visible three-card window; reuse existing controllers so
+    /// an article keeps its scroll position and a utility card keeps its state.
     private func makePreview(at index: Int) -> Preview {
         let card = carousel.makeScrubPreviewCard(at: index)
         let preview = Preview(card: card, index: index)
+        if carousel.dataSource?.carousel(carousel, showsContentWhileScrubbingCardAt: index) == true {
+            let existing = carousel.contentController(at: index)
+            if let content = existing ?? carousel.dataSource?.carousel(
+                carousel, contentControllerForCardAt: index) {
+                preview.content = content
+                preview.ownsContent = existing == nil
+                if preview.ownsContent { carousel.addChild(content) }
+                card.installContentView(content.view)
+                content.setMuted(carousel.isSoundMuted)
+                if preview.ownsContent { content.didMove(toParent: carousel) }
+                cardArea.addSubview(card)
+                return preview
+            }
+        }
 
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
@@ -121,9 +128,9 @@ final class CarouselScrubPreviewController {
         return preview
     }
 
-    /// Fills a preview for the slot it now occupies without mounting live content.
-    private func configure(_ preview: Preview, atSlotOffset offset: Int) {
-        loadThumbnail(into: preview)
+    /// Refreshes fallback artwork and shared chrome for a recycled preview.
+    private func configure(_ preview: Preview) {
+        if preview.content == nil { loadThumbnail(into: preview) }
         preview.titleLabel?.text = carousel.dataSource?.carousel(
             carousel, titleForCardAt: preview.index)
         updateFill(preview)
@@ -155,7 +162,27 @@ final class CarouselScrubPreviewController {
     }
 
     private func discard(_ preview: Preview) {
+        if let content = preview.content {
+            if preview.ownsContent {
+                content.setPlaying(false)
+                content.willMove(toParent: nil)
+                content.view.removeFromSuperview()
+                content.removeFromParent()
+            } else {
+                carousel.restoreScrubContent(content, at: preview.index)
+            }
+        }
         preview.card.removeFromSuperview()
+    }
+
+    /// Promote the exact preview controller, preserving its rendered viewport.
+    /// Mounted/borrowed controllers already belong to a real slot.
+    func takeContent(at index: Int) -> CardContentViewController? {
+        guard let preview = previews.values.first(where: { $0.index == index }),
+              preview.ownsContent, let content = preview.content else { return nil }
+        preview.content = nil
+        content.view.removeFromSuperview()
+        return content
     }
 
     // MARK: - Layout + state
@@ -165,6 +192,7 @@ final class CarouselScrubPreviewController {
         for (offset, preview) in previews {
             carousel.applyRestingLayout(
                 to: preview.card, atSlotOffset: offset)
+            preview.card.layoutIfNeeded()
         }
     }
 

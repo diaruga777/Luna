@@ -47,6 +47,14 @@ final class CardKindStyleTests: XCTestCase {
         super.tearDown()
     }
 
+    func testOnlyMediaUsesPosterOnlyScrubPreviews() {
+        XCTAssertTrue(ArticleCardPresenter().showsContentWhileScrubbing)
+        XCTAssertTrue(ProductCardPresenter().showsContentWhileScrubbing)
+        XCTAssertFalse(MediaCardPresenter().showsContentWhileScrubbing)
+        let host = CardCarouselHostViewController()
+        XCTAssertTrue(host.carousel(host.carousel, showsContentWhileScrubbingCardAt: 0))
+    }
+
     // MARK: - The point: one deck, one frame, two presentations
 
     func testEveryCardPagesFromItsNonControlSurfaceByDefault() {

@@ -209,6 +209,8 @@ final class MediaCardPresenter: CardKindPresenting {
         return LunaColors.errorAccent
     }
 
+    var showsContentWhileScrubbing: Bool { false }
+
     // MARK: - Strip and scrub preview
 
     func title(for item: SavedItem) -> String? {

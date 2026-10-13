@@ -1285,6 +1285,15 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
 
     func carousel(
         _ carousel: CardCarouselViewController,
+        showsContentWhileScrubbingCardAt index: Int
+    ) -> Bool {
+        if isUtilCard(index) { return true }
+        guard let slot = slotIndex(forCarouselIndex: index) else { return false }
+        return deckProvider?.deckShowsContentWhileScrubbing(forSlot: slot) ?? false
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
         if isUtilCard(index) {

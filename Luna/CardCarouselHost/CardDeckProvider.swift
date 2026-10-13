@@ -154,6 +154,7 @@ protocol CardDeckProviding: AnyObject {
 
     // MARK: - Cards
 
+    func deckShowsContentWhileScrubbing(forSlot slot: Int) -> Bool
     func deckContentController(forSlot slot: Int) -> CardContentViewController
     func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void)
     func deckTitle(forSlot slot: Int) -> String?
@@ -213,6 +214,7 @@ protocol CardDeckProviding: AnyObject {
 // does, so `deckLoadSourceBadge` absent means "this deck has no source badges",
 // not "this deck forgot".
 extension CardDeckProviding {
+    func deckShowsContentWhileScrubbing(forSlot slot: Int) -> Bool { false }
     var deckChangeNotificationNames: [Notification.Name] { [] }
     var deckActivationNotificationNames: [Notification.Name] { [] }
     func deckWillBeginObservingStores() {}

@@ -150,6 +150,9 @@ protocol CardKindPresenting: AnyObject {
 
     // MARK: Strip and scrub preview
 
+    /// Media opts out to keep players out of the scrub interaction.
+    var showsContentWhileScrubbing: Bool { get }
+
     func title(for item: SavedItem) -> String?
     func loadThumbnail(
         for item: SavedItem, host: CardPresenterHost,
@@ -267,6 +270,7 @@ protocol CardKindPresenting: AnyObject {
 
 // Every hook a kind doesn't need.
 extension CardKindPresenting {
+    var showsContentWhileScrubbing: Bool { true }
     func fingerprint(for item: SavedItem) -> String { "" }
     func hasContent(for item: SavedItem) -> Bool { true }
     func isArchived(_ item: SavedItem) -> Bool { item.isArchived }

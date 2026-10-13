@@ -1598,3 +1598,15 @@
 "Reader_finishedBadge_pullToReadTitle_Luna" = "Pull up to mark read";
 "Reader_finishedBadge_releaseToReadTitle_Luna" = "Release to mark read";
 "Reader_finishedBadge_markReadAccessibilityHint_Luna" = "Marks this article read and sends it to the archive on next load";
+
+/* Manual incoming mail recovery */
+"Settings_email_pullRecent_Luna" = "Pull Recent Emails";
+"Settings_email_pullingRecent_Luna" = "Pulling Recent Emails…";
+"Settings_email_pullRecentDetail_Luna" = "Apply your sender and subject filters to the past 7 days. Already processed emails are skipped.";
+"Settings_email_pullComplete_Luna" = "Recent Emails Checked";
+"Settings_email_pullSummary_Luna" = "Processed %d emails. Skipped %d already processed emails.";
+"Settings_email_pullFailed_Luna" = "Couldn’t Pull Recent Emails";
+"Settings_email_pullNotConfigured_Luna" = "Connect or reconnect your email account first.";
+"Settings_email_pullBusy_Luna" = "An email check is already running. Try again once it finishes.";
+"Settings_email_pullAccountChanged_Luna" = "The connected account changed. Try again with the current account.";
+"Settings_email_pullSaveFailed_Luna" = "An email could not be saved. Try again; completed imports will be skipped.";

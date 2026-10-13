@@ -40,6 +40,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// session / autodiscovery task).
     private var accountSetup: EmailAccountSetup?
     private var isConnecting = false
+    private var isPullingMail = false
 
     /// The account this screen reads, signs in to, and signs out of. Injectable so
     /// tests can exercise the inline sign-in form without touching the App Group
@@ -129,7 +130,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             // Connected: account status/actions. Otherwise the inline sign-in
             // form: address field + Connect.
             return accountStore.isConfigured ? connectedAccountRows.count : 2
-        case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
+        case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 2 /* add, pull recent */
         case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
     }
@@ -167,6 +168,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         cell.accessoryView = nil
         cell.accessoryType = .none
         cell.selectionStyle = .none
+        cell.accessibilityIdentifier = nil
+        cell.accessibilityTraits = .none
 
         switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
@@ -235,10 +238,28 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 let senderIndex = indexPath.row - 2
                 if senderIndex < IncomingMailSettings.allowedSenders.count {
                     content.text = IncomingMailSettings.allowedSenders[senderIndex]
-                } else {
+                } else if senderIndex == IncomingMailSettings.allowedSenders.count {
                     content.text = L10n.string("Settings_email_addSenderRow")
                     content.textProperties.color = view.tintColor ?? .systemBlue
                     cell.selectionStyle = .default
+                }
+            }
+
+            if indexPath.row == IncomingMailSettings.allowedSenders.count + 3 {
+                content.text = L10n.string(isPullingMail
+                    ? "Settings_email_pullingRecent" : "Settings_email_pullRecent")
+                content.secondaryText = L10n.string("Settings_email_pullRecentDetail")
+                content.image = UIImage(systemName: "arrow.down.circle")
+                let enabled = accountStore.isReady && !isPullingMail
+                content.textProperties.color = enabled
+                    ? (view.tintColor ?? .systemBlue) : LunaColors.tertiaryText
+                cell.selectionStyle = enabled ? .default : .none
+                cell.accessibilityIdentifier = "email.pullRecent"
+                cell.accessibilityTraits = enabled ? .button : [.button, .notEnabled]
+                if isPullingMail {
+                    let spinner = HorizonSpinnerView(side: 20)
+                    spinner.startAnimating()
+                    cell.accessoryView = spinner
                 }
             }
 
@@ -274,6 +295,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             } else if indexPath.row == 1 {
                 connectAccount()
             }
+        case .importMail where indexPath.row == IncomingMailSettings.allowedSenders.count + 3:
+            pullRecentMail()
         case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
             promptForSender()
         case .subjectFilters where indexPath.row == IncomingMailSettings.subjectFilters.count:
@@ -490,6 +513,28 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     // MARK: - Import & filters
+
+    private func pullRecentMail() {
+        guard accountStore.isReady, !isPullingMail else { return }
+        isPullingMail = true
+        tableView.reloadData()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let summary = try await IncomingMailImporter.shared.importRecentMail()
+                self.isPullingMail = false
+                self.tableView.reloadData()
+                self.presentInfoAlert(
+                    title: L10n.string("Settings_email_pullComplete"),
+                    message: L10n.string("Settings_email_pullSummary", summary.processed, summary.skipped))
+            } catch {
+                self.isPullingMail = false
+                self.tableView.reloadData()
+                self.presentInfoAlert(
+                    title: L10n.string("Settings_email_pullFailed"), message: error.localizedDescription)
+            }
+        }
+    }
 
     @objc private func importToggled(_ toggle: UISwitch) {
         IncomingMailSettings.isEnabled = toggle.isOn

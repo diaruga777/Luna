@@ -19,8 +19,8 @@ still KEEPS only its own kinds from what it imports.
   implicit TLS + STARTTLS) and removed; only its unit-tested parsers and
   `IncomingMessage` remain. **`StreamIMAPClient`** is the live transport:
   `LOGIN` (quoted account + app password) → `SELECT INBOX` → per-sender
-  `UID SEARCH UID <cursor+1>:* FROM "<sender>"` AND per-filter `…
-  SUBJECT "<phrase>"` (results unioned, deduped) → `UID FETCH
+  `UID SEARCH CHARSET UTF-8 UID <cursor+1>:* FROM {n}` AND per-filter `…
+  SUBJECT {n}` (UTF-8 literals sent only after the server continuation) (results unioned, deduped) → `UID FETCH
   (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE
   CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT])` → `UID STORE +FLAGS (\Seen)`
   (courtesy) → `LOGOUT`. Literal-aware command loop (`{n}` byte counts). First
@@ -65,7 +65,7 @@ still KEEPS only its own kinds from what it imports.
     body as an article. Either way the Luna subject prefix is stripped before
     it can reach a saved title.
   - **Everything else (generic newsletter match)**: saved **as an article**
-    (the email body IS the content; `lunamail://<uid>` item + `saveContent`),
+    (the email body IS the content; `lunamail://<message-key>` item + `saveContent`),
     falling back to the first URL when there's no usable body.
   Before routing, mail from a blocked contact is marked read and ignored.
   Imported items retain the normalized sender email as well as the parsed
@@ -125,7 +125,43 @@ two background tasks above, and immediately when the toggle is turned on.
 - Gmail IMAP is always on (the enable/disable toggle was removed in 2025); an
   **app password** (2-Step Verification) is required — the same one used for
   SMTP send. Plain account passwords don't work over IMAP.
-- Dedupe is by highest processed UID per UIDVALIDITY (robust; `\Seen` is only a
-  courtesy). The same URL from two emails dedupes at the saves layer.
+- Automatic polls use the highest processed UID per UIDVALIDITY; durable
+  `processed_mail` receipts in `saves.sqlite` dedupe both automatic and recent
+  scans (`\Seen` is only a courtesy). The same URL from two emails dedupes at the saves layer.
 - Live IMAP round-trip can only be verified on a real device with a real Gmail
   app password.
+
+## Pull Recent Emails
+
+Settings → Email → Import from Email includes **Pull Recent Emails**. It reapplies
+current sender and subject filters, plus the built-in Luna-share searches, to the
+past seven days (starting at midnight UTC seven days ago; IMAP SINCE has date-only
+precision). IMAP searches INBOX; Outlook searches the account's messages and
+follows Graph pagination. Read mail is included. A connected, ready account is
+required; the action is explicit and also works when automatic newsletter import
+is off. The row shows progress, then a processed/skipped summary or the fetch error.
+Overlapping automatic checks coalesce; a manual action during a check asks the user
+to retry after it finishes.
+
+Recent scans do not reset or advance the automatic cursor, so applying a newly
+added filter can recover older mail without skipping another automatic match.
+Both paths share the importer and persistent SQLite processing receipts (schema
+18), independent of saved-item deletion. Receipt keys include the account/provider
+and IMAP host, then Message-ID when available, otherwise the provider ID plus
+IMAP UIDVALIDITY. Synthetic email URLs use the same hashed key. Existing ready
+`lunamail://<provider-id>` imports are recognized for compatibility. URL-based
+shares still dedupe through `addIfAbsent`. Receipts are written after processing;
+failed fetches/saves leave the automatic cursor untouched and retryable. Repeated
+pulls do not rewrite articles or trigger their readiness/auto-send hook again.
+
+## October 2026 search rejection
+
+The supplied build-129 diagnostics show a successful initial cursor anchor at
+2026-10-13 09:34 UTC, followed by `a4 BAD Could not parse command` on every later
+poll, beginning at 17:53 UTC (04:53 Sydney time on October 14). In the command
+sequence, a4 is the built-in Luna SUBJECT fallback, before user sender/subject
+filters. Its `via Lu\u{200C}na:` prefix contains non-ASCII bytes, which the old
+client placed in an IMAP quoted string without a charset. RFC 3501 quoted strings
+allow only 7-bit characters. Searches now specify CHARSET UTF-8 and use byte-counted
+synchronizing literals, including the server continuation handshake. This fix
+covers the built-in prefix and non-ASCII user filters.

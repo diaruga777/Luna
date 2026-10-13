@@ -1362,6 +1362,26 @@ public final class SavesStore {
         item.canHaveOriginalArchive
     }
 
+    /// Mail receipts are independent of saves: deleting an imported article must
+    /// not make the next recent-mail scan import or auto-send it again.
+    public func hasProcessedMail(_ key: String) throws -> Bool {
+        guard let db = database() else { throw SavesStoreError.databaseUnavailable }
+        return try db.transaction { db in
+            try db.scalarInt("SELECT 1 FROM processed_mail WHERE message_key = ?") {
+                try $0.bind(1, key)
+            } != nil
+        }
+    }
+
+    public func recordProcessedMail(_ key: String) throws {
+        guard let db = database() else { throw SavesStoreError.databaseUnavailable }
+        try db.transaction { db in
+            try db.run("INSERT OR IGNORE INTO processed_mail (message_key) VALUES (?)") {
+                try $0.bind(1, key)
+            }
+        }
+    }
+
     // MARK: - Mutation primitives
 
     /// One write transaction. Returns nil when the database is unavailable or the

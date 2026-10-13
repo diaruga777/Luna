@@ -569,3 +569,11 @@ Intelligence gets ONE silent, automatic attempt per item, tracked in the
 chat hand-off on the card: ChatGPT or Claude answers with a Luna file, and Luna
 imports it. Full designs: `claudedocs/url-rescue.md`,
 `claudedocs/llm-handoff.md`, `claudedocs/luna-file.md`.
+
+### Email processing receipts (schema 18)
+
+`processed_mail(message_key TEXT PRIMARY KEY)` records handled incoming messages
+independently of their saves. Keys hash the connected account/mailbox and message
+identity (Message-ID, or native ID + IMAP UIDVALIDITY). Automatic mail checks and
+Settings → Email's recent-mail scan share these receipts. Deleting a saved article
+does not delete its receipt, so a later scan cannot reimport or auto-send it.

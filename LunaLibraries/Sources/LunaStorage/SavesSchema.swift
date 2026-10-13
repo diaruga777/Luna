@@ -248,6 +248,10 @@ enum SavesSchema {
         -- One row per save. `seq` is the list's own order (highest first): a new
         -- save goes to the front, and `bump` moves one there, independently of
         -- the dates a deck sorts by.
+        CREATE TABLE IF NOT EXISTS processed_mail (
+            message_key TEXT PRIMARY KEY NOT NULL
+        ) WITHOUT ROWID;
+
         CREATE TABLE IF NOT EXISTS saves (
             id                         TEXT    PRIMARY KEY NOT NULL,
             seq                        INTEGER NOT NULL,

@@ -1,5 +1,5 @@
 import LunaModels
-import LunaStorage
+@testable import LunaStorage
 import SQLite3
 import XCTest
 
@@ -215,7 +215,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
                                          pluginID: "p", originalURLString: original)
         PendingPluginModelStore(saves: migrated).put(pending)
         XCTAssertEqual(PendingPluginModelStore(saves: fresh).takeAll(), [pending])
-        try withDatabase { db in XCTAssertEqual(userVersion(in: db), 17) }
+        try withDatabase { db in XCTAssertEqual(userVersion(in: db), SavesDatabase.schemaVersion) }
     }
 
     // MARK: - Migration
@@ -252,7 +252,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertNil(migrated.items().first?.pluginID)
 
         try withDatabase { db in
-            XCTAssertEqual(userVersion(in: db), 17)
+            XCTAssertEqual(userVersion(in: db), SavesDatabase.schemaVersion)
             XCTAssertTrue(columns(of: "saves", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "tracker_stores", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "media_download_jobs", in: db)

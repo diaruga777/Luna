@@ -9,6 +9,7 @@ import LunaSocial
 import LunaStorage
 import LunaModels
 import Foundation
+import CryptoKit
 
 /// Opportunistically reads incoming mail on launch, foreground, and
 /// background, through the connected email account, and:
@@ -28,6 +29,7 @@ public final class IncomingMailImporter {
     private let store: SavesStore
     private let friends: FriendsStore
     private let accountStore: EmailAccountStore
+    private let makeTransport: () -> EmailTransport?
     /// Guarded by `runningLock`: `importNewMail` is called concurrently from
     /// launch, foreground, and background refresh, so the coalescing check and
     /// set must be one atomic step.
@@ -36,63 +38,143 @@ public final class IncomingMailImporter {
 
     public init(store: SavesStore = .shared,
                 friends: FriendsStore = .shared,
-                accountStore: EmailAccountStore = .shared) {
+                accountStore: EmailAccountStore = .shared,
+                makeTransport: (() -> EmailTransport?)? = nil) {
         self.store = store
         self.friends = friends
         self.accountStore = accountStore
+        self.makeTransport = makeTransport ?? { MailTransportFactory.make(store: accountStore) }
     }
 
     /// Can run when an email account is connected and does not need recovery.
     public var isConfigured: Bool { accountStore.isReady }
 
-    /// Fetches and processes new mail. Safe to call repeatedly; coalesces overlaps.
+    public struct ImportSummary: Equatable {
+        public let processed: Int
+        public let skipped: Int
+        public init(processed: Int, skipped: Int) {
+            self.processed = processed
+            self.skipped = skipped
+        }
+    }
+
+    public enum ImportError: Error, LocalizedError {
+        case notConfigured, alreadyRunning, accountChanged, saveFailed
+        public var errorDescription: String? {
+            switch self {
+            case .notConfigured: return L10n.string("Settings_email_pullNotConfigured")
+            case .alreadyRunning: return L10n.string("Settings_email_pullBusy")
+            case .accountChanged: return L10n.string("Settings_email_pullAccountChanged")
+            case .saveFailed: return L10n.string("Settings_email_pullSaveFailed")
+            }
+        }
+    }
+
+    /// Automatic polls keep their existing cursor behavior and log failures.
     public func importNewMail() async {
         guard isConfigured else { return }
-        guard let transport = MailTransportFactory.make(store: accountStore) else { return }
+        do { _ = try await run(since: nil) }
+        catch ImportError.alreadyRunning { }
+        catch {
+            DiagnosticLog.shared.record(
+                "incoming mail fetch failed: \(String(describing: error))", category: "mail")
+        }
+    }
+
+    /// Explicit recovery/backfill: reapply current filters to the past seven days.
+    /// IMAP SINCE has day precision, so its window starts at midnight UTC.
+    /// A recent scan never advances the automatic cursor, even when it finds
+    /// newer messages, because doing so could skip older automatic-poll matches.
+    public func importRecentMail(now: Date = Date()) async throws -> ImportSummary {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let since = calendar.startOfDay(for: now.addingTimeInterval(-7 * 24 * 60 * 60))
+        return try await run(since: since)
+    }
+
+    private func run(since: Date?) async throws -> ImportSummary {
+        guard let account = accountStore.account, isConfigured,
+              let transport = makeTransport() else { throw ImportError.notConfigured }
         let alreadyRunning = runningLock.withLock {
             let wasRunning = isRunning
             if !wasRunning { isRunning = true }
             return wasRunning
         }
-        guard !alreadyRunning else { return }
+        guard !alreadyRunning else { throw ImportError.alreadyRunning }
         defer { runningLock.withLock { isRunning = false } }
-
-        do {
-            let result = try await transport.fetchShares(
+        let result: FetchResult
+        if let since {
+            result = try await transport.fetchRecentShares(
+                since: since, extraSenders: IncomingMailSettings.allowedSenders,
+                extraSubjects: IncomingMailSettings.subjectFilters)
+        } else {
+            result = try await transport.fetchShares(
                 after: IncomingMailSettings.cursor,
                 extraSenders: IncomingMailSettings.allowedSenders,
                 extraSubjects: IncomingMailSettings.subjectFilters)
-
-            var toMarkRead: [String] = []
-            for message in result.messages {
-                let senderEmail = Self.address(from: message.from)
-                if friends.isBlocked(senderEmail) {
-                    DiagnosticLog.shared.record(
-                        "incoming mail: ignored blocked contact \(senderEmail)", category: "mail")
-                    toMarkRead.append(message.id)
-                    continue
-                }
-                if let marker = message.marker {
-                    if await handleLunaShare(marker, message: message) {
-                        toMarkRead.append(message.id)
-                    }
-                } else if Self.isLunaShareSubject(message.subject) {
-                    await importUnmarkedLunaShare(message)
-                    toMarkRead.append(message.id)
-                } else {
-                    importNewsletter(message)
-                    toMarkRead.append(message.id)
-                }
-            }
-            if !toMarkRead.isEmpty { try? await transport.markRead(toMarkRead) }
-
-            IncomingMailSettings.cursor = result.cursor
-            DiagnosticLog.shared.record(
-                "incoming mail: processed \(result.messages.count) message(s)", category: "mail")
-        } catch {
-            DiagnosticLog.shared.record(
-                "incoming mail fetch failed: \(String(describing: error))", category: "mail")
         }
+        var processed = 0
+        var skipped = 0
+        var toMarkRead: [String] = []
+        for message in result.messages {
+            try Task.checkCancellation()
+            guard accountStore.account == account else {
+                throw ImportError.accountChanged
+            }
+            let key = Self.messageKey(message, account: account, cursor: result.cursor)
+            if try store.hasProcessedMail(key) {
+                skipped += 1
+                continue
+            }
+            // Preserve imports made before processing receipts existed. Those
+            // builds used the provider's raw message id as the synthetic URL.
+            if store.item(forURLString: "lunamail://\(message.id)")?.state == .ready {
+                try store.recordProcessedMail(key)
+                skipped += 1
+                continue
+            }
+            let senderEmail = Self.address(from: message.from)
+            if friends.isBlocked(senderEmail) {
+                DiagnosticLog.shared.record(
+                    "incoming mail: ignored blocked contact \(senderEmail)", category: "mail")
+            } else if let marker = message.marker {
+                _ = await handleLunaShare(marker, message: message)
+            } else if Self.isLunaShareSubject(message.subject) {
+                try await importUnmarkedLunaShare(message, messageKey: key)
+            } else {
+                try importNewsletter(message, messageKey: key)
+            }
+            try store.recordProcessedMail(key)
+            processed += 1
+            toMarkRead.append(message.id)
+        }
+        if !toMarkRead.isEmpty { try? await transport.markRead(toMarkRead) }
+        guard accountStore.account == account else {
+            throw ImportError.accountChanged
+        }
+        if since == nil { IncomingMailSettings.cursor = result.cursor }
+        DiagnosticLog.shared.record(
+            "incoming mail\(since == nil ? "" : " recent scan"): processed \(processed) message(s), skipped \(skipped) already processed", category: "mail")
+        return ImportSummary(processed: processed, skipped: skipped)
+    }
+
+    /// Scope native IDs by mailbox/account and IMAP UIDVALIDITY. Message-ID,
+    /// when present, survives UID renumbering and Graph folder moves. Hashing
+    /// keeps addresses and server names out of synthetic saved URLs.
+    static func messageKey(_ message: FetchedMessage, account: EmailAccount, cursor: MailCursor) -> String {
+        let scope = [account.address.lowercased(), account.providerID.rawValue,
+                     account.server?.imapHost.lowercased() ?? "graph"]
+        let identity: String
+        if let messageID = message.headers["message-id"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !messageID.isEmpty {
+            identity = "message-id:\(messageID)"
+        } else if case .imap(_, let validity) = cursor {
+            identity = "imap:\(validity):\(message.id)"
+        } else {
+            identity = "graph:\(message.id)"
+        }
+        let data = Data((scope + [identity]).joined(separator: "\u{0}").utf8)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Luna shares
@@ -148,7 +230,7 @@ public final class IncomingMailImporter {
     /// real article instead of Luna's own rendered copy. Falls back to the
     /// rendered email body only when the URL is missing or needs a CAPTCHA to
     /// unlock.
-    private func importUnmarkedLunaShare(_ message: FetchedMessage) async {
+    private func importUnmarkedLunaShare(_ message: FetchedMessage, messageKey: String) async throws {
         let senderEmail = Self.address(from: message.from)
         guard Friend.isValidEmail(senderEmail) else { return }
         let contact = contactForRecognizedEmail(message, senderEmail: senderEmail)
@@ -164,9 +246,9 @@ public final class IncomingMailImporter {
             // rendered email content below.
             store.delete(item)
         }
-        importFromBody(
+        try importFromBody(
             message, subjectOverride: Self.titleStrippingLunaPrefix(message.subject),
-            contact: contact)
+            contact: contact, messageKey: messageKey)
     }
 
     /// Whether the (decoded) subject carries Luna's own share prefix
@@ -188,8 +270,8 @@ public final class IncomingMailImporter {
 
     // MARK: - Newsletters (existing sender/subject filters)
 
-    private func importNewsletter(_ message: FetchedMessage) {
-        importFromBody(message, subjectOverride: nil, contact: nil)
+    private func importNewsletter(_ message: FetchedMessage, messageKey: String) throws {
+        try importFromBody(message, subjectOverride: nil, contact: nil, messageKey: messageKey)
     }
 
     /// Saves an email using its own rendered body as the article content —
@@ -199,8 +281,8 @@ public final class IncomingMailImporter {
     /// Luna's subject prefix already stripped, so the saved title never
     /// carries it.
     private func importFromBody(
-        _ message: FetchedMessage, subjectOverride: String?, contact: Friend?
-    ) {
+        _ message: FetchedMessage, subjectOverride: String?, contact: Friend?, messageKey: String
+    ) throws {
         let incoming = IncomingMessage(
             uid: message.uid ?? 0, from: message.from, subject: subjectOverride ?? message.subject,
             date: message.date, contentType: message.headers["content-type"] ?? "",
@@ -208,12 +290,17 @@ public final class IncomingMailImporter {
             body: message.bodyText, urls: Self.urls(in: message.bodyText))
 
         if let content = MailArticleBuilder.article(from: incoming) {
-            let item = store.add(urlString: "lunamail://\(message.id)", source: .email)
+            let url = "lunamail://\(messageKey)"
+            let existing = store.item(forURLString: url)
+            if existing?.state == .ready { return }
+            guard let item = existing ?? store.addIfAbsent(urlString: url, source: .email)
+            else { throw ImportError.saveFailed }
             recordSender(message, contact: contact, itemID: item.id)
             let ready = store.saveContent(content, for: item)
             // Article-kind hook for Kindle/ereader auto-send. A no-op in apps
             // without article handling — they have no send destination.
-            if ready.state == .ready { SaveReadiness.observer?.saveBecameReady(ready) }
+            guard ready.state == .ready else { throw ImportError.saveFailed }
+            SaveReadiness.observer?.saveBecameReady(ready)
         } else if let url = incoming.urls.first, let item = store.addIfAbsent(
             urlString: url.absoluteString, source: .email) {
             recordSender(message, contact: contact, itemID: item.id)

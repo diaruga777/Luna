@@ -23,13 +23,18 @@ enum KeyboardMediaSearch {
     ]
     let (data, response) = try await limitedData(from: components.url!)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+    return try results(from: data)
+  }
+
+  static func results(from data: Data) throws -> [Result] {
     let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
     return (object["data"] as? [[String: Any]] ?? []).compactMap { value in
       guard let images = value["images"] as? [String: [String: Any]],
         let text = images["fixed_height"]?["url"] as? String, let url = URL(string: text), url.scheme == "https" else { return nil }
-      // Still thumbnails avoid continuously decoding every visible GIF while typing.
+      // Small animated renditions preserve Clack's animated storefront without
+      // downloading the full copy rendition for every visible cell.
       return Result(title: value["title"] as? String ?? "GIF", url: url,
-        thumbnail: (images["fixed_width_small_still"]?["url"] as? String).flatMap(URL.init(string:)))
+        thumbnail: (images["fixed_width_small"]?["url"] as? String).flatMap(URL.init(string:)))
     }
   }
 

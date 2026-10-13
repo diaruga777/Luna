@@ -25,6 +25,16 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   private var timer: Timer?
   private var generation = 0
   private var pending = 0
+  private var localPending = false
+  private var localTask: Task<Void, Never>?
+  private var preparedQuery: String?
+  private actor LocalSearch {
+    static let shared = LocalSearch()
+    func items(query: String, catalog: KeyboardCatalog, store: KeyboardStore?) -> [Item] {
+      guard !Task.isCancelled else { return [] }
+      return KeyboardToolsPanel.savedItems(query: query, catalog: catalog, store: store)
+    }
+  }
   private var localItems: [Item] = []
   private var remoteItems: [Item] = []
   private var errors: [String] = []
@@ -70,9 +80,13 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     collection.backgroundColor = .clear
     collection.showsHorizontalScrollIndicator = false
     collection.delegate = self
+    collection.isPrefetchingEnabled = false
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) { [weak self] collection, index, id in
       guard let self else { return nil }
-      return self.collectionView(collection, cellForItemAt: index)
+      guard let item = self.items.first(where: { $0.id == id }) else { return nil }
+      let cell = collection.dequeueReusableCell(withReuseIdentifier: "glyph", for: index) as! KeyboardMediaCell
+      self.configure(cell, item: item, index: index)
+      return cell
     }
     collection.register(KeyboardMediaCell.self, forCellWithReuseIdentifier: "glyph")
     collection.accessibilityIdentifier = "keyboard.searchResults"
@@ -114,7 +128,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   }
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   deinit {
-    tasks.forEach { $0.cancel() }; copyTask?.cancel(); timer?.invalidate()
+    tasks.forEach { $0.cancel() }; localTask?.cancel(); copyTask?.cancel(); timer?.invalidate()
   }
   func setDark(_ dark: Bool) {
     searchField.backgroundColor = dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
@@ -150,33 +164,53 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     generation += 1
     timer?.invalidate(); timer = nil
     tasks.forEach { $0.cancel() }; tasks = []
+    localTask?.cancel(); localTask = nil
     copyTask?.cancel(); copyTask = nil
+    loadingID = nil
+    preparedQuery = nil
+    pending = 0; localPending = false
     activity.stopAnimating()
     collection.visibleCells.forEach { ($0 as? KeyboardMediaCell)?.preview.reset() }
     copiedPreview.reset(); focusedPreview.reset()
   }
   private func schedule() {
-    prepareSearch()
+    guard prepareSearch() else { return }
     guard fullAccess, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !tagging else { return }
     timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in self?.fetchRemote() }
   }
-  func searchNow() { prepareSearch(); fetchRemote() }
-  private func prepareSearch() {
-    guard !tagging else { return }
+  func searchNow() { if prepareSearch(force: true) { fetchRemote() } }
+  @discardableResult private func prepareSearch(force: Bool = false) -> Bool {
+    guard !tagging else { return false }
+    let query = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(128)).styleErased
+    guard force || preparedQuery != query else { return false }
+    preparedQuery = query
     generation += 1
     timer?.invalidate(); timer = nil
     tasks.forEach { $0.cancel() }; tasks = []
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines).styleErased
-    // Local SQLite matches are visible during, rather than after, the network debounce.
-    localItems = savedItems(query: query)
-    remoteItems = []; errors = []; pending = 0
-    activity.stopAnimating()
+    localTask?.cancel()
+    copyTask?.cancel(); copyTask = nil; loadingID = nil
+    localItems = []; remoteItems = []; errors = []
+    localPending = true
+    // Loading starts with the edit, including the remote debounce interval.
+    pending = fullAccess && !query.isEmpty ? 1 : 0
     if !fullAccess, !query.isEmpty { errors = ["Enable Full Access for GIF search."] }
     rebuildItems(resetScroll: true)
+    let gen = generation
+    let catalog = self.catalog, store = self.store
+    localTask = Task { [weak self] in
+      // A serial worker bounds outstanding SQLite reads. Never wait for the
+      // shared store's lock on the typing thread, even for an empty query.
+      let found = await LocalSearch.shared.items(query: query, catalog: catalog, store: store)
+      guard !Task.isCancelled, let self, self.generation == gen else { return }
+      self.localPending = false
+      self.localItems = found
+      self.rebuildItems()
+    }
+    return true
   }
   private func fetchRemote() {
     guard !tagging else { return }
-    let query = String(query.trimmingCharacters(in: .whitespacesAndNewlines).styleErased.prefix(128))
+    let query = preparedQuery ?? ""
     guard fullAccess, !query.isEmpty else { return }
     let gen = generation
     pending = 1; activity.startAnimating()
@@ -185,10 +219,12 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     tasks = [Task { [weak self] in
       // Provider JSON and cache IO stay off the typing/UI thread.
       let worker = Task.detached(priority: .utility) {
-        let key = "gif-v3:" + query.lowercased()
+        try Task.checkCancellation()
+        let key = "gif-v4:" + query.lowercased()
         let cached = try? store?.cachedMediaSearch(key)
         let decoded = cached.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([KeyboardMediaSearch.Result].self, from: $0) }
         let fetched: [KeyboardMediaSearch.Result]
+        try Task.checkCancellation()
         if let decoded { fetched = decoded } else { fetched = try await fetch(query) }
         try Task.checkCancellation()
         var seen = Set<URL>()
@@ -212,28 +248,31 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   }
   private func finishedSearch() {
     pending = 0
-    activity.stopAnimating()
     rebuildItems()
   }
-  private func savedItems(query: String) -> [Item] {
+  nonisolated private static func savedItems(query: String, catalog: KeyboardCatalog, store: KeyboardStore?) -> [Item] {
     let saved = ((try? store?.searchShortcuts(query, limit: 40)) ?? []).map { shortcut in
       Item(id: "saved:" + shortcut.id, title: shortcut.text, text: shortcut.kind == "text" ? shortcut.text : nil,
            shortcut: shortcut, url: store?.fileURL(for: shortcut), gif: shortcut.kind == "gif")
     }
+    guard !Task.isCancelled else { return [] }
     let builtins: [Item] = [
       Item(id: "wat", title: "Wat", url: KeyboardResources.url("wat", extension: "png")),
       Item(id: "dramatic", title: "Dramatic chipmunk", url: KeyboardResources.url("dramatic_chipmunk", extension: "gif"), gif: true),
     ].filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     let defaults: [Item] = query.isEmpty ? [Item(id: "shrug", title: "Shrug", text: "¯\\_(ツ)_/¯")] : []
     let glyphs = catalog.browseGlyphs(query: query, limit: 40).map { Item(id: "glyph:" + $0.text, title: $0.name, text: $0.text) }
+    guard !Task.isCancelled else { return [] }
     let links = ((try? store?.recentLinks(limit: 12, query: query)) ?? []).map { Item(id: "link:" + $0.id, title: $0.title, text: $0.url) }
     return saved + builtins + defaults + glyphs + links
   }
   private func rebuildItems(resetScroll: Bool = false) {
     // All local matches rank ahead of remote GIFs, in the same horizontal row.
-    items = localItems + remoteItems
+    var seen = Set<String>()
+    items = (localItems + remoteItems).filter { seen.insert($0.id).inserted }
     items += errors.map { Item(id: $0, title: $0, text: nil, isError: true) }
-    if items.isEmpty, pending == 0 { items = [Item(id: "empty", title: "No results", isError: true)] }
+    if localPending || pending > 0 { activity.startAnimating() } else { activity.stopAnimating() }
+    if items.isEmpty, pending == 0, !localPending { items = [Item(id: "empty", title: "No results", isError: true)] }
     collection.contentInset.left = copied == nil ? 0 : (compact ? 85 : 120)
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
     snapshot.appendSections([0])
@@ -273,13 +312,20 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "glyph", for: indexPath) as! KeyboardMediaCell
     let item = items[indexPath.item]
-    cell.preview.load(item.thumbnail ?? item.url, text: item.url == nil ? (item.text ?? item.title) : nil, animating: false)
+    configure(cell, item: item, index: indexPath)
+    return cell
+  }
+  private func configure(_ cell: KeyboardMediaCell, item: Item, index: IndexPath) {
+    cell.preview.load(item.thumbnail ?? item.url, text: item.url == nil ? (item.text ?? item.title) : nil, animating: item.gif)
     cell.accessibilityLabel = item.isCopied ? "Copied \(item.title). Add keywords" : item.title
-    cell.accessibilityIdentifier = "keyboard.result.\(indexPath.item)"
+    cell.accessibilityIdentifier = "keyboard.result.\(index.item)"
     cell.accessibilityHint = item.text != nil ? "Insert text" : "Copy, then paste into your message"
     cell.accessibilityCustomActions = [UIAccessibilityCustomAction(name: item.attribution) { _ in true }]
     cell.showFeedback(item.id == loadingID ? "Copying…" : item.id == copiedID ? "Copied ✓" : item.isCopied ? "Add keywords" : nil)
-    return cell
+  }
+  func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    guard let cell = cell as? KeyboardMediaCell, indexPath.item < items.count else { return }
+    configure(cell, item: items[indexPath.item], index: indexPath)
   }
   func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) { if !collectionView.visibleCells.contains(cell) { (cell as? KeyboardMediaCell)?.preview.reset() } }
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) { select(items[indexPath.item]) }
@@ -336,6 +382,8 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   }
   func beginTagging() {
     guard let copied else { return }
+    localTask?.cancel(); localTask = nil
+    copyTask?.cancel(); copyTask = nil; loadingID = nil
     tagging = true; previousQuery = query
     copiedPreview.reset()
     collection.visibleCells.forEach { ($0 as? KeyboardMediaCell)?.preview.reset() }

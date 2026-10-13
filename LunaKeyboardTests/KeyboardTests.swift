@@ -1,3 +1,4 @@
+import ImageIO
 import LunaAppConfig
 import LunaModels
 import SQLite3
@@ -6,7 +7,7 @@ import XCTest
 
 @testable import LunaKeyboardCore
 @testable import LunaKeyboardUI
-@testable import LunaStorage
+@testable @preconcurrency import LunaStorage
 
 final class KeyboardTests: XCTestCase {
   private var directory: URL!
@@ -843,6 +844,7 @@ extension KeyboardTests {
 
   @MainActor func testMediaSearchCopyAndSaveKeywords() async throws {
     let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _ in [] }
+    try await Task.sleep(for: .milliseconds(100))
     let index = try XCTUnwrap(panel.items.firstIndex { $0.id == "wat" })
     panel.collectionView(panel.collection, didSelectItemAt: IndexPath(item: index, section: 0))
     try await Task.sleep(for: .milliseconds(200))
@@ -868,7 +870,7 @@ extension KeyboardTests {
     XCTAssertFalse(editor.text.contains("after"))
     let attachment = try XCTUnwrap(editor.attributedText.attribute(.attachment, at: 7, effectiveRange: nil) as? NSTextAttachment)
     XCTAssertEqual(attachment.contents, data)
-    XCTAssertTrue(attachment.usesTextAttachmentView)
+    XCTAssertFalse(attachment.allowsTextAttachmentView)
     XCTAssertEqual(attachment.bounds.size, CGSize(width: 80, height: 80))
     XCTAssertEqual(editor.selectedRange.location, editor.text.utf16.count)
   }
@@ -876,10 +878,11 @@ extension KeyboardTests {
   @MainActor func testCopiedMediaSurvivesClosingSearchAndCanBeSavedOnce() async throws {
     let clipboard = KeyboardSearchClipboard()
     var panel: KeyboardToolsPanel? = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true, clipboard: clipboard) { _ in [] }
+    try await Task.sleep(for: .milliseconds(100))
     let index = try XCTUnwrap(panel?.items.firstIndex { $0.id == "wat" })
     panel!.collectionView(panel!.collection, didSelectItemAt: IndexPath(item: index, section: 0))
     try await Task.sleep(for: .milliseconds(200))
-    weak var released = panel
+    weak let released = panel
     panel = nil
     XCTAssertNil(released)
     XCTAssertNotNil(clipboard.file)
@@ -938,6 +941,7 @@ extension KeyboardTests {
       return [.init(title: "Remote cat", url: URL(string: "https://example.com/cat.gif")!, thumbnail: nil)]
     }
     panel.appendSearch("cat")
+    try await Task.sleep(for: .milliseconds(100))
     XCTAssertEqual(calls, 0)
     XCTAssertEqual(panel.items.first?.text, "my local cat")
     XCTAssertTrue(panel.items.contains { $0.text == "🐱" || $0.text == "😺" })
@@ -991,13 +995,135 @@ extension KeyboardTests {
     lowMemoryStore.trimMemory()
     XCTAssertNoThrow(try lowMemoryStore.preferences())
   }
-  @MainActor func testLocalSearchLatencyWithLargeShortcutLibrary() throws {
+  @MainActor func testLocalSearchLatencyWithLargeShortcutLibrary() async throws {
     for i in 0..<250 { try store.save(.init(keywords: ["cat"], text: "Cat \(i)")) }
     let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false)
     measure(metrics: [XCTClockMetric()]) {
       for _ in 0..<10 { panel.searchField.text = "cat"; panel.searchNow() }
     }
+    try await Task.sleep(for: .milliseconds(200))
     XCTAssertEqual(panel.items.filter { $0.shortcut != nil }.count, 40)
+    panel.cancelWork()
+  }
+}
+
+
+extension KeyboardTests {
+  @MainActor private func host(_ view: UIView) -> UIWindow {
+    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = UIViewController()
+    window.rootViewController!.view.addSubview(view)
+    view.frame = CGRect(x: 0, y: 100, width: 390, height: 350)
+    window.makeKeyAndVisible()
+    window.layoutIfNeeded()
+    view.layoutIfNeeded()
+    return window
+  }
+
+  @MainActor func testPreviewActuallyAdvancesGIFPixels() async throws {
+    let preview = KeyboardMediaPreview()
+    let window = host(preview)
+    defer { window.isHidden = true; preview.reset() }
+    preview.load(try XCTUnwrap(KeyboardResources.url("dramatic_chipmunk", extension: "gif")))
+    try await Task.sleep(for: .milliseconds(150))
+    let image = try XCTUnwrap(preview.subviews.compactMap { $0 as? UIImageView }.first)
+    let first = try XCTUnwrap(image.image?.pngData())
+    try await Task.sleep(for: .milliseconds(350))
+    XCTAssertNotEqual(first, image.image?.pngData(), "The displayed GIF pixels must change")
+    XCTAssertLessThanOrEqual(max(image.image!.size.width, image.image!.size.height), 160)
+    XCTAssertLessThanOrEqual(preview.displayedFrameCount, 5, "Preview must stay below 8 fps")
+    preview.isHidden = true
+    try await Task.sleep(for: .milliseconds(150))
+    let paused = preview.displayedFrameCount
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(preview.displayedFrameCount, paused)
+    preview.isHidden = false
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertGreaterThan(preview.displayedFrameCount, paused)
+  }
+
+  @MainActor func testPastedGIFActuallyCreatesAnAnimatingAttachmentView() async throws {
+    let editor = KeyboardTryoutTextView()
+    let window = host(editor)
+    editor.becomeFirstResponder()
+    defer { window.isHidden = true }
+    let data = try Data(contentsOf: XCTUnwrap(KeyboardResources.url("dramatic_chipmunk", extension: "gif")))
+    UIPasteboard.general.setData(data, forPasteboardType: "com.compuserve.gif")
+    editor.paste(nil)
+    editor.layoutIfNeeded()
+    try await Task.sleep(for: .milliseconds(250))
+    func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
+    let preview = try XCTUnwrap(descendants(editor).compactMap { $0 as? KeyboardMediaPreview }.first,
+      "The editor must display animated pixels, not just retain GIF attachment bytes")
+    XCTAssertGreaterThan(preview.bounds.width, 0)
+    XCTAssertGreaterThan(preview.bounds.height, 0)
+    let image = try XCTUnwrap(preview.subviews.compactMap { $0 as? UIImageView }.first)
+    let first = try XCTUnwrap(image.image?.pngData())
+    try await Task.sleep(for: .milliseconds(350))
+    XCTAssertNotEqual(first, image.image?.pngData())
+    XCTAssertNotNil(editor.textLayoutManager)
+    editor.selectedRange = NSRange(location: 0, length: editor.attributedText.length)
+    editor.deleteBackward()
+    editor.layoutIfNeeded()
+    XCTAssertTrue(descendants(editor).compactMap { $0 as? KeyboardMediaPreview }.isEmpty)
+  }
+
+  @MainActor func testNoEmptyStateDuringDebounceOrRemoteLoading() async throws {
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: true) { _ in
+      try await Task.sleep(for: .milliseconds(250)); return []
+    }
+    panel.appendSearch("zzzznomatch")
+    XCTAssertFalse(panel.items.contains { $0.id == "empty" })
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertFalse(panel.items.contains { $0.id == "empty" })
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertEqual(panel.items.map(\.id), ["empty"])
+    panel.cancelWork()
+  }
+
+  func testGiphyUsesAnimatedSmallRendition() throws {
+    let json = #"{"data":[{"title":"Cat","images":{"fixed_height":{"url":"https://example.com/copy.gif"},"fixed_width_small":{"url":"https://example.com/animated.gif"},"fixed_width_small_still":{"url":"https://example.com/still.gif"}}}]}"#
+    let result = try XCTUnwrap(KeyboardMediaSearch.results(from: Data(json.utf8)).first)
+    XCTAssertEqual(result.thumbnail?.lastPathComponent, "animated.gif")
+    XCTAssertEqual(result.url.lastPathComponent, "copy.gif")
+  }
+
+  @MainActor func testSearchTypingDoesNotWaitForTheSharedStoreLock() async throws {
+    let locked = expectation(description: "Database locked")
+    let unlocked = expectation(description: "Database unlocked")
+    let release = DispatchSemaphore(value: 0)
+    let saves = self.saves!
+    DispatchQueue.global().async {
+      try? saves.keyboardRead { _ in
+        locked.fulfill()
+        _ = release.wait(timeout: .now() + 3)
+      }
+      unlocked.fulfill()
+    }
+    await fulfillment(of: [locked], timeout: 1)
+    let start = Date()
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false)
+    panel.appendSearch("cat")
+    panel.appendSearch("s")
+    XCTAssertLessThan(Date().timeIntervalSince(start), 0.1, "A busy shared database must not block typing")
+    release.signal()
+    await fulfillment(of: [unlocked], timeout: 1)
+    try await Task.sleep(for: .milliseconds(100))
+    panel.cancelWork()
+  }
+}
+
+
+extension KeyboardTests {
+  @MainActor func testDuplicateCatalogGlyphsCannotCrashSearchSnapshot() async throws {
+    let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false)
+    for query in ["heart", "party", "arrow"] {
+      panel.searchField.text = query
+      panel.searchNow()
+      try await Task.sleep(for: .milliseconds(60))
+      XCTAssertEqual(Set(panel.items.map(\.id)).count, panel.items.count)
+    }
     panel.cancelWork()
   }
 }

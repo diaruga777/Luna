@@ -311,3 +311,37 @@ with 24 still thumbnails. Writer's build-for-testing succeeds and all 57 command
 tests pass. Physical-device
 extension memory and host switching remain unmeasured; no numerical RAM reduction
 is asserted from these checks.
+
+## Search responsiveness and animated media audit (13 October 2026)
+
+Clack's animated storefront is restored. GIF search uses GIPHY's small animated
+rendition, with a new metadata cache version to discard still-thumbnail entries.
+Previews are limited to 160 pixels on their longest edge and at most 8 fps. Frame
+skipping preserves GIF timing. A serial ImageIO worker decodes one frame at a time,
+explicitly removes ImageIO's decoded-frame cache, and never builds a frame array.
+Remote preview downloads are capped at 2 MB; local/copied media at 8 MB. Sources
+above 4 megapixels or 4096 pixels on either edge are refused for preview to bound
+decode scratch space. Scrolling cells offscreen releases their source and pixels;
+collection prefetching is disabled, and reused cells restart their preview.
+Hidden previews pause, with playback resuming when shown.
+
+Local search now runs on a cancellable serial worker immediately after an edit,
+without waiting for the remote debounce. It no longer blocks typing on the shared
+database lock. Repeated notifications for the same normalized query do not restart
+search. Loading starts during the debounce and remains until both local and remote
+work finish; “No results” appears only after completion. Query changes cancel copies
+as well as searches. Duplicate catalog glyphs are removed before diffable snapshots,
+preventing duplicate-identifier crashes for queries such as heart/party/arrow.
+
+The tryout/tutorial editor uses UIKit's TextKit 2 stack and public text-range geometry
+to position bounded animated previews over inline attachments. This avoids the
+editable viewport failing to mount NSTextAttachmentViewProvider views. Attachment
+bytes remain intact; removal, scrolling and disappearance release preview work.
+
+Verification: **88 hosted keyboard tests passed, 0 failures** on iPhone 17 Pro /
+iOS 26.2, with app and extension built using Xcode 26.2. New checks exercise actual
+changing GIF pixels in previews and pasted attachments, the 160-pixel/8-fps limits,
+hide/resume and deletion cleanup, loading across debounce/network delay, typing
+while the shared store is locked, and duplicate catalog identifiers. Physical-device
+extension peak memory has not been measured; these are enforced resource bounds,
+not a claim of a measured device RAM footprint.

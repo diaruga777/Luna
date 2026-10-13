@@ -4,19 +4,53 @@ import UniformTypeIdentifiers
 
 /// A real media-capable message editor for exercising the keyboard's copy/paste flow.
 public final class KeyboardTryoutTextView: UITextView {
+  private var mediaViews: [Int: (KeyboardMediaAttachment, KeyboardMediaPreview)] = [:]
+  private var layingOutMedia = false
+
   public override init(frame: CGRect, textContainer: NSTextContainer?) {
-    // View-backed GIF attachments require TextKit 2, including in the tryout host.
-    let container: NSTextContainer
-    if let textContainer { container = textContainer }
-    else {
-      let content = NSTextContentStorage()
-      let layout = NSTextLayoutManager()
-      container = NSTextContainer(size: .zero)
-      content.addTextLayoutManager(layout)
-      layout.textContainer = container
-    }
-    super.init(frame: frame, textContainer: container)
+    // UIKit owns the TextKit 2 stack and its viewport attachment lifecycle.
+    super.init(frame: frame, textContainer: textContainer)
+    allowsEditingTextAttributes = true
     pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.gif.identifier, UTType.image.identifier, UTType.plainText.identifier])
+  }
+  public override func layoutSubviews() {
+    super.layoutSubviews()
+    guard !layingOutMedia, window != nil else { return }
+    layingOutMedia = true
+    defer { layingOutMedia = false }
+    var visible = Set<Int>()
+    // UITextView does not consistently mount view-backed attachments in its
+    // editable viewport. Use its public text geometry to host bounded previews.
+    attributedText.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedText.length)) { value, range, stop in
+      guard let attachment = value as? KeyboardMediaAttachment,
+        let start = position(from: beginningOfDocument, offset: range.location),
+        let end = position(from: start, offset: 1), let textRange = textRange(from: start, to: end) else { return }
+      let rect = firstRect(for: textRange)
+      let frame = CGRect(x: rect.minX, y: rect.maxY - attachment.bounds.height,
+                         width: attachment.bounds.width, height: attachment.bounds.height)
+      guard frame.intersects(bounds) else { return }
+      visible.insert(range.location)
+      if mediaViews[range.location]?.0 !== attachment {
+        mediaViews[range.location]?.1.reset()
+        mediaViews[range.location]?.1.removeFromSuperview()
+        let preview = KeyboardMediaPreview(frame: frame)
+        addSubview(preview)
+        if let data = attachment.contents { preview.load(data: data) }
+        mediaViews[range.location] = (attachment, preview)
+      }
+      mediaViews[range.location]?.1.frame = frame
+      if visible.count >= 8 { stop.pointee = true }
+    }
+    for key in Array(mediaViews.keys) where !visible.contains(key) {
+      mediaViews.removeValue(forKey: key).map { $0.1.reset(); $0.1.removeFromSuperview() }
+    }
+  }
+  public override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      mediaViews.values.forEach { $0.1.reset(); $0.1.removeFromSuperview() }
+      mediaViews.removeAll()
+    } else { setNeedsLayout() }
   }
   public required init?(coder: NSCoder) { fatalError("init(coder:)") }
   public override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
@@ -44,10 +78,10 @@ public final class KeyboardTryoutTextView: UITextView {
   }
   func insertMedia(_ data: Data) {
     guard data.count <= 8 * 1024 * 1024,
-      let source = CGImageSourceCreateWithData(data as CFData, nil),
-      CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 240] as CFDictionary) != nil else { return }
+      let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+      CGImageSourceGetCount(source) > 0 else { return }
     let attachment = KeyboardMediaAttachment(data: data, ofType: CGImageSourceGetType(source) as String?)
-    attachment.allowsTextAttachmentView = true
+    attachment.allowsTextAttachmentView = false
     // Setting attachment.image would discard contents/fileType and disable the animated view.
     attachment.bounds = CGRect(x: 0, y: 0, width: 80, height: 80)
     let text = NSMutableAttributedString(attributedString: attributedText)
@@ -57,21 +91,15 @@ public final class KeyboardTryoutTextView: UITextView {
     text.replaceCharacters(in: selectedRange, with: insertion)
     attributedText = text
     selectedRange = NSRange(location: end, length: 0)
+    setNeedsLayout()
     delegate?.textViewDidChange?(self)
   }
 }
 
 private final class KeyboardMediaAttachment: NSTextAttachment {
-  override var usesTextAttachmentView: Bool { true }
-  override func viewProvider(for parentView: UIView?, location: any NSTextLocation, textContainer: NSTextContainer?) -> NSTextAttachmentViewProvider? {
-    KeyboardAttachmentViewProvider(textAttachment: self, parentView: parentView, textLayoutManager: textContainer?.textLayoutManager, location: location)
-  }
-}
-
-private final class KeyboardAttachmentViewProvider: NSTextAttachmentViewProvider {
-  override func loadView() {
-    let preview = KeyboardMediaPreview()
-    if let data = textAttachment?.contents { preview.load(data: data) }
-    view = preview
+  // Reserve inline geometry without asking UIKit to decode a full-size still.
+  private static let placeholder = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+  override func image(for bounds: CGRect, attributes: [NSAttributedString.Key: Any], location: any NSTextLocation, textContainer: NSTextContainer?) -> UIImage? {
+    Self.placeholder
   }
 }

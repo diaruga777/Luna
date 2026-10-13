@@ -30,6 +30,9 @@ import LunaMusicCore
                 .toggle("Hide Played Episodes", state.settings.hidePlayed) { [self] value in try library.edit { $0.settings.hidePlayed = value } },
                 .toggle("Stream over Cellular", state.settings.cellularStreaming) { [self] value in try library.edit { $0.settings.cellularStreaming = value } }
             ]), ("Downloads", [
+                .choice("Download Size Limit", ByteCountFormatter.string(fromByteCount: state.settings.maximumDownloadBytes, countStyle: .file), [Int64(500_000_000), 1_000_000_000, 2_000_000_000, 5_000_000_000, 10_000_000_000].map { bytes in
+                    (ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file), { [self] in try library.edit { $0.settings.downloadByteLimit = bytes }; await PodcastDownloads.shared.reconcile() })
+                }),
                 .toggle("Download over Cellular", state.settings.cellularDownloads) { [self] value in try library.edit { $0.settings.cellularDownloads = value } },
                 .toggle("Download Saved Episodes", state.settings.downloadSavedEpisodes) { [self] value in try library.edit { $0.settings.downloadSavedEpisodes = value }; await PodcastDownloads.shared.reconcile() },
                 .toggle("Remove Played Downloads", state.settings.removePlayedDownloads) { [self] value in try library.edit { $0.settings.removePlayedDownloads = value }; await PodcastDownloads.shared.reconcile() },

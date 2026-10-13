@@ -623,3 +623,97 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertTrue(library.state.queue.isEmpty); XCTAssertNotNil(library.state.lastPlayedEpisodeID)
     }
 }
+
+@MainActor final class PodcastQueueDownloadTests: XCTestCase {
+    private func fixture(cap: Int64, sizesKnown: Bool = true) throws -> (PodcastLibraryController, PodcastDownloads, [PodcastEpisode], URL) {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_DOWNLOAD_FIXTURE_URL"], let url = URL(string: base) else {
+            throw XCTSkip("Run with the local podcast download fixture.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
+        let episodes = (0..<3).map { index -> PodcastEpisode in
+            var episode = PodcastEpisode(showID: "local", guid: "episode-\(index)", title: "Episode \(index)", publishedAt: Date(), mediaURL: url.appendingPathComponent(index == 1 ? "two.wav" : "one.wav"))
+            episode.mediaType = "audio/wav"; episode.duration = 30
+            episode.byteCount = sizesKnown ? 480_044 : 0
+            return episode
+        }
+        try library.edit {
+            $0.episodes = Dictionary(uniqueKeysWithValues: episodes.map { ($0.id, $0) })
+            $0.currentEpisodeID = episodes[0].id; $0.lastPlayedEpisodeID = episodes[0].id
+            $0.queue = episodes.dropFirst().map(\.id); $0.settings.downloadByteLimit = cap
+        }
+        let downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
+        return (library, downloads, episodes, root)
+    }
+    private func waitUntil(file: StaticString = #filePath, line: UInt = #line, _ predicate: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(20)
+        while !predicate(), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        guard predicate() else {
+            XCTFail("Podcast download/playback did not settle within 20 seconds", file: file, line: line)
+            throw PodcastError("Podcast fixture timed out")
+        }
+    }
+    func testQueueDownloadsWithinCapAndRestoresPausedEpisodeFromDisk() async throws {
+        let (library, downloads, episodes, root) = try fixture(cap: 960_088, sizesKnown: false)
+        defer { downloads.stop(); try? FileManager.default.removeItem(at: root) }
+        await downloads.reconcile()
+        try await waitUntil { downloads.localURL(episodes[1].id) != nil }
+        XCTAssertNotNil(downloads.localURL(episodes[0].id))
+        XCTAssertNil(downloads.localURL(episodes[2].id)); XCTAssertEqual(downloads.totalBytes, 960_088)
+        let restored = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
+        defer { restored.stop() }
+        await restored.start()
+        XCTAssertNotNil(restored.localURL(episodes[0].id)); XCTAssertEqual(restored.totalBytes, 960_088)
+        let player = PodcastPlaybackController(library: library, downloads: restored)
+        player.player.isMuted = true
+        defer { player.pause(); player.player.replaceCurrentItem(with: nil) }
+        try await player.resume()
+        XCTAssertTrue((player.player.currentItem?.asset as? AVURLAsset)?.url.isFileURL == true)
+        try await waitUntil { player.isPlaying }
+        player.pause(); try await player.resume()
+        XCTAssertTrue((player.player.currentItem?.asset as? AVURLAsset)?.url.isFileURL == true)
+    }
+    func testQueueReorderEvictsLowerPriorityAndEnqueueTriggersDownload() async throws {
+        let (library, downloads, episodes, root) = try fixture(cap: 960_088)
+        defer { downloads.stop(); try? FileManager.default.removeItem(at: root) }
+        await downloads.reconcile(); try await waitUntil { downloads.localURL(episodes[1].id) != nil }
+        try library.requireStore().enqueue(episodes[2].id, next: true)
+        try await waitUntil { downloads.localURL(episodes[2].id) != nil }
+        XCTAssertNotNil(downloads.localURL(episodes[0].id)); XCTAssertNil(downloads.localURL(episodes[1].id))
+        XCTAssertEqual(downloads.totalBytes, 960_088)
+    }
+    func testNaturalCompletionDeletesAndRefillsIncludingSleepAtEnd() async throws {
+        let (library, downloads, episodes, root) = try fixture(cap: 960_088)
+        defer { downloads.stop(); try? FileManager.default.removeItem(at: root) }
+        await downloads.reconcile(); try await waitUntil { downloads.localURL(episodes[1].id) != nil }
+        let player = PodcastPlaybackController(library: library, downloads: downloads)
+        player.player.isMuted = true
+        defer { player.pause(); player.player.replaceCurrentItem(with: nil) }
+        try await player.resume(); try await waitUntil { player.isPlaying }
+        let firstFile = try XCTUnwrap(downloads.localURL(episodes[0].id))
+        // Deliver AVPlayer's natural-end event directly: Simulator audio output
+        // can stall its clock, while this still exercises the real end observer.
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: player.player.currentItem)
+        try await waitUntil { player.currentEpisode?.id == episodes[1].id && player.isPlaying }
+        try await waitUntil { downloads.localURL(episodes[2].id) != nil }
+        XCTAssertNil(downloads.localURL(episodes[0].id)); XCTAssertFalse(FileManager.default.fileExists(atPath: firstFile.path))
+        XCTAssertTrue((player.player.currentItem?.asset as? AVURLAsset)?.url.isFileURL == true)
+        XCTAssertEqual(downloads.totalBytes, 960_088)
+        player.setSleepTimer(minutes: nil, endOfEpisode: true)
+        // Deliver AVPlayer's natural-end event directly: Simulator audio output
+        // can stall its clock, while this still exercises the real end observer.
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: player.player.currentItem)
+        try await waitUntil { library.state.progress[episodes[1].id]?.listened == true && downloads.localURL(episodes[1].id) == nil }
+        XCTAssertFalse(player.isPlaying); XCTAssertEqual(library.state.queue, [episodes[2].id])
+        XCTAssertNotNil(downloads.localURL(episodes[2].id))
+    }
+    func testUnderreportedEnclosureCannotExceedCapOrSkipQueueOrder() async throws {
+        let (library, downloads, episodes, root) = try fixture(cap: 100_000)
+        defer { downloads.stop(); try? FileManager.default.removeItem(at: root) }
+        try library.edit { $0.episodes[episodes[0].id]?.byteCount = 1 }
+        await downloads.reconcile()
+        try await waitUntil { downloads.downloads[episodes[0].id]?.bytes == 480_044 && downloads.downloads[episodes[0].id]?.status == "waiting" }
+        XCTAssertEqual(downloads.totalBytes, 0)
+        XCTAssertNil(downloads.localURL(episodes[0].id)); XCTAssertNil(downloads.downloads[episodes[1].id])
+    }
+}

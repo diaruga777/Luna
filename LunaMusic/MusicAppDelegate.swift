@@ -56,7 +56,7 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
                 task.expirationHandler = { work.cancel() }
             }
         }
-        Task { await PodcastDownloads.shared.start() }
+        Task { await PodcastDownloads.shared.reconcile() }
         schedule()
     }
     func foreground() {

@@ -284,9 +284,22 @@ failed downloads for retry. Completed ordinary files are installed atomically an
 checked against the manifest size before playback. HLS locations remain where
 AVFoundation installs them. The cache is excluded from backup. Settings cover
 cellular streaming/downloads, per-show automatic limits, saved-episode downloads,
-played-file retention (24 hours by default) and storage removal. Explicit deletion
-suppresses automatic re-download until requested again. Failed automatic downloads
-retry on a later poll after 15 minutes. HTTP is permitted because arbitrary
+a download byte cap (2 GB by default; 500 MB, 1/2/5/10 GB choices), played-file
+retention for manually marked episodes and storage removal. The current/paused
+episode and explicitly queued episodes download first, in playback order, ahead
+of manual, saved and per-show automatic requests. Queue edits and launch reconcile
+immediately, independently of feed refresh. Downloads run one at a time; unknown
+sizes reserve the remaining budget until measured, and the first episode that
+cannot fit stops the queue prefix. Queue reordering evicts lower-priority files
+and preempts lower-priority transfers. Actual response/file sizes enforce the cap,
+including underreported RSS enclosures; HLS packages are measured before retention.
+Lowering the cap preserves an asset still open in AVPlayer until it is released.
+A paused streaming item switches to its completed local copy on resume. Natural
+completion always releases and deletes that episode's download, even for saved
+or manual downloads and sleep-at-episode-end, then refills the queue within the
+cap. Completed saved episodes do not automatically download again. Explicit
+deletion suppresses automatic re-download until a download, play or requeue is
+requested. Failed automatic downloads retry on a later poll after 15 minutes. HTTP is permitted because arbitrary
 publisher RSS feeds and enclosures may still use it; Luna's own services retain
 their separate authenticated protocols.
 
@@ -449,3 +462,13 @@ playback flow. A tenth focused UI test passed against a four-second delayed feed
 verifying that a visible activity indicator remains until navigation completes.
 The loading and populated-show screenshots were inspected. Use the existing
 `TEST_RUNNER_LUNA_PODCAST_FIXTURE_URL` setup for both RSS UI checks.
+
+Podcast queue download regressions are covered by the pure `tools/podcast-tests`
+suite and hosted `PodcastQueueDownloadTests`. For the hosted fixture, run
+`python3 tools/podcast-tests/fixture_server.py` and set
+`TEST_RUNNER_LUNA_PODCAST_DOWNLOAD_FIXTURE_URL=http://127.0.0.1:19265` when running
+`xcodebuild test -scheme LunaMusic`. Tests cover byte accounting with unknown and
+underreported sizes, enqueue/reorder-triggered downloads, paused local playback
+after manifest restoration, natural-end deletion/refill and sleep-at-end cleanup.
+The completion regression delivers AVPlayer’s end notification after playback
+starts, avoiding dependence on the simulator’s sometimes-stalled audio clock.

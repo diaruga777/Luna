@@ -27,6 +27,7 @@ import LunaPodcastCore
         currentEpisode != nil || library.state.queue.contains { library.state.episodes[$0] != nil }
     }
     private let library: PodcastLibraryController
+    private let downloads: PodcastDownloads
     private lazy var session = MPNowPlayingSession(players: [player])
     private var observations: [NSKeyValueObservation] = []
     private var observers: [NSObjectProtocol] = []
@@ -47,8 +48,8 @@ import LunaPodcastCore
     private var isSelecting = false
     private var needsPreparation = true
 
-    public init(library: PodcastLibraryController = .shared) {
-        self.library = library
+    public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared) {
+        self.library = library; self.downloads = downloads
         if let id = library.state.lastPlayedEpisodeID, let episode = library.state.episodes[id] {
             currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = episode.duration
             rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
@@ -113,20 +114,29 @@ import LunaPodcastCore
         bufferingTask?.cancel(); bufferingTask = nil
         defer { if generation == token { isSelecting = false; updatePlayback() } }
         player.currentItem?.cancelPendingSeeks()
-        player.pause(); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; ignoreSeekEnd = false
+        player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; ignoreSeekEnd = false
         errorMessage = nil; setBuffering(true)
         currentEpisode = episode; duration = episode.duration
         let saved = library.state.progress[episode.id]
         position = !restorePosition && saved?.listened == true ? 0 : max(0, saved?.position ?? 0)
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
-        try library.edit { $0.currentEpisodeID = episode.id; $0.queue.removeAll { $0 == episode.id }; $0.continuation.removeAll { $0 == episode.id } }
+        try library.edit { state in
+            state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
+            state.progress[episode.id]?.suppressAutomaticDownload = false
+            if !restorePosition, state.progress[episode.id]?.listened == true {
+                state.progress[episode.id]?.listened = false; state.progress[episode.id]?.completedAt = nil
+            }
+        }
+        await downloads.start()
+        guard token == generation else { throw CancellationError() }
+        Task { await self.downloads.reconcile() }
         let audio = AVAudioSession.sharedInstance()
         // Playback already supports AirPlay. Explicit .allowAirPlay is only
         // valid for .playAndRecord and throws paramErr (-50) here.
         try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
         let asset: AVURLAsset
-        if let local = PodcastDownloads.shared.localURL(episode.id) { asset = AVURLAsset(url: local) }
+        if let local = downloads.localURL(episode.id) { asset = AVURLAsset(url: local) }
         else { asset = AVURLAsset(url: episode.mediaURL, options: [AVURLAssetAllowsCellularAccessKey: library.state.settings.cellularStreaming]) }
         let item = AVPlayerItem(asset: asset); item.audioTimePitchAlgorithm = .timeDomain
         // AVPlayer streams HTTP ranges/HLS incrementally; a short forward target
@@ -152,7 +162,11 @@ import LunaPodcastCore
     public func resume() async throws {
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         willPlay?()
-        guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation else { try await select(episode, restorePosition: true); return }
+        // A streaming item may have been downloaded while paused. Resume from
+        // the complete local asset so reconnecting never requires publisher I/O.
+        let local = downloads.localURL(episode.id)
+        let switchToLocal = local != nil && (player.currentItem?.asset as? AVURLAsset)?.url != local
+        guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation, !switchToLocal else { try await select(episode, restorePosition: true); return }
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
         let token = generation
@@ -241,16 +255,24 @@ import LunaPodcastCore
     }
     private func ended() async {
         guard actualStartRecorded, !ignoreSeekEnd, let episode = currentEpisode else { pause(); return }
+        let token = generation
         persistPosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
+        // Release the file before deleting it, including a final/sleep-timer item.
+        player.replaceCurrentItem(with: nil); needsPreparation = true
         do {
             if sleepAtEpisodeEnd {
                 try library.requireStore().markListened(episode.id, true)
-                try library.edit { $0.naturallyExhaustedQueue = $0.queue.isEmpty }
+                try library.edit { $0.currentEpisodeID = nil; $0.naturallyExhaustedQueue = $0.queue.isEmpty }
+                downloads.remove(episode.id)
+                await downloads.reconcile()
                 sleepAtEpisodeEnd = false; publish(); return
             }
             let next = try library.requireStore().finishNaturally(episode.id); library.reloadState()
+            downloads.remove(episode.id)
+            await downloads.reconcile()
+            guard generation == token else { return }
             if let next, let episode = library.state.episodes[next] { try await select(episode) }
-            else { publish(); await PodcastDownloads.shared.reconcile() }
+            else { publish(); await downloads.reconcile() }
         } catch { fail(error) }
     }
     public func persistPosition() {

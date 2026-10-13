@@ -74,6 +74,9 @@ trackers without an owner require an explicit re-save. Unavailable refreshes rep
 `publisher-access.js` embeds `access-data.js` (publisher rules, blockers and cleanup
 scripts) and `access.js` (AMP, crawler/referrer/cookie selection, archive lookup and
 browser sequence). These are ordinary removable/disableable plugin resources.
+Crawler probes and the parallel newest/oldest archive lookups accept the first
+readable article immediately; a slow sibling request cannot hold that result.
+Only when every probe declines or fails does the plugin proceed to the next strategy.
 Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 /
 2048 bytes each). Native WebKit validates and executes those declarations without
 choosing publisher rules. Safari preserves browser-deferred outcomes without a save

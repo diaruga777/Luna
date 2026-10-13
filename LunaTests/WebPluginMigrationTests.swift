@@ -43,6 +43,34 @@ final class WebPluginMigrationTests: XCTestCase {
         XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == url+"?amp" })
     }
 
+    func testReadableDailyBeastArchiveDoesNotWaitForStalledOldestLookupInJSC() async throws {
+        try load("publisher-access")
+        let url = "https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing"
+        let encoded = "https%3A%2F%2Fwww.thedailybeast.com%2Fanimated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing"
+        let query = "https://web.archive.org/cdx/search/cdx?url=\(encoded)&output=json&filter=statuscode:200&filter=mimetype:text/html&collapse=timestamp:6&limit=1"
+        let gated = "<article><p>Subscribe to read</p></article>"
+        // Synthetic prose in the archive's article shape; large script payloads
+        // and a metered declaration must not prevent an available full body.
+        let html = """
+        <html><head><title>Recovered article</title>
+        <script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>
+        </head><body><article id="main-article">
+        <p class="c-paragraph">\(String(repeating: "Complete archived reporting. ", count: 150))</p>
+        </article><script>\(String(repeating: " ", count: 600_000))</script></body></html>
+        """
+        runner.fetcher.respond(to: url, body: gated)
+        runner.fetcher.respond(to: query+"&sort=reverse", body: #"[["timestamp"],["20260307154638"]]"#)
+        runner.fetcher.respond(to: query, body: "[]")
+        runner.fetcher.delays[query] = 5
+        runner.fetcher.respond(to: "https://web.archive.org/web/20260307154638id_/"+url, body: html)
+        let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+            argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                page: .init(url: url, html: gated, source: "fetch"), reason: .save, context: .app), timeout: 2, as: PluginIngestAnswer.self)
+        guard case let .model(.article(article)) = answer else { return XCTFail("No article") }
+        XCTAssertTrue(article.html.contains("Complete archived reporting"))
+        XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == query })
+    }
+
     struct ArticleParityCase: Decodable {
         let name: String
         let url: String

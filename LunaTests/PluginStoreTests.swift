@@ -217,6 +217,46 @@ final class PluginStoreTests: XCTestCase {
         XCTAssertEqual(catalog.sourceURLs().count, 0)
     }
 
+    func testBundleManifestsAreReusedButEnabledStateStaysLive() throws {
+        let bundleURL = containerURL.appendingPathComponent("Fixture.bundle", isDirectory: true)
+        let pluginsURL = bundleURL.appendingPathComponent("Plugins", isDirectory: true)
+        try FileManager.default.createDirectory(at: pluginsURL, withIntermediateDirectories: true)
+        let file = pluginsURL.appendingPathComponent("shared.js")
+        try source(id: "app.luna.shared").write(to: file, atomically: true, encoding: .utf8)
+        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+        let catalog = BundledPluginCatalog(bundle: bundle, store: store)
+        XCTAssertEqual(catalog.plugins().first?.manifest.version.description, "1.0.0")
+
+        // Mutating the fixture proves a second lookup uses the parsed bundle
+        // snapshot. A shipping app bundle cannot change under its process.
+        try source(id: "app.luna.shared", version: "2.0.0")
+            .write(to: file, atomically: true, encoding: .utf8)
+        store.setEnabled(false, pluginID: "app.luna.shared", isBundled: true)
+        XCTAssertEqual(catalog.plugin(id: "app.luna.shared")?.manifest.version.description, "1.0.0")
+        XCTAssertEqual(catalog.plugin(id: "app.luna.shared")?.state.isEnabled, false)
+        XCTAssertEqual(catalog.plugins().first?.state.isEnabled, false)
+        store.setEnabled(true, pluginID: "app.luna.shared", isBundled: true)
+        XCTAssertEqual(catalog.plugin(id: "app.luna.shared")?.state.isEnabled, true)
+        XCTAssertNil(catalog.plugin(id: "app.luna.missing"))
+
+        let relaunched = BundledPluginCatalog(bundle: bundle, store: store)
+        XCTAssertEqual(relaunched.plugin(id: "app.luna.shared")?.manifest.version.description, "2.0.0")
+    }
+
+    func testDirectoryCatalogStillSeesEditedSources() throws {
+        let directory = containerURL.appendingPathComponent("fixtures", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("shared.js")
+        try source(id: "app.luna.shared").write(to: file, atomically: true, encoding: .utf8)
+        let catalog = BundledPluginCatalog(source: .directory(directory), store: store)
+        XCTAssertEqual(catalog.plugin(id: "app.luna.shared")?.manifest.version.description, "1.0.0")
+        try source(id: "app.luna.shared", version: "2.0.0")
+            .write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertEqual(catalog.plugin(id: "app.luna.shared")?.manifest.version.description, "2.0.0")
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(catalog.plugins().isEmpty)
+    }
+
     // MARK: - Import preview
 
     func testAPreviewOfANewPluginAsksForConsentForEveryCapability() throws {

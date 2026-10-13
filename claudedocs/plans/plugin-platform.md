@@ -1078,7 +1078,10 @@ through `PluginImportCoordinator` → parse header → consent
 plugin with the same `id` as a bundled one **replaces** it while installed
 (the bundled copy is the fallback after deletion). Consent for bundled
 plugins is implicit (they ship with the app) but their capabilities are still
-listed.
+listed. The catalog caches parsed manifests from the immutable resource bundle
+for its lifetime. Enabled state is read on each lookup, imported overrides stay
+live, and directory-backed staging catalogs still reread editable source. Settings
+schema lookup resolves one bundled plugin rather than reparsing the whole catalog.
 
 ## 12. Store schema changes (`SavesSchema`, one `user_version` bump)
 

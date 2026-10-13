@@ -88,7 +88,7 @@ public enum PluginPlatformComposition {
             store: store, bundled: bundled, runtime: runtime)
         let settings = PluginSettingsStore(values: keyValueStore) { id in
             store.plugin(id: id)?.manifest.settings
-                ?? bundled.plugins().first(where: { $0.id == id })?.manifest.settings ?? []
+                ?? bundled.plugin(id: id)?.manifest.settings ?? []
         }
         // Migrate legacy secret fields before any plugin can read ordinary storage.
         let imported = store.installedPlugins()

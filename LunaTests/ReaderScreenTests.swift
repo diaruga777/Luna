@@ -19,8 +19,9 @@ import XCTest
 /// `ScrollReaderViewController` directly (outside a host that already conforms).
 private final class RecordingReaderCompletionDelegate: ReaderCompletionDelegate {
     var didFinish = false
+    var finishCount = 0
     var didMoveAway = false
-    func readerDidFinishReading(_ reader: UIViewController) { didFinish = true }
+    func readerDidFinishReading(_ reader: UIViewController) { didFinish = true; finishCount += 1 }
     func readerDidMoveAwayFromEnd(_ reader: UIViewController) { didMoveAway = true }
 }
 
@@ -142,7 +143,7 @@ final class ReaderScreenTests: XCTestCase {
         _ = window
     }
 
-    func testScrollReaderFinishesWhenScrolledToEnd() {
+    func testScrollReaderRequiresPullAndReleaseAtEnd() {
         let delegate = RecordingReaderCompletionDelegate()
         let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
         reader.completionDelegate = delegate
@@ -169,9 +170,111 @@ final class ReaderScreenTests: XCTestCase {
         textView.contentOffset.y = maxOffset
         reader.scrollViewDidScroll(textView)
 
-        XCTAssertTrue(delegate.didFinish, "Scrolling to the full article end should mark the article read")
+        XCTAssertFalse(delegate.didFinish, "Reaching the article end must not mark it read")
+        let prompt = findView(of: FinishedReadingBadgeView.self, in: reader.view)
+        XCTAssertEqual(prompt?.accessibilityLabel, "Pull up to mark read")
+
+        // An inertial/programmatic overshoot cannot arm the control.
+        textView.contentOffset.y = maxOffset + 100
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+        XCTAssertFalse(delegate.didFinish)
+
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = maxOffset + 100
+        reader.scrollViewDidScroll(textView)
+        XCTAssertFalse(delegate.didFinish, "Crossing the threshold only arms the control")
+        XCTAssertEqual(prompt?.accessibilityLabel, "Release to mark read")
+        releaseReadPull(reader, textView)
+        XCTAssertTrue(delegate.didFinish)
+        XCTAssertEqual(prompt?.accessibilityLabel, "Read")
+
+        pullToRead(reader, textView)
+        XCTAssertEqual(delegate.finishCount, 1, "Completion is durable and fires once")
         let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
         XCTAssertFalse(badge?.isHidden ?? true)
+    }
+
+    func testScrollReaderShortContentCancelsInsufficientAndRetreatedPulls() {
+        let delegate = RecordingReaderCompletionDelegate()
+        let reader = ScrollReaderViewController(item: item, content: shortArticleContent())
+        reader.completionDelegate = delegate
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let textView = findTextView(in: reader.view) else { return XCTFail("Missing text view") }
+        XCTAssertTrue(reader.didLoadFullContentForTesting)
+        XCTAssertTrue(textView.alwaysBounceVertical)
+        let bottom = max(-textView.adjustedContentInset.top,
+                         textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        XCTAssertFalse(delegate.didFinish, "An article that fits on screen starts unread")
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 30
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+        XCTAssertFalse(delegate.didFinish)
+
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 100
+        reader.scrollViewDidScroll(textView)
+        textView.contentOffset.y = bottom + 10
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+        XCTAssertFalse(delegate.didFinish, "Retreating before release cancels the action")
+
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 100
+        reader.scrollViewDidScroll(textView)
+        reader.scrollViewDidEndDragging(textView, willDecelerate: false)
+        XCTAssertFalse(delegate.didFinish, "A cancelled gesture cannot complete the article")
+        pullToRead(reader, textView)
+        XCTAssertTrue(delegate.didFinish, "Short articles can still be pulled past the bottom")
+    }
+
+    func testScrollReaderPrefixCannotBeMarkedReadByPull() {
+        let delegate = RecordingReaderCompletionDelegate()
+        let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
+        reader.completionDelegate = delegate
+        reader.defersAutomaticFullContentLoad = true
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let textView = findTextView(in: reader.view) else { return XCTFail("Missing text view") }
+        XCTAssertFalse(reader.didLoadFullContentForTesting)
+        pullToRead(reader, textView)
+        XCTAssertFalse(delegate.didFinish)
+    }
+
+    func testScrollReaderPromptOffersAccessibleMarkReadAction() {
+        let delegate = RecordingReaderCompletionDelegate()
+        let reader = ScrollReaderViewController(item: item, content: shortArticleContent())
+        reader.completionDelegate = delegate
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let textView = findTextView(in: reader.view),
+              let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view) else {
+            return XCTFail("Missing reader controls")
+        }
+        reader.scrollViewDidScroll(textView)
+        XCTAssertFalse(delegate.didFinish)
+        XCTAssertTrue(badge.accessibilityActivate())
+        XCTAssertTrue(delegate.didFinish)
+    }
+
+    private func pullToRead(_ reader: ScrollReaderViewController, _ textView: UITextView) {
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height) + 100
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+    }
+
+    private func releaseReadPull(_ reader: ScrollReaderViewController, _ textView: UITextView) {
+        var target = textView.contentOffset
+        reader.scrollViewWillEndDragging(textView, withVelocity: .zero, targetContentOffset: &target)
+        reader.scrollViewDidEndDragging(textView, willDecelerate: false)
     }
 
     func testScrollReaderCompletionLaneKeepsBottomOffsetStable() {
@@ -346,6 +449,9 @@ final class ReaderScreenTests: XCTestCase {
             -textView.adjustedContentInset.top,
             textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
         scroll.scrollViewDidScroll(textView)
+        XCTAssertNotEqual(SavesStore.shared.item(withID: storeItem.id)?.readState, .read)
+        XCTAssertNil(SavesStore.shared.item(withID: storeItem.id)?.pendingArchiveAt)
+        pullToRead(scroll, textView)
 
         let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
@@ -379,6 +485,7 @@ final class ReaderScreenTests: XCTestCase {
             -textView.adjustedContentInset.top,
             textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
         scroll.scrollViewDidScroll(textView)
+        pullToRead(scroll, textView)
         textView.contentOffset.y = 0
         scroll.scrollViewDidScroll(textView)
 

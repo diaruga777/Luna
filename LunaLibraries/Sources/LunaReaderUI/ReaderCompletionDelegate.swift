@@ -11,7 +11,7 @@ import UIKit
 /// `RabbitHoleLayerViewController` each wire one delegate to whichever of the
 /// two is currently embedded.
 public protocol ReaderCompletionDelegate: AnyObject {
-    /// Fired once when playback/scrolling reaches the end of the article.
+    /// Fired when playback finishes or the user pulls up to mark the scroll reader read.
     func readerDidFinishReading(_ reader: UIViewController)
     /// Fired when a reader that had reached the end moves back before it.
     func readerDidMoveAwayFromEnd(_ reader: UIViewController)

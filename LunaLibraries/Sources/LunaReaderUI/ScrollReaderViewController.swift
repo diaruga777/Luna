@@ -87,6 +87,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var resizeAnchor: TextViewportReflowTransition.AnchorGeometry?
     private let store = SavesStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
+    private var isPullingToRead = false
+    private var pullIsArmed = false
+    /// Distance in UIKit’s rubber-banded content coordinates, beyond the bottom inset.
+    private static let readPullThreshold: CGFloat = 72
     private let finishedBadge = FinishedReadingBadgeView()
     private var didRestoreScroll = false
 
@@ -279,6 +283,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         removeHighlight()
 
         finishedReadingTracker = FinishedReadingTracker()
+        isPullingToRead = false
+        pullIsArmed = false
         didRestoreScroll = false
         fullContentLoad = .pending
         didStartPlayback = false
@@ -536,6 +542,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if abs(textView.contentInset.bottom - bottomInset) > 0.5 {
             textView.contentInset.bottom = bottomInset
         }
+        updateReadPullPrompt()
     }
 
     /// The track the scroll indicator runs on: from just below whatever chrome
@@ -602,6 +609,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func installFinishedBadge() {
         textView.addSubview(finishedBadge)
+        finishedBadge.onAccessibilityMarkRead = { [weak self] in
+            self?.finishReadingFromPull()
+        }
         contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
             self?.layoutCompletionArea()
         }
@@ -802,7 +812,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         installPositionDependentFeatures()
         layoutCompletionArea()
         fetchMissingImagesIfNeeded()
-        checkFinishedReading()
+        updateReadPullPrompt()
     }
 
     /// Installs the read-aloud resume highlight, which needs the FULL word map (a
@@ -847,7 +857,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             self.textView.layoutIfNeeded()
             self.installAnimatedImageViews()
             self.layoutCompletionArea()
-            self.checkFinishedReading()
+            self.updateReadPullPrompt()
             SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
         }
     }
@@ -1123,9 +1133,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             applyInitialScrollPosition()
         }
         revealContent()
-        // An article that fits on one screen can never scroll — seeing it at
-        // all means it's been read.
-        checkFinishedReading()
+        // Even an article that fits on one screen requires a deliberate bottom pull.
+        updateReadPullPrompt()
 
         // Phase 2 of the progressive load: render the FULL article and swap it in,
         // AFTER the entry animation, so its heavy glyph generation never stalls the
@@ -1418,7 +1427,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         captureResizeAnchor()
-        checkFinishedReading()
+        updateReadPullPrompt()
         updateAnimatedImagePlayback()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
@@ -1430,16 +1439,35 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
+    public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // A drag begun against the progressive prefix cannot complete the article.
+        isPullingToRead = fullContentLoad == .done && !finishedReadingTracker.isFinished
+        pullIsArmed = false
+    }
+
     /// UIKit hands the fling speed here (points/ms) — capture it (as points/s) so the
     /// settle handler can tell a deliberate scroll from a glance fling.
     public func scrollViewWillEndDragging(
         _ scrollView: UIScrollView, withVelocity velocity: CGPoint,
         targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         pendingFlingSpeedPointsPerSecond = abs(velocity.y) * 1000
+        // Commit only on release, never from a fling's deceleration/bounce, a
+        // restored offset, audio follow-scroll, or merely arriving at the bottom.
+        updateReadPullPrompt()
+        if isPullingToRead && pullIsArmed && scrollView.panGestureRecognizer.state != .cancelled {
+            finishReadingFromPull()
+        }
+        isPullingToRead = false
+        pullIsArmed = false
+        updateReadPullPrompt()
     }
 
     /// A drag that ends without inertia settles immediately.
     public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        // Also clears a cancelled pan, which does not pass through willEndDragging.
+        isPullingToRead = false
+        pullIsArmed = false
+        updateReadPullPrompt()
         if !decelerate { handleScrollSettled() }
     }
 
@@ -1477,22 +1505,33 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return y <= minOffset + tolerance || y >= maxOffset - tolerance
     }
 
-    private func checkFinishedReading() {
-        // Never decide "finished" against the PREFIX content size — a long article
-        // whose prefix happens to fit one screen would be wrongly marked read before
-        // Phase 2 expands it. Wait for the full content.
-        guard fullContentLoad == .done, textView.contentSize.height > 0 else { return }
-        let visibleBottom = textView.contentOffset.y + textView.bounds.height
-        // Require the user to enter the reserved whitespace far enough for the
-        // persistent glass pill to be visible when its checkmark starts drawing.
-        let reachedEnd = visibleBottom >= articleContentBottom + 52
-        switch finishedReadingTracker.update(reachedEnd: reachedEnd) {
-        case .finished:
-            finishedBadge.present()
-            completionDelegate?.readerDidFinishReading(self)
-        case .movedAway: completionDelegate?.readerDidMoveAwayFromEnd(self)
-        case nil: break
+    private func updateReadPullPrompt() {
+        guard fullContentLoad == .done, textView.contentSize.height > 0,
+              !finishedReadingTracker.isFinished else { return }
+        // Keep offscreen glass out of TextKit's compositing tree until the
+        // completion lane enters the viewport (also avoids blank layer snapshots).
+        guard textView.contentOffset.y + textView.bounds.height > finishedBadge.frame.minY else {
+            pullIsArmed = false
+            finishedBadge.isHidden = true
+            return
         }
+        let bottomOffset = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        let distance = max(0, textView.contentOffset.y - bottomOffset)
+        let armed = isPullingToRead && distance >= Self.readPullThreshold
+        if armed && !pullIsArmed {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        pullIsArmed = armed
+        finishedBadge.showPullPrompt(isArmed: armed)
+    }
+
+    private func finishReadingFromPull() {
+        guard fullContentLoad == .done, !finishedReadingTracker.isFinished else { return }
+        finishedReadingTracker.markFinished()
+        finishedBadge.present()
+        completionDelegate?.readerDidFinishReading(self)
     }
 
     // MARK: - Link taps → split

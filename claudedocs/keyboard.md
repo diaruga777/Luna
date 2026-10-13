@@ -345,3 +345,36 @@ hide/resume and deletion cleanup, loading across debounce/network delay, typing
 while the shared store is locked, and duplicate catalog identifiers. Physical-device
 extension peak memory has not been measured; these are enforced resource bounds,
 not a claim of a measured device RAM footprint.
+
+## Keyboard visual refinement (14 October 2026)
+
+The System theme now uses neutral light/dark keycaps, pixel-aligned edges,
+consistent eight-point corners, natural-aspect SF Symbols, a white active Shift
+key and blue action Return keys. The styles key is a native glass `Aa` control;
+the style grid includes names beneath its samples and a short page transition.
+High Contrast retains an opaque styles key. Long-press choices expand toward the
+available space, keep the default choice nearest the held key, and stay inside
+320–440-point phone widths. Sliding onto a modifier no longer shows a character
+balloon for that modifier.
+
+Search uses a `UIGlassContainerEffect` with glass search, close and save controls.
+Content tiles use continuous corners and adaptive fills, with small feedback
+badges instead of covering the entire preview. Remote results retain visible
+GIPHY attribution. Loading and empty states occupy the content shelf rather than
+posing as selectable results. Search opens with a restrained spring, styles fade,
+and pressed results respond with a small scale change; Reduce Motion disables
+these animations. The existing compact heights and bounded media decoder remain.
+
+The tryout board now has the same 220-point portrait height as the extension.
+Debug `--keyboard-tryout --keyboard-light` permits light-mode inspection;
+`--keyboard-system-reference` uses the system input view for comparison.
+
+Verification: **89 hosted keyboard tests passed, 0 failures** on iPhone 17 Pro /
+iOS 26.2, building both the containing app and extension. Simulator screenshots
+and touch interaction covered light/dark keys, search entry and results, and a
+right-expanding-side accent hold. Regression coverage includes menu bounds,
+compact glass-field geometry, loading-state timing, search isolation and media
+copy/save behavior. A pixel-for-pixel comparison against Apple's keyboard remains
+unverified: the simulator's system keyboard stayed hidden, including in Settings,
+and the locked Mac prevented changing its software-keyboard UI setting. This is
+not a claim of exact system-keyboard equivalence or physical-device validation.

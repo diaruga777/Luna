@@ -32,7 +32,14 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private let suggestionScroll = UIScrollView()
   private let dividers = [UIView(), UIView()]
   private var suggestionButtons: [UIButton] = []
-  private let pasteControl = UIPasteControl()
+  private let pasteControl: UIPasteControl = {
+    var configuration = UIPasteControl.Configuration()
+    configuration.displayMode = .iconAndLabel
+    configuration.cornerStyle = .capsule
+    configuration.baseBackgroundColor = .tertiarySystemFill
+    configuration.baseForegroundColor = .label
+    return UIPasteControl(configuration: configuration)
+  }()
   private var pasteRequest: UUID?
   private var suggestions: [KeyboardSuggestion] = []
   private var timer: Timer?
@@ -80,6 +87,8 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     pasteControl.isHidden = true
     suggestionScroll.addSubview(pasteControl)
     countdown.backgroundColor = .systemBlue
+    countdown.isHidden = true
+    countdown.layer.cornerRadius = 1
     countdown.isUserInteractionEnabled = false
     suggestionScroll.addSubview(countdown)
     board.onSearch = { [weak self] in self?.toggleTools() }
@@ -108,7 +117,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     board.frame = CGRect(x: 0, y: widgetHeight, width: bounds.width, height: boardHeight)
     for (i, divider) in dividers.enumerated() {
       divider.isHidden = panel != nil
-      divider.frame = CGRect(x: bounds.width / 3 * CGFloat(i + 1), y: 6, width: 1, height: 48)
+      divider.frame = CGRect(x: bounds.width / 3 * CGFloat(i + 1), y: 15, width: 1 / traitCollection.displayScale, height: 26)
     }
     layoutSuggestions()
   }
@@ -202,7 +211,7 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     // presenters, animation queues, or histories retained by the surface.
     while suggestionButtons.count < min(12, suggestions.count) {
       let b = UIButton(type: .system)
-      b.titleLabel?.font = .systemFont(ofSize: 16)
+      b.titleLabel?.font = .systemFont(ofSize: 17)
       b.addInteraction(UIContextMenuInteraction(delegate: self))
       b.addAction(
         UIAction { [weak self, weak b] _ in
@@ -543,10 +552,24 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     p.onText = { [weak self] text in self?.insert(text) }
     p.onClose = { [weak self] in self?.closeTools() }
     p.onReturnTitle = { [weak self] in self?.board.returnTitle = $0 }
+    layoutIfNeeded()
     panel = p
     addSubview(p)
+    p.setDark(board.dark)
     heightChanged?(requiredHeight)
     setNeedsLayout()
+    KeyboardAppearance.animate {
+      self.superview?.layoutIfNeeded()
+      self.layoutIfNeeded()
+    }
+    if !UIAccessibility.isReduceMotionEnabled {
+      let reveal = CASpringAnimation(keyPath: "transform.translation.y")
+      reveal.fromValue = 12; reveal.toValue = 0
+      reveal.damping = 22; reveal.stiffness = 260
+      reveal.duration = 0.3
+      p.layer.add(reveal, forKey: "searchReveal")
+    }
+    UIAccessibility.post(notification: .layoutChanged, argument: p.searchField)
   }
   private func closeTools() {
     panel?.searchField.resignFirstResponder()
@@ -557,7 +580,9 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
     onReturnToDocument?()
     heightChanged?(requiredHeight)
     setNeedsLayout()
+    KeyboardAppearance.animate { self.superview?.layoutIfNeeded(); self.layoutIfNeeded() }
     refresh()
+    UIAccessibility.post(notification: .layoutChanged, argument: board)
   }
   public override func paste(itemProviders: [NSItemProvider]) {
     guard hasFullAccess, !hasSelection(), before().isEmpty, after().isEmpty,

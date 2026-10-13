@@ -1,9 +1,9 @@
 import LunaKeyboardCore
 import UIKit
 
-// Metrics and popup outlines retained from the original system-matching board.
+// Keep keycaps and callouts on the same radius and spacing grid.
 public struct BoardSpacing {
-  let keyCornerRadius: CGFloat = 6
+  let keyCornerRadius: CGFloat = 8
   let betweenKeys: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 8 : 6
 }
 extension CGPoint {
@@ -32,11 +32,26 @@ public final class KeyboardBoardView: UIView {
   public var needsGlobe = true { didSet { if oldValue != needsGlobe { rebuild() } } }
   public var keyboardType: UIKeyboardType = .default { didSet { if oldValue != keyboardType { rebuild() } } }
   public var returnTitle = "return" { didSet { if oldValue != returnTitle { setNeedsDisplay() } } }
-  public var theme: KeyboardTheme = .system { didSet { setNeedsDisplay() } }
+  public var theme: KeyboardTheme = .system { didSet { if oldValue != theme { rebuild() } } }
   public var demonstrationKey: String? { didSet { setNeedsDisplay() } }
   public func frameForKey(_ key: String) -> CGRect? { keys.first { $0.value == key }?.frame }
-  public var dark = false { didSet { if oldValue != dark { setNeedsDisplay() } } }
-  public var page = 0 { didSet { if oldValue != page { rebuild() } } }
+  public var dark = false { didSet {
+    if oldValue != dark {
+      stylesGlass.overrideUserInterfaceStyle = dark ? .dark : .light
+      stylesLabel.textColor = dark ? .white : .black
+      setNeedsDisplay()
+    }
+  } }
+  public var page = 0 { didSet {
+    guard oldValue != page else { return }
+    reset()
+    rebuild()
+    if (oldValue == 3 || page == 3), !UIAccessibility.isReduceMotionEnabled {
+      let transition = CATransition()
+      transition.type = .fade; transition.duration = 0.16
+      layer.add(transition, forKey: "stylePage")
+    }
+  } }
   private struct Key {
     var value: String
     var frame: CGRect
@@ -56,12 +71,23 @@ public final class KeyboardBoardView: UIView {
   private var longPress: Timer?
   private var repeating: Timer?
   private let popup = KeyboardPopupView()
+  private let stylesGlass = KeyboardAppearance.glass(interactive: true)
+  private let stylesLabel = UILabel()
   public override init(frame: CGRect) {
     super.init(frame: frame)
     isOpaque = false
     isMultipleTouchEnabled = false
     accessibilityIdentifier = "keyboard.board"
     clipsToBounds = false
+    stylesGlass.isUserInteractionEnabled = false
+    stylesGlass.isAccessibilityElement = false
+    if #available(iOS 26, *) { stylesGlass.cornerConfiguration = .capsule(maximumRadius: 8) }
+    else { stylesGlass.layer.cornerRadius = 8 }
+    stylesLabel.text = "Aa"
+    stylesLabel.font = .systemFont(ofSize: 17, weight: .medium)
+    stylesLabel.textAlignment = .center
+    stylesGlass.contentView.addSubview(stylesLabel)
+    addSubview(stylesGlass)
   }
   public required init?(coder: NSCoder) { fatalError("init(coder:)") }
   deinit {
@@ -197,7 +223,23 @@ public final class KeyboardBoardView: UIView {
       }
       all.append(.init(value: "shift", frame: CGRect(x: 3, y: 2 + 2 * (h + rowGap), width: side, height: h), special: true))
     }
+    // Snap shared edges to physical pixels to avoid soft, uneven keycaps.
+    let scale = traitCollection.displayScale
+    all = all.map { key in
+      var key = key
+      let rect = key.frame
+      key.frame = CGRect(x: (rect.minX * scale).rounded() / scale,
+                         y: (rect.minY * scale).rounded() / scale,
+                         width: (rect.maxX * scale).rounded() / scale - (rect.minX * scale).rounded() / scale,
+                         height: (rect.maxY * scale).rounded() / scale - (rect.minY * scale).rounded() / scale)
+      return key
+    }
     keys = all
+    stylesGlass.isHidden = theme == .highContrast || !all.contains { $0.value == "styles" }
+    if let styleKey = all.first(where: { $0.value == "styles" }) {
+      stylesGlass.frame = styleKey.frame
+      stylesLabel.frame = stylesGlass.bounds
+    }
     accessibilityElements = all.map { key in
       let element = KeyboardKeyAccessibility(accessibilityContainer: self)
       element.accessibilityLabel = accessibilityName(key.value)
@@ -260,7 +302,7 @@ public final class KeyboardBoardView: UIView {
     case "shift": return capsLock ? "⇪" : "⇧"
     case "delete": return "⌫"
     case "globe": return "◎"
-    case "styles": return "𝐁𝘐U̲"
+    case "styles": return "Aa"
     case "tab": return "⇥"
     case "dismiss": return "⌄"
     case "return": return returnTitle
@@ -270,9 +312,8 @@ public final class KeyboardBoardView: UIView {
   }
   public override func draw(_ rect: CGRect) {
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    var normal: UIColor = dark ? UIColor(red: 121/255, green: 131/255, blue: 128/255, alpha: 1) : .white
-    var special: UIColor =
-      dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
+    var normal = KeyboardAppearance.key(dark: dark)
+    var special = KeyboardAppearance.modifier(dark: dark)
     var foreground: UIColor = dark ? .white : .black
     switch theme {
     case .system: break
@@ -292,24 +333,45 @@ public final class KeyboardBoardView: UIView {
       ctx.setShadow(
         offset: CGSize(width: 0, height: 1), blur: 0,
         color: UIColor.black.withAlphaComponent(0.3).cgColor)
-      let selected = i == active || key.value == demonstrationKey
-        || (key.value == "shift" && uppercase) || key.value == "style:" + textStyle.rawValue
-      (selected ? (dark ? UIColor(white: 0.85, alpha: 1) : .darkGray) : key.special ? special : normal).setFill()
-      let outline = UIBezierPath(roundedRect: key.frame, cornerRadius: 6)
+      let pressed = i == active || key.value == demonstrationKey
+      let shifted = key.value == "shift" && uppercase
+      let selectedStyle = key.value == "style:" + textStyle.rawValue
+      let action = key.value == "return" && returnTitle != "return"
+      var fill = key.special ? special : normal
+      var ink = foreground
+      if shifted { fill = .white; ink = .black }
+      if action || selectedStyle { fill = .systemBlue; ink = .white }
+      if pressed {
+        fill = key.special ? normal : special
+        if action { fill = .systemBlue.withAlphaComponent(0.7); ink = .white }
+      }
+      if key.value == "styles", theme != .highContrast {
+        ctx.restoreGState()
+        stylesLabel.alpha = cursorDragging ? 0 : 1
+        continue
+      }
+      fill.setFill()
+      let outline = UIBezierPath(roundedRect: key.frame, cornerRadius: BoardSpacing().keyCornerRadius)
       outline.fill()
       if theme == .highContrast { foreground.setStroke(); outline.lineWidth = 2; outline.stroke() }
       ctx.restoreGState()
       guard !cursorDragging && (!blank || key.special) else { continue }
       let text = label(key.value)
       let title = key.special || key.value == " " || key.value.hasPrefix("style:") ? text : textStyle.style(text)
-      let size: CGFloat = key.special || key.value == " " ? 16 : 22
+      let size: CGFloat = key.special || key.value == " " ? 16 : key.value.hasPrefix("style:") ? 20 : 25
       if key.value == "shift" || key.value == "delete" || key.value == "globe" {
-        let name = key.value == "shift" ? (capsLock ? "capslock.fill" : uppercase ? "shift.fill" : "shift") : key.value == "delete" ? "delete.left" : "globe"
-        let color: UIColor = selected ? (dark ? .black : .white) : foreground
-        let image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .regular))?.withTintColor(color, renderingMode: .alwaysOriginal)
-        image?.draw(in: CGRect(x: key.frame.midX - 12, y: key.frame.midY - 12, width: 24, height: 24))
+        let name = key.value == "shift" ? (capsLock ? "capslock.fill" : uppercase ? "shift.fill" : "shift") : key.value == "delete" ? (pressed ? "delete.left.fill" : "delete.left") : "globe"
+        let image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular))?.withTintColor(ink, renderingMode: .alwaysOriginal)
+        if let image {
+          image.draw(at: CGPoint(x: key.frame.midX - image.size.width / 2, y: key.frame.midY - image.size.height / 2))
+        }
+      } else if key.value.hasPrefix("style:"), let style = TextStyle(rawValue: String(key.value.dropFirst(6))) {
+        let sample = CGRect(x: key.frame.minX, y: key.frame.minY + 3, width: key.frame.width, height: key.frame.height - 17)
+        drawText(title, in: sample, color: ink, size: 19)
+        let caption = CGRect(x: key.frame.minX, y: key.frame.maxY - 15, width: key.frame.width, height: 12)
+        drawText(style.keyboardTitle, in: caption, color: ink.withAlphaComponent(0.8), size: 9)
       } else {
-        drawText(title, in: key.frame, color: selected ? (dark ? .black : .white) : foreground, size: size)
+        drawText(title, in: key.frame, color: ink, size: size)
       }
       if isPad, !key.special, let alt = firstAlternative(for: key.value), key.value != " " {
         drawText(alt, in: CGRect(x: key.frame.maxX - 20, y: key.frame.minY + 2, width: 16, height: 14), color: foreground.withAlphaComponent(0.8), size: 11)
@@ -447,7 +509,10 @@ public final class KeyboardBoardView: UIView {
       longPress?.invalidate()
       if let i = nearest(p), i != active {
         self.active = i
-        showPopup(index: i, options: [label(keys[i].value)])
+        if preview && !keys[i].special && keys[i].value != " " {
+          showPopup(index: i, options: [label(keys[i].value)])
+        } else { popup.isHidden = true }
+        setNeedsDisplay()
       }
     }
   }
@@ -501,7 +566,11 @@ public final class KeyboardBoardView: UIView {
   private func showPopup(index: Int, options: [String]) {
     guard let parent = superview else { return }
     let frame = convert(keys[index].frame, to: parent)
-    popup.configure(keyFrame: frame, options: options.map { $0.hasPrefix("style:") ? label($0) : $0 }, parentWidth: parent.bounds.width, dark: dark)
+    let expandsLeft = frame.midX > parent.bounds.width / 2 && options.count > 1
+    let displayed = expandsLeft ? Array(options.reversed()) : options
+    if options.count > 1 { alternatives = displayed; alternativeIndex = expandsLeft ? displayed.count - 1 : 0 }
+    popup.configure(keyFrame: frame, options: displayed.map { $0.hasPrefix("style:") ? label($0) : $0 }, parentWidth: parent.bounds.width, dark: dark)
+    popup.selected = alternativeIndex
     parent.bringSubviewToFront(popup)
   }
 }
@@ -513,15 +582,17 @@ private final class KeyboardKeyAccessibility: UIAccessibilityElement {
   }
 }
 private func drawText(_ text: String, in rect: CGRect, color: UIColor, size: CGFloat) {
+  let naturalWidth = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size)]).width
+  let fittingSize = size * min(1, max(1, rect.width - 6) / max(1, naturalWidth))
   let attrs: [NSAttributedString.Key: Any] = [
-    .font: UIFont.systemFont(ofSize: size), .foregroundColor: color,
+    .font: UIFont.systemFont(ofSize: fittingSize), .foregroundColor: color,
   ]
   let measured = (text as NSString).size(withAttributes: attrs)
   (text as NSString).draw(
     at: CGPoint(x: rect.midX - measured.width / 2, y: rect.midY - measured.height / 2),
     withAttributes: attrs)
 }
-private final class KeyboardPopupView: UIView {
+final class KeyboardPopupView: UIView {
   private var options: [String] = []
   private var key = CGRect.zero
   private var shape: PopUpKeyBezierPath = .center
@@ -541,7 +612,8 @@ private final class KeyboardPopupView: UIView {
     selected = 0
     key = CGRect(origin: .zero, size: keyFrame.size)
     if options.count > 1 {
-      let width = min(parentWidth - 8, CGFloat(options.count) * max(32, key.width, options.contains(where: { $0.count > 4 }) ? 68 : 0))
+      let available = keyFrame.midX > parentWidth / 2 ? keyFrame.maxX - 3 : parentWidth - keyFrame.minX - 3
+      let width = min(available, CGFloat(options.count) * max(32, key.width, options.contains(where: { $0.count > 4 }) ? 68 : 0))
       shape =
         keyFrame.midX > parentWidth / 2
         ? .expandLeft(menuWidth: width) : .expandRight(menuWidth: width)
@@ -578,7 +650,7 @@ private final class KeyboardPopupView: UIView {
     ctx.setShadow(
       offset: CGSize(width: 0, height: 2), blur: 3,
       color: UIColor.black.withAlphaComponent(0.3).cgColor)
-    (dark ? UIColor(white: 0.45, alpha: 1) : .white).setFill()
+    KeyboardAppearance.key(dark: dark).setFill()
     shape.path(keyBounds: CGRect(origin: .zero, size: key.size), spacing: BoardSpacing()).fill()
     ctx.restoreGState()
     for (i, text) in options.enumerated() {
@@ -593,6 +665,21 @@ private final class KeyboardPopupView: UIView {
       drawText(
         text, in: r, color: dark || (options.count > 1 && i == selected) ? .white : .black,
         size: text.count > 4 ? 15 : options.count > 1 ? 22 : 30)
+    }
+  }
+}
+
+private extension TextStyle {
+  var keyboardTitle: String {
+    switch self {
+    case .boldItalic: return "Bold italic"
+    case .underscore: return "Underline"
+    case .strikethrough: return "Strike"
+    case .inverseBoxed: return "Filled"
+    case .doubleStroke: return "Double"
+    case .superscript: return "Raised"
+    case .gothicBold: return "Gothic bold"
+    default: return rawValue.prefix(1).uppercased() + rawValue.dropFirst()
     }
   }
 }

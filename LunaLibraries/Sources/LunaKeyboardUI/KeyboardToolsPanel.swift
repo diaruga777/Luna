@@ -4,8 +4,7 @@ import LunaStorage
 import UIKit
 import UniformTypeIdentifiers
 
-/// Clack's storefront: one query, a horizontal row of glyphs, and the search
-/// field directly above the typing keys. The document is never the search buffer.
+/// A content shelf above a shared glass search bar. The document is never the search buffer.
 final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UITextFieldDelegate {
   var onText: ((String) -> Void)?
   var onClose: (() -> Void)?
@@ -14,6 +13,13 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   let collection: UICollectionView
   private let close = UIButton(type: .system)
   private let activity = UIActivityIndicatorView(style: .medium)
+  private let chrome = KeyboardAppearance.glassContainer()
+  private let searchGlass = KeyboardAppearance.glass()
+  private let closeGlass = KeyboardAppearance.glass(interactive: true)
+  private let saveGlass = KeyboardAppearance.glass(interactive: true)
+  private let emptyState = UIStackView()
+  private let emptyTitle = UILabel()
+  private let emptyDetail = UILabel()
   private let catalog: KeyboardCatalog
   private let store: KeyboardStore?
   private let fullAccess: Bool
@@ -50,6 +56,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   private var copiedID: String?
   private let focusedPreview = KeyboardMediaPreview()
   private let save = UIButton(type: .system)
+  var searchStatus: String? { emptyState.isHidden ? nil : emptyTitle.text }
   var query: String { searchField.text ?? "" }
   var requiredHeight: CGFloat { (compact ? 85 : 120) + 66 }
 
@@ -71,8 +78,8 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     self.catalog = catalog; self.store = store; self.fullAccess = fullAccess; self.compact = compact; self.fetch = fetch; self.clipboard = clipboard
     let layout = UICollectionViewFlowLayout()
     layout.scrollDirection = .horizontal
-    layout.minimumLineSpacing = 8
-    layout.sectionInset = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+    layout.minimumLineSpacing = 10
+    layout.sectionInset = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
     collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     super.init(frame: .zero)
     accessibilityIdentifier = "keyboard.searchPanel"
@@ -90,8 +97,8 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     }
     collection.register(KeyboardMediaCell.self, forCellWithReuseIdentifier: "glyph")
     collection.accessibilityIdentifier = "keyboard.searchResults"
-    searchField.font = .systemFont(ofSize: 18)
-    searchField.placeholder = "Search · Powered by GIPHY"
+    searchField.font = .systemFont(ofSize: 17)
+    searchField.placeholder = "Emoji, shortcuts & GIFs"
     searchField.accessibilityLabel = "Search emoji, shortcuts and GIFs"
     searchField.accessibilityIdentifier = "keyboard.searchField"
     searchField.autocapitalizationType = .none
@@ -99,13 +106,17 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     searchField.spellCheckingType = .no
     searchField.returnKeyType = .search
     searchField.clearButtonMode = .whileEditing
-    searchField.layer.cornerRadius = 8
+    searchField.tintColor = .systemBlue
     searchField.inputView = UIView(frame: .zero)
-    let inset = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 42))
+    let inset = UIView(frame: CGRect(x: 0, y: 0, width: 36, height: 42))
+    let magnifier = UIImageView(image: UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)))
+    magnifier.tintColor = .secondaryLabel
+    magnifier.frame = CGRect(x: 12, y: 12, width: 18, height: 18)
+    inset.addSubview(magnifier)
     searchField.leftView = inset; searchField.leftViewMode = .always
     searchField.delegate = self
     searchField.addAction(UIAction { [weak self] _ in self?.schedule() }, for: .editingChanged)
-    close.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .ultraLight)), for: .normal)
+    close.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)), for: .normal)
     close.accessibilityLabel = "Close search"
     close.accessibilityIdentifier = "keyboard.closeSearch"
     close.addAction(UIAction { [weak self] _ in
@@ -116,12 +127,32 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     save.accessibilityIdentifier = "keyboard.saveMedia"
     save.addAction(UIAction { [weak self] _ in self?.saveCopied() }, for: .touchUpInside)
     save.isHidden = true; focusedPreview.isHidden = true
-    [collection, searchField, close, activity, focusedPreview, save, copiedPreview, copiedButton].forEach(addSubview)
+    [collection, emptyState, chrome, focusedPreview, copiedPreview, copiedButton].forEach(addSubview)
+    [closeGlass, searchGlass, saveGlass].forEach(chrome.contentView.addSubview)
+    closeGlass.contentView.addSubview(close)
+    searchGlass.contentView.addSubview(searchField)
+    searchGlass.contentView.addSubview(activity)
+    saveGlass.contentView.addSubview(save)
+    saveGlass.isHidden = true
+    save.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+    emptyState.axis = .vertical
+    emptyState.alignment = .center
+    emptyState.spacing = 6
+    emptyState.isUserInteractionEnabled = false
+    emptyTitle.font = .systemFont(ofSize: 17, weight: .semibold)
+    emptyTitle.textColor = .label
+    emptyDetail.font = .systemFont(ofSize: 13)
+    emptyDetail.textColor = .secondaryLabel
+    emptyDetail.numberOfLines = 2
+    emptyDetail.textAlignment = .center
+    emptyState.addArrangedSubview(emptyTitle)
+    emptyState.addArrangedSubview(emptyDetail)
+    emptyState.isHidden = true
     copiedButton.accessibilityLabel = "Copied item. Add keywords"
     copiedButton.accessibilityIdentifier = "keyboard.copiedPreview"
     copiedButton.addAction(UIAction { [weak self] _ in self?.beginTagging() }, for: .touchUpInside)
-    copiedPreview.layer.borderWidth = 3
-    copiedPreview.layer.borderColor = UIColor.gray.cgColor
+    copiedPreview.layer.borderWidth = 2
+    copiedPreview.layer.borderColor = UIColor.systemBlue.cgColor
     copiedPreview.load(copiedFile, text: copied?.text)
     copiedPreview.isHidden = copied == nil; copiedButton.isHidden = copied == nil
     searchNow()
@@ -131,20 +162,28 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     tasks.forEach { $0.cancel() }; localTask?.cancel(); copyTask?.cancel(); timer?.invalidate()
   }
   func setDark(_ dark: Bool) {
-    searchField.backgroundColor = dark ? UIColor(red: 93/255, green: 95/255, blue: 90/255, alpha: 1) : UIColor(white: 0.9, alpha: 1)
-    searchField.textColor = dark ? .white : .black
-    close.tintColor = dark ? .white : .black
-    save.tintColor = close.tintColor
+    overrideUserInterfaceStyle = dark ? .dark : .light
+    searchField.backgroundColor = .clear
+    searchField.textColor = .label
+    close.tintColor = .label
+    save.tintColor = .systemBlue
   }
   override func layoutSubviews() {
     super.layoutSubviews()
     let cellHeight: CGFloat = compact ? 85 : 120
     collection.frame = CGRect(x: 0, y: 8, width: bounds.width, height: cellHeight)
-    close.frame = CGRect(x: 0, y: cellHeight + 16, width: 42, height: 42)
-    searchField.frame = CGRect(x: 42, y: cellHeight + 16, width: max(0, bounds.width - 50 - (tagging ? 54 : 0)), height: 42)
-    activity.frame = CGRect(x: bounds.width - 38, y: 14, width: 24, height: 24)
+    emptyState.frame = CGRect(x: 24, y: 8 + (cellHeight - 56) / 2, width: max(0, bounds.width - 48), height: 56)
+    chrome.frame = CGRect(x: 8, y: cellHeight + 16, width: max(0, bounds.width - 16), height: 42)
+    closeGlass.frame = CGRect(x: 0, y: 0, width: 42, height: 42)
+    close.frame = closeGlass.bounds
+    searchGlass.frame = CGRect(x: 50, y: 0, width: max(0, chrome.bounds.width - 50 - (tagging ? 62 : 0)), height: 42)
+    searchField.frame = searchGlass.bounds.insetBy(dx: 0, dy: 0)
+    // Reserve the trailing accessory for progress; never cover the Clear button.
+    activity.frame = CGRect(x: 0, y: 0, width: 32, height: 42)
     focusedPreview.frame = CGRect(x: (bounds.width - cellHeight) / 2, y: 8, width: cellHeight, height: cellHeight)
-    save.frame = CGRect(x: bounds.width - 62, y: cellHeight + 16, width: 54, height: 42)
+    saveGlass.frame = CGRect(x: chrome.bounds.width - 54, y: 0, width: 54, height: 42)
+    save.frame = saveGlass.bounds
+    saveGlass.isHidden = !tagging
     layoutCopiedPreview()
   }
   override func didMoveToWindow() {
@@ -271,8 +310,13 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     var seen = Set<String>()
     items = (localItems + remoteItems).filter { seen.insert($0.id).inserted }
     items += errors.map { Item(id: $0, title: $0, text: nil, isError: true) }
-    if localPending || pending > 0 { activity.startAnimating() } else { activity.stopAnimating() }
-    if items.isEmpty, pending == 0, !localPending { items = [Item(id: "empty", title: "No results", isError: true)] }
+    let loading = localPending || pending > 0
+    if loading { activity.startAnimating() } else { activity.stopAnimating() }
+    searchField.rightView = loading ? activity : nil
+    searchField.rightViewMode = loading ? .always : .never
+    emptyState.isHidden = !items.isEmpty || tagging
+    emptyTitle.text = loading ? "Searching…" : "No results"
+    emptyDetail.text = loading ? "Finding emoji, shortcuts and GIFs" : "Try a different word or phrase."
     collection.contentInset.left = copied == nil ? 0 : (compact ? 85 : 120)
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
     snapshot.appendSections([0])
@@ -319,7 +363,9 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     cell.preview.load(item.thumbnail ?? item.url, text: item.url == nil ? (item.text ?? item.title) : nil, animating: item.gif)
     cell.accessibilityLabel = item.isCopied ? "Copied \(item.title). Add keywords" : item.title
     cell.accessibilityIdentifier = "keyboard.result.\(index.item)"
-    cell.accessibilityHint = item.text != nil ? "Insert text" : "Copy, then paste into your message"
+    cell.accessibilityHint = item.isError ? (fullAccess ? "Retry search" : "Allow Full Access in Settings to search GIFs") : item.text != nil ? "Insert text" : "Copy, then paste into your message"
+    cell.setCaption(item.isError ? "" : item.id.hasPrefix("remote:") ? "GIPHY" : item.attribution == "Saved shortcut" ? (item.shortcut == nil ? "" : "Shortcut") : item.attribution)
+    cell.preview.isStatus = item.isError
     cell.accessibilityCustomActions = [UIAccessibilityCustomAction(name: item.attribution) { _ in true }]
     cell.showFeedback(item.id == loadingID ? "Copying…" : item.id == copiedID ? "Copied ✓" : item.isCopied ? "Add keywords" : nil)
   }
@@ -389,7 +435,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
     collection.visibleCells.forEach { ($0 as? KeyboardMediaCell)?.preview.reset() }
     layoutCopiedPreview()
     timer?.invalidate(); generation += 1; tasks.forEach { $0.cancel() }; activity.stopAnimating()
-    collection.isHidden = true; focusedPreview.isHidden = false; save.isHidden = false
+    collection.isHidden = true; emptyState.isHidden = true; focusedPreview.isHidden = false; save.isHidden = false
     focusedPreview.load(copied.url, text: copied.text)
     searchField.text = copied.shortcut?.keywords.joined(separator: ", ") ?? query
     searchField.placeholder = "Add keywords, separated by commas"
@@ -400,7 +446,7 @@ final class KeyboardToolsPanel: UIView, UICollectionViewDataSource, UICollection
   }
   private func finishTagging() {
     tagging = false; searchField.text = previousQuery
-    searchField.placeholder = "Search · Powered by GIPHY"
+    searchField.placeholder = "Emoji, shortcuts & GIFs"
     collection.isHidden = false; focusedPreview.isHidden = true; save.isHidden = true
     focusedPreview.reset()
     copiedPreview.load(copiedFile, text: copied?.text)

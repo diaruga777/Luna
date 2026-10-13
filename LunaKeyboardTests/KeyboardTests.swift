@@ -786,14 +786,14 @@ extension KeyboardTests {
     surface.releaseMemory()
   }
 
-  @MainActor func testCompactSearchKeepsClackTileAndFieldSizes() {
+  @MainActor func testCompactSearchKeepsContentAndGlassFieldInsidePanel() {
     let panel = KeyboardToolsPanel(catalog: KeyboardCatalog(), store: store, fullAccess: false, compact: true)
     panel.frame = CGRect(x: 0, y: 0, width: 320, height: panel.requiredHeight)
     panel.layoutIfNeeded()
     XCTAssertEqual(panel.requiredHeight, 151)
     XCTAssertEqual(panel.collection.bounds.height, 85)
     XCTAssertEqual(panel.searchField.bounds.height, 42)
-    XCTAssertEqual(panel.searchField.frame.maxY, 143)
+    XCTAssertEqual(panel.searchField.convert(panel.searchField.bounds, to: panel).maxY, 143)
   }
 
   @MainActor func testStyleBoardStaysInsideKeyboardAndSelectsStyle() {
@@ -1074,11 +1074,12 @@ extension KeyboardTests {
       try await Task.sleep(for: .milliseconds(250)); return []
     }
     panel.appendSearch("zzzznomatch")
-    XCTAssertFalse(panel.items.contains { $0.id == "empty" })
+    XCTAssertNotEqual(panel.searchStatus, "No results")
     try await Task.sleep(for: .milliseconds(300))
-    XCTAssertFalse(panel.items.contains { $0.id == "empty" })
+    XCTAssertNotEqual(panel.searchStatus, "No results")
     try await Task.sleep(for: .milliseconds(250))
-    XCTAssertEqual(panel.items.map(\.id), ["empty"])
+    XCTAssertTrue(panel.items.isEmpty)
+    XCTAssertEqual(panel.searchStatus, "No results")
     panel.cancelWork()
   }
 
@@ -1125,5 +1126,24 @@ extension KeyboardTests {
       XCTAssertEqual(Set(panel.items.map(\.id)).count, panel.items.count)
     }
     panel.cancelWork()
+  }
+}
+
+
+extension KeyboardTests {
+  @MainActor func testAccentMenusStayInsideNarrowAndWideBoards() {
+    for width: CGFloat in [320, 375, 402, 440] {
+      let board = KeyboardBoardView(frame: CGRect(x: 0, y: 56, width: width, height: 220))
+      board.needsGlobe = false
+      board.layoutIfNeeded()
+      for letter in ["q", "e", "u", "o", "p", "a"] {
+        guard let key = board.frameForKey(letter) else { XCTFail("Missing key"); continue }
+        let popup = KeyboardPopupView()
+        let options = board.holdAlternatives(for: letter)
+        popup.configure(keyFrame: key, options: options, parentWidth: width, dark: false)
+        XCTAssertGreaterThanOrEqual(popup.frame.minX, -0.5, "\(width): \(letter)")
+        XCTAssertLessThanOrEqual(popup.frame.maxX, width + 0.5, "\(width): \(letter)")
+      }
+    }
   }
 }

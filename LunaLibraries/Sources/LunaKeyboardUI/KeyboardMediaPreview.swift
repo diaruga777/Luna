@@ -17,20 +17,27 @@ final class KeyboardMediaPreview: UIView {
   private(set) var displayedFrameCount = 0
   private var timer: Timer?
   private var token = UUID()
+  var isStatus = false {
+    didSet {
+      label.font = .systemFont(ofSize: isStatus ? 14 : (message?.count ?? 0) <= 3 ? 36 : 20, weight: isStatus ? .medium : .regular)
+      label.numberOfLines = isStatus || message?.contains("\n") == true ? 0 : 1
+    }
+  }
   var message: String? { didSet { label.text = message; label.isHidden = message == nil } }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    backgroundColor = .black
-    layer.cornerRadius = 8
+    backgroundColor = .tertiarySystemFill
+    layer.cornerRadius = 18
+    layer.cornerCurve = .continuous
     clipsToBounds = true
     imageView.contentMode = .scaleAspectFit
     label.textAlignment = .center
     label.numberOfLines = 0
-    label.font = .systemFont(ofSize: 20)
+    label.font = .systemFont(ofSize: 32)
     label.adjustsFontSizeToFitWidth = true
     label.minimumScaleFactor = 0.6
-    label.textColor = .white
+    label.textColor = .label
     [imageView, label, spinner].forEach(addSubview)
     isUserInteractionEnabled = false
   }
@@ -38,7 +45,7 @@ final class KeyboardMediaPreview: UIView {
   deinit { task?.cancel(); decodeTask?.cancel(); timer?.invalidate() }
   override func layoutSubviews() {
     super.layoutSubviews()
-    imageView.frame = bounds.insetBy(dx: 2, dy: 2)
+    imageView.frame = bounds
     label.frame = bounds.insetBy(dx: 8, dy: 6)
     spinner.center = CGPoint(x: bounds.midX, y: bounds.midY)
   }
@@ -198,11 +205,25 @@ private actor KeyboardPreviewDecoder {
 final class KeyboardMediaCell: UICollectionViewCell {
   let preview = KeyboardMediaPreview()
   private let feedback = UILabel()
+  private let caption = UILabel()
+  override var isHighlighted: Bool {
+    didSet {
+      KeyboardAppearance.animate { self.contentView.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.96, y: 0.96) : .identity }
+    }
+  }
   override init(frame: CGRect) {
     super.init(frame: frame)
     contentView.addSubview(preview)
     contentView.addSubview(feedback)
-    feedback.font = .systemFont(ofSize: 15, weight: .semibold)
+    contentView.addSubview(caption)
+    caption.font = .systemFont(ofSize: 10, weight: .semibold)
+    caption.textColor = .white
+    caption.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+    caption.textAlignment = .center
+    caption.layer.cornerRadius = 7
+    caption.clipsToBounds = true
+    caption.isUserInteractionEnabled = false
+    feedback.font = .systemFont(ofSize: 13, weight: .semibold)
     feedback.textAlignment = .center
     feedback.numberOfLines = 0
     feedback.textColor = .white
@@ -216,9 +237,12 @@ final class KeyboardMediaCell: UICollectionViewCell {
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   override func layoutSubviews() {
     super.layoutSubviews()
-    preview.frame = bounds.insetBy(dx: 2, dy: 2)
-    feedback.frame = bounds.insetBy(dx: 2, dy: 2)
+    preview.frame = bounds
+    feedback.frame = CGRect(x: 6, y: 6, width: bounds.width - 12, height: 30)
+    let captionWidth = min(bounds.width - 16, caption.intrinsicContentSize.width + 12)
+    caption.frame = CGRect(x: 8, y: bounds.height - 24, width: captionWidth, height: 16)
   }
-  override func prepareForReuse() { super.prepareForReuse(); preview.reset(); showFeedback(nil) }
+  override func prepareForReuse() { super.prepareForReuse(); preview.reset(); showFeedback(nil); setCaption(""); contentView.transform = .identity }
+  func setCaption(_ text: String) { caption.text = text; caption.isHidden = text.isEmpty; setNeedsLayout() }
   func showFeedback(_ text: String?) { feedback.text = text; feedback.isHidden = text == nil }
 }

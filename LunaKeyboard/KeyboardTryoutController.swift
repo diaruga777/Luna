@@ -35,7 +35,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
       surface.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       surface.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -75),
     ])
-    surface.boardHeight = 210
+    surface.boardHeight = 220
     let height = surface.heightAnchor.constraint(equalToConstant: surface.requiredHeight)
     height.isActive = true
     surface.heightChanged = { [weak height] value in height?.constant = value }
@@ -62,10 +62,25 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
     surface.board.needsGlobe = false
     surface.layer.cornerRadius = 28
     surface.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-    surface.backgroundColor = UIColor(white: 0.09, alpha: 1)
+    surface.backgroundColor = UIColor(white: 0.13, alpha: 1)
     surface.board.dark = true
     surface.reloadSettings()
+    #if DEBUG
+    if !ProcessInfo.processInfo.arguments.contains("--keyboard-system-reference") { editor.inputView = input }
+    if ProcessInfo.processInfo.arguments.contains("--keyboard-light") {
+      view.overrideUserInterfaceStyle = .light
+      view.backgroundColor = .white
+      editor.backgroundColor = .white
+      editor.textColor = .black
+      surface.board.dark = false
+      surface.backgroundColor = UIColor(red: 209/255, green: 212/255, blue: 218/255, alpha: 1)
+    }
+    if ProcessInfo.processInfo.arguments.contains("--keyboard-system-reference") {
+      surface.isHidden = true
+    }
+    #else
     editor.inputView = input
+    #endif
     navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Paste", primaryAction: UIAction { [weak self] _ in
       self?.editor.paste(nil)
     })

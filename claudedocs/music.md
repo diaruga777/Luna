@@ -365,7 +365,15 @@ Now Playing activation waits for session eligibility and retries when eligibilit
 changes or audio begins playing. A failed attempt during startup cannot permanently
 leave hardware commands routed to the preceding session. Paused sources do not
 reclaim activation. These changes do not intercept Apple's application music
-player’s commands; its ordinary next/previous behavior remains system-owned.
+player's commands; its ordinary next/previous behavior remains system-owned.
+
+Verification (2026-10-14): the LunaMusic simulator suite completed 88 tests with
+13 fixture-dependent skips and zero failures; all 29 Foundation podcast tests
+passed. Regression coverage checks headphone command enablement, monotonic skip
+timing, late session eligibility, paused/cancelled activation, podcast intervals,
+and both directions of queue switching with preserved positions. The switch test
+also waits for the destination's real Now Playing session to become active.
+Actual AirPods button delivery remains a physical-device acceptance check.
 
 Apple account follows/history, Apple-paid podcast audio, ratings/reviews,
 Apple editorial/personalized recommendations, proprietary Enhance Dialogue, and

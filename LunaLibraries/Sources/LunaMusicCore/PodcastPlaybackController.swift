@@ -23,12 +23,13 @@ import LunaPodcastCore
     @Published public private(set) var sleepDeadline: Date?
     @Published public private(set) var sleepAtEpisodeEnd = false
     public var willPlay: (() -> Void)?
+    public var remoteSkip: ((MediaSkipGesture.Direction, TimeInterval) -> Void)?
     public var hasRestorableQueue: Bool {
         currentEpisode != nil || library.state.queue.contains { library.state.episodes[$0] != nil }
     }
     private let library: PodcastLibraryController
     private let downloads: PodcastDownloads
-    private lazy var session = MPNowPlayingSession(players: [player])
+    lazy var session = MPNowPlayingSession(players: [player])
     private var observations: [NSKeyValueObservation] = []
     private var observers: [NSObjectProtocol] = []
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
@@ -49,7 +50,9 @@ import LunaPodcastCore
     private var itemObserver: NSKeyValueObservation?
     private var isSelecting = false
     private var needsPreparation = true
-    private var activationTask: Task<Void, Never>?
+    private lazy var sessionActivation = MediaSessionActivation(session: session) { [weak self] in
+        self?.requestedPlayback == true
+    }
     private var playbackStartTime: Double?
     private var startupTimeToken: Any?
 
@@ -118,7 +121,6 @@ import LunaPodcastCore
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
         extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
-        activationTask?.cancel()
     }
     private func installItem(_ episode: PodcastEpisode, url: URL, token: UUID) -> AVURLAsset {
         let asset = AVURLAsset(url: url, options: [
@@ -155,13 +157,12 @@ import LunaPodcastCore
         }
         player.playImmediately(atRate: rate)
     }
-    private func activateSession() {
-        activationTask?.cancel()
-        let token = generation
-        activationTask = Task { [weak self] in
-            guard let self, generation == token, requestedPlayback, !Task.isCancelled else { return }
-            _ = await session.becomeActiveIfPossible()
-        }
+    private func activateSession() { sessionActivation.request() }
+    func receiveRemoteSkip(_ direction: MediaSkipGesture.Direction) {
+        // The recognizer and its expiration must use the same monotonic clock.
+        // MPRemoteCommandEvent does not document its timestamp's clock origin.
+        if let remoteSkip { remoteSkip(direction, ProcessInfo.processInfo.systemUptime) }
+        else { skip(backward: direction == .backward) }
     }
     public func play(_ episode: PodcastEpisode) async throws {
         // A single episode never enrolls the rest of its show in the queue.
@@ -291,7 +292,7 @@ import LunaPodcastCore
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
         }
-        activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
+        sessionActivation.cancel(); clearPlaybackStart()
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
         if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
@@ -395,6 +396,7 @@ import LunaPodcastCore
             clearPlaybackStart()
         }
         isPlaying = requestedPlayback && player.timeControlStatus == .playing && playbackStartTime == nil
+        if isPlaying { activateSession() }
         setBuffering(requestedPlayback && (isSelecting || !isPlaying))
         if isPlaying, !actualStartRecorded, let episode = currentEpisode {
             do { try library.requireStore().recordPlaybackStarted(episode.id); actualStartRecorded = true; library.reloadState() }
@@ -463,7 +465,7 @@ import LunaPodcastCore
     }
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
-        activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
+        sessionActivation.cancel(); clearPlaybackStart()
         generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true
         player.currentItem?.cancelPendingSeeks()
         extrasTask?.cancel(); extrasTimeoutTask?.cancel()
@@ -500,10 +502,10 @@ import LunaPodcastCore
         add(remote.togglePlayPauseCommand) { [weak self] _ in self?.toggle() }
         add(remote.stopCommand) { [weak self] _ in self?.pause() }
         for command in [remote.skipBackwardCommand, remote.previousTrackCommand] {
-            add(command) { event in MediaPlaybackCoordinator.shared.skip(.backward, timestamp: event.timestamp) }
+            add(command) { [weak self] _ in self?.receiveRemoteSkip(.backward) }
         }
         for command in [remote.skipForwardCommand, remote.nextTrackCommand] {
-            add(command) { event in MediaPlaybackCoordinator.shared.skip(.forward, timestamp: event.timestamp) }
+            add(command) { [weak self] _ in self?.receiveRemoteSkip(.forward) }
         }
         add(remote.changePlaybackPositionCommand) { [weak self] event in if let event = event as? MPChangePlaybackPositionCommandEvent { self?.seek(to: event.positionTime) } }
         remote.changePlaybackRateCommand.supportedPlaybackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]

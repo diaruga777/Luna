@@ -42,7 +42,10 @@ public final class MusicPlaybackController: ObservableObject {
     private var unshuffledIDs: [MusicID] = []
 
     private let filePlayer: AVPlayer
-    private lazy var fileSession = MPNowPlayingSession(players: [filePlayer])
+    lazy var fileSession = MPNowPlayingSession(players: [filePlayer])
+    private lazy var sessionActivation = MediaSessionActivation(session: fileSession) { [weak self] in
+        self?.filePlaybackRequested == true && self?.nowPlaying?.source == .vault
+    }
     private var loader: VaultMusicResourceLoader?
     private var usesFileQueue = false
     private var fileStatus: NSKeyValueObservation?
@@ -127,8 +130,8 @@ public final class MusicPlaybackController: ObservableObject {
             } else if nowPlaying?.source == .vault {
                 try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
                 try AVAudioSession.sharedInstance().setActive(true)
-                _ = await fileSession.becomeActiveIfPossible()
                 filePlayer.play()
+                sessionActivation.request()
             } else { player.play() }
             return
         }
@@ -257,6 +260,7 @@ public final class MusicPlaybackController: ObservableObject {
     public func pause() {
         let preparing = isPreparing || advancing
         requestID = UUID(); isPreparing = false; advancing = false
+        sessionActivation.cancel()
         filePlaybackRequested = false; isBuffering = false
         filePlayer.pause(); player.pause(); isPlaying = false
         if preparing { needsPreparation = true }
@@ -459,6 +463,10 @@ public final class MusicPlaybackController: ObservableObject {
             }, completionHandler: { _, _ in })
         }
     }
+    func receiveRemoteSkip(_ direction: MediaSkipGesture.Direction) {
+        if let remoteSkip { remoteSkip(direction, ProcessInfo.processInfo.systemUptime) }
+        else if direction == .forward { next() } else { previous() }
+    }
     private func installFilePlayback() {
         // Apple's buffering-rate predictor cannot predict a custom resource loader.
         filePlayer.automaticallyWaitsToMinimizeStalling = false
@@ -496,6 +504,7 @@ public final class MusicPlaybackController: ObservableObject {
         })
         let remote = fileSession.remoteCommandCenter
         func add(_ command: MPRemoteCommand, _ action: @escaping @MainActor (MPRemoteCommandEvent) -> Void) {
+            command.isEnabled = true
             let target = command.addTarget { [weak self] event in
                 guard Thread.isMainThread else {
                     Task { @MainActor in if self?.nowPlaying?.source == .vault { action(event) } }
@@ -511,12 +520,8 @@ public final class MusicPlaybackController: ObservableObject {
         add(remote.playCommand) { [weak self] _ in Task { do { try await self?.resume() } catch { self?.report(error) } } }
         add(remote.pauseCommand) { [weak self] _ in self?.filePlaybackRequested = false; self?.filePlayer.pause(); self?.refresh() }
         add(remote.togglePlayPauseCommand) { [weak self] _ in self?.togglePlayPause() }
-        add(remote.nextTrackCommand) { [weak self] event in
-            if let handler = self?.remoteSkip { handler(.forward, event.timestamp) } else { self?.next() }
-        }
-        add(remote.previousTrackCommand) { [weak self] event in
-            if let handler = self?.remoteSkip { handler(.backward, event.timestamp) } else { self?.previous() }
-        }
+        add(remote.nextTrackCommand) { [weak self] _ in self?.receiveRemoteSkip(.forward) }
+        add(remote.previousTrackCommand) { [weak self] _ in self?.receiveRemoteSkip(.backward) }
         add(remote.changePlaybackPositionCommand) { [weak self] event in
             if let event = event as? MPChangePlaybackPositionCommandEvent { self?.seek(to: event.positionTime) }
         }
@@ -558,11 +563,10 @@ public final class MusicPlaybackController: ObservableObject {
                 }
             }
             filePlayer.replaceCurrentItem(with: item)
-            _ = await fileSession.becomeActiveIfPossible()
             guard requestID == generation else { throw CancellationError() }
             if time > 0 { await filePlayer.seek(to: CMTime(seconds: time, preferredTimescale: 600)) }
             guard requestID == generation else { throw CancellationError() }
-            if filePlaybackRequested { filePlayer.play() }
+            if filePlaybackRequested { filePlayer.play(); sessionActivation.request() }
         } else if let media = song.mediaItem {
             let descriptor = MPMusicPlayerMediaItemQueueDescriptor(itemCollection: MPMediaItemCollection(items: [media]))
             descriptor.setStartTime(time, for: media)
@@ -614,6 +618,7 @@ public final class MusicPlaybackController: ObservableObject {
         }
         isBuffering = filePlaybackRequested && !isPlaying && errorMessage == nil
         if isPlaying {
+            if nowPlaying?.source == .vault { sessionActivation.request() }
             didPlayCurrent = true
             if let id = pendingPlaylistID {
                 var recency = defaults.dictionary(forKey: recencyKey) as? [String: Double] ?? [:]

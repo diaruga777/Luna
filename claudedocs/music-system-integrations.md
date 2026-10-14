@@ -49,3 +49,11 @@ application music player internally owns protected Apple Music remote events, so
 that hardware direction remains unsupported by public APIs; explicit switching is
 available. Real accessory/CarPlay validation and the managed CarPlay entitlement
 are still required before claiming hardware compatibility.
+
+App-owned sessions enable headphone next/previous transport and route it through
+the same uptime-based chord recognizer as interval skips. Activation retries after
+session eligibility changes and playback startup, so an early failed activation
+does not leave the prior session receiving commands. Paused sources cannot reclaim
+activation. Apple-library next/previous commands continue to be handled by Apple's
+application player; queue switching while it owns remote playback still requires
+the explicit switch control or shortcut.

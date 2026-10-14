@@ -11,23 +11,31 @@ import LunaPodcastCore
     private var expiration: Task<Void, Never>?
     @Published public private(set) var switching = false
     private var installed = false
-    private init() { active = Surface(rawValue: UserDefaults.standard.string(forKey: "LunaMusic.activeMedia") ?? "") ?? .music }
+    private let music: MusicPlaybackController
+    private let podcasts: PodcastPlaybackController
+    private let defaults: UserDefaults
+    init(music: MusicPlaybackController = .shared, podcasts: PodcastPlaybackController = .shared,
+         defaults: UserDefaults = .standard) {
+        self.music = music; self.podcasts = podcasts; self.defaults = defaults
+        active = Surface(rawValue: defaults.string(forKey: "LunaMusic.activeMedia") ?? "") ?? .music
+    }
     public func install() {
         guard !installed else { return }; installed = true
-        MusicPlaybackController.shared.willPlay = { [weak self] in self?.activate(.music) }
-        MusicPlaybackController.shared.remoteSkip = { direction, timestamp in Self.shared.skip(direction, timestamp: timestamp) }
-        PodcastPlaybackController.shared.willPlay = { [weak self] in self?.activate(.podcasts) }
+        music.willPlay = { [weak self] in self?.activate(.music) }
+        music.remoteSkip = { [weak self] direction, timestamp in self?.skip(direction, timestamp: timestamp) }
+        podcasts.remoteSkip = { [weak self] direction, timestamp in self?.skip(direction, timestamp: timestamp) }
+        podcasts.willPlay = { [weak self] in self?.activate(.podcasts) }
     }
     private func activate(_ surface: Surface) {
         guard active != surface else { return }
         gesture.cancel(); expiration?.cancel()
-        if surface == .music { PodcastPlaybackController.shared.pause() }
-        else { MusicPlaybackController.shared.pause() }
-        active = surface; UserDefaults.standard.set(surface.rawValue, forKey: "LunaMusic.activeMedia")
+        if surface == .music { podcasts.pause() }
+        else { music.pause() }
+        active = surface; defaults.set(surface.rawValue, forKey: "LunaMusic.activeMedia")
         NotificationCenter.default.post(name: .lunaMediaSurfaceChanged, object: self)
     }
     public var canSwitch: Bool {
-        active == .music ? PodcastPlaybackController.shared.hasRestorableQueue : MusicPlaybackController.shared.hasRestorableQueue
+        active == .music ? podcasts.hasRestorableQueue : music.hasRestorableQueue
     }
     public func skip(_ direction: MediaSkipGesture.Direction, timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         install()
@@ -46,8 +54,8 @@ import LunaPodcastCore
         for action in actions {
             switch action {
             case .switchQueue: Task { await switchQueue() }
-            case .backward: if active == .podcasts { PodcastPlaybackController.shared.skip(backward: true) } else { MusicPlaybackController.shared.previous() }
-            case .forward: if active == .podcasts { PodcastPlaybackController.shared.skip(backward: false) } else { MusicPlaybackController.shared.next() }
+            case .backward: if active == .podcasts { podcasts.skip(backward: true) } else { music.previous() }
+            case .forward: if active == .podcasts { podcasts.skip(backward: false) } else { music.next() }
             }
         }
     }
@@ -55,20 +63,20 @@ import LunaPodcastCore
         install(); guard !switching else { return }
         switching = true; errorMessage = nil
         defer { switching = false }
-        if active == .podcasts { await MusicPlaybackController.shared.restoreIfNeeded() }
+        if active == .podcasts { await music.restoreIfNeeded() }
         guard canSwitch else { return }
         let previous = active
-        let wasPlaying = previous == .music ? MusicPlaybackController.shared.isPlaying : PodcastPlaybackController.shared.isPlaying
+        let wasPlaying = previous == .music ? music.isPlaying : podcasts.isPlaying
         do {
-            if previous == .music { try await PodcastPlaybackController.shared.resume() }
-            else { try await MusicPlaybackController.shared.resume() }
+            if previous == .music { try await podcasts.resume() }
+            else { try await music.resume() }
         } catch {
             errorMessage = error.localizedDescription
             activate(previous)
             if wasPlaying {
                 do {
-                    if previous == .music { try await MusicPlaybackController.shared.resume() }
-                    else { try await PodcastPlaybackController.shared.resume() }
+                    if previous == .music { try await music.resume() }
+                    else { try await podcasts.resume() }
                 } catch { errorMessage = error.localizedDescription }
             }
         }
@@ -76,12 +84,12 @@ import LunaPodcastCore
     public func toggle() async throws {
         install()
         if active == .podcasts {
-            if PodcastPlaybackController.shared.isPlaying || PodcastPlaybackController.shared.isBuffering { PodcastPlaybackController.shared.pause() }
-            else { try await PodcastPlaybackController.shared.resume() }
+            if podcasts.isPlaying || podcasts.isBuffering { podcasts.pause() }
+            else { try await podcasts.resume() }
         } else {
-            if MusicPlaybackController.shared.isPlaying { MusicPlaybackController.shared.pause() }
-            else { try await MusicPlaybackController.shared.resume() }
+            if music.isPlaying { music.pause() }
+            else { try await music.resume() }
         }
     }
-    public func pause() { if active == .podcasts { PodcastPlaybackController.shared.pause() } else { MusicPlaybackController.shared.pause() } }
+    public func pause() { if active == .podcasts { podcasts.pause() } else { music.pause() } }
 }

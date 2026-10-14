@@ -354,6 +354,19 @@ Use the explicit CarPlay switch button or Switch Music and Podcasts shortcut the
 Hardware accessory delivery and entitlement-enabled CarPlay require real-device
 validation; simulator policy tests cannot establish that evidence.
 
+App-owned podcast and Vault sessions explicitly enable next/previous commands for
+headphone double/triple presses. Podcasts also accept interval skip commands from
+system controls. Both routes use the coordinator's uptime clock, including the
+two-second standalone-back expiration; remote-event timestamps have no documented
+clock origin and are not mixed with uptime. Isolated podcast players route skips
+to themselves when no coordinator is installed.
+
+Now Playing activation waits for session eligibility and retries when eligibility
+changes or audio begins playing. A failed attempt during startup cannot permanently
+leave hardware commands routed to the preceding session. Paused sources do not
+reclaim activation. These changes do not intercept Apple's application music
+player’s commands; its ordinary next/previous behavior remains system-owned.
+
 Apple account follows/history, Apple-paid podcast audio, ratings/reviews,
 Apple editorial/personalized recommendations, proprietary Enhance Dialogue, and
 Apple-generated transcripts/chapters are not exposed through the public directory

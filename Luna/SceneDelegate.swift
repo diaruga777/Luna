@@ -39,7 +39,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         options connectionOptions: UIScene.ConnectionOptions
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
-        let window = UIWindow(windowScene: windowScene)
+        let window = AppLaunchWindow(windowScene: windowScene)
         AppearanceSettings.apply(to: window)
 
         #if DEBUG
@@ -77,7 +77,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         window.makeKeyAndVisible()
         mainNavigationController?.installLunarEclipseTransition()
+        if let url = connectionOptions.urlContexts.first?.url,
+           LunaDeepLink.isResolvedMediaLink(url) || LunaDeepLink.isPluginModelLink(url) {
+            AppLaunchTransition.holdForHandoff()
+        }
         AppLaunchTransition.install(in: window)
+        AppFirstFrame.perform { AppLaunchServices.shared.ensureReady() }
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
@@ -100,6 +105,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader.
     private func route(_ url: URL) {
+        AppLaunchServices.shared.whenReady { [weak self] in self?.routeWhenReady(url) }
+    }
+
+    private func routeWhenReady(_ url: URL) {
         if url.isFileURL {
             openLunaFile(at: url)
             return
@@ -362,6 +371,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // A staged run is a frozen world; foregrounding must not re-fetch,
         // re-import or re-purge anything into it.
         guard !LunaStage.isActive else { return }
+        AppLaunchServices.shared.ensureReady()
         // An intent may have added items while the app was backgrounded.
         NotificationCenter.default.post(name: .savesChanged, object: nil)
         SavesIngestor.shared.ingestAllPending()

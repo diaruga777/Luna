@@ -34,7 +34,7 @@ enum MediaShellWiring {
         // The util card's inline "Store files …" line. Only an app that
         // downloads has anywhere to store, so only an app that links this module
         // installs the choice (`claudedocs/util-card.md`).
-        MediaUtilCardStorageChoice.install()
+        // Installed with the presentation seams before constructing the util card.
         // URL Rescue's media leg: download engine-resolved assets directly.
         // Which resolver that is belongs to the media module, not to this shell:
         // central Luna runs its bundled plugins and the Downloader runs the

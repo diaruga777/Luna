@@ -104,24 +104,45 @@ Re-run `ruby scripts/hide_generated_schemes.rb` after touching these targets.
 
 ## Startup work ordering
 
-The app installs kind/plugin seams, background-task registrations, remote audio
-commands, and the onboarding/deck state before returning from launch. Bundled
-plugin manifests are parsed once per catalog; individual settings lookups do not
-rescan all bundled scripts. Speech synthesis starts only when audio is requested.
+The foreground launch path installs only the kind/card presenters, onboarding
+state, reader settings, the article audio observer/remote-command seam, and the
+background-task registrations that iOS requires before launch returns. Finished
+articles are archived before selecting the first card. Cached saves render directly
+in the actual root hierarchy.
+
+`AppLaunchServices` defers plugin runtime creation/evaluation, ingest handlers,
+rescue setup, script-cache maintenance, mini-player construction, recent-URL
+refresh and share-notification cleanup until the root has had a displayed frame.
+`AppFirstFrame` waits for two display-link callbacks; dispatching to the main queue
+alone is insufficient because it can run before Core Animation commits the window.
+Early touches/keyboard presses, App Intents, and background URLSession/mail/price
+callbacks demand installation before using services. Cold deep links queue until
+installation completes, including Safari hand-offs. Installation happens once,
+even if these entry points race the first-frame callback.
 
 Save retries, mail import, indexing, retention sweeps, weekly refresh and price
-refresh start once after `AppLaunchTransition.didFinish`. A background-only wake
-runs this maintenance after a one-second scene-connection grace period.
-The transient `.background` state inside `didFinishLaunching` is not sufficient
-to classify a launch: ordinary foreground scene launches report it too. The first scene foreground
-callback does not duplicate the launch refresh; later foregrounds refresh normally.
-Safari hand-off routes and their completion observer are installed before deferral.
-Staged launches continue to suppress maintenance.
+refresh start once after `AppLaunchTransition.didFinish`. Background-only wakes
+retain the one-second scene-connection fallback; lifecycle callbacks and intents
+can demand service readiness immediately. The first scene foreground callback
+does not duplicate launch refresh. Staged launches install services eagerly and
+continue to suppress maintenance.
 
-The normal splash has no timed hold and an 80 ms crossfade (immediate with Reduce
-Motion). It still yields a run-loop turn before revealing the live root. The
-special onboarding reveal and bounded Safari hand-off hold keep their own timing.
-The existing first-run headline animation is separate from process launch.
+Normal launches draw the root directly, with no app-owned splash overlay, hold,
+or crossfade. The empty util card shows its headline and controls immediately;
+the animated intro remains available to explicit visual stages. Safari hand-offs
+retain their bounded splash hold. The carousel creates its playback-speed pill
+only when a playable card needs it.
+
+Bundled plugin manifests remain cached per catalog, and speech synthesis still
+starts only when audio is requested. Audio observers remain installed before
+reader construction so populated decks retain their read-aloud behavior.
+
+Validation: 62 focused tests pass (startup ordering/idempotence, plugin boot,
+audio playback, speed controls and launch geometry). A broader selection also
+found existing central-app policy mismatches: two kind-pack tests still demand
+Swift processors that `pluginsOnly` intentionally disables, and recent-URL tests
+still expect Swift URL normalization/filtering that the same policy bypasses.
+Those policy functions and tests are unchanged by this work.
 
 ### Simulator check, October 2026
 

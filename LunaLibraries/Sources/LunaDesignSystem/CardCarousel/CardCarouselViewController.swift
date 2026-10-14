@@ -474,7 +474,7 @@ public final class CardCarouselViewController: UIViewController {
     private(set) var isPagingGesture = false
 
     private let playbackScrubProgress = MoonHorizonProgressBar()
-    private let playbackSpeedPill = PlaybackSpeedPillButton()
+    private var playbackSpeedPill: PlaybackSpeedPillButton?
     private var playbackScrubPresentation = 0
     private var playbackScrubHideTimer: Timer?
     private static let playbackScrubHideDelay: TimeInterval = 1.25
@@ -527,10 +527,6 @@ public final class CardCarouselViewController: UIViewController {
         playbackScrubProgress.accessibilityLabel = L10n.string("CardDeck_videoPositionAccessibilityLabel")
         playbackScrubProgress.isUserInteractionEnabled = true
         cardArea.addSubview(playbackScrubProgress)
-        playbackSpeedPill.alpha = 0
-        playbackSpeedPill.isHidden = true
-        playbackSpeedPill.delegate = self
-        cardArea.addSubview(playbackSpeedPill)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         scrubberLeadingConstraint = scrubber.leadingAnchor.constraint(
             equalTo: view.leadingAnchor, constant: style.scrubberHorizontalInset)
@@ -1224,6 +1220,7 @@ public final class CardCarouselViewController: UIViewController {
         playbackScrubProgress.frame = bar
         // The speed pill rides above the bar's LEFT end — so the two read as one
         // stack of controls floating inside the card's bottom edge.
+        guard let playbackSpeedPill else { return }
         let pill = playbackSpeedPill.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize)
         playbackSpeedPill.frame = CGRect(
@@ -1280,6 +1277,16 @@ public final class CardCarouselViewController: UIViewController {
         if wasHidden { playbackScrubProgress.alpha = 0 }
         cardArea.bringSubviewToFront(playbackScrubProgress)
         if let speed {
+            let playbackSpeedPill: PlaybackSpeedPillButton
+            if let existing = self.playbackSpeedPill {
+                playbackSpeedPill = existing
+            } else {
+                playbackSpeedPill = PlaybackSpeedPillButton()
+                playbackSpeedPill.isHidden = true
+                playbackSpeedPill.delegate = self
+                cardArea.addSubview(playbackSpeedPill)
+                self.playbackSpeedPill = playbackSpeedPill
+            }
             playbackSpeedPill.speed = speed
             if playbackSpeedPill.isHidden {
                 playbackSpeedPill.isHidden = false
@@ -1294,10 +1301,10 @@ public final class CardCarouselViewController: UIViewController {
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             self.playbackScrubProgress.alpha = 1
-            self.playbackSpeedPill.alpha = speed == nil ? 0 : 1
+            self.playbackSpeedPill?.alpha = speed == nil ? 0 : 1
         } completion: { [weak self] _ in
             guard let self, speed == nil else { return }
-            self.playbackSpeedPill.isHidden = true
+            self.playbackSpeedPill?.isHidden = true
         }
     }
 
@@ -1316,7 +1323,8 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     var playbackSpeedPillForTesting: PlaybackSpeedPillButton? {
-        playbackSpeedPill.isHidden || playbackSpeedPill.alpha == 0 ? nil : playbackSpeedPill
+        guard let playbackSpeedPill else { return nil }
+        return playbackSpeedPill.isHidden || playbackSpeedPill.alpha == 0 ? nil : playbackSpeedPill
     }
 
     /// The bar's frame in card-area coordinates, for geometry tests. Nil while
@@ -1348,7 +1356,7 @@ public final class CardCarouselViewController: UIViewController {
     private func hidePlaybackControls() {
         playbackScrubHideTimer?.invalidate()
         playbackScrubHideTimer = nil
-        guard !playbackScrubProgress.isHidden || !playbackSpeedPill.isHidden else { return }
+        guard !playbackScrubProgress.isHidden || playbackSpeedPill?.isHidden == false else { return }
         playbackScrubPresentation += 1
         let presentation = playbackScrubPresentation
         UIView.animate(
@@ -1357,11 +1365,11 @@ public final class CardCarouselViewController: UIViewController {
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             self.playbackScrubProgress.alpha = 0
-            self.playbackSpeedPill.alpha = 0
+            self.playbackSpeedPill?.alpha = 0
         } completion: { [weak self] finished in
             guard let self, finished, presentation == self.playbackScrubPresentation else { return }
             self.playbackScrubProgress.isHidden = true
-            self.playbackSpeedPill.isHidden = true
+            self.playbackSpeedPill?.isHidden = true
         }
     }
 

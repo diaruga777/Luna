@@ -50,6 +50,7 @@ struct ReadArticleIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        await MainActor.run { AppLaunchServices.shared.ensureReady() }
         let store = SavesStore.shared
         let resolvedItem: SavedItem
         if let article, let item = store.item(withID: article.id), ArticleReadability.isReadableArticle(item) {

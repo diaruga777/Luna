@@ -307,14 +307,16 @@ remainder of the process. Their icons are the real artwork, not generic symbols:
 `safari.fill` for Safari and the bundled `ShortcutsAppIcon` for the save lesson.
 
 **The headline's sweep belongs to the LAUNCH.** It plays only when this
-appearance is the launch's own — the deck is empty (so the util card is the
-launch selection) and `AppLaunchTransition.hasFinished` is still false. Paged
+appearance is an explicit staged launch — `LunaStage.isActive`, the deck is
+empty, and `AppLaunchTransition.hasFinished` is still false. Normal launches
+show the finished headline and all controls immediately, without waiting for
+an intro sweep. Paged
 back to at any other time the sentence simply stands finished
 (`OnboardingIntroHeadlineView.showFinishedState()`), so nothing re-animates on a
 page — including a two-line headline, whose second line is already there rather
 than waiting to arrive.
 
-**On that launch, the headline speaks first.** The setup actions, “or”, paste
+**In that visual stage, the headline speaks first.** The setup actions, “or”, paste
 row, and storage chooser wait at alpha 0 until the second beat's bloom has
 finished, then fade in together, in place (0.38s ease-out, 0.16s after the
 sweep's completion — the standalone intro card's own beat). Central Luna starts

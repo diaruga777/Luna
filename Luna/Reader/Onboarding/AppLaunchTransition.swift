@@ -120,6 +120,7 @@ enum AppLaunchTransition {
         reveal?()
     }
 
+    @MainActor
     static func install(in window: UIWindow) {
         window.layoutIfNeeded()
         guard window.bounds.width > 0, window.bounds.height > 0 else {
@@ -132,6 +133,18 @@ enum AppLaunchTransition {
 
         OnboardingAnimationClock.installSlowMotionIfRequested(in: window)
         let target = window.rootViewController?.appLaunchTransitionTarget()
+        if !isHeldForHandoff {
+            target?.appLaunchTransitionWillReveal()
+            AppFirstFrame.perform {
+                hasFinished = true
+                target?.appLaunchTransitionDidFinish()
+                if target?.keepsOnboardingSlowMotionAfterLaunch != true {
+                    OnboardingAnimationClock.restoreNormalSpeed(in: window)
+                }
+                NotificationCenter.default.post(name: didFinish, object: nil)
+            }
+            return
+        }
         let targetFrame = target?.appLaunchTargetFrame(in: window)
             ?? fallbackTargetFrame(in: window)
         let overlay = makeLaunchView(frame: window.bounds, cardFrame: targetFrame)

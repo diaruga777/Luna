@@ -31,6 +31,15 @@ import UIKit
 enum ArticleShellWiring {
 
     @MainActor
+    static func installPresentation() {
+        // Settle finished-reading state before choosing the initial card.
+        SavesStore.shared.archivePendingFinishedItems()
+        // Readers register audio observers as they load. Keep that seam ready;
+        // script-cache maintenance and the mini-player can wait for the frame.
+        AudioPlaybackWiring.install()
+    }
+
+    @MainActor
     static func install() {
         IngestorKindHandlers.article = ArticleKindHandler()
         // The ONE readiness path. Every kind's report — a persisted article, a
@@ -40,31 +49,15 @@ enum ArticleShellWiring {
         // no-op.
         SaveReadiness.observer = SendCoordinatorReadiness()
 
-        // A completion written before a force-quit never received the normal
-        // background callback. Promote it before constructing the Reader UI.
-        SavesStore.shared.archivePendingFinishedItems()
-
         // Send-to-Kindle emails go out through the connected email account.
         // LunaSend sits below LunaMailTransport, so the transport factory is
         // injected here. An extension leaves it nil, so Kindle sends are
         // no-ops there.
         ArticleEmailTransportProvider.installed = MailFactoryTransportProvider()
 
-        // Installs the autoplay queue provider and registers the Now
-        // Playing / remote-command coordinator (`claudedocs/audio-playback
-        // -plan.md`, Phase 2). Registration must happen at launch, not
-        // lazily, so a cold background relaunch from a lock-screen play
-        // command can restore the persisted session. Read-aloud — the
-        // app-wide center, its background session, the window mini-player —
-        // belongs exclusively to article-handling apps. The Downloader and
-        // Price Tracker leave `ReaderAudioLauncher.center` nil, which keeps
-        // their shared readers on the legacy self-contained
-        // `SpeechController` path.
-        AudioPlaybackWiring.install()
-        // The trimming pipeline's opportunistic script-cache builder (Phase
-        // 4). It is wired right after playback, so its scriptProvider and
-        // scriptPrefetchHandler seams are set before anything can call into
-        // the center.
+        // Playback's observer/remote-command seam was installed with the
+        // presentation layer. Its opportunistic script-cache builder waits
+        // until the root is visible.
         AudioScriptPipelineWiring.install()
 
         // The Action Button double save (`claudedocs/double-save.md`). Its

@@ -505,43 +505,65 @@ headphones and AirPlay have not been reproduced by this change.
 
 ### Local podcast cold-start resume (2026-10-14)
 
-The saved complete episode is opened and sought as Luna Music launches, without
-activating the audio session, recording listening history, playing audio, or
-contacting its publisher. Resume and Resume Last Podcast reuse that AVPlayerItem;
-Play during preparation waits for the same task instead of rebuilding the item.
-Pause invalidates preparation and rapid seeks retain only the latest target.
-Actual duration is resolved during local preparation so missing/inaccurate feed
-lengths still recover a saved EOF into the explicit queue.
+Launch restores only the saved episode identity, position and cached duration from
+library/download metadata. It does not open an audio asset, create an AVPlayerItem,
+load tracks, or seek/preroll the episode. The earlier launch-time prewarming has
+been removed. On Play, AVPlayer opens the complete local file and seeks directly
+to the saved position. It loads only tracks, uses approximate asset timing, disables
+stall prediction for local files, and does not wait for download-session restoration
+or Now Playing activation. A no-op cold selection also avoids encoding and atomically
+rewriting the entire feed library before audio opens. Remote HTTP/HLS playback
+retains its three-second forward buffer and cellular policy.
 
-Playback no longer awaits URLSession/AVAssetDownloadURLSession task restoration.
-The download manifest and file-size validation already identify complete local
-files synchronously; reconciliation remains asynchronous. File-based items disable
-stall prediction and use the default forward buffer; remote streams retain their
-three-second target and cellular policy. Items automatically load only tracks,
-matching [Pocket Casts' playback item setup](https://github.com/Automattic/pocket-casts-ios/blob/46952f88227581c27d4013cde1874a3db1b4cc69/podcasts/PlaybackItem.swift).
-AVURLAsset's approximate timing mode avoids requesting a precise whole-file scan;
-exact seeks are retained to preserve the listener's chosen position. Audio is
-file-backed and decoded incrementally, rather than read into a whole-file Data or
-PCM buffer. Download priority already retains the current episode and explicit
-queue subject to the configured storage budget and deletion preferences.
+Download completion prepares durable playback data on a utility task: actual
+duration and embedded chapter titles are saved with the download manifest. Raw MP3
+and AAC packets are copied into an indexed QuickTime `.mov` container using
+AVAssetExportPresetPassthrough, preserving compressed audio without decoding it
+into a whole-episode PCM buffer or re-encoding it. MP4/M4A and PCM need no remux.
+Apple documents that [QuickTime/MPEG-4 carry timing information that other formats
+may require media parsing to determine](https://developer.apple.com/documentation/avfoundation/avurlassetpreferprecisedurationandtimingkey).
+[Tracks-only playback preparation](https://github.com/Automattic/pocket-casts-ios/blob/46952f88227581c27d4013cde1874a3db1b4cc69/podcasts/PlaybackItem.swift)
+also follows the open-source Pocket Casts player. Apple's own app internals are not
+publicly established by this research.
 
-Now Playing activation runs alongside playback instead of preceding it. Artwork,
-chapters and transcripts start after the play request. Loading Audio remains until
-the playback clock actually advances; AVPlayer's `playing` state alone is no longer
-sufficient. A temporary 50 ms time observer checks startup and is removed as soon
-as the clock advances; steady-state playback keeps its 500 ms observer. This
-reports media delivery, not whether a headset/AirPlay route is audibly producing
-sound, nor whether the publisher encoded silence at that position.
+A download is published as complete only after optional preparation and atomic
+installation. A failed/cancelled export retains the transferred original; a container
+whose overhead would exceed the retained download budget also falls back to the
+original. Temporary remux files are cleaned up. Preparation holds a background task
+and delays background URLSession completion while its jobs finish. MP3 download
+staging keeps a valid audio extension, since format discovery for an extensionless
+staged file can fail on iOS. Embedded chapters survive container replacement through
+the manifest. HLS packages continue to use AVAssetDownloadURLSession and their native
+manifest timing; older files without timing metadata resolve/cache duration on use.
 
-Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 75 hosted Music tests passed,
-including six new offline restoration, cancellation, latest-seek, EOF and long-MP3
-checks (including Play during preparation), plus existing throttled streaming and download lifecycle tests. All 29
-Foundation podcast tests passed. Prepared local resume reached an advancing clock
-in 0.135 s for the three-minute MP4 fixture and 0.138 s halfway through a generated
-two-hour, 28.8 MB MP3, using an unreachable publisher URL. These are simulator
-measurements after local preparation; physical-device/Bluetooth/AirPlay latency
-are not established by those timings. Play tapped immediately during local
-preparation joined the same task and reached an advancing clock in 0.156 s.
-The actual terminate/relaunch UI regression and existing RSS playback/queue test
-both passed; the restored player retained its paused position, resumed with clock
-advancement, and cleared Loading Audio. The resumed-player screenshot was inspected.
+Existing downloads upgrade during app backgrounding or scheduled background refresh,
+never on foreground launch or Play. Each maintenance pass prepares up to five files,
+prioritizing the current episode and explicit queue. It skips files already open in
+the player, checks that the record is still current after asynchronous work, respects
+storage limits, commits the replacement manifest before deleting the original, and
+cannot resurrect a user-deleted download. The optional metadata/version fields remain
+compatible with earlier download manifests.
+
+Loading Audio remains until the playback clock advances. A temporary 50 ms observer
+is removed at that point; steady-state playback keeps its 500 ms cadence. Chapters,
+transcripts and artwork load after the play request. This confirms media delivery,
+not physical headset output or the absence of silence encoded by the publisher.
+
+Validation: Xcode 26.2 / fresh iPhone 17 Pro / iOS 26.2. All 83 hosted Music tests
+and all 29 Foundation podcast tests passed. The download integration used a two-hour
+VBR MP3 without a Xing seek header and verified the indexed file still has the MP3
+codec, duration survives manifest restoration, and the restored player opens no
+audio at launch. A native passthrough probe also produced identical SHA-256 hashes
+for source and output compressed packet streams. Storage-cap fallback, cancellation,
+legacy conversion, active-file protection, and deletion during preparation passed.
+
+With launch prewarming removed, the entire Resume request reached an advancing clock
+in 0.161 s for the local three-minute MP4 and 0.135 s halfway through the indexed
+two-hour MP3. Play after only metadata restoration measured 0.162 s. A separate
+fresh-item open-and-exact-seek check reached readyToPlay in 0.013 s. These are simulator
+measurements; physical device, Bluetooth and AirPlay latency remains unmeasured.
+The actual terminate/relaunch UI check passed with the paused position restored and
+clock advancement after Play, alongside the existing RSS playback/queue integration.
+On the freshly created simulator, the first UI attempt was displaced by the initial
+Music authorization callback; the cold-relaunch check passed after that setup settled.
+The resumed-player screenshot was inspected.

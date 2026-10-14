@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.2","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.3","api":1,
  "description":"Reads gated articles using publisher rules, crawler requests, archives and plugin-declared browser steps.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -413,13 +413,28 @@ const LunaAccess = (() => {
         if (html && /["']@type["']\s*:\s*["']Product["']/.test(html)) return false;
         return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '');
     }
-    function prepare(html) {
+    function prepare(html,url) {
+        if(matches(host(url),'thedailybeast.com')) {
+            const doc=luna.html.parse(html,url);
+            const content=doc.querySelector('article#article-content');
+            if(content) {
+                // Astro marks the actual continuation paragraphs/images as
+                // tdb-paywall. They are content, not subscription furniture.
+                // Select editorial blocks before generic gate/noise detection;
+                // recirculation cards and subscription offers are siblings.
+                const types=['text','image','heading','list','blockquote'];
+                const blocks=content.children.filter(n=>types.includes(n.getAttribute('data-block-type')));
+                if(blocks.length) html='<html><head>'+(doc.head?doc.head.innerHTML:'')+'</head><body><article>'+
+                    blocks.map(n=>'<'+n.tagName+'>'+n.innerHTML+'</'+n.tagName+'>').join('\n')+
+                    '</article></body></html>';
+            }
+        }
         // Machine-marked AMP gate furniture is never part of the article.
         return html.replace(/<([\w-]+)\b[^>]*subscriptions-section=["'](?!content["'])[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,'')
             .replace(/<\/?amp-img\b/gi, m=>m.replace('amp-img','img'));
     }
     function article(html,url) {
-        const value=LunaWeb.article(prepare(html),url);
+        const value=LunaWeb.article(prepare(html,url),url);
         if(!value)return null;
         delete value.text;
         return Object.assign({kind:'article',baseURL:url},value);

@@ -77,6 +77,14 @@ browser sequence). These are ordinary removable/disableable plugin resources.
 Crawler probes and the parallel newest/oldest archive lookups accept the first
 readable article immediately; a slow sibling request cannot hold that result.
 Only when every probe declines or fails does the plugin proceed to the next strategy.
+Daily Beast's Astro article pages use `tdb-paywall` on continuation paragraphs and
+images. Publisher access selects editorial `data-block-type` children of
+`article#article-content` before generic gate detection, preserving their order,
+inline links, images and page metadata while excluding recirculation, newsletters,
+bylines and subscription offers. A complete live response can therefore finish in
+the share extension without archive requests or a deferred browser. Short metered
+teasers still fail the normal readability checks; older page shapes retain the
+existing extraction and fallback sequence.
 Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 /
 2048 bytes each). Native WebKit validates and executes those declarations without
 choosing publisher rules. Safari preserves browser-deferred outcomes without a save

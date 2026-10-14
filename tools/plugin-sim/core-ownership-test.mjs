@@ -27,8 +27,41 @@ const safari=plugin('publisher-access',async req=>({ok:true,text:gated,url:req.u
 safari.luna.browser={open:async()=>{throw Object.assign(Error('deferred'),{code:'browser-deferred'});}};
 await assert.rejects(safari.hooks.ingest({url:'https://example.test/premium',context:'safari',reason:'save'}),{code:'browser-deferred'});
 
-// A readable archive must not wait for the other snapshot lookup to finish.
+// Daily Beast's Astro continuation must survive generic gate detection.
 const beastURL='https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing';
+const beastHTML=read('LunaTests/Fixtures/Plugins/dailybeast-astro.html');
+for(const suppliedPage of [true,false]) {
+    const requests=[];
+    const beast=plugin('publisher-access',async req=>{requests.push(req.url);return {ok:true,text:beastHTML,url:req.url};});
+    beast.luna.browser={open:async()=>{throw Error('complete Daily Beast response must not need a browser');}};
+    const answer=await beast.hooks.ingest({url:beastURL,context:'share',reason:'save',saveId:'beast',
+        page:suppliedPage?{url:beastURL,html:beastHTML}:undefined});
+    assert.equal(answer?.kind,'article');
+    for(let n=1;n<=6;n++)assert(answer.html.includes('Paragraph '+n+'.'));
+    assert(answer.html.indexOf('Paragraph 1.')<answer.html.indexOf('fixture.jpg'));
+    assert(answer.html.indexOf('fixture.jpg')<answer.html.indexOf('Paragraph 2.'));
+    assert(answer.html.includes('inline source'));
+    assert(!answer.html.includes('must not appear'));
+    assert(!answer.html.includes('Subscribe to read'));
+    assert.deepEqual(requests,suppliedPage?[]:[beastURL]);
+}
+const shape=plugin('publisher-access',async()=>({ok:false}));
+shape.ctx.beastHTML=beastHTML;
+assert.equal(vm.runInContext('LunaAccess.article(beastHTML,"https://unrelated.example/story")',shape.ctx),null,'publisher normalization must be host scoped');
+shape.ctx.teaser='<html><head><script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script></head><body><article id="article-content"><p data-block-type="text">'+('A metered teaser. '.repeat(70))+'</p><div class="tdb-paywall">Subscribe to read</div></article></body></html>';
+assert.equal(vm.runInContext('LunaAccess.article(teaser,"https://www.thedailybeast.com/story")',shape.ctx),null,'a teaser alone must remain locked');
+const crawlerRequests=[];
+const crawler=plugin('publisher-access',async req=>{
+    crawlerRequests.push(req);
+    return {ok:true,text:req.userAgent?.includes('Google-InspectionTool')?beastHTML:shape.ctx.teaser,url:req.url};
+});
+crawler.luna.browser={open:async()=>{throw Error('readable crawler response must not open a browser');}};
+const crawlerAnswer=await crawler.hooks.ingest({url:beastURL,context:'share',reason:'save',saveId:'beast',page:{url:beastURL,html:shape.ctx.teaser}});
+assert.equal(crawlerAnswer?.kind,'article');
+assert(crawlerAnswer.html.includes('Paragraph 6.'));
+assert(crawlerRequests.every(req=>req.url===beastURL),'crawler success must not fall through to archive lookups');
+
+// A readable archive must not wait for the other snapshot lookup to finish.
 const archived=plugin('publisher-access',async req=>{
     if(req.url.includes('/cdx/')) {
         if(!req.url.includes('sort=reverse'))return new Promise(()=>{});

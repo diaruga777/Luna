@@ -71,6 +71,36 @@ final class WebPluginMigrationTests: XCTestCase {
         XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == query })
     }
 
+    func testDailyBeastAstroContinuationDoesNotNeedArchiveOrBrowserInJSC() async throws {
+        try load("publisher-access")
+        let url = "https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing"
+        let html = try String(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Plugins/dailybeast-astro.html"), encoding: .utf8)
+        runner.fetcher.respond(to: url, body: html)
+        let teaser = """
+        <html><head><script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script></head>
+        <body><article id="article-content"><p data-block-type="text">Only the opening is available.</p>
+        <div class="tdb-paywall">Subscribe to read.</div></article></body></html>
+        """
+        // A captured full page, initial fetch, and teaser followed by a full
+        // probe must all finish without archives or a deferred browser.
+        for mode in 0...2 {
+            let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+                argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                    page: mode == 1 ? nil : .init(url: url, html: mode == 0 ? html : teaser, source: "fetch"),
+                    reason: .save, context: .share), timeout: 2, as: PluginIngestAnswer.self)
+            guard case let .model(.article(article)) = answer else { return XCTFail("No article") }
+            XCTAssertEqual(article.title, "Daily Beast regression")
+            XCTAssertEqual(article.author, "Fixture Reporter")
+            for n in 1...6 { XCTAssertTrue(article.html.contains("Paragraph \(n).")) }
+            XCTAssertTrue(article.html.contains("fixture.jpg"))
+            XCTAssertTrue(article.html.contains("inline source"))
+            XCTAssertFalse(article.html.contains("must not appear"))
+            XCTAssertFalse(article.html.contains("Subscribe to read"))
+        }
+        XCTAssertTrue(runner.fetcher.requests.count >= 2)
+        XCTAssertTrue(runner.fetcher.requests.allSatisfy { $0.url.absoluteString == url })
+    }
+
     struct ArticleParityCase: Decodable {
         let name: String
         let url: String

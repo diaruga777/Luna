@@ -533,11 +533,15 @@ as the clock advances; steady-state playback keeps its 500 ms observer. This
 reports media delivery, not whether a headset/AirPlay route is audibly producing
 sound, nor whether the publisher encoded silence at that position.
 
-Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 74 hosted Music tests passed,
-including five new offline restoration, cancellation, latest-seek, EOF and long-MP3
-checks, plus existing throttled streaming and download lifecycle tests. All 29
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 75 hosted Music tests passed,
+including six new offline restoration, cancellation, latest-seek, EOF and long-MP3
+checks (including Play during preparation), plus existing throttled streaming and download lifecycle tests. All 29
 Foundation podcast tests passed. Prepared local resume reached an advancing clock
-in 0.144 s for the three-minute MP4 fixture and 0.140 s halfway through a generated
+in 0.135 s for the three-minute MP4 fixture and 0.138 s halfway through a generated
 two-hour, 28.8 MB MP3, using an unreachable publisher URL. These are simulator
 measurements after local preparation; physical-device/Bluetooth/AirPlay latency
-and a user tapping before preparation finishes are not established by those timings.
+are not established by those timings. Play tapped immediately during local
+preparation joined the same task and reached an advancing clock in 0.156 s.
+The actual terminate/relaunch UI regression and existing RSS playback/queue test
+both passed; the restored player retained its paused position, resumed with clock
+advancement, and cleared Loading Audio. The resumed-player screenshot was inspected.

@@ -141,6 +141,46 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Podcasts"].waitForExistence(timeout: 5))
     }
 
+    func testDownloadedPodcastResumesAfterColdRelaunch() throws {
+        guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        app.staticTexts["Podcasts"].tap()
+        app.navigationBars.buttons["Podcast Options"].tap()
+        app.buttons["Follow a Show by URL"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap(); field.typeText(feedURL + "?cold-start=" + UUID().uuidString)
+        app.alerts.buttons["Follow"].tap()
+        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 15))
+        let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
+        XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
+        app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch.tap()
+        app.buttons["Open Now Playing"].tap()
+        let elapsed = app.staticTexts["podcasts.playback.elapsed"]
+        expectation(for: NSPredicate(format: "label != '0:00'"), evaluatedWith: elapsed)
+        waitForExpectations(timeout: 5)
+        app.buttons["Pause"].tap()
+        app.sliders["Episode Position"].adjust(toNormalizedSliderPosition: 0.5)
+        expectation(for: NSPredicate(format: "label MATCHES '0:1[456]'"), evaluatedWith: elapsed)
+        waitForExpectations(timeout: 5)
+        let pausedPosition = elapsed.label
+        app.terminate()
+        app.launchArguments = ["-LunaMusic.browsingPodcasts", "YES", "-LunaMusic.activeMedia", "podcasts"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Open Now Playing"].waitForExistence(timeout: 5))
+        app.buttons["Open Now Playing"].tap()
+        XCTAssertEqual(elapsed.label, pausedPosition)
+        XCTAssertTrue(app.buttons["Play"].exists)
+        app.buttons["Play"].tap()
+        expectation(for: NSPredicate(format: "label != %@", pausedPosition), evaluatedWith: elapsed)
+        waitForExpectations(timeout: 3)
+        XCTAssertNotEqual(app.buttons["Pause"].value as? String, "Loading Audio")
+        app.buttons["Pause"].tap()
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Downloaded podcast resumed after cold launch"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
     func testRootOptionsAndDownloadedFilters() {
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }

@@ -962,6 +962,18 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertFalse(playback.isBuffering)
         XCTAssertNil(playback.errorMessage)
     }
+    func testImmediateResumeJoinsLocalPreparationWithoutReplacingItem() async throws {
+        let item = try XCTUnwrap(playback.player.currentItem)
+        let started = Date()
+        try await playback.resume()
+        try await waitFor { playback.isPlaying }
+        let latency = Date().timeIntervalSince(started)
+        print("IMMEDIATE_LOCAL_RESUME_SECONDS=\(latency)")
+        XCTAssertLessThan(latency, 1)
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertEqual(playback.player.currentTime().seconds, 80, accuracy: 1)
+        XCTAssertFalse(playback.isBuffering)
+    }
     func testImmediateResumeAndPauseDuringLocalPreparationCannotPlayLater() async throws {
         let request = Task { try await playback.resume() }
         await Task.yield()

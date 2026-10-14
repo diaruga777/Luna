@@ -295,16 +295,21 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     /// Re-runs the pipeline for a save a plugin locked, keeping its id
     /// (`claudedocs/plans/plugin-platform.md` §8.3).
     ///
-    /// It is a plain re-ingest of the same row, so the walk reaches the same
-    /// plugin, its `luna.browser.open` is answered from the stored result
-    /// instead of a modal, and the Model it finally returns replaces the locked
-    /// placeholder rather than adding a second save.
+    /// It is a plain re-ingest of the same row using the currently installed
+    /// plugins. Silent extraction may now succeed; otherwise `luna.browser.open`
+    /// consumes a matching stored answer or presents the current browser step.
+    /// The resulting Model replaces the lock rather than adding a second save.
     public func resumePluginLockedSave(id: UUID) async {
         guard let item = store.item(withID: id),
               item.isPluginLocked || (URLBehaviorPolicy.pluginsOnly && item.state == .needsCaptcha) else { return }
         SharedDiagnosticLog.record(
             "plugin: resuming locked save \(id.uuidString.prefix(8))", category: "plugin")
         await ingest(item)
+        // A plugin update can recover the article before browser.open is ever
+        // reached. Retire the old request/answer in that case too.
+        if store.item(withID: id)?.state == .ready {
+            PluginBrowserRequestStore(saves: store).clear(saveID: id)
+        }
     }
 
     /// Persists a rescued `IngestResult` for an existing item through the shared

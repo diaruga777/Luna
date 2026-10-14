@@ -873,6 +873,16 @@ scratch, reaching this same lock the first time `ingest` runs there.
 
 ### 7.3 In the app
 
+A locked-card tap re-runs ingestion for that same save through
+`PluginResumeSeams.resumer` before presenting a browser. Stored requests contain
+the old plugin's detection/cleanup scripts; replaying them first would bypass
+an installed extraction fix (as happened with Daily Beast's Astro continuation).
+The current plugin gets its normal silent extraction/probe sequence and opens a
+fresh browser step only if still needed. Repeated taps during that retry coalesce.
+A successful retry clears the obsolete browser request, including any unused
+answer. Without an installed resumer, the presentation-only fallback can still
+show a stored pending step.
+
 `PluginBrowserViewController` (`LunaLibraries/Sources/LunaPluginUI/PluginBrowserViewController.swift`)
 generalizes the archive unlock's cover-until-challenge mechanics onto a
 plugin's own `detect` script: an always-live `WKWebView` under an opaque

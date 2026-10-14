@@ -148,6 +148,30 @@ final class PluginBrowserBridgeTests: XCTestCase {
             requests.record(for: saveID), "the other page's answer must survive untouched")
     }
 
+    @MainActor
+    func testRetryThatStillNeedsBrowserUsesCurrentRequestInsteadOfStoredScripts() async {
+        let stale = PluginBrowserRequest(url: URL(string: Self.gateURL)!, detect: "'wait'")
+        requests.put(saveID: saveID, pluginID: Self.pluginID, requestJSON: stale.jsonText!)
+        let browser = RecordingBrowser()
+        install(processKind: .app, presenter: browser)
+
+        let value = await answer(scopedTo: saveID)
+
+        XCTAssertEqual(value, "html:recovered")
+        XCTAssertEqual(browser.detectScripts, ["'done'"])
+        XCTAssertNil(requests.record(for: saveID))
+    }
+
+    @MainActor
+    private final class RecordingBrowser: PluginBrowserPresenting {
+        var detectScripts: [String] = []
+        func presentBrowserStep(_ request: PluginBrowserRequest, pluginID: String) async -> PluginBrowserResult? {
+            detectScripts.append(request.detect)
+            return PluginBrowserResult(url: request.url.absoluteString, html: "recovered",
+                                       title: "", cookieHeader: "", cookies: [])
+        }
+    }
+
     // MARK: - Outside a save
 
     func testACallWithNoSaveToParkAgainstRefuses() async {

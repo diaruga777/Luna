@@ -13,9 +13,9 @@ import UIKit
 ///
 /// Two things reach it: a tap on a locked card of any kind, and the launch or
 /// foreground sweep for a save whose browser step was answered but never
-/// consumed. Both end the same way — the result is written against the save and
-/// the pipeline runs again with the same id, so the plugin's Model replaces the
-/// placeholder instead of adding a second row.
+/// consumed. Both run the current pipeline with the same id, so the plugin's
+/// Model replaces the placeholder instead of adding a second row. A tap retries
+/// silent extraction before asking the current plugin for a browser step.
 @MainActor
 public enum PluginUnlockFlow {
 
@@ -23,8 +23,8 @@ public enum PluginUnlockFlow {
     /// for the length of a presentation.
     public static let shared = PluginUnlockFlowRunner()
 
-    /// Presents the browser step `item` is waiting on. A save with no stored
-    /// request has nothing to show, so nothing happens.
+    /// Retries `item` with the current plugins. A browser is presented only if
+    /// the current ingest walk still needs one.
     public static func present(for item: SavedItem, from presenter: UIViewController) {
         shared.present(for: item, from: presenter)
     }
@@ -49,6 +49,7 @@ public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
     private let store: SavesStore
     private let requests: PluginBrowserRequestStore
     private let modal: PluginBrowserModalPresentation
+    private var retrying = Set<UUID>()
 
     public init(
         store: SavesStore = .shared, requests: PluginBrowserRequestStore = .shared,
@@ -60,6 +61,19 @@ public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
     }
 
     public func present(for item: SavedItem, from presenter: UIViewController) {
+        // Deferred requests contain executable detection/cleanup scripts from
+        // the attempt that failed. Replaying them first bypasses fixes in the
+        // installed plugin (and its now-successful silent extraction). Re-enter
+        // the normal app walk, which also consumes any completed browser answer
+        // and asks its live browser bridge for a fresh step only when necessary.
+        if let resumer = PluginResumeSeams.resumer {
+            guard retrying.insert(item.id).inserted else { return }
+            Task { [self] in
+                defer { retrying.remove(item.id) }
+                await resumer.resumePluginLockedSave(id: item.id)
+            }
+            return
+        }
         guard !modal.isPresented,
               let record = requests.pending(for: item.id),
               let request = PluginBrowserRequest(json: record.requestJSON)

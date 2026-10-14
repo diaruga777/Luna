@@ -10,6 +10,8 @@ import LunaPluginIngest
 import LunaPluginKit
 import LunaArchiveReader
 import LunaPluginUI
+import LunaReaderUI
+import LunaSaves
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -114,7 +116,11 @@ final class PluginResumeTests: XCTestCase {
         let root = UIViewController()
         window.rootViewController = root
         window.isHidden = false
+        // Exercise the presentation-only fallback. Composed apps retry their
+        // current pipeline instead (covered below).
+        PluginResumeSeams.resumer = nil
         runner.present(for: item, from: root)
+        PluginResumeSeams.resumer = resumer
 
         guard let browser = pages.made.first else {
             return XCTFail("the pending request should have opened a browser step")
@@ -130,13 +136,83 @@ final class PluginResumeTests: XCTestCase {
     }
 
     @MainActor
-    func testASaveWithNoPendingRequestOpensNothing() {
+    func testASaveWithNoPendingRequestStillRetriesTheCurrentPipeline() async {
         let item = saves.add(urlString: "https://gate.test/none")
         saves.markPluginLocked(item.id, pluginID: "app.luna.gate", title: "Waiting")
         let pages = FakePageMaker()
-        PluginUnlockFlowRunner(store: saves, requests: requests, pageMaker: pages)
-            .present(for: saves.item(withID: item.id) ?? item, from: UIViewController())
+        let flow = PluginUnlockFlowRunner(store: saves, requests: requests, pageMaker: pages)
+        flow.present(for: saves.item(withID: item.id) ?? item, from: UIViewController())
+        flow.present(for: saves.item(withID: item.id) ?? item, from: UIViewController())
+        await waitFor("the lock is retried once despite repeated taps") {
+            self.resumer.resumed == [item.id]
+        }
         XCTAssertTrue(pages.made.isEmpty)
+    }
+
+    @MainActor
+    func testExistingDailyBeastLockUsesFixedPluginBeforeStaleBrowserRequest() async throws {
+        let fixture = PluginJSFixtureRunner()
+        let previousStage = IngestPipeline.pluginStage
+        let previousHandler = IngestorKindHandlers.article
+        let previousPolicy = URLBehaviorPolicy.pluginsOnly
+        let scope = PluginAdopterScope()
+        defer {
+            IngestPipeline.pluginStage = previousStage
+            IngestorKindHandlers.article = previousHandler
+            URLBehaviorPolicy.pluginsOnly = previousPolicy
+            scope.restore()
+            fixture.cleanUp()
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        try fixture.load(String(contentsOf: root.appendingPathComponent(
+            "LunaLibraries/Sources/LunaBundledPlugins/Plugins/publisher-access.js"), encoding: .utf8))
+        let url = "https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing"
+        fixture.fetcher.respond(to: url, body: try String(contentsOf: root.appendingPathComponent(
+            "LunaTests/Fixtures/Plugins/dailybeast-astro.html"), encoding: .utf8))
+        URLBehaviorPolicy.pluginsOnly = true
+        PluginModelAdopters.article = ArticleModelAdopter()
+        IngestPipeline.pluginStage = PluginIngestStage(invoker: fixture.runtime, processKind: .app)
+        IngestorKindHandlers.article = RecoveryArticleHandler()
+        PluginResumeSeams.resumer = SavesIngestor(store: saves, surfaceGate: ScriptedIngestGate.supported)
+
+        // Both a never-answered step and an answer left by a previous session
+        // must recover in place. Neither should replay the old wait-only probe.
+        for answered in [false, true] {
+            let saved = saves.add(urlString: url)
+            saves.markPluginLocked(saved.id, pluginID: "app.luna.publisher-access", title: "Locked")
+            let stale = PluginBrowserRequest(url: URL(string: url)!, detect: "'wait'")
+            requests.put(saveID: saved.id, pluginID: "app.luna.publisher-access", requestJSON: stale.jsonText!)
+            if answered { requests.complete(saveID: saved.id, resultJSON: result(html: "<p>Old teaser</p>").jsonText!) }
+            let pages = FakePageMaker()
+            let flow = PluginUnlockFlowRunner(store: saves, requests: requests, pageMaker: pages)
+            flow.present(for: try XCTUnwrap(saves.item(withID: saved.id)), from: UIViewController())
+
+            await waitFor("the existing save recovers with the current plugin") {
+                self.saves.item(withID: saved.id)?.state == .ready && self.requests.record(for: saved.id) == nil
+            }
+            let recovered = try XCTUnwrap(saves.item(withID: saved.id))
+            let content = try XCTUnwrap(saves.content(for: recovered))
+            XCTAssertEqual(recovered.id, saved.id)
+            XCTAssertEqual(recovered.pluginID, "app.luna.publisher-access")
+            XCTAssertEqual(recovered.title, "Daily Beast regression")
+            XCTAssertTrue(content.blocks.contains { $0.text.contains("Paragraph 6.") })
+            XCTAssertTrue(pages.made.isEmpty, "stale detection scripts must never be opened")
+            XCTAssertEqual(saves.items().count, 1, "recovery replaces the existing row")
+            saves.delete(recovered)
+        }
+        XCTAssertTrue(fixture.fetcher.requests.allSatisfy { $0.url.absoluteString == url })
+    }
+
+    private struct RecoveryArticleHandler: IngestorArticleHandling {
+        func persistArticle(_ content: ArticleContent, html: String, for item: SavedItem,
+                            url: URL, store: SavesStore) async { _ = store.saveContent(content, for: item) }
+        func ingestDocument(_ item: SavedItem, store: SavesStore) async {}
+        func backfillMissingWebArchives(store: SavesStore) {}
+        func backfillMissingThumbnails(store: SavesStore) {}
+        func preloadPasteboard(content: ArticleContent, sourceURL: URL) {}
+        func doubleSaveDestinationIDs() -> [String] { [] }
+        func sendToDestination(_ item: SavedItem, destinationID: String) async {}
+        func isDestinationConfigured(_ destinationID: String) -> Bool { false }
     }
 
     /// A page maker that hands out inert pages and remembers them, so the flow

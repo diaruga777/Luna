@@ -5,8 +5,8 @@
 
 import Foundation
 
-/// Re-runs the pipeline for a save a plugin locked, once its browser step has
-/// an answer (`claudedocs/plans/plugin-platform.md` §8.3).
+/// Re-runs the current pipeline for a save a plugin locked, on an unlock tap
+/// or once its browser step has an answer (`claudedocs/plans/plugin-platform.md` §8.3).
 ///
 /// The run keeps the save's id, so the plugin's Model replaces the locked
 /// placeholder rather than adding a second row.

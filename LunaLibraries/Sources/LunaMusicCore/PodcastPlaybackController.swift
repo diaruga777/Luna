@@ -36,7 +36,9 @@ import LunaPodcastCore
     private var generation = UUID()
     private var requestedPlayback = false
     private var actualStartRecorded = false
-    private var ignoreSeekEnd = false
+    private var pendingSeek: Double?
+    private var seekGeneration = UUID()
+    private var isCompleting = false
     private var lastPersistedAt = Date.distantPast
     private var interruptedPlayback = false
     private var artwork: UIImage?
@@ -50,18 +52,29 @@ import LunaPodcastCore
 
     public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared) {
         self.library = library; self.downloads = downloads
-        if let id = library.state.lastPlayedEpisodeID, let episode = library.state.episodes[id] {
+        if let id = library.state.currentEpisodeID ?? library.state.lastPlayedEpisodeID, let episode = library.state.episodes[id] {
             currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = episode.duration
             rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         }
+        // Recover a completed saved item without taking audio ownership on launch.
+        if let episode = currentEpisode, isAtEnd || library.state.progress[episode.id]?.listened == true,
+           let next = library.state.queue.compactMap({ library.state.episodes[$0] }).first {
+            do {
+                try library.edit { $0.currentEpisodeID = next.id; $0.queue.removeAll { $0 == next.id } }
+                currentEpisode = next; position = library.state.progress[next.id]?.listened == true ? 0 : library.state.progress[next.id]?.position ?? 0
+                duration = next.duration; rate = library.state.shows[next.showID]?.settings.playbackRate ?? 1
+            } catch { errorMessage = error.localizedDescription }
+        }
+        player.actionAtItemEnd = .pause
         player.automaticallyWaitsToMinimizeStalling = true
         observations.append(player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in Task { @MainActor in self?.updatePlayback() } })
-        timeToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
-            Task { @MainActor in self?.tick(time.seconds) }
+        timeToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
         observers.append(NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor in
                 guard let self, note.object as? AVPlayerItem === self.player.currentItem else { return }
+                guard self.requestedPlayback, self.pendingSeek == nil, !self.isSelecting else { return }
                 await self.ended()
             }
         })
@@ -108,17 +121,19 @@ import LunaPodcastCore
         do { try await select(first) } catch { fail(error); throw error }
     }
     private func select(_ episode: PodcastEpisode, restorePosition: Bool = false) async throws {
+        let retainedPosition = restorePosition && currentEpisode?.id == episode.id ? position : nil
         persistPosition()
         willPlay?()
         let token = UUID(); generation = token; isSelecting = true
         bufferingTask?.cancel(); bufferingTask = nil
         defer { if generation == token { isSelecting = false; updatePlayback() } }
         player.currentItem?.cancelPendingSeeks()
-        player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; ignoreSeekEnd = false
+        player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; pendingSeek = nil; seekGeneration = UUID()
         errorMessage = nil; setBuffering(true)
         currentEpisode = episode; duration = episode.duration
         let saved = library.state.progress[episode.id]
-        position = !restorePosition && saved?.listened == true ? 0 : max(0, saved?.position ?? 0)
+        position = saved?.listened == true ? 0 : max(0, retainedPosition ?? saved?.position ?? 0)
+        if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         try library.edit { state in
             state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
@@ -153,7 +168,15 @@ import LunaPodcastCore
         publish()
         _ = await session.becomeActiveIfPossible()
         guard token == generation else { throw CancellationError() }
-        if position > 0 { await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+        // Controls can seek while the item/session is preparing. Only the latest
+        // target may win; periodic callbacks must not overwrite it in the meantime.
+        repeat {
+            let revision = seekGeneration
+            let target = pendingSeek ?? position
+            if target > 0 || pendingSeek != nil { await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+            guard token == generation else { throw CancellationError() }
+            if revision == seekGeneration { pendingSeek = nil; break }
+        } while true
         guard token == generation else { throw CancellationError() }
         needsPreparation = false
         if requestedPlayback { player.playImmediately(atRate: rate) }
@@ -161,6 +184,13 @@ import LunaPodcastCore
     }
     public func resume() async throws {
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
+        if isAtEnd {
+            if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
+                try await advanceCompleted(autoplay: true, natural: false); return
+            }
+            position = 0
+            try await select(episode); return
+        }
         willPlay?()
         // A streaming item may have been downloaded while paused. Resume from
         // the complete local asset so reconnecting never requires publisher I/O.
@@ -193,28 +223,56 @@ import LunaPodcastCore
         }
     }
     public func pause() {
+        if !isSelecting, pendingSeek == nil, player.currentItem != nil {
+            let time = player.currentTime().seconds
+            if time.isFinite { position = max(0, time) }
+        }
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
-        if isSelecting { generation = UUID(); isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
+        if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
     }
     public func toggle() { if requestedPlayback { pause() } else { Task { do { try await resume() } catch { fail(error) } } } }
+    private var isAtEnd: Bool { duration.isFinite && duration > 0 && position >= duration - 0.05 }
     public func seek(to seconds: Double) {
-        guard seconds.isFinite, currentEpisode != nil else { return }
+        guard seconds.isFinite, let episode = currentEpisode else { return }
         let target = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
-        ignoreSeekEnd = duration > 0 && target >= duration - 0.25
-        position = target
+        position = target; pendingSeek = target
+        let revision = UUID(); seekGeneration = revision
+        // Seeking a restored, unprepared item must survive the next Resume too.
+        do { try library.requireStore().recordPosition(episode.id, position: target); library.reloadState() }
+        catch { errorMessage = error.localizedDescription }
+        publish()
+        if isAtEnd {
+            pendingSeek = nil
+            let autoplay = requestedPlayback
+            let token = generation
+            Task {
+                guard generation == token, seekGeneration == revision else { return }
+                do { try await advanceCompleted(autoplay: autoplay && requestedPlayback, natural: false) } catch { fail(error) }
+            }
+            return
+        }
+        guard !isSelecting, player.currentItem != nil, !needsPreparation else { return }
         if requestedPlayback { setBuffering(true) }
         let token = generation
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            Task { @MainActor in guard let self, self.generation == token else { return }; self.updatePlayback() }
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            Task { @MainActor in
+                guard let self, self.generation == token, self.seekGeneration == revision else { return }
+                self.pendingSeek = nil
+                if finished {
+                    self.position = target
+                    self.persistPosition()
+                    if self.requestedPlayback { self.player.playImmediately(atRate: self.rate) }
+                } else { self.errorMessage = "Unable to seek. Try moving the playback position again." }
+                self.updatePlayback()
+            }
         }
-        persistPosition(); publish()
     }
     public func skip(backward: Bool) { seek(to: position + (backward ? -library.state.settings.skipBack : library.state.settings.skipForward)) }
     public func setRate(_ value: Float) {
         guard value.isFinite, (0.5...3).contains(value) else { return }
         rate = value
-        if requestedPlayback { player.rate = value }
+        if requestedPlayback, !isSelecting, pendingSeek == nil { player.playImmediately(atRate: value) }
         if let id = currentEpisode?.showID { do { try library.edit { $0.shows[id]?.settings.playbackRate = value; $0.shows[id]?.updatedAt = Date() } } catch { fail(error) } }
         publish()
     }
@@ -228,14 +286,33 @@ import LunaPodcastCore
             }
         }
     }
-    private func tick(_ time: Double) {
-        guard !isSelecting, player.currentItem != nil else { return }
-        if time.isFinite { position = max(0, time) }
+    private func tick() {
+        guard !isSelecting, !isCompleting, pendingSeek == nil, player.currentItem != nil else { return }
+        // Read the current item now: a queued periodic callback can belong to an
+        // earlier seek/item and carry an obsolete time.
+        let currentTime = player.currentTime().seconds
+        if currentTime.isFinite { position = max(0, currentTime) }
         if let length = player.currentItem?.duration.seconds, length.isFinite { duration = max(0, length) }
+        if requestedPlayback, actualStartRecorded, isAtEnd {
+            let token = generation
+            Task { if self.generation == token { await self.ended() } }; return
+        }
         if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPosition(); publish() }
     }
     private func updatePlayback() {
-        isPlaying = player.timeControlStatus == .playing
+        if !isSelecting, pendingSeek == nil, player.currentItem != nil {
+            let time = player.currentTime().seconds
+            if time.isFinite { position = max(0, time) }
+            if let length = player.currentItem?.duration.seconds, length.isFinite, length > 0 { duration = length }
+        }
+        // System/native video controls can pause AVPlayer directly. Do not
+        // leave a pending Play intent that can restart it after a later seek.
+        if requestedPlayback, actualStartRecorded, !isSelecting, pendingSeek == nil,
+           player.timeControlStatus == .paused, !isAtEnd, !isBuffering {
+            requestedPlayback = false
+            persistPosition()
+        }
+        isPlaying = requestedPlayback && player.timeControlStatus == .playing
         setBuffering(requestedPlayback && (isSelecting || !isPlaying))
         if isPlaying, !actualStartRecorded, let episode = currentEpisode {
             do { try library.requireStore().recordPlaybackStarted(episode.id); actualStartRecorded = true; library.reloadState() }
@@ -254,26 +331,47 @@ import LunaPodcastCore
         }
     }
     private func ended() async {
-        guard actualStartRecorded, !ignoreSeekEnd, let episode = currentEpisode else { pause(); return }
-        let token = generation
+        guard requestedPlayback, actualStartRecorded, !isSelecting, pendingSeek == nil else { return }
+        do { try await advanceCompleted(autoplay: true, natural: true) } catch { fail(error) }
+    }
+    private func advanceCompleted(autoplay: Bool, natural: Bool) async throws {
+        guard !isCompleting, let episode = currentEpisode else { return }
+        isCompleting = true
+        defer { isCompleting = false }
+        let token = UUID(); generation = token; seekGeneration = UUID(); pendingSeek = nil
+        let sleepAtEnd = sleepAtEpisodeEnd
+        let shouldPlay = autoplay && !sleepAtEnd
         persistPosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
-        // Release the file before deleting it, including a final/sleep-timer item.
-        player.replaceCurrentItem(with: nil); needsPreparation = true
-        do {
-            if sleepAtEpisodeEnd {
-                try library.requireStore().markListened(episode.id, true)
-                try library.edit { $0.currentEpisodeID = nil; $0.naturallyExhaustedQueue = $0.queue.isEmpty }
-                downloads.remove(episode.id)
-                await downloads.reconcile()
-                sleepAtEpisodeEnd = false; publish(); return
+        player.pause(); player.replaceCurrentItem(with: nil); needsPreparation = true
+        actualStartRecorded = false
+        let store = try library.requireStore()
+        let next: String?
+        if store.state.currentEpisodeID != episode.id { try library.edit { $0.currentEpisodeID = episode.id } }
+        if sleepAtEnd {
+            try store.markListened(episode.id, true)
+            try library.edit { $0.currentEpisodeID = nil; $0.naturallyExhaustedQueue = natural && $0.queue.isEmpty }
+            next = nil; sleepAtEpisodeEnd = false
+        } else {
+            // A manual seek may complete an explicit queue item, but cannot
+            // authorize the resume intent's natural-exhaustion recommendations.
+            next = try store.finishNaturally(episode.id, natural: natural)
+            library.reloadState()
+        }
+        downloads.remove(episode.id)
+        Task { await self.downloads.reconcile() }
+        guard generation == token else { return }
+        if let next, let episode = library.state.episodes[next] {
+            if shouldPlay { try await select(episode) }
+            else {
+                currentEpisode = episode; duration = episode.duration
+                position = library.state.progress[episode.id]?.listened == true ? 0 : library.state.progress[episode.id]?.position ?? 0
+                rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
+                chapters = episode.chapters; transcript = []; artwork = nil
+                extrasTask?.cancel(); extrasTimeoutTask?.cancel(); extrasTask = nil
+                isLoadingTranscript = false; isLoadingChapters = false
+                publish()
             }
-            let next = try library.requireStore().finishNaturally(episode.id); library.reloadState()
-            downloads.remove(episode.id)
-            await downloads.reconcile()
-            guard generation == token else { return }
-            if let next, let episode = library.state.episodes[next] { try await select(episode) }
-            else { publish(); await downloads.reconcile() }
-        } catch { fail(error) }
+        } else { position = duration; publish() }
     }
     public func persistPosition() {
         guard let id = currentEpisode?.id, actualStartRecorded else { return }
@@ -282,7 +380,7 @@ import LunaPodcastCore
     }
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
-        generation = UUID(); isSelecting = false; needsPreparation = true
+        generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true
         player.currentItem?.cancelPendingSeeks()
         extrasTask?.cancel(); extrasTimeoutTask?.cancel()
         if isLoadingTranscript { transcriptError = error.localizedDescription }

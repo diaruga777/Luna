@@ -58,6 +58,7 @@ enum SavesSchema {
                 }
                 try database.execute(tables)
                 try database.execute(KeyboardStore.schema)
+                try database.execute(SavedLibrarySearchSchema.sql)
                 // Version 11 assigns every live media job to the exact
                 // process-specific background session that owns its tasks.
                 // CREATE TABLE above handles a fresh database; an existing

@@ -52,6 +52,27 @@ is the test seam that waits for them.
 
 ## The schema
 
+Schema 19 adds the shared, local library index: `library_documents`, FTS5
+`library_fts`, normalized Float32 chunk embeddings in `library_vectors`, and
+`library_index_state` for warming vectors only when the index changes. Save-row
+triggers index titles and retire deleted documents/vectors across processes.
+`saveContent` indexes the complete body, author, headings, and captions in the
+same transaction, including replacement content under the same JSON filename.
+Reading-position updates do not invalidate embeddings.
+
+`SavedLibrarySearchIndex` starts at deck launch, repairs historical content in
+the background, and prepares sentence/paragraph chunks of at most 120 words
+with sentence overlap at length boundaries. Apple's local English sentence
+embedding model supplies semantic retrieval; if unavailable, full-text search
+continues. There are no remote search/embedding requests or model downloads.
+Vectors persist across launches and are warmed before queries. Searches use
+FTS5 prefix matches plus a normalized vector dot product over current chunks,
+deduplicated by save, with exact matches first. Semantic candidates need no
+matching query words. Generation checks suppress stale vectors immediately
+after replacement or deletion. Content files are never read while querying.
+
+See [card-carousel.md](card-carousel.md) for the swipe-up library UI.
+
 Schema 15 also adds Luna Keyboard preferences, shortcuts, keyword mappings and its
 personal dictionary. Shortcut media uses the same ownership edges and reaper;
 see [keyboard.md](keyboard.md).

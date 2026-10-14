@@ -20,13 +20,9 @@ enum KindWiring {
     private static let legacyOnboardingDemoSave =
         DownloaderOnboardingDemoSave.legacyCleanup
 
+    /// Only registrations needed to construct the saved-card hierarchy.
     @MainActor
-    static func install() {
-        // The Luna file intake seam. Every root installs a witness, so a
-        // `.luna` file reaching a surface is always accounted for; the
-        // recovery and plugin surfaces replace it with their own.
-        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
-        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
+    static func installPresentation() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs, for this app's kinds only
@@ -34,16 +30,19 @@ enum KindWiring {
         SharedStageCatalog.install()
         MediaStageCatalog.install()
         #endif
-
-        // The media kind pack: one call, shared verbatim with the
-        // Downloader's share and action extensions. See
-        // `MediaKindComposition`, which also states that media needs no
-        // web-processing pipeline stage — platform recognition is URL-only
-        // classification.
         MediaKindComposition.install()
-        // The media kind's card half follows the same rule — the one
-        // definition the central app installs too. See `CardKindPresenter.swift`.
         CardKindPresenters.media = MediaCardPresenter()
+        MediaUtilCardStorageChoice.install()
+    }
+
+    @MainActor
+    static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces replace it with their own.
+        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
+        LunaFileIntake.pluginHandler = UnsupportedLunaFileIntake()
+
         // The media kind's app-shell half installs from the same file the
         // central app uses (`MediaShellWiring`).
         MediaShellWiring.install()

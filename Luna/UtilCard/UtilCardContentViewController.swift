@@ -329,7 +329,7 @@ final class UtilCardContentViewController: CardContentViewController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in RecentURLMatcher.shared.refresh() }
+            Task { @MainActor in AppLaunchServices.shared.whenReady { RecentURLMatcher.shared.refresh() } }
             // Two days can pass while the app is away, and the retirement that
             // frees a slot for email is written on the way out.
             self?.rebuildSetupBlock()
@@ -347,7 +347,7 @@ final class UtilCardContentViewController: CardContentViewController {
             for element in introRevealElements { element.alpha = 0 }
         }
 
-        RecentURLMatcher.shared.refresh()
+        AppLaunchServices.shared.whenReady { RecentURLMatcher.shared.refresh() }
     }
 
     /// What waits behind the headline on the launch that animates it. The

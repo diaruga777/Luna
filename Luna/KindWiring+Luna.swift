@@ -36,14 +36,9 @@ enum KindWiring {
     private static let legacyOnboardingDemoSave: any OnboardingLegacyDemoSweeping =
         BundledLunaArticle.LegacySweep()
 
+    /// Only registrations needed to construct the saved-card hierarchy.
     @MainActor
-    static func install() {
-        // The Luna file intake seam. Every root installs a witness, so a
-        // `.luna` file reaching a surface is always accounted for; the
-        // recovery and plugin surfaces each install their own half.
-        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
-        LunaFileIntake.pluginHandler = PluginDraftFileIntake(
-            presenter: AppPluginDraftReviewRoute(), launcher: LLMLauncher.shared)
+    static func installPresentation() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
         // Staged mode's catalogs follow the same rule as the kind packs: a
@@ -57,14 +52,25 @@ enum KindWiring {
         ProductStageCatalog.install()
         PluginStageCatalog.install()
         #endif
-
-        // One install call per kind this app handles. What each kind
-        // registers is defined once in that kind's own module and shared by
-        // every surface — app, share extension, action extension, clip. See
-        // `ArticleKindComposition`.
         ArticleKindComposition.install()
+        CardKindPresenters.article = ArticleCardPresenter()
         MediaKindComposition.install()
+        CardKindPresenters.media = MediaCardPresenter()
         ProductKindComposition.install()
+        CardKindPresenters.product = ProductCardPresenter()
+        ArticleShellWiring.installPresentation()
+        MediaUtilCardStorageChoice.install()
+    }
+
+    @MainActor
+    static func install() {
+        // The Luna file intake seam. Every root installs a witness, so a
+        // `.luna` file reaching a surface is always accounted for; the
+        // recovery and plugin surfaces each install their own half.
+        LunaFileIntake.recoveryHandler = RecoveryFileIntake()
+        LunaFileIntake.pluginHandler = PluginDraftFileIntake(
+            presenter: AppPluginDraftReviewRoute(), launcher: LLMLauncher.shared)
+
         installFullPluginComposition()
         installPluginRecoveryRoute()
         PluginModelDrain.returnOpener = SystemPluginModelReturnOpener()
@@ -77,13 +83,7 @@ enum KindWiring {
         // plugin only at the next launch's migration — so an address typed
         // there left the destination unconfigured for the rest of the session.
         DoubleSaveSettingsSupport.kindleSetupLauncher = PluginKindleSetupRoute()
-        // The card half of each kind follows the same rule: one definition
-        // per kind, installed by every app that shows it, so the central deck
-        // and each single-kind deck can't disagree about the same save. See
-        // `CardKindPresenter.swift`.
-        CardKindPresenters.article = ArticleCardPresenter()
-        CardKindPresenters.media = MediaCardPresenter()
-        CardKindPresenters.product = ProductCardPresenter()
+
         // The app-shell half of each kind installs from the same files each
         // single-kind app uses (`ArticleShellWiring` and its siblings), so the
         // central app can't drift from the app that specializes in that kind.

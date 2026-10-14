@@ -153,6 +153,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // invocation does not have to wait for the first invocation to tear
         // down.
         let attemptDate = Date()
+        await MainActor.run { AppLaunchServices.shared.ensureReady() }
         LunaSetupStatusStore.shared.recordShortcutRun(for: .current)
         let reporter = IntentProgressReporter()
         // Compiler/OS availability decides whether Save gets the iOS 27

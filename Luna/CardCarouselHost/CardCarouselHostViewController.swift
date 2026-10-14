@@ -563,7 +563,9 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     final func makeUtilCardContentController() -> CardContentViewController {
         let card = UtilCardContentViewController(
             showsOnboarding: utilCardShowsOnboardingAtLaunch,
-            animatesIntro: !utilCardHasSaves && !AppLaunchTransition.hasFinished,
+            // Normal launch shows the headline and actions in its first frame.
+            // Keep the animated treatment available to explicit visual stages.
+            animatesIntro: LunaStage.isActive && !utilCardHasSaves && !AppLaunchTransition.hasFinished,
             // Nil in the two apps that download nothing, so their card never
             // offers the storage line (`claudedocs/util-card.md`).
             storageChoice: DownloadStorageChoice.installed)
@@ -1105,7 +1107,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
         //
         // This lives on the base class every app's root inherits, rather than
         // on one deck, so no deck can be missing it.
-        NotificationManager.clearShareNotifications()
+        AppLaunchServices.shared.whenReady { NotificationManager.clearShareNotifications() }
     }
 
     override func viewDidLayoutSubviews() {

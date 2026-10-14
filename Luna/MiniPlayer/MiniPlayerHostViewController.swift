@@ -29,7 +29,7 @@ final class MiniPlayerHostViewController: UIViewController {
     /// The wrapped main navigation controller used by deep links and notification routes.
     let contentNavigationController: UINavigationController
 
-    private let miniPlayer = AudioMiniPlayerView()
+    private lazy var miniPlayer = AudioMiniPlayerView()
     private var barMode: AudioMiniPlayerView.BarMode = .hidden
     private var meldObserver: NSObjectProtocol?
     /// Extension → main-app handoff: true while the bar shows a paused
@@ -67,6 +67,10 @@ final class MiniPlayerHostViewController: UIViewController {
         view.addSubview(contentNavigationController.view)
         contentNavigationController.didMove(toParent: self)
 
+        AppLaunchServices.shared.whenReady { [weak self] in self?.installPlayer() }
+    }
+
+    private func installPlayer() {
         miniPlayer.isHidden = true
         miniPlayer.alpha = 0
         view.addSubview(miniPlayer)

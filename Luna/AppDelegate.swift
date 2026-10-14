@@ -78,13 +78,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // launch path, so one assert covers them.
         assert(AppConfig.resolvedFromInfoPlist, "LunaAppGroupID did not resolve from Info.plist")
         #endif
-        DiagnosticLog.shared.record("app launch", category: "lifecycle")
-        // Register this app's per-kind pipeline processors, handlers, and UI
-        // seams FIRST — everything below (launch re-ingest, intents, list UI)
-        // consults the registries. Exactly one KindWiring variant is compiled
-        // per app target; kind-specific launch work (audio wiring, pending-
-        // completion promotion, transport injection) lives in its `install()`.
-        KindWiring.install()
+
+        // Install only what the saved-card hierarchy reads while it is built.
+        // Plugins, ingest handlers and maintenance wait for a displayed frame.
+        KindWiring.installPresentation()
+        AppLaunchServices.shared.configure { [weak self] in self?.installServices() }
         // Onboarding's own launch bookkeeping, before any root reads its state:
         // stamp the start of a first run (or of the run a reset just began), then
         // latch completion if a save has arrived since — a save from ANY surface
@@ -99,40 +97,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()
-        // Mark this surface installed so any Safari extension host knows which
-        // sibling Luna apps its page buttons can deep-link into.
-        InstalledAppMarkers.recordCurrentApp()
-        // Unsupported-kind error for dropped INTERACTIVE in-app saves:
-        // LunaSaves can't present UI, so the app shell installs the
-        // presenter. This is the same cross-tier protocol-witness pattern as
-        // `DiagnosticLog.exportIdentityProvider`.
-        SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
-
-        // A plugin-locked save is finished by re-running the pipeline for the
-        // same id, and the flow that presents the browser step sits above
-        // LunaSaves. An app with no plugin platform installs this too and
-        // never has a locked save to resume.
-        PluginResumeSeams.resumer = SavesIngestor.shared
-
-        // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
-        // the ingest pipeline, so the shell hands it the one metadata read the
-        // row needs.
-        WeeklySaveRefresher.metadataFetcher = WeeklyRowMetadataFetcher()
-
-        // Diagnostics export header shows the connected email account (which lives
-        // above LunaStorage), injected here.
-        DiagnosticLog.exportIdentityProvider = ConnectedAccountExportIdentity()
-
-        // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
-        // bridge + coordinator (all three apps; main-app only — extensions never
-        // link the engine). Must precede ingestAllPending() so the ingestor's
-        // rescueTrigger is set before the launch re-ingest can surface failures.
-        URLRescueWiring.install()
-
-        // The observer must exist before a cold Safari hand-off is routed.
-        // Retrying old saves and lifecycle sweeps wait for the first card.
-        if !LunaStage.isActive { BackgroundIngestCompletion.install() }
-
         // Local notifications: show as banners while open. Launch does NOT ask for
         // authorization — a fresh install has nothing to notify anyone about, so the
         // prompt would arrive before its reason exists. Every posting feature asks
@@ -209,15 +173,56 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         #if DEBUG
         // LAST, once every catalog has been installed above: answer
         // `-LunaStageList` with the manifest and exit. Never reached without it.
+        if LunaStage.isActive { AppLaunchServices.shared.ensureReady() }
         LunaStage.finishLaunchIfNeeded()
         #endif
         return true
     }
 
+    private func installServices() {
+        DiagnosticLog.shared.record("app launch", category: "lifecycle")
+        KindWiring.install()
+        // Mark this surface installed so any Safari extension host knows which
+        // sibling Luna apps its page buttons can deep-link into.
+        InstalledAppMarkers.recordCurrentApp()
+        // Unsupported-kind error for dropped INTERACTIVE in-app saves:
+        // LunaSaves can't present UI, so the app shell installs the
+        // presenter. This is the same cross-tier protocol-witness pattern as
+        // `DiagnosticLog.exportIdentityProvider`.
+        SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
+
+        // A plugin-locked save is finished by re-running the pipeline for the
+        // same id, and the flow that presents the browser step sits above
+        // LunaSaves. An app with no plugin platform installs this too and
+        // never has a locked save to resume.
+        PluginResumeSeams.resumer = SavesIngestor.shared
+
+        // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
+        // the ingest pipeline, so the shell hands it the one metadata read the
+        // row needs.
+        WeeklySaveRefresher.metadataFetcher = WeeklyRowMetadataFetcher()
+
+        // Diagnostics export header shows the connected email account (which lives
+        // above LunaStorage), injected here.
+        DiagnosticLog.exportIdentityProvider = ConnectedAccountExportIdentity()
+
+        // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
+        // bridge + coordinator (all three apps; main-app only — extensions never
+        // link the engine). Must precede ingestAllPending() so the ingestor's
+        // rescueTrigger is set before the launch re-ingest can surface failures.
+        URLRescueWiring.install()
+
+        // The observer must exist before a cold Safari hand-off is routed.
+        // Retrying old saves and lifecycle sweeps wait for the first card.
+        if !LunaStage.isActive { BackgroundIngestCompletion.install() }
+
+    }
+
     /// Runs once after the launch card is visible, or immediately for a
-    /// background-only wake. Deep links already have all of their wiring.
+    /// background-only wake. Service installation precedes every consumer.
     func startLaunchMaintenance() {
         guard !LunaStage.isActive, !hasStartedLaunchMaintenance else { return }
+        AppLaunchServices.shared.ensureReady()
         hasStartedLaunchMaintenance = true
         if let launchRevealObserver {
             NotificationCenter.default.removeObserver(launchRevealObserver)
@@ -278,6 +283,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
+        AppLaunchServices.shared.ensureReady()
         // Background URLSessions belong to the media download manager; apps
         // without the media kind complete the callback immediately.
         KindWiring.attachBackgroundURLSessionHandler(
@@ -318,6 +324,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             work?.cancel()
         }
         work = Task {
+            await MainActor.run { AppLaunchServices.shared.ensureReady() }
             await IncomingMailImporter.shared.importNewMail()
             KindWiring.retryPendingArticleSends()
             task.setTaskCompleted(success: !Task.isCancelled)
@@ -411,6 +418,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self.schedulePriceRefresh(reason: "background expiration")
         }
         work = Task { [weak self] in
+            await MainActor.run { AppLaunchServices.shared.ensureReady() }
             // The handler is only registered when a runner exists (see
             // schedulesPriceRefresh), so the fallback 0 is unreachable.
             let processed = await KindWiring.priceRefreshRunner?.runPriceRefresh() ?? 0

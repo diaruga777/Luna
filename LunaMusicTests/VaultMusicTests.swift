@@ -606,6 +606,16 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             window?.isHidden = true
         }
     }
+    func testScrubberCommitsAccessibilityAndTouchReleasePositions() throws {
+        let (controller, library) = try fixture()
+        let slider = try XCTUnwrap(descendants(controller.view, UISlider.self).first)
+        XCTAssertGreaterThanOrEqual(slider.bounds.height, 44)
+        slider.value = 123; slider.sendActions(for: .valueChanged)
+        let id = try XCTUnwrap(library.state.lastPlayedEpisodeID)
+        XCTAssertEqual(library.state.progress[id]?.position ?? -1, 123, accuracy: 0.001)
+        slider.value = 456; slider.sendActions(for: .touchUpOutside)
+        XCTAssertEqual(library.state.progress[id]?.position ?? -1, 456, accuracy: 0.001)
+    }
     func testQueueRemovalAndClearEditOnlyUpcomingEpisodes() throws {
         let (controller, library) = try fixture(queue: true)
         let queue = try XCTUnwrap(controller.children.first as? PodcastQueueViewController)
@@ -715,5 +725,175 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await waitUntil { downloads.downloads[episodes[0].id]?.bytes == 480_044 && downloads.downloads[episodes[0].id]?.status == "waiting" }
         XCTAssertEqual(downloads.totalBytes, 0)
         XCTAssertNil(downloads.localURL(episodes[0].id)); XCTAssertNil(downloads.downloads[episodes[1].id])
+    }
+}
+
+@MainActor final class PodcastTransportTests: XCTestCase {
+    private var root: URL!
+    private var playback: PodcastPlaybackController!
+    private var downloads: PodcastDownloads!
+    private var library: PodcastLibraryController!
+    private var episodes: [PodcastEpisode] = []
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
+        let media = try XCTUnwrap(Bundle(for: VaultMusicTests.self).url(forResource: "streaming", withExtension: "mp4"))
+        episodes = (0..<3).map {
+            var episode = PodcastEpisode(showID: "transport", guid: "\($0)", title: "Transport \($0)", publishedAt: Date(), mediaURL: media)
+            episode.duration = 180; return episode
+        }
+        try library.edit { $0.episodes = Dictionary(uniqueKeysWithValues: episodes.map { ($0.id, $0) }); $0.settings.downloadByteLimit = 0 }
+        downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+    }
+    override func tearDown() {
+        playback.pause(); playback = nil; downloads.stop(); downloads = nil
+        try? FileManager.default.removeItem(at: root)
+        super.tearDown()
+    }
+    private func waitFor(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        for _ in 0..<150 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTFail("Playback did not settle: \(playback.errorMessage ?? "no error")", file: file, line: line)
+        throw PodcastError("Transport test timed out")
+    }
+    private func startQueue() async throws {
+        try await playback.playEpisodes(episodes)
+        try await waitFor { playback.isPlaying }
+    }
+    func testRapidSeeksWhilePlayingAndPausedCommitLatestTarget() async throws {
+        try await startQueue()
+        playback.seek(to: 30); playback.seek(to: 90); playback.seek(to: 60)
+        try await waitFor { abs(playback.player.currentTime().seconds - 60) < 2 && playback.isPlaying }
+        playback.pause(); playback.seek(to: 120); playback.seek(to: 45)
+        try await waitFor { abs(playback.player.currentTime().seconds - 45) < 0.2 }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.position, 45, accuracy: 0.2)
+        XCTAssertEqual(library.state.progress[episodes[0].id]?.position ?? -1, 45, accuracy: 0.2)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.position, 45, accuracy: 2)
+    }
+    func testSeekOnColdRestoredPlayerPersistsAndResumesAtTarget() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 20)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        playback.seek(to: 80)
+        XCTAssertNil(playback.player.currentItem)
+        XCTAssertEqual(library.state.progress[episodes[0].id]?.position, 80)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.player.currentTime().seconds, 80, accuracy: 2)
+    }
+    func testSeekToEndAdvancesExplicitQueueWithoutNaturalFallback() async throws {
+        try await startQueue()
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id && playback.isPlaying }
+        XCTAssertEqual(library.state.queue, [episodes[2].id])
+        XCTAssertTrue(library.state.progress[episodes[0].id]?.listened == true)
+        XCTAssertFalse(library.state.naturallyExhaustedQueue)
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.currentEpisode?.id == episodes[2].id && playback.isPlaying }
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.player.currentItem == nil }
+        XCTAssertFalse(library.state.naturallyExhaustedQueue)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertLessThan(playback.position, 2)
+    }
+    func testPauseImmediatelyAfterTerminalSeekWinsOverQueuedPlay() async throws {
+        try await startQueue()
+        playback.seek(to: playback.duration); playback.pause()
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id }
+        XCTAssertFalse(playback.isPlaying); XCTAssertNil(playback.player.currentItem)
+    }
+    func testActualAudioEndAdvancesQueueAndFinalItemCanReplay() async throws {
+        try await playback.playEpisodes(Array(episodes.prefix(2)))
+        try await waitFor { playback.isPlaying }
+        playback.seek(to: 179)
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id && playback.isPlaying }
+        playback.seek(to: 179)
+        try await waitFor { playback.player.currentItem == nil }
+        XCTAssertTrue(library.state.naturallyExhaustedQueue)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertLessThan(playback.position, 2)
+    }
+    func testMissingFeedDurationRecoversSavedEOFIntoQueuedEpisode() async throws {
+        var episode = episodes[0]; episode.duration = 0
+        try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episodes[1].id] }
+        try library.requireStore().recordPlaybackStarted(episode.id)
+        try library.requireStore().recordPosition(episode.id, position: 180)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+    }
+    func testSeekBackIntoCompletedEpisodeResumesChosenPosition() async throws {
+        try await playback.play(episodes[0]); try await waitFor { playback.isPlaying }
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.player.currentItem == nil }
+        playback.seek(to: 45)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.player.currentTime().seconds, 45, accuracy: 2)
+        XCTAssertFalse(library.state.progress[episodes[0].id]?.listened == true)
+    }
+    func testNativePlayerPauseCannotBeUndoneBySeek() async throws {
+        try await startQueue(); playback.player.pause()
+        try await waitFor { !playback.isPlaying && !playback.isBuffering }
+        playback.seek(to: 60)
+        try await waitFor { abs(playback.player.currentTime().seconds - 60) < 0.2 }
+        XCTAssertEqual(playback.player.rate, 0)
+        playback.player.playImmediately(atRate: playback.rate)
+        try await waitFor { playback.isPlaying }
+        playback.toggle()
+        XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.player.rate, 0)
+    }
+    func testPausedSeekToEndPreparesNextWithoutStartingAudio() async throws {
+        try await startQueue(); playback.pause()
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.position, 0); XCTAssertNil(playback.player.currentItem)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+    }
+    func testDuplicateEndAndLateEndAfterPauseCannotAutoplay() async throws {
+        try await startQueue()
+        let first = try XCTUnwrap(playback.player.currentItem)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: first)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: first)
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id && playback.isPlaying }
+        XCTAssertEqual(library.state.queue, [episodes[2].id])
+        playback.pause()
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: playback.player.currentItem)
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertFalse(playback.isPlaying); XCTAssertEqual(library.state.queue, [episodes[2].id])
+    }
+    func testRestorationRecoversTerminalPositionAndPendingNextPaused() throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        try library.edit { $0.queue = [episodes[1].id, episodes[2].id] }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(playback.position, 0); XCTAssertFalse(playback.isPlaying)
+        XCTAssertEqual(library.state.lastPlayedEpisodeID, episodes[0].id)
+        XCTAssertEqual(library.state.queue, [episodes[2].id])
+        let restored = PodcastPlaybackController(library: library, downloads: downloads)
+        XCTAssertEqual(restored.currentEpisode?.id, episodes[1].id)
+    }
+    func testSpeedWhilePausedDoesNotStartPlaybackAndSkipsSeek() async throws {
+        try await startQueue(); playback.pause(); playback.setRate(1.75)
+        playback.seek(to: 60)
+        try await waitFor { abs(playback.player.currentTime().seconds - 60) < 0.2 }
+        playback.skip(backward: true)
+        try await waitFor { abs(playback.player.currentTime().seconds - 45) < 0.2 }
+        playback.skip(backward: false)
+        try await waitFor { abs(playback.player.currentTime().seconds - 75) < 0.2 }
+        XCTAssertEqual(playback.player.rate, 0)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.player.rate, 1.75)
     }
 }

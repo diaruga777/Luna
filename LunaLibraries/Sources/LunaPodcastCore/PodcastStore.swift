@@ -92,7 +92,7 @@ import Foundation
             progress.position = max(0, position); progress.updatedAt = Date(); state.progress[id] = progress
         }
     }
-    public func finishNaturally(_ id: String) throws -> String? {
+    public func finishNaturally(_ id: String, natural: Bool = true) throws -> String? {
         guard state.currentEpisodeID == id else { return nil }
         var next: String?
         try update { state in
@@ -103,7 +103,7 @@ import Foundation
             state.continuation = []
             if !state.queue.isEmpty { next = state.queue.removeFirst() }
             state.currentEpisodeID = next
-            state.naturallyExhaustedQueue = next == nil
+            state.naturallyExhaustedQueue = natural && next == nil
             // Last played remains the completed episode until the next actually plays.
         }
         return next

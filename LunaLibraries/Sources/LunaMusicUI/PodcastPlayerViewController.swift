@@ -88,6 +88,8 @@ extension MusicScreenViewController {
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)), for: .normal)
         more.accessibilityLabel = "Episode Actions"; more.showsMenuAsPrimaryAction = true
 
+        elapsed.accessibilityIdentifier = "podcasts.playback.elapsed"
+        remaining.accessibilityIdentifier = "podcasts.playback.remaining"
         slider.accessibilityLabel = "Episode Position"
         slider.minimumTrackTintColor = UIColor.white.withAlphaComponent(0.65)
         slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
@@ -95,10 +97,11 @@ extension MusicScreenViewController {
             UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 3, height: 3))
         }
         slider.setThumbImage(thumb, for: .normal)
-        slider.addAction(UIAction { [weak self] _ in self?.updateScrubbingTime() }, for: .valueChanged)
+        slider.addAction(UIAction { [weak self] _ in guard let self else { return }; self.updateScrubbingTime(); if !self.slider.isTracking { self.player.seek(to: Double(self.slider.value)) } }, for: .valueChanged)
         slider.addAction(UIAction { [weak self] _ in
             guard let self else { return }; self.player.seek(to: Double(self.slider.value))
         }, for: [.touchUpInside, .touchUpOutside])
+        slider.addAction(UIAction { [weak self] _ in self?.refresh() }, for: .touchCancel)
         elapsed.font = MusicStyle.font(17, weight: .medium); remaining.font = elapsed.font; remaining.textAlignment = .right
         back = MusicStyle.plainButton("gobackward.15", label: "Skip Back", size: 32) { MediaPlaybackCoordinator.shared.skip(.backward) }
         play = MusicStyle.plainButton("play.fill", label: "Play", size: 48) { [weak self] in self?.player.toggle() }
@@ -177,7 +180,7 @@ extension MusicScreenViewController {
             : CGRect(x: left, y: top, width: width, height: max(0, timelineY - top - 12))
         grabber.frame = CGRect(x: view.bounds.midX - 29, y: max(12, safe.top + 8), width: 58, height: 4)
         close.frame = CGRect(x: view.bounds.midX - 60, y: max(0, safe.top - 12), width: 120, height: 44)
-        slider.frame = CGRect(x: left, y: timelineY, width: width, height: 24)
+        slider.frame = CGRect(x: left, y: timelineY - 10, width: width, height: 44)
         elapsed.frame = CGRect(x: left, y: timelineY + 25, width: width / 2, height: max(22, elapsed.font.lineHeight))
         remaining.frame = CGRect(x: left + width / 2, y: elapsed.frame.minY, width: width / 2, height: elapsed.bounds.height)
         transport.frame = CGRect(x: left, y: timelineY + controlsHeight * 0.25, width: width, height: controlsHeight * 0.36)

@@ -168,6 +168,19 @@ import LunaPodcastCore
         publish()
         _ = await session.becomeActiveIfPossible()
         guard token == generation else { throw CancellationError() }
+        // RSS durations can be missing or inaccurate. Resolve the actual end
+        // before restoring a saved seek so an EOF position cannot stall startup.
+        if restorePosition, position > 0 {
+            let length = try? await asset.load(.duration)
+            guard token == generation else { throw CancellationError() }
+            if let seconds = length?.seconds, seconds.isFinite, seconds > 0 { duration = seconds }
+            if isAtEnd {
+                if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
+                    try await advanceCompleted(autoplay: requestedPlayback, natural: false); return
+                }
+                position = 0; pendingSeek = 0
+            }
+        }
         // Controls can seek while the item/session is preparing. Only the latest
         // target may win; periodic callbacks must not overwrite it in the meantime.
         repeat {
@@ -239,7 +252,15 @@ import LunaPodcastCore
         position = target; pendingSeek = target
         let revision = UUID(); seekGeneration = revision
         // Seeking a restored, unprepared item must survive the next Resume too.
-        do { try library.requireStore().recordPosition(episode.id, position: target); library.reloadState() }
+        do {
+            try library.edit { state in
+                var progress = state.progress[episode.id] ?? PodcastEpisodeState()
+                progress.position = target; progress.updatedAt = Date()
+                if !isAtEnd { progress.listened = false; progress.completedAt = nil }
+                state.progress[episode.id] = progress
+                state.currentEpisodeID = episode.id
+            }
+        }
         catch { errorMessage = error.localizedDescription }
         publish()
         if isAtEnd {
@@ -304,6 +325,10 @@ import LunaPodcastCore
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
             if let length = player.currentItem?.duration.seconds, length.isFinite, length > 0 { duration = length }
+        }
+        if player.timeControlStatus == .playing, !requestedPlayback, !isSelecting, !needsPreparation {
+            // AVPlayerViewController's video Play button bypasses our transport.
+            requestedPlayback = true; willPlay?()
         }
         // System/native video controls can pause AVPlayer directly. Do not
         // leave a pending Play intent that can restart it after a later seek.

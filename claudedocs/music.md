@@ -472,3 +472,33 @@ underreported sizes, enqueue/reorder-triggered downloads, paused local playback
 after manifest restoration, natural-end deletion/refill and sleep-at-end cleanup.
 The completion regression delivers AVPlayer’s end notification after playback
 starts, avoiding dependence on the simulator’s sometimes-stalled audio clock.
+
+### Podcast transport recovery (2026-10-14)
+
+Podcast seeks retain the latest requested position through preparation and repeated
+seeks. Periodic callbacks read the current AVPlayer time instead of applying a
+possibly obsolete callback time, and do not overwrite an in-flight seek. Seeking
+an unprepared/restored episode persists its position without claiming listening
+history. Seeking back into a completed episode clears its completion marker so
+Resume honors that position. Touch release and VoiceOver slider changes commit
+seeks; the timeline has a 44-point interaction height.
+
+Natural completion advances the explicit queue before asynchronous download
+reconciliation. Completion notifications are checked against the current item and
+play intent, and duplicate/late events cannot advance twice or autoplay after
+Pause. Seeking/skipping to EOF advances an existing explicit queue while preserving
+paused state; manual completion never grants the Resume Last Podcast intent's
+natural-exhaustion fallback. The final episode can replay with Play. Restoration
+prefers the persisted current item, recovers stale terminal positions into queued
+work while paused, and resolves the actual asset duration on resumed seeks when
+RSS duration is missing or inaccurate. Native video transport changes are reflected
+in Luna's play intent, preventing a later seek from undoing a native Pause.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 69 hosted Music tests passed,
+including 12 real-AVPlayer transport regressions and the existing throttled HTTP,
+offline download, completion/refill and sleep-at-end checks. All 29 Foundation
+podcast tests passed. The expanded RSS UI integration passed with actual slider
+interaction, paused foreground retention, skip back, speed, sleep timer, episode
+actions and queue editing. Player artwork/queue layouts were inspected. These
+checks establish simulator behavior; the reported physical-device session,
+headphones and AirPlay have not been reproduced by this change.

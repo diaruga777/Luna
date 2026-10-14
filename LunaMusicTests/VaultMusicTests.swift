@@ -819,12 +819,35 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.resume(); try await waitFor { playback.isPlaying }
         XCTAssertLessThan(playback.position, 2)
     }
+    func testMissingFeedDurationRecoversSavedEOFIntoQueuedEpisode() async throws {
+        var episode = episodes[0]; episode.duration = 0
+        try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episodes[1].id] }
+        try library.requireStore().recordPlaybackStarted(episode.id)
+        try library.requireStore().recordPosition(episode.id, position: 180)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+    }
+    func testSeekBackIntoCompletedEpisodeResumesChosenPosition() async throws {
+        try await playback.play(episodes[0]); try await waitFor { playback.isPlaying }
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.player.currentItem == nil }
+        playback.seek(to: 45)
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.player.currentTime().seconds, 45, accuracy: 2)
+        XCTAssertFalse(library.state.progress[episodes[0].id]?.listened == true)
+    }
     func testNativePlayerPauseCannotBeUndoneBySeek() async throws {
         try await startQueue(); playback.player.pause()
         try await waitFor { !playback.isPlaying && !playback.isBuffering }
         playback.seek(to: 60)
         try await waitFor { abs(playback.player.currentTime().seconds - 60) < 0.2 }
         XCTAssertEqual(playback.player.rate, 0)
+        playback.player.playImmediately(atRate: playback.rate)
+        try await waitFor { playback.isPlaying }
+        playback.toggle()
+        XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.player.rate, 0)
     }
     func testPausedSeekToEndPreparesNextWithoutStartingAudio() async throws {
         try await startQueue(); playback.pause()

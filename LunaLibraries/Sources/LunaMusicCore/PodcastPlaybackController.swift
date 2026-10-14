@@ -49,6 +49,10 @@ import LunaPodcastCore
     private var itemObserver: NSKeyValueObservation?
     private var isSelecting = false
     private var needsPreparation = true
+    private var restorationTask: Task<Void, Never>?
+    private var activationTask: Task<Void, Never>?
+    private var playbackStartTime: Double?
+    private var startupTimeToken: Any?
 
     public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared) {
         self.library = library; self.downloads = downloads
@@ -103,12 +107,90 @@ import LunaPodcastCore
             }
         })
         installRemoteCommands()
+        prepareLocalRestoration()
     }
     deinit {
         if let timeToken { player.removeTimeObserver(timeToken) }
+        if let startupTimeToken { player.removeTimeObserver(startupTimeToken) }
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
         extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
+        restorationTask?.cancel(); activationTask?.cancel()
+    }
+    /// Open and seek the complete saved file while the UI opens, without taking
+    /// audio ownership or fetching anything from the publisher.
+    private func prepareLocalRestoration() {
+        guard let episode = currentEpisode, !isAtEnd, let url = downloads.localURL(episode.id) else { return }
+        let token = generation
+        isSelecting = true
+        let asset = installItem(episode, url: url, token: token)
+        restorationTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if generation == token {
+                    isSelecting = false; restorationTask = nil
+                }
+            }
+            // Resolve EOF during background preparation, preserving recovery for
+            // missing/inaccurate RSS durations without a duration request on Play.
+            let length = try? await asset.load(.duration)
+            guard generation == token, !Task.isCancelled else { return }
+            if let seconds = length?.seconds, seconds.isFinite, seconds > 0 { duration = seconds }
+            if isAtEnd { return }
+            repeat {
+                let revision = seekGeneration
+                let target = pendingSeek ?? position
+                if target > 0 || pendingSeek != nil {
+                    await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                }
+                guard generation == token, !Task.isCancelled else { return }
+                if revision == seekGeneration { pendingSeek = nil; break }
+            } while true
+            needsPreparation = false
+        }
+    }
+    private func installItem(_ episode: PodcastEpisode, url: URL, token: UUID) -> AVURLAsset {
+        let asset = AVURLAsset(url: url, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: false,
+            AVURLAssetAllowsCellularAccessKey: library.state.settings.cellularStreaming
+        ])
+        // Duration/chapters are not prerequisites for decoding the first audio.
+        let item = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: [.tracks])
+        item.audioTimePitchAlgorithm = .timeDomain
+        item.preferredForwardBufferDuration = url.isFileURL ? 0 : 3
+        player.automaticallyWaitsToMinimizeStalling = !url.isFileURL
+        itemObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self, self.generation == token else { return }
+                if item.status == .failed { self.fail(item.error ?? PodcastError("This episode could not be played.")) }
+            }
+        }
+        player.replaceCurrentItem(with: item)
+        return asset
+    }
+    private func clearPlaybackStart() {
+        playbackStartTime = nil
+        if let startupTimeToken { player.removeTimeObserver(startupTimeToken) }
+        startupTimeToken = nil
+    }
+    private func startPlayback() {
+        clearPlaybackStart()
+        let time = player.currentTime().seconds
+        playbackStartTime = time.isFinite ? time : position
+        // Observe startup closely, then remove this observer once the clock
+        // advances. Normal playback keeps its existing half-second cadence.
+        startupTimeToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updatePlayback() }
+        }
+        player.playImmediately(atRate: rate)
+    }
+    private func activateSession() {
+        activationTask?.cancel()
+        let token = generation
+        activationTask = Task { [weak self] in
+            guard let self, generation == token, requestedPlayback, !Task.isCancelled else { return }
+            _ = await session.becomeActiveIfPossible()
+        }
     }
     public func play(_ episode: PodcastEpisode) async throws {
         // A single episode never enrolls the rest of its show in the queue.
@@ -124,9 +206,11 @@ import LunaPodcastCore
         let retainedPosition = restorePosition && currentEpisode?.id == episode.id ? position : nil
         persistPosition()
         willPlay?()
+        restorationTask?.cancel(); restorationTask = nil
         let token = UUID(); generation = token; isSelecting = true
         bufferingTask?.cancel(); bufferingTask = nil
         defer { if generation == token { isSelecting = false; updatePlayback() } }
+        clearPlaybackStart()
         player.currentItem?.cancelPendingSeeks()
         player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; pendingSeek = nil; seekGeneration = UUID()
         errorMessage = nil; setBuffering(true)
@@ -142,32 +226,14 @@ import LunaPodcastCore
                 state.progress[episode.id]?.listened = false; state.progress[episode.id]?.completedAt = nil
             }
         }
-        await downloads.start()
-        guard token == generation else { throw CancellationError() }
         Task { await self.downloads.reconcile() }
         let audio = AVAudioSession.sharedInstance()
         // Playback already supports AirPlay. Explicit .allowAirPlay is only
         // valid for .playAndRecord and throws paramErr (-50) here.
         try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
-        let asset: AVURLAsset
-        if let local = downloads.localURL(episode.id) { asset = AVURLAsset(url: local) }
-        else { asset = AVURLAsset(url: episode.mediaURL, options: [AVURLAssetAllowsCellularAccessKey: library.state.settings.cellularStreaming]) }
-        let item = AVPlayerItem(asset: asset); item.audioTimePitchAlgorithm = .timeDomain
-        // AVPlayer streams HTTP ranges/HLS incrementally; a short forward target
-        // avoids asking slow publishers for half a minute before playback.
-        item.preferredForwardBufferDuration = 3
-        itemObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            Task { @MainActor in
-                guard let self, self.generation == token else { return }
-                if item.status == .failed { self.fail(item.error ?? PodcastError("This episode could not be played.")) }
-            }
-        }
-        player.replaceCurrentItem(with: item)
-        loadExtras(episode, token: token)
+        let asset = installItem(episode, url: downloads.localURL(episode.id) ?? episode.mediaURL, token: token)
         publish()
-        _ = await session.becomeActiveIfPossible()
-        guard token == generation else { throw CancellationError() }
         // RSS durations can be missing or inaccurate. Resolve the actual end
         // before restoring a saved seek so an EOF position cannot stall startup.
         if restorePosition, position > 0 {
@@ -192,10 +258,20 @@ import LunaPodcastCore
         } while true
         guard token == generation else { throw CancellationError() }
         needsPreparation = false
-        if requestedPlayback { player.playImmediately(atRate: rate) }
+        if requestedPlayback { startPlayback(); activateSession() }
+        loadExtras(episode, token: token)
         publish()
     }
     public func resume() async throws {
+        if let restorationTask {
+            let token = generation
+            willPlay?()
+            requestedPlayback = true; errorMessage = nil; setBuffering(true)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+            try AVAudioSession.sharedInstance().setActive(true)
+            await restorationTask.value
+            guard generation == token, requestedPlayback else { return }
+        }
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         if isAtEnd {
             if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
@@ -212,11 +288,10 @@ import LunaPodcastCore
         guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation, !switchToLocal else { try await select(episode, restorePosition: true); return }
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
-        let token = generation
-        requestedPlayback = true; errorMessage = nil; setBuffering(true); publish()
-        _ = await session.becomeActiveIfPossible()
-        guard generation == token, requestedPlayback else { return }
-        player.playImmediately(atRate: rate); publish()
+        requestedPlayback = true; errorMessage = nil; setBuffering(true)
+        startPlayback(); activateSession()
+        if extrasTask == nil { loadExtras(episode, token: generation) }
+        publish()
     }
     /// No recommendation or unrelated "Now Playing" hand-off is involved.
     public func resumeLastPodcast() async throws {
@@ -226,7 +301,7 @@ import LunaPodcastCore
         case .nothing: return
         case .resume(let id):
             guard let episode = store.state.episodes[id] else { return }
-            if currentEpisode?.id == id, player.currentItem != nil { try await resume() }
+            if currentEpisode?.id == id { try await resume() }
             else { try await select(episode, restorePosition: true) }
         case .start(let id):
             guard let episode = store.state.episodes[id] else { return }
@@ -236,12 +311,13 @@ import LunaPodcastCore
         }
     }
     public func pause() {
-        if !isSelecting, pendingSeek == nil, player.currentItem != nil {
+        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
         }
+        activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
-        if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
+        if isSelecting { restorationTask?.cancel(); restorationTask = nil; generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
     }
     public func toggle() { if requestedPlayback { pause() } else { Task { do { try await resume() } catch { fail(error) } } } }
@@ -274,7 +350,7 @@ import LunaPodcastCore
             return
         }
         guard !isSelecting, player.currentItem != nil, !needsPreparation else { return }
-        if requestedPlayback { setBuffering(true) }
+        if requestedPlayback { playbackStartTime = target; setBuffering(true) }
         let token = generation
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
             Task { @MainActor in
@@ -283,7 +359,7 @@ import LunaPodcastCore
                 if finished {
                     self.position = target
                     self.persistPosition()
-                    if self.requestedPlayback { self.player.playImmediately(atRate: self.rate) }
+                    if self.requestedPlayback { self.startPlayback() }
                 } else { self.errorMessage = "Unable to seek. Try moving the playback position again." }
                 self.updatePlayback()
             }
@@ -308,11 +384,12 @@ import LunaPodcastCore
         }
     }
     private func tick() {
-        guard !isSelecting, !isCompleting, pendingSeek == nil, player.currentItem != nil else { return }
+        guard !isSelecting, !needsPreparation, !isCompleting, pendingSeek == nil, player.currentItem != nil else { return }
         // Read the current item now: a queued periodic callback can belong to an
         // earlier seek/item and carry an obsolete time.
         let currentTime = player.currentTime().seconds
         if currentTime.isFinite { position = max(0, currentTime) }
+        if requestedPlayback, playbackStartTime != nil { updatePlayback() }
         if let length = player.currentItem?.duration.seconds, length.isFinite { duration = max(0, length) }
         if requestedPlayback, actualStartRecorded, isAtEnd {
             let token = generation
@@ -321,7 +398,7 @@ import LunaPodcastCore
         if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPosition(); publish() }
     }
     private func updatePlayback() {
-        if !isSelecting, pendingSeek == nil, player.currentItem != nil {
+        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
             if let length = player.currentItem?.duration.seconds, length.isFinite, length > 0 { duration = length }
@@ -337,7 +414,11 @@ import LunaPodcastCore
             requestedPlayback = false
             persistPosition()
         }
-        isPlaying = requestedPlayback && player.timeControlStatus == .playing
+        if let start = playbackStartTime, !isSelecting, pendingSeek == nil,
+           player.timeControlStatus == .playing, player.currentTime().seconds > start + 0.001 {
+            clearPlaybackStart()
+        }
+        isPlaying = requestedPlayback && player.timeControlStatus == .playing && playbackStartTime == nil
         setBuffering(requestedPlayback && (isSelecting || !isPlaying))
         if isPlaying, !actualStartRecorded, let episode = currentEpisode {
             do { try library.requireStore().recordPlaybackStarted(episode.id); actualStartRecorded = true; library.reloadState() }
@@ -366,6 +447,7 @@ import LunaPodcastCore
         let token = UUID(); generation = token; seekGeneration = UUID(); pendingSeek = nil
         let sleepAtEnd = sleepAtEpisodeEnd
         let shouldPlay = autoplay && !sleepAtEnd
+        clearPlaybackStart()
         persistPosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
         player.pause(); player.replaceCurrentItem(with: nil); needsPreparation = true
         actualStartRecorded = false
@@ -405,6 +487,7 @@ import LunaPodcastCore
     }
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
+        restorationTask?.cancel(); restorationTask = nil; activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
         generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true
         player.currentItem?.cancelPendingSeeks()
         extrasTask?.cancel(); extrasTimeoutTask?.cancel()

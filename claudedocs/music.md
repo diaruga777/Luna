@@ -502,3 +502,42 @@ interaction, paused foreground retention, skip back, speed, sleep timer, episode
 actions and queue editing. Player artwork/queue layouts were inspected. These
 checks establish simulator behavior; the reported physical-device session,
 headphones and AirPlay have not been reproduced by this change.
+
+### Local podcast cold-start resume (2026-10-14)
+
+The saved complete episode is opened and sought as Luna Music launches, without
+activating the audio session, recording listening history, playing audio, or
+contacting its publisher. Resume and Resume Last Podcast reuse that AVPlayerItem;
+Play during preparation waits for the same task instead of rebuilding the item.
+Pause invalidates preparation and rapid seeks retain only the latest target.
+Actual duration is resolved during local preparation so missing/inaccurate feed
+lengths still recover a saved EOF into the explicit queue.
+
+Playback no longer awaits URLSession/AVAssetDownloadURLSession task restoration.
+The download manifest and file-size validation already identify complete local
+files synchronously; reconciliation remains asynchronous. File-based items disable
+stall prediction and use the default forward buffer; remote streams retain their
+three-second target and cellular policy. Items automatically load only tracks,
+matching [Pocket Casts' playback item setup](https://github.com/Automattic/pocket-casts-ios/blob/46952f88227581c27d4013cde1874a3db1b4cc69/podcasts/PlaybackItem.swift).
+AVURLAsset's approximate timing mode avoids requesting a precise whole-file scan;
+exact seeks are retained to preserve the listener's chosen position. Audio is
+file-backed and decoded incrementally, rather than read into a whole-file Data or
+PCM buffer. Download priority already retains the current episode and explicit
+queue subject to the configured storage budget and deletion preferences.
+
+Now Playing activation runs alongside playback instead of preceding it. Artwork,
+chapters and transcripts start after the play request. Loading Audio remains until
+the playback clock actually advances; AVPlayer's `playing` state alone is no longer
+sufficient. A temporary 50 ms time observer checks startup and is removed as soon
+as the clock advances; steady-state playback keeps its 500 ms observer. This
+reports media delivery, not whether a headset/AirPlay route is audibly producing
+sound, nor whether the publisher encoded silence at that position.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 74 hosted Music tests passed,
+including five new offline restoration, cancellation, latest-seek, EOF and long-MP3
+checks, plus existing throttled streaming and download lifecycle tests. All 29
+Foundation podcast tests passed. Prepared local resume reached an advancing clock
+in 0.144 s for the three-minute MP4 fixture and 0.140 s halfway through a generated
+two-hour, 28.8 MB MP3, using an unreachable publisher URL. These are simulator
+measurements after local preparation; physical-device/Bluetooth/AirPlay latency
+and a user tapping before preparation finishes are not established by those timings.

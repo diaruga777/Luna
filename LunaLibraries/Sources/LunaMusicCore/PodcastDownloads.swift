@@ -25,6 +25,7 @@ public struct PodcastDownload: Codable, Equatable {
     private var tasks: [String: URLSessionTask] = [:]
     private var restoring: Task<Void, Never>?
     private var reconciles = false
+    private var isStopped = false
     private let directory: URL
     private let library: PodcastLibraryController
     private let activeEpisodeID: () -> String?
@@ -62,6 +63,7 @@ public struct PodcastDownload: Codable, Equatable {
     }
     deinit { if let libraryObserver { NotificationCenter.default.removeObserver(libraryObserver) } }
     public func start() async {
+        guard !isStopped else { return }
         if let restoring { await restoring.value; return }
         restoring = Task { [weak self] in
             guard let self else { return }
@@ -148,7 +150,7 @@ public struct PodcastDownload: Codable, Equatable {
     public func reconcile() async {
         await start()
         library.reloadState()
-        guard !reconciles else { return }; reconciles = true
+        guard !isStopped, !reconciles else { return }; reconciles = true
         defer { reconciles = false }
         let state = library.state
         let automatic = PodcastPolicies.automaticDownloads(state)
@@ -176,7 +178,7 @@ public struct PodcastDownload: Codable, Equatable {
         begin(episode, manual: downloads[id]?.manual ?? false)
     }
     /// Used by isolated callers/tests; the production singleton lives for the app lifetime.
-    func stop() { session.invalidateAndCancel() }
+    func stop() { isStopped = true; restoring?.cancel(); session.invalidateAndCancel() }
     private func downloadPlan() -> PodcastDownloadPlan {
         PodcastDownloadPlan(state: library.state, sizes: downloads.mapValues(\.bytes),
             manualIDs: downloads.values.filter(\.manual).sorted { $0.createdAt < $1.createdAt }.map(\.episodeID), protectedID: protectedDownloadID)

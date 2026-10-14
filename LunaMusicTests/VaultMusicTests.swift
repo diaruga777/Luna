@@ -897,3 +897,111 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.player.rate, 1.75)
     }
 }
+
+@MainActor final class PodcastLocalResumeTests: XCTestCase {
+    private var root: URL!
+    private var library: PodcastLibraryController!
+    private var downloads: PodcastDownloads!
+    private var playback: PodcastPlaybackController!
+    private var episode: PodcastEpisode!
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
+        let directory = root.appendingPathComponent("Downloads")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fixture = try XCTUnwrap(Bundle(for: VaultMusicTests.self).url(forResource: "streaming", withExtension: "mp4"))
+        try install(fixture, position: 80)
+    }
+    private func install(_ fixture: URL, position: Double) throws {
+        let directory = root.appendingPathComponent("Downloads")
+        let filename = "saved." + fixture.pathExtension
+        let local = directory.appendingPathComponent(filename)
+        try FileManager.default.copyItem(at: fixture, to: local)
+        let bytes = try XCTUnwrap((try FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.int64Value)
+        // The publisher is unreachable; a restored episode must use disk alone.
+        episode = PodcastEpisode(showID: "offline", guid: UUID().uuidString, title: "Saved episode", publishedAt: Date(), mediaURL: URL(string: "http://127.0.0.1:1/unreachable.mp3")!)
+        let record = PodcastDownload(episodeID: episode.id, sourceURL: episode.mediaURL, filename: filename, bytes: bytes, manual: false, status: "downloaded")
+        try JSONEncoder().encode([episode.id: record]).write(to: directory.appendingPathComponent("downloads.json"))
+        try library.edit {
+            $0.episodes[episode.id] = episode; $0.currentEpisodeID = episode.id; $0.lastPlayedEpisodeID = episode.id
+            $0.progress[episode.id] = PodcastEpisodeState(); $0.progress[episode.id]?.position = position
+            $0.settings.downloadByteLimit = bytes + 1
+        }
+        downloads = PodcastDownloads(directory: directory, library: library, sessionConfiguration: .ephemeral)
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+    }
+    override func tearDown() {
+        playback?.pause(); playback?.player.replaceCurrentItem(with: nil); playback = nil
+        downloads?.stop(); downloads = nil
+        try? FileManager.default.removeItem(at: root)
+        super.tearDown()
+    }
+    private func waitFor(_ condition: () -> Bool) async throws {
+        for _ in 0..<1500 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw PodcastError("Local resume timed out: \(playback.errorMessage ?? "no error")")
+    }
+    func testRestoredDownloadPreparesPausedAndResumeReusesItemOffline() async throws {
+        let item = try XCTUnwrap(playback.player.currentItem)
+        XCTAssertTrue((item.asset as? AVURLAsset)?.url.isFileURL == true)
+        try await waitFor { item.status == .readyToPlay && abs(playback.player.currentTime().seconds - 80) < 0.1 }
+        XCTAssertEqual(playback.position, 80, accuracy: 0.1)
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertNil(library.state.progress[episode.id]?.lastPlayedAt)
+        let started = Date()
+        try await playback.resumeLastPodcast()
+        try await waitFor { playback.isPlaying }
+        let latency = Date().timeIntervalSince(started)
+        print("LOCAL_PODCAST_RESUME_SECONDS=\(latency)")
+        XCTAssertLessThan(latency, 1, "A prepared local file must not spend seconds loading on Play")
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertGreaterThan(playback.player.currentTime().seconds, 80)
+        XCTAssertFalse(playback.isBuffering)
+        XCTAssertNil(playback.errorMessage)
+    }
+    func testImmediateResumeAndPauseDuringLocalPreparationCannotPlayLater() async throws {
+        let request = Task { try await playback.resume() }
+        await Task.yield()
+        playback.pause()
+        _ = try? await request.value
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.position, 80, accuracy: 0.1)
+    }
+    func testSeekDuringLocalPreparationKeepsLatestTarget() async throws {
+        playback.seek(to: 100); playback.seek(to: 50)
+        try await playback.resume()
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.player.currentTime().seconds, 50, accuracy: 1)
+    }
+    func testMissingDurationAtEOFWarmupStillAdvancesExplicitQueue() async throws {
+        playback.pause(); playback.player.replaceCurrentItem(with: nil)
+        var next = episode!; next.guid = "next"; next.id = "next"
+        try library.edit {
+            $0.episodes[next.id] = next; $0.queue = [next.id]; $0.progress[episode.id]?.position = 180
+        }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resume()
+        try await waitFor { playback.currentEpisode?.id == next.id }
+        XCTAssertTrue(library.state.progress[episode.id]?.listened == true)
+    }
+    func testLongMP3ResumeLatency() async throws {
+        guard let path = ProcessInfo.processInfo.environment["LUNA_PODCAST_LONG_MP3_FIXTURE"] else { throw XCTSkip("Supply a generated two-hour MP3 fixture to measure long episode startup") }
+        playback.pause(); playback.player.replaceCurrentItem(with: nil); downloads.stop()
+        try install(URL(fileURLWithPath: path), position: 3600)
+        let item = try XCTUnwrap(playback.player.currentItem)
+        try await waitFor { item.status == .readyToPlay && abs(playback.player.currentTime().seconds - 3600) < 0.1 }
+        let started = Date()
+        try await playback.resume()
+        try await waitFor { playback.isPlaying }
+        let latency = Date().timeIntervalSince(started)
+        print("LONG_MP3_RESUME_SECONDS=\(latency)")
+        XCTAssertLessThan(latency, 1)
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertEqual(playback.player.currentTime().seconds, 3600, accuracy: 1)
+    }
+}

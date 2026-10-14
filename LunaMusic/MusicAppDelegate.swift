@@ -50,6 +50,7 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
                 self.schedule()
                 let work = Task { @MainActor in
                     await PodcastLibraryController.shared.refresh()
+                    if !Task.isCancelled { await PodcastDownloads.shared.prepareExistingDownloads() }
                     if !Task.isCancelled { try? await PodcastCloudSync.shared.synchronize() }
                     task.setTaskCompleted(success: !Task.isCancelled)
                 }
@@ -66,7 +67,10 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         }
         Task { await PodcastLibraryController.shared.refresh(); try? await PodcastCloudSync.shared.synchronize() }
     }
-    func background() { timer?.invalidate(); timer = nil; PodcastPlaybackController.shared.persistPosition(); schedule() }
+    func background() {
+        timer?.invalidate(); timer = nil; PodcastPlaybackController.shared.persistPosition(); schedule()
+        Task { await PodcastDownloads.shared.prepareExistingDownloads() }
+    }
     private func schedule() {
         let request = BGAppRefreshTaskRequest(identifier: identifier); request.earliestBeginDate = Date().addingTimeInterval(900)
         do { try BGTaskScheduler.shared.submit(request) } catch { /* Foreground polling remains available if background refresh is disabled. */ }

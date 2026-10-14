@@ -1,6 +1,6 @@
 """Local RSS + ranged audio fixture for simulator integration tests. No external I/O."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io, wave, struct, math, time
+import io, wave, struct, math, time, os
 from urllib.parse import urlsplit
 port = 19265
 buffer = io.BytesIO()
@@ -17,6 +17,21 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get('If-None-Match') == '"fixture-v1"':
                 self.send_response(304); self.end_headers(); return
             self.send_response(200); self.send_header('Content-Type','application/rss+xml'); self.send_header('ETag','"fixture-v1"'); self.send_header('Content-Length',str(len(feed))); self.end_headers(); self.wfile.write(feed)
+        elif route.path == '/long.mp3' and os.environ.get('LUNA_PODCAST_LONG_MP3_FIXTURE'):
+            path = os.environ['LUNA_PODCAST_LONG_MP3_FIXTURE']
+            size = os.path.getsize(path)
+            start, end = 0, size - 1
+            if self.headers.get('Range', '').startswith('bytes='):
+                bounds = self.headers['Range'][6:].split('-')
+                start = int(bounds[0] or 0); end = min(int(bounds[1] or end), end)
+                self.send_response(206); self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+            else: self.send_response(200)
+            self.send_header('Accept-Ranges', 'bytes'); self.send_header('Content-Type', 'audio/mpeg')
+            self.send_header('Content-Length', str(end-start+1)); self.end_headers()
+            with open(path, 'rb') as sound:
+                sound.seek(start); remaining = end-start+1
+                while remaining:
+                    chunk = sound.read(min(65536, remaining)); self.wfile.write(chunk); remaining -= len(chunk)
         elif self.path in ('/one.wav','/two.wav'):
             start, end = 0, len(audio)-1
             if self.headers.get('Range','').startswith('bytes='):

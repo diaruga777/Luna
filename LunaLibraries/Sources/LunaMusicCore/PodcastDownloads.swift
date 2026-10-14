@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import UIKit
 import LunaPodcastCore
 
 public struct PodcastDownload: Codable, Equatable {
@@ -12,6 +13,9 @@ public struct PodcastDownload: Codable, Equatable {
     public var status: String = "waiting"
     public var error: String?
     public var createdAt = Date()
+    public var preparationVersion: Int?
+    public var preparedDuration: Double?
+    public var preparedChapters: [PodcastChapter]?
 }
 @MainActor public final class PodcastDownloads: NSObject, ObservableObject {
     public static let shared = PodcastDownloads()
@@ -23,6 +27,9 @@ public struct PodcastDownload: Codable, Equatable {
     public var hlsBackgroundCompletion: (() -> Void)?
     public static let hlsSessionIdentifier = sessionIdentifier + ".hls"
     private var tasks: [String: URLSessionTask] = [:]
+    private var preparationTasks: [String: Task<PodcastAudioPreparation.Result, Error>] = [:]
+    private var preparingBackgroundEvents = false
+    private var isPreparingExisting = false
     private var restoring: Task<Void, Never>?
     private var reconciles = false
     private var isStopped = false
@@ -30,6 +37,7 @@ public struct PodcastDownload: Codable, Equatable {
     private let library: PodcastLibraryController
     private let activeEpisodeID: () -> String?
     private let sessionConfiguration: URLSessionConfiguration
+    private let prepareAudio: @Sendable (URL, String, String) async throws -> PodcastAudioPreparation.Result
     private var libraryObserver: NSObjectProtocol?
     private var manifestURL: URL { directory.appendingPathComponent("downloads.json") }
     private lazy var session: URLSession = {
@@ -48,9 +56,10 @@ public struct PodcastDownload: Codable, Equatable {
                   library: .shared, sessionConfiguration: .background(withIdentifier: Self.sessionIdentifier),
                   activeEpisodeID: { PodcastPlaybackController.shared.player.currentItem == nil ? nil : PodcastPlaybackController.shared.currentEpisode?.id })
     }
-    init(directory: URL, library: PodcastLibraryController, sessionConfiguration: URLSessionConfiguration, activeEpisodeID: @escaping () -> String? = { nil }) {
+    init(directory: URL, library: PodcastLibraryController, sessionConfiguration: URLSessionConfiguration, activeEpisodeID: @escaping () -> String? = { nil },
+         prepareAudio: @escaping @Sendable (URL, String, String) async throws -> PodcastAudioPreparation.Result = { try await PodcastAudioPreparation.prepare($0, mediaType: $1, suffix: $2) }) {
         self.directory = directory; self.library = library; self.sessionConfiguration = sessionConfiguration
-        self.activeEpisodeID = activeEpisodeID
+        self.activeEpisodeID = activeEpisodeID; self.prepareAudio = prepareAudio
         super.init()
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -95,6 +104,65 @@ public struct PodcastDownload: Codable, Equatable {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path), (attributes[.size] as? NSNumber)?.int64Value == record.bytes, record.bytes > 0 else { return nil }
         return url
     }
+    /// The manifest is already loaded. Reading timing never opens an audio asset.
+    public func cachedDuration(_ id: String) -> Double? {
+        guard downloads[id]?.status == "downloaded", let value = downloads[id]?.preparedDuration, value.isFinite, value > 0 else { return nil }
+        return value
+    }
+    func cachedChapters(_ id: String) -> [PodcastChapter] { downloads[id]?.preparedChapters ?? [] }
+    func cacheDuration(_ duration: Double, for id: String) {
+        guard duration.isFinite, duration > 0, downloads[id]?.status == "downloaded" else { return }
+        downloads[id]?.preparedDuration = duration; persist()
+    }
+    /// Upgrade legacy files only in background/maintenance, never on launch or
+    /// Play. An asset already open in the player is left untouched.
+    public func prepareExistingDownloads() async {
+        guard !isStopped, !isPreparingExisting else { return }
+        isPreparingExisting = true
+        defer { isPreparingExisting = false }
+        let priority = [library.state.currentEpisodeID].compactMap { $0 } + library.state.queue + downloads.keys.sorted()
+        var seen = Set<String>()
+        var preparedCount = 0
+        for id in priority {
+            guard !isStopped, !Task.isCancelled, preparedCount < 5 else { return }
+            guard seen.insert(id).inserted, activeEpisodeID() != id,
+                  let record = downloads[id], record.preparationVersion == nil,
+                  let filename = record.filename, !filename.hasPrefix("hls:"), let original = localURL(id), preparationTasks[id] == nil else { continue }
+            preparedCount += 1
+            let job = Task.detached(priority: .utility) { [prepareAudio] in
+                try await prepareAudio(original, "", original.pathExtension.lowercased())
+            }
+            preparationTasks[id] = job
+            let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Saved Podcast") { job.cancel() }
+            defer {
+                preparationTasks[id] = nil
+                if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+                finishPreparationEvents()
+            }
+            guard let prepared = try? await job.value else { continue }
+            defer { if prepared.url != original { try? FileManager.default.removeItem(at: prepared.url) } }
+            guard !isStopped, !Task.isCancelled, downloads[id] == record, activeEpisodeID() != id else { continue }
+            var updated = record
+            updated.preparationVersion = 1; updated.preparedDuration = prepared.duration; updated.preparedChapters = prepared.chapters
+            var replacement: URL?
+            if prepared.url != original,
+               let size = (try? FileManager.default.attributesOfItem(atPath: prepared.url.path)[.size] as? NSNumber)?.int64Value,
+               size > 0, totalBytes - record.bytes <= library.state.settings.maximumDownloadBytes - size {
+                let target = directory.appendingPathComponent(original.deletingPathExtension().lastPathComponent + ".indexed.mov")
+                do {
+                    try FileManager.default.moveItem(at: prepared.url, to: target)
+                    updated.filename = target.lastPathComponent; updated.bytes = size; replacement = target
+                } catch { errorMessage = error.localizedDescription; continue }
+            }
+            downloads[id] = updated
+            if persist() {
+                if replacement != nil { try? FileManager.default.removeItem(at: original) }
+            } else {
+                downloads[id] = record
+                if let replacement { try? FileManager.default.removeItem(at: replacement) }
+            }
+        }
+    }
     public var totalBytes: Int64 { downloads.values.filter { $0.status == "downloaded" }.reduce(0) { $0 + $1.bytes } }
     public func download(_ episode: PodcastEpisode, manual: Bool = true) async {
         await start()
@@ -133,6 +201,7 @@ public struct PodcastDownload: Codable, Equatable {
         task.resume()
     }
     public func remove(_ id: String, suppress: Bool = true) {
+        preparationTasks.removeValue(forKey: id)?.cancel()
         tasks.removeValue(forKey: id)?.cancel(); progress[id] = nil
         if let name = downloads[id]?.filename {
             let url = name.hasPrefix("hls:") ? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(String(name.dropFirst(4))) : directory.appendingPathComponent(name)
@@ -178,7 +247,7 @@ public struct PodcastDownload: Codable, Equatable {
         begin(episode, manual: downloads[id]?.manual ?? false)
     }
     /// Used by isolated callers/tests; the production singleton lives for the app lifetime.
-    func stop() { isStopped = true; restoring?.cancel(); session.invalidateAndCancel() }
+    func stop() { isStopped = true; restoring?.cancel(); preparationTasks.values.forEach { $0.cancel() }; session.invalidateAndCancel() }
     private func downloadPlan() -> PodcastDownloadPlan {
         PodcastDownloadPlan(state: library.state, sizes: downloads.mapValues(\.bytes),
             manualIDs: downloads.values.filter(\.manual).sorted { $0.createdAt < $1.createdAt }.map(\.episodeID), protectedID: protectedDownloadID)
@@ -189,6 +258,7 @@ public struct PodcastDownload: Codable, Equatable {
     }
     private func discardFile(_ id: String) {
         guard tasks[id] != nil || downloads[id]?.filename != nil || downloads[id]?.status == "downloading" else { return }
+        preparationTasks.removeValue(forKey: id)?.cancel()
         tasks.removeValue(forKey: id)?.cancel(); progress[id] = nil
         guard var record = downloads[id] else { return }
         if let name = record.filename {
@@ -196,7 +266,7 @@ public struct PodcastDownload: Codable, Equatable {
             do { if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) } }
             catch { errorMessage = error.localizedDescription; return }
         }
-        record.filename = nil
+        record.filename = nil; record.preparationVersion = nil; record.preparedDuration = nil; record.preparedChapters = nil
         // Failed transfers keep their retry delay until the next poll.
         if record.status != "failed" { record.status = "waiting" }
         downloads[id] = record; persist()
@@ -217,6 +287,11 @@ public struct PodcastDownload: Codable, Equatable {
         downloads[id]?.status = "failed"; downloads[id]?.error = message
         await completed(id)
     }
+    private func finishPreparationEvents() {
+        guard preparingBackgroundEvents, preparationTasks.isEmpty else { return }
+        preparingBackgroundEvents = false
+        let completion = backgroundCompletion; backgroundCompletion = nil; completion?()
+    }
     @discardableResult private func persist() -> Bool {
         do { try JSONEncoder().encode(downloads).write(to: manifestURL, options: [.atomic]); return true }
         catch { errorMessage = error.localizedDescription; return false }
@@ -231,7 +306,11 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
             Task { @MainActor in await self.failed(id, task: downloadTask, message: "The server did not return a media file.") }; return
         }
         // URLSession deletes `location` after this callback returns.
-        let staged = FileManager.default.temporaryDirectory.appendingPathComponent("podcast-\(UUID().uuidString)")
+        let mimeSuffix = ["audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a",
+                          "video/mp4": "mp4", "audio/aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg"][type]
+        let sourceSuffix = downloadTask.originalRequest?.url?.pathExtension.lowercased() ?? ""
+        let suffix = mimeSuffix ?? (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(sourceSuffix) ? sourceSuffix : "mp3")
+        let staged = FileManager.default.temporaryDirectory.appendingPathComponent("podcast-\(UUID().uuidString)").appendingPathExtension(suffix)
         do { try FileManager.default.moveItem(at: location, to: staged) }
         catch { Task { @MainActor in await self.failed(id, task: downloadTask, message: error.localizedDescription) }; return }
         Task { @MainActor in
@@ -243,12 +322,46 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                 guard self.accepts(id, bytes: bytes) else {
                     self.discardFile(id); await self.completed(id); return
                 }
-                let suffix = record.sourceURL.pathExtension.lowercased()
-                let name = PodcastIdentity.hash(id + record.sourceURL.absoluteString) + "." + (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
+                let prepareAudio = self.prepareAudio
+                let preparation = Task.detached(priority: .utility) {
+                    try await prepareAudio(staged, type, suffix)
+                }
+                self.preparationTasks[id] = preparation
+                let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Podcast Download") {
+                    preparation.cancel()
+                }
+                defer {
+                    self.preparationTasks[id] = nil
+                    if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+                    self.finishPreparationEvents()
+                }
+                let prepared: PodcastAudioPreparation.Result
+                do { prepared = try await preparation.value }
+                catch {
+                    // Expiration/cancellation of optional indexing must not lose
+                    // a completed transfer. Explicit Remove still wins below.
+                    prepared = .init(url: staged, duration: nil, chapters: [])
+                }
+                defer { if prepared.url != staged { try? FileManager.default.removeItem(at: prepared.url) } }
+                guard !self.isStopped, self.tasks[id] === downloadTask, let latest = self.downloads[id] else { return }
+                record = latest
+                var ready = prepared.url
+                var installedBytes = (try FileManager.default.attributesOfItem(atPath: ready.path)[.size] as? NSNumber)?.int64Value ?? 0
+                if ready != staged, !self.accepts(id, bytes: installedBytes) {
+                    // Container overhead must not discard an otherwise fitting
+                    // episode or exceed the user's storage cap.
+                    ready = staged; installedBytes = bytes
+                }
+                guard self.accepts(id, bytes: installedBytes) else {
+                    self.discardFile(id); await self.completed(id); return
+                }
+                let ext = ready != staged ? "mov" : (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
+                let name = PodcastIdentity.hash(id + record.sourceURL.absoluteString) + "." + ext
                 let target = self.directory.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-                try FileManager.default.moveItem(at: staged, to: target)
-                record.filename = name; record.bytes = bytes; record.status = "downloaded"; record.error = nil
+                try FileManager.default.moveItem(at: ready, to: target)
+                record.filename = name; record.bytes = installedBytes; record.status = "downloaded"; record.error = nil
+                record.preparationVersion = prepared.duration == nil ? nil : 1; record.preparedDuration = prepared.duration; record.preparedChapters = prepared.chapters
                 self.downloads[id] = record; await self.completed(id)
             } catch { await self.failed(id, task: downloadTask, message: error.localizedDescription) }
         }
@@ -278,7 +391,7 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
     nonisolated public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in
             if session.configuration.identifier == Self.hlsSessionIdentifier { let completion = self.hlsBackgroundCompletion; self.hlsBackgroundCompletion = nil; completion?() }
-            else { let completion = self.backgroundCompletion; self.backgroundCompletion = nil; completion?() }
+            else { self.preparingBackgroundEvents = true; self.finishPreparationEvents() }
         }
     }
 }

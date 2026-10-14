@@ -49,7 +49,6 @@ import LunaPodcastCore
     private var itemObserver: NSKeyValueObservation?
     private var isSelecting = false
     private var needsPreparation = true
-    private var restorationTask: Task<Void, Never>?
     private var activationTask: Task<Void, Never>?
     private var playbackStartTime: Double?
     private var startupTimeToken: Any?
@@ -57,16 +56,21 @@ import LunaPodcastCore
     public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared) {
         self.library = library; self.downloads = downloads
         if let id = library.state.currentEpisodeID ?? library.state.lastPlayedEpisodeID, let episode = library.state.episodes[id] {
-            currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = episode.duration
+            currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = downloads.cachedDuration(episode.id) ?? episode.duration
             rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         }
         // Recover a completed saved item without taking audio ownership on launch.
         if let episode = currentEpisode, isAtEnd || library.state.progress[episode.id]?.listened == true,
            let next = library.state.queue.compactMap({ library.state.episodes[$0] }).first {
             do {
-                try library.edit { $0.currentEpisodeID = next.id; $0.queue.removeAll { $0 == next.id } }
+                try library.edit {
+                    var progress = $0.progress[episode.id] ?? PodcastEpisodeState()
+                    progress.listened = true; progress.completedAt = progress.completedAt ?? Date()
+                    $0.progress[episode.id] = progress
+                    $0.currentEpisodeID = next.id; $0.queue.removeAll { $0 == next.id }
+                }
                 currentEpisode = next; position = library.state.progress[next.id]?.listened == true ? 0 : library.state.progress[next.id]?.position ?? 0
-                duration = next.duration; rate = library.state.shows[next.showID]?.settings.playbackRate ?? 1
+                duration = downloads.cachedDuration(next.id) ?? next.duration; rate = library.state.shows[next.showID]?.settings.playbackRate ?? 1
             } catch { errorMessage = error.localizedDescription }
         }
         player.actionAtItemEnd = .pause
@@ -107,7 +111,6 @@ import LunaPodcastCore
             }
         })
         installRemoteCommands()
-        prepareLocalRestoration()
     }
     deinit {
         if let timeToken { player.removeTimeObserver(timeToken) }
@@ -115,39 +118,7 @@ import LunaPodcastCore
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
         extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
-        restorationTask?.cancel(); activationTask?.cancel()
-    }
-    /// Open and seek the complete saved file while the UI opens, without taking
-    /// audio ownership or fetching anything from the publisher.
-    private func prepareLocalRestoration() {
-        guard let episode = currentEpisode, !isAtEnd, let url = downloads.localURL(episode.id) else { return }
-        let token = generation
-        isSelecting = true
-        let asset = installItem(episode, url: url, token: token)
-        restorationTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if generation == token {
-                    isSelecting = false; restorationTask = nil
-                }
-            }
-            // Resolve EOF during background preparation, preserving recovery for
-            // missing/inaccurate RSS durations without a duration request on Play.
-            let length = try? await asset.load(.duration)
-            guard generation == token, !Task.isCancelled else { return }
-            if let seconds = length?.seconds, seconds.isFinite, seconds > 0 { duration = seconds }
-            if isAtEnd { return }
-            repeat {
-                let revision = seekGeneration
-                let target = pendingSeek ?? position
-                if target > 0 || pendingSeek != nil {
-                    await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-                }
-                guard generation == token, !Task.isCancelled else { return }
-                if revision == seekGeneration { pendingSeek = nil; break }
-            } while true
-            needsPreparation = false
-        }
+        activationTask?.cancel()
     }
     private func installItem(_ episode: PodcastEpisode, url: URL, token: UUID) -> AVURLAsset {
         let asset = AVURLAsset(url: url, options: [
@@ -194,7 +165,7 @@ import LunaPodcastCore
     }
     public func play(_ episode: PodcastEpisode) async throws {
         // A single episode never enrolls the rest of its show in the queue.
-        try library.edit { $0.continuation = [] }
+        if !library.state.continuation.isEmpty { try library.edit { $0.continuation = [] } }
         do { try await select(episode) } catch { fail(error); throw error }
     }
     public func playEpisodes(_ episodes: [PodcastEpisode]) async throws {
@@ -206,7 +177,6 @@ import LunaPodcastCore
         let retainedPosition = restorePosition && currentEpisode?.id == episode.id ? position : nil
         persistPosition()
         willPlay?()
-        restorationTask?.cancel(); restorationTask = nil
         let token = UUID(); generation = token; isSelecting = true
         bufferingTask?.cancel(); bufferingTask = nil
         defer { if generation == token { isSelecting = false; updatePlayback() } }
@@ -214,32 +184,47 @@ import LunaPodcastCore
         player.currentItem?.cancelPendingSeeks()
         player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; pendingSeek = nil; seekGeneration = UUID()
         errorMessage = nil; setBuffering(true)
-        currentEpisode = episode; duration = episode.duration
+        currentEpisode = episode; duration = downloads.cachedDuration(episode.id) ?? episode.duration
         let saved = library.state.progress[episode.id]
         position = saved?.listened == true ? 0 : max(0, retainedPosition ?? saved?.position ?? 0)
         if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
-        try library.edit { state in
-            state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
-            state.progress[episode.id]?.suppressAutomaticDownload = false
-            if !restorePosition, state.progress[episode.id]?.listened == true {
-                state.progress[episode.id]?.listened = false; state.progress[episode.id]?.completedAt = nil
+        let local = downloads.localURL(episode.id)
+        let changesSelection = library.state.currentEpisodeID != episode.id || library.state.queue.contains(episode.id) ||
+            library.state.continuation.contains(episode.id) || saved?.suppressAutomaticDownload == true ||
+            (!restorePosition && saved?.listened == true)
+        // Cold Resume usually changes none of these fields. Do not encode and
+        // atomically rewrite the whole feed library before opening its audio.
+        if changesSelection {
+            try library.edit { state in
+                state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
+                state.progress[episode.id]?.suppressAutomaticDownload = false
+                if !restorePosition, state.progress[episode.id]?.listened == true {
+                    state.progress[episode.id]?.listened = false; state.progress[episode.id]?.completedAt = nil
+                }
             }
         }
-        Task { await self.downloads.reconcile() }
+        if local == nil || changesSelection { Task { await self.downloads.reconcile() } }
         let audio = AVAudioSession.sharedInstance()
         // Playback already supports AirPlay. Explicit .allowAirPlay is only
         // valid for .playAndRecord and throws paramErr (-50) here.
         try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
-        let asset = installItem(episode, url: downloads.localURL(episode.id) ?? episode.mediaURL, token: token)
+        let cachedDuration = local == nil ? nil : downloads.cachedDuration(episode.id)
+        let asset = installItem(episode, url: local ?? episode.mediaURL, token: token)
         publish()
         // RSS durations can be missing or inaccurate. Resolve the actual end
         // before restoring a saved seek so an EOF position cannot stall startup.
         if restorePosition, position > 0 {
-            let length = try? await asset.load(.duration)
-            guard token == generation else { throw CancellationError() }
-            if let seconds = length?.seconds, seconds.isFinite, seconds > 0 { duration = seconds }
+            if let cachedDuration { duration = cachedDuration }
+            else {
+                let length = try? await asset.load(.duration)
+                guard token == generation else { throw CancellationError() }
+                if let seconds = length?.seconds, seconds.isFinite, seconds > 0 {
+                    duration = seconds
+                    if local != nil { downloads.cacheDuration(seconds, for: episode.id) }
+                }
+            }
             if isAtEnd {
                 if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
                     try await advanceCompleted(autoplay: requestedPlayback, natural: false); return
@@ -263,15 +248,6 @@ import LunaPodcastCore
         publish()
     }
     public func resume() async throws {
-        if let restorationTask {
-            let token = generation
-            willPlay?()
-            requestedPlayback = true; errorMessage = nil; setBuffering(true)
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try AVAudioSession.sharedInstance().setActive(true)
-            await restorationTask.value
-            guard generation == token, requestedPlayback else { return }
-        }
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         if isAtEnd {
             if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
@@ -317,7 +293,7 @@ import LunaPodcastCore
         }
         activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
-        if isSelecting { restorationTask?.cancel(); restorationTask = nil; generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
+        if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
     }
     public func toggle() { if requestedPlayback { pause() } else { Task { do { try await resume() } catch { fail(error) } } } }
@@ -470,7 +446,7 @@ import LunaPodcastCore
         if let next, let episode = library.state.episodes[next] {
             if shouldPlay { try await select(episode) }
             else {
-                currentEpisode = episode; duration = episode.duration
+                currentEpisode = episode; duration = downloads.cachedDuration(episode.id) ?? episode.duration
                 position = library.state.progress[episode.id]?.listened == true ? 0 : library.state.progress[episode.id]?.position ?? 0
                 rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
                 chapters = episode.chapters; transcript = []; artwork = nil
@@ -487,7 +463,7 @@ import LunaPodcastCore
     }
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
-        restorationTask?.cancel(); restorationTask = nil; activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
+        activationTask?.cancel(); activationTask = nil; clearPlaybackStart()
         generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true
         player.currentItem?.cancelPendingSeeks()
         extrasTask?.cancel(); extrasTimeoutTask?.cancel()
@@ -542,7 +518,7 @@ import LunaPodcastCore
         loadExtras(episode, token: generation)
     }
     private func loadExtras(_ episode: PodcastEpisode, token: UUID) {
-        extrasTask?.cancel(); extrasTimeoutTask?.cancel(); chapters = episode.chapters; transcript = []; artwork = nil
+        extrasTask?.cancel(); extrasTimeoutTask?.cancel(); chapters = episode.chapters.isEmpty ? downloads.cachedChapters(episode.id) : episode.chapters; transcript = []; artwork = nil
         transcriptError = nil; chaptersError = nil
         isLoadingTranscript = !episode.transcripts.isEmpty
         isLoadingChapters = chapters.isEmpty || episode.chaptersURL != nil

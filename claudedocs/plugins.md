@@ -914,8 +914,10 @@ also retries its unlock when tapped.
 The bundled Publisher access plugin tries silent extraction first. WSJ then goes
 directly to the archive browser rather than waiting on an unremovable live wall.
 A TimeMap lookup runs alongside Wayback probes and tries the specific snapshot
-silently first. The browser opens that snapshot, or the archive homepage with an
-automatically submitted URL form, avoiding the looping `/newest/` redirect.
+silently first. The browser establishes an archive session on its homepage, then
+opens the specific snapshot or automatically submits the original URL form,
+avoiding the looping `/newest/` redirect. An archive that still refuses the
+embedded browser stops with a Safari escape and leaves the save retryable.
 Its detector checks every content root (including archive `#CONTENT`), reveals
 CAPTCHA widgets even when the page title is just `archive.li`, submits an archive
 URL form when necessary, and reports known terminal archive errors. Complete

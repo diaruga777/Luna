@@ -130,6 +130,7 @@ final class WebPluginMigrationTests: XCTestCase {
     private final class WSJArchiveBrowser: PluginBrowserPresenting {
         var urls: [String] = []
         var stages: [String] = []
+        var submittedURL: String?
         let html: String
         init(html: String) { self.html = html }
         func presentBrowserStep(_ request: PluginBrowserRequest, pluginID: String) async -> PluginBrowserResult? {
@@ -150,6 +151,14 @@ final class WebPluginMigrationTests: XCTestCase {
                 document.querySelectorAll=()=>[{innerText:'Teaser'}, {innerText:'Full reporting. '.repeat(160)}];
                 """)
             stages.append(context.evaluateScript(request.detect)?.toString() ?? "")
+            context.evaluateScript("""
+                var window={};location.pathname='/';
+                var input={value:'',form:{submit:()=>{window.submitted=input.value;}}};
+                document.querySelector=s=>s==='input[name="url"]'?input:null;
+                document.querySelectorAll=()=>[];
+                """)
+            stages.append(context.evaluateScript(request.detect)?.toString() ?? "")
+            submittedURL = context.evaluateScript("window.submitted")?.toString()
             return PluginBrowserResult(url: "https://archive.li/fixture", html: html,
                                        title: "Recovered WSJ", cookieHeader: "", cookies: [])
         }
@@ -182,7 +191,8 @@ final class WebPluginMigrationTests: XCTestCase {
                     timeout: 5, as: PluginIngestAnswer.self)
             }
         XCTAssertEqual(browser.urls, ["https://archive.is/"])
-        XCTAssertEqual(browser.stages, ["challenge", "done"])
+        XCTAssertEqual(browser.stages, ["challenge", "done", "wait"])
+        XCTAssertEqual(browser.submittedURL, url, "the homepage submits the article without typing")
         guard case let .model(.article(article)) = answer else { return XCTFail("No recovered WSJ article") }
         XCTAssertTrue(article.html.contains("Final paragraph"))
         XCTAssertFalse(article.html.contains("Unrelated teaser"))

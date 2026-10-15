@@ -516,14 +516,21 @@ const LunaAccess = (() => {
         if(/subscribe to (continue|read)|already a subscriber/i.test(body))return 'challenge';
         return 'wait';
     })()`;
-    function archiveDetect(url) {
+    function archiveDetect(url,snapshotURL) {
         return `(() => {
-            const stage=(${detect});if(stage!=='wait')return stage;
+            // Establish the archive session through its homepage first. Direct
+            // newest/snapshot loads can get a permanent "enable JS" gate in WK.
             const input=document.querySelector('input[name="url"]');
-            if(input&&input.form&&!window.__lunaArchiveSubmitted){
-                window.__lunaArchiveSubmitted=true;input.value=${JSON.stringify(url)};input.form.submit();
+            if((location.pathname==='/'||location.pathname==='')&&input&&input.form){
+                if(!window.__lunaArchiveSubmitted){
+                    window.__lunaArchiveSubmitted=true;
+                    const snapshot=${JSON.stringify(snapshotURL)};
+                    if(snapshot)location.href=snapshot;
+                    else {input.value=${JSON.stringify(url)};input.form.submit();}
+                }
+                return 'wait';
             }
-            return 'wait';
+            return (${detect});
         })()`;
     }
     async function resolve({url,page,reason,context,saveId}) {
@@ -557,7 +564,7 @@ const LunaAccess = (() => {
                 scripts:[cleanup(url,rule)],blockURLs:blockers(url,rule),timeout:90});
             const liveArticle=live&&article(live.html,url);if(liveArticle)return liveArticle;
         }
-        const snapshot=await luna.browser.open({url:snapshotURL||'https://archive.is/',saveId,title:'Find archived article',detect:archiveDetect(url),timeout:180});
+        const snapshot=await luna.browser.open({url:'https://archive.is/',saveId,title:'Find archived article',detect:archiveDetect(url,snapshotURL),timeout:180});
         return snapshot?article(snapshot.html,url):null;
     }
     return {resolve,eligible,article,blockers,cleanup,canProbe};

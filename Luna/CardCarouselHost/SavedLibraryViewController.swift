@@ -43,6 +43,7 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
     var didSelect: ((UUID) -> Void)?
     private let searchBar = UISearchBar()
     private let pills = UIStackView()
+    private var pillWidths: [NSLayoutConstraint] = []
     private let layout = UICollectionViewFlowLayout()
     private lazy var collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private var filters = Set<SavedLibraryFilter>()
@@ -96,8 +97,16 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
                 self.applyResults()
             }, for: .touchUpInside)
             pills.addArrangedSubview(button)
+            let width = button.widthAnchor.constraint(equalToConstant: 44)
+            width.isActive = true
+            pillWidths.append(width)
         }
         updatePills()
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
+            (controller: SavedLibraryViewController, _: UITraitCollection) in
+            controller.updatePills()
+            controller.view.setNeedsLayout()
+        }
         let chrome = UIStackView(arrangedSubviews: [heading, searchBar, pillScroll])
         chrome.axis = .vertical
         chrome.spacing = 8
@@ -146,7 +155,8 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func updatePills() {
-        for (filter, view) in zip(SavedLibraryFilter.allCases, pills.arrangedSubviews) {
+        for (index, pair) in zip(SavedLibraryFilter.allCases, pills.arrangedSubviews).enumerated() {
+            let (filter, view) = pair
             guard let button = view as? UIButton else { continue }
             let selected = filters.contains(filter)
             var config = selected ? UIButton.Configuration.filled() : .tinted()
@@ -161,6 +171,8 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
             config.baseBackgroundColor = selected ? .systemIndigo : .secondarySystemFill
             config.baseForegroundColor = selected ? .white : .label
             button.configuration = config
+            let font = UIFont.preferredFont(forTextStyle: .subheadline)
+            pillWidths[index].constant = max(44, ceil((filter.title as NSString).size(withAttributes: [.font: font]).width) + 20)
             button.isSelected = selected
             button.accessibilityTraits = selected ? [.button, .selected] : .button
         }

@@ -100,6 +100,15 @@ final class SavedLibraryPresentationTests: XCTestCase {
         XCTAssertEqual(Set(pills.compactMap { $0.configuration?.title }), Set(["In progress", "Text", "Video", "Shopping"]))
         XCTAssertTrue(descendants(library.view).contains { ($0 as? UILabel)?.text == "Library" })
         XCTAssertTrue(pills.allSatisfy { !$0.isSelected })
+        XCTAssertTrue(pills.allSatisfy { $0.convert($0.bounds, to: library.view).maxX <= library.view.bounds.maxX - 16 },
+                      "all four pills must fit at normal iPhone text size")
+        let videoPill = pills.first { $0.accessibilityIdentifier == "savedLibrary.filter.video" }!
+        videoPill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(videoPill.isSelected)
+        XCTAssertEqual(collection.numberOfItems(inSection: 0), 0)
+        videoPill.sendActions(for: .touchUpInside)
+        XCTAssertFalse(videoPill.isSelected)
+        XCTAssertEqual(collection.numberOfItems(inSection: 0), 8)
         let labels = descendants(collection).compactMap { ($0 as? UILabel)?.text }
         XCTAssertFalse(labels.contains { $0.contains("example.com") })
     }

@@ -23,6 +23,7 @@ const LunaAccess = (() => {
         const content=snapshot.querySelector('#CONTENT');
         if(content) html='<html><head>'+(snapshot.head?snapshot.head.innerHTML:'')+
             '</head><body><article>'+content.innerHTML+'</article></body></html>';
+        html=LunaNewYorker.prepare(html,url);
         if(matches(host(url),'livemint.com')) {
             // Mint labels the continuation's editorial wrappers paywall-slot.
             // Generic noise stripping would discard all but the opening paragraph;

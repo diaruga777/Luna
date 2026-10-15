@@ -4,7 +4,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 for path in (root / 'LunaLibraries/Sources/LunaBundledPlugins/Plugins').glob('*.js'):
     source = path.read_text()
-    for name in ['web', 'retail-data', 'shop', 'access-data', 'access']:
+    for name in ['web', 'newyorker', 'retail-data', 'shop', 'access-data', 'access']:
         tag = name.upper().replace('-', '_')
         start, end = f'// BEGIN BUNDLED {tag} HELPER', f'// END BUNDLED {tag} HELPER'
         if start not in source: continue

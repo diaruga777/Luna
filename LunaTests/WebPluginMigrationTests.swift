@@ -5,6 +5,8 @@ import LunaStorage
 import LunaModels
 import LunaPluginKit
 import LunaPluginIngest
+import LunaIngest
+import LunaReaderUI
 
 final class WebPluginMigrationTests: XCTestCase {
     private var runner: PluginJSFixtureRunner!
@@ -102,6 +104,77 @@ final class WebPluginMigrationTests: XCTestCase {
         }
         XCTAssertTrue(runner.fetcher.requests.count >= 2)
         XCTAssertTrue(runner.fetcher.requests.allSatisfy { $0.url.absoluteString == url })
+    }
+
+    func testNewYorkerKeepsOpeningAndPaywallMarkedProseInJSC() async throws {
+        try load("publisher-access")
+        let url = "https://www.newyorker.com/magazine/2026/10/05/cookie-monster-tries-to-meet-his-ai-mandate"
+        let html = try String(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Plugins/newyorker-paywall-paragraphs.html"), encoding: .utf8)
+        runner.fetcher.respond(to: url, body: html)
+        for capturedPage in [true, false] {
+            let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+                argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                    page: capturedPage ? .init(url: url, html: html, source: "safari") : nil,
+                    reason: .save, context: .share), timeout: 2, as: PluginIngestAnswer.self)
+            guard case let .model(.article(article)) = answer else { return XCTFail("No article") }
+            XCTAssertEqual(article.title, "New Yorker regression")
+            XCTAssertEqual(article.author, "Fixture Reporter")
+            XCTAssertTrue(article.html.hasPrefix("<p class=\"has-dropcap body dropcap has-dropcap__lead-standard-heading\">Me resident cookie expert"))
+            XCTAssertEqual(article.html.components(separatedBy: "<p ").count - 1, 22)
+            var remainder = article.html[...]
+            for n in 2...22 {
+                let marker = String(format: "Paragraph %02d.", n)
+                guard let range = remainder.range(of: marker) else { return XCTFail("Missing or reordered \(marker)") }
+                remainder = remainder[range.upperBound...]
+            }
+            XCTAssertTrue(article.html.contains("inline source"))
+            XCTAssertTrue(article.html.contains("fixture.jpg"))
+            XCTAssertFalse(article.html.contains("must not appear"))
+        }
+        XCTAssertEqual(runner.fetcher.requests.map { $0.url.absoluteString }, [url])
+    }
+
+    func testNewYorkerCapturedLivePage() async throws {
+        guard ProcessInfo.processInfo.environment["LUNA_NEWYORKER_LIVE_FIXTURE"] == "1" else {
+            throw XCTSkip("Opt-in verification against the freshly fetched New Yorker page")
+        }
+        try load("web")
+        let url = "https://www.newyorker.com/magazine/2026/10/05/cookie-monster-tries-to-meet-his-ai-mandate"
+        runner.fetcher.respond(to: url, body: try String(contentsOfFile: "/tmp/luna-newyorker-cookie.html", encoding: .utf8))
+        let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.web",
+            argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                page: nil, reason: .save, context: .app), as: PluginIngestAnswer.self)
+        guard case let .model(.article(article)) = answer else { return XCTFail("Live page did not produce an article") }
+        XCTAssertTrue(article.html.hasPrefix("<p class=\"has-dropcap body dropcap has-dropcap__lead-standard-heading\">Me resident cookie expert"))
+        XCTAssertEqual(article.html.components(separatedBy: "<p ").count - 1, 22)
+        XCTAssertTrue(article.html.contains("not actual monster"), "The ending must also survive")
+        XCTAssertEqual(runner.fetcher.requests.count, 1)
+    }
+
+    func testNewYorkerNormalPluginWalkPersistsTheOpening() async throws {
+        let scope = PluginAdopterScope()
+        defer { scope.restore() }
+        PluginModelAdopters.article = ArticleModelAdopter()
+        try load("web")
+        try load("publisher-access")
+        let url = URL(string: "https://www.newyorker.com/magazine/2026/10/05/cookie-monster-tries-to-meet-his-ai-mandate")!
+        let html = try String(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Plugins/newyorker-paywall-paragraphs.html"), encoding: .utf8)
+        runner.fetcher.respond(to: url.absoluteString, body: html)
+        let stage = PluginIngestStage(invoker: runner.runtime, processKind: .app)
+        let result = await stage.run(IngestInput(url: url, source: .manual), fetcher: MockArticleFetcher())
+        guard case let .outcome(.article(content, _), owner) = result else { return XCTFail("No article from the normal plugin walk") }
+        XCTAssertEqual(owner, "app.luna.web", "The first eligible plugin must preserve the opening before publisher recovery runs")
+        let saves = SavesStore(containerURL: runner.containerURL.appendingPathComponent("save-regression"))
+        let item = saves.add(urlString: url.absoluteString)
+        _ = saves.saveContent(content, for: item)
+        let saved = try XCTUnwrap(saves.item(withID: item.id))
+        let stored = try XCTUnwrap(saves.content(for: saved))
+        let paragraphs = stored.blocks.filter { $0.kind == .paragraph }
+        XCTAssertEqual(paragraphs.count, 22)
+        XCTAssertTrue(paragraphs.first?.text.hasPrefix("Me resident cookie expert") == true)
+        XCTAssertTrue(paragraphs[1].text.hasPrefix("Matt here to"))
+        XCTAssertFalse(stored.blocks.contains { $0.text.contains("must not appear") })
+        XCTAssertEqual(runner.fetcher.requests.count, 1)
     }
 
     func testPublisherReadsSpecificTimeMapSnapshotWithoutOpeningABrowser() async throws {

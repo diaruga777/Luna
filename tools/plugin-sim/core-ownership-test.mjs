@@ -46,6 +46,34 @@ for(const suppliedPage of [true,false]) {
     assert.deepEqual(requests,suppliedPage?[]:[beastURL]);
 }
 const shape=plugin('publisher-access',async()=>({ok:false}));
+// New Yorker's JSON-LD omits the intro while the DOM labels later prose paywall.
+const newYorkerURL='https://www.newyorker.com/magazine/2026/10/05/cookie-monster-tries-to-meet-his-ai-mandate';
+const newYorkerHTML=read('LunaTests/Fixtures/Plugins/newyorker-paywall-paragraphs.html');
+for(const pluginName of ['web','publisher-access']) for(const context of ['app','share','safari']) for(const suppliedPage of [true,false]) {
+    const requests=[];
+    const publisher=plugin(pluginName,async req=>{requests.push(req.url);return {ok:true,text:newYorkerHTML,url:req.url};});
+    publisher.luna.browser={open:async()=>{throw Error('complete New Yorker response must not need a browser');}};
+    const answer=await publisher.hooks.ingest({url:newYorkerURL,context,reason:'save',saveId:'newyorker',
+        page:suppliedPage?{url:newYorkerURL,html:newYorkerHTML}:undefined});
+    assert.equal(answer?.kind,'article');
+    const doc=publisher.luna.html.parse(answer.html,newYorkerURL);
+    const paragraphs=doc.querySelectorAll('p');
+    assert.equal(paragraphs.length,22);
+    assert(paragraphs[0].textContent.startsWith('Me resident cookie expert'));
+    assert(paragraphs[1].textContent.startsWith('Matt here to'));
+    for(let n=2;n<=22;n++)assert(paragraphs[n-1].textContent.includes('Paragraph '+String(n).padStart(2,'0')+'.'));
+    assert.equal(answer.title,'New Yorker regression');
+    assert.equal(answer.author,'Fixture Reporter');
+    assert(answer.html.includes('inline source'));
+    assert(answer.html.includes('fixture.jpg'));
+    assert(!answer.html.includes('must not appear'));
+    assert.deepEqual(requests,suppliedPage?[]:[newYorkerURL]);
+}
+shape.ctx.newYorkerHTML=newYorkerHTML;
+const otherHost=vm.runInContext('LunaAccess.article(newYorkerHTML,"https://newyorker.com.unrelated.example/story")',shape.ctx);
+assert(!otherHost.html.includes('Me resident cookie expert'),'publisher normalization must not affect other hosts');
+shape.ctx.newYorkerTeaser='<html><head><script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script></head><body><article><div data-testid="BodyWrapper"><div class="body__inner-container"><p>Only the opening is available.</p><p class="paywall">Subscribe to read the rest of this article.</p></div></div></article></body></html>';
+assert.equal(vm.runInContext('LunaAccess.article(newYorkerTeaser,"https://www.newyorker.com/story")',shape.ctx),null,'a real subscription notice must not become an article');
 shape.ctx.beastHTML=beastHTML;
 assert.equal(vm.runInContext('LunaAccess.article(beastHTML,"https://unrelated.example/story")',shape.ctx),null,'publisher normalization must be host scoped');
 shape.ctx.teaser='<html><head><script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script></head><body><article id="article-content"><p data-block-type="text">'+('A metered teaser. '.repeat(70))+'</p><div class="tdb-paywall">Subscribe to read</div></article></body></html>';

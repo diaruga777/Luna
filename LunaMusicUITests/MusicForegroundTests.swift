@@ -59,6 +59,38 @@ final class MusicForegroundTests: XCTestCase {
         app.navigationBars.buttons["Following"].tap()
     }
 
+    func testLargePodcastArchiveScrollAndDeferredEpisodeMenu() throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"],
+              let feed = URL(string: base)?.deletingLastPathComponent().appendingPathComponent("large-feed.xml") else {
+            throw XCTSkip("Run with the local podcast fixture server.")
+        }
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        app.staticTexts["Podcasts"].tap()
+        app.navigationBars.buttons["Podcast Options"].tap()
+        app.buttons["Follow a Show by URL"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap()
+        field.typeText(feed.absoluteString + "?archive=" + UUID().uuidString)
+        app.alerts.buttons["Follow"].tap()
+        XCTAssertTrue(app.staticTexts["Archive Episode 1999"].waitForExistence(timeout: 20))
+        let table = app.tables.firstMatch
+        table.swipeUp(); table.swipeUp(); table.swipeUp()
+        XCTAssertFalse(app.staticTexts["Archive Episode 1999"].isHittable)
+        // Return to a known row without asking XCTest to enumerate 2,000 cells.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
+        let episode = table.cells.containing(.staticText, identifier: "Archive Episode 1999").firstMatch
+        XCTAssertTrue(episode.waitForExistence(timeout: 5))
+        let showScreenshot = XCTAttachment(screenshot: app.screenshot())
+        showScreenshot.name = "Large podcast archive after scrolling"; showScreenshot.lifetime = .keepAlways; add(showScreenshot)
+        episode.buttons["Episode Actions"].tap()
+        XCTAssertTrue(app.buttons["Episode Details"].waitForExistence(timeout: 3))
+        app.buttons["Episode Details"].tap()
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 3))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Large podcast archive episode details"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
     func testPodcastFeedFollowAutoDownloadAndEpisodeActions() throws {
         guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }

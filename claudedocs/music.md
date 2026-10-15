@@ -588,3 +588,53 @@ clock advancement after Play, alongside the existing RSS playback/queue integrat
 On the freshly created simulator, the first UI attempt was displaced by the initial
 Music authorization callback; the cold-relaunch check passed after that setup settled.
 The resumed-player screenshot was inspected.
+
+### Show-page and library scrolling responsiveness (2026-10-15)
+
+Podcast feed imports/refreshes prepare, merge, encode and stage their library
+snapshot on a utility task. The main actor only validates its revision, atomically
+renames the staged file and publishes. An intervening edit retries against the
+latest state; cancellation and failed preparation cannot publish or replace the
+library. Feed metadata and episodes commit together. Mark All as Played also
+uses one background transaction instead of one complete library rewrite per item.
+Periodic playback checkpoints use the same background path and cannot overwrite a
+newer seek, pause or completion. Their notifications update visible episode status
+without rebuilding lists or recalculating automatic downloads.
+
+Podcast artwork uses ImageIO thumbnail creation and decoding on a utility task.
+Episode rows cache description conversion and date formatting, limit the two-line
+summary to 500 characters, and create action menus only when opened. Full show
+notes remain available in Episode Details. Show headers ignore refresh bookkeeping
+when deciding whether to rebuild. Download/buffering status refreshes reuse static
+row content, throttle progress updates and coalesce list reloads. Hidden screens
+defer notification-driven work until they reappear. Download callbacks reuse the
+current byte reservation, rebuilding the plan only when queue/settings change or
+the response exceeds its reservation, while retaining oversized-response checks.
+
+Music library sorting/grouping and root/collection text searches run in background
+tasks. Searches debounce briefly, cancel obsolete workers and reject stale results;
+clearing search restores rows immediately. Album grids are derived once per result
+change instead of for every row request. Four-cover playlist artwork stops after
+finding four usable covers instead of decoding the entire playlist's album art.
+Song menus are also deferred until opened.
+
+The Foundation regression fixture imports 2,000 episodes with long show notes.
+On the development Mac, the synchronous comparison blocked the main actor for
+79 ms; background import took 85 ms while its 5 ms heartbeat's largest observed
+gap was 8 ms. This measures storage work, not physical-device scroll frame times.
+Regression tests cover concurrent edits/imports, cancellation, atomic durability,
+batched publication, hidden-screen updates, position-only notifications, bounded
+summaries, menu ownership and search cancellation. The local RSS fixture server
+also provides `/large-feed.xml`; the Music UI suite's large-archive test opens,
+scrolls and visits an episode menu/details page using the usual
+`LUNA_PODCAST_FIXTURE_URL` test-runner environment setup.
+
+Validation: Xcode 26.2 / iOS 26.2. All 34 Foundation podcast tests passed;
+51 focused hosted Music tests completed with three optional streaming-fixture
+skips and zero failures. Five UI checks passed across focused runs, covering the
+large archive, loading feedback, foreground search, podcast navigation and
+Downloaded filters. The archive and episode layouts were inspected. Broader audio
+checks timed out starting AVPlayer on both the existing and a fresh simulator;
+the local-audio start regression also failed in a separate unchanged-`main`
+checkout on that fresh simulator. Those audio failures are not claimed green.
+Physical-device scroll frame times have not been measured.

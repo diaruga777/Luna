@@ -388,6 +388,11 @@ extension PodcastTests {
             episode.summary = String(repeating: "<p>Long publisher show notes &amp; links.</p>", count: 100)
             return episode
         }
+        let blockingStore = try makeStore()
+        defer { try? FileManager.default.removeItem(at: blockingStore.url.deletingLastPathComponent()) }
+        let blockingStart = Date()
+        _ = try blockingStore.merge(PodcastFeed(show: show, episodes: episodes))
+        let blockingDuration = Date().timeIntervalSince(blockingStart)
         var ticks = 0
         var largestGap: TimeInterval = 0
         let heartbeat = Task { @MainActor in
@@ -400,7 +405,7 @@ extension PodcastTests {
         let start = Date()
         let ids = try await store.mergeInBackground(PodcastFeed(show: show, episodes: episodes), follow: false)
         heartbeat.cancel()
-        print("Large-feed import: \(Date().timeIntervalSince(start)) s; main heartbeat ticks: \(ticks); largest gap: \(largestGap) s")
+        print("Large-feed import: synchronous main-thread stall \(blockingDuration) s; background import \(Date().timeIntervalSince(start)) s; main heartbeat ticks: \(ticks); largest gap: \(largestGap) s")
         XCTAssertGreaterThan(ticks, 0)
         XCTAssertEqual(ids.count, 2000)
         XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)

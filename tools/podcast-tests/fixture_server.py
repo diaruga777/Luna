@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io, wave, struct, math, time, os
 from urllib.parse import urlsplit
+from email.utils import formatdate
 port = 19265
 buffer = io.BytesIO()
 with wave.open(buffer, 'wb') as sound:
@@ -9,6 +10,11 @@ with wave.open(buffer, 'wb') as sound:
     sound.writeframes(b''.join(struct.pack('<h', int(300 * math.sin(i * 2 * math.pi * 220 / 8000))) for i in range(8000 * 30)))
 audio = buffer.getvalue()
 feed = f'''<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Luna Podcast Test Feed</title><itunes:author>Local Integration Fixture</itunes:author><description>Simulator test only.</description><item><guid>fixture-2</guid><title>Fixture Episode Two</title><pubDate>Wed, 07 Oct 2026 10:00:00 +0000</pubDate><itunes:duration>30</itunes:duration><description>Second fixture episode.</description><enclosure url="http://127.0.0.1:{port}/two.wav" type="audio/wav" length="{len(audio)}"/></item><item><guid>fixture-1</guid><title>Fixture Episode One</title><pubDate>Tue, 06 Oct 2026 10:00:00 +0000</pubDate><itunes:duration>30</itunes:duration><description>First fixture episode.</description><enclosure url="http://127.0.0.1:{port}/one.wav" type="audio/wav" length="{len(audio)}"/></item></channel></rss>'''.encode()
+# A publisher-sized archive exercises import, row layout, filtering and scrolling.
+notes = '<p>Long publisher notes with links &amp; details.</p>' * 100
+large_feed = ('<rss version="2.0"><channel><title>Luna Large Archive</title><description>Large archive scroll fixture.</description>' + ''.join(
+    f'<item><guid>large-{index}</guid><title>Archive Episode {index:04d}</title><pubDate>{formatdate(1700000000 + index * 86400, usegmt=True)}</pubDate><description><![CDATA[{notes}]]></description><enclosure url="http://127.0.0.1:{port}/one.wav" type="audio/wav" length="{len(audio)}"/></item>'
+    for index in range(2000)) + '</channel></rss>').encode()
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path)
@@ -17,6 +23,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get('If-None-Match') == '"fixture-v1"':
                 self.send_response(304); self.end_headers(); return
             self.send_response(200); self.send_header('Content-Type','application/rss+xml'); self.send_header('ETag','"fixture-v1"'); self.send_header('Content-Length',str(len(feed))); self.end_headers(); self.wfile.write(feed)
+        elif route.path == '/large-feed.xml':
+            self.send_response(200); self.send_header('Content-Type', 'application/rss+xml')
+            self.send_header('Content-Length', str(len(large_feed))); self.end_headers(); self.wfile.write(large_feed)
         elif route.path == '/long.mp3' and os.environ.get('LUNA_PODCAST_LONG_MP3_FIXTURE'):
             path = os.environ['LUNA_PODCAST_LONG_MP3_FIXTURE']
             size = os.path.getsize(path)

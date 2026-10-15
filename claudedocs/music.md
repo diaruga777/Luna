@@ -328,14 +328,15 @@ marking an episode played never grants the fallback permission. Explicit queued
 work added after exhaustion takes priority. A never-played followed show contributes
 its oldest episode when fallback is permitted.
 
-`MediaPlaybackCoordinator` owns active media and transport routing. For app-owned
-sessions, back then forward within **at most two monotonic seconds** consumes both
-skips and switches queues. A standalone back waits two seconds before applying,
+`MediaPlaybackCoordinator` owns active media and transport routing. With in-app
+transport controls, back then forward within **at most two monotonic seconds**
+consumes both skips and switches queues. A standalone back waits two seconds before applying,
 so a chord leaves the source queue/position untouched. No destination means normal
 skip behavior; a failed switch attempts to restore the prior playing source.
-The same policy serves in-app controls, widget commands, podcast and Vault remote
-sessions, and CarPlay. `SwitchMediaQueueIntent` and a CarPlay Now Playing button
-provide an explicit switch as well. The music player shows a labeled Podcasts
+The chord policy serves in-app controls, widget commands and CarPlay. Headphone
+and system remote commands skip immediately in podcast and Vault sessions; they
+also cancel any unfinished in-app chord. `SwitchMediaQueueIntent` and a CarPlay
+Now Playing button provide an explicit switch as well. The music player shows a labeled Podcasts
 switch; the podcast player offers Switch to Music in its episode menu in both
 artwork and queue modes. A successful switch replaces the displayed player,
 preserving whether the queue was open; an empty destination is disabled.
@@ -348,18 +349,18 @@ Now Playing/queue controls.
 The implementation is **not a claim of full Apple Podcasts parity**. Apple's
 application music player owns protected Apple Music hardware-command handling;
 public MediaPlayer APIs do not expose those commands for interception. Consequently
-the two-button chord works through Luna's app-owned podcast/Vault command handlers
-and in-app controls, but cannot be promised while Apple Music owns remote playback.
+the two-button chord works through Luna's in-app controls; headphone commands
+perform ordinary skips. Apple Music owns its own remote playback commands.
 Use the explicit CarPlay switch button or Switch Music and Podcasts shortcut there.
 Hardware accessory delivery and entitlement-enabled CarPlay require real-device
 validation; simulator policy tests cannot establish that evidence.
 
 App-owned podcast and Vault sessions explicitly enable next/previous commands for
 headphone double/triple presses. Podcasts also accept interval skip commands from
-system controls. Both routes use the coordinator's uptime clock, including the
-two-second standalone-back expiration; remote-event timestamps have no documented
-clock origin and are not mixed with uptime. Isolated podcast players route skips
-to themselves when no coordinator is installed.
+system controls. Both remote routes bypass the coordinator's two-second chord
+window so backward and forward skips execute immediately. In-app chords continue
+to use monotonic uptime; remote-event timestamps are not mixed with uptime.
+Isolated podcast players route skips to themselves when no coordinator is installed.
 
 Now Playing activation waits for session eligibility and retries when eligibility
 changes or audio begins playing. A failed attempt during startup cannot permanently
@@ -374,6 +375,14 @@ timing, late session eligibility, paused/cancelled activation, podcast intervals
 and both directions of queue switching with preserved positions. The switch test
 also waits for the destination's real Now Playing session to become active.
 Actual AirPods button delivery remains a physical-device acceptance check.
+
+Headphone skip latency fix (2026-10-16): remote skips no longer enter the
+back-then-forward queue-switch recognizer. Rapid remote back/forward presses apply
+the configured skip intervals, including when another queue is restorable, and
+cancel any unfinished in-app chord. Five remote-command/session tests and all 34
+Foundation podcast tests pass. The playback/session integration test times out
+while the iOS 26.2 simulator reports audio-output startup failures; actual AirPods
+response time still requires device validation.
 
 Apple account follows/history, Apple-paid podcast audio, ratings/reviews,
 Apple editorial/personalized recommendations, proprietary Enhance Dialogue, and

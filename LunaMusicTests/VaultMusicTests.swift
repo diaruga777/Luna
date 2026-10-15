@@ -61,6 +61,46 @@ import MediaPlayer
         XCTAssertTrue(times.allSatisfy { $0 >= before && $0 <= after })
     }
 
+    func testCoordinatedPodcastRemoteSkipsAreImmediateAndCancelPendingChord() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
+        var episode = PodcastEpisode(showID: "show", guid: "remote", title: "Test", publishedAt: Date(), mediaURL: URL(string: "https://example.com/audio.mp3")!)
+        episode.duration = 600
+        try library.edit { state in
+            state.episodes[episode.id] = episode; state.currentEpisodeID = episode.id
+            var progress = PodcastEpisodeState(); progress.position = 100; state.progress[episode.id] = progress
+            state.settings.skipForward = 45; state.settings.skipBack = 10
+        }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("podcasts", forKey: "LunaMusic.activeMedia")
+        let snapshot = MusicQueueSnapshot(songIDs: [1], currentIndex: 0, playbackTime: 0,
+                                          originalSongIDs: [1], shuffleEnabled: false, repeatMode: 0)
+        defaults.set(try JSONEncoder().encode(snapshot), forKey: "LunaMusic.playbackQueue.v1")
+        let podcasts = PodcastPlaybackController(library: library)
+        let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults)
+        coordinator.install()
+
+        // Assert in the same turn, with a switch destination available: no
+        // expiration task or playback is needed.
+        XCTAssertTrue(coordinator.canSwitch)
+        podcasts.receiveRemoteSkip(.backward)
+        XCTAssertEqual(podcasts.position, 90)
+        podcasts.receiveRemoteSkip(.backward)
+        XCTAssertEqual(podcasts.position, 80)
+        podcasts.receiveRemoteSkip(.forward)
+        XCTAssertEqual(podcasts.position, 125)
+        XCTAssertEqual(coordinator.active, .podcasts)
+
+        coordinator.skip(.backward)
+        XCTAssertEqual(podcasts.position, 125)
+        podcasts.receiveRemoteSkip(.forward)
+        XCTAssertEqual(podcasts.position, 170)
+        try await Task.sleep(for: .milliseconds(2150))
+        XCTAssertEqual(podcasts.position, 170, "An interrupted in-app chord must not apply a delayed skip")
+    }
+
     func testPodcastRemoteSkipsReachTheirOwnPlayerWithoutCoordinator() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -280,17 +320,29 @@ final class VaultMusicTests: XCTestCase {
         XCTAssertEqual(podcasts.position, 90, accuracy: 0.2)
         try await until { abs(podcasts.player.currentTime().seconds - 90) < 0.2 }
         podcasts.receiveRemoteSkip(.backward)
-        try await until { abs(podcasts.position - 75) < 0.2 }
+        XCTAssertEqual(podcasts.position, 75, accuracy: 0.2)
         try await until { abs(podcasts.player.currentTime().seconds - 75) < 0.2 }
 
-        podcasts.receiveRemoteSkip(.backward); podcasts.receiveRemoteSkip(.forward)
+        // Even with another restorable queue, a quick headphone back/forward
+        // pair must perform two ordinary skips rather than switch media.
+        XCTAssertTrue(coordinator.canSwitch)
+        podcasts.receiveRemoteSkip(.backward)
+        XCTAssertEqual(podcasts.position, 60, accuracy: 0.2)
+        podcasts.receiveRemoteSkip(.forward)
+        XCTAssertEqual(podcasts.position, 90, accuracy: 0.2)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        try await until { abs(podcasts.player.currentTime().seconds - 90) < 0.2 }
+        podcasts.seek(to: 75)
+        try await until { abs(podcasts.player.currentTime().seconds - 75) < 0.2 }
+
+        coordinator.skip(.backward); coordinator.skip(.forward)
         try await until { coordinator.active == .music && music.isPlaying && music.fileSession.isActive }
         XCTAssertEqual(podcasts.position, 75, accuracy: 0.2)
         XCTAssertEqual(music.nowPlaying?.persistentID, first.persistentID)
         XCTAssertGreaterThanOrEqual(music.playbackTime, 11.8)
         music.pause()
         let musicPosition = music.playbackTime
-        music.receiveRemoteSkip(.backward); music.receiveRemoteSkip(.forward)
+        coordinator.skip(.backward); coordinator.skip(.forward)
         try await until { coordinator.active == .podcasts && podcasts.isPlaying && podcasts.session.isActive }
         XCTAssertEqual(music.playbackTime, musicPosition, accuracy: 0.2)
         XCTAssertEqual(music.nowPlaying?.persistentID, first.persistentID)

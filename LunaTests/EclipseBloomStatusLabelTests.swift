@@ -137,4 +137,131 @@ final class EclipseBloomStatusLabelTests: XCTestCase {
         wait(for: [rotated], timeout: 6)
         cycler.stop()
     }
+
+    func testBloomRasterMatchesVisibleLabelAtDifferentHeights() throws {
+        for height: CGFloat in [24, 64] {
+            let ink = UILabel(frame: CGRect(x: 0, y: 0, width: 280, height: height))
+            ink.font = .systemFont(ofSize: 17)
+            ink.text = "Finding the good part…"
+            ink.textColor = .white
+            ink.textAlignment = .center
+            ink.layoutIfNeeded()
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 3
+            let visible = UIGraphicsImageRenderer(size: ink.bounds.size, format: format)
+                .image { ink.layer.render(in: $0.cgContext) }
+            let bloom = GlyphPixelBloomView(frame: ink.bounds)
+            bloom.configure(
+                glyphLabel: ink, glyphFrame: ink.bounds,
+                circleFrame: CGRect(x: -500, y: 0, width: 1200, height: 1200),
+                scale: 3)
+            XCTAssertEqual(try XCTUnwrap(bloom.glyphRasterForTesting).pngData(), visible.pngData(),
+                           "the bloom must emit from the visible glyphs, including their baseline")
+        }
+    }
+
+    func testRotationKeepsOutgoingInkUntilTheSameFrontReplacesIt() throws {
+        let label = EclipseBloomStatusLabel(frame: CGRect(x: 0, y: 0, width: 300, height: 40))
+        label.setTextImmediately("Opening in Luna…")
+        label.layoutIfNeeded()
+        label.reveal("Still going…", duration: 10)
+        let incoming = try XCTUnwrap(label.subviews.compactMap { $0 as? UILabel }.first)
+        let old = label.outgoingInkForTesting
+        XCTAssertFalse(old.isHidden)
+        XCTAssertNotNil(old.contents)
+        let incomingMask = try XCTUnwrap(incoming.layer.mask as? CAShapeLayer)
+        let outgoingMask = try XCTUnwrap(old.mask as? CAShapeLayer)
+        let reveal = try XCTUnwrap(incomingMask.animation(forKey: "eclipseGlyphReveal") as? CABasicAnimation)
+        let conceal = try XCTUnwrap(outgoingMask.animation(forKey: "eclipseGlyphConceal") as? CABasicAnimation)
+        XCTAssertEqual(reveal.duration, conceal.duration)
+        for value in [false, true] {
+            let newPath = try XCTUnwrap((value ? reveal.toValue : reveal.fromValue) as! CGPath?)
+            let oldPath = try XCTUnwrap((value ? conceal.toValue : conceal.fromValue) as! CGPath?)
+            for y in stride(from: CGFloat(1), to: 40, by: 2) {
+                let point = CGPoint(x: 150, y: y)
+                XCTAssertNotEqual(newPath.contains(point, using: .evenOdd), oldPath.contains(point),
+                                  "exactly one phrase supplies ink on either side of the front")
+            }
+        }
+        label.setTextImmediately("Finished")
+        XCTAssertTrue(old.isHidden)
+        XCTAssertNil(old.contents)
+        XCTAssertNil(incoming.layer.mask)
+    }
+
+    @MainActor
+    func testRotationSettlesIntrinsicLayoutBeforeCapturingBloom() throws {
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let label = EclipseBloomStatusLabel()
+        LoadingStatusLayout.install(spinner: HorizonSpinnerView(side: 36), label: label, in: container)
+        label.setTextImmediately("Loading…")
+        container.layoutIfNeeded()
+        let oldFrame = label.frame
+        label.reveal("Finding the good part…", duration: 10)
+        let ink = try XCTUnwrap(label.subviews.compactMap { $0 as? UILabel }.first)
+        let bloom = try XCTUnwrap(label.subviews.compactMap { $0 as? GlyphPixelBloomView }.first)
+        XCTAssertGreaterThan(label.bounds.width, oldFrame.width)
+        XCTAssertEqual(bloom.glyphRasterForTesting?.size, ink.bounds.size)
+        let preservedFrame = label.convert(label.outgoingInkForTesting.frame, to: container)
+        XCTAssertEqual(preservedFrame.minX, oldFrame.minX, accuracy: 0.001)
+        XCTAssertEqual(preservedFrame.minY, oldFrame.minY, accuracy: 0.001)
+        XCTAssertEqual(preservedFrame.width, oldFrame.width, accuracy: 0.001)
+        XCTAssertEqual(preservedFrame.height, oldFrame.height, accuracy: 0.001)
+        let settledFrame = label.frame
+        container.layoutIfNeeded()
+        XCTAssertEqual(label.frame, settledFrame, "the label must not move away from its captured bloom")
+        label.setTextImmediately("Done")
+    }
+
+    func testParkedFirstRevealHasNoOutgoingCopy() {
+        let label = EclipseBloomStatusLabel()
+        label.reveal("Opening in Luna…")
+        label.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
+        label.layoutIfNeeded()
+        XCTAssertTrue(label.outgoingInkForTesting.isHidden)
+        XCTAssertNil(label.outgoingInkForTesting.contents)
+        label.setTextImmediately(nil)
+    }
+
+
+    @MainActor
+    func testRotationFinishesWithOneStableLabel() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        controller.view.backgroundColor = .black
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let label = EclipseBloomStatusLabel()
+        let spinner = HorizonSpinnerView(side: 36)
+        LoadingStatusLayout.install(spinner: spinner, label: label, in: controller.view)
+        label.setTextImmediately("Opening in Luna…")
+        window.layoutIfNeeded()
+        label.reveal("Finding the good part…", duration: 1.55)
+        let stableFrame = label.frame
+        for (index, delay) in [0.05, 0.7, 1.2, 1.7].enumerated() {
+            let captured = expectation(description: "bloom frame \(index)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + (index == 0 ? delay : delay - [0.05, 0.7, 1.2, 1.7][index - 1])) {
+                XCTAssertEqual(label.frame, stableFrame)
+                let image = UIGraphicsImageRenderer(size: window.bounds.size).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Loading bloom \(index)"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+                try? image.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("luna-bloom-\(index).png"))
+                captured.fulfill()
+            }
+            wait(for: [captured], timeout: 5)
+        }
+        XCTAssertTrue(label.outgoingInkForTesting.isHidden)
+        XCTAssertNil(label.outgoingInkForTesting.contents)
+        XCTAssertEqual(label.subviews.compactMap { $0 as? UILabel }.count, 1)
+        XCTAssertFalse(label.subviews.contains { $0 is GlyphPixelBloomView })
+        XCTAssertEqual(label.text, "Finding the good part…")
+    }
+
 }

@@ -114,6 +114,10 @@ public final class GlyphPixelBloomView: UIView {
     /// the light without touching its geometry.
     private var emitterGain: CGFloat = 1
 
+    #if DEBUG
+    public var glyphRasterForTesting: UIImage? { glyphImage }
+    #endif
+
     public var usesRasterizedGlyphPixels: Bool {
         glyphImage != nil && !glyphFrame.isEmpty
     }
@@ -156,8 +160,11 @@ public final class GlyphPixelBloomView: UIView {
             size: glyphLabel.bounds.size,
             format: glyphFormat)
         configure(
-            raster: glyphRenderer.image { _ in
-                glyphLabel.drawText(in: glyphLabel.bounds)
+            raster: glyphRenderer.image { context in
+                // UILabel resolves its text rect (including vertical alignment
+                // and line layout) when drawing its layer. Calling drawText in
+                // the full bounds bypasses that and offsets the emitting glyphs.
+                glyphLabel.layer.render(in: context.cgContext)
             },
             rasterFrame: glyphFrame,
             circleFrame: circleFrame,
@@ -412,7 +419,8 @@ public final class GlyphPixelBloomView: UIView {
             let pixelScale = max(scale, 1)
             scaledFalloffReach = (GlyphPixelBloomView.edgeFalloff.last?.outer ?? 12)
                 * edgeBandScale
-            stripHeight = scaledFalloffReach + edgeSagitta + 12
+            stripHeight = ((scaledFalloffReach + edgeSagitta + 12) * pixelScale)
+                .rounded(.up) / pixelScale
             let widestHalo = GlyphPixelBloomView.haloPasses.map(\.radius).max() ?? 30
             glowReach = widestHalo + 4
             // The radii are in POINTS, as the view context they were tuned in
@@ -429,7 +437,9 @@ public final class GlyphPixelBloomView: UIView {
                      .cgColor)
             }
             drawAlpha = min(emitterGain, 1)
-            emitterSize = CGSize(width: width, height: stripHeight)
+            emitterSize = CGSize(
+                width: (width * pixelScale).rounded(.up) / pixelScale,
+                height: stripHeight)
             // Whole device pixels, so the composite maps onto the bloom view's
             // own pixel grid one for one and Core Animation never resamples it.
             compositeSize = CGSize(
@@ -534,7 +544,12 @@ public final class GlyphPixelBloomView: UIView {
             let y = edge == .bottomArc
                 ? circle.maxY - edgeSagitta - 8
                 : circle.minY - scaledFalloffReach - 4
-            return CGRect(x: 0, y: y, width: width, height: stripHeight)
+            // The emitter is a bitmap too: snapping only the final composite
+            // still resamples glyphs onto a different fractional grid on every
+            // frame, making the white core wobble against the settled ink.
+            return CGRect(
+                x: 0, y: (y * scale).rounded(.down) / scale,
+                width: width, height: stripHeight)
         }
 
         /// The strip plus everywhere its halos reach, snapped DOWN to a device

@@ -16,6 +16,10 @@ public final class EclipseBloomStatusLabel: UIView {
     /// raster bloom renderer as the onboarding utility-card headline.
     private let illuminationMaskLabel = UILabel()
     private let revealMask = CAShapeLayer()
+    /// Frozen outgoing ink, visible only ahead of the same edge that reveals
+    /// the incoming label. It never draws over the incoming glyphs.
+    private let outgoingInk = CALayer()
+    private let outgoingMask = CAShapeLayer()
     /// A transparent copy of the onboarding moon front. Its presentation
     /// transform is the bloom renderer's clock, keeping the light attached to
     /// the actual mask edge instead of letting two independent animations drift.
@@ -59,6 +63,7 @@ public final class EclipseBloomStatusLabel: UIView {
     /// cycler's near-instant first bloom, its unchanged rotation sweep) reached
     /// the animation rather than being silently ignored.
     public private(set) var lastResolvedRevealDurationForTesting: TimeInterval?
+    public var outgoingInkForTesting: CALayer { outgoingInk }
     #endif
 
     public override init(frame: CGRect) {
@@ -82,6 +87,9 @@ public final class EclipseBloomStatusLabel: UIView {
         illuminationMaskLabel.textColor = .white
         frontTracker.fillColor = UIColor.clear.cgColor
         layer.addSublayer(frontTracker)
+        outgoingInk.contentsGravity = .resize
+        outgoingInk.isHidden = true
+        layer.addSublayer(outgoingInk)
     }
 
     @available(*, unavailable)
@@ -120,6 +128,17 @@ public final class EclipseBloomStatusLabel: UIView {
     public func reveal(_ text: String, duration: TimeInterval = 1.55) {
         revealGeneration &+= 1
         stopReveal()
+        // Capture the previous phrase at its settled screen position before
+        // changing intrinsic size. The snapshot has no bloom or reveal mask.
+        let outgoingFrame = finalLabel.convert(finalLabel.bounds, to: superview)
+        let outgoingImage: UIImage? = finalLabel.text.flatMap { previous in
+            guard pendingRevealDuration == nil, !previous.isEmpty,
+                  !finalLabel.bounds.isEmpty else { return nil }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = traitCollection.displayScale
+            return UIGraphicsImageRenderer(size: finalLabel.bounds.size, format: format)
+                .image { finalLabel.layer.render(in: $0.cgContext) }
+        }
         requestedText = text
         finalLabel.text = text
         illuminationMaskLabel.text = text
@@ -136,15 +155,25 @@ public final class EclipseBloomStatusLabel: UIView {
         pendingRevealDuration = nil
         isRevealing = true
 
+        // Applying new text invalidates the label's intrinsic size. Resolve the
+        // entire containing layout BEFORE capturing glyphs or installing masks;
+        // otherwise the next layout moves the ink away from its bloom raster.
+        var layoutRoot: UIView = self
+        while let parent = layoutRoot.superview { layoutRoot = parent }
+        layoutRoot.setNeedsLayout()
+        layoutRoot.layoutIfNeeded()
+        layoutIfNeeded()
         let rect = finalLabel.bounds
-        let diameter = max(rect.width * 8, 1_200)
+        let previousRect = convert(outgoingFrame, from: superview)
+        let sweepRect = outgoingImage == nil ? rect : rect.union(previousRect)
+        let diameter = max(sweepRect.width * 8, 1_200)
         let radius = diameter / 2
-        let halfWidth = rect.width / 2
+        let halfWidth = sweepRect.width / 2
         let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
         let initial = CGRect(
-            x: rect.midX - radius, y: -1 - sagitta,
+            x: sweepRect.midX - radius, y: sweepRect.minY - 1 - sagitta,
             width: diameter, height: diameter)
-        let travel = rect.height + 2 + sagitta
+        let travel = sweepRect.height + 2 + sagitta
         let final = initial.offsetBy(dx: 0, dy: travel)
         let initialPath = revealPath(excluding: initial, in: rect)
         let finalPath = revealPath(excluding: final, in: rect)
@@ -156,6 +185,18 @@ public final class EclipseBloomStatusLabel: UIView {
         revealMask.frame = rect
         revealMask.path = finalPath
         finalLabel.layer.mask = revealMask
+        outgoingInk.frame = previousRect
+        outgoingInk.contentsScale = traitCollection.displayScale
+        outgoingInk.contents = outgoingImage?.cgImage
+        outgoingInk.isHidden = outgoingImage == nil
+        outgoingMask.frame = outgoingInk.bounds
+        outgoingMask.fillColor = UIColor.white.cgColor
+        let outgoingInitialPath = UIBezierPath(ovalIn: initial.offsetBy(
+            dx: -previousRect.minX, dy: -previousRect.minY)).cgPath
+        let outgoingFinalPath = UIBezierPath(ovalIn: final.offsetBy(
+            dx: -previousRect.minX, dy: -previousRect.minY)).cgPath
+        outgoingMask.path = outgoingFinalPath
+        outgoingInk.mask = outgoingMask
         frontTracker.frame = rect
         frontTracker.path = UIBezierPath(ovalIn: initial).cgPath
         let frontTransform = CATransform3DMakeTranslation(0, travel, 0)
@@ -172,6 +213,12 @@ public final class EclipseBloomStatusLabel: UIView {
         maskAnimation.duration = resolvedDuration
         maskAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         revealMask.add(maskAnimation, forKey: "eclipseGlyphReveal")
+        let outgoingAnimation = CABasicAnimation(keyPath: "path")
+        outgoingAnimation.duration = resolvedDuration
+        outgoingAnimation.timingFunction = maskAnimation.timingFunction
+        outgoingAnimation.fromValue = outgoingInitialPath
+        outgoingAnimation.toValue = outgoingFinalPath
+        outgoingMask.add(outgoingAnimation, forKey: "eclipseGlyphConceal")
 
         let trackerAnimation = CABasicAnimation(keyPath: "transform")
         trackerAnimation.fromValue = CATransform3DIdentity
@@ -208,11 +255,7 @@ public final class EclipseBloomStatusLabel: UIView {
         let generation = revealGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + resolvedDuration) { [weak self] in
             guard let self, self.revealGeneration == generation else { return }
-            self.finalLabel.layer.mask = nil
-            self.frontTracker.removeAllAnimations()
-            self.pixelBloomView.stop()
-            self.pixelBloomView.removeFromSuperview()
-            self.isRevealing = false
+            self.stopReveal()
         }
     }
 
@@ -228,16 +271,19 @@ public final class EclipseBloomStatusLabel: UIView {
     }
 
     private func stopReveal() {
-        revealMask.removeAllAnimations()
-        frontTracker.removeAllAnimations()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        revealMask.removeAllAnimations()
+        outgoingMask.removeAllAnimations()
+        outgoingInk.contents = nil
+        outgoingInk.isHidden = true
+        frontTracker.removeAllAnimations()
         frontTracker.transform = CATransform3DIdentity
-        CATransaction.commit()
         pixelBloomView.stop()
         pixelBloomView.removeFromSuperview()
         finalLabel.layer.mask = nil
         isRevealing = false
+        CATransaction.commit()
     }
 
     private func revealPath(excluding circle: CGRect, in rect: CGRect) -> CGPath {

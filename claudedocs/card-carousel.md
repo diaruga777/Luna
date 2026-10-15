@@ -378,6 +378,39 @@ Consequences for the deck:
   testing to the parked circle (`ReaderChromeRowView`), whose transform carries
   it beyond the row's bounds.
 
+## Swipe-up library
+
+Swipe up on the mini carousel to present the library at full sheet height.
+Its cards contain only a title and a favicon/source badge on the left, with a
+saved banner image behind a dark legibility treatment when available. iPhone
+shows one card per row and several rows at once; wide iPad sheets use two
+columns. Cells load only visible artwork and never instantiate readers or
+players. There are no synopses, URLs, search-match explanations, topic groups,
+or density controls. Tapping a row centers its live card; archived saves use
+the existing external-open path. Closing/reopening preserves query, filters,
+and library position. Merely browsing rows does not mark articles opened.
+
+The top pills are **In progress / Text / Video / Shopping**, initially all
+unselected. Type selections form a union; In progress intersects that union
+and requires an actual unfinished reading position, including Original mode,
+rather than merely having centered the item. Every app retains its existing
+surface gating. Results have the same card treatment as the unfiltered library.
+Search runs off-main against the prebuilt local FTS/vector indexes described
+in [saves.md](saves.md), with a 60ms typing debounce and stale-query rejection.
+
+Horizontal scrubbing smoothly increases from 1.5× gain for small movements to
+4× at 200pt, preserving direction reversals, native deceleration, snapping,
+visible-only artwork, and the existing three-card preview. The scrub strip
+also exposes an **Open library** accessibility action.
+
+Article headers use the same saved banner treatment. `ArticleBanner` makes a
+display-only article projection: the exact matching inline image and its
+following caption move out of the reader body, while unrelated images and the
+canonical saved article remain intact for export and indexing. A missing or
+invalid banner keeps inline images. Both the pinned and scrolling header
+copies receive the same artwork. The debug stage `deck.article.library`
+provides deterministic banner/no-banner rows and a partially read article.
+
 ## Content controllers
 
 `CardContentViewController` is the open base contract (playable/duration/fraction/

@@ -30,6 +30,35 @@ enum ArticleStageCatalog {
     private static var deckStages: [StageDescriptor] {
         [
             StageDescriptor(
+                id: "deck.article.library", screen: "Library", variant: "banner card rows",
+                summary: "Swipe-up library with local search, toggle filters, and matching reader banners.",
+                kind: .article,
+                seed: {
+                    StageFixtures.completeOnboarding()
+                    let titles = ["The Shape of Cities", "Across the River", "A Wider View", "The Quiet Reading Room", "Notes for Tomorrow", "On Looking Closely", "After the Rain", "Small Discoveries"]
+                    let items = titles.enumerated().map { index, title in
+                        StageFixtures.article(seed: "library-\(index)", url: "https://example.com/library/\(index)",
+                                              title: title, hoursAgo: index + 1,
+                                              readingProgress: index == 1 ? 0.35 : nil)
+                    }
+                    StageFixtures.seed(items, contents: Dictionary(uniqueKeysWithValues:
+                        items.map { ($0.id, StageFixtures.content($0.title ?? "Article")) }))
+                    for (index, item) in items.enumerated() where index % 3 != 2 {
+                        let data = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 240)).pngData { context in
+                            UIColor(hue: CGFloat(index) / 10, saturation: 0.65, brightness: 0.55, alpha: 1).setFill()
+                            context.fill(CGRect(x: 0, y: 0, width: 600, height: 240))
+                            UIColor.white.withAlphaComponent(0.18).setFill()
+                            UIBezierPath(ovalIn: CGRect(x: 230, y: -70, width: 400, height: 400)).fill()
+                        }
+                        SavesStore.shared.setThumbnail(data, for: item.id)
+                    }
+                },
+                make: {
+                    let deck = ArticleCardsViewController()
+                    DispatchQueue.main.async { deck.carouselDidRequestLibrary(deck.carousel) }
+                    return deck
+                }),
+            StageDescriptor(
                 id: "deck.article.rail", screen: "Card deck", variant: "two-row article library",
                 summary: "Several readable articles for testing horizontal browsing and viewport expansion.",
                 kind: .article,

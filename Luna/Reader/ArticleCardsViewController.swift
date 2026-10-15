@@ -1408,7 +1408,20 @@ final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
+    private func loadHeaderBanner(_ url: URL) {
+        DownsampledImageLoader.load(
+            path: url.path, pointSize: CGSize(width: 600, height: 200),
+            scale: view.traitCollection.displayScale, isStale: { [weak self] in self == nil }
+        ) { [weak self] image in
+            self?.titleHeader.setBanner(image)
+            self?.scrollTitleHeader.setBanner(image)
+        }
+    }
+
     private func mountTitleHeader() {
+        if reader == nil, let name = item.thumbnailFileName {
+            loadHeaderBanner(SavesStore.shared.articlesDirectory.appendingPathComponent(name))
+        }
         for header in [titleHeader, scrollTitleHeader] {
             header.isUserInteractionEnabled = false
         }
@@ -1486,8 +1499,11 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     private func embedReaderIfPossible() {
         guard reader == nil, item.state == .ready,
-              let content = knownContent ?? SavesStore.shared.content(for: item)
+              let originalContent = knownContent ?? SavesStore.shared.content(for: item)
         else { return }
+        let presentation = ArticleBanner.prepare(content: originalContent, item: item, store: .shared)
+        let content = presentation.content
+        if let url = presentation.imageURL { loadHeaderBanner(url) }
         titleHeader.setTitle(content.title)
         scrollTitleHeader.setTitle(content.title)
         // Render only the initial scroll viewport while this is a side card or
@@ -1867,6 +1883,8 @@ private final class ReaderCardTitleHeaderView: UIView {
     private static let overflowLineLimit = 6
     private static let overflowGap: CGFloat = 6
 
+    private let bannerView = UIImageView()
+    private let bannerTreatment = UIView()
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     /// The rest of a title too long for the line cap, shown in smaller type
@@ -1917,6 +1935,12 @@ private final class ReaderCardTitleHeaderView: UIView {
         subtitleLabel.lineBreakMode = .byTruncatingTail
         subtitleLabel.isHidden = subtitle == nil
 
+        bannerView.contentMode = .scaleAspectFill
+        bannerView.clipsToBounds = true
+        bannerTreatment.backgroundColor = UIColor.black.withAlphaComponent(0.68)
+        bannerTreatment.isHidden = true
+        addSubview(bannerView)
+        addSubview(bannerTreatment)
         addSubview(iconView)
         addSubview(titleLabel)
         addSubview(overflowLabel)
@@ -1928,6 +1952,15 @@ private final class ReaderCardTitleHeaderView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setBanner(_ image: UIImage?) {
+        bannerView.image = image
+        bannerTreatment.isHidden = image == nil
+        titleLabel.textColor = image == nil ? LunaColors.primaryText : .white
+        overflowLabel.textColor = image == nil ? LunaColors.secondaryText : UIColor.white.withAlphaComponent(0.85)
+        subtitleLabel.textColor = image == nil ? LunaColors.secondaryText : UIColor.white.withAlphaComponent(0.85)
+        setNeedsLayout()
+    }
 
     func setIcon(_ image: UIImage) {
         iconView.image = image
@@ -1980,6 +2013,8 @@ private final class ReaderCardTitleHeaderView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        bannerView.frame = bounds
+        bannerTreatment.frame = bounds
         let iconSide: CGFloat = 30
         let contentHeight = max(bounds.height - topInset, 0)
         iconView.frame = CGRect(

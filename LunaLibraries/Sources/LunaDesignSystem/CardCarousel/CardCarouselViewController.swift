@@ -249,6 +249,7 @@ public protocol CardCarouselDelegate: AnyObject {
     /// has already restored its own chrome synchronously; hosts use this to
     /// restore any matching screen-level chrome before the page moves.
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController)
+    func carouselDidRequestLibrary(_ carousel: CardCarouselViewController)
 }
 
 public extension CardCarouselDelegate {
@@ -262,6 +263,7 @@ public extension CardCarouselDelegate {
     ) -> UIMenu? { nil }
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {}
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {}
+    func carouselDidRequestLibrary(_ carousel: CardCarouselViewController) {}
 }
 
 enum CardCarouselPagePanStartDecision: Equatable {
@@ -2073,6 +2075,11 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
 // MARK: - Scrub strip
 
 extension CardCarouselViewController: CarouselScrubberViewDelegate {
+    public func scrubberDidRequestLibrary(_ scrubber: CarouselScrubberView) {
+        guard !isTransitioning else { return }
+        delegate?.carouselDidRequestLibrary(self)
+    }
+
 
     public func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {
         loadStripVisuals(for: indices)

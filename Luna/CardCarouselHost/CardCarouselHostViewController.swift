@@ -540,6 +540,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     /// is refreshed are not.
     let trailingBottomButton = UIButton(type: .system)
 
+    private var savedLibrary: SavedLibraryViewController?
     private(set) var archiveTray: ArchiveTrayController?
     private var utilCardSaveTransition: UtilCardSaveTransition?
     private let utilCardShowsOnboardingAtLaunch =
@@ -613,6 +614,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
         mountArchiveTray()
         deckProvider?.deckWillBeginObservingStores()
         observeStoreChanges()
+        SavedLibrarySearchIndex.shared.install()
         reload()
     }
 
@@ -779,6 +781,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     @objc final func reload() {
         deckWillReload()
         guard let provider = deckProvider else { return }
+        savedLibrary?.entries = libraryEntries()
         let snapshot = provider.deckPreparedSnapshot()
         let fingerprint = snapshot.slots.map(\.fingerprint) + snapshot.offstageFingerprint
         // Runs on the abandoned path too: a reload that changes nothing is
@@ -1570,5 +1573,63 @@ extension CardCarouselHostViewController: UtilCardDelegate {
         completion: @escaping (Bool) -> Void
     ) {
         transcribeUtilCardURL(urlString, sourceView: sourceView, completion: completion)
+    }
+}
+
+// MARK: - Swipe-up library
+extension CardCarouselHostViewController {
+    func carouselDidRequestLibrary(_ carousel: CardCarouselViewController) {
+        guard presentedViewController == nil else { return }
+        let library = savedLibrary ?? SavedLibraryViewController()
+        savedLibrary = library
+        library.entries = libraryEntries()
+        library.didSelect = { [weak self] id in
+            guard let self else { return }
+            if self.centerCard(onItemID: id) { return }
+            if let item = SavesStore.shared.items().first(where: { $0.id == id }) {
+                self.openExternally(item)
+            }
+        }
+        library.modalPresentationStyle = .pageSheet
+        if let sheet = library.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(library, animated: true)
+    }
+
+    private func libraryEntries() -> [SavedLibraryEntry] {
+        var items = SavesStore.shared.items().filter { LunaApp.current.includes($0) }
+        let known = Set(items.map(\.id))
+        for index in slots.indices {
+            if let item = deckProvider?.deckItem(forSlot: index), !known.contains(item.id) {
+                items.append(item)
+            }
+        }
+        let media = Dictionary(uniqueKeysWithValues: SavesStore.shared.mediaItems().map { ($0.id, $0) })
+        return items.sorted {
+            let left = $0.bumpDate ?? $0.dateAdded, right = $1.bumpDate ?? $1.dateAdded
+            return left == right ? $0.id.uuidString < $1.id.uuidString : left > right
+        }.map { item in
+            let presenter = presenter(forItem: item)
+            return SavedLibraryEntry(
+                item: item,
+                isVideo: media[item.id]?.kind == .video || (item.contentPlatform?.kind == .video && media[item.id]?.kind == nil),
+                loadBanner: { [weak self] completion in
+                    guard let self else { completion(nil); return }
+                    if let fileName = item.thumbnailFileName {
+                        DownsampledImageLoader.load(
+                            path: SavesStore.shared.articlesDirectory.appendingPathComponent(fileName).path,
+                            pointSize: CGSize(width: 600, height: 160), scale: self.displayScale,
+                            isStale: { false }, completion: completion)
+                    } else {
+                        presenter?.loadThumbnail(for: item, host: self, completion: completion)
+                            ?? completion(nil)
+                    }
+                },
+                loadBadge: { completion in
+                    presenter?.loadSourceBadge(for: item, completion: completion) ?? completion(nil)
+                })
+        }
     }
 }

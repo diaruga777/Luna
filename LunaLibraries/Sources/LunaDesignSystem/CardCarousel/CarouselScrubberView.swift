@@ -40,9 +40,11 @@ public protocol CarouselScrubberViewDelegate: AnyObject {
     /// The chips intersecting the scroll viewport changed. The carousel uses
     /// this bounded window to request only the artwork that can be displayed.
     func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet)
+    func scrubberDidRequestLibrary(_ scrubber: CarouselScrubberView)
 }
 
 public extension CarouselScrubberViewDelegate {
+    func scrubberDidRequestLibrary(_ scrubber: CarouselScrubberView) {}
     func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {}
     func scrubber(_ scrubber: CarouselScrubberView, didTap index: Int) {
         self.scrubber(scrubber, didCommit: index)
@@ -88,6 +90,18 @@ public final class CarouselScrubberView: UIView {
     private var selectedIndex = 0
     private var reportedVisibleIndices = IndexSet()
     private let selectionFeedback = UISelectionFeedbackGenerator()
+    private var dragStartOffset: CGFloat = 0
+    private var dragStartTranslation: CGFloat = 0
+    private var isAdjustingDrag = false
+
+    /// The integral of a smoothly increasing gain: 1.5x for fine motion,
+    /// rising to 4x after 200pt. Symmetric and continuous when reversing.
+    public static func acceleratedDistance(_ translation: CGFloat) -> CGFloat {
+        let distance = abs(translation)
+        let ramp = min(distance, 200)
+        let travel = 1.5 * ramp + ramp * ramp / 160 + max(0, distance - 200) * 4
+        return translation < 0 ? -travel : travel
+    }
 
     /// True while the strip's motion belongs to the user's finger (dragging or
     /// the deceleration it launched). Programmatic centering must stand aside,
@@ -108,6 +122,7 @@ public final class CarouselScrubberView: UIView {
         layout.minimumLineSpacing = spacing
         layout.minimumInteritemSpacing = spacing
 
+        collectionView.accessibilityIdentifier = "carousel.miniCarousel"
         collectionView.backgroundColor = .clear
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -131,6 +146,14 @@ public final class CarouselScrubberView: UIView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
         collectionView.addGestureRecognizer(tap)
+        let up = UISwipeGestureRecognizer(target: self, action: #selector(openLibrary))
+        up.direction = .up
+        collectionView.addGestureRecognizer(up)
+        collectionView.panGestureRecognizer.require(toFail: up)
+        let libraryAction = UIAccessibilityCustomAction(
+            name: "Open library", target: self, selector: #selector(accessibilityOpenLibrary))
+        accessibilityCustomActions = [libraryAction]
+        collectionView.accessibilityCustomActions = [libraryAction]
     }
 
     @available(*, unavailable)
@@ -288,6 +311,9 @@ public final class CarouselScrubberView: UIView {
         reportedVisibleIndices = visible
         delegate?.scrubber(self, didShow: visible)
     }
+
+    @objc private func openLibrary() { delegate?.scrubberDidRequestLibrary(self) }
+    @objc private func accessibilityOpenLibrary() -> Bool { openLibrary(); return true }
 }
 
 // MARK: - Scroll-driven scrubbing
@@ -319,12 +345,25 @@ extension CarouselScrubberView: UICollectionViewDataSource,
     ) -> CGSize { itemSize }
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        dragStartOffset = scrollView.contentOffset.x
+        dragStartTranslation = scrollView.panGestureRecognizer.translation(in: self).x
         selectionFeedback.prepare()
     }
 
     /// Live preview: while the user scrolls the strip, every chip that passes
     /// the viewport's center becomes the selection (and previews its card).
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard !isAdjustingDrag else { return }
+        if scrollView.isDragging {
+            let translation = scrollView.panGestureRecognizer.translation(in: self).x - dragStartTranslation
+            let maximum = CGFloat(max(0, itemCount - 1)) * (itemSize.width + spacing)
+            let target = min(max(0, dragStartOffset - Self.acceleratedDistance(translation)), maximum)
+            if abs(scrollView.contentOffset.x - target) > 0.1 {
+                isAdjustingDrag = true
+                scrollView.contentOffset.x = target
+                isAdjustingDrag = false
+            }
+        }
         reportVisibleIndicesIfNeeded()
         guard isUserScrolling else { return }
         let index = nearestIndex(toOffsetX: scrollView.contentOffset.x)
@@ -345,7 +384,11 @@ extension CarouselScrubberView: UICollectionViewDataSource,
         withVelocity velocity: CGPoint,
         targetContentOffset: UnsafeMutablePointer<CGPoint>
     ) {
-        let index = nearestIndex(toOffsetX: targetContentOffset.pointee.x)
+        let translation = abs(scrollView.panGestureRecognizer.translation(in: self).x)
+        let gain = min(4, 1.5 + translation / 80)
+        let projected = scrollView.contentOffset.x
+            + (targetContentOffset.pointee.x - scrollView.contentOffset.x) * gain
+        let index = nearestIndex(toOffsetX: projected)
         guard let x = centeringOffsetX(forIndex: index) else { return }
         targetContentOffset.pointee.x = x
     }

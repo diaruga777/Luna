@@ -1610,3 +1610,15 @@
 "Settings_email_pullBusy_Luna" = "An email check is already running. Try again once it finishes.";
 "Settings_email_pullAccountChanged_Luna" = "The connected account changed. Try again with the current account.";
 "Settings_email_pullSaveFailed_Luna" = "An email could not be saved. Try again; completed imports will be skipped.";
+
+/* Swipe-up library */
+"Library_title_Luna" = "Library";
+"Library_close_Luna" = "Close library";
+"Library_search_Luna" = "Search library";
+"Library_inProgress_Luna" = "In progress";
+"Library_text_Luna" = "Text";
+"Library_video_Luna" = "Video";
+"Library_shopping_Luna" = "Shopping";
+"Library_empty_Luna" = "Your saved items will appear here.";
+"Library_noMatches_Luna" = "No matching items";
+"Library_searchUnavailable_Luna" = "Search is temporarily unavailable.";

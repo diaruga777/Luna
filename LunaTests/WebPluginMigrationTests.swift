@@ -1,4 +1,7 @@
 import XCTest
+import JavaScriptCore
+import LunaPluginUI
+import LunaStorage
 import LunaModels
 import LunaPluginKit
 import LunaPluginIngest
@@ -99,6 +102,69 @@ final class WebPluginMigrationTests: XCTestCase {
         }
         XCTAssertTrue(runner.fetcher.requests.count >= 2)
         XCTAssertTrue(runner.fetcher.requests.allSatisfy { $0.url.absoluteString == url })
+    }
+
+    @MainActor
+    private final class WSJArchiveBrowser: PluginBrowserPresenting {
+        var urls: [String] = []
+        var stages: [String] = []
+        let html: String
+        init(html: String) { self.html = html }
+        func presentBrowserStep(_ request: PluginBrowserRequest, pluginID: String) async -> PluginBrowserResult? {
+            urls.append(request.url.absoluteString)
+            let context = JSContext()!
+            // archive.li's real CAPTCHA has the site name as its title, and
+            // its widget is #g-recaptcha. The title-only probe hid it forever.
+            context.evaluateScript("""
+                var location={pathname:'/snapshot'};
+                var document={title:'archive.li', body:{innerText:'Why do I have to complete a CAPTCHA?'},
+                  querySelectorAll:()=>[], querySelector:s=>s.includes('#g-recaptcha')?{}:null};
+                """)
+            stages.append(context.evaluateScript(request.detect)?.toString() ?? "")
+            // A short teaser article comes before #CONTENT; an ad's CAPTCHA
+            // remains after the real article appears. Full content must win.
+            context.evaluateScript("""
+                document.body.innerText='Archived article';
+                document.querySelectorAll=()=>[{innerText:'Teaser'}, {innerText:'Full reporting. '.repeat(160)}];
+                """)
+            stages.append(context.evaluateScript(request.detect)?.toString() ?? "")
+            return PluginBrowserResult(url: "https://archive.li/fixture", html: html,
+                                       title: "Recovered WSJ", cookieHeader: "", cookies: [])
+        }
+    }
+
+    @MainActor
+    func testWSJUsesArchiveRevealsCaptchaAndExtractsSnapshotBeyondTeasers() async throws {
+        try load("publisher-access")
+        let url = "https://www.wsj.com/tech/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-160eec6b"
+        let saves = SavesStore(containerURL: runner.containerURL.appendingPathComponent("browser-saves"))
+        let saved = saves.add(urlString: url)
+        let browser = WSJArchiveBrowser(html: """
+            <html><head><title>Recovered WSJ</title></head><body>
+            <article><p>Unrelated teaser must not appear</p></article>
+            <div id="CONTENT"><div><h1>Recovered WSJ</h1>
+            <div>\(String(repeating: "Complete article reporting about protecting trade secrets. ", count: 100))</div>
+            <div>Final paragraph of recovered reporting.</div></div></div></body></html>
+            """)
+        runner.capabilities.register(PluginBrowserBridge(
+            processKind: .app, scheduler: runner.runtime,
+            requests: PluginBrowserRequestStore(saves: saves), presenter: browser))
+        // Registering a new capability requires reloading the plugin context.
+        _ = runner.runtime.loadAll()
+        runner.fetcher.respond(to: url, body: "<article><p>Subscribe to read</p></article>")
+        let answer: PluginIngestAnswer? = await PluginIngestScope.run(
+            saveID: saved.id, pluginID: "app.luna.publisher-access") {
+                await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+                    argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                        page: nil, reason: .save, context: .app, saveID: saved.id.uuidString),
+                    timeout: 5, as: PluginIngestAnswer.self)
+            }
+        XCTAssertEqual(browser.urls, ["https://archive.ph/newest/"+url])
+        XCTAssertEqual(browser.stages, ["challenge", "done"])
+        guard case let .model(.article(article)) = answer else { return XCTFail("No recovered WSJ article") }
+        XCTAssertTrue(article.html.contains("Final paragraph"))
+        XCTAssertFalse(article.html.contains("Unrelated teaser"))
+        XCTAssertEqual(article.baseURL?.absoluteString, url)
     }
 
     struct ArticleParityCase: Decodable {

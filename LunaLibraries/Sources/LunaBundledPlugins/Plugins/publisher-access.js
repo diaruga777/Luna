@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.3","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.4","api":1,
  "description":"Reads gated articles using publisher rules, crawler requests, archives and plugin-declared browser steps.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -414,6 +414,10 @@ const LunaAccess = (() => {
         return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '');
     }
     function prepare(html,url) {
+        const snapshot=luna.html.parse(html,url);
+        const content=snapshot.querySelector('#CONTENT');
+        if(content) html='<html><head>'+(snapshot.head?snapshot.head.innerHTML:'')+
+            '</head><body><article>'+content.innerHTML+'</article></body></html>';
         if(matches(host(url),'thedailybeast.com')) {
             const doc=luna.html.parse(html,url);
             const content=doc.querySelector('article#article-content');
@@ -480,12 +484,32 @@ const LunaAccess = (() => {
         }catch(_){}
         return null;
     }
+    // Content wins over unrelated ad CAPTCHA widgets. Check every root: WSJ
+    // snapshots often put teaser <article>s before the actual article body.
     const detect=`(() => {
-        if (/captcha|verify you are human|checking your browser/i.test(document.title)) return 'challenge';
-        const article=document.querySelector('article,[itemprop="articleBody"],main');
-        const text=article?article.innerText:'';
-        return text.length>1200&&!/subscribe to (continue|read)|already a subscriber/i.test(text)?'done':'wait';
+        const body=document.body?document.body.innerText:'';
+        const roots=Array.from(document.querySelectorAll('article,[itemprop="articleBody"],[class*="article-body"],#CONTENT,main'));
+        if(roots.some(n=>n.innerText.length>1200&&!/subscribe to (continue|read)|already a subscriber/i.test(n.innerText)))return 'done';
+        if(document.querySelector('#g-recaptcha,.g-recaptcha,[data-sitekey],.cf-turnstile,#challenge-form,iframe[src*="captcha"],iframe[src*="challenges.cloudflare.com"]') ||
+           /captcha|verify (you are|you're)( a)? human|checking your browser|just a moment/i.test(document.title) ||
+           /why do i have to complete a captcha|verify (you are|you're)( a)? human|checking your browser|needs to review the security/i.test(body))return 'challenge';
+        if(/-32602|invalid interception ?id/i.test(body) ||
+           (body.length<4000&&/enable (js|javascript)/i.test(body)&&/ad ?blocker/i.test(body)))return 'error';
+        // A publisher login/paywall requires the person, too. It cannot make
+        // progress while hidden under a spinner.
+        if(/subscribe to (continue|read)|already a subscriber/i.test(body))return 'challenge';
+        return 'wait';
     })()`;
+    function archiveDetect(url) {
+        return `(() => {
+            const stage=(${detect});if(stage!=='wait')return stage;
+            const input=document.querySelector('input[name="url"]');
+            if(input&&input.form&&!window.__lunaArchiveSubmitted){
+                window.__lunaArchiveSubmitted=true;input.value=${JSON.stringify(url)};input.form.submit();
+            }
+            return 'wait';
+        })()`;
+    }
     async function resolve({url,page,reason,context,saveId}) {
         let html=page&&page.url===url&&page.html;
         if(!html){try{const r=await luna.fetch({url,userAgent:'safari',timeout:5});html=r.text;}catch(_){}}
@@ -504,11 +528,16 @@ const LunaAccess = (() => {
         if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;
-        const live=await luna.browser.open({url,saveId,cookies:rule&&rule.allowCookies?'persistent':'ephemeral',
-            userAgent:rule&&rule.useragentCustom,title:'Open article',detect,
-            scripts:[cleanup(url,rule)],blockURLs:blockers(url,rule),timeout:90});
-        const liveArticle=live&&article(live.html,url);if(liveArticle)return liveArticle;
-        const snapshot=await luna.browser.open({url:'https://archive.ph/newest/'+url,saveId,title:'Find archived article',detect,timeout:180});
+        // WSJ's server-side wall cannot be removed with a live-page cleanup.
+        // Go straight to the archive after silent probes rather than hiding it
+        // for a ninety-second live wait that can never recover the body.
+        if(!matches(host(url),'wsj.com')) {
+            const live=await luna.browser.open({url,saveId,cookies:rule&&rule.allowCookies?'persistent':'ephemeral',
+                userAgent:rule&&rule.useragentCustom,title:'Open article',detect,
+                scripts:[cleanup(url,rule)],blockURLs:blockers(url,rule),timeout:90});
+            const liveArticle=live&&article(live.html,url);if(liveArticle)return liveArticle;
+        }
+        const snapshot=await luna.browser.open({url:'https://archive.ph/newest/'+url,saveId,title:'Find archived article',detect:archiveDetect(url),timeout:180});
         return snapshot?article(snapshot.html,url):null;
     }
     return {resolve,eligible,article,blockers,cleanup,canProbe};

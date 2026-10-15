@@ -3,6 +3,7 @@
 //  LunaPluginUI
 //
 
+import LunaArchiveReader
 import LunaModels
 import LunaSavesUI
 import LunaStorage
@@ -68,8 +69,19 @@ public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
         // and asks its live browser bridge for a fresh step only when necessary.
         if let resumer = PluginResumeSeams.resumer {
             guard retrying.insert(item.id).inserted else { return }
+            // Install feedback synchronously, before the first network probe.
+            // The live browser may appear above this cover; it stays until the
+            // whole attempt ends, including extraction after a browser answer.
+            let cover = ChallengeCoverView(
+                actionTitle: L10n.string("Common_cancel"), actionSymbol: "xmark")
+            cover.accessibilityIdentifier = "PluginUnlockProgress"
+            cover.label.setTextImmediately(L10n.string("PluginBrowser_workingStatus"))
+            cover.cover(presenter.view)
             Task { [self] in
-                defer { retrying.remove(item.id) }
+                defer {
+                    cover.removeFromSuperview()
+                    retrying.remove(item.id)
+                }
                 await resumer.resumePluginLockedSave(id: item.id)
             }
             return
@@ -88,6 +100,12 @@ public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
     }
 
     public func resumeCompleted() {
+        // Older app versions could downgrade a cancelled unlock to a bookmark
+        // while retaining its plugin owner. Restore the tappable lock on launch
+        // and foreground without opening any browser unprompted.
+        for item in store.items() where item.state == .link && item.pluginID != nil {
+            store.markPluginLocked(item.id, pluginID: item.pluginID!, title: item.title)
+        }
         let waiting = store.items()
             .filter { $0.isPluginLocked }
             .filter { requests.record(for: $0.id)?.resultJSON != nil }

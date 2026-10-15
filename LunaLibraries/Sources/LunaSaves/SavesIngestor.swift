@@ -230,6 +230,15 @@ public final class SavesIngestor: PluginLockedSaveResuming {
         _ result: IngestResult, for item: SavedItem, forceArticle: Bool,
         allowsInteractivePrompt: Bool
     ) async -> SurfaceSupport.Decision {
+        // Retrying a lock is allowed to replace it with content, never with a
+        // bookmark or failure after a cancelled/expired browser invocation.
+        if item.isPluginLocked {
+            switch result.outcome {
+            case .link, .failed:
+                return .supported
+            default: break
+            }
+        }
         var item = item
         let resolvedURL = result.url
         if let itemURL = item.url, resolvedURL != itemURL {
@@ -300,6 +309,9 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     /// consumes a matching stored answer or presents the current browser step.
     /// The resulting Model replaces the lock rather than adding a second save.
     public func resumePluginLockedSave(id: UUID) async {
+        if let item = store.item(withID: id), item.state == .link, let owner = item.pluginID {
+            store.markPluginLocked(id, pluginID: owner, title: item.title)
+        }
         guard let item = store.item(withID: id),
               item.isPluginLocked || (URLBehaviorPolicy.pluginsOnly && item.state == .needsCaptcha) else { return }
         SharedDiagnosticLog.record(

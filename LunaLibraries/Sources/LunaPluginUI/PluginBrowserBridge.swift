@@ -157,10 +157,13 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
         }
         diagnostics.record(
             "browser opening \(request.url.absoluteString)", pluginID: pluginID)
-        // The store row is dropped here rather than kept: this run is showing
-        // the modal, so a stale request for the same save would only mislead a
-        // later launch into offering an unlock for a step already taken.
-        requests.clear(saveID: saveID)
+        // Keep a durable checkpoint while the modal is up. Cancellation,
+        // process termination and a failed page must leave an unlock to retry.
+        guard let json = request.jsonText else {
+            box.fail("the browser request could not be stored", code: "bridge-failed")
+            return
+        }
+        requests.put(saveID: saveID, pluginID: pluginID, requestJSON: json)
         Task { @MainActor in
             guard box.isOperationValid else { return }
             // Awaiting a person is useful work, bounded by the browser request's
@@ -175,10 +178,14 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
             }
             defer { heartbeat.cancel() }
             let result = await presenter.presentBrowserStep(request, pluginID: pluginID)
+            guard box.isOperationValid else { return }
             guard let result else {
-                box.fail("the browser step was cancelled", code: "cancelled")
+                // The walk already understands this resumable outcome. Do not
+                // fall through to another plugin and save a plain bookmark.
+                box.fail("the browser step is unfinished", code: LunaPluginRuntime.PluginBrowserDeferral.code)
                 return
             }
+            requests.clear(saveID: saveID)
             box.fulfill(result.jsObject)
         }
     }

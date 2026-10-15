@@ -172,6 +172,32 @@ final class PluginBrowserBridgeTests: XCTestCase {
         }
     }
 
+    @MainActor
+    private final class CancelledBrowser: PluginBrowserPresenting {
+        let requests: PluginBrowserRequestStore
+        let saveID: UUID
+        var checkpointWasPresent = false
+        init(requests: PluginBrowserRequestStore, saveID: UUID) {
+            self.requests = requests
+            self.saveID = saveID
+        }
+        func presentBrowserStep(_ request: PluginBrowserRequest, pluginID: String) async -> PluginBrowserResult? {
+            checkpointWasPresent = requests.pending(for: saveID) != nil
+            return nil
+        }
+    }
+
+    @MainActor
+    func testCancelledAppBrowserKeepsTheCurrentCheckpointAndReturnsALock() async throws {
+        let browser = CancelledBrowser(requests: requests, saveID: saveID)
+        install(processKind: .app, presenter: browser)
+        let value = await answer(scopedTo: saveID)
+        XCTAssertEqual(value, "code:browser-deferred")
+        XCTAssertTrue(browser.checkpointWasPresent, "killing the app while the browser is up must be recoverable")
+        let record = try XCTUnwrap(requests.pending(for: saveID))
+        XCTAssertEqual(PluginBrowserRequest(json: record.requestJSON)?.url.absoluteString, Self.gateURL)
+    }
+
     // MARK: - Outside a save
 
     func testACallWithNoSaveToParkAgainstRefuses() async {

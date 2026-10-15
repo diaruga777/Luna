@@ -92,6 +92,19 @@ final class PluginResumeTests: XCTestCase {
     }
 
     @MainActor
+    func testForegroundRepairsPreviouslyDowngradedLocksWithoutOpeningBrowser() {
+        let locked = lockedSave()
+        requests.clear(saveID: locked.id)
+        saves.markPlainLink(locked.id)
+        let bookmark = saves.add(urlString: "https://bookmark.test/ordinary")
+        saves.markPlainLink(bookmark.id)
+        PluginUnlockFlowRunner(store: saves, requests: requests).resumeCompleted()
+        XCTAssertTrue(saves.item(withID: locked.id)?.isPluginLocked == true)
+        XCTAssertEqual(saves.item(withID: bookmark.id)?.state, .link)
+        XCTAssertTrue(resumer.resumed.isEmpty)
+    }
+
+    @MainActor
     func testASaveLockedByTheArchiveFlowIsNeverResumedByThePluginSweep() async {
         let item = saves.add(urlString: "https://paywall.test/a")
         saves.markNeedsCaptcha(item.id, title: "Locked")
@@ -147,6 +160,37 @@ final class PluginResumeTests: XCTestCase {
             self.resumer.resumed == [item.id]
         }
         XCTAssertTrue(pages.made.isEmpty)
+    }
+
+    @MainActor
+    func testRetryDisplaysProgressSynchronouslyBeforeTheResumerStarts() async {
+        let item = lockedSave()
+        let flow = PluginUnlockFlowRunner(store: saves, requests: requests)
+        let presenter = UIViewController()
+        flow.present(for: item, from: presenter)
+        XCTAssertTrue(presenter.view.subviews.contains { $0.accessibilityIdentifier == "PluginUnlockProgress" })
+        XCTAssertTrue(resumer.resumed.isEmpty, "feedback precedes async work")
+        await waitFor("progress removed after completion") {
+            !presenter.view.subviews.contains { $0.accessibilityIdentifier == "PluginUnlockProgress" }
+        }
+        XCTAssertEqual(resumer.resumed, [item.id])
+    }
+
+    func testDeclinedOrFailedRetryPreservesLockAcrossStoreReopen() async throws {
+        let originalPolicy = URLBehaviorPolicy.pluginsOnly
+        URLBehaviorPolicy.pluginsOnly = true
+        defer { URLBehaviorPolicy.pluginsOnly = originalPolicy }
+        let item = lockedSave()
+        let ingestor = SavesIngestor(store: saves, surfaceGate: ScriptedIngestGate.supported)
+        for outcome in [Outcome.link, .failed(.timedOut)] {
+            _ = await ingestor.applyRescued(IngestResult(url: item.url!, outcome: outcome),
+                                          forItemID: item.id, interactive: true)
+            let reopened = SavesStore(containerURL: directory)
+            let restored = try XCTUnwrap(reopened.item(withID: item.id))
+            XCTAssertTrue(restored.isPluginLocked)
+            XCTAssertEqual(restored.title, item.title)
+            XCTAssertEqual(restored.urlString, item.urlString)
+        }
     }
 
     @MainActor

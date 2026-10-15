@@ -478,7 +478,12 @@ window, which drives the same trigger and queue sweep.
   the e-ink display and frontlight untouched, opens the usual authenticated
   BLE window, then returns to deep sleep. A valid X3 clock anchors the first
   check after a user sleep to 00:00/12:00 UTC; later automatic checks are 12
-  hours apart. Without a set clock, each sleep arms a 12-hour delay.
+  hours apart after a completed sweep. Without a set clock, user sleep arms
+  a 12-hour delay. A missed/incomplete automatic BLE window or SD mount failure
+  gets up to three retries 15 minutes apart, then resumes the 12-hour interval.
+  `/.crosspoint/luna_auto_sync.txt` records whether the timer was armed, woke,
+  completed its sweep, or failed, with the next delay and retry count. Timer
+  wakes skip the display-controller probe, which would reset the panel.
   Luna's existing `no_work` response ends an empty-queue window immediately.
   If Wi-Fi escalation starts but no phone joins the reader's AP, the
   automatic window closes that AP after 20 seconds; manual sync retains its

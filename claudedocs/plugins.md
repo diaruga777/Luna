@@ -85,6 +85,16 @@ bylines and subscription offers. A complete live response can therefore finish i
 the share extension without archive requests or a deferred browser. Short metered
 teasers still fail the normal readability checks; older page shapes retain the
 existing extraction and fallback sequence.
+New Yorker body paragraphs marked `paywall` are normalized only inside that
+publisher's `BodyWrapper` / `body__inner-container` structure. Both web and publisher access
+retains the opening and continuation together, preserving other attributes,
+hidden-content rules, inline markup and chunk order. Its JSON-LD `articleBody`
+can omit the opening, so using it after discarding the marked paragraphs loses
+text. `docs/plugins/lib/newyorker.js` is bundled into both owners because ordinary
+saves reach web before publisher recovery. Short teasers and actual subscription
+notices still fail readability.
+The [October 16 ingestion ownership audit](reviews/ingestion-plugin-audit-2026-10-16.md)
+records the preceding 48 hours of publisher fixes and the native lifecycle changes.
 Browser requests may declare `scripts` (16 / 512 KB total) and `blockURLs` (100 /
 2048 bytes each). Native WebKit validates and executes those declarations without
 choosing publisher rules. Safari preserves browser-deferred outcomes without a save

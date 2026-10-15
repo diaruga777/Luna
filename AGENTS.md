@@ -85,6 +85,10 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 
 ## Agent workflow
 
+- Keep publisher-specific ingestion fixes in the owning JavaScript plugin (and
+  its source under `docs/plugins/lib/`); regenerate bundled helpers when needed.
+  The Swift host stays site-agnostic: bridges, lifecycle, validation and storage,
+  not publisher selectors, text extraction, paywall rules or recovery strategies.
 - Commit completed work in small, logical chunks as it is verified. Do not bundle unrelated changes into the same commit.
 - Unless told otherwise, do all work in your own worktree taken off `main`, not a
   shared checkout. Commit as you go, then merge the worktree's branch into `main`

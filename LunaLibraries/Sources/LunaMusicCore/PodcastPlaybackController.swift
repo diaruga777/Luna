@@ -41,6 +41,7 @@ import LunaPodcastCore
     private var seekGeneration = UUID()
     private var isCompleting = false
     private var lastPersistedAt = Date.distantPast
+    private var positionSaveTask: Task<Void, Never>?
     private var interruptedPlayback = false
     private var artwork: UIImage?
     private var extrasTask: Task<Void, Never>?
@@ -372,7 +373,7 @@ import LunaPodcastCore
             let token = generation
             Task { if self.generation == token { await self.ended() } }; return
         }
-        if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPosition(); publish() }
+        if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPositionInBackground(); publish() }
     }
     private func updatePlayback() {
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
@@ -458,7 +459,29 @@ import LunaPodcastCore
             }
         } else { position = duration; publish() }
     }
+    private func persistPositionInBackground() {
+        guard positionSaveTask == nil, let id = currentEpisode?.id, actualStartRecorded else { return }
+        let savedPosition = position, expected = library.state.progress[id]
+        lastPersistedAt = Date()
+        positionSaveTask = Task { [weak self] in
+            guard let self else { return }
+            defer { positionSaveTask = nil }
+            do {
+                try await library.requireStore().updateInBackground(positionOnly: true) { state in
+                    // A seek, pause or completion may have saved newer progress
+                    // while this snapshot was encoding. Never rewind that edit.
+                    guard state.progress[id] == expected else { return }
+                    var progress = state.progress[id] ?? PodcastEpisodeState()
+                    progress.position = max(0, savedPosition); progress.updatedAt = Date()
+                    state.progress[id] = progress
+                }
+                library.reloadState()
+            } catch is CancellationError { }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
     public func persistPosition() {
+        positionSaveTask?.cancel()
         guard let id = currentEpisode?.id, actualStartRecorded else { return }
         do { try library.requireStore().recordPosition(id, position: position); library.reloadState(); lastPersistedAt = Date() }
         catch { errorMessage = error.localizedDescription }

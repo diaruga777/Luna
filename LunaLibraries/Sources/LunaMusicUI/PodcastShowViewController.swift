@@ -27,7 +27,8 @@ import LunaMusicCore
                 UIAction(title: "Settings", image: UIImage(systemName: "gearshape")) { [weak self] _ in guard let self else { return }; navigationController?.pushViewController(PodcastSettingsViewController(showID: showID), animated: true) },
                 UIAction(title: "Mark All as Played", image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
                     guard let self else { return }; PodcastUI.run(self) {
-                        for episode in self.podcasts.episodes(for: self.showID, applySettings: false).reversed() { try self.podcasts.requireStore().markListened(episode.id, true) }
+                        let ids = self.podcasts.episodes(for: self.showID, applySettings: false).reversed().map(\.id)
+                        try await self.podcasts.requireStore().markListenedInBackground(ids, true)
                         self.podcasts.reloadState()
                     }
                 },
@@ -46,7 +47,9 @@ import LunaMusicCore
             switch filter.selectedSegmentIndex { case 1: return state?.listened != true; case 2: return PodcastDownloads.shared.localURL(episode.id) != nil; case 3: return state?.saved == true; default: return true }
         }
         sections = [.init(title: "Episodes", rows: episodes.map(Row.episode))]
-        if headerShow != show { headerShow = show; buildHeader(show) }
+        if headerShow?.title != show.title || headerShow?.author != show.author || headerShow?.summary != show.summary || headerShow?.artworkURL != show.artworkURL {
+            headerShow = show; buildHeader(show)
+        }
         table.tableFooterView = nil
         if podcasts.refreshingShowIDs.contains(showID) { loading("Updating Episodes") }
         else if let error = show.refreshError { empty("Unable to Update Episodes", detail: error, retry: { [weak self] in Task { await self?.refreshContent() } }) }

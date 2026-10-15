@@ -106,6 +106,21 @@ public class MusicScreenViewController: UIViewController {
     let mini = MusicMiniPlayer()
     var notificationTokens: [NSObjectProtocol] = []
     var tableTop: NSLayoutConstraint!
+    private var defersUpdates = false
+    private var deferredUpdates: [String: @MainActor () -> Void] = [:]
+    func performWhenVisible(key: String, action: @escaping @MainActor () -> Void) {
+        if defersUpdates { deferredUpdates[key] = action } else { action() }
+    }
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        defersUpdates = false
+        let updates = deferredUpdates; deferredUpdates.removeAll()
+        updates.values.forEach { $0() }
+    }
+    public override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        defersUpdates = true
+    }
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -144,7 +159,7 @@ public class MusicScreenViewController: UIViewController {
     }
     func observe(_ name: Notification.Name, action: @escaping @MainActor () -> Void) {
         notificationTokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
-            Task { @MainActor in action() }
+            Task { @MainActor [weak self] in self?.performWhenVisible(key: name.rawValue, action: action) }
         })
     }
     deinit { notificationTokens.forEach(NotificationCenter.default.removeObserver) }
@@ -225,7 +240,9 @@ public class MusicScreenViewController: UIViewController {
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         more.tintColor = .secondaryLabel
         more.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
-        more.menu = songMenu(item, downloadedOnly: downloadedOnly)
+        more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] completion in
+            completion(self?.songMenu(item, downloadedOnly: downloadedOnly).children ?? [])
+        }])
         more.showsMenuAsPrimaryAction = true
         more.accessibilityLabel = "More options for \(item.title ?? "song")"
         cell.accessoryView = more

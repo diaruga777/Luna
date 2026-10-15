@@ -8,7 +8,7 @@ public extension Notification.Name {
     static let lunaMusicPlaybackChanged = Notification.Name("LunaMusic.playbackChanged")
 }
 
-public struct MusicLibrarySearchResults {
+public struct MusicLibrarySearchResults: Sendable {
     public let songs: [MusicSong]
     public let albums: [MusicCollection]
     public let artists: [MusicCollection]
@@ -31,13 +31,14 @@ public final class MusicLibraryController: ObservableObject {
     private var appleSongs: [MusicSong] = []
     private var applePlaylists: [MusicPlaylist] = []
     public private(set) var hasLoaded = false
+    private var publicationID = UUID()
     private var loadWaiters: [CheckedContinuation<Void, Never>] = []
 
     private init() {
         vaultObserver = NotificationCenter.default.addObserver(forName: .lunaMusicVaultChanged, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.publish() }
+            Task { @MainActor in await self?.publish() }
         }
-        publish()
+        Task { await publish() }
         MPMediaLibrary.default().beginGeneratingLibraryChangeNotifications()
         observer = NotificationCenter.default.addObserver(forName: .MPMediaLibraryDidChange,
                                                           object: nil, queue: .main) { [weak self] _ in
@@ -58,7 +59,7 @@ public final class MusicLibraryController: ObservableObject {
     public func reload(refreshVault: Bool = true) async {
         authorizationStatus = Self.libraryAuthorizationStatus
         guard authorizationStatus == .authorized else {
-            appleSongs = []; applePlaylists = []; hasLoaded = true; publish()
+            appleSongs = []; applePlaylists = []; hasLoaded = true; await publish()
             if refreshVault { await VaultMusicController.shared.refresh() }
             NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
             return
@@ -88,7 +89,7 @@ public final class MusicLibraryController: ObservableObject {
         }
         appleSongs = snapshot.songs
         applePlaylists = snapshot.playlists
-        publish()
+        await publish()
         isLoading = false
         hasLoaded = true
         finishLoadWaiters()
@@ -96,22 +97,30 @@ public final class MusicLibraryController: ObservableObject {
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
     }
 
-    private func publish() {
-        songs = (appleSongs + VaultMusicController.shared.songs).sorted {
-            ($0.title ?? "").localizedStandardCompare($1.title ?? "") == .orderedAscending
-        }
-        playlists = (applePlaylists + VaultMusicController.shared.playlists).sorted {
-            ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending
-        }
-        albums = Dictionary(grouping: songs, by: \.albumPersistentID).values.map { items in
-            MusicCollection(items: items.sorted {
-                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
-                if $0.albumTrackNumber != $1.albumTrackNumber { return $0.albumTrackNumber < $1.albumTrackNumber }
-                return ($0.title ?? "") < ($1.title ?? "")
-            })
-        }.sorted { ($0.representativeItem?.albumTitle ?? "") < ($1.representativeItem?.albumTitle ?? "") }
-        artists = Dictionary(grouping: songs, by: \.artistPersistentID).values.map { MusicCollection(items: $0) }
-            .sorted { ($0.representativeItem?.artist ?? "") < ($1.representativeItem?.artist ?? "") }
+    private func publish() async {
+        let token = UUID(); publicationID = token
+        let allSongs = appleSongs + VaultMusicController.shared.songs
+        let allPlaylists = applePlaylists + VaultMusicController.shared.playlists
+        let prepared = await Task.detached(priority: .userInitiated) {
+            let songs = allSongs.sorted {
+                ($0.title ?? "").localizedStandardCompare($1.title ?? "") == .orderedAscending
+            }
+            let playlists = allPlaylists.sorted {
+                ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending
+            }
+            let albums = Dictionary(grouping: songs, by: \.albumPersistentID).values.map { items in
+                MusicCollection(items: items.sorted {
+                    if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                    if $0.albumTrackNumber != $1.albumTrackNumber { return $0.albumTrackNumber < $1.albumTrackNumber }
+                    return ($0.title ?? "") < ($1.title ?? "")
+                })
+            }.sorted { ($0.representativeItem?.albumTitle ?? "") < ($1.representativeItem?.albumTitle ?? "") }
+            let artists = Dictionary(grouping: songs, by: \.artistPersistentID).values.map { MusicCollection(items: $0) }
+                .sorted { ($0.representativeItem?.artist ?? "") < ($1.representativeItem?.artist ?? "") }
+            return (songs, playlists, albums, artists)
+        }.value
+        guard publicationID == token else { return }
+        songs = prepared.0; playlists = prepared.1; albums = prepared.2; artists = prepared.3
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
     }
 
@@ -166,9 +175,20 @@ public final class MusicLibraryController: ObservableObject {
         }
     }
 
+    public func searchInBackground(_ text: String) async -> MusicLibrarySearchResults {
+        let songs = songs, albums = albums, artists = artists, playlists = playlists
+        let worker = Task.detached(priority: .userInitiated) {
+            Self.search(text, songs: songs, albums: albums, artists: artists, playlists: playlists)
+        }
+        return await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+    }
     public func search(_ text: String) -> MusicLibrarySearchResults {
+        Self.search(text, songs: songs, albums: albums, artists: artists, playlists: playlists)
+    }
+    nonisolated private static func search(_ text: String, songs: [MusicSong], albums: [MusicCollection], artists: [MusicCollection], playlists: [MusicPlaylist]) -> MusicLibrarySearchResults {
         let terms = text.split(whereSeparator: \.isWhitespace).map(String.init)
         func matches(_ values: String?...) -> Bool {
+            guard !Task.isCancelled else { return false }
             let joined = values.compactMap { $0 }.joined(separator: " ")
             return terms.allSatisfy { joined.localizedStandardContains($0) }
         }

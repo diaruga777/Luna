@@ -32,12 +32,12 @@ public struct MusicSong: @unchecked Sendable {
         return mediaItem?.isCloudItem ?? true
     }
 }
-public struct MusicCollection {
+public struct MusicCollection: Sendable {
     public let items: [MusicSong]
     public var representativeItem: MusicSong? { items.first }
     public init(items: [MusicSong]) { self.items = items }
 }
-public struct MusicPlaylist {
+public struct MusicPlaylist: @unchecked Sendable {
     public let mediaPlaylist: MPMediaPlaylist?
     public let persistentID: MusicID
     public let name: String?

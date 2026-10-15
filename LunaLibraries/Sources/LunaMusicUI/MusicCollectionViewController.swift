@@ -17,19 +17,14 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         }
     }
     private var filteredResults: [MusicResult] = []
-    private func matchingResults() -> [MusicResult] {
-        let terms = (searchController.searchBar.text ?? "").split(whereSeparator: \.isWhitespace)
-        return results.filter { result in
-            guard !downloadedOnly || result.hasDownloadedSongs else { return false }
-            let text = ([result.name] + result.songs.flatMap { [$0.title ?? "", $0.artist ?? "", $0.albumTitle ?? ""] }).joined(separator: " ")
-            return terms.allSatisfy { text.localizedStandardContains(String($0)) }
-        }
-    }
-    private var gridAlbums: [MusicCollection]? {
+    private var filterTask: Task<Void, Never>?
+    private var filterToken = UUID()
+    private var gridAlbums: [MusicCollection]?
+    private func rebuildGridAlbums() {
         let isArtist: Bool
         if case .artist = collection { isArtist = true } else { isArtist = false }
-        guard isArtist || (title == "Albums" && collection == nil) else { return nil }
-        return filteredResults.compactMap { if case .album(let album) = $0 { return album }; return nil }
+        guard isArtist || (title == "Albums" && collection == nil) else { gridAlbums = nil; return }
+        gridAlbums = filteredResults.compactMap { if case .album(let album) = $0 { return album }; return nil }
     }
     init(title: String, results: [MusicResult], collection: MusicResult? = nil, downloadedOnly: Bool = false) {
         self.results = results; self.collection = collection; self.downloadedOnly = downloadedOnly
@@ -132,7 +127,27 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     }
     func updateSearchResults(for searchController: UISearchController) { reloadResults() }
     private func reloadResults() {
-        filteredResults = matchingResults()
+        filterTask?.cancel()
+        let token = UUID(); filterToken = token
+        let terms = (searchController.searchBar.text ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
+        let candidates = downloadedOnly ? results.filter { $0.hasDownloadedSongs } : results
+        guard !terms.isEmpty else { filteredResults = candidates; renderResults(); return }
+        filterTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+            let worker = Task.detached(priority: .userInitiated) {
+                candidates.filter { result in
+                    guard !Task.isCancelled else { return false }
+                    let text = ([result.name] + result.songs.flatMap { [$0.title ?? "", $0.artist ?? "", $0.albumTitle ?? ""] }).joined(separator: " ")
+                    return terms.allSatisfy { text.localizedStandardContains($0) }
+                }
+            }
+            let found = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+            guard let self, !Task.isCancelled, filterToken == token else { return }
+            filteredResults = found; renderResults()
+        }
+    }
+    private func renderResults() {
+        rebuildGridAlbums()
         let searching = !(searchController.searchBar.text ?? "").isEmpty
         table.tableHeaderView = searching ? nil : collectionHeader
         table.reloadData()

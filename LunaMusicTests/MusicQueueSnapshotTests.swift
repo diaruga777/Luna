@@ -122,7 +122,14 @@ final class MusicLayoutTests: XCTestCase {
         XCTAssertNotNil(screen.navigationItem.searchController)
         capture("Empty playlist with Add Music")
     }
-    func testCollectionSearchFiltersAlbumsAndSongs() {
+    private func waitForRows(_ count: Int, in screen: MusicCollectionViewController) async throws {
+        for _ in 0..<200 {
+            if screen.tableView(screen.table, numberOfRowsInSection: 0) == count { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Collection search did not publish \(count) rows")
+    }
+    func testCollectionSearchFiltersAlbumsAndSongs() async throws {
         let first = LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars")
         let second = LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist")
         for result in [MusicResult.album(MusicCollection(items: [first, second].map(MusicSong.init))), .artist(MusicCollection(items: [first, second].map(MusicSong.init))), .playlist(MusicPlaylist(LayoutPlaylist(items: [first, second])))] {
@@ -136,16 +143,18 @@ final class MusicLayoutTests: XCTestCase {
             XCTAssertTrue(screen.navigationItem.hidesSearchBarWhenScrolling)
             search.searchBar.text = "Cars"
             screen.updateSearchResults(for: search)
+            try await waitForRows(1, in: screen)
             XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 1)
             search.searchBar.text = "No Match"
             screen.updateSearchResults(for: search)
+            try await waitForRows(0, in: screen)
             XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 0)
             search.searchBar.text = ""
             screen.updateSearchResults(for: search)
             XCTAssertNotNil(screen.table.tableHeaderView)
         }
     }
-    func testDownloadedFilterCombinesWithSearchAndKeepsCollectionMetadata() {
+    func testDownloadedFilterCombinesWithSearchAndKeepsCollectionMetadata() async throws {
         let local = MusicSong(LayoutSong(id: 1, title: "Drive", album: "Heartbeat City", artist: "The Cars"))
         let cloud = MusicSong(LayoutSong(id: 2, title: "Hello", album: "Other Album", artist: "Another Artist", cloud: true))
         let mixed = MusicResult.album(MusicCollection(items: [local, cloud]))
@@ -157,9 +166,11 @@ final class MusicLayoutTests: XCTestCase {
             let search = screen.navigationItem.searchController!
             search.searchBar.text = "No Match"
             screen.updateSearchResults(for: search)
+            try await waitForRows(0, in: screen)
             XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 0)
             search.searchBar.text = "Cars"
             screen.updateSearchResults(for: search)
+            try await waitForRows(1, in: screen)
             XCTAssertEqual(screen.tableView(screen.table, numberOfRowsInSection: 0), 1)
             screen.downloadedOnly = false
             search.searchBar.text = ""

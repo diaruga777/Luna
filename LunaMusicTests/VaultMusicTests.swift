@@ -1289,3 +1289,83 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.player.currentTime().seconds, 3600, accuracy: 1)
     }
 }
+
+@MainActor final class MusicResponsivenessTests: XCTestCase {
+    func testHiddenPodcastScreensDeferAndCoalesceReloads() async throws {
+        let controller = CountingPodcastList()
+        controller.loadViewIfNeeded()
+        controller.viewWillAppear(false)
+        try await Task.sleep(for: .milliseconds(50))
+        let baseline = controller.reloads
+        controller.viewDidDisappear(false)
+        for _ in 0..<5 { NotificationCenter.default.post(name: .lunaPodcastsChanged, object: nil) }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(controller.reloads, baseline)
+        controller.viewWillAppear(false)
+        XCTAssertEqual(controller.reloads, baseline + 1)
+    }
+    func testPositionCheckpointDoesNotRebuildPodcastLists() async throws {
+        let controller = CountingPodcastList()
+        controller.loadViewIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        let baseline = controller.reloads
+        NotificationCenter.default.post(name: .lunaPodcastsChanged, object: nil, userInfo: ["positionOnly": true])
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(controller.reloads, baseline)
+    }
+    func testLibraryRowsStayConsistentWhileSearchIsPending() async throws {
+        let controller = MusicLibraryViewController()
+        controller.loadViewIfNeeded()
+        let search = try XCTUnwrap(controller.navigationItem.searchController)
+        search.searchBar.text = "No Such Song"
+        controller.updateSearchResults(for: search)
+        // UIKit may request an existing category cell during the debounce.
+        let cell = controller.tableView(controller.table, cellForRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertEqual((cell.contentConfiguration as? UIListContentConfiguration)?.text, "Playlists")
+        search.searchBar.text = ""
+        controller.updateSearchResults(for: search)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(controller.tableView(controller.table, numberOfRowsInSection: 0), 5)
+    }
+    func testCollectionSearchCannotApplyObsoleteResultsAfterClearing() async throws {
+        let songs = (0..<2000).map { index in
+            MusicResult.song(MusicSong(file: MusicFile(path: "song-\(index).mp3", version: "1", size: 1, title: "Song \(index)", artist: "Artist", album: "Album"), peer: "test"))
+        }
+        let controller = MusicCollectionViewController(title: "Songs", results: songs)
+        controller.loadViewIfNeeded()
+        let search = try XCTUnwrap(controller.navigationItem.searchController)
+        search.searchBar.text = "Song 1999"
+        controller.updateSearchResults(for: search)
+        // Let the detached search start, then clear it before it may publish.
+        try await Task.sleep(for: .milliseconds(125))
+        search.searchBar.text = ""
+        controller.updateSearchResults(for: search)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(controller.tableView(controller.table, numberOfRowsInSection: 0), 2000)
+        search.searchBar.text = "Song 1999"
+        controller.updateSearchResults(for: search)
+        for _ in 0..<100 {
+            if controller.tableView(controller.table, numberOfRowsInSection: 0) == 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(controller.tableView(controller.table, numberOfRowsInSection: 0), 1)
+    }
+    func testEpisodeSummaryIsBoundedAndMenuDoesNotRetainScreen() {
+        var episode = PodcastEpisode(showID: "notes", guid: "long", title: "Long notes", publishedAt: Date(), mediaURL: URL(string: "https://example.com/notes.mp3")!)
+        episode.summary = String(repeating: "<p>Hello &amp; world.</p>", count: 1000)
+        let cell = PodcastEpisodeCell(style: .default, reuseIdentifier: nil)
+        weak var releasedOwner: UIViewController?
+        do {
+            let owner = UIViewController(); releasedOwner = owner
+            cell.configure(episode, owner: owner)
+            XCTAssertLessThanOrEqual(cell.summary.text?.count ?? 0, 500)
+            XCTAssertTrue(cell.summary.text?.hasPrefix("Hello & world.") == true)
+        }
+        XCTAssertNil(releasedOwner)
+    }
+}
+
+@MainActor private final class CountingPodcastList: PodcastListViewController {
+    var reloads = 0
+    override func reload() { reloads += 1; super.reload() }
+}

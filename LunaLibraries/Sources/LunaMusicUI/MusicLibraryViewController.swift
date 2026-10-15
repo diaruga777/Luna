@@ -8,8 +8,11 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     private let searchController = UISearchController(searchResultsController: nil)
     private var search: UISearchBar { searchController.searchBar }
     private var pendingSearchFocus = false
+    private var searchTask: Task<Void, Never>?
+    private var searchToken = UUID()
     private let library = MusicLibraryController.shared
     private var results: [MusicResult] = []
+    private var showingSearchResults = false
     private var query: String { search.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
     private lazy var podcasts = PodcastLibraryViewController()
     private var downloadedOnly = false
@@ -108,13 +111,23 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     public func updateSearchResults(for searchController: UISearchController) { update() }
     public func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
     private func update() {
-        results = []
-        if !query.isEmpty {
-            let found = library.search(query)
+        searchTask?.cancel()
+        let token = UUID(); searchToken = token
+        let text = query
+        guard !text.isEmpty else { results = []; renderResults(); return }
+        searchTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+            guard let self else { return }
+            let found = await library.searchInBackground(text)
+            guard !Task.isCancelled, searchToken == token, query == text else { return }
             results = found.songs.map(MusicResult.song) + found.albums.map(MusicResult.album)
                 + found.artists.map(MusicResult.artist) + found.playlists.map(MusicResult.playlist)
+            if downloadedOnly { results = results.filter { $0.hasDownloadedSongs } }
+            renderResults()
         }
-        if downloadedOnly { results = results.filter { $0.hasDownloadedSongs } }
+    }
+    private func renderResults() {
+        showingSearchResults = !query.isEmpty
         table.reloadData()
         var configuration: UIContentUnavailableConfiguration?
         if library.songs.isEmpty && (library.authorizationStatus == .denied || library.authorizationStatus == .restricted) {
@@ -144,12 +157,12 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     }
     public func numberOfSections(in tableView: UITableView) -> Int { 1 }
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        query.isEmpty ? categories.count : results.count
+        showingSearchResults ? results.count : categories.count
     }
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
         cell.accessoryView = nil
-        if query.isEmpty {
+        if !showingSearchResults {
             let category = categories[indexPath.row]
             var config = cell.defaultContentConfiguration(); config.text = category.0; config.image = UIImage(systemName: category.1)
             config.textProperties.font = .preferredFont(forTextStyle: .title2)
@@ -162,7 +175,10 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     }
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if !query.isEmpty { open(results[indexPath.row]); return }
+        if showingSearchResults {
+            guard results.indices.contains(indexPath.row) else { return }
+            open(results[indexPath.row]); return
+        }
         guard indexPath.section == 0 else { return }
         if indexPath.row == 4 { showPodcasts(); return }
         let items: [MusicResult]
@@ -182,7 +198,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
     }
 }
 
-internal enum MusicResult {
+internal enum MusicResult: Sendable {
     case song(MusicSong), playlist(MusicPlaylist), album(MusicCollection), artist(MusicCollection)
     var name: String { switch self { case .song(let item): return item.title ?? "Unknown Song"; case .playlist(let item): return item.name ?? "Playlist"; case .album(let item): return item.representativeItem?.albumTitle ?? "Unknown Album"; case .artist(let item): return item.representativeItem?.artist ?? "Unknown Artist" } }
     var songs: [MusicSong] { switch self { case .song(let item): return [item]; case .playlist(let item): return item.items; case .album(let item), .artist(let item): return item.items } }
@@ -191,8 +207,13 @@ internal enum MusicResult {
     @MainActor func artwork(size: CGFloat = 600) -> UIImage? {
         guard case .playlist = self else { return MusicStyle.image(songs.first, size: size) }
         var seen = Set<MusicID>()
-        let covers = songs.filter { seen.insert($0.albumPersistentID).inserted }
-            .compactMap { MusicStyle.image($0, size: size / 2) }.prefix(4)
+        var covers: [UIImage] = []
+        for song in songs {
+            guard seen.insert(song.albumPersistentID).inserted,
+                  let cover = MusicStyle.image(song, size: size / 2) else { continue }
+            covers.append(cover)
+            if covers.count == 4 { break }
+        }
         guard covers.count == 4 else { return MusicStyle.image(songs.first, size: size) }
         return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
             for (index, cover) in covers.enumerated() {

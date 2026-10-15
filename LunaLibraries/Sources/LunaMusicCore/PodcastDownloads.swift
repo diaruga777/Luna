@@ -27,6 +27,7 @@ public struct PodcastDownload: Codable, Equatable {
     public var hlsBackgroundCompletion: (() -> Void)?
     public static let hlsSessionIdentifier = sessionIdentifier + ".hls"
     private var tasks: [String: URLSessionTask] = [:]
+    private var transferBudgets: [String: Int64] = [:]
     private var preparationTasks: [String: Task<PodcastAudioPreparation.Result, Error>] = [:]
     private var preparingBackgroundEvents = false
     private var isPreparingExisting = false
@@ -66,7 +67,8 @@ public struct PodcastDownload: Codable, Equatable {
             var url = directory; var values = URLResourceValues(); values.isExcludedFromBackup = true; try url.setResourceValues(values)
             if FileManager.default.fileExists(atPath: manifestURL.path) { downloads = try JSONDecoder().decode([String: PodcastDownload].self, from: Data(contentsOf: manifestURL)) }
         } catch { errorMessage = error.localizedDescription }
-        libraryObserver = NotificationCenter.default.addObserver(forName: .lunaPodcastsChanged, object: library.store, queue: .main) { [weak self] _ in
+        libraryObserver = NotificationCenter.default.addObserver(forName: .lunaPodcastsChanged, object: library.store, queue: .main) { [weak self] notification in
+            guard notification.userInfo?["positionOnly"] as? Bool != true else { return }
             Task { @MainActor in await self?.reconcile() }
         }
     }
@@ -229,6 +231,7 @@ public struct PodcastDownload: Codable, Equatable {
             }
         }
         let plan = downloadPlan()
+        transferBudgets = plan.reservedBytes
         let retained = Set(plan.episodeIDs)
         for id in Array(downloads.keys) where !retained.contains(id) && protectedDownloadID != id {
             // Preserve the request/known size so it can be refilled after space frees.
@@ -372,11 +375,15 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
             guard self.tasks[id] === downloadTask else { return }
             self.progress[id] = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
             let size = max(totalBytesWritten, totalBytesExpectedToWrite)
-            if size > 0 {
+            if size > 0, self.downloads[id]?.bytes != size {
                 self.downloads[id]?.bytes = size
-                // Abort oversized/underreported responses before filling the disk.
-                let budget = self.downloadPlan().reservedBytes[id] ?? 0
-                if size > budget { self.discardFile(id); await self.completed(id) }
+                // The reservation stays valid as bytes arrive. Rebuild the
+                // library-wide plan only if the server exceeds it, or reconcile
+                // changes queue/settings; never sort all feeds per network chunk.
+                if size > (self.transferBudgets[id] ?? 0) {
+                    self.transferBudgets = self.downloadPlan().reservedBytes
+                    if size > (self.transferBudgets[id] ?? 0) { self.discardFile(id); await self.completed(id) }
+                }
             }
         }
     }

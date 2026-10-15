@@ -1,4 +1,5 @@
 import UIKit
+import ImageIO
 import Combine
 import LunaPodcastCore
 import LunaMusicCore
@@ -10,23 +11,36 @@ import LunaDesignSystem
     static func image(_ url: URL) async -> UIImage? {
         if let image = images.object(forKey: url as NSURL) { return image }
         if let task = imageTasks[url] { return await task.value }
-        let task = Task<UIImage?, Never> {
+        let task = Task.detached(priority: .utility) { () -> UIImage? in
             var request = URLRequest(url: url); request.timeoutInterval = 20
             guard let (data, response) = try? await PodcastNetwork.session.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
                   data.count < 15_000_000 else { return nil }
-            return await UIImage(data: data)?.byPreparingThumbnail(ofSize: CGSize(width: 600, height: 600))
+            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 600
+                  ] as CFDictionary) else { return nil }
+            return UIImage(cgImage: thumbnail)
         }
         imageTasks[url] = task
         let image = await task.value; imageTasks[url] = nil
         if let image { images.setObject(image, forKey: url as NSURL, cost: Int(image.size.width * image.size.height * 4)) }
         return image
     }
+    private static let texts: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>(); cache.totalCostLimit = 4 * 1_024 * 1_024; return cache
+    }()
     static func text(_ html: String) -> String {
-        html.replacingOccurrences(of: "</p>|<br\\s*/?>|</div>", with: "\n", options: .regularExpression)
+        if let cached = texts.object(forKey: html as NSString) { return cached as String }
+        let result = html.replacingOccurrences(of: "</p>|<br\\s*/?>|</div>", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&nbsp;", with: " ")
+        texts.setObject(result as NSString, forKey: html as NSString, cost: (html.utf16.count + result.utf16.count) * 2)
+        return result
     }
     static func time(_ seconds: Double) -> String {
         guard seconds.isFinite else { return "0:00" }
@@ -95,6 +109,8 @@ import LunaDesignSystem
     let artwork = UIImageView()
     let heading = UILabel(), detail = UILabel(), summary = UILabel()
     let more = UIButton(type: .system)
+    private var episode: PodcastEpisode?
+    private var date = ""
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         artwork.layer.cornerRadius = 8; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
@@ -111,8 +127,21 @@ import LunaDesignSystem
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func configure(_ episode: PodcastEpisode, owner: UIViewController) {
         let library = PodcastLibraryController.shared; let state = library.state.progress[episode.id]
-        heading.text = episode.title; summary.text = PodcastUI.text(episode.summary)
-        let date = episode.publishedAt == .distantPast ? "" : episode.publishedAt.formatted(date: .abbreviated, time: .omitted)
+        if self.episode != episode {
+            self.episode = episode
+            heading.text = episode.title
+            // Labels show two lines; don't ask TextKit to lay out entire show notes.
+            summary.text = String(PodcastUI.text(episode.summary).prefix(500))
+            date = episode.publishedAt == .distantPast ? "" : episode.publishedAt.formatted(date: .abbreviated, time: .omitted)
+            more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak owner] completion in
+                guard let owner else { completion([]); return }
+                completion(PodcastUI.episodeMenu(episode, from: owner).children)
+            }])
+        }
+        let artworkURL = episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL
+        if artwork.accessibilityIdentifier != artworkURL?.absoluteString || artwork.image == nil {
+            PodcastUI.artwork(artworkURL, into: artwork)
+        }
         let time = state?.listened == true ? "Played" : (state?.position ?? 0) > 0 ? "\(PodcastUI.time(max(0, episode.duration - (state?.position ?? 0)))) left" : PodcastUI.time(episode.duration)
         detail.text = [date, time, episode.explicit ? "Explicit" : nil, PodcastDownloads.shared.localURL(episode.id) != nil ? "Downloaded" : nil].compactMap { $0 }.joined(separator: " · ")
         let download = PodcastDownloads.shared.downloads[episode.id]
@@ -127,8 +156,6 @@ import LunaDesignSystem
             spinner.accessibilityLabel = "Loading Audio"; spinner.accessibilityIdentifier = "podcasts.episodeLoading"
             accessoryView = spinner
         } else { accessoryView = nil }
-        more.menu = PodcastUI.episodeMenu(episode, from: owner)
-        PodcastUI.artwork(episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL, into: artwork)
         accessibilityIdentifier = "podcast.episode.\(episode.id)"
     }
 }
@@ -174,6 +201,7 @@ import LunaDesignSystem
         if case .directory(let result) = sections[indexPath.section].rows[indexPath.row] { prefetch([result]) }
     }
     func cancelDirectoryOpening() {
+        guard openingDirectoryID != nil || directoryTask != nil else { return }
         directoryToken = UUID(); directoryTask?.cancel(); directoryTask = nil
         openingDirectoryID = nil
         table.allowsSelection = true
@@ -197,14 +225,32 @@ import LunaDesignSystem
         table.register(PodcastEpisodeCell.self, forCellReuseIdentifier: "episode")
         table.register(UITableViewCell.self, forCellReuseIdentifier: "podcastRow")
         table.dataSource = self; table.delegate = self; table.prefetchDataSource = self
-        podcasts.$refreshingShowIDs.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &loadingSubscriptions)
-        PodcastDownloads.shared.objectWillChange.debounce(for: .milliseconds(200), scheduler: DispatchQueue.main).sink { [weak self] in self?.refreshVisibleEpisodes() }.store(in: &loadingSubscriptions)
-        PodcastPlaybackController.shared.$isBuffering.sink { [weak self] _ in DispatchQueue.main.async { self?.refreshVisibleEpisodes() } }.store(in: &loadingSubscriptions)
-        observe(.lunaPodcastsChanged) { [weak self] in self?.reload() }
+        podcasts.$refreshingShowIDs.dropFirst().sink { [weak self] _ in self?.scheduleReload() }.store(in: &loadingSubscriptions)
+        PodcastDownloads.shared.objectWillChange.throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true).sink { [weak self] in
+            DispatchQueue.main.async { self?.performWhenVisible(key: "podcastProgress") { [weak self] in self?.refreshVisibleEpisodes() } }
+        }.store(in: &loadingSubscriptions)
+        PodcastPlaybackController.shared.$isBuffering.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.performWhenVisible(key: "podcastProgress") { [weak self] in self?.refreshVisibleEpisodes() } }
+        }.store(in: &loadingSubscriptions)
+        NotificationCenter.default.publisher(for: .lunaPodcastsChanged).receive(on: DispatchQueue.main).sink { [weak self] notification in
+            if notification.userInfo?["positionOnly"] as? Bool == true {
+                self?.performWhenVisible(key: "podcastProgress") { [weak self] in self?.refreshVisibleEpisodes() }
+            } else { self?.scheduleReload() }
+        }.store(in: &loadingSubscriptions)
         let refresh = UIRefreshControl(); refresh.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             Task { await self.refreshContent(); refresh.endRefreshing(); self.reload() }
         }, for: .valueChanged); table.refreshControl = refresh
+    }
+    private var reloadScheduled = false
+    private func scheduleReload() {
+        guard !reloadScheduled else { return }
+        reloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reloadScheduled = false
+            self.performWhenVisible(key: "podcastReload") { [weak self] in self?.reload() }
+        }
     }
     private func refreshVisibleEpisodes() {
         for path in table.indexPathsForVisibleRows ?? [] {

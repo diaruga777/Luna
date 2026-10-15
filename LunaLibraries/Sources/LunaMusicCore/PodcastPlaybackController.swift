@@ -38,6 +38,10 @@ import LunaPodcastCore
     private var requestedPlayback = false
     private var actualStartRecorded = false
     private var pendingSeek: Double?
+    private var seekCompletion: ((Bool) -> Void)?
+    private func finishSeek(_ finished: Bool) {
+        let completion = seekCompletion; seekCompletion = nil; completion?(finished)
+    }
     private var seekGeneration = UUID()
     private var isCompleting = false
     private var lastPersistedAt = Date.distantPast
@@ -184,7 +188,7 @@ import LunaPodcastCore
         defer { if generation == token { isSelecting = false; updatePlayback() } }
         clearPlaybackStart()
         player.currentItem?.cancelPendingSeeks()
-        player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; pendingSeek = nil; seekGeneration = UUID()
+        player.pause(); player.replaceCurrentItem(with: nil); isPlaying = false; requestedPlayback = true; actualStartRecorded = false; pendingSeek = nil; seekGeneration = UUID(); finishSeek(false)
         errorMessage = nil; setBuffering(true)
         currentEpisode = episode; duration = downloads.cachedDuration(episode.id) ?? episode.duration
         let saved = library.state.progress[episode.id]
@@ -239,9 +243,10 @@ import LunaPodcastCore
         repeat {
             let revision = seekGeneration
             let target = pendingSeek ?? position
-            if target > 0 || pendingSeek != nil { await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+            var finished = true
+            if target > 0 || pendingSeek != nil { finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
             guard token == generation else { throw CancellationError() }
-            if revision == seekGeneration { pendingSeek = nil; break }
+            if revision == seekGeneration { pendingSeek = nil; finishSeek(finished); break }
         } while true
         guard token == generation else { throw CancellationError() }
         needsPreparation = false
@@ -295,13 +300,14 @@ import LunaPodcastCore
         }
         sessionActivation.cancel(); clearPlaybackStart()
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
-        if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
+        if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; finishSeek(false); isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
         persistPosition(); publish()
     }
     public func toggle() { if requestedPlayback { pause() } else { Task { do { try await resume() } catch { fail(error) } } } }
     private var isAtEnd: Bool { duration.isFinite && duration > 0 && position >= duration - 0.05 }
-    public func seek(to seconds: Double) {
-        guard seconds.isFinite, let episode = currentEpisode else { return }
+    public func seek(to seconds: Double, completion: ((Bool) -> Void)? = nil) {
+        guard seconds.isFinite, let episode = currentEpisode else { completion?(false); return }
+        finishSeek(false); seekCompletion = completion
         let target = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
         position = target; pendingSeek = target
         let revision = UUID(); seekGeneration = revision
@@ -318,7 +324,7 @@ import LunaPodcastCore
         catch { errorMessage = error.localizedDescription }
         publish()
         if isAtEnd {
-            pendingSeek = nil
+            pendingSeek = nil; finishSeek(false)
             let autoplay = requestedPlayback
             let token = generation
             Task {
@@ -327,7 +333,8 @@ import LunaPodcastCore
             }
             return
         }
-        guard !isSelecting, player.currentItem != nil, !needsPreparation else { return }
+        guard !isSelecting else { return }
+        guard player.currentItem != nil, !needsPreparation else { finishSeek(true); return }
         if requestedPlayback { playbackStartTime = target; setBuffering(true) }
         let token = generation
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
@@ -340,10 +347,13 @@ import LunaPodcastCore
                     if self.requestedPlayback { self.startPlayback() }
                 } else { self.errorMessage = "Unable to seek. Try moving the playback position again." }
                 self.updatePlayback()
+                self.finishSeek(finished)
             }
         }
     }
-    public func skip(backward: Bool) { seek(to: position + (backward ? -library.state.settings.skipBack : library.state.settings.skipForward)) }
+    public func skip(backward: Bool, completion: ((Bool) -> Void)? = nil) {
+        seek(to: position + (backward ? -library.state.settings.skipBack : library.state.settings.skipForward), completion: completion)
+    }
     public func setRate(_ value: Float) {
         guard value.isFinite, (0.5...3).contains(value) else { return }
         rate = value
@@ -423,7 +433,7 @@ import LunaPodcastCore
         guard !isCompleting, let episode = currentEpisode else { return }
         isCompleting = true
         defer { isCompleting = false }
-        let token = UUID(); generation = token; seekGeneration = UUID(); pendingSeek = nil
+        let token = UUID(); generation = token; seekGeneration = UUID(); pendingSeek = nil; finishSeek(false)
         let sleepAtEnd = sleepAtEpisodeEnd
         let shouldPlay = autoplay && !sleepAtEnd
         clearPlaybackStart()
@@ -489,7 +499,7 @@ import LunaPodcastCore
     public func fail(_ error: Error) {
         guard !(error is CancellationError) else { return }
         sessionActivation.cancel(); clearPlaybackStart()
-        generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; isSelecting = false; needsPreparation = true
+        generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; finishSeek(false); isSelecting = false; needsPreparation = true
         player.currentItem?.cancelPendingSeeks()
         extrasTask?.cancel(); extrasTimeoutTask?.cancel()
         if isLoadingTranscript { transcriptError = error.localizedDescription }

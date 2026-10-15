@@ -62,25 +62,19 @@ public enum PodcastPolicies {
     }
 }
 
-/// Pure monotonic-time recognizer. The caller schedules expiration and routes
-/// actions, including failures, through one serialized media coordinator.
+/// Back applies immediately. A forward may switch for one monotonic second
+/// after the caller reports that the backward operation completed successfully.
 public struct MediaSkipGesture {
     public enum Direction { case backward, forward }
     public enum Action: Equatable { case backward, forward, switchQueue }
-    private var pendingBack: TimeInterval?
+    private var backFinishedAt: TimeInterval?
     public init() {}
     public mutating func receive(_ direction: Direction, at time: TimeInterval, canSwitch: Bool) -> [Action] {
-        if direction == .forward, let back = pendingBack, time >= back, time - back <= 2, canSwitch {
-            pendingBack = nil; return [.switchQueue]
-        }
-        var actions: [Action] = []
-        if pendingBack != nil { actions.append(.backward); pendingBack = nil }
-        if direction == .backward { pendingBack = time } else { actions.append(.forward) }
-        return actions
+        defer { backFinishedAt = nil }
+        if direction == .backward { return [.backward] }
+        if let back = backFinishedAt, time >= back, time - back <= 1, canSwitch { return [.switchQueue] }
+        return [.forward]
     }
-    public mutating func expire(at time: TimeInterval) -> [Action] {
-        guard let back = pendingBack, time - back >= 2 else { return [] }
-        pendingBack = nil; return [.backward]
-    }
-    public mutating func cancel() { pendingBack = nil }
+    public mutating func backwardCompleted(at time: TimeInterval) { backFinishedAt = time }
+    public mutating func cancel() { backFinishedAt = nil }
 }

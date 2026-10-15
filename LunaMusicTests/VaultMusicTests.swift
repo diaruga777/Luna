@@ -61,9 +61,9 @@ import MediaPlayer
         XCTAssertTrue(times.allSatisfy { $0 >= before && $0 <= after })
     }
 
-    func testCoordinatedPodcastRemoteSkipsAreImmediateAndCancelPendingChord() async throws {
+    private func skipFixture(uptime: @escaping () -> TimeInterval,
+                             backward: ((PodcastPlaybackController, @escaping (Bool) -> Void) -> Void)? = nil) throws -> (URL, MediaPlaybackCoordinator, PodcastPlaybackController) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
         let library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
         var episode = PodcastEpisode(showID: "show", guid: "remote", title: "Test", publishedAt: Date(), mediaURL: URL(string: "https://example.com/audio.mp3")!)
         episode.duration = 600
@@ -79,26 +79,60 @@ import MediaPlayer
         defaults.set(try JSONEncoder().encode(snapshot), forKey: "LunaMusic.playbackQueue.v1")
         let podcasts = PodcastPlaybackController(library: library)
         let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")))
-        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults)
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults,
+                                                   uptime: uptime, backward: backward.map { operation in
+            { _, completion in operation(podcasts, completion) }
+        })
         coordinator.install()
-
-        // Assert in the same turn, with a switch destination available: no
-        // expiration task or playback is needed.
         XCTAssertTrue(coordinator.canSwitch)
-        podcasts.receiveRemoteSkip(.backward)
-        XCTAssertEqual(podcasts.position, 90)
-        podcasts.receiveRemoteSkip(.backward)
-        XCTAssertEqual(podcasts.position, 80)
-        podcasts.receiveRemoteSkip(.forward)
-        XCTAssertEqual(podcasts.position, 125)
-        XCTAssertEqual(coordinator.active, .podcasts)
+        return (root, coordinator, podcasts)
+    }
 
-        coordinator.skip(.backward)
-        XCTAssertEqual(podcasts.position, 125)
-        podcasts.receiveRemoteSkip(.forward)
-        XCTAssertEqual(podcasts.position, 170)
-        try await Task.sleep(for: .milliseconds(2150))
-        XCTAssertEqual(podcasts.position, 170, "An interrupted in-app chord must not apply a delayed skip")
+    func testSoftwareAndRemoteControlsShareImmediateBackAndCompletionWindow() throws {
+        for remoteBack in [false, true] {
+            for remoteForward in [false, true] {
+                for elapsed in [0.9, 1.0, 1.001] {
+                    var now: TimeInterval = 100
+                    let (root, coordinator, podcasts) = try skipFixture(uptime: { now })
+                    defer { try? FileManager.default.removeItem(at: root) }
+                    if remoteBack { podcasts.receiveRemoteSkip(.backward) } else { coordinator.skip(.backward) }
+                    XCTAssertEqual(podcasts.position, 90, "Every back applies immediately")
+                    now += elapsed
+                    if remoteForward { podcasts.receiveRemoteSkip(.forward) } else { coordinator.skip(.forward) }
+                    XCTAssertEqual(podcasts.position, elapsed <= 1 ? 90 : 135,
+                                   "A switch consumes only forward and retains the applied back")
+                }
+            }
+        }
+    }
+
+    func testWindowStartsAfterSlowBackFinishesAndIgnoresFailedOrStaleCompletions() throws {
+        for scenario in ["slow", "unfinished", "failed", "superseded"] {
+            var now: TimeInterval = 100
+            var completions: [(Bool) -> Void] = []
+            let (root, coordinator, podcasts) = try skipFixture(uptime: { now }, backward: { player, completion in
+                player.skip(backward: true); completions.append(completion)
+            })
+            defer { try? FileManager.default.removeItem(at: root) }
+            coordinator.skip(.backward)
+            XCTAssertEqual(podcasts.position, 90)
+            now = 110 // The command can take longer than the entire switch window.
+            if scenario == "slow" { completions[0](true) }
+            if scenario == "failed" { completions[0](false) }
+            if scenario == "superseded" {
+                podcasts.receiveRemoteSkip(.backward)
+                XCTAssertEqual(podcasts.position, 80)
+                completions[0](true) // Completion of the older back must be ignored.
+            }
+            now = 110.9
+            podcasts.receiveRemoteSkip(.forward)
+            XCTAssertEqual(podcasts.position, scenario == "slow" ? 90 : scenario == "superseded" ? 125 : 135)
+            // Neither an unfinished seek nor an old completion may arm a later forward.
+            now = 111
+            completions.last?(true)
+            coordinator.skip(.forward)
+            XCTAssertEqual(podcasts.position, scenario == "slow" ? 135 : scenario == "superseded" ? 170 : 180)
+        }
     }
 
     func testPodcastRemoteSkipsReachTheirOwnPlayerWithoutCoordinator() throws {
@@ -300,7 +334,13 @@ final class VaultMusicTests: XCTestCase {
         try library.edit { $0.episodes[episode.id] = episode; $0.settings.downloadByteLimit = 0 }
         let downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
         let podcasts = PodcastPlaybackController(library: library, downloads: downloads)
-        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults)
+        var backFinished = false
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults, backward: { surface, completion in
+            backFinished = false
+            let finished: (Bool) -> Void = { result in backFinished = result; completion(result) }
+            if surface == .podcasts { podcasts.skip(backward: true, completion: finished) }
+            else { music.previous(completion: finished) }
+        })
         coordinator.install()
         defer { music.pause(); podcasts.pause(); downloads.stop() }
 
@@ -323,31 +363,26 @@ final class VaultMusicTests: XCTestCase {
         XCTAssertEqual(podcasts.position, 75, accuracy: 0.2)
         try await until { abs(podcasts.player.currentTime().seconds - 75) < 0.2 }
 
-        // Even with another restorable queue, a quick headphone back/forward
-        // pair must perform two ordinary skips rather than switch media.
         XCTAssertTrue(coordinator.canSwitch)
         podcasts.receiveRemoteSkip(.backward)
         XCTAssertEqual(podcasts.position, 60, accuracy: 0.2)
+        try await until { abs(podcasts.player.currentTime().seconds - 60) < 0.2 }
+        try await until { backFinished }
         podcasts.receiveRemoteSkip(.forward)
-        XCTAssertEqual(podcasts.position, 90, accuracy: 0.2)
-        XCTAssertEqual(coordinator.active, .podcasts)
-        try await until { abs(podcasts.player.currentTime().seconds - 90) < 0.2 }
-        podcasts.seek(to: 75)
-        try await until { abs(podcasts.player.currentTime().seconds - 75) < 0.2 }
-
-        coordinator.skip(.backward); coordinator.skip(.forward)
         try await until { coordinator.active == .music && music.isPlaying && music.fileSession.isActive }
-        XCTAssertEqual(podcasts.position, 75, accuracy: 0.2)
+        XCTAssertEqual(podcasts.position, 60, accuracy: 0.2)
         XCTAssertEqual(music.nowPlaying?.persistentID, first.persistentID)
         XCTAssertGreaterThanOrEqual(music.playbackTime, 11.8)
         music.pause()
-        let musicPosition = music.playbackTime
-        coordinator.skip(.backward); coordinator.skip(.forward)
+        music.receiveRemoteSkip(.backward)
+        try await until { music.playbackTime < 0.2 }
+        try await until { backFinished }
+        coordinator.skip(.forward)
         try await until { coordinator.active == .podcasts && podcasts.isPlaying && podcasts.session.isActive }
-        XCTAssertEqual(music.playbackTime, musicPosition, accuracy: 0.2)
+        XCTAssertLessThan(music.playbackTime, 0.2)
         XCTAssertEqual(music.nowPlaying?.persistentID, first.persistentID)
         XCTAssertEqual(podcasts.currentEpisode?.id, episode.id)
-        XCTAssertGreaterThanOrEqual(podcasts.position, 74.8)
+        XCTAssertGreaterThanOrEqual(podcasts.position, 59.8)
         XCTAssertNil(coordinator.errorMessage)
     }
     @MainActor private func until(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
@@ -1008,6 +1043,26 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.playEpisodes(episodes)
         try await waitFor { playback.isPlaying }
     }
+    func testPausedBackReportsActualSeekCompletionAndSupersededSeekFails() async throws {
+        try await playback.playEpisodes(episodes)
+        playback.pause()
+        var setupFinished = false
+        playback.seek(to: 60, completion: { setupFinished = $0 })
+        try await waitFor { setupFinished }
+        var backFinished = false
+        playback.skip(backward: true, completion: { backFinished = $0 })
+        XCTAssertEqual(playback.position, 45, accuracy: 0.2)
+        XCTAssertFalse(backFinished, "The requested position is not seek completion")
+        try await waitFor { backFinished }
+        XCTAssertEqual(playback.player.currentTime().seconds, 45, accuracy: 0.2)
+        XCTAssertFalse(playback.isPlaying)
+        var superseded: Bool?
+        playback.seek(to: 30, completion: { superseded = $0 })
+        playback.seek(to: 90)
+        XCTAssertEqual(superseded, false)
+        try await waitFor { abs(playback.player.currentTime().seconds - 90) < 0.2 }
+    }
+
     func testRapidSeeksWhilePlayingAndPausedCommitLatestTarget() async throws {
         try await startQueue()
         playback.seek(to: 30); playback.seek(to: 90); playback.seek(to: 60)

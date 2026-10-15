@@ -8,27 +8,36 @@ import LunaPodcastCore
     @Published public private(set) var active: Surface
     @Published public private(set) var errorMessage: String?
     private var gesture = MediaSkipGesture()
-    private var expiration: Task<Void, Never>?
+    private var skipRevision = UUID()
+    private let uptime: () -> TimeInterval
+    private let backward: (Surface, @escaping (Bool) -> Void) -> Void
     @Published public private(set) var switching = false
     private var installed = false
     private let music: MusicPlaybackController
     private let podcasts: PodcastPlaybackController
     private let defaults: UserDefaults
     init(music: MusicPlaybackController = .shared, podcasts: PodcastPlaybackController = .shared,
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard,
+         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         backward: ((Surface, @escaping (Bool) -> Void) -> Void)? = nil) {
         self.music = music; self.podcasts = podcasts; self.defaults = defaults
+        self.uptime = uptime
+        self.backward = backward ?? { surface, completion in
+            if surface == .podcasts { podcasts.skip(backward: true, completion: completion) }
+            else { music.previous(completion: completion) }
+        }
         active = Surface(rawValue: defaults.string(forKey: "LunaMusic.activeMedia") ?? "") ?? .music
     }
     public func install() {
         guard !installed else { return }; installed = true
         music.willPlay = { [weak self] in self?.activate(.music) }
-        music.remoteSkip = { [weak self] direction, _ in self?.skipImmediately(direction) }
-        podcasts.remoteSkip = { [weak self] direction, _ in self?.skipImmediately(direction) }
+        music.remoteSkip = { [weak self] direction, _ in self?.skip(direction) }
+        podcasts.remoteSkip = { [weak self] direction, _ in self?.skip(direction) }
         podcasts.willPlay = { [weak self] in self?.activate(.podcasts) }
     }
     private func activate(_ surface: Surface) {
         guard active != surface else { return }
-        gesture.cancel(); expiration?.cancel()
+        gesture.cancel(); skipRevision = UUID()
         if surface == .music { podcasts.pause() }
         else { music.pause() }
         active = surface; defaults.set(surface.rawValue, forKey: "LunaMusic.activeMedia")
@@ -37,37 +46,26 @@ import LunaPodcastCore
     public var canSwitch: Bool {
         active == .music ? podcasts.hasRestorableQueue : music.hasRestorableQueue
     }
-    private func skipImmediately(_ direction: MediaSkipGesture.Direction) {
-        guard !switching else { return }
-        // Headphone/system transport must not wait for the two-second queue
-        // chord. Also discard an unfinished in-app chord so it cannot fire later.
-        gesture.cancel(); expiration?.cancel(); expiration = nil
-        execute([direction == .backward ? .backward : .forward])
-    }
-    public func skip(_ direction: MediaSkipGesture.Direction, timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+    public func skip(_ direction: MediaSkipGesture.Direction) {
         install()
         guard !switching else { return }
-        expiration?.cancel()
-        let actions = gesture.receive(direction, at: timestamp, canSwitch: canSwitch)
-        execute(actions)
-        if direction == .backward {
-            expiration = Task { [weak self] in
-                do { try await Task.sleep(for: .milliseconds(2010)); guard !Task.isCancelled, let self else { return }; self.execute(self.gesture.expire(at: ProcessInfo.processInfo.systemUptime)) }
-                catch {}
-            }
-        }
-    }
-    private func execute(_ actions: [MediaSkipGesture.Action]) {
-        for action in actions {
+        let revision = UUID(); skipRevision = revision
+        let source = active
+        for action in gesture.receive(direction, at: uptime(), canSwitch: canSwitch) {
             switch action {
             case .switchQueue: Task { await switchQueue() }
-            case .backward: if active == .podcasts { podcasts.skip(backward: true) } else { music.previous() }
+            case .backward:
+                backward(source) { [weak self] finished in
+                    guard let self, finished, self.skipRevision == revision, self.active == source else { return }
+                    self.gesture.backwardCompleted(at: self.uptime())
+                }
             case .forward: if active == .podcasts { podcasts.skip(backward: false) } else { music.next() }
             }
         }
     }
     public func switchQueue() async {
         install(); guard !switching else { return }
+        gesture.cancel(); skipRevision = UUID()
         switching = true; errorMessage = nil
         defer { switching = false }
         if active == .podcasts { await music.restoreIfNeeded() }

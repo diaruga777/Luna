@@ -36,16 +36,21 @@ final class PodcastTests: XCTestCase {
     }
     func testGestureBoundariesAndNoDestination() {
         var gesture = MediaSkipGesture()
-        XCTAssertEqual(gesture.receive(.backward, at: 10, canSwitch: true), [])
-        XCTAssertEqual(gesture.receive(.forward, at: 12, canSwitch: true), [.switchQueue])
-        XCTAssertEqual(gesture.expire(at: 13), [])
-        XCTAssertEqual(gesture.receive(.backward, at: 20, canSwitch: true), [])
-        XCTAssertEqual(gesture.receive(.forward, at: 22.001, canSwitch: true), [.backward, .forward])
-        XCTAssertEqual(gesture.receive(.backward, at: 30, canSwitch: false), [])
-        XCTAssertEqual(gesture.receive(.forward, at: 31, canSwitch: false), [.backward, .forward])
-        XCTAssertEqual(gesture.receive(.backward, at: 40, canSwitch: true), [])
-        XCTAssertEqual(gesture.expire(at: 41.9), [])
-        XCTAssertEqual(gesture.expire(at: 42), [.backward])
+        XCTAssertEqual(gesture.receive(.backward, at: 10, canSwitch: true), [.backward])
+        // A long back operation gets a full second starting at completion.
+        gesture.backwardCompleted(at: 20)
+        XCTAssertEqual(gesture.receive(.forward, at: 21, canSwitch: true), [.switchQueue])
+        XCTAssertEqual(gesture.receive(.forward, at: 21, canSwitch: true), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 30, canSwitch: true), [.backward])
+        gesture.backwardCompleted(at: 35)
+        XCTAssertEqual(gesture.receive(.forward, at: 36.001, canSwitch: true), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 40, canSwitch: false), [.backward])
+        gesture.backwardCompleted(at: 40)
+        XCTAssertEqual(gesture.receive(.forward, at: 40.5, canSwitch: false), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 50, canSwitch: true), [.backward])
+        XCTAssertEqual(gesture.receive(.forward, at: 50.1, canSwitch: true), [.forward], "An unfinished back cannot arm a switch")
+        gesture.backwardCompleted(at: 60)
+        XCTAssertEqual(gesture.receive(.forward, at: 59, canSwitch: true), [.forward])
     }
     @MainActor func testDurabilityNaturalEndAndManualMarking() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -109,11 +114,16 @@ extension PodcastTests {
     func testGestureRepeatedBackAndReversedOrder() {
         var gesture = MediaSkipGesture()
         XCTAssertEqual(gesture.receive(.forward, at: 1, canSwitch: true), [.forward])
-        XCTAssertEqual(gesture.receive(.backward, at: 2, canSwitch: true), [])
-        XCTAssertEqual(gesture.receive(.backward, at: 2.5, canSwitch: true), [.backward])
-        XCTAssertEqual(gesture.receive(.forward, at: 3, canSwitch: true), [.switchQueue])
-        XCTAssertEqual(gesture.receive(.backward, at: 4, canSwitch: true), [])
-        gesture.cancel(); XCTAssertEqual(gesture.receive(.forward, at: 5, canSwitch: true), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 2, canSwitch: true), [.backward])
+        gesture.backwardCompleted(at: 3)
+        XCTAssertEqual(gesture.receive(.backward, at: 3.5, canSwitch: true), [.backward])
+        XCTAssertEqual(gesture.receive(.forward, at: 3.6, canSwitch: true), [.forward])
+        XCTAssertEqual(gesture.receive(.backward, at: 4, canSwitch: true), [.backward])
+        gesture.backwardCompleted(at: 5)
+        XCTAssertEqual(gesture.receive(.forward, at: 5.5, canSwitch: true), [.switchQueue])
+        XCTAssertEqual(gesture.receive(.backward, at: 6, canSwitch: true), [.backward])
+        gesture.backwardCompleted(at: 7)
+        gesture.cancel(); XCTAssertEqual(gesture.receive(.forward, at: 7.1, canSwitch: true), [.forward])
     }
     @MainActor func testFeedRefreshPreservesFollowSettingsArchiveAndCursor() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -55,6 +55,22 @@ public final class MusicPlaybackController: ObservableObject {
     private var filePlaybackRequested = false
     private var fileStalled = false
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    private var systemBack: (id: MusicID, target: Double?, completion: (Bool) -> Void)?
+    private func cancelSystemBack() {
+        let pending = systemBack; systemBack = nil; pending?.completion(false)
+    }
+    private func completeSystemBackIfApplied() {
+        guard let pending = systemBack, nowPlaying != nil else { return }
+        let actualTime = player.currentPlaybackTime
+        guard actualTime.isFinite, actualTime >= 0 else { return }
+        let applied: Bool
+        if let target = pending.target {
+            applied = nowPlaying?.persistentID == pending.id && abs(actualTime - target) <= 1
+        } else {
+            applied = nowPlaying?.persistentID != pending.id || actualTime <= 1
+        }
+        if applied { systemBack = nil; pending.completion(true) }
+    }
 
     init(defaults: UserDefaults = .standard, vault: VaultMusicController = .shared, filePlayer: AVPlayer = AVPlayer()) {
         self.defaults = defaults; self.vault = vault; self.filePlayer = filePlayer
@@ -285,31 +301,51 @@ public final class MusicPlaybackController: ObservableObject {
     }
 
     public func next() {
+        cancelSystemBack()
         if usesFileQueue { if needsPreparation { moveRestoredSelection(by: 1) } else { advanceFileQueue(by: 1) }; return }
         if needsPreparation { moveRestoredSelection(by: 1); return }
         player.skipToNextItem(); refresh()
     }
-    public func previous() {
-        if usesFileQueue { if playbackTime > 3 { seek(to: 0) } else if needsPreparation { moveRestoredSelection(by: -1) } else { advanceFileQueue(by: -1) }; return }
-        if needsPreparation {
-            if playbackTime > 3 { seek(to: 0) } else { moveRestoredSelection(by: -1) }
+    public func previous(completion: ((Bool) -> Void)? = nil) {
+        cancelSystemBack()
+        if usesFileQueue {
+            if playbackTime > 3 { seek(to: 0, completion: completion) }
+            else if needsPreparation { moveRestoredSelection(by: -1); completion?(true) }
+            else { advanceFileQueue(by: -1, completion: completion) }
             return
         }
-        if player.currentPlaybackTime > 3 { player.skipToBeginning() }
+        if needsPreparation {
+            if playbackTime > 3 { seek(to: 0, completion: completion) }
+            else { moveRestoredSelection(by: -1); completion?(true) }
+            return
+        }
+        guard let id = nowPlaying?.persistentID else { completion?(false); return }
+        let restart = player.currentPlaybackTime > 3
+        if let completion { systemBack = (id, restart ? 0 : nil, completion) }
+        if restart { player.skipToBeginning() }
         else { player.skipToPreviousItem() }
         refresh()
     }
-    public func seek(to time: TimeInterval) {
-        guard time.isFinite else { return }
+    public func seek(to time: TimeInterval, completion: ((Bool) -> Void)? = nil) {
+        cancelSystemBack()
+        guard time.isFinite else { completion?(false); return }
         if usesFileQueue, !needsPreparation {
             let value = min(max(0, time), duration)
-            if nowPlaying?.source == .vault { filePlayer.seek(to: CMTime(seconds: value, preferredTimescale: 600)) }
-            else { player.currentPlaybackTime = value }
+            if nowPlaying?.source == .vault {
+                filePlayer.seek(to: CMTime(seconds: value, preferredTimescale: 600)) { finished in
+                    Task { @MainActor in completion?(finished) }
+                }
+            } else {
+                if let completion, let id = nowPlaying?.persistentID { systemBack = (id, value, completion) }
+                else if let completion { completion(false) }
+                player.currentPlaybackTime = value
+                completeSystemBackIfApplied()
+            }
             playbackTime = value; changed(); return
         }
         if needsPreparation { playbackTime = min(max(0, time), duration) }
         else { player.currentPlaybackTime = min(max(0, time), duration); refresh() }
-        changed()
+        changed(); completion?(true)
     }
     public func cycleRepeat() {
         switch repeatMode {
@@ -424,6 +460,7 @@ public final class MusicPlaybackController: ObservableObject {
         let time = player.currentPlaybackTime
         playbackTime = time.isFinite ? max(0, time) : 0
         duration = nowPlaying?.playbackDuration ?? 0
+        completeSystemBackIfApplied()
         if isPlaying, let id = pendingPlaylistID {
             var recency = defaults.dictionary(forKey: recencyKey) as? [String: Double] ?? [:]
             recency[id.rawValue] = Date().timeIntervalSince1970
@@ -580,8 +617,8 @@ public final class MusicPlaybackController: ObservableObject {
         }
         refreshFileQueue()
     }
-    private func advanceFileQueue(by offset: Int, ended: Bool = false) {
-        guard !queue.isEmpty else { return }
+    private func advanceFileQueue(by offset: Int, ended: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        guard !queue.isEmpty else { completion?(false); return }
         var index = currentIndex + offset
         if ended && repeatMode == .one { index = currentIndex }
         if index >= queue.count {
@@ -589,7 +626,18 @@ public final class MusicPlaybackController: ObservableObject {
             else { filePlaybackRequested = false; isBuffering = false; filePlayer.pause(); player.pause(); isPlaying = false; playbackTime = duration; changed(); return }
         }
         index = max(0, index)
-        Task { do { try await selectFileQueueItem(at: index) } catch { report(error) } }
+        Task {
+            do {
+                try await selectFileQueueItem(at: index)
+                if completion != nil, nowPlaying?.source == .vault {
+                    let revision = requestID
+                    while filePlayer.currentItem?.status == .unknown, requestID == revision {
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
+                    completion?(requestID == revision && filePlayer.currentItem?.status == .readyToPlay)
+                } else { completion?(true) }
+            } catch { report(error); completion?(false) }
+        }
     }
     private func refreshFileQueue() {
         guard !advancing else { return }
@@ -612,6 +660,7 @@ public final class MusicPlaybackController: ObservableObject {
             isPlaying = player.playbackState == .playing
             let time = player.currentPlaybackTime
             if time.isFinite && time > 0 { playbackTime = time }
+            completeSystemBackIfApplied()
             if didPlayCurrent && player.playbackState == .stopped {
                 didPlayCurrent = false; advanceFileQueue(by: 1, ended: true); return
             }

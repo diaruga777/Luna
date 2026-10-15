@@ -192,8 +192,13 @@ the onboarding utility-card intro both drive the one shared `GlyphPixelBloomView
 moving moon edge intersects a native-scale glyph raster, then composites the same stacked
 additive halos off the main thread. Loading-copy changes are always whole-phrase reveals;
 they do not search for or preserve a shared substring between the old and new messages.
-Only the settled label is part of the view hierarchy—the bloom raster is transient—so a
-second full-text overlay cannot unevenly darken or thicken the final glyphs. Terminal errors
+Each rotation preserves a snapshot of the outgoing ink ahead of the descending edge
+while revealing the new phrase behind it; complementary masks replace the text directly,
+with no blank interval or full-label crossfade. Layout settles before the glyph capture,
+and the bloom captures UILabel's actual layer drawing rather than drawing into a different
+text rect. Both the emitter strip and its composite snap to the native pixel grid, keeping
+the glowing core aligned with one stable copy of the ink. The outgoing snapshot and bloom
+are discarded when the sweep ends or a terminal message interrupts it. Terminal errors
 replace the label plainly and stop the cycle.
 
 ## Moon-horizon progress (`MoonHorizonProgressBar` / `MoonHorizonProgressView`)

@@ -913,6 +913,15 @@ also retries its unlock when tapped.
 
 The bundled Publisher access plugin tries silent extraction first. WSJ then goes
 directly to the archive browser rather than waiting on an unremovable live wall.
+WSJ also probes Mint's WSJ syndication index alongside the archive lookups.
+Candidates must match the source URL slug, and their fetched page must carry a
+WSJ canonical link with the exact original path. Only readable content from that
+verified copy is accepted, with its own base URL for relative media; the save
+keeps the original WSJ URL. This recovers articles whose archive snapshot captured
+only a publisher bot gate (the 160eec6b WSJ article was one such snapshot), rather
+than repeatedly opening that unusable capture. The index probe is bounded and
+best-effort; articles no longer indexed still use the other strategies.
+
 A TimeMap lookup runs alongside Wayback probes and tries the specific snapshot
 silently first. The browser establishes an archive session on its homepage, then
 opens the specific snapshot or automatically submits the original URL form,
@@ -923,6 +932,16 @@ CAPTCHA widgets even when the page title is just `archive.li`, submits an archiv
 URL form when necessary, and reports known terminal archive errors. Complete
 content takes precedence over unrelated ad CAPTCHA widgets. Snapshot extraction
 isolates `#CONTENT` so earlier teaser `<article>` elements cannot win.
+
+A locked-card tap presents the final navigation-wrapped browser container
+synchronously, before retrying the current plugin. Its cover/spinner and both
+navigation items persist throughout the retry. Safari is disabled until a page
+exists; Cancel stays usable. WebKit is created only when a browser step is needed
+and mounted below that same cover. A save-ID-scoped modal registry routes bridge
+callbacks to this container, including successive steps; completed browser steps
+return to the same cover while extraction finishes. Cancellation keeps the
+registry entry until the retry unwinds, preventing late callbacks from reopening
+a dismissed modal. Probe/capture generations reject callbacks from earlier pages.
 
 After a deferred step closes, `PluginUnlockFlow.resumeCompleted()` (called from `appDidLaunch`,
 `sceneDidForeground`) re-runs `ingest` with `reason: "resume"` for any save

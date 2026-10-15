@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.5","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.6","api":1,
  "description":"Reads gated articles using publisher rules, crawler requests, archives and plugin-declared browser steps.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -418,6 +418,17 @@ const LunaAccess = (() => {
         const content=snapshot.querySelector('#CONTENT');
         if(content) html='<html><head>'+(snapshot.head?snapshot.head.innerHTML:'')+
             '</head><body><article>'+content.innerHTML+'</article></body></html>';
+        if(matches(host(url),'livemint.com')) {
+            // Mint labels the continuation's editorial wrappers paywall-slot.
+            // Generic noise stripping would discard all but the opening paragraph;
+            // its JSON-LD articleBody is also just that teaser. Select the real
+            // paragraphs inside the story before removing subscription furniture.
+            const doc=luna.html.parse(html,url);
+            const paragraphs=doc.querySelectorAll('#mainArea .storyParagraph');
+            if(paragraphs.length) html='<html><head>'+(doc.head?doc.head.innerHTML:'')+
+                '</head><body><article>'+paragraphs.map(n=>'<div>'+n.innerHTML+'</div>').join('\n')+
+                '</article></body></html>';
+        }
         if(matches(host(url),'thedailybeast.com')) {
             const doc=luna.html.parse(html,url);
             const content=doc.querySelector('article#article-content');
@@ -483,6 +494,35 @@ const LunaAccess = (() => {
             if(!oldest){const a=await luna.fetch({url:'https://archive.org/wayback/available?url='+encodeURIComponent(url),timeout:4});const v=JSON.parse(a.text);const snap=v.archived_snapshots&&v.archived_snapshots.closest;if(snap&&snap.available&&/^\d{14}$/.test(snap.timestamp))return await fetchArticle('https://web.archive.org/web/'+snap.timestamp+'id_/'+url,url);}
         }catch(_){}
         return null;
+    }
+    // Mint republishes WSJ reporting with a canonical link back to the original.
+    // Use the publisher's own index, then verify that identity on the fetched
+    // page. A matching headline alone must never substitute a different story.
+    async function syndicatedWSJ(url) {
+        if(!matches(host(url),'wsj.com'))return null;
+        const path=(luna.parseURL(url)||{}).pathname||'';
+        const slug=path.split('/').pop().replace(/-[a-f0-9]{8}$/, '');
+        if(slug.length<20)return null;
+        try {
+            const index=await luna.fetch({url:'https://www.livemint.com/wsj',timeout:5,cookies:'none'});
+            if(!index.ok)return null;
+            const doc=luna.html.parse(index.text,'https://www.livemint.com/wsj');
+            const candidates=[...new Set(doc.querySelectorAll('a[href]').map(a=>a.absoluteURL('href')))]
+                .filter(u=>u&&host(u)==='www.livemint.com'&&((luna.parseURL(u)||{}).pathname||'').split('/').pop().startsWith(slug+'-')).slice(0,3);
+            return await firstReadable(candidates.map(async candidate=>{
+                const response=await luna.fetch({url:candidate,timeout:5,cookies:'none'});
+                if(!response.ok)return null;
+                const page=luna.html.parse(response.text,candidate);
+                const canonical=page.querySelector('link[rel="canonical"]');
+                const source=canonical&&luna.parseURL(canonical.absoluteURL('href'));
+                if(!source||!matches(source.hostname,'wsj.com')||source.pathname!==path)return null;
+                const value=article(response.text,candidate);
+                if(!value)return null;
+                // Resolve relative media against the copy, retaining the saved WSJ URL.
+                value.baseURL=candidate;
+                return value;
+            }));
+        }catch(_){return null;}
     }
     async function archiveSnapshotURL(url) {
         try {
@@ -551,7 +591,7 @@ const LunaAccess = (() => {
         const today=archiveSnapshotURL(url).then(async value=>{
             snapshotURL=value;return value?await fetchArticle(value,url):null;
         });
-        const snapshotArticle=await firstReadable([archived(url,false),recent?Promise.resolve(null):archived(url,true),today]);
+        const snapshotArticle=await firstReadable([syndicatedWSJ(url),archived(url,false),recent?Promise.resolve(null):archived(url,true),today]);
         if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;

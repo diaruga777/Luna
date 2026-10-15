@@ -69,19 +69,17 @@ public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
         // and asks its live browser bridge for a fresh step only when necessary.
         if let resumer = PluginResumeSeams.resumer {
             guard retrying.insert(item.id).inserted else { return }
-            // Install feedback synchronously, before the first network probe.
-            // The live browser may appear above this cover; it stays until the
-            // whole attempt ends, including extraction after a browser answer.
-            let cover = ChallengeCoverView(
-                actionTitle: L10n.string("Common_cancel"), actionSymbol: "xmark")
-            cover.accessibilityIdentifier = "PluginUnlockProgress"
-            cover.label.setTextImmediately(L10n.string("PluginBrowser_workingStatus"))
-            cover.cover(presenter.view)
-            Task { [self] in
+            guard !modal.isPresented else { retrying.remove(item.id); return }
+            var work: Task<Void, Never>?
+            modal.prepare(from: presenter) { work?.cancel() }
+            PluginBrowserModalPresentation.unlocks[item.id] = modal
+            work = Task { [self] in
                 defer {
-                    cover.removeFromSuperview()
+                    PluginBrowserModalPresentation.unlocks.removeValue(forKey: item.id)
+                    modal.endRetry()
                     retrying.remove(item.id)
                 }
+                guard !Task.isCancelled else { return }
                 await resumer.resumePluginLockedSave(id: item.id)
             }
             return

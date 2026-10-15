@@ -52,11 +52,6 @@ enum ArticleStageCatalog {
                         }
                         SavesStore.shared.setThumbnail(data, for: item.id)
                     }
-                },
-                make: {
-                    let deck = ArticleCardsViewController()
-                    DispatchQueue.main.async { deck.carouselDidRequestLibrary(deck.carousel) }
-                    return deck
                 }),
             StageDescriptor(
                 id: "deck.article.rail", screen: "Card deck", variant: "two-row article library",

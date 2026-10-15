@@ -1622,3 +1622,5 @@
 "Library_empty_Luna" = "Your saved items will appear here.";
 "Library_noMatches_Luna" = "No matching items";
 "Library_searchUnavailable_Luna" = "Search is temporarily unavailable.";
+
+"Common_retry_Luna" = "Try again";

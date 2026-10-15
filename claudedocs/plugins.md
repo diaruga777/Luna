@@ -878,7 +878,9 @@ A locked-card tap re-runs ingestion for that same save through
 the old plugin's detection/cleanup scripts; replaying them first would bypass
 an installed extraction fix (as happened with Daily Beast's Astro continuation).
 The current plugin gets its normal silent extraction/probe sequence and opens a
-fresh browser step only if still needed. Repeated taps during that retry coalesce.
+fresh browser step only if still needed. A `ChallengeCoverView` is mounted
+synchronously on the tapping screen before any async retry work starts, and stays
+until the entire attempt ends. Repeated taps during that retry coalesce.
 A successful retry clears the obsolete browser request, including any unused
 answer. Without an installed resumer, the presentation-only fallback can still
 show a stored pending step.
@@ -898,8 +900,25 @@ final URL, the title and the domain's cookies, then
 `luna.browser.open` in the app: if a stored result already answers this
 EXACT request (same page — `PluginBrowserRequest.addressesSamePage(as:)`),
 it is returned via `takeResult` (single-use) with no modal shown — this is
-the resume path. Otherwise the modal is presented and awaited. After it
-closes, `PluginUnlockFlow.resumeCompleted()` (called from `appDidLaunch`,
+the resume path. Otherwise the current request is checkpointed before the modal
+is presented and awaited. A cancelled or unfinished browser rejects
+`browser-deferred`, preserving the locked save and request for another tap. A
+successful live answer clears the checkpoint and returns directly to the running
+plugin. Failed/declined retries cannot downgrade an existing plugin lock to a
+bookmark. Launch/foreground also restores locks that older versions downgraded to
+`.link` while retaining a plugin owner. Locked and plain-link cards both offer
+Copy Link and Share Link in their long-press menu; an older downgraded bookmark
+also retries its unlock when tapped.
+
+The bundled Publisher access plugin tries silent extraction first. WSJ then goes
+directly to the archive browser rather than waiting on an unremovable live wall.
+Its detector checks every content root (including archive `#CONTENT`), reveals
+CAPTCHA widgets even when the page title is just `archive.li`, submits an archive
+URL form when necessary, and reports known terminal archive errors. Complete
+content takes precedence over unrelated ad CAPTCHA widgets. Snapshot extraction
+isolates `#CONTENT` so earlier teaser `<article>` elements cannot win.
+
+After a deferred step closes, `PluginUnlockFlow.resumeCompleted()` (called from `appDidLaunch`,
 `sceneDidForeground`) re-runs `ingest` with `reason: "resume"` for any save
 still holding a completed, undrained result — the save keeps its id, and the
 Model that comes back replaces the locked placeholder.

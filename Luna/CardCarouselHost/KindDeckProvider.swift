@@ -376,7 +376,18 @@ final class KindDeckProvider: CardDeckProviding {
                 delete: delete)
         }
 
-        let kindActions = presenter.menuActions(for: item, host: host)
+        var kindActions = presenter.menuActions(for: item, host: host)
+        if item.state == .needsCaptcha {
+            kindActions.insert(contentsOf: [
+                UIAction(title: L10n.string("Common_copyLink"), image: UIImage(systemName: "doc.on.doc")) { _ in
+                    UIPasteboard.general.string = item.urlString
+                },
+                UIAction(title: L10n.string("Common_shareLinkEllipsis"), image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+                    guard let self else { return }
+                    SendToFriendSheet.shareLink(urlString: item.urlString, from: self.host, sourceView: self.host.view)
+                },
+            ], at: 0)
+        }
         let weekly = WeeklyPromotionMenu.actions(for: item, presenter: host)
         let recover: [UIMenuElement] = recoverWithAIMenu(for: item).map { [$0] } ?? []
         return UIMenu(children: kindActions + weekly + recover + [

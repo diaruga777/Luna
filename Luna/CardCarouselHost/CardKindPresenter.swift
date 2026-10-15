@@ -385,8 +385,38 @@ private final class PlainLinkCardPresenter: CardKindPresenting {
     func cardContent(for item: SavedItem, host: CardPresenterHost) -> CardContentViewController? {
         PlainLinkCard(item: item)
     }
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
+        var actions: [UIMenuElement] = [
+            UIAction(title: L10n.string("Common_copyLink"), image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIPasteboard.general.string = item.urlString
+            },
+            UIAction(title: L10n.string("Common_shareLinkEllipsis"), image: UIImage(systemName: "square.and.arrow.up")) { [weak host] _ in
+                guard let host else { return }
+                _ = self.share(item, host: host, sourceView: host.presentingController.view)
+            },
+        ]
+        if item.pluginID != nil {
+            actions.append(UIAction(title: L10n.string("Common_retry"), image: UIImage(systemName: "arrow.clockwise")) { [weak host] _ in
+                guard let host else { return }
+                self.retryUnlock(item, host: host)
+            })
+        }
+        return actions
+    }
+
+    private func retryUnlock(_ item: SavedItem, host: CardPresenterHost) {
+        guard let owner = item.pluginID else { return }
+        SavesStore.shared.markPluginLocked(item.id, pluginID: owner, title: item.title)
+        guard let locked = SavesStore.shared.item(withID: item.id) else { return }
+        PluginLockedSaves.presentUnlock(for: locked, from: host.presentingController)
+    }
+
     func itemWasTapped(_ item: SavedItem, cardContent: CardContentViewController?, host: CardPresenterHost) -> Bool {
-        openExternally(item, host: host)
+        if item.pluginID != nil {
+            retryUnlock(item, host: host)
+            return true
+        }
+        return openExternally(item, host: host)
     }
     func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
         guard let url = item.url else { return false }

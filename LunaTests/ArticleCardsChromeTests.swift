@@ -852,6 +852,23 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertNil(SavesStore.shared.content(for: item))
     }
 
+    @MainActor
+    func testLinkAndLockedCardMenusKeepCopyAndShareAvailable() throws {
+        for state in [SavedItem.State.link, .needsCaptcha] {
+            let item = SavedItem(seed: "url-menu-\(state)", urlString: "https://example.com/locked",
+                                 title: "Locked article", dateAdded: Date(), state: state)
+            SavesStore.shared.seedForTesting(items: [item], contents: [:])
+            let deck = ArticleCardsViewController()
+            let window = UITestSupport.host(deck)
+            defer { window.isHidden = true }
+            deck.reload()
+            let menu = try XCTUnwrap(deck.deckProvider?.deckMenu(forSlot: 0))
+            let titles = menu.children.compactMap { ($0 as? UIAction)?.title }
+            XCTAssertTrue(titles.contains(L10n.string("Common_copyLink")), "\(state)")
+            XCTAssertTrue(titles.contains(L10n.string("Common_shareLinkEllipsis")), "\(state)")
+        }
+    }
+
     /// A save can land ready with the wrong content, so every ready card's menu
     /// carries the same chat hand-off the failed card offers
     /// (`claudedocs/llm-handoff.md`) — above Archive, because it is about the

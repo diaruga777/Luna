@@ -310,3 +310,112 @@ extension PodcastTests {
         XCTAssertFalse(PodcastPolicies.automaticDownloads(state).contains(episodes[6].id))
     }
 }
+
+@MainActor final class PodcastStoreResponsivenessTests: XCTestCase {
+    private func makeStore() throws -> PodcastStore {
+        try PodcastStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("library.json"))
+    }
+    func testBackgroundSaveYieldsAndRetriesConcurrentEdits() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
+        let started = expectation(description: "Background preparation began")
+        let gate = PodcastSaveGate { started.fulfill() }
+        let save = Task {
+            try await store.updateInBackground { state in
+                XCTAssertFalse(Thread.isMainThread)
+                gate.waitOnce()
+                state.settings.countryCode = "AU"
+            }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        // This must remain possible while the background snapshot is prepared.
+        try store.update { $0.settings.hidePlayed = true }
+        gate.release()
+        try await save.value
+        XCTAssertTrue(store.state.settings.hidePlayed)
+        XCTAssertEqual(store.state.settings.countryCode, "AU")
+        XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.url.deletingLastPathComponent().path), ["library.json"])
+    }
+    func testCancelledBackgroundSaveNeverPublishesOrReplacesDisk() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
+        try store.update { $0.settings.countryCode = "US" }
+        let before = try Data(contentsOf: store.url)
+        let started = expectation(description: "Preparation began")
+        let gate = PodcastSaveGate { started.fulfill() }
+        let save = Task {
+            try await store.updateInBackground { state in gate.waitOnce(); state.settings.countryCode = "AU" }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        save.cancel(); gate.release()
+        do { try await save.value; XCTFail("Cancelled save committed") } catch is CancellationError { }
+        XCTAssertEqual(store.state.settings.countryCode, "US")
+        XCTAssertEqual(try Data(contentsOf: store.url), before)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.url.deletingLastPathComponent().path), ["library.json"])
+    }
+    func testConcurrentFeedImportsPreserveBothFeedsAndDurability() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
+        func feed(_ name: String) -> PodcastFeed {
+            let show = PodcastShow(feedURL: URL(string: "https://example.com/\(name)")!, title: name)
+            let episode = PodcastEpisode(showID: show.id, guid: name, title: name, publishedAt: Date(), mediaURL: URL(string: "https://example.com/\(name).mp3")!)
+            return PodcastFeed(show: show, episodes: [episode])
+        }
+        async let first = store.mergeInBackground(feed("a"), follow: true)
+        async let second = store.mergeInBackground(feed("b"), follow: false)
+        _ = try await (first, second)
+        XCTAssertEqual(store.state.shows.count, 2); XCTAssertEqual(store.state.episodes.count, 2)
+        XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)
+    }
+    func testBatchMarkPlayedWritesAndPublishesOnce() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
+        let published = expectation(description: "One publication"); published.assertForOverFulfill = true
+        let observer = NotificationCenter.default.addObserver(forName: .lunaPodcastsChanged, object: nil, queue: .main) { _ in published.fulfill() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        try await store.markListenedInBackground(["a", "b", "c"], true)
+        await fulfillment(of: [published], timeout: 1)
+        XCTAssertEqual(store.state.progress.values.filter(\.listened).count, 3)
+        XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)
+    }
+    func testLargeFeedImportKeepsMainActorAvailable() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
+        let show = PodcastShow(feedURL: URL(string: "https://example.com/large")!, title: "Large Archive")
+        let episodes = (0..<2000).map { index in
+            var episode = PodcastEpisode(showID: show.id, guid: "\(index)", title: "Episode \(index)", publishedAt: Date(), mediaURL: URL(string: "https://example.com/\(index).mp3")!)
+            episode.summary = String(repeating: "<p>Long publisher show notes &amp; links.</p>", count: 100)
+            return episode
+        }
+        var ticks = 0
+        var largestGap: TimeInterval = 0
+        let heartbeat = Task { @MainActor in
+            var previous = Date()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(5)) } catch { return }
+                let now = Date(); largestGap = max(largestGap, now.timeIntervalSince(previous)); previous = now; ticks += 1
+            }
+        }
+        let start = Date()
+        let ids = try await store.mergeInBackground(PodcastFeed(show: show, episodes: episodes), follow: false)
+        heartbeat.cancel()
+        print("Large-feed import: \(Date().timeIntervalSince(start)) s; main heartbeat ticks: \(ticks); largest gap: \(largestGap) s")
+        XCTAssertGreaterThan(ticks, 0)
+        XCTAssertEqual(ids.count, 2000)
+        XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)
+    }
+}
+
+private final class PodcastSaveGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var waited = false
+    private let started: @Sendable () -> Void
+    init(started: @escaping @Sendable () -> Void) { self.started = started }
+    func waitOnce() {
+        lock.lock(); let shouldWait = !waited; waited = true; lock.unlock()
+        if shouldWait { started(); _ = semaphore.wait(timeout: .now() + 5) }
+    }
+    func release() { semaphore.signal() }
+}

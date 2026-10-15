@@ -51,11 +51,8 @@ import LunaPodcastCore
         let response = try await feedClient.fetch(PodcastShow(feedURL: url, title: ""))
         guard let feed = response.feed else { throw PodcastError("The podcast feed is empty.") }
         try Task.checkCancellation()
-        let store = try requireStore(); _ = try store.merge(feed)
-        try store.update { state in
-            state.shows[feed.show.id]?.followed = follow; state.shows[feed.show.id]?.directoryID = directoryID
-            state.shows[feed.show.id]?.etag = response.etag; state.shows[feed.show.id]?.lastModified = response.lastModified
-        }
+        let store = try requireStore()
+        _ = try await store.mergeInBackground(feed, follow: follow, directoryID: directoryID, etag: response.etag, lastModified: response.lastModified)
         reloadState(); Task { await PodcastDownloads.shared.reconcile() }
         return feed.show.id
     }
@@ -92,11 +89,15 @@ import LunaPodcastCore
             do {
                 let response = try await feedClient.fetch(show, force: force)
                 var newIDs: [String] = []
-                if let feed = response.feed { newIDs = try requireStore().merge(feed, existingID: id) }
-                try edit { state in
-                    state.shows[id]?.etag = response.etag; state.shows[id]?.lastModified = response.lastModified
-                    state.shows[id]?.lastRefresh = Date(); state.shows[id]?.refreshError = nil
+                if let feed = response.feed {
+                    newIDs = try await requireStore().mergeInBackground(feed, existingID: id, etag: response.etag, lastModified: response.lastModified)
+                } else {
+                    try await requireStore().updateInBackground { state in
+                        state.shows[id]?.etag = response.etag; state.shows[id]?.lastModified = response.lastModified
+                        state.shows[id]?.lastRefresh = Date(); state.shows[id]?.refreshError = nil
+                    }
                 }
+                reloadState()
                 if show.followed && show.settings.notifications && show.lastRefresh != nil && !newIDs.isEmpty { await notify(show: show, ids: newIDs) }
             } catch {
                 try? edit { $0.shows[id]?.refreshError = error.localizedDescription }

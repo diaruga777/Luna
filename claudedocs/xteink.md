@@ -47,6 +47,14 @@ passively at row-build time and at launch/foreground — the background scan
 has to stay warm for a device-initiated rendezvous to have a central to
 connect to.
 
+Bluetooth restoration launches install the services and reopen their central
+managers directly from `didFinishLaunching`, before any display-frame or
+scene-reveal callback. Both BLE paths resume GATT discovery/the plugin sweep
+for an already-connected restored peripheral once the manager is powered on;
+such a link does not produce another `didConnect` callback. Disconnected links
+reconnect, and pending links retain their existing callbacks. This applies to
+ordinary iOS termination; iOS does not relaunch a force-quit Luna for BLE.
+
 ## CrossPoint X3 transport
 
 Luna is the state-restorable CoreBluetooth central and the X3 is the

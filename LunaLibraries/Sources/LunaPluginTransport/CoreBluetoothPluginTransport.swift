@@ -5,6 +5,7 @@
 
 import CoreBluetooth
 import Foundation
+import LunaSend
 
 /// `PluginBluetoothTransporting` over CoreBluetooth, one per declaring plugin.
 ///
@@ -29,6 +30,8 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     /// cancels its own.
     private var standing: [String: CBPeripheral] = [:]
     private var characteristics: [String: [String: CBCharacteristic]] = [:]
+    private var restoredPeripherals: [CBPeripheral] = []
+    private var announcedConnections: Set<UUID> = []
     private var scanServices: [String] = []
     /// Connects asked for while the manager was down or not yet powered on.
     private var parkedConnects: Set<String> = []
@@ -235,6 +238,8 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
             characteristics = [:]
             manager.delegate = nil
             self.manager = nil
+            self.restoredPeripherals = []
+            self.announcedConnections = []
         }
     }
 
@@ -291,6 +296,7 @@ extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let parked = parkedConnects
         parkedConnects = []
+        if central.state == .poweredOn { resumeRestoredPeripherals(central) }
         transportDelegate?.bluetoothTransportDidChangeState(state)
         guard central.state == .poweredOn else { return }
         for deviceID in parked { connect(deviceID: deviceID) }
@@ -299,10 +305,20 @@ extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
     public func centralManager(
         _ central: CBCentralManager, willRestoreState dict: [String: Any]
     ) {
-        let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        for peripheral in restoredPeripherals { adopt(peripheral) }
+        if central.state == .poweredOn { resumeRestoredPeripherals(central) }
+    }
+
+    private func resumeRestoredPeripherals(_ central: CBCentralManager) {
+        let restored = restoredPeripherals
+        restoredPeripherals = []
         for peripheral in restored {
-            adopt(peripheral)
-            central.connect(peripheral)
+            switch BluetoothRestorationAction(state: peripheral.state) {
+            case .resume: connected(peripheral, central: central, restored: true)
+            case .connect: central.connect(peripheral)
+            case .wait: break
+            }
         }
     }
 
@@ -316,6 +332,11 @@ extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
     }
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        connected(peripheral, central: central, restored: false)
+    }
+
+    private func connected(_ peripheral: CBPeripheral, central: CBCentralManager, restored: Bool) {
+        guard announcedConnections.insert(peripheral.identifier).inserted else { return }
         adopt(peripheral)
         let deviceID = peripheral.identifier.uuidString
         // The standing connect and the scan can both be open; retire the one
@@ -325,7 +346,7 @@ extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
         }
         central.stopScan()
         transportDelegate?.bluetoothTransportDidConnect(
-            Self.device(from: peripheral), restored: false)
+            Self.device(from: peripheral), restored: restored)
     }
 
     public func centralManager(
@@ -333,6 +354,7 @@ extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
         error: Error?
     ) {
         let deviceID = peripheral.identifier.uuidString
+        announcedConnections.remove(peripheral.identifier)
         peripherals[deviceID] = nil
         characteristics[deviceID] = nil
         failPending(.disconnected)

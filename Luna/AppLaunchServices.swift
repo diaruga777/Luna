@@ -16,6 +16,18 @@ final class AppLaunchServices {
         isReady = false
     }
 
+    /// A Bluetooth relaunch has no displayed frame to trigger installation.
+    /// Restore its managers before returning from didFinishLaunching.
+    func restoreBluetoothIfNeeded(
+        launchOptions: [UIApplication.LaunchOptionsKey: Any]?,
+        restore: () -> Void
+    ) {
+        guard let identifiers = launchOptions?[.bluetoothCentrals] as? [String],
+              !identifiers.isEmpty else { return }
+        ensureReady()
+        restore()
+    }
+
     func whenReady(_ action: @escaping () -> Void) {
         if isReady { action() } else { waiting.append(action) }
     }

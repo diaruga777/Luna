@@ -114,10 +114,12 @@ enum KindWiring {
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
-        // The X3 advertises briefly after a power-button wake. Keep the central
-        // eligible for state restoration; it does no network work until that
-        // rendezvous actually appears.
-        XteinkBLECentral.shared.beginRendezvousScan()
+        restoreBluetooth()
+    }
+
+    static func restoreBluetooth() {
+        // Install the sweep observer before opening a timer/power-button
+        // rendezvous so a restored link cannot become ready ahead of it.
         if xteinkRendezvousObserver == nil {
             xteinkRendezvousObserver = NotificationCenter.default.addObserver(
                 forName: .xteinkRendezvousReady, object: nil, queue: .main
@@ -142,6 +144,7 @@ enum KindWiring {
                     })
             }
         }
+        XteinkBLECentral.shared.beginRendezvousScan()
     }
 
     static func appDidEnterBackground() {

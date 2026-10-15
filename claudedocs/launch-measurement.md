@@ -121,7 +121,9 @@ installation completes, including Safari hand-offs. Installation happens once,
 even if these entry points race the first-frame callback.
 
 Save retries, mail import, indexing, retention sweeps, weekly refresh and price
-refresh start once after `AppLaunchTransition.didFinish`. Background-only wakes
+refresh start once after `AppLaunchTransition.didFinish`. Bluetooth restoration launches synchronously install services and restore their
+central managers before `didFinishLaunching` returns, without waiting for a
+scene or starting unrelated lifecycle sweeps. Other background-only wakes
 retain the one-second scene-connection fallback; lifecycle callbacks and intents
 can demand service readiness immediately. The first scene foreground callback
 does not duplicate launch refresh. Staged launches install services eagerly and

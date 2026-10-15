@@ -97,6 +97,24 @@ final class PluginBluetoothCenterTests: XCTestCase {
         rival.release()
     }
 
+    func testRestoredConnectionRunsTheSweepWithALiveSession() throws {
+        let center = makeCenter()
+        invoker.observedCenter = center
+        center.start()
+        maker.transport.fireConnect(device, restored: true)
+        waitUntil("restored sweep ran") { self.invoker.hooks.count == 1 }
+        XCTAssertEqual(invoker.eventTypes, ["connected"])
+        XCTAssertEqual(invoker.sessionWasLiveDuringHook, [true])
+        let invocation = try XCTUnwrap(invoker.invocations.first)
+        let event = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(invocation.argumentJSON.utf8)
+            ) as? [String: Any])
+        XCTAssertEqual(event["restored"] as? Bool, true)
+        XCTAssertEqual(invoker.lockWasFreeDuringHook, [false])
+        waitUntil("restored lease ended") { self.maker.lease.isBalanced }
+    }
+
     /// A process that loses the lock stays completely silent. It must not even
     /// answer the device: the owner concludes the window.
     func testALostLockInvokesNothing() {

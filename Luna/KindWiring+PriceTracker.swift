@@ -83,6 +83,8 @@ enum KindWiring {
         ProductShellWiring.appDidLaunch()
     }
 
+    static func restoreBluetooth() {}
+
     static func appDidEnterBackground() {
         ProductShellWiring.appDidEnterBackground()
     }

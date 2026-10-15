@@ -362,6 +362,10 @@ enum KindWiring {
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ProductShellWiring.appDidLaunch()
         TranscriptionShellWiring.appDidLaunch()
+        restoreBluetooth()
+    }
+
+    static func restoreBluetooth() {
         // Xteink is a bundled PLUGIN in this app: `xteink.js` owns the
         // rendezvous sweep, the transfer and the settings screen, and its
         // `luna.bluetooth` center opens the standing connect a short wake

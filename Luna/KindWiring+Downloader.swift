@@ -101,6 +101,8 @@ enum KindWiring {
         MediaShellWiring.appDidLaunch()
     }
 
+    static func restoreBluetooth() {}
+
     static func appDidEnterBackground() {
         MediaShellWiring.appDidEnterBackground()
     }

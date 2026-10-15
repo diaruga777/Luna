@@ -170,6 +170,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.startLaunchMaintenance()
             }
         }
+        if !LunaStage.isActive {
+            AppLaunchServices.shared.restoreBluetoothIfNeeded(launchOptions: launchOptions) {
+                KindWiring.restoreBluetooth()
+            }
+        }
         #if DEBUG
         // LAST, once every catalog has been installed above: answer
         // `-LunaStageList` with the manifest and exit. Never reached without it.

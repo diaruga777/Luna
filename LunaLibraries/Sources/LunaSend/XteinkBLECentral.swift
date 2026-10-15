@@ -34,6 +34,8 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// not yet powered on). `scanIfReady` completes it at the next poweredOn.
     private var pendingConnectIdentifier: UUID?
     private var peripheral: CBPeripheral?
+    private var restoredPeripheral: CBPeripheral?
+    private var discoveringPeripheralID: UUID?
     private var control: CBCharacteristic?
     private var dataIn: CBCharacteristic?
     private var status: CBCharacteristic?
@@ -458,6 +460,8 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     }
 
     private func clearConnection() {
+        restoredPeripheral = nil
+        discoveringPeripheralID = nil
         active = false
         nonce = nil
         readReportOnlyWindow = false
@@ -479,13 +483,28 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
 }
 
 extension XteinkBLECentral: CBCentralManagerDelegate {
-    public func centralManagerDidUpdateState(_ central: CBCentralManager) { scanIfReady() }
+    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if central.state == .poweredOn { resumeRestoredPeripheral(central) }
+        scanIfReady()
+    }
     public func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         if let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral], let first = restored.first {
             peripheral = first; first.delegate = self
-            central.connect(first)
+            restoredPeripheral = first
+            if central.state == .poweredOn { resumeRestoredPeripheral(central) }
         }
     }
+
+    private func resumeRestoredPeripheral(_ central: CBCentralManager) {
+        guard let restored = restoredPeripheral else { return }
+        restoredPeripheral = nil
+        switch BluetoothRestorationAction(state: restored.state) {
+        case .resume: centralManager(central, didConnect: restored)
+        case .connect: central.connect(restored)
+        case .wait: break
+        }
+    }
+
     public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                advertisementData: [String: Any], rssi RSSI: NSNumber) {
         self.peripheral = peripheral
@@ -494,6 +513,8 @@ extension XteinkBLECentral: CBCentralManagerDelegate {
         central.connect(peripheral)
     }
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard discoveringPeripheralID != peripheral.identifier else { return }
+        discoveringPeripheralID = peripheral.identifier
         // The standing connect delivers here with `self.peripheral` still nil;
         // adopt whichever path won and retire the other.
         self.peripheral = peripheral
@@ -531,7 +552,14 @@ extension XteinkBLECentral: CBPeripheralDelegate {
             }
         }
         active = control != nil && dataIn != nil && status != nil
-        if let status { peripheral.setNotifyValue(true, for: status) }
+        if let status {
+            if status.isNotifying {
+                // Restoration can preserve the subscription as well as the link.
+                peripheral.readValue(for: status)
+            } else {
+                peripheral.setNotifyValue(true, for: status)
+            }
+        }
     }
     public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == XteinkSyncProtocol.control else { return }

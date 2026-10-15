@@ -22,8 +22,8 @@ import LunaPodcastCore
     public func install() {
         guard !installed else { return }; installed = true
         music.willPlay = { [weak self] in self?.activate(.music) }
-        music.remoteSkip = { [weak self] direction, timestamp in self?.skip(direction, timestamp: timestamp) }
-        podcasts.remoteSkip = { [weak self] direction, timestamp in self?.skip(direction, timestamp: timestamp) }
+        music.remoteSkip = { [weak self] direction, _ in self?.skipImmediately(direction) }
+        podcasts.remoteSkip = { [weak self] direction, _ in self?.skipImmediately(direction) }
         podcasts.willPlay = { [weak self] in self?.activate(.podcasts) }
     }
     private func activate(_ surface: Surface) {
@@ -36,6 +36,13 @@ import LunaPodcastCore
     }
     public var canSwitch: Bool {
         active == .music ? podcasts.hasRestorableQueue : music.hasRestorableQueue
+    }
+    private func skipImmediately(_ direction: MediaSkipGesture.Direction) {
+        guard !switching else { return }
+        // Headphone/system transport must not wait for the two-second queue
+        // chord. Also discard an unfinished in-app chord so it cannot fire later.
+        gesture.cancel(); expiration?.cancel(); expiration = nil
+        execute([direction == .backward ? .backward : .forward])
     }
     public func skip(_ direction: MediaSkipGesture.Direction, timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         install()

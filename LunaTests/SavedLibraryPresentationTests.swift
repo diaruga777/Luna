@@ -75,6 +75,31 @@ final class SavedLibraryPresentationTests: XCTestCase {
         XCTAssertEqual(presented.content, original)
     }
 
+    func testCardMastheadRemainsVisibleWhenScrollingCopyLeavesViewport() throws {
+        var item = SavedItem(urlString: "https://example.com/masthead")
+        item.title = "Visible masthead"
+        item.state = .ready
+        let content = ArticleContent(title: item.title!, blocks: [
+            .init(kind: .paragraph, text: String(repeating: "A long article body. ", count: 200), links: []),
+        ])
+        let card = ReaderCardContentViewController(item: item, senderName: nil, knownContent: content)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = card
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        card.view.layoutIfNeeded()
+        card.cardDidBecomeCentered()
+        let scroll = try XCTUnwrap(card.rabbitHoleReader?.focusedContentScrollView)
+        scroll.contentOffset.y = 0
+        card.setCardChromeVisible(true, animated: false)
+        let headers = descendants(card.view).filter {
+            $0.accessibilityLabel == item.title && $0.accessibilityTraits.contains(.header)
+        }
+        XCTAssertTrue(headers.contains {
+            $0.alpha > 0.01 && $0.convert($0.bounds, to: card.view).intersects(card.view.bounds)
+        })
+    }
+
     func testLibraryShowsMultipleTitleOnlyCardsWithNoPillsSelected() {
         let library = SavedLibraryViewController()
         library.entries = (0..<8).map { ordinal in

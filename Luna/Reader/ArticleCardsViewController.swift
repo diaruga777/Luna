@@ -1800,8 +1800,13 @@ final class ReaderCardContentViewController: CardContentViewController,
         // remembers a reading position below its title.
         let isLibraryPreview = cardChromeVisible
             && (parent as? CardCarouselViewController)?.usesReaderGrid == true
+        // UIKit can settle exactly at the end of the scrolling masthead,
+        // inside the handoff's hysteresis band. Keep the pinned copy visible
+        // once that entire title/banner has left the viewport.
+        let scrollingHeaderHasLeftViewport = titleScrollView != nil
+            && scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).maxY <= 0.5
         let showsPinnedTitle = titleScrollView == nil || isLibraryPreview
-            || (cardChromeVisible && pinnedTitleHasTakenOver)
+            || (cardChromeVisible && (pinnedTitleHasTakenOver || scrollingHeaderHasLeftViewport))
         scrollTitleHeader.alpha = isLibraryPreview ? 0 : 1
         let changes = {
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0

@@ -177,7 +177,12 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
                 }
             }
             defer { heartbeat.cancel() }
-            let result = await presenter.presentBrowserStep(request, pluginID: pluginID)
+            let result: PluginBrowserResult?
+            if let unlock = PluginBrowserModalPresentation.unlocks[saveID] {
+                result = await unlock.presentStep(request)
+            } else {
+                result = await presenter.presentBrowserStep(request, pluginID: pluginID)
+            }
             guard box.isOperationValid else { return }
             guard let result else {
                 // The walk already understands this resumable outcome. Do not

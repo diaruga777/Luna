@@ -4,7 +4,7 @@
 //
 
 import LunaArchiveReader
-import LunaPluginUI
+@testable import LunaPluginUI
 import UIKit
 import XCTest
 
@@ -89,6 +89,82 @@ final class PluginBrowserViewControllerTests: XCTestCase {
 
     private func tick(_ controller: PluginBrowserViewController) {
         controller.probePollerDidTick(DOMProbePoller())
+    }
+
+    func testPreparingModalAddsPageUnderSameCoverAndNavigationItems() {
+        let controller = PluginBrowserViewController(title: "Unlocking")
+        controller.delegate = legs
+        controller.loadViewIfNeeded()
+        let originalCover = cover(of: controller)
+        let cancel = controller.navigationItem.leftBarButtonItem
+        let safari = controller.navigationItem.rightBarButtonItem
+        XCTAssertNotNil(originalCover)
+        XCTAssertEqual(controller.view.subviews.count, 1, "no web view before it is needed")
+        XCTAssertEqual(safari?.isEnabled, false)
+        XCTAssertEqual(cancel?.isEnabled, true, "cancellation is available during silent work")
+        controller.start(PluginBrowserRequest(url: URL(string: "https://gate.test/x")!, detect: "probe()"), page: page)
+        XCTAssertTrue(cover(of: controller) === originalCover)
+        XCTAssertTrue(controller.navigationItem.rightBarButtonItem === safari)
+        XCTAssertTrue(controller.navigationItem.leftBarButtonItem === cancel)
+        XCTAssertEqual(safari?.isEnabled, true)
+        XCTAssertEqual(page.loads, 1)
+        XCTAssertTrue(page.pageView.superview === controller.view)
+        XCTAssertEqual(originalCover?.spinner.isAnimating, true)
+    }
+
+    func testPreparingModalCanBeCancelledBeforeBrowserExists() {
+        let controller = PluginBrowserViewController(title: "Unlocking")
+        controller.delegate = legs
+        controller.loadViewIfNeeded()
+        controller.navigationItem.leftBarButtonItem?.primaryAction?.performWithSender(nil, target: nil)
+        controller.viewDidDisappear(false)
+        XCTAssertEqual(legs.finishes.count, 1)
+        XCTAssertNil(legs.finishes.first ?? nil)
+    }
+
+    func testRetryKeepsModalAcrossBrowserAnswersAndRejectsStepsAfterCancel() async throws {
+        final class Maker: PluginBrowserPageMaking {
+            var pages: [FakePage] = []
+            func makePage(for request: PluginBrowserRequest) -> any PluginBrowserPageDriving {
+                let page = FakePage()
+                pages.append(page)
+                return page
+            }
+        }
+        let maker = Maker()
+        let modal = PluginBrowserModalPresentation(pageMaker: maker)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let presenter = UIViewController()
+        window.rootViewController = presenter
+        window.isHidden = false
+        var cancels = 0
+        modal.prepare(from: presenter) { cancels += 1 }
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let controller = try XCTUnwrap(navigation.topViewController as? PluginBrowserViewController)
+        controller.loadViewIfNeeded()
+        let originalCover = cover(of: controller)
+        let request = PluginBrowserRequest(url: URL(string: "https://gate.test/x")!, detect: "'wait'")
+        let first = Task { await modal.presentStep(request) }
+        while maker.pages.isEmpty { await Task.yield() }
+        let result = PluginBrowserResult(url: "https://gate.test/done", html: "<p>done</p>", title: "Done", cookieHeader: "", cookies: [])
+        modal.pluginBrowser(controller, didFinishWith: result)
+        let answer = await first.value
+        XCTAssertEqual(answer?.html, result.html)
+        XCTAssertTrue(presenter.presentedViewController === navigation)
+        XCTAssertTrue(cover(of: controller) === originalCover)
+        XCTAssertTrue(originalCover?.spinner.isAnimating == true)
+        XCTAssertEqual(controller.navigationItem.rightBarButtonItem?.isEnabled, false)
+        XCTAssertEqual(cancels, 0)
+        let second = Task { await modal.presentStep(request) }
+        while maker.pages.count < 2 { await Task.yield() }
+        modal.pluginBrowser(controller, didFinishWith: nil)
+        let cancelled = await second.value
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(cancels, 1)
+        let late = await modal.presentStep(request)
+        XCTAssertNil(late)
+        XCTAssertEqual(maker.pages.count, 2, "late requests cannot reopen the browser")
+        modal.endRetry()
     }
 
     // MARK: - The cover

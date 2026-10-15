@@ -167,12 +167,17 @@ final class PluginResumeTests: XCTestCase {
         let item = lockedSave()
         let flow = PluginUnlockFlowRunner(store: saves, requests: requests)
         let presenter = UIViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = presenter
+        window.isHidden = false
         flow.present(for: item, from: presenter)
-        XCTAssertTrue(presenter.view.subviews.contains { $0.accessibilityIdentifier == "PluginUnlockProgress" })
+        let navigation = presenter.presentedViewController as? UINavigationController
+        let browser = navigation?.topViewController as? PluginBrowserViewController
+        XCTAssertNotNil(browser, "the final browser container appears synchronously")
+        browser?.loadViewIfNeeded()
+        XCTAssertEqual(browser?.navigationItem.rightBarButtonItem?.isEnabled, false)
         XCTAssertTrue(resumer.resumed.isEmpty, "feedback precedes async work")
-        await waitFor("progress removed after completion") {
-            !presenter.view.subviews.contains { $0.accessibilityIdentifier == "PluginUnlockProgress" }
-        }
+        await waitFor("the attempt completes") { self.resumer.resumed == [item.id] }
         XCTAssertEqual(resumer.resumed, [item.id])
     }
 

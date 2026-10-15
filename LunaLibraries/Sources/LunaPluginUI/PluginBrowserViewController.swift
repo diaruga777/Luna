@@ -40,8 +40,8 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
 
     public weak var delegate: PluginBrowserViewControllerDelegate?
 
-    private let request: PluginBrowserRequest
-    private let page: any PluginBrowserPageDriving
+    private var request: PluginBrowserRequest?
+    private var page: (any PluginBrowserPageDriving)?
     private let poller: DOMProbePoller
     private let cover: ChallengeCoverView
     private let clock: () -> Date
@@ -54,6 +54,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     /// Set once the delegate has been told what the step produced. A dead end
     /// stops the page without answering, so the two are not the same flag.
     private var didAnswer = false
+    private var generation = UUID()
 
     /// - Parameters:
     ///   - page: the live page, from a `PluginBrowserPageMaking`.
@@ -66,14 +67,24 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
         poller: DOMProbePoller = DOMProbePoller(),
         clock: @escaping () -> Date = Date.init
     ) {
-        self.request = request
-        self.page = page
         self.poller = poller
         self.clock = clock
         cover = ChallengeCoverView(
             actionTitle: L10n.string("Common_openInSafari"), actionSymbol: "safari")
         super.init(nibName: nil, bundle: nil)
+        self.request = request
+        self.page = page
         navigationItem.title = request.title ?? title
+    }
+
+    /// The final modal can precede the first network probe, without WebKit.
+    public init(title: String) {
+        poller = DOMProbePoller()
+        clock = Date.init
+        cover = ChallengeCoverView(
+            actionTitle: L10n.string("Common_openInSafari"), actionSymbol: "safari")
+        super.init(nibName: nil, bundle: nil)
+        navigationItem.title = title
     }
 
     @available(*, unavailable)
@@ -82,16 +93,6 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-
-        let pageView = page.pageView
-        pageView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(pageView)
-        NSLayoutConstraint.activate([
-            pageView.topAnchor.constraint(equalTo: view.topAnchor),
-            pageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            pageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            pageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
 
         cover.cover(view)
         cover.label.setTextImmediately(L10n.string("PluginBrowser_workingStatus"))
@@ -106,10 +107,51 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
             image: UIImage(systemName: "safari"),
             primaryAction: UIAction { [weak self] _ in self?.escapeToSystemBrowser() })
 
+        navigationItem.rightBarButtonItem?.accessibilityLabel = L10n.string("Common_openInSafari")
+        navigationItem.rightBarButtonItem?.isEnabled = false
+        if let request, let page { start(request, page: page) }
+    }
+
+    /// Mount a browser beneath the existing cover. Never replace the controller,
+    /// navigation items or spinner between silent work and browser steps.
+    public func start(_ request: PluginBrowserRequest, page: any PluginBrowserPageDriving) {
+        loadViewIfNeeded()
+        waitForPipeline()
+        self.request = request
+        self.page = page
+        let pageView = page.pageView
+        pageView.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(pageView, belowSubview: cover)
+        NSLayoutConstraint.activate([
+            pageView.topAnchor.constraint(equalTo: view.topAnchor),
+            pageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            pageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            pageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        navigationItem.rightBarButtonItem?.isEnabled = true
         deadline = clock().addingTimeInterval(request.timeout)
         page.load(request)
         poller.delegate = self
         poller.start()
+    }
+
+    func waitForPipeline() {
+        generation = UUID()
+        poller.stop()
+        if deadline != nil { page?.stopLoading() }
+        page?.pageView.removeFromSuperview()
+        page = nil
+        request = nil
+        deadline = nil
+        isProbing = false
+        isCapturing = false
+        didStop = false
+        didAnswer = false
+        cover.isHidden = false
+        cover.actionButton.isHidden = true
+        if !cover.spinner.isAnimating { cover.spinner.startAnimating() }
+        cover.label.setTextImmediately(L10n.string("PluginBrowser_workingStatus"))
+        navigationItem.rightBarButtonItem?.isEnabled = false
     }
 
     public override func viewDidDisappear(_ animated: Bool) {
@@ -126,7 +168,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     // MARK: - The stage machine
 
     public func probePollerDidTick(_ poller: DOMProbePoller) {
-        guard !didStop else { return }
+        guard !didStop, let request, let page else { return }
         if let deadline, clock() >= deadline {
             stop(with: L10n.string("PluginBrowser_timedOutMessage"))
             return
@@ -135,8 +177,9 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
         // the interval, and two in flight would fight over the cover.
         guard !isProbing, !isCapturing else { return }
         isProbing = true
+        let generation = self.generation
         page.probe(request.detect) { [weak self] answer in
-            guard let self else { return }
+            guard let self, self.generation == generation else { return }
             self.isProbing = false
             self.apply(Stage(rawValue: answer ?? "") ?? .wait)
         }
@@ -158,8 +201,9 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
             // left to collect it (and never extend the request's deadline).
             let captureDeadline = clock().addingTimeInterval(10)
             deadline = min(deadline ?? captureDeadline, captureDeadline)
-            page.capture { [weak self] result in
-                guard let self, !self.didStop else { return }
+            let generation = self.generation
+            page?.capture { [weak self] result in
+                guard let self, !self.didStop, self.generation == generation else { return }
                 self.finish(with: result)
             }
         case .error:
@@ -173,7 +217,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
         guard !didStop else { return }
         didStop = true
         poller.stop()
-        page.stopLoading()
+        page?.stopLoading()
         view.bringSubviewToFront(cover)
         cover.isHidden = false
         cover.spinner.stopAnimating()
@@ -183,7 +227,8 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     }
 
     private func escapeToSystemBrowser() {
-        delegate?.pluginBrowser(self, openInSystemBrowser: page.currentURL ?? request.url)
+        guard let url = page?.currentURL ?? request?.url else { return }
+        delegate?.pluginBrowser(self, openInSystemBrowser: url)
     }
 
     private func finish(with result: PluginBrowserResult?) {
@@ -191,7 +236,7 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
         didAnswer = true
         didStop = true
         poller.stop()
-        page.stopLoading()
+        page?.stopLoading()
         delegate?.pluginBrowser(self, didFinishWith: result)
     }
 }

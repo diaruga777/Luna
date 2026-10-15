@@ -42,7 +42,7 @@ final class ArticleCoverThumbnailTests: XCTestCase {
     /// Writes `data` under a lead-image file name and returns that name. Real
     /// downloads use fresh generated names; the content links the name directly.
     private func seedDownloadedImage(forImageURL imageURL: String, data: Data) -> String {
-        let fileName = "lead-\(UUID().uuidString).jpg"
+        let fileName = "img-\(UUID().uuidString).jpg"
         try? data.write(to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
         return fileName
     }

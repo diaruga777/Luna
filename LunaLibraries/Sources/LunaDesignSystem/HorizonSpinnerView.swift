@@ -37,17 +37,16 @@ public final class HorizonSpinnerView: UIView {
     /// eases `headSpeedCycles` times per lap, between `1 ± headSpeedSwing` of
     /// the mean — never stalling, the way a stalling spinner reads as stuck.
     ///
-    /// The lap and pulse durations are scaled with `ringScale`, so widening the
-    /// ring leaves the light travelling at the same speed *along* it rather than
-    /// whipping around a bigger circle in the same time.
-    private static let lapDuration: CFTimeInterval = 2.0
+    /// One broad speed swell per 3.2s lap gives the acceleration, fast sweep,
+    /// and deceleration room to breathe without frequent near-stops.
+    private static let lapDuration: CFTimeInterval = 3.2
     private static let headSpeedSwing: CGFloat = 0.62
-    private static let headSpeedCycles: CGFloat = 2
+    private static let headSpeedCycles: CGFloat = 1
     /// The second point's own cycle: one relative lap, then a rest before it
     /// separates again. Deliberately not a multiple of `lapDuration`, so the
     /// merge lands somewhere new on the ring every time.
-    private static let pulseTravelDuration: CFTimeInterval = 2.45
-    private static let pulseCycleDuration: CFTimeInterval = 4.0
+    private static let pulseTravelDuration: CFTimeInterval = 3.8
+    private static let pulseCycleDuration: CFTimeInterval = 6.0
     /// Negative: the pulse drifts off the head slowly, races the far side, and
     /// eases back in rather than arriving at speed.
     private static let pulseSpeedSwing: CGFloat = -0.55
@@ -288,12 +287,12 @@ public final class HorizonSpinnerView: UIView {
         addPulseCycle()
     }
 
-    /// The head's endless lap, at a pace that swells and eases twice around.
+    /// The head's endless lap, with one long acceleration and deceleration.
     private func addHeadOrbit() {
         let orbit = CAKeyframeAnimation(keyPath: "transform.rotation.z")
         orbit.values = Self.lapAngles(
             swing: Self.headSpeedSwing, speedCycles: Self.headSpeedCycles)
-        orbit.calculationMode = .cubic
+        orbit.calculationMode = .linear
         orbit.duration = Self.lapDuration
         orbit.repeatCount = .infinity
         orbit.isRemovedOnCompletion = false
@@ -314,17 +313,20 @@ public final class HorizonSpinnerView: UIView {
             (0..<lap.count).map {
                 NSNumber(value: Double(CGFloat($0) / CGFloat(lap.count - 1) * travel))
             } + [1]
-        sweep.calculationMode = .cubic
+        // Dense linear samples preserve the speed curve without cubic
+        // overshoot past the merge into the stationary part of the cycle.
+        sweep.calculationMode = .linear
         // Grouped animations need their own duration; a sub-animation left at
         // the default snaps instead of playing across the group.
         sweep.duration = Self.pulseCycleDuration
 
-        // Fade in as it separates, out again just before it arrives, so the
-        // merge itself is carried by the flare rather than a hard landing.
+        // Keep the smaller dot visible through the catch-up; hand its light
+        // to the flare only during the final approach to the merge.
+        let flareStart = travel - CGFloat(Self.flareLead / Self.pulseCycleDuration)
         let glow = CAKeyframeAnimation(keyPath: "opacity")
         glow.values = [0, 1, 1, 0, 0]
         glow.keyTimes = [
-            0, NSNumber(value: Double(travel * 0.10)), NSNumber(value: Double(travel * 0.88)),
+            0, NSNumber(value: Double(travel * 0.10)), NSNumber(value: Double(flareStart)),
             NSNumber(value: Double(travel)), 1,
         ]
         glow.duration = Self.pulseCycleDuration
@@ -334,17 +336,23 @@ public final class HorizonSpinnerView: UIView {
         cycle.duration = Self.pulseCycleDuration
         cycle.repeatCount = .infinity
         cycle.isRemovedOnCompletion = false
+        // Both siblings use the same parent clock and a linear timeline.
+        // Easing an entire group shifts its keyframes in wall-clock time,
+        // making the flare peak before the pulse actually catches the head.
+        let beginTime = orbitLayer.convertTime(CACurrentMediaTime(), from: nil)
+        cycle.beginTime = beginTime
+        cycle.timingFunction = CAMediaTimingFunction(name: .linear)
         pulseOrbitLayer.add(cycle, forKey: Self.pulseKey)
 
-        addMergeFlare(mergesAt: travel)
+        addMergeFlare(mergesAt: travel, beginTime: beginTime)
     }
 
-    private func addMergeFlare(mergesAt merge: CGFloat) {
+    private func addMergeFlare(mergesAt merge: CGFloat, beginTime: CFTimeInterval) {
         let cycle = CGFloat(Self.pulseCycleDuration)
         let start = merge - CGFloat(Self.flareLead) / cycle
         let span = CGFloat(Self.flareDuration) / cycle
         let keyTimes: [NSNumber] = [
-            0, NSNumber(value: Double(start)), NSNumber(value: Double(start + span * 0.35)),
+            0, NSNumber(value: Double(start)), NSNumber(value: Double(merge)),
             NSNumber(value: Double(start + span)), 1,
         ]
 
@@ -363,7 +371,8 @@ public final class HorizonSpinnerView: UIView {
         group.duration = Self.pulseCycleDuration
         group.repeatCount = .infinity
         group.isRemovedOnCompletion = false
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        group.beginTime = beginTime
+        group.timingFunction = CAMediaTimingFunction(name: .linear)
         flareLayer.add(group, forKey: Self.flareKey)
     }
 
@@ -379,7 +388,7 @@ public final class HorizonSpinnerView: UIView {
     /// A positive `swing` leaves fast and arrives fast; a negative one leaves
     /// and arrives slowly, hurrying through the middle.
     private static func lapAngles(
-        swing: CGFloat, speedCycles: CGFloat, samples: Int = 60
+        swing: CGFloat, speedCycles: CGFloat, samples: Int = 120
     ) -> [NSNumber] {
         (0...samples).map { index in
             let t = CGFloat(index) / CGFloat(samples)

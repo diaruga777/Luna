@@ -139,6 +139,11 @@ final class HorizonSpinnerViewTests: XCTestCase {
         let fastest = try XCTUnwrap(steps.max())
         let slowest = try XCTUnwrap(steps.min())
         XCTAssertGreaterThan(fastest / slowest, 2, "the pace visibly swells and eases")
+        let speedChanges = zip(steps, steps.dropFirst()).map { $1 - $0 }
+            .filter { abs($0) > 0.000001 }
+        let slowBeats = zip(speedChanges, speedChanges.dropFirst()).filter { $0 < 0 && $1 > 0 }
+        XCTAssertEqual(slowBeats.count, 1, "one broad speed swell per lap")
+        XCTAssertGreaterThanOrEqual(animation.duration, 3, "the speed changes have room to breathe")
     }
 
     /// The pulse laps the ring *relative to the head* — a full turn within the
@@ -177,6 +182,58 @@ final class HorizonSpinnerViewTests: XCTestCase {
         let fade = try XCTUnwrap(parts.first { $0.keyPath == "opacity" })
         XCTAssertEqual(fade.values?.first as? Int, 0, "invisible at the moment it separates")
         XCTAssertEqual(fade.values?.last as? Int, 0, "and invisible again while it rests")
+    }
+
+    /// The flare must peak when the smaller dot reaches the head. Easing the
+    /// flare's whole group used to pull that peak forward in real time, even
+    /// though the individual keyframes appeared close to the merge.
+    func testFlarePeaksAtCatchUpOnTheSameClock() throws {
+        try XCTSkipIf(UIAccessibility.isReduceMotionEnabled, "no motion to assert")
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let spinner = laidOutSpinner(side: 36)
+        window.addSubview(spinner)
+        window.isHidden = false
+        spinner.startAnimating()
+        defer { spinner.stopAnimating() }
+
+        let lights = try layers(of: spinner).lights
+        let pulse = try XCTUnwrap(
+            lights[0].animation(forKey: "horizonPulseCycle") as? CAAnimationGroup)
+        let flare = try XCTUnwrap(
+            lights[3].animation(forKey: "horizonMergeFlare") as? CAAnimationGroup)
+        XCTAssertEqual(pulse.beginTime, flare.beginTime)
+        XCTAssertEqual(pulse.duration, flare.duration)
+        XCTAssertGreaterThanOrEqual(pulse.duration, 5.5, "catch-ups should not feel too frequent")
+        for group in [pulse, flare] {
+            let timing = try XCTUnwrap(group.timingFunction)
+            for index in 1...2 {
+                var point: [Float] = [0, 0]
+                timing.getControlPoint(at: index, values: &point)
+                XCTAssertEqual(point[0], point[1], accuracy: 0.0001,
+                               "group easing must not shift the merge or brightness peak")
+            }
+        }
+
+        let pulseAnimations = try XCTUnwrap(pulse.animations as? [CAKeyframeAnimation])
+        let sweep = try XCTUnwrap(pulseAnimations.first { $0.keyPath == "transform.rotation.z" })
+        let merge = try XCTUnwrap(sweep.keyTimes?.dropLast().last).doubleValue
+        XCTAssertGreaterThanOrEqual(merge * pulse.duration, 3.5, "a longer catch-up sweep")
+        XCTAssertEqual(sweep.calculationMode, .linear, "no overshoot when the dots merge")
+        let fade = try XCTUnwrap(pulseAnimations.first { $0.keyPath == "opacity" })
+        let fadeTimes = try XCTUnwrap(fade.keyTimes)
+        let fadeStart = fadeTimes[2].doubleValue
+        XCTAssertLessThan((merge - fadeStart) * pulse.duration, 0.15,
+                          "keep the smaller dot visible until the final approach")
+        XCTAssertEqual(fadeTimes[3].doubleValue, merge, accuracy: 0.0001)
+
+        let flareAnimations = try XCTUnwrap(flare.animations as? [CAKeyframeAnimation])
+        let flash = try XCTUnwrap(flareAnimations.first { $0.keyPath == "opacity" })
+        let brightness = try XCTUnwrap(flash.values as? [NSNumber]).map(\.doubleValue)
+        let peak = try XCTUnwrap(brightness.indices.max { brightness[$0] < brightness[$1] })
+        let peakTime = try XCTUnwrap(flash.keyTimes?[peak]).doubleValue
+        XCTAssertEqual(peakTime, merge, accuracy: 0.0001,
+                       "maximum brightness coincides with the completed relative lap")
+        XCTAssertEqual(flash.duration, pulse.duration)
     }
 
     /// `resolveToCheckmark` only runs its success beat while animating; stopped,

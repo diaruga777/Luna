@@ -154,18 +154,21 @@ the clip loops inline in that controller and never opens a full-screen player.
 loading indicator: `HorizonScrollIndicator`'s treatment — a faint app-tinted track with one
 white-hot point and its bloom riding it — bent into a closed ring. Nothing else is drawn (no
 moon disc, no swept tail). The head orbits forever at a pace that is deliberately **not**
-constant: its angular speed swells and eases twice per 2.0s lap, between 0.38× and 1.62× of
-the mean, from the closed form `θ(t) = 2πt + (swing/cycles)·sin(2π·cycles·t)` sampled into a
-cubic keyframe animation. Because an integral cycle count ends the lap at both the angle and
-the speed it began, the infinite repeat is seamless. On its own slower 4.0s cycle a dimmer
+constant: its angular speed swells and eases once per 3.2s lap, between 0.38× and 1.62× of
+the mean, giving each acceleration, fast sweep, and deceleration a longer beat. The closed
+form `θ(t) = 2πt + (swing/cycles)·sin(2π·cycles·t)` is sampled into 120 linear keyframe
+segments, preserving the smooth speed curve without overshooting the pulse's merge. Because
+an integral cycle count ends the lap at both the angle and the speed it began, the infinite
+repeat is seamless. On its own slower 6.0s cycle a dimmer
 second point separates from the head, takes one lap *relative to it*, and merges back in a
 brief flare, exactly like `MoonHorizonProgressBar`'s activity pulse — implemented by rotating
 the pulse's own frame of reference inside the orbit layer, so it always departs from and
-returns to precisely where the head is, however fast the head is moving. The 4.0s pulse cycle
-is not a multiple of the 2.0s lap, so the merge lands somewhere new on the ring each time.
-The lap and pulse durations are tied to `ringScale` (0.88 of the view's half-width): widening
-the ring lengthens them in proportion, so the light keeps its speed *along* the ring instead of
-whipping faster around a bigger circle.
+returns to precisely where the head is, however fast the head is moving. The relative lap
+takes 3.8s; the smaller dot stays visible until its final approach. Pulse and flare share an
+explicit start time and linear group timelines, with peak flare brightness keyed exactly to
+the merge. The flare rises over the last 0.12s and fades over the following 0.33s; easing the
+whole flare group would shift its peak ahead of the catch-up. The 6.0s pulse cycle is not a
+multiple of the 3.2s lap, so the merge lands somewhere new on the ring each time.
 Ring, bloom, and core all scale off the view's size — the scroll indicator's 26:3
 bloom-to-core ratio, capped so the halo never outgrows its own ring — so a 20pt spinner isn't
 the blob a fixed 26pt bloom made of it. It retains

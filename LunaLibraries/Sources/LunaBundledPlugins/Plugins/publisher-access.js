@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.4","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.5","api":1,
  "description":"Reads gated articles using publisher rules, crawler requests, archives and plugin-declared browser steps.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -484,6 +484,22 @@ const LunaAccess = (() => {
         }catch(_){}
         return null;
     }
+    async function archiveSnapshotURL(url) {
+        try {
+            const r=await luna.fetch({url:'https://archive.is/timemap/'+url,timeout:4});
+            if(!r.ok)return null;
+            const entries=String(r.text).match(/<[^>]+>[^<]*/g)||[];
+            let last=null,explicit=null;
+            for(const entry of entries) {
+                const m=entry.match(/^<([^>]+)>([\s\S]*)$/);
+                if(!m||!/rel\s*=\s*"[^"]*memento/i.test(m[2]))continue;
+                const parsed=luna.parseURL(m[1]);
+                if(!parsed||!['http:','https:'].includes(parsed.protocol)||!/^archive\.(is|ph|today|li|fo|md|vn)$/.test(parsed.hostname))continue;
+                last=m[1].replace(/^http:/,'https:');if(/last memento/i.test(m[2]))explicit=last;
+            }
+            return explicit||last;
+        }catch(_){return null;}
+    }
     // Content wins over unrelated ad CAPTCHA widgets. Check every root: WSJ
     // snapshots often put teaser <article>s before the actual article body.
     const detect=`(() => {
@@ -524,7 +540,11 @@ const LunaAccess = (() => {
         const found=await firstReadable(requests);if(found)return found;
         const published=html&&LunaWeb.meta(luna.html.parse(html,url)).published;
         const recent=published&&Date.now()-Date.parse(published)<180*86400000;
-        const snapshotArticle=await firstReadable([archived(url,false),recent?Promise.resolve(null):archived(url,true)]);
+        let snapshotURL=null;
+        const today=archiveSnapshotURL(url).then(async value=>{
+            snapshotURL=value;return value?await fetchArticle(value,url):null;
+        });
+        const snapshotArticle=await firstReadable([archived(url,false),recent?Promise.resolve(null):archived(url,true),today]);
         if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;
@@ -537,7 +557,7 @@ const LunaAccess = (() => {
                 scripts:[cleanup(url,rule)],blockURLs:blockers(url,rule),timeout:90});
             const liveArticle=live&&article(live.html,url);if(liveArticle)return liveArticle;
         }
-        const snapshot=await luna.browser.open({url:'https://archive.ph/newest/'+url,saveId,title:'Find archived article',detect:archiveDetect(url),timeout:180});
+        const snapshot=await luna.browser.open({url:snapshotURL||'https://archive.is/',saveId,title:'Find archived article',detect:archiveDetect(url),timeout:180});
         return snapshot?article(snapshot.html,url):null;
     }
     return {resolve,eligible,article,blockers,cleanup,canProbe};

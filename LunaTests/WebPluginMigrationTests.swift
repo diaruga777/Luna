@@ -104,6 +104,28 @@ final class WebPluginMigrationTests: XCTestCase {
         XCTAssertTrue(runner.fetcher.requests.allSatisfy { $0.url.absoluteString == url })
     }
 
+    func testPublisherReadsSpecificTimeMapSnapshotWithoutOpeningABrowser() async throws {
+        try load("publisher-access")
+        let url = "https://www.wsj.com/tech/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-160eec6b"
+        let snapshot = "https://archive.md/20261015021530/"+url
+        runner.fetcher.respond(to: url, body: "<article><p>Subscribe to read</p></article>")
+        runner.fetcher.respond(to: "https://archive.is/timemap/"+url, body: """
+            <http://archive.md/timegate/\(url)>; rel="timegate",
+            <http://archive.md/20261015021530/\(url)>; rel="first last memento"; datetime="Thu, 15 Oct 2026 02:15:30 GMT"
+            """)
+        runner.fetcher.respond(to: snapshot, body: """
+            <html><head><title>Recovered WSJ</title></head><body><div id="CONTENT">
+            <p>\(String(repeating: "Full archived reporting on trade secrets. ", count: 100))</p>
+            </div></body></html>
+            """)
+        let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+            argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                                           page: nil, reason: .save, context: .app), as: PluginIngestAnswer.self)
+        guard case let .model(.article(article)) = answer else { return XCTFail("No article from TimeMap snapshot") }
+        XCTAssertTrue(article.html.contains("Full archived reporting"))
+        XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == snapshot })
+    }
+
     @MainActor
     private final class WSJArchiveBrowser: PluginBrowserPresenting {
         var urls: [String] = []
@@ -159,7 +181,7 @@ final class WebPluginMigrationTests: XCTestCase {
                         page: nil, reason: .save, context: .app, saveID: saved.id.uuidString),
                     timeout: 5, as: PluginIngestAnswer.self)
             }
-        XCTAssertEqual(browser.urls, ["https://archive.ph/newest/"+url])
+        XCTAssertEqual(browser.urls, ["https://archive.is/"])
         XCTAssertEqual(browser.stages, ["challenge", "done"])
         guard case let .model(.article(article)) = answer else { return XCTFail("No recovered WSJ article") }
         XCTAssertTrue(article.html.contains("Final paragraph"))

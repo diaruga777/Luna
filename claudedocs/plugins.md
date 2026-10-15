@@ -901,7 +901,8 @@ final URL, the title and the domain's cookies, then
 EXACT request (same page — `PluginBrowserRequest.addressesSamePage(as:)`),
 it is returned via `takeResult` (single-use) with no modal shown — this is
 the resume path. Otherwise the current request is checkpointed before the modal
-is presented and awaited. A cancelled or unfinished browser rejects
+is presented and awaited; the save is marked locked at that checkpoint even if
+its first in-app ingest was still pending. A cancelled or unfinished browser rejects
 `browser-deferred`, preserving the locked save and request for another tap. A
 successful live answer clears the checkpoint and returns directly to the running
 plugin. Failed/declined retries cannot downgrade an existing plugin lock to a
@@ -912,6 +913,9 @@ also retries its unlock when tapped.
 
 The bundled Publisher access plugin tries silent extraction first. WSJ then goes
 directly to the archive browser rather than waiting on an unremovable live wall.
+A TimeMap lookup runs alongside Wayback probes and tries the specific snapshot
+silently first. The browser opens that snapshot, or the archive homepage with an
+automatically submitted URL form, avoiding the looping `/newest/` redirect.
 Its detector checks every content root (including archive `#CONTENT`), reveals
 CAPTCHA widgets even when the page title is just `archive.li`, submits an archive
 URL form when necessary, and reports known terminal archive errors. Complete

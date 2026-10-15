@@ -138,4 +138,39 @@ final class SavedLibraryPresentationTests: XCTestCase {
         XCTAssertFalse(labels.contains { $0.contains("example.com") })
     }
     private func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+
+    func testSearchUsesSavedTextAndRejectsSupersededQueries() throws {
+        let store = SavesStore.shared
+        let items = ["First library item", "Second library item"].enumerated().map { index, title in
+            let item = store.add(urlString: "https://example.com/library-test-\(UUID().uuidString)")
+            return store.saveContent(ArticleContent(title: title, blocks: [
+                .init(kind: .paragraph, text: index == 0 ? "axolotlfirsttoken" : "wombatsecondtoken", links: []),
+            ]), for: item)
+        }
+        defer { items.forEach(store.delete) }
+        let library = SavedLibraryViewController()
+        library.entries = items.map { SavedLibraryEntry(item: $0, isVideo: false,
+                                                        loadBanner: { $0(nil) }, loadBadge: { $0(nil) }) }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = library
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        library.view.layoutIfNeeded()
+        let field = try XCTUnwrap(descendants(library.view).compactMap { $0 as? UISearchBar }.first)
+        let collection = try XCTUnwrap(descendants(library.view).compactMap { $0 as? UICollectionView }.first)
+        field.text = "axolotlfirsttoken"
+        library.searchBar(field, textDidChange: field.text!)
+        field.text = "wombatsecondtoken"
+        library.searchBar(field, textDidChange: field.text!)
+        let results = expectation(for: NSPredicate { _, _ in
+            collection.layoutIfNeeded()
+            return collection.cellForItem(at: IndexPath(item: 0, section: 0))?.accessibilityLabel == "Second library item"
+        }, evaluatedWith: library)
+        wait(for: [results], timeout: 3)
+        field.text = ""
+        library.searchBar(field, textDidChange: "")
+        collection.layoutIfNeeded()
+        XCTAssertEqual(collection.numberOfItems(inSection: 0), 2)
+        XCTAssertEqual(collection.cellForItem(at: IndexPath(item: 0, section: 0))?.accessibilityLabel, "First library item")
+    }
 }

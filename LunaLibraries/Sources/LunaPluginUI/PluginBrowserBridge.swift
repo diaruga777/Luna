@@ -163,7 +163,7 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
             box.fail("the browser request could not be stored", code: "bridge-failed")
             return
         }
-        requests.put(saveID: saveID, pluginID: pluginID, requestJSON: json)
+        requests.checkpoint(saveID: saveID, pluginID: pluginID, requestJSON: json)
         Task { @MainActor in
             guard box.isOperationValid else { return }
             // Awaiting a person is useful work, bounded by the browser request's

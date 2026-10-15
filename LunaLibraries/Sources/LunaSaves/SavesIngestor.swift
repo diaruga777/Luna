@@ -232,7 +232,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
     ) async -> SurfaceSupport.Decision {
         // Retrying a lock is allowed to replace it with content, never with a
         // bookmark or failure after a cancelled/expired browser invocation.
-        if item.isPluginLocked {
+        if item.isPluginLocked || store.item(withID: item.id)?.isPluginLocked == true {
             switch result.outcome {
             case .link, .failed:
                 return .supported

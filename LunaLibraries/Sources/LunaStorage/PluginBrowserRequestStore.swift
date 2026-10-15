@@ -75,6 +75,14 @@ public final class PluginBrowserRequestStore {
         }
     }
 
+    /// An app browser is already running this step. Persist both halves of
+    /// the checkpoint before presentation so termination leaves a tappable
+    /// lock even when the original in-app save was still pending.
+    public func checkpoint(saveID: UUID, pluginID: String, requestJSON: String) {
+        put(saveID: saveID, pluginID: pluginID, requestJSON: requestJSON)
+        saves.markPluginLocked(saveID, pluginID: pluginID, title: nil)
+    }
+
     /// The request still waiting for a browser step, or nil when there is none
     /// or one already completed.
     public func pending(for saveID: UUID) -> PluginBrowserRequestRecord? {

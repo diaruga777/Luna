@@ -194,6 +194,8 @@ final class PluginBrowserBridgeTests: XCTestCase {
         let value = await answer(scopedTo: saveID)
         XCTAssertEqual(value, "code:browser-deferred")
         XCTAssertTrue(browser.checkpointWasPresent, "killing the app while the browser is up must be recoverable")
+        XCTAssertTrue(saves.item(withID: saveID)?.isPluginLocked == true,
+                      "an in-app save must already have its lock before the process can be killed")
         let record = try XCTUnwrap(requests.pending(for: saveID))
         XCTAssertEqual(PluginBrowserRequest(json: record.requestJSON)?.url.absoluteString, Self.gateURL)
     }

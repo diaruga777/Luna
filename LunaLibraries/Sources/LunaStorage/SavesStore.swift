@@ -1058,6 +1058,7 @@ public final class SavesStore {
                 try self.writeSave(stored, previous: previous, in: db)
             }
             if let ownedImages {
+                try SavedLibrarySearchSchema.setBody(SavedLibrarySearchSchema.text(persistedContent), id: item.id, in: db)
                 // The images are reconciled even when no column changed — the same
                 // content re-saved still has to hold its pictures.
                 try SavedFileOwnership.reconcile(
@@ -1433,6 +1434,15 @@ public final class SavesStore {
     /// exists so the sidecar stores share this process's ONE connection rather
     /// than opening a second. A store whose rows drive a card's status line
     /// follows its write with `notifySidecarChanged()`.
+    // The library index shares this connection without invalidating the deck
+    // cache or posting savesChanged for derived-index writes.
+    func libraryIndexRead<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
+        try keyboardRead(body)
+    }
+    func libraryIndexWrite<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
+        try keyboardWrite(body)
+    }
+
     // Keyboard queries share this connection but never materialize the saves list.
     func keyboardRead<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
         guard let database = database() else { throw CocoaError(.fileReadUnknown) }

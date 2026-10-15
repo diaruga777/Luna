@@ -43,7 +43,7 @@ final class SavesDatabase {
 
     /// Schema revision written to `PRAGMA user_version`. Bump it when the tables
     /// change and add the migration next to `SavesSchema.create`.
-    static let schemaVersion: Int32 = 18
+    static let schemaVersion: Int32 = 19
 
     /// The database file. Its `-wal` / `-shm` siblings live beside it — the
     /// standard cross-process arrangement, and the reason the App Group
@@ -356,6 +356,19 @@ struct SavesStatement {
     static func text(for decimal: Decimal) -> String {
         NSDecimalNumber(decimal: decimal)
             .description(withLocale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    func bind(_ index: Int32, blob: Data) throws {
+        try blob.withUnsafeBytes { raw in
+            try check(sqlite3_bind_blob(handle, index, raw.baseAddress, Int32(raw.count), SQLITE_TRANSIENT))
+        }
+    }
+
+    func blob(_ column: Int32) -> Data? {
+        guard !isNull(column) else { return nil }
+        let count = Int(sqlite3_column_bytes(handle, column))
+        guard count > 0, let bytes = sqlite3_column_blob(handle, column) else { return Data() }
+        return Data(bytes: bytes, count: count)
     }
 
     // MARK: - Step

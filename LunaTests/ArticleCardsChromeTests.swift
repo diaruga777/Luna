@@ -455,7 +455,9 @@ final class ArticleCardsChromeTests: XCTestCase {
         let headers = headerViews(labelled: title, in: controller.view)
         let pinned = try XCTUnwrap(headers.first { !hasScrollViewAncestor($0) })
         let scrolling = try XCTUnwrap(headers.first { hasScrollViewAncestor($0) })
-        let icon = try XCTUnwrap(firstSubview(of: UIImageView.self, in: pinned))
+        let icon = try XCTUnwrap(pinned.subviews.compactMap { $0 as? UIImageView }.first {
+            $0.accessibilityIdentifier == UtilCardSaveTransitionAnchor.thumbnail
+        })
         let label = try XCTUnwrap(firstSubview(of: UILabel.self, in: pinned))
 
         XCTAssertGreaterThan(label.frame.height, label.font.lineHeight)

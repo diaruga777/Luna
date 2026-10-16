@@ -20,6 +20,21 @@ public struct CompanionMacBrowser: Sendable {
         return .success(data)
     }
 
+    public func respondCheckingAccess(to wire: BEPRequest) async -> Result<Data, BEPErrorCode> {
+        guard wire.folder == VaultMacBrowseProtocol.folder, wire.offset == 0,
+              wire.size == 0, wire.hash.isEmpty, !wire.fromTemporary else { return .failure(.invalidFile) }
+        do {
+            let request = try VaultMacBrowseRequest(encodedName: wire.name)
+            if request.operation != .locations {
+                guard request.path.hasPrefix("/"), !request.path.utf8.contains(0), request.path.utf8.count <= 16_384 else { return .failure(.invalidFile) }
+                let url = URL(fileURLWithPath: request.path)
+                try await CompanionFileAccess.shared.checkDirectory(request.operation == .list ? url : url.deletingLastPathComponent())
+            }
+            return await Task.detached { respond(to: wire) }.value
+        } catch {
+            return .success((try? JSONEncoder().encode(VaultMacBrowseResponse(error: error.localizedDescription))) ?? Data())
+        }
+    }
     public func perform(_ request: VaultMacBrowseRequest) throws -> VaultMacBrowseResponse {
         if request.operation == .locations {
             let locations = [("Home", homeURL), ("Desktop", homeURL.appendingPathComponent("Desktop")),
@@ -103,6 +118,6 @@ public struct CompanionMacBrowser: Sendable {
         return VaultMacBrowseError("Couldn’t read this folder on your Mac. Check that it still exists and its disk is connected.")
     }
     private func permissionError() -> VaultMacBrowseError {
-        VaultMacBrowseError("macOS hasn’t allowed Luna Vault to read this item. On your Mac, allow access in System Settings → Privacy & Security → Files and Folders or Full Disk Access, then try again.")
+        VaultMacBrowseError("macOS hasn’t allowed Luna Mac to read this item. On your Mac, allow access in System Settings → Privacy & Security → Files and Folders or Full Disk Access, then try again.")
     }
 }

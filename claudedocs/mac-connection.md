@@ -86,3 +86,22 @@ approval rejection, and each app’s first-launch restored UI. Cloud delivery it
 requires two signed physical devices using one Apple Account with Passwords &
 Keychain enabled; deterministic tests use an injected credential store and do not
 claim to verify Apple’s synchronization service.
+
+## Folder permission recovery
+
+The companion uses `CompanionFileAccess` before Code operations, Mac file browsing,
+Music requests and Vault folder setup/scanning. Read-only probes run off service
+actors and return an error after eight seconds when folder access stalls. macOS
+has no public API that confirms a pending Files and Folders prompt, so the message
+says access is taking too long and asks the user to check for a system prompt.
+A denied probe explicitly directs the user to Privacy & Security → Files and
+Folders / Full Disk Access. Luna Mac shows the affected path and offers an Open
+Privacy & Security button. The listener starts before protected-folder setup,
+so initial connection failures can carry the same actionable error to iOS.
+
+Retry reuses a still-blocked probe rather than creating more filesystem calls.
+After the prompt is answered, another request can proceed. Probes never write;
+a timed-out save preflight cannot later resume a write. Failed directory scans
+also leave the previous Vault index intact instead of treating unreadable files
+as deletions. Tests inject stalled reads and denials; they do not automate or
+change the user's macOS privacy permissions.

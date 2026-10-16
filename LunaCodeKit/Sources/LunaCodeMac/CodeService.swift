@@ -5,11 +5,14 @@ public actor CodeService {
     private let files = CodeFiles()
     private let jobs: CodeJobs
     private let root: URL
+    private let checkAccess: @Sendable (String) async throws -> Void
     private var language: Task<CodeLanguageServer, Error>?
     private var projectKey: String?
     private var intelligenceTail: Task<Void, Never>?
     private var savedReplies: [String: (Data, Data)] = [:]
-    public init(root: URL) throws { self.root = root; jobs = try CodeJobs(root: root.appendingPathComponent("Jobs")) }
+    public init(root: URL, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
+        self.root = root; self.checkAccess = checkAccess; jobs = try CodeJobs(root: root.appendingPathComponent("Jobs"))
+    }
     public func handle(_ data: Data) async -> Data {
         var response = CodeResponse()
         do {
@@ -20,6 +23,12 @@ public actor CodeService {
             if let previous = savedReplies[request.id] {
                 guard previous.0 == canonical else { throw CodeFailure("A request ID was reused with different content.") }
                 return previous.1
+            }
+            switch request.operation {
+            case .job, .cancel, .devices: break
+            default:
+                let path = request.project?.path ?? request.path
+                if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
             case .open:

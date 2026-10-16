@@ -15,6 +15,57 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
 
+    func testFolderPromptHasBoundedErrorAndRecoversAfterPermissionIsGranted() async throws {
+        let release = DispatchSemaphore(value: 0)
+        let entered = expectation(description: "Read started")
+        let access = CompanionFileAccess(timeout: 0.05, readDirectory: { _ in
+            entered.fulfill(); release.wait(); return []
+        })
+        defer { release.signal() }
+        do { try await access.checkDirectory(directory); XCTFail("A blocked read must not leave an infinite spinner") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("macOS permission prompt")) }
+        await fulfillment(of: [entered], timeout: 1)
+        XCTAssertTrue(access.statusMessage?.contains(directory.path) == true)
+        // A retry reuses the blocked probe instead of starting another TCC call.
+        do { try await access.checkDirectory(directory); XCTFail("Still waiting for permission") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("macOS permission prompt")) }
+        release.signal()
+        for _ in 0..<100 where access.statusMessage != nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(access.statusMessage)
+    }
+    func testRecursiveAccessChecksProtectedDescendantsAndSkipsLinks() async throws {
+        let protected = directory.appendingPathComponent("Documents")
+        try FileManager.default.createDirectory(at: protected, withIntermediateDirectories: true)
+        let alias = directory.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: protected)
+        let access = CompanionFileAccess(readDirectory: { url in
+            if url.lastPathComponent == "Documents" { throw NSError(domain: NSPOSIXErrorDomain, code: 13) }
+            if url.lastPathComponent == "alias" { throw CodeFailureForTest() }
+            return try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+        })
+        do { try await access.checkTree(directory); XCTFail("Expected protected descendant error") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("macOS denied Luna Mac access")) }
+        XCTAssertTrue(access.statusMessage?.contains(protected.path) == true)
+    }
+    private struct CodeFailureForTest: Error {}
+
+    func testDeniedFolderAccessHasPrivacySettingsRecovery() async throws {
+        let access = CompanionFileAccess(readDirectory: { _ in throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError) })
+        do { try await access.checkDirectory(directory); XCTFail("Expected denied access") }
+        catch {
+            XCTAssertTrue(error.localizedDescription.contains("macOS denied Luna Mac"))
+            XCTAssertTrue(error.localizedDescription.contains("Privacy & Security"))
+        }
+        XCTAssertTrue(access.statusMessage?.contains("Privacy & Security") == true)
+        let readable = CompanionFileAccess(timeout: 0.05)
+        try await readable.checkDirectory(directory)
+        XCTAssertNil(readable.statusMessage)
+        // Old timeout callbacks cannot fail a subsequent fast check.
+        try await Task.sleep(for: .milliseconds(60))
+        try await readable.checkDirectory(directory)
+        XCTAssertNil(readable.statusMessage)
+    }
+
     func testMacBrowserDownloadsOutsideVaultWithoutIndexingOrMutating() async throws {
         let folder = directory.appendingPathComponent("Vault")
         let outside = directory.appendingPathComponent("Documents")

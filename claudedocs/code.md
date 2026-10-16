@@ -44,7 +44,12 @@ Vault identities, so upgrading preserves existing pairing.
 
 The unsandboxed Mac companion can browse its accessible filesystem. macOS still
 controls protected directories; grant Luna Mac access in System Settings when
-needed. Code can modify existing regular source files up to 2 MB, preserving
+needed. Before Code file/project operations, the Mac performs a bounded read-only
+folder-access probe. A permission prompt that blocks longer than eight seconds
+returns an actionable error instead of leaving the iPhone loading. Denials point
+to Files and Folders / Full Disk Access. Luna Mac displays the same access issue.
+Retry after answering the system prompt; no write runs until the probe succeeds.
+Code can modify existing regular source files up to 2 MB, preserving
 UTF-8/UTF-16 BOM, line endings and permissions. Open original paths for symlinks.
 New files, deletion, rename, Git UI and graphical Xcode project editing are outside v1.
 
@@ -148,7 +153,7 @@ must already work for the selected project. No private API key is sent to iPhone
 ## Verification
 
 - `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
-  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, detached main checkout isolation/cleanup, command-log retention,
+  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, command-log retention,
   file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external

@@ -42,14 +42,25 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         chooseButton = NSButton(title: "Choose shared folder…", target: self, action: #selector(chooseFolder))
         forgetButton = NSButton(title: "Forget Luna connection…", target: self, action: #selector(forgetConnection))
         chooseButton.isHidden = true; forgetButton.isHidden = true
-        let stack = NSStackView(views: [heading, instructions, codeField, copy, statusField, featuresField, chooseButton, forgetButton])
+        let permissions = NSButton(title: "Open Privacy & Security…", target: self, action: #selector(openPrivacySettings))
+        let stack = NSStackView(views: [heading, instructions, codeField, copy, statusField, permissions, featuresField, chooseButton, forgetButton])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 18
         stack.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView!.addSubview(stack)
+        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let document = CompanionDocumentView(); document.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = document; document.addSubview(stack)
+        window.contentView!.addSubview(scroll)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 28),
+            scroll.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 28),
+            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -28),
             instructions.widthAnchor.constraint(equalTo: stack.widthAnchor),
             codeField.widthAnchor.constraint(equalTo: stack.widthAnchor),
             featuresField.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -70,6 +81,7 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.codeField.stringValue = self.controller.pairingCode ?? "Starting…"
                 self.statusField.stringValue = self.controller.statusText
+                self.statusField.textColor = CompanionFileAccess.shared.statusMessage == nil ? .labelColor : .systemOrange
                 let clients = self.controller.clients
                 self.featuresField.stringValue = clients.isEmpty ? "Your apps appear here after they connect." : clients.map {
                     switch $0 {
@@ -103,7 +115,14 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Forget Connection")
         if alert.runModal() == .alertSecondButtonReturn { controller.forgetConnection() }
     }
+    @objc private func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders") { NSWorkspace.shared.open(url) }
+    }
     @objc private func quit() { NSApp.terminate(nil) }
+}
+
+private final class CompanionDocumentView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 private final class CompanionController: @unchecked Sendable {
@@ -125,7 +144,7 @@ private final class CompanionController: @unchecked Sendable {
     var clients: [LunaMacClient] { lock.withLock { LunaMacClient.allCases.filter { configuredClients.contains($0) } } }
     var sharedFolderPath: String { lock.withLock { folderURL.path } }
     var pairingCode: String? { lock.withLock { code } }
-    var statusText: String { lock.withLock { status } }
+    var statusText: String { CompanionFileAccess.shared.statusMessage ?? lock.withLock { status } }
     init() {
         stateURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Luna Vault", isDirectory: true)
@@ -158,7 +177,9 @@ private final class CompanionController: @unchecked Sendable {
     }
     private func handleCode(_ data: Data) async -> Data {
         let service = lock.withLock { () -> CodeService? in
-            if codeService == nil { codeService = try? CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true)) }
+            if codeService == nil { codeService = try? CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true), checkAccess: { path in
+                try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true))
+            }) }
             return codeService
         }
         guard let service else { return Data() }
@@ -176,9 +197,6 @@ private final class CompanionController: @unchecked Sendable {
         Task {
             do {
                 try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
-                let folder = lock.withLock { folderURL }
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try FileManager.default.createDirectory(at: folder.appendingPathComponent("Music"), withIntermediateDirectories: true)
                 let localID = try transport.identity()
                 let listener: LunaVaultGoListener
                 do {
@@ -208,6 +226,7 @@ private final class CompanionController: @unchecked Sendable {
     private func handle(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {
         let allowed = lock.withLock { account.allows(accepted.device, pairingOpen: Date() < pairingUntil) }
         guard allowed else { accepted.stream.close(); return }
+        var openedConnection: BEPConnection?
         do {
             let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
             // A fresh scan each connection guarantees reconnect sees changed files.
@@ -220,6 +239,7 @@ private final class CompanionController: @unchecked Sendable {
             let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
                 localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Mac", clientVersion: "1.0"),
                 delegate: delegate)
+            openedConnection = connection
             let hello = try await connection.start()
             let accountGeneration = account.generation
             if account.trustedDevice != accepted.device {
@@ -251,6 +271,11 @@ private final class CompanionController: @unchecked Sendable {
             }
             guard registered else { await connection.close(reason: "Connection changed or too many sessions"); return }
             defer { _ = lock.withLock { active.removeValue(forKey: connectionID) } }
+            try await CompanionFileAccess.shared.checkDirectory(folder.deletingLastPathComponent())
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try await CompanionFileAccess.shared.checkDirectory(folder)
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent("Music"), withIntermediateDirectories: true)
+            try await CompanionFileAccess.shared.checkTree(folder)
             let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID)
             let existing = Dictionary(uniqueKeysWithValues: try index.all().map { ($0.name, $0) })
             try index.reconcileScan(scanner.scan(previous: existing), deviceShortID: localID.shortID)
@@ -267,6 +292,7 @@ private final class CompanionController: @unchecked Sendable {
             while !(await connection.isClosed) {
                 try await Task.sleep(for: .seconds(5))
                 guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }) else { return }
+                try await CompanionFileAccess.shared.checkTree(folder)
                 let indexed = try index.all()
                 let scan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: indexed.map { ($0.name, $0) }))
                 if scan != lastScan {
@@ -281,7 +307,8 @@ private final class CompanionController: @unchecked Sendable {
                 if active[connectionID]?.0 === connection { active.removeValue(forKey: connectionID); status = active.isEmpty ? "Luna account connected · Apps offline" : "Connected · \(active.count) Luna sessions" }
             }
         } catch {
-            accepted.stream.close()
+            if let openedConnection { await openedConnection.close(reason: error.localizedDescription) }
+            else { accepted.stream.close() }
             lock.withLock { status = "Connection failed: \(error)" }
         }
     }

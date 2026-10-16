@@ -8,7 +8,7 @@ import AppKit
 /// One catalog per paired connection. Reuses metadata across scans and launches;
 /// only Music is walked and no file is ever modified by this service.
 public actor CompanionMusicLibrary {
-    private let root: URL
+    private var root: URL
     private let cacheURL: URL?
     private let scanInterval: TimeInterval
     private var files: [MusicFile] = []
@@ -16,17 +16,23 @@ public actor CompanionMusicLibrary {
     private var generation = UUID().uuidString
     private var scannedAt = Date.distantPast
     public init(vaultRoot: URL, cacheURL: URL? = nil, scanInterval: TimeInterval = 15) {
-        root = vaultRoot.resolvingSymlinksInPath().appendingPathComponent("Music", isDirectory: true).standardizedFileURL
+        root = vaultRoot.appendingPathComponent("Music", isDirectory: true).standardizedFileURL
         self.cacheURL = cacheURL; self.scanInterval = scanInterval
-        if let cacheURL, let data = try? Data(contentsOf: cacheURL),
-           let cached = try? JSONDecoder().decode([MusicFile].self, from: data) {
-            metadata = Dictionary(cached.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
-        }
     }
+    private var loadedCache = false
     public func handle(_ payload: Data) async -> Data {
         let response: MusicFileResponse
         do {
             let request = try JSONDecoder().decode(MusicFileRequest.self, from: payload)
+            try await CompanionFileAccess.shared.checkDirectory(root.deletingLastPathComponent())
+            if !loadedCache {
+                root = root.resolvingSymlinksInPath()
+                loadedCache = true
+                if let cacheURL, let data = try? Data(contentsOf: cacheURL),
+                   let cached = try? JSONDecoder().decode([MusicFile].self, from: data) {
+                    metadata = Dictionary(cached.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+                }
+            }
             response = try await perform(request)
         } catch { response = MusicFileResponse(error: error.localizedDescription) }
         return (try? JSONEncoder().encode(response)) ?? Data()
@@ -43,6 +49,7 @@ public actor CompanionMusicLibrary {
             return MusicFileResponse(files: Array(files[start..<end]), nextOffset: end < files.count ? Int64(end) : nil, generation: generation)
         case .read:
             let url = try safeURL(request.path)
+            try await CompanionFileAccess.shared.checkDirectory(url.deletingLastPathComponent())
             guard request.length > 0, request.length <= MusicFileProtocol.chunkSize else { throw MusicFileError("Invalid music range.") }
             let result = try CompanionMacBrowser().perform(.init(.read, path: url.path, offset: request.offset,
                 length: request.length, version: request.version))
@@ -67,6 +74,7 @@ public actor CompanionMusicLibrary {
     }
     private func scan() async throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try await CompanionFileAccess.shared.checkTree(root)
         guard try root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw MusicFileError("Music must be a real folder inside Vault.") }
         var failure: Error?
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles], errorHandler: { _, error in failure = error; return false }) else { throw MusicFileError("Cannot read the Music folder.") }

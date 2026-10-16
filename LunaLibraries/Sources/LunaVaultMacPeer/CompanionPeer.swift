@@ -162,7 +162,10 @@ public struct CompanionFolderScanner: Sendable {
 
     public func scan(previous: [String: BEPFileInfo] = [:]) throws -> [CompanionFileRecord] {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
-        guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { return [] }
+        var failure: Error?
+        guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles], errorHandler: { _, error in failure = error; return false }) else {
+            throw VaultMacBrowseError("Cannot read the shared folder. Check Luna Mac’s folder access in System Settings → Privacy & Security.")
+        }
         var records: [CompanionFileRecord] = []
         for case let url as URL in enumerator {
             let relative = url.path.replacingOccurrences(of: rootURL.path + "/", with: "")
@@ -196,6 +199,7 @@ public struct CompanionFolderScanner: Sendable {
                     blockSize: Int32(blockSize), blocks: blocks, blocksHash: BlockLayout.blocksHash(blocks)), absoluteURL: url))
             }
         }
+        if let failure { throw failure }
         return records.sorted { $0.info.name < $1.info.name }
     }
 }
@@ -487,7 +491,7 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
             return .success(response)
         }
         if request.folder == VaultMacBrowseProtocol.folder {
-            return await Task.detached(priority: .userInitiated) { CompanionMacBrowser().respond(to: request) }.value
+            return await CompanionMacBrowser().respondCheckingAccess(to: request)
         }
         guard request.folder == folderID,
               let record = try? index.file(named: request.name),

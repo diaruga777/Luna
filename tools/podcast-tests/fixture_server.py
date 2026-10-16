@@ -12,7 +12,8 @@ audio = buffer.getvalue()
 feed = f'''<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Luna Podcast Test Feed</title><itunes:author>Local Integration Fixture</itunes:author><description>Simulator test only.</description><item><guid>fixture-2</guid><title>Fixture Episode Two</title><pubDate>Wed, 07 Oct 2026 10:00:00 +0000</pubDate><itunes:duration>30</itunes:duration><description>Second fixture episode.</description><enclosure url="http://127.0.0.1:{port}/two.wav" type="audio/wav" length="{len(audio)}"/></item><item><guid>fixture-1</guid><title>Fixture Episode One</title><pubDate>Tue, 06 Oct 2026 10:00:00 +0000</pubDate><itunes:duration>30</itunes:duration><description>First fixture episode.</description><enclosure url="http://127.0.0.1:{port}/one.wav" type="audio/wav" length="{len(audio)}"/></item></channel></rss>'''.encode()
 # A publisher-sized archive exercises import, row layout, filtering and scrolling.
 notes = '<p>Long publisher notes with links &amp; details.</p>' * 100
-large_feed = ('<rss version="2.0"><channel><title>Luna Large Archive</title><description>Large archive scroll fixture.</description>' + ''.join(
+show_notes = 'A large archive with long publisher descriptions. ' * 12
+large_feed = (f'<rss version="2.0"><channel><title>Luna Large Archive</title><description>{show_notes}</description>' + ''.join(
     f'<item><guid>large-{index}</guid><title>Archive Episode {index:04d}</title><pubDate>{formatdate(1700000000 + index * 86400, usegmt=True)}</pubDate><description><![CDATA[{notes}]]></description><enclosure url="http://127.0.0.1:{port}/one.wav" type="audio/wav" length="{len(audio)}"/></item>'
     for index in range(2000)) + '</channel></rss>').encode()
 class Handler(BaseHTTPRequestHandler):

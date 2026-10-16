@@ -6,7 +6,7 @@ final class MusicForegroundTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication(bundleIdentifier: "com.hsanabria.luna.music")
-        app.launchArguments = ["-LunaMusic.browsingPodcasts", "NO", "-LunaMusic.activeMedia", "music"]
+        app.launchArguments = ["-LunaMusic.browsingPodcasts", "NO", "-LunaMusic.activeMedia", "music", "-LunaMac.Setup.music", "YES"]
         app.launch()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         if springboard.alerts.firstMatch.waitForExistence(timeout: 2) {
@@ -74,6 +74,13 @@ final class MusicForegroundTests: XCTestCase {
         field.typeText(feed.absoluteString + "?archive=" + UUID().uuidString)
         app.alerts.buttons["Follow"].tap()
         XCTAssertTrue(app.staticTexts["Archive Episode 1999"].waitForExistence(timeout: 20))
+        let description = app.buttons["podcasts.description.expand"]
+        XCTAssertTrue(description.waitForExistence(timeout: 5))
+        XCTAssertEqual(description.label, "More")
+        description.tap()
+        XCTAssertEqual(description.label, "Less")
+        description.tap()
+        XCTAssertEqual(description.label, "More")
         let table = app.tables.firstMatch
         table.swipeUp(); table.swipeUp(); table.swipeUp()
         XCTAssertFalse(app.staticTexts["Archive Episode 1999"].isHittable)
@@ -116,7 +123,7 @@ final class MusicForegroundTests: XCTestCase {
         app.buttons["Mark as Played"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Played'")).firstMatch.waitForExistence(timeout: 3))
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast followed feed and offline episode"; screenshot.lifetime = .keepAlways; add(screenshot)
-        episode.tap()
+        episode.buttons["Episode Actions"].tap(); app.collectionViews.buttons["Play"].tap()
         app.buttons["Open Now Playing"].tap()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
         app.buttons["Pause"].tap()
@@ -187,7 +194,8 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 15))
         let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
         XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
-        app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch.tap()
+        app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch.buttons["Episode Actions"].tap()
+        app.collectionViews.buttons["Play"].tap()
         app.buttons["Open Now Playing"].tap()
         let elapsed = app.staticTexts["podcasts.playback.elapsed"]
         expectation(for: NSPredicate(format: "label != '0:00'"), evaluatedWith: elapsed)
@@ -198,7 +206,7 @@ final class MusicForegroundTests: XCTestCase {
         waitForExpectations(timeout: 5)
         let pausedPosition = elapsed.label
         app.terminate()
-        app.launchArguments = ["-LunaMusic.browsingPodcasts", "YES", "-LunaMusic.activeMedia", "podcasts"]
+        app.launchArguments = ["-LunaMusic.browsingPodcasts", "YES", "-LunaMusic.activeMedia", "podcasts", "-LunaMac.Setup.music", "YES"]
         app.launch()
         XCTAssertTrue(app.buttons["Open Now Playing"].waitForExistence(timeout: 5))
         app.buttons["Open Now Playing"].tap()

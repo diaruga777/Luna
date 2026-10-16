@@ -254,7 +254,7 @@ public class MusicScreenViewController: UIViewController {
 internal final class MusicMiniPlayer: UIVisualEffectView {
     var onOpen: (() -> Void)?
     let art = MusicStyle.artwork()
-    let titleLabel = UILabel()
+    let titleLabel = PodcastPlayerTitleView()
     let artistLabel = UILabel()
     private var play: UIButton!
     private var artworkID: MusicID?
@@ -273,12 +273,15 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         titleLabel.font = MusicStyle.font(17, weight: .semibold)
         artistLabel.font = MusicStyle.font(17)
         artistLabel.textColor = .secondaryLabel
-        [titleLabel, artistLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = .label
+        artistLabel.adjustsFontForContentSizeCategory = true
         let labels = UIStackView(arrangedSubviews: [titleLabel, artistLabel]); labels.axis = .vertical
-        [titleLabel, artistLabel].forEach {
-            $0.numberOfLines = 1
-            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        }
+        artistLabel.numberOfLines = 1
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        artistLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        labels.clipsToBounds = true
         let open = UIButton(type: .custom)
         open.addAction(UIAction { [weak self] _ in self?.onOpen?() }, for: .touchUpInside)
         open.accessibilityLabel = "Open Now Playing"

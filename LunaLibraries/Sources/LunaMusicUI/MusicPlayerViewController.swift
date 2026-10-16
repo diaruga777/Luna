@@ -19,7 +19,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private let volumeHigh = UIImageView(image: UIImage(systemName: "speaker.wave.3.fill"))
     private let art = MusicStyle.artwork(corner: 10)
     private let names = UIStackView()
-    private let titleLabel = UILabel()
+    private let titleLabel = PodcastPlayerTitleView()
     private let artistLabel = UILabel()
     private let sourceLabel = UILabel()
     private let elapsed = UILabel()
@@ -77,13 +77,13 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         titleLabel.font = MusicStyle.font(20, weight: .semibold)
         artistLabel.font = MusicStyle.font(20)
         artistLabel.textColor = UIColor.white.withAlphaComponent(0.65)
-        titleLabel.lineBreakMode = .byTruncatingTail
         artistLabel.lineBreakMode = .byTruncatingTail
         names.axis = .vertical
         names.spacing = 2
         names.addArrangedSubview(titleLabel)
         names.addArrangedSubview(artistLabel)
-        [titleLabel, artistLabel, sourceLabel, elapsed, remaining].forEach { $0.adjustsFontForContentSizeCategory = true }
+        titleLabel.adjustsFontForContentSizeCategory = true
+        [artistLabel, sourceLabel, elapsed, remaining].forEach { $0.adjustsFontForContentSizeCategory = true }
 
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)), for: .normal)
         more.tintColor = .white

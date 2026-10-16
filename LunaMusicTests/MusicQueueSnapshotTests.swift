@@ -80,11 +80,11 @@ final class MusicLayoutTests: XCTestCase {
         screen.mini.artistLabel.text = "The Bravery"
         screen.view.layoutIfNeeded()
         let mini = screen.mini
-        for label in [mini.titleLabel, mini.artistLabel] {
+        for (label, font) in [(mini.titleLabel as UIView, mini.titleLabel.font), (mini.artistLabel as UIView, mini.artistLabel.font!)] {
             let frame = label.convert(label.bounds, to: mini)
             XCTAssertGreaterThanOrEqual(frame.minY, 0)
             XCTAssertLessThanOrEqual(frame.maxY, mini.bounds.height)
-            XCTAssertGreaterThanOrEqual(frame.height, label.font.lineHeight - 1)
+            XCTAssertGreaterThanOrEqual(frame.height, font.lineHeight - 1)
         }
         let buttons = descendants(mini, of: UIButton.self)
         let open = buttons.first { $0.accessibilityLabel == "Open Now Playing" }!

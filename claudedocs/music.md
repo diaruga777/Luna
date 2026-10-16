@@ -668,3 +668,23 @@ checks timed out starting AVPlayer on both the existing and a fresh simulator;
 the local-audio start regression also failed in a separate unchanged-`main`
 checkout on that fresh simulator. Those audio failures are not claimed green.
 Physical-device scroll frame times have not been measured.
+
+### Long text and player layout (2026-10-16)
+
+The mini player, music player, podcast player/show name and podcast queue use a
+clipped single-line ticker for overflowing titles. It pauses at either end,
+stops when removed/backgrounded, restarts after foreground/layout changes and
+respects Reduce Motion; VoiceOver retains the complete title. Tapping podcast
+player titles opens the episode/show, and episode-row titles or summaries open
+full details. Show descriptions expand/collapse with More/Less, resizing the
+header above playback/filter controls. Accessibility text sizes stack show artwork
+above metadata. Row labels yield horizontal space to artwork and action controls.
+
+Episode details use a compact navigation title and a scrollable, selectable text
+view with separate title, show, date and notes styles. Sticky podcast section
+headers use the system background to keep episode text from showing through.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 21 focused layout,
+responsiveness and long-text tests passed. The large-archive UI check passed
+More/Less expansion, scrolling and full notes; the RSS playback/queue integration
+also passed. Screenshots of the player, rows and episode details were inspected.

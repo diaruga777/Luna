@@ -799,7 +799,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         let queue = try XCTUnwrap(controller.children.first as? PodcastQueueViewController)
         queue.view.layoutIfNeeded(); queue.table.layoutIfNeeded()
         let cell = try XCTUnwrap(queue.table.cellForRow(at: IndexPath(row: 0, section: 0)) as? PodcastPlayerQueueCell)
-        XCTAssertEqual(cell.heading.numberOfLines, 1); XCTAssertEqual(cell.detail.numberOfLines, 1)
+        XCTAssertGreaterThanOrEqual(cell.heading.bounds.height, cell.heading.font.lineHeight - 1); XCTAssertEqual(cell.detail.numberOfLines, 1)
         XCTAssertEqual(queue.tableView(queue.table, editingStyleForRowAt: IndexPath(row: 0, section: 0)), .none)
         XCTAssertFalse(queue.tableView(queue.table, shouldIndentWhileEditingRowAt: IndexPath(row: 0, section: 0)))
         XCTAssertGreaterThan(cell.heading.bounds.width, 150)
@@ -849,6 +849,75 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         let clear = try XCTUnwrap(descendants(queue.view, UIButton.self).first { $0.accessibilityLabel == "Clear Queue" })
         clear.isEnabled = true; clear.sendActions(for: .touchUpInside)
         XCTAssertTrue(library.state.queue.isEmpty); XCTAssertNotNil(library.state.lastPlayedEpisodeID)
+    }
+}
+
+@MainActor final class MusicTextLayoutTests: XCTestCase {
+    func testLongMiniPlayerTitleStaysInsidePlaybackControls() throws {
+        let mini = MusicMiniPlayer()
+        mini.titleLabel.text = String(repeating: "An exceptionally long podcast episode title ", count: 12)
+        mini.artistLabel.text = String(repeating: "Long show name ", count: 20)
+        mini.frame = CGRect(x: 0, y: 0, width: 280, height: 76)
+        mini.layoutIfNeeded()
+        let title = mini.titleLabel.convert(mini.titleLabel.bounds, to: mini)
+        let artist = mini.artistLabel.convert(mini.artistLabel.bounds, to: mini)
+        XCTAssertGreaterThan(title.width, 40)
+        XCTAssertLessThanOrEqual(title.maxY, artist.minY + 1)
+        for button in mini.contentView.subviews.flatMap({ ($0 as? UIStackView)?.arrangedSubviews ?? [] }).compactMap({ $0 as? UIButton }) {
+            let rect = button.convert(button.bounds, to: mini)
+            XCTAssertLessThanOrEqual(title.maxX, rect.minX)
+            XCTAssertGreaterThanOrEqual(rect.height, 44)
+        }
+    }
+
+    func testTickerScrollsOnlyOverflowingTextAndStopsWhenRemoved() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let ticker = PodcastPlayerTitleView(frame: CGRect(x: 0, y: 80, width: 160, height: 30))
+        ticker.font = .systemFont(ofSize: 20)
+        ticker.text = String(repeating: "An episode title ", count: 10)
+        controller.view.addSubview(ticker); ticker.layoutIfNeeded()
+        let label = try XCTUnwrap(ticker.subviews.first as? UILabel)
+        XCTAssertTrue(ticker.clipsToBounds)
+        if !UIAccessibility.isReduceMotionEnabled {
+            XCTAssertGreaterThan(label.bounds.width, ticker.bounds.width)
+            XCTAssertNotNil(label.layer.animation(forKey: "titleScroll"))
+        }
+        ticker.text = "Short"; ticker.layoutIfNeeded()
+        XCTAssertNil(label.layer.animation(forKey: "titleScroll"))
+        ticker.text = String(repeating: "Long again ", count: 20); ticker.layoutIfNeeded()
+        ticker.removeFromSuperview(); ticker.layoutIfNeeded()
+        XCTAssertNil(label.layer.animation(forKey: "titleScroll"))
+    }
+
+    func testDescriptionExpandsAndCollapsesWithoutLosingText() throws {
+        let content = String(repeating: "A long description with more to read. ", count: 30)
+        let description = PodcastDescriptionView(text: content)
+        func height() -> CGFloat {
+            description.systemLayoutSizeFitting(CGSize(width: 280, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+        }
+        description.frame = CGRect(x: 0, y: 0, width: 280, height: height())
+        description.layoutIfNeeded()
+        let button = try XCTUnwrap(description.arrangedSubviews.compactMap { $0 as? UIButton }.first)
+        let label = try XCTUnwrap(description.arrangedSubviews.compactMap { $0 as? UILabel }.first)
+        let collapsed = height()
+        XCTAssertFalse(button.isHidden)
+        button.sendActions(for: .touchUpInside)
+        XCTAssertGreaterThan(height(), collapsed * 2)
+        XCTAssertEqual(label.numberOfLines, 0)
+        XCTAssertEqual(label.text, content)
+        button.sendActions(for: .touchUpInside)
+        XCTAssertEqual(height(), collapsed, accuracy: 1)
+        XCTAssertEqual(label.numberOfLines, 4)
+    }
+
+    func testShortDescriptionDoesNotNeedDisclosure() {
+        let description = PodcastDescriptionView(text: "A short description.")
+        description.frame = CGRect(x: 0, y: 0, width: 280, height: 100)
+        description.layoutIfNeeded()
+        XCTAssertTrue(description.arrangedSubviews.compactMap { $0 as? UIButton }.first?.isHidden == true)
     }
 }
 

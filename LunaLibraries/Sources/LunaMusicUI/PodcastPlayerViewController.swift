@@ -28,7 +28,8 @@ extension MusicScreenViewController {
     private let artwork = UIImageView()
     private let names = UIView()
     private let titleLabel = PodcastPlayerTitleView()
-    private let dateLabel = UILabel(), showLabel = UILabel(), elapsed = UILabel(), remaining = UILabel()
+    private let showLabel = PodcastPlayerTitleView()
+    private let dateLabel = UILabel(), elapsed = UILabel(), remaining = UILabel()
     private let more = UIButton(type: .system)
     private let slider = UISlider()
     private let transport = UIView()
@@ -79,11 +80,19 @@ extension MusicScreenViewController {
         close.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panDismiss(_:))))
         titleLabel.font = MusicStyle.font(24, weight: .semibold)
         showLabel.font = MusicStyle.font(24); dateLabel.font = MusicStyle.font(18)
-        for label in [showLabel, dateLabel, elapsed, remaining] {
+        for label in [dateLabel, elapsed, remaining] {
             label.adjustsFontForContentSizeCategory = true
             label.textColor = UIColor.white.withAlphaComponent(0.5)
         }
-        showLabel.lineBreakMode = .byTruncatingTail
+        showLabel.textColor = UIColor.white.withAlphaComponent(0.5)
+        showLabel.onOpen = { [weak self] in
+            guard let self, let episode = self.player.currentEpisode else { return }
+            self.open(PodcastShowViewController(showID: episode.showID))
+        }
+        titleLabel.onOpen = { [weak self] in
+            guard let self, let episode = self.player.currentEpisode else { return }
+            self.open(PodcastEpisodeViewController(episode: episode))
+        }
         [dateLabel, titleLabel, showLabel].forEach(names.addSubview)
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)), for: .normal)
         more.accessibilityLabel = "Episode Actions"; more.showsMenuAsPrimaryAction = true

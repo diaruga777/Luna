@@ -111,21 +111,33 @@ import LunaDesignSystem
     let more = UIButton(type: .system)
     private var episode: PodcastEpisode?
     private var date = ""
+    private weak var owner: UIViewController?
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         artwork.layer.cornerRadius = 8; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
         heading.font = .preferredFont(forTextStyle: .headline); heading.numberOfLines = 2
+        heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.font = .preferredFont(forTextStyle: .caption1); detail.textColor = .secondaryLabel; detail.numberOfLines = 2
         summary.font = .preferredFont(forTextStyle: .subheadline); summary.textColor = .secondaryLabel; summary.numberOfLines = 2
         [heading, detail, summary].forEach { $0.adjustsFontForContentSizeCategory = true }
         let labels = UIStackView(arrangedSubviews: [detail, heading, summary]); labels.axis = .vertical; labels.spacing = 4
+        labels.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openDetails)))
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        artwork.setContentCompressionResistancePriority(.required, for: .horizontal)
+        more.setContentCompressionResistancePriority(.required, for: .horizontal)
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal); more.accessibilityLabel = "Episode Actions"; more.showsMenuAsPrimaryAction = true
         let stack = UIStackView(arrangedSubviews: [artwork, labels, more]); stack.spacing = 12; stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor), stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14), artwork.widthAnchor.constraint(equalToConstant: 64), artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor), more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func openDetails() {
+        guard let episode, let owner else { return }
+        owner.navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
+    }
     func configure(_ episode: PodcastEpisode, owner: UIViewController) {
+        self.owner = owner
         let library = PodcastLibraryController.shared; let state = library.state.progress[episode.id]
         if self.episode != episode {
             self.episode = episode
@@ -263,6 +275,12 @@ import LunaDesignSystem
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].rows.count }
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { sections[section].title.isEmpty ? nil : sections[section].title }
+    func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        guard let header = view as? UITableViewHeaderFooterView else { return }
+        var background = UIBackgroundConfiguration.listPlainHeaderFooter()
+        background.backgroundColor = .systemBackground
+        header.backgroundConfiguration = background
+    }
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = sections[indexPath.section].rows[indexPath.row]
         if case .episode(let episode) = row {

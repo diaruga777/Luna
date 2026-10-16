@@ -92,18 +92,20 @@ import LunaMusicCore
 
 @MainActor final class PodcastPlayerQueueCell: UITableViewCell {
     let artwork = UIImageView()
-    let heading = UILabel(), detail = UILabel()
+    let heading = PodcastPlayerTitleView()
+    let detail = UILabel()
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear; contentView.backgroundColor = .clear
         artwork.layer.cornerRadius = 4; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
         heading.font = MusicStyle.font(20); detail.font = MusicStyle.font(18)
         heading.textColor = .white; detail.textColor = UIColor.white.withAlphaComponent(0.5)
-        [heading, detail].forEach {
-            $0.numberOfLines = 1; $0.lineBreakMode = .byTruncatingTail; $0.adjustsFontForContentSizeCategory = true
-            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        }
+        heading.adjustsFontForContentSizeCategory = true
+        heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        detail.numberOfLines = 1; detail.lineBreakMode = .byTruncatingTail; detail.adjustsFontForContentSizeCategory = true
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let labels = UIStackView(arrangedSubviews: [heading, detail]); labels.axis = .vertical; labels.spacing = 4
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let stack = UIStackView(arrangedSubviews: [artwork, labels]); stack.alignment = .center; stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
         NSLayoutConstraint.activate([

@@ -61,8 +61,17 @@ import LunaMusicCore
         PodcastUI.artwork(show.artworkURL, into: art)
         let name = UILabel(); name.font = .preferredFont(forTextStyle: .title1); name.text = show.title; name.numberOfLines = 0
         let author = UILabel(); author.font = .preferredFont(forTextStyle: .subheadline); author.textColor = .secondaryLabel; author.text = show.author; author.numberOfLines = 0
-        let description = UILabel(); description.font = .preferredFont(forTextStyle: .body); description.textColor = .secondaryLabel; description.numberOfLines = 4; description.text = PodcastUI.text(show.summary)
-        [name, author, description].forEach { $0.adjustsFontForContentSizeCategory = true }
+        let description = PodcastDescriptionView(text: PodcastUI.text(show.summary))
+        description.onResize = { [weak self] in
+            guard let self else { return }
+            let update = { self.layoutHeader(); self.table.layoutIfNeeded() }
+            if UIAccessibility.isReduceMotionEnabled { update() }
+            else { UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: update) }
+        }
+        [name, author].forEach {
+            $0.adjustsFontForContentSizeCategory = true
+            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         let play = UIButton(configuration: .tinted()); play.configuration?.title = "Play"; play.configuration?.image = UIImage(systemName: "play.fill"); play.configuration?.imagePadding = 8
         play.addAction(UIAction { [weak self] _ in
             guard let self else { return }
@@ -70,13 +79,20 @@ import LunaMusicCore
             PodcastUI.run(self) { try await PodcastPlaybackController.shared.playEpisodes(episodes) }
         }, for: .touchUpInside)
         let labels = UIStackView(arrangedSubviews: [name, author]); labels.axis = .vertical; labels.spacing = 6
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let row = UIStackView(arrangedSubviews: [art, labels]); row.spacing = 18; row.alignment = .center
+        row.axis = traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? .vertical : .horizontal
         let stack = UIStackView(arrangedSubviews: [row, description, play, filter]); stack.axis = .vertical; stack.spacing = 16
         stack.isLayoutMarginsRelativeArrangement = true; stack.directionalLayoutMargins = .init(top: 20, leading: 20, bottom: 20, trailing: 20)
         NSLayoutConstraint.activate([art.widthAnchor.constraint(equalToConstant: 110), art.heightAnchor.constraint(equalTo: art.widthAnchor), play.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)])
         header = stack; table.tableHeaderView = stack; layoutHeader()
     }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); layoutHeader() }
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory,
+           let show = podcasts.state.shows[showID] { buildHeader(show) }
+    }
     private func layoutHeader() {
         guard let header else { return }
         let size = header.systemLayoutSizeFitting(CGSize(width: table.bounds.width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
@@ -90,10 +106,25 @@ import LunaMusicCore
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
         super.viewDidLoad(); title = "Episode"; view.backgroundColor = .systemBackground; view.tintColor = .systemPurple
+        navigationItem.largeTitleDisplayMode = .never
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: PodcastUI.episodeMenu(episode, from: self))
         let text = UITextView(); text.isEditable = false; text.dataDetectorTypes = [.link]; text.backgroundColor = .clear
         text.font = .preferredFont(forTextStyle: .body); text.adjustsFontForContentSizeCategory = true
-        text.text = "\(episode.title)\n\n\(PodcastLibraryController.shared.state.shows[episode.showID]?.title ?? "")\n\(episode.publishedAt.formatted(date: .long, time: .omitted)) · \(PodcastUI.time(episode.duration))\n\n\(PodcastUI.text(episode.summary))"
+        text.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 0)
+        text.textContainer.lineFragmentPadding = 0
+        let content = NSMutableAttributedString(string: "")
+        func append(_ value: String, style: UIFont.TextStyle, color: UIColor = .label) {
+            let paragraph = NSMutableParagraphStyle(); paragraph.paragraphSpacing = 12
+            content.append(NSAttributedString(string: value + "\n", attributes: [
+                .font: UIFont.preferredFont(forTextStyle: style), .foregroundColor: color, .paragraphStyle: paragraph
+            ]))
+        }
+        append(episode.title, style: .title1)
+        if let show = PodcastLibraryController.shared.state.shows[episode.showID]?.title { append(show, style: .headline, color: .secondaryLabel) }
+        let date = episode.publishedAt == .distantPast ? nil : episode.publishedAt.formatted(date: .long, time: .omitted)
+        append([date, PodcastUI.time(episode.duration)].compactMap { $0 }.joined(separator: " · "), style: .subheadline, color: .secondaryLabel)
+        append(PodcastUI.text(episode.summary), style: .body)
+        text.attributedText = content
         let play = UIButton(configuration: .tinted()); play.configuration?.title = "Play Episode"; play.configuration?.image = UIImage(systemName: "play.fill"); play.configuration?.imagePadding = 8
         play.addAction(UIAction { [weak self] _ in guard let self else { return }; PodcastUI.run(self) { try await PodcastPlaybackController.shared.play(self.episode) } }, for: .touchUpInside)
         let stack = UIStackView(arrangedSubviews: [play, text]); stack.axis = .vertical; stack.spacing = 16; stack.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(stack)

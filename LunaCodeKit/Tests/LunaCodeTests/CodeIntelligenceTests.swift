@@ -10,6 +10,9 @@ final class CodeIntelligenceTests: XCTestCase {
         let project = CodeProject(path: root + "/Fixture.xcodeproj", scheme: "Fixture")
         let schemes = try await client.call(CodeRequest(.schemes, path: project.path))
         XCTAssertTrue(schemes.schemes.contains("Fixture"))
+        XCTAssertTrue(schemes.schemes.contains("FixtureSupport"), "Include an automatic package library scheme in discovery")
+        let allApps = try await client.call(CodeRequest(.apps, path: project.path))
+        XCTAssertEqual(allApps.apps?.map(\.project.scheme), ["Fixture"], "A package scheme without a Build action must not abort the complete scan")
         var appRequest = CodeRequest(.apps, path: project.path); appRequest.project = project
         let apps = try await client.call(appRequest)
         XCTAssertEqual(apps.apps?.map(\.bundleID), ["dev.luna.code.fixture"])

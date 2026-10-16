@@ -110,6 +110,12 @@ Hardware keyboard: ⌘S save, ⌘F find/replace, ⌘⇧O open path, ⌘/ comment
 Completion supports arrows, Return/Tab and Escape. Native selection, clipboard,
 undo and redo remain available. Touch has equivalent editor/accessory actions.
 
+Project Settings uses a grouped form with separate Project and TestFlight sections.
+Empty editor and browser states use system unavailable-content views with direct
+actions. Build rows show project, branch, phone and job state without permanent
+instructional footers; the build screen keeps console output optional. Editor tabs
+retain their views while typing and truncate long filenames in the middle.
+
 ## Compiler investigation and implementation
 
 SwiftParser performs **local syntax checks**, including offline. An ordinary iOS

@@ -24,13 +24,11 @@ import LunaCodeCore
     private let container = UIView()
     private let tabs = UIScrollView()
     private let tabStack = UIStackView()
+    private var tabPresentation = ""
     private let status = UIButton(type: .system)
     private let positionLabel = UILabel()
     private let footer = UIStackView()
-    private let empty = UIStackView()
-    private let emptyHeading = UILabel()
-    private let emptyDetail = UILabel()
-    private let browseButton = UIButton(type: .system)
+    private let empty = UIContentUnavailableView(configuration: .empty())
     private var workspaceGeneration = 0
     private var openGeneration = 0
     private var startingJob = false
@@ -81,30 +79,30 @@ import LunaCodeCore
             tabStack.leadingAnchor.constraint(equalTo: tabs.contentLayoutGuide.leadingAnchor, constant: 8), tabStack.trailingAnchor.constraint(equalTo: tabs.contentLayoutGuide.trailingAnchor, constant: -8),
             tabStack.heightAnchor.constraint(equalTo: tabs.frameLayoutGuide.heightAnchor)
         ])
-        status.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
+        status.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
+        status.titleLabel?.adjustsFontForContentSizeCategory = true
+        status.titleLabel?.lineBreakMode = .byTruncatingTail
+        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        positionLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         status.contentHorizontalAlignment = .leading; status.setTitle("Ready", for: .normal)
         status.addTarget(self, action: #selector(showIssues), for: .touchUpInside)
         positionLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular); positionLabel.textColor = .secondaryLabel
         footer.axis = .horizontal; footer.spacing = 12; footer.addArrangedSubview(status); footer.addArrangedSubview(positionLabel)
         footer.isLayoutMarginsRelativeArrangement = true; footer.layoutMargins = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         footer.backgroundColor = .secondarySystemBackground
+        footer.heightAnchor.constraint(greaterThanOrEqualTo: status.heightAnchor).isActive = true
         let vertical = UIStackView(arrangedSubviews: [tabs, container, footer]); vertical.axis = .vertical
         vertical.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(vertical)
         NSLayoutConstraint.activate([
             vertical.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor), vertical.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             vertical.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), vertical.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
-            tabs.heightAnchor.constraint(equalToConstant: 34), footer.heightAnchor.constraint(equalToConstant: 24)
+            tabs.heightAnchor.constraint(equalToConstant: 44), footer.heightAnchor.constraint(greaterThanOrEqualToConstant: 32)
         ])
-        let symbol = UIImageView(image: UIImage(systemName: "curlybraces")); symbol.tintColor = .systemIndigo; symbol.contentMode = .scaleAspectFit
-        symbol.heightAnchor.constraint(equalToConstant: 52).isActive = true
-        let heading = emptyHeading; heading.text = "Your Mac. Your code."; heading.font = .systemFont(ofSize: 25, weight: .semibold); heading.textAlignment = .center; heading.numberOfLines = 0
-        let detail = emptyDetail; detail.text = "Open a source file from your Mac.\nDrafts stay here until you save."
-        detail.font = .preferredFont(forTextStyle: .body); detail.textColor = .secondaryLabel; detail.numberOfLines = 0; detail.textAlignment = .center
-        let browse = browseButton; browse.setTitle("Browse Mac Files", for: .normal); browse.configuration = .tinted(); browse.addTarget(self, action: #selector(files), for: .touchUpInside)
-        empty.axis = .vertical; empty.spacing = 16; [symbol, heading, detail, browse].forEach { empty.addArrangedSubview($0) }
         empty.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(empty)
-        NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: container.centerXAnchor), empty.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            empty.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40)])
+        NSLayoutConstraint.activate([
+            empty.leadingAnchor.constraint(equalTo: container.leadingAnchor), empty.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            empty.topAnchor.constraint(equalTo: container.topAnchor), empty.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
         completionTable.dataSource = self; completionTable.delegate = self; completionTable.rowHeight = 40
         completionTable.layer.cornerRadius = 10; completionTable.layer.borderWidth = 0.5; completionTable.layer.borderColor = UIColor.separator.cgColor
         completionTable.backgroundColor = .secondarySystemBackground; completionTable.isHidden = true
@@ -145,10 +143,13 @@ import LunaCodeCore
         guard isViewLoaded else { return }
         let project = environment.project
         let name = project.map { URL(fileURLWithPath: $0.path).deletingPathExtension().lastPathComponent }
-        emptyHeading.text = name ?? "Your Mac. Your code."
-        emptyDetail.text = project == nil ? "Open an Xcode project or source file from your Mac.\nDrafts stay here until you save." : "Choose a source file from this project to start editing."
-        browseButton.setTitle(project == nil ? "Browse Mac Files" : "Browse Project Files", for: .normal)
-        if active == nil { title = name ?? "Luna Code"; setStatus(project == nil ? "Choose a project or file" : "Project ready · Choose a file") }
+        var configuration = UIContentUnavailableConfiguration.empty()
+        configuration.image = UIImage(systemName: "doc.text")
+        configuration.text = name ?? "No Open Files"
+        configuration.button.title = project == nil ? "Browse Mac Files" : "Browse Project Files"
+        configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.files() }
+        empty.configuration = configuration
+        if active == nil { title = name ?? "Luna Code"; setStatus("Ready") }
         buildButton.menu = buildMenu()
         scheduleAnalysis()
     }
@@ -219,17 +220,27 @@ import LunaCodeCore
         updateChrome(); scheduleAnalysis(); view.setNeedsLayout()
     }
     private func updateChrome() {
-        tabStack.arrangedSubviews.forEach { tabStack.removeArrangedSubview($0); $0.removeFromSuperview() }
-        for doc in documents {
-            let button = UIButton(type: .system)
-            var configuration = UIButton.Configuration.plain()
-            configuration.title = (doc.draft.modified ? "● " : "") + (doc.draft.base.path as NSString).lastPathComponent
-            configuration.baseForegroundColor = doc === active ? .label : .secondaryLabel
-            configuration.background.backgroundColor = doc === active ? .systemBackground : .clear
-            configuration.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
-            button.configuration = configuration; button.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
-            button.addAction(UIAction { [weak self, weak doc] _ in if let doc { self?.activate(doc) } }, for: .touchUpInside)
-            tabStack.addArrangedSubview(button)
+        let presentation = documents.map {
+            $0.draft.base.path + "|" + String($0.draft.modified) + "|" + String($0 === active)
+        }.joined(separator: "\n")
+        if presentation != tabPresentation {
+            tabPresentation = presentation
+            tabStack.arrangedSubviews.forEach { tabStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+            for doc in documents {
+                let button = UIButton(type: .system)
+                var configuration = UIButton.Configuration.plain()
+                configuration.title = (doc.draft.modified ? "● " : "") + (doc.draft.base.path as NSString).lastPathComponent
+                configuration.baseForegroundColor = doc === active ? .label : .secondaryLabel
+                configuration.background.backgroundColor = doc === active ? .systemBackground : .clear
+                configuration.cornerStyle = .capsule
+                configuration.titleLineBreakMode = .byTruncatingMiddle
+                configuration.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+                button.configuration = configuration; button.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+                button.addAction(UIAction { [weak self, weak doc] _ in if let doc { self?.activate(doc) } }, for: .touchUpInside)
+                button.widthAnchor.constraint(lessThanOrEqualToConstant: 240).isActive = true
+                button.accessibilityTraits = doc === active ? [.button, .selected] : .button
+                tabStack.addArrangedSubview(button)
+            }
         }
         navigationItem.rightBarButtonItems?.first?.menu = editorMenu()
         buildButton.menu = buildMenu()
@@ -237,8 +248,8 @@ import LunaCodeCore
         guard let active else { positionLabel.text = nil; return }
         let pos = CodePosition.at(utf16Offset: active.view.selectedRange.location, in: active.view.text)
         positionLabel.text = "\(pos.line + 1):\(pos.character + 1)"
-        if active.remote != nil { setStatus("Mac changed · Choose a version", color: .systemOrange) }
-        else if active.draft.modified { setStatus("Edited · saved on iPhone", color: .secondaryLabel) }
+        if active.remote != nil { setStatus("Resolve Conflict", color: .systemOrange) }
+        else if active.draft.modified { setStatus("Draft", color: .secondaryLabel) }
         else { setStatus("Saved to Mac", color: .secondaryLabel) }
     }
     private func setStatus(_ message: String, color: UIColor = .secondaryLabel) { status.setTitle(message, for: .normal); status.setTitleColor(color, for: .normal); status.accessibilityLabel = message }
@@ -500,30 +511,17 @@ import LunaCodeCore
     func configureProject(from presenter: UIViewController? = nil) {
         let presenter = presenter ?? self
         let peer = environment.peerID()
-        let alert = UIAlertController(title: "Project Settings", message: "Select a scheme for builds and code intelligence. TestFlight IDs are optional until you deploy.", preferredStyle: .alert)
-        let current = environment.project
-        for (placeholder, value) in [("/path/App.xcodeproj or .xcworkspace", current?.path), ("Scheme (leave empty to choose)", current?.scheme), ("App Store Connect app ID", current?.appID), ("Internal testing group ID", current?.groupID)] {
-            alert.addTextField { $0.placeholder = placeholder; $0.text = value; $0.autocapitalizationType = .none; $0.autocorrectionType = .no }
+        let settings = CodeProjectSettingsController(project: environment.project) { [weak self, weak presenter] project in
+            guard let self, let presenter, peer == self.environment.peerID() else { return }
+            self.environment.project = project
+            if project.scheme.isEmpty {
+                let visible = (self.splitViewController?.viewController(for: .primary) as? UINavigationController)?.topViewController
+                self.chooseScheme(from: presenter.viewIfLoaded?.window == nil ? (visible ?? self) : presenter)
+            } else { self.scheduleAnalysis() }
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak presenter] _ in
-            guard let self, let presenter, let fields = alert.textFields, peer == self.environment.peerID() else { return }
-            let values = fields.map { ($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-            // Complete dismissal before presenting another sheet or replacing the browser.
-            presenter.dismiss(animated: true) {
-                guard values[0].hasPrefix("/"), ["xcodeproj", "xcworkspace"].contains(URL(fileURLWithPath: values[0]).pathExtension) else {
-                    self.showError(CodeFailure("Enter an absolute path ending in .xcodeproj or .xcworkspace."), from: presenter); return
-                }
-                self.environment.project = CodeProject(path: values[0], scheme: values[1], appID: values[2], groupID: values[3])
-                if values[1].isEmpty {
-                    // If the project changed, the old browser may have been removed.
-                    let visible = (self.splitViewController?.viewController(for: .primary) as? UINavigationController)?.topViewController
-                    self.chooseScheme(from: presenter.viewIfLoaded?.window == nil ? (visible ?? self) : presenter)
-                } else { self.scheduleAnalysis() }
-            }
-        })
-        presenter.present(alert, animated: true)
+        presenter.present(UINavigationController(rootViewController: settings), animated: true)
     }
+
     func chooseScheme(from presenter: UIViewController? = nil, completion: (() -> Void)? = nil) {
         guard let project = environment.project, !loadingSchemes else { return }
         let presenter = presenter ?? self, peer = environment.peerID()
@@ -653,6 +651,8 @@ import LunaCodeCore
         text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.isEditable = false; text.translatesAutoresizingMaskIntoConstraints = false
         text.accessibilityIdentifier = "CodeBuildConsole"
         status.font = .preferredFont(forTextStyle: .title2); status.textAlignment = .center; status.numberOfLines = 0
+        status.adjustsFontForContentSizeCategory = true
+        detail.adjustsFontForContentSizeCategory = true; detail.textColor = .secondaryLabel
         detail.font = .preferredFont(forTextStyle: .body); detail.textAlignment = .center; detail.numberOfLines = 0
         detail.accessibilityIdentifier = "CodeBuildStatus"
         summary = UIStackView(arrangedSubviews: [spinner, status, detail]); summary.axis = .vertical; summary.spacing = 20
@@ -679,15 +679,16 @@ import LunaCodeCore
         text.text = value.log.isEmpty ? "Starting on your Mac…" : value.log
         console.setTitle(showConsole ? "Hide Console" : "Show Console", for: .normal)
         if value.state == .running { spinner.startAnimating() } else { spinner.stopAnimating() }
+        detail.isHidden = value.state == .succeeded || value.state == .cancelled
         switch value.state {
         case .running:
             status.text = "Building on Your Mac…"
-            detail.text = "You can background Luna Code while this builds. Keep your Mac awake and your phone connected by cable or on the same network. Return here to check the result."
-        case .succeeded: status.text = "Build Completed"; detail.text = "Your Mac finished this job successfully."
+            detail.text = "You can leave Luna Code while this builds."
+        case .succeeded: status.text = "Build Completed"; detail.text = nil
         case .failed:
             status.text = "Build Failed"
             detail.text = value.failureMessage ?? "Your Mac couldn’t complete this job. Open the console for details."
-        case .cancelled: status.text = "Build Cancelled"; detail.text = "This job was cancelled."
+        case .cancelled: status.text = "Build Cancelled"; detail.text = nil
         }
     }
 }

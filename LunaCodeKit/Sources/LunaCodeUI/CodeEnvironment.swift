@@ -142,9 +142,6 @@ public struct CodeBrowserPage: Sendable {
         super.viewDidLoad()
         title = path.map { ($0 as NSString).lastPathComponent } ?? "Mac Files"
         tableView.accessibilityIdentifier = "CodeFileBrowser"
-        if path == environment.project?.root, let project = environment.project {
-            navigationItem.prompt = (project.path as NSString).lastPathComponent
-        }
         navigationItem.largeTitleDisplayMode = .never
         search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
         search.searchBar.placeholder = "Find in this folder"
@@ -223,7 +220,7 @@ public struct CodeBrowserPage: Sendable {
             var config = UIContentUnavailableConfiguration.empty()
             config.image = UIImage(systemName: "wifi.exclamationmark")
             config.text = "Couldn’t Load Files"
-            config.secondaryText = loadError + "\nCheck Mac Connection or try again."
+            config.secondaryText = loadError
             config.button.title = "Retry"
             config.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.load(reset: true) }
             tableView.backgroundView = UIContentUnavailableView(configuration: config)
@@ -234,7 +231,7 @@ public struct CodeBrowserPage: Sendable {
             var config = UIContentUnavailableConfiguration.empty()
             config.image = UIImage(systemName: "folder")
             config.text = items.isEmpty ? "Empty Folder" : "No Matching Files"
-            config.secondaryText = items.isEmpty ? "Use Browser Actions to browse another folder or show hidden files." : "Try another name."
+            config.secondaryText = items.isEmpty ? nil : "Try another name."
             tableView.backgroundView = UIContentUnavailableView(configuration: config)
         } else { tableView.backgroundView = nil }
     }
@@ -245,10 +242,12 @@ public struct CodeBrowserPage: Sendable {
         guard indexPath.row < filtered.count else { cell.textLabel?.text = "Load More"; return cell }
         let item = filtered[indexPath.row]
         cell.textLabel?.text = item.name; cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.numberOfLines = 2; cell.textLabel?.lineBreakMode = .byTruncatingMiddle
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
         cell.imageView?.image = UIImage(systemName: item.project ? "hammer.fill" : item.directory ? "folder.fill" : "doc.text")
         cell.imageView?.tintColor = item.project ? .systemIndigo : .systemBlue
         cell.accessoryType = item.directory ? .disclosureIndicator : .none
-        if item.project { cell.detailTextLabel?.text = item.path == environment.project?.path ? "Current project · Browse source files" : "Open project files" }
+        if item.project { cell.detailTextLabel?.text = item.path == environment.project?.path ? "Current Project" : nil }
         cell.accessibilityIdentifier = "CodeFile:" + item.path
         return cell
     }

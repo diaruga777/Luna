@@ -155,8 +155,8 @@ import LunaCodeCore
         if rows.isEmpty {
             var config = loading ? UIContentUnavailableConfiguration.loading() : .empty()
             config.image = loading ? nil : UIImage(systemName: "iphone.and.arrow.forward")
-            config.text = loading ? "Finding Apps…" : "Build to Your Phone"
-            config.secondaryText = message ?? "Open a project in the Project tab. Its iOS apps will appear here with one-tap builds from main."
+            config.text = loading ? "Finding Apps…" : "No Apps"
+            config.secondaryText = message ?? "Open a project to see its apps here."
             if !loading {
                 config.button.title = message == nil ? "Open Project" : "Retry"
                 config.buttonProperties.primaryAction = UIAction { [weak self] _ in
@@ -168,8 +168,8 @@ import LunaCodeCore
         } else { tableView.backgroundView = nil }
     }
     private var footerText: String {
-        if let message { return message + "\nPull to refresh. Cached apps remain available." }
-        return loading ? "Finding app schemes on your Mac…" : "Builds use committed main by default. Use ••• to change a branch or phone. Pull to refresh apps and connected phones."
+        if let message { return message }
+        return loading ? "Finding Apps…" : ""
     }
     private func phone(for app: CodeBuildApp) -> CodeDevice? {
         CodeBuildCatalog.resolveDevice(devices, preferred: app.deviceID ?? catalog.defaultDevice(peer: environment.peerID()), currentName: UIDevice.current.name)
@@ -179,9 +179,11 @@ import LunaCodeCore
         cell.selectionStyle = .none
         cell.textLabel?.text = app.project.scheme
         cell.textLabel?.font = .preferredFont(forTextStyle: .headline)
-        cell.textLabel?.numberOfLines = 0
+        cell.textLabel?.numberOfLines = 2
         cell.detailTextLabel?.numberOfLines = 0
-        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .caption1)
+        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
         cell.accessibilityIdentifier = "CodeBuildApp:" + app.project.scheme
         let play = UIButton(type: .system)
         play.accessibilityLabel = "Build and Run " + app.name
@@ -209,7 +211,7 @@ import LunaCodeCore
     private func update(_ cell: UITableViewCell, app: CodeBuildApp) {
         let target = phone(for: app)?.name ?? "Phone disconnected"
         let status = app.jobID.flatMap { jobs[$0]?.state.rawValue.capitalized }
-        let detail = [(app.project.root as NSString).lastPathComponent + " · " + app.project.scheme, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
+        let detail = [(app.project.root as NSString).lastPathComponent, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
         if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
         guard let play = (cell.accessoryView as? UIStackView)?.arrangedSubviews.first as? UIButton else { return }
         let busy = starting == app.key || app.jobID.flatMap { jobs[$0]?.state } == .running
@@ -352,7 +354,7 @@ import LunaCodeCore
 }
 private final class CodeBuildDataSource: UITableViewDiffableDataSource<Int, String> {
     var footer: String = ""
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "Previously Opened Projects" }
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "Apps" }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { footer }
 }
 #endif

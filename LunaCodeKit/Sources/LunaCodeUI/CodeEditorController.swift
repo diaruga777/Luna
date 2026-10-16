@@ -614,13 +614,13 @@ import LunaCodeCore
     init(title: String, rows: [String], select: @escaping (Int) -> Void) { self.rows = rows; self.select = select; super.init(style: .insetGrouped); self.title = title }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() { super.viewDidLoad(); navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }) }
-    func showLoading() {
+    func showLoading(_ message: String = "Reading Xcode schemes…") {
         loadViewIfNeeded()
-        var config = UIContentUnavailableConfiguration.loading(); config.text = "Reading Xcode schemes…"
+        var config = UIContentUnavailableConfiguration.loading(); config.text = message
         tableView.backgroundView = UIContentUnavailableView(configuration: config)
     }
     func showMessage(_ message: String) {
-        var config = UIContentUnavailableConfiguration.empty(); config.text = "Schemes Unavailable"; config.secondaryText = message
+        var config = UIContentUnavailableConfiguration.empty(); config.text = "Unavailable"; config.secondaryText = message
         tableView.backgroundView = UIContentUnavailableView(configuration: config)
     }
     func setRows(_ rows: [String], emptyMessage: String, select: @escaping (Int) -> Void) {
@@ -637,6 +637,7 @@ import LunaCodeCore
 @MainActor final class CodeLogController: UIViewController {
     private let text = UITextView()
     private var job: CodeJob
+    var jobID: String { job.id }
     init(job: CodeJob) { self.job = job; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {

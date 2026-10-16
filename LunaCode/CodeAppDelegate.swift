@@ -36,7 +36,7 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
                     let settings = VaultConnectedSettingsViewController(services: runtime) { try await runtime.pair(code: $0) }
                     settings.title = "Luna Mac"; return settings
                 }, peerID: { (try? store.peer()?.deviceID.description) ?? "unpaired" })
-            window.rootViewController = CodeWorkspaceController(environment: environment)
+            window.rootViewController = CodeTabsController(environment: environment)
         } catch {
             let controller = UIViewController(); controller.view.backgroundColor = .systemBackground
             let label = UILabel(); label.numberOfLines = 0; label.textAlignment = .center

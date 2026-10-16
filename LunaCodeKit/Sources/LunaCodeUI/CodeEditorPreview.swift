@@ -28,7 +28,7 @@ import LunaCodeCore
                 return CodeBrowserPage(items: entries.map { CodeBrowserItem(path: $0.0, name: ($0.0 as NSString).lastPathComponent, directory: $0.1) }, next: nil)
             },
             pairing: { UIViewController() }, peerID: { "preview" })
-        return CodeWorkspaceController(environment: environment)
+        return CodeTabsController(environment: environment)
     }
 }
 private actor PreviewFiles {
@@ -58,10 +58,28 @@ private actor PreviewFiles {
         var response = CodeResponse()
         do {
             let request = try JSONDecoder().decode(CodeRequest.self, from: data)
+            if ProcessInfo.processInfo.arguments.contains("--build-offline"), [.devices, .apps, .schemes, .job].contains(request.operation) { throw CodeFailure("Preview Mac is offline.") }
             let version = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
             switch request.operation {
+            case .devices:
+                response.devices = [CodeDevice(id: "preview-phone", name: "Preview iPhone")]
+                return try JSONEncoder().encode(response)
+            case .apps:
+                let schemes = request.project.map { [$0.scheme] } ?? ["Sample", "SampleCompanion"]
+                response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map { CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + $0) }
+                return try JSONEncoder().encode(response)
+            case .branches:
+                response.branches = ["main", "feature/preview"]
+                return try JSONEncoder().encode(response)
+            case .runOnDevice:
+                guard request.deviceBuild?.branch == "main", request.deviceBuild?.deviceID == "preview-phone" else { throw CodeFailure("Unexpected preview build settings.") }
+                response.job = CodeJob(id: "preview-build", title: "Build & Run · " + (request.project?.scheme ?? ""), state: .succeeded, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                return try JSONEncoder().encode(response)
+            case .job:
+                response.job = CodeJob(id: "preview-build", title: "Build & Run", state: .succeeded, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                return try JSONEncoder().encode(response)
             case .schemes:
-                response.schemes = ["Sample", "SampleTests"]
+                response.schemes = ["Sample", "SampleCompanion", "SampleTests"]
                 return try JSONEncoder().encode(response)
             case .open: break
             case .save:

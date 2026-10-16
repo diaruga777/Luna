@@ -142,6 +142,37 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String ?? "").contains("keep my draft"))
     }
 
+    func testBuildsCacheOneTapMainBuildAndLastTabRestoration() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let row = app.cells["CodeBuildApp:Sample"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.cells["CodeBuildApp:SampleCompanion"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.cells["CodeBuildApp:SampleTests"].exists)
+        attach("Cached app builds", app)
+        app.buttons["CodeBuildOptions:Sample"].tap()
+        XCTAssertTrue(app.buttons["Branch: main"].waitForExistence(timeout: 5))
+        app.buttons["Branch: main"].tap()
+        XCTAssertTrue(app.cells.staticTexts["feature/preview"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        app.buttons["CodeRun:Sample"].tap()
+        XCTAssertTrue(app.textViews.containing(NSPredicate(format: "value CONTAINS %@", "Preview build from main on Preview iPhone")).firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Done"].tap()
+        app.terminate(); app.launchArguments = ["--editor-preview", "--workspace-preview", "--build-offline"]; app.launch()
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Builds"].isSelected)
+        app.tabBars.buttons["Project"].tap()
+        XCTAssertTrue(app.cells["CodeFile:/Preview/Sources"].waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.cells["CodeFile:/Preview/Sources"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Project"].isSelected)
+    }
+
     private func attach(_ name: String, _ app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }

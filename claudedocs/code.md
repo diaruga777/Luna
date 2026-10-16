@@ -45,6 +45,33 @@ needed. Code can modify existing regular source files up to 2 MB, preserving
 UTF-8/UTF-16 BOM, line endings and permissions. Open original paths for symlinks.
 New files, deletion, rename, Git UI and graphical Xcode project editing are outside v1.
 
+## Project and Builds tabs
+
+**Project** retains the single-project file browser, editor, scheme settings,
+code intelligence and TestFlight controls. **Builds** lists the runnable iOS apps
+from previously opened projects, with one row per app bundle/scheme (alias schemes
+for the same bundle share a row). The app restores the last selected tab.
+Project history, cached app rows, row options and job IDs are isolated by paired
+Mac and survive relaunch. Opening another project does not clear the build list.
+Rows remain visible offline; pull to refresh discovers new schemes and devices.
+Discovery publishes apps progressively and excludes test, extension and Mac targets.
+
+Tap a row's play button to build Debug, install and launch on the default phone.
+The default is the current phone when its device name uniquely matches, otherwise
+the only connected iOS device. If there are multiple choices, select a default
+once; iOS does not expose the phone's UDID. A saved but disconnected phone never
+silently falls back to a different device. Phones must be connected to the Mac,
+trusted, unlocked and set up for development in Xcode.
+
+The row's **•••** menu offers target device, branch, scheme, Open in Project,
+persisted build log and cancellation. Row settings are independent of the editor.
+Quick builds default to committed local **main**. The Mac resolves the selected
+Git ref into an isolated detached checkout, builds there, then removes it. The
+editor's branch, index, unsaved files and iPhone drafts are not changed or saved
+by quick builds. Xcode signing must already be configured on the Mac.
+Installation and launch use Apple's `devicectl`; no device UI automation is used.
+Update both Luna Code and Luna Mac for these new protocol operations.
+
 ## Editor
 
 Runestone's native text system and Tree-sitter provide Swift, C-family, JavaScript
@@ -109,7 +136,9 @@ must already work for the selected project. No private API key is sent to iPhone
 
 ## Verification
 
-- `swift test --package-path LunaCodeKit`: file versions/conflicts, encoding,
+- `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
+  device filtering, detached main checkout isolation/cleanup, command-log retention,
+  file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external
   Swift package; verifies completion changes with receiver type, unsaved semantic
@@ -119,7 +148,8 @@ must already work for the selected project. No private API key is sent to iPhone
 - `xcodebuild test -scheme LunaCode -destination 'platform=iOS Simulator,id=…'`:
   isolated simulator preview, portrait/landscape typing, explicit Save,
   draft recovery, project/workspace selection and restoration, project switching,
-  scheme selection, browser failure/recovery, and explicit save-conflict resolution;
+  scheme selection, cached app rows, one-tap main build requests, last-tab restoration,
+  browser failure/recovery, and explicit save-conflict resolution;
   iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
 - `LunaVaultConnectionTests`: approved-peer gate for Code alongside existing pairing,
   browser, index and transport tests. Never use WebDriverAgent on a physical iPhone.

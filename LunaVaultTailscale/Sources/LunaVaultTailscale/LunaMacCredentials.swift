@@ -124,7 +124,9 @@ public final class LunaMacIdentityStore: @unchecked Sendable {
             attributes: [.posixPermissions: 0o700])
         for (name, bytes) in [("cert.pem", value.certificate), ("key.pem", value.privateKey)] {
             let path = directory.appendingPathComponent(name)
-            if !FileManager.default.fileExists(atPath: path.path) {
+            if FileManager.default.fileExists(atPath: path.path) {
+                guard try Data(contentsOf: path) == bytes else { throw LunaMacCredentialError.invalid }
+            } else {
                 try bytes.write(to: path, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
                 #if os(iOS)

@@ -84,3 +84,20 @@ swift test --package-path LunaVaultTailscale --filter ReconnectTests
 
 They cover blocked Hello/index/ping writes, repeated connection replacement,
 folder-specific snapshot reuse, and Code requests before the Vault rescan.
+
+## Local signing and folder permissions
+
+`script/build_and_run.sh` signs the staged app with the installed Apple
+Development identity `Apple Development: Harry Sanabria (ALMQ68659D)` from
+Luna's team (`MM5QBNLXR6`). Set `LUNA_MAC_SIGNING_IDENTITY` to an exact certificate
+name or SHA-1 to override it. The script resolves valid identities before
+building and stops if none or multiple match; it never falls back to ad hoc
+signing. It verifies the completed bundle before launch.
+
+Keep the bundle identifier and installed app location consistent. Certificate
+signing gives rebuilds a stable designated requirement instead of the
+binary-specific hash used by ad hoc signing. Moving from the old ad hoc build
+may require approving folder access once for the new identity. Future builds
+with a compatible signing identity should retain those grants. Permissions
+remain managed by macOS; repeated folder reads do not themselves reset them.
+The five-second folder checks remain enabled.

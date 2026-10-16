@@ -4,6 +4,18 @@ MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="LunaVaultMacCompanion"
 BUNDLE="$ROOT_DIR/.build-vault-mac/Luna Mac.app"
+# Keep macOS privacy grants tied to a certificate-backed app identity across
+# rebuilds. Resolve only valid identities; expired certificates can share a name.
+SIGNING_IDENTITY="${LUNA_MAC_SIGNING_IDENTITY:-Apple Development: Harry Sanabria (ALMQ68659D)}"
+SIGNING_MATCHES="$(security find-identity -v -p codesigning | awk -F '"' -v requested="$SIGNING_IDENTITY" '
+  { split($1, fields, " "); if (fields[2] == requested || $2 == requested) print fields[2] }
+')"
+if [[ -z "$SIGNING_MATCHES" || "$SIGNING_MATCHES" == *$'\n'* ]]; then
+  echo "Luna Mac needs one valid signing identity: $SIGNING_IDENTITY" >&2
+  echo "Set LUNA_MAC_SIGNING_IDENTITY to its exact certificate name or SHA-1 from: security find-identity -v -p codesigning" >&2
+  exit 1
+fi
+SIGNING_IDENTITY="$SIGNING_MATCHES"
 cd "$ROOT_DIR/LunaVaultTailscale"
 swift build --product "$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
@@ -28,7 +40,8 @@ cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
 <key>NSLocalNetworkUsageDescription</key><string>Luna Mac connects to Luna Vault and Luna Code on your paired iPhone.</string>
 </dict></plist>
 PLIST
-codesign --force --sign - "$BUNDLE"
+codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$BUNDLE"
+codesign --verify --strict "$BUNDLE"
 case "$MODE" in
   --build-only) exit 0 ;;
   run) open -n "$BUNDLE" ;;

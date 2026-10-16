@@ -60,6 +60,29 @@ final class CodeBuildCatalogTests: XCTestCase {
         XCTAssertFalse(CodeDeviceSupport.isApp(library))
         XCTAssertFalse(CodeDeviceSupport.isApp(["PRODUCT_TYPE": "com.apple.product-type.application", "SUPPORTED_PLATFORMS": "macosx"]))
     }
+    func testPackageSchemeWithoutBuildActionIsExcludedButOtherXcodeErrorsRemainVisible() throws {
+        let output = Data("2026-10-16 Writing error result bundle\nxcodebuild: error: Scheme LunaContentRendering is not currently configured for the build action.\n".utf8)
+        let result = try CodeDeviceSupport.queryResult(output, status: 66, nonBuildableScheme: "LunaContentRendering") as? [[String: Any]]
+        XCTAssertEqual(result?.count, 0)
+        XCTAssertThrowsError(try CodeDeviceSupport.queryResult(output, status: 66, nonBuildableScheme: "LunaCode"))
+        XCTAssertThrowsError(try CodeDeviceSupport.queryResult(output, status: 66))
+        let packageError = Data("xcodebuild: error: Could not resolve package dependencies.".utf8)
+        XCTAssertThrowsError(try CodeDeviceSupport.queryResult(packageError, status: 74, nonBuildableScheme: "LunaCode"))
+        let valid = Data(#"[{"buildSettings":{"TARGET_NAME":"LunaCode"}}]"#.utf8)
+        XCTAssertEqual((try CodeDeviceSupport.queryResult(valid, status: 0) as? [[String: Any]])?.count, 1)
+    }
+    func testExplicitNonRunnableSchemeDoesNotQueryXcode() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let project = root.appendingPathComponent("App.xcodeproj")
+        let folder = project.appendingPathComponent("xcshareddata/xcschemes")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // No pbxproj exists: invoking Xcode here would fail.
+        try Data(#"<Scheme><BuildAction/><TestAction/><LaunchAction/></Scheme>"#.utf8).write(to: folder.appendingPathComponent("Tests.xcscheme"))
+        let apps = try await CodeDeviceSupport.apps(path: project.path, scheme: "Tests", root: root)
+        XCTAssertTrue(apps.isEmpty)
+    }
+
     func testDestinationRequiresAvailablePhysicalIOSRowWithoutError() {
         let output = """
         Available destinations for the App scheme:

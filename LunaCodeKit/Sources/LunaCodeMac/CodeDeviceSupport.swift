@@ -4,11 +4,20 @@ import LunaCodeCore
 /// Xcode/CoreDevice commands only. No UI automation agent is installed on phones.
 enum CodeDeviceSupport {
     static func json(_ executable: String, _ arguments: [String], directory: String, root: URL,
-                     process: CodeProcess = CodeProcess(), timeout: TimeInterval = 120) async throws -> Any {
+                     process: CodeProcess = CodeProcess(), timeout: TimeInterval = 120, nonBuildableScheme: String? = nil) async throws -> Any {
         let log = root.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: log) }
         let status = try await process.run(executable, arguments, directory: directory, log: log, timeout: timeout)
         let data = try Data(contentsOf: log)
+        return try queryResult(data, status: status, nonBuildableScheme: nonBuildableScheme)
+    }
+    static func queryResult(_ data: Data, status: Int32, nonBuildableScheme: String? = nil) throws -> Any {
+        // Package schemes can appear in -list even though they have no Build
+        // action. They are not failed app queries and must not abort discovery.
+        if status != 0, let scheme = nonBuildableScheme,
+           String(decoding: data, as: UTF8.self).contains("xcodebuild: error: Scheme " + scheme + " is not currently configured for the build action.") {
+            return [[String: Any]]()
+        }
         guard status == 0 else { throw CodeFailure("Xcode could not read project details. Open the project on the Mac to resolve packages and signing.\n" + String(decoding: data.suffix(2000), as: UTF8.self)) }
         return try parseJSONOutput(data)
     }
@@ -26,7 +35,7 @@ enum CodeDeviceSupport {
         return project?["schemes"] as? [String] ?? []
     }
     static func settings(_ project: CodeProject, root: URL, process: CodeProcess = CodeProcess(), destination: String? = nil) async throws -> [[String: String]] {
-        let rows = try await json("/usr/bin/xcodebuild", project.xcodeArguments + ["-configuration", "Debug"] + (destination.map { ["-destination", $0] } ?? []) + ["-showBuildSettings", "-json"], directory: project.root, root: root, process: process) as? [[String: Any]] ?? []
+        let rows = try await json("/usr/bin/xcodebuild", project.xcodeArguments + ["-configuration", "Debug"] + (destination.map { ["-destination", $0] } ?? []) + ["-showBuildSettings", "-json"], directory: project.root, root: root, process: process, nonBuildableScheme: project.scheme) as? [[String: Any]] ?? []
         return rows.compactMap { $0["buildSettings"] as? [String: String] }
     }
     static func isApp(_ settings: [String: String]) -> Bool {
@@ -46,6 +55,10 @@ enum CodeDeviceSupport {
         else { available = try await schemes(path: path, root: root) }
         for scheme in available where !scheme.lowercased().contains("webdriveragent") {
             let project = CodeProject(path: path, scheme: scheme)
+            // Explicit test-only / aggregate schemes have no runnable product.
+            // Skip before invoking Xcode; automatic package schemes are filtered
+            // by the no-Build-action result in settings().
+            if try runnableTarget(path: path, scheme: scheme) == "" { continue }
             let settings = try await settings(project, root: root)
             // An explicit scheme's Run action identifies its app even when
             // build settings put a dependency first. Automatic schemes use

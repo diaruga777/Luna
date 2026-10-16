@@ -21,6 +21,7 @@ public struct BEPConnectionTiming: Sendable {
     public var pingInterval: TimeInterval = 45
     public var receiveTimeout: TimeInterval = 300
     public var requestTimeout: TimeInterval = 180
+    public var writeTimeout: TimeInterval = 30
     public var helloTimeout: TimeInterval = 20
     public var timerTick: TimeInterval = 5
     public init() {}
@@ -76,11 +77,17 @@ public actor BEPConnection {
     @discardableResult
     public func start() async throws -> BEPHello {
         let helloBytes = try BEPFraming.encodeHello(localHello)
-        try await stream.write(helloBytes)
-        bytesSent += Int64(helloBytes.count)
-        let peer = try await withTimeout(timing.helloTimeout, onTimeout: { [stream] in stream.close() }) { [stream] in
-            try await BEPFraming.readHello(from: stream)
+        let peer: BEPHello
+        do {
+            peer = try await withTimeout(timing.helloTimeout, onTimeout: { [stream] in stream.close() }) { [stream] in
+                try await stream.write(helloBytes)
+                return try await BEPFraming.readHello(from: stream)
+            }
+        } catch {
+            await tearDown(error: error)
+            throw error
         }
+        bytesSent += Int64(helloBytes.count)
         peerHello = peer
         lastRead = clock()
         lastWrite = clock()
@@ -219,8 +226,13 @@ public actor BEPConnection {
             throw BEPProtocolError.clusterConfigExpected
         }
         let frame = BEPFraming.encodeMessage(message)
-        do { try await stream.write(frame) }
-        catch {
+        do {
+            // Network loss can fill the Go bridge's socket buffer. A ping must
+            // never park the timer loop forever and prevent dead-peer cleanup.
+            try await withTimeout(timing.writeTimeout, onTimeout: { [stream] in stream.close() }) { [stream] in
+                try await stream.write(frame)
+            }
+        } catch {
             await tearDown(error: error)
             throw error
         }

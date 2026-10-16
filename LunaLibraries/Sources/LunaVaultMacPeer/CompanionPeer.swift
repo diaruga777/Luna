@@ -30,9 +30,23 @@ public final class CompanionIndex: @unchecked Sendable {
             block_size INTEGER NOT NULL, version BLOB NOT NULL,
             sequence INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)
         """)
+        try db.execute("CREATE TABLE IF NOT EXISTS snapshot_root (id INTEGER PRIMARY KEY CHECK(id=1), path TEXT NOT NULL)")
         var hasDeleted = false
         try db.query("PRAGMA table_info(files)") { if $0.text(1) == "deleted" { hasDeleted = true } }
         if !hasDeleted { try db.execute("ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0") }
+    }
+
+    /// A cached handshake must never advertise the previous selected folder.
+    /// Legacy indexes have no root row; keep their snapshot on the first use.
+    public func prepareSnapshot(root: URL) throws {
+        lock.lock(); defer { lock.unlock() }
+        let path = root.standardizedFileURL.path
+        try db.transaction {
+            var previous: String?
+            try db.query("SELECT path FROM snapshot_root WHERE id=1") { previous = $0.text(0) }
+            if let previous, previous != path { try db.execute("DELETE FROM files") }
+            try db.run("INSERT INTO snapshot_root(id,path) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET path=excluded.path", [.text(path)])
+        }
     }
 
     public func replace(with records: [CompanionFileRecord]) throws {

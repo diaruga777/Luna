@@ -3,9 +3,10 @@
 The companion is the Mac-side BEP peer and a small menu-bar accessory built
 from the existing SwiftPM executable. It has no Xcode application target.
 
-At startup it chooses one folder, ensures `.stfolder` exists, scans files, and
-stores its index in `companion.sqlite`. Rescans run on a timer and from file
-system events. Syncthing metadata folders, temporary files, and ignored
+The companion chooses one shared folder and stores its index in
+`companion.sqlite`. On an authenticated reconnect it sends the saved snapshot
+before rescanning the folder. Rescans run every five seconds on a dedicated
+filesystem queue. Syncthing metadata folders, temporary files, and ignored
 folders are skipped. The scanner reuses block hashes when mtime and size are
 unchanged.
 
@@ -14,8 +15,12 @@ relay listener, or tailnet listener. Each accepted peer must be paired before
 its index is applied. The server sends `ClusterConfig` and a full or resumable
 index, serves requested blocks directly from disk with hash verification, and
 pulls iPhone-created blocks into a temporary file before atomic installation.
-It enables serving after the folder scan and before advertising that index, so
-an iPhone opening a newly listed file cannot race the serving authorization.
+It enables serving before advertising the saved index, so Code, Music, and
+Mac browsing can start even while a Vault folder scan or macOS permission probe
+is pending. Fresh scan results follow as a full index. Folder access errors
+appear in the companion and are retried without closing the shared connection.
+Block serving still checks the indexed hash against current disk content.
+Changing the selected folder clears its previous snapshot before advertising it.
 Deletes become tombstones in the index and remove the local file only after
 the protocol has accepted the change.
 
@@ -61,3 +66,21 @@ subfolders. `CompanionMusicLibrary` indexes native AVFoundation audio metadata,
 keeps a version-keyed metadata cache, and serves paginated catalogs plus bounded,
 version-checked byte ranges. It never writes audio or applies Music cache deletions
 to the Mac. See [music.md](music.md) for formats, playback, and iPhone cache policy.
+
+## Recovery after network changes
+
+Every protocol write has a 30-second deadline that closes a stalled stream;
+the 20-second Hello deadline covers both writing and reading the greeting.
+A blocked keepalive write therefore cannot disable dead-peer cleanup. The Mac
+keeps up to eight authenticated sessions; when full, a newer approved connection
+retires the oldest session instead of rejecting reconnects until a restart.
+Retired delegates are revoked and their streams closed before the new exchange.
+
+Run the focused macOS regressions with:
+
+```sh
+swift test --package-path LunaVaultTailscale --filter ReconnectTests
+```
+
+They cover blocked Hello/index/ping writes, repeated connection replacement,
+folder-specific snapshot reuse, and Code requests before the Vault rescan.

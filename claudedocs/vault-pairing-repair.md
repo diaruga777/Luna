@@ -49,8 +49,11 @@ after this reachability check.
 
 ## Files and reconnect
 
-The Mac retains each active connection and its delegate, scans the folder on
-connect, and checks for changes every five seconds while connected. The phone
+The Mac retains each active connection and its delegate, sends its saved index
+immediately after authentication, then rescans the folder and checks for changes
+every five seconds. Folder scanning and permission probes do not gate Code,
+Music, or browsing readiness. Stalled writes are bounded, and a full session
+pool retires its oldest approved connection to admit a reconnect. The phone
 reconnects when foregrounded and checks its connection every sixty seconds;
 pull to refresh forces a new index exchange. Returning from Settings reloads
 home from the same durable mirror. File previews fetch verified blocks and

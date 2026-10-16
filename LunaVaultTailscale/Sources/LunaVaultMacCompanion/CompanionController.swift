@@ -7,6 +7,7 @@ import LunaVaultTailscale
 
 final class CompanionController: @unchecked Sendable {
     private let lock = NSLock()
+    private let scanQueue = DispatchQueue(label: "LunaMac.folderScan", qos: .utility)
     private let stateURL: URL
     private let transport: LunaVaultGoTransport
     private var folderURL: URL
@@ -14,7 +15,7 @@ final class CompanionController: @unchecked Sendable {
     private var code: String?
     private var pairingUntil = Date.distantPast
     private var listener: LunaVaultGoListener?
-    private var active: [UUID: (BEPConnection, CompanionBEPDelegate)] = [:]
+    private var active = CompanionSessions()
     private var codeService: CodeService?
     private let account: CompanionAccountGate
     private var configuredClients: Set<LunaMacClient>
@@ -109,7 +110,7 @@ final class CompanionController: @unchecked Sendable {
         var openedConnection: BEPConnection?
         do {
             let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
-            // A fresh scan each connection guarantees reconnect sees changed files.
+            // Reuse the durable snapshot for the handshake; refresh it after services are ready.
             let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
             let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", codeHandler: { [weak self] data in
                 guard let self else { return Data() }; return await self.handleCode(data)
@@ -144,47 +145,71 @@ final class CompanionController: @unchecked Sendable {
                 await connection.close(reason: "Shared folder changed"); return
             }
             let connectionID = UUID()
-            let registered = lock.withLock { () -> Bool in
-                guard generation == selectedGeneration, account.trustedDevice == accepted.device, active.count < 8 else { return false }
-                active[connectionID] = (connection, delegate)
-                return true
+            let registration = lock.withLock { () -> (Bool, (BEPConnection, CompanionBEPDelegate)?) in
+                guard generation == selectedGeneration, account.trustedDevice == accepted.device else { return (false, nil) }
+                return (true, active.insert((connection, delegate), for: connectionID))
             }
-            guard registered else { await connection.close(reason: "Connection changed or too many sessions"); return }
-            defer { _ = lock.withLock { active.removeValue(forKey: connectionID) } }
-            try await CompanionFileAccess.shared.checkDirectory(folder.deletingLastPathComponent())
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try await CompanionFileAccess.shared.checkDirectory(folder)
-            try FileManager.default.createDirectory(at: folder.appendingPathComponent("Music"), withIntermediateDirectories: true)
-            try await CompanionFileAccess.shared.checkTree(folder)
-            let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID)
-            let existing = Dictionary(uniqueKeysWithValues: try index.all().map { ($0.name, $0) })
-            try index.reconcileScan(scanner.scan(previous: existing), deviceShortID: localID.shortID)
-            try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: folder.lastPathComponent,
-                devices: [BEPDevice(id: localID, name: "Luna Mac"), BEPDevice(id: accepted.device, name: hello.deviceName)])]))
-            let files = try index.all()
-            // The iPhone can request a block as soon as it reads this index.
-            // Authorize serving before the index is put on the wire.
-            delegate.startServing(connection)
-            try await connection.send(index: BEPIndex(folder: "vault", files: files,
-                lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
-            lock.withLock { status = "Connected" }
-            var lastScan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: files.map { ($0.name, $0) }))
-            while !(await connection.isClosed) {
-                try await Task.sleep(for: .seconds(5))
-                guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }) else { return }
-                try await CompanionFileAccess.shared.checkTree(folder)
-                let indexed = try index.all()
-                let scan = try scanner.scan(previous: Dictionary(uniqueKeysWithValues: indexed.map { ($0.name, $0) }))
-                if scan != lastScan {
-                    try index.reconcileScan(scan, deviceShortID: localID.shortID)
-                    let updated = try index.all()
-                    try await connection.send(index: BEPIndex(folder: "vault", files: updated,
-                        lastSequence: updated.map(\.sequence).max() ?? 0, isUpdate: false))
-                    lastScan = scan
+            guard registration.0 else { await connection.close(reason: "Connection changed"); return }
+            if let retired = registration.1 {
+                // A trusted reconnect must make progress even if half-open
+                // sessions from the previous network have filled the limit.
+                retired.1.revoke()
+                retired.0.stream.close()
+                await retired.0.close(reason: "Replaced by a newer connection")
+            }
+            defer {
+                delegate.revoke()
+                connection.stream.close()
+                lock.withLock {
+                    active.removeValue(forKey: connectionID)
+                    status = active.isEmpty ? "Apps Offline" : "Connected"
                 }
             }
-            lock.withLock {
-                if active[connectionID]?.0 === connection { active.removeValue(forKey: connectionID); status = active.isEmpty ? "Apps Offline" : "Connected" }
+            try index.prepareSnapshot(root: folder)
+            try await CompanionInitialExchange.send(connection: connection, delegate: delegate, index: index,
+                config: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: folder.lastPathComponent,
+                    devices: [BEPDevice(id: localID, name: "Luna Mac"), BEPDevice(id: accepted.device, name: hello.deviceName)])]))
+            lock.withLock { status = "Connected" }
+            let scanner = CompanionFolderScanner(rootURL: folder, deviceShortID: localID.shortID)
+            var lastScan: [CompanionFileRecord]?
+            while !(await connection.isClosed) {
+                guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }) else { return }
+                do {
+                    try await CompanionFileAccess.shared.checkDirectory(folder.deletingLastPathComponent())
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try await CompanionFileAccess.shared.checkDirectory(folder)
+                    try FileManager.default.createDirectory(at: folder.appendingPathComponent("Music"), withIntermediateDirectories: true)
+                    try await CompanionFileAccess.shared.checkTree(folder)
+                    let indexed = try index.all()
+                    // Filesystem enumeration/hashing may stall on a mounted or
+                    // protected folder. Never occupy the Swift executor needed
+                    // by connection timers and Code/Music requests.
+                    let scan: [CompanionFileRecord] = try await withCheckedThrowingContinuation { continuation in
+                        scanQueue.async { [self] in
+                            guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }) else {
+                                continuation.resume(throwing: BEPStreamError.closed); return
+                            }
+                            continuation.resume(with: Result {
+                                try scanner.scan(previous: Dictionary(uniqueKeysWithValues: indexed.map { ($0.name, $0) }))
+                            })
+                        }
+                    }
+                    guard lock.withLock({ active[connectionID]?.0 === connection && generation == selectedGeneration }),
+                          !(await connection.isClosed) else { return }
+                    if scan != lastScan {
+                        try index.reconcileScan(scan, deviceShortID: localID.shortID)
+                        let updated = try index.all()
+                        try await connection.send(index: BEPIndex(folder: "vault", files: updated,
+                            lastSequence: updated.map(\.sequence).max() ?? 0, isUpdate: false))
+                        lastScan = scan
+                    }
+                } catch {
+                    if await connection.isClosed { return }
+                    // A Vault folder problem must not take down the shared
+                    // authenticated channel used by Code and Music.
+                    lock.withLock { status = "Connected. Folder sync: \(error.localizedDescription)" }
+                }
+                try await Task.sleep(for: .seconds(5))
             }
         } catch {
             if let openedConnection { await openedConnection.close(reason: error.localizedDescription) }

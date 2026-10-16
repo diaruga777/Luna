@@ -44,6 +44,11 @@ let package = Package(
             .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
             .product(name: "LunaCodeMac", package: "LunaCodeKit"),
         ]),
+        .testTarget(name: "LunaMacReconnectTests", dependencies: [
+            "LunaVaultMacCompanion",
+            .product(name: "LunaVaultBEP", package: "LunaLibraries"),
+            .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
+        ]),
     ],
     // Swift 5 language mode to match LunaLibraries and the app targets.
     swiftLanguageModes: [.v5]

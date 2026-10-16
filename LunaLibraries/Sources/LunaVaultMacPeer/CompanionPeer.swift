@@ -208,13 +208,17 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private let folderID: String
     private let transferLock = NSLock()
     private var authorized = false
+    private var revoked = false
     private let music: CompanionMusicLibrary
+    private let clientStarted: (@Sendable (LunaMacClient) -> Void)?
     private let codeHandler: (@Sendable (Data) async -> Data)?
     private var pending: [BEPIndex] = []
     private var transferTask: Task<Void, Never>?
 
     public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String,
-                codeHandler: (@Sendable (Data) async -> Data)? = nil) {
+                codeHandler: (@Sendable (Data) async -> Data)? = nil,
+                clientStarted: (@Sendable (LunaMacClient) -> Void)? = nil) {
+        self.clientStarted = clientStarted
         self.music = CompanionMusicLibrary(vaultRoot: rootURL, cacheURL: rootURL.appendingPathComponent(".luna-music-index.json"))
         self.codeHandler = codeHandler
         self.rootURL = rootURL.standardizedFileURL
@@ -232,6 +236,7 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     /// initial ClusterConfig/Index have been sent. No file access before it.
     public func startServing(_ connection: BEPConnection) {
         let queued = transferLock.withLock { () -> [BEPIndex] in
+            guard !revoked else { return [] }
             authorized = true
             defer { pending.removeAll() }
             return pending
@@ -458,6 +463,14 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
 
     public func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> {
         guard transferLock.withLock({ authorized }) else { return .failure(.noSuchFile) }
+        if request.folder == LunaMacClientStartup.folder {
+            guard request.offset == 0, request.size == 0, request.hash.isEmpty, !request.fromTemporary,
+                  request.name.utf8.count <= 1024, let data = Data(base64Encoded: request.name),
+                  let startup = try? JSONDecoder().decode(LunaMacClientStartup.self, from: data),
+                  startup.version == 1 else { return .failure(.invalidFile) }
+            clientStarted?(startup.client)
+            return .success(Data([1]))
+        }
         if request.folder == MusicFileProtocol.folder {
             guard request.offset == 0, request.size == 0, request.hash.isEmpty, !request.fromTemporary,
                   request.name.utf8.count <= 32_768, let data = Data(base64Encoded: request.name) else { return .failure(.invalidFile) }
@@ -493,9 +506,13 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
         } catch { return .failure(.noSuchFile) }
     }
 
-    public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {
-        transferLock.withLock { authorized = false; pending.removeAll(); transferTask?.cancel(); transferTask = nil }
+    public func revoke() {
+        transferLock.withLock {
+            revoked = true; authorized = false
+            pending.removeAll(); transferTask?.cancel(); transferTask = nil
+        }
     }
+    public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async { revoke() }
 }
 
 /// A small pairing gate shared by the status-item UI and the listener.

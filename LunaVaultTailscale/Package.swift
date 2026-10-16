@@ -34,6 +34,9 @@ let package = Package(
             "TailscaleKit",
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),
+            .product(name: "LunaAppConfig", package: "LunaLibraries"),
+            .product(name: "LunaVaultStore", package: "LunaLibraries"),
+            .product(name: "LunaVaultUI", package: "LunaLibraries", condition: .when(platforms: [.iOS])),
         ]),
         .executableTarget(name: "LunaVaultMacCompanion", dependencies: [
             "LunaVaultTailscale",

@@ -91,6 +91,10 @@ public enum AppConfig {
     public static let vaultKeychainAccessGroup: String? =
         string(forInfoKey: vaultKeychainAccessGroupInfoKey)
 
+    /// Dedicated connection credentials shared only by Vault, Music, and Code.
+    public static let macConnectionKeychainAccessGroup: String? =
+        string(forInfoKey: "LunaMacKeychainAccessGroup")
+
     /// The Vault database filename is deliberately not `saves.sqlite`.
     public static let vaultDatabaseName: String =
         string(forInfoKey: vaultDatabaseNameInfoKey) ?? "vault.sqlite"

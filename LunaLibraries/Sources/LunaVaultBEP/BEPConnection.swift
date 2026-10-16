@@ -31,7 +31,7 @@ public struct BEPConnectionTiming: Sendable {
 /// Call `start()` to exchange Hellos, then `send(clusterConfig:)` before any
 /// other message. The read loop enforces the same rule on the peer.
 public actor BEPConnection {
-    public let stream: any BEPByteStream
+    public nonisolated let stream: any BEPByteStream
     public let localHello: BEPHello
     public let peerDevice: DeviceID
     public private(set) var peerHello: BEPHello?
@@ -131,6 +131,18 @@ public actor BEPConnection {
         let value = try JSONDecoder().decode(VaultMacBrowseResponse.self, from: response.data)
         if let error = value.error { throw VaultMacBrowseError(error) }
         return value
+    }
+
+    public func announce(client: LunaMacClient) async throws {
+        let payload = try JSONEncoder().encode(LunaMacClientStartup(client: client))
+        let request = BEPRequest(id: allocateRequestID(), folder: LunaMacClientStartup.folder,
+            name: payload.base64EncodedString(), offset: 0, size: 0, hash: Data())
+        let response: BEPResponse
+        do { response = try await sendRequest(request, requestTimeout: 15) }
+        catch BEPRequestError.peerCode {
+            throw VaultMacBrowseError("Update and reopen Luna Mac on your Mac to connect all your Luna apps, then reconnect.")
+        }
+        guard response.data == Data([1]) else { throw BEPStreamError.closed }
     }
 
     public func musicRequest(_ payload: Data) async throws -> Data {

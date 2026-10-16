@@ -26,9 +26,9 @@ public enum VaultSyncSessionError: Error, Equatable, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notPaired: return "Pair your Mac first."
-        case .folderNotAccepted, .folderNotOffered: return "The Mac has not shared this folder with your iPhone. Accept the request in Luna Vault on the Mac."
-        case .noConnection: return "The Mac closed the connection. Keep Luna Vault open on the Mac and accept the pairing request."
-        case .allAddressesFailed: return "Your iPhone could not reach the Mac. Connect both devices to the same Wi-Fi, allow Local Network access for Luna Vault in iPhone Settings, and copy a fresh code. For a Tailscale address, connect Tailscale on both devices."
+        case .folderNotAccepted, .folderNotOffered: return "The Mac has not shared this folder with your iPhone. Accept the request in Luna Mac on the Mac."
+        case .noConnection: return "The Mac closed the connection. Keep Luna Mac open on the Mac and accept the pairing request."
+        case .allAddressesFailed: return "Your iPhone could not reach the Mac. Connect both devices to the same Wi-Fi, allow Local Network access for this app in iPhone Settings, and copy a fresh code. For a Tailscale address, connect Tailscale on both devices."
         case .initialIndexTimedOut: return "The Mac did not send its file list. Accept the pairing request on the Mac, then try again."
         case .uploadPending: return "This import is saved on your iPhone but has not reached your Mac. Keep both apps open and reconnect; Vault will retry the pending upload."
         case .uploadInterrupted(let reason): return "This import is saved on your iPhone but has not reached your Mac. Transfer stopped: \(reason). Reconnect to retry."
@@ -76,6 +76,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     private let callbacks: VaultSyncSessionCallbacks
     private let clock: @Sendable () -> Date
 
+    private var announcedClients = Set<LunaMacClient>()
     private var connection: BEPConnection?
     private var state: VaultSyncSessionState = .idle
     private var receivedInitialIndex = false
@@ -140,6 +141,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 let stream = try await dialer.dial(address, expecting: peer.deviceID)
                 let candidate = BEPConnection(stream: stream, peerDevice: peer.deviceID,
                                               localHello: hello, delegate: self)
+                announcedClients.removeAll()
                 connection = candidate
                 await setState(peer.isFolderAccepted ? .syncing : .awaitingFolder)
                 _ = try await candidate.start()
@@ -166,6 +168,15 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         let error = VaultSyncSessionError.allAddressesFailed(failures)
         await setState(.offline("Connection failed"))
         throw error
+    }
+
+    public func announce(client: LunaMacClient) async throws {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        guard !announcedClients.contains(client) else { return }
+        try await connection.announce(client: client)
+        announcedClients.insert(client)
     }
 
     private var musicConnectionTask: Task<Void, Error>?

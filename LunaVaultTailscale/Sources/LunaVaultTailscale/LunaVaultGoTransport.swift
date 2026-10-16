@@ -35,6 +35,16 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
     }
 
     public func identity() throws -> DeviceID {
+        // All three apps can launch at once against the same App Group. Go’s
+        // in-process lock cannot protect certificate creation across processes.
+        try FileManager.default.createDirectory(at: configuration.stateDirectory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let lockPath = configuration.stateDirectory.appendingPathComponent("identity.lock").path
+        let descriptor = open(lockPath, O_CREAT | O_RDWR, mode_t(0o600))
+        guard descriptor >= 0 else { throw BEPStreamError.posix(errno) }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { throw BEPStreamError.posix(errno) }
+        defer { flock(descriptor, LOCK_UN) }
         var buffer = [CChar](repeating: 0, count: 128)
         let result = configuration.stateDirectory.path.withCString { path in
             api.identity(path, &buffer, buffer.count)

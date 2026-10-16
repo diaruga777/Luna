@@ -7,31 +7,90 @@ import LunaVaultSearch
 /// The home screen and Settings share this single durable peer and session.
 public actor VaultConnectedRuntime: VaultPresentationProviding {
     public nonisolated let store: VaultFolderStore
-    private let dialer: any VaultPeerDialing
-    private let lookup: (any VaultPeerLookup)?
-    private let localID: DeviceID
-    private let session: VaultSyncSession
+    private var dialer: any VaultPeerDialing
+    private var lookup: (any VaultPeerLookup)?
+    private var localID: DeviceID
+    private var session: VaultSyncSession
     private let cache: VaultCacheManager
     private let searchIndex: VaultSearchIndex
     private var busy = false
+    private let client: LunaMacClient
+    private let restoreShared: (@Sendable () throws -> VaultSharedConnection?)?
+    private let persistShared: (@Sendable (VaultPeerRecord?, DeviceID) throws -> Void)?
+    private var connectionPeerID: DeviceID?
+    private var sharedRevision: String?
+    private var restoreTask: Task<Void, Error>?
 
     public init(store: VaultFolderStore, dialer: any VaultPeerDialing,
-                lookup: (any VaultPeerLookup)?, localID: DeviceID) throws {
+                lookup: (any VaultPeerLookup)?, localID: DeviceID,
+                client: LunaMacClient = .vault,
+                restoreShared: (@Sendable () throws -> VaultSharedConnection?)? = nil,
+                persistShared: (@Sendable (VaultPeerRecord?, DeviceID) throws -> Void)? = nil) throws {
+        self.client = client; self.restoreShared = restoreShared; self.persistShared = persistShared
         self.store = store; self.dialer = dialer; self.lookup = lookup; self.localID = localID
+        connectionPeerID = try store.peer()?.deviceID
         cache = VaultCacheManager(store: store)
         searchIndex = try VaultSearchIndex(databaseURL: store.searchIndexURL)
-        session = VaultSyncSession(store: store, dialer: dialer, lookup: lookup, localDevice: localID)
+        session = VaultSyncSession(store: store, dialer: dialer, lookup: lookup, localDevice: localID, localName: client.title)
     }
 
-    public func musicRequest(_ payload: Data) async throws -> Data { try await session.musicRequest(payload) }
+    public func musicRequest(_ payload: Data) async throws -> Data {
+        try await prepareConnection(); try await session.announce(client: client)
+        return try await session.musicRequest(payload)
+    }
 
-    public func codeRequest(_ payload: Data) async throws -> Data { try await session.codeRequest(payload) }
+    public func codeRequest(_ payload: Data) async throws -> Data {
+        try await prepareConnection(); try await session.announce(client: client)
+        return try await session.codeRequest(payload)
+    }
+
+    /// Re-read synchronizable credentials on launch and foreground. A directory
+    /// keyed by certificate avoids changing an identity cached by the Go bridge.
+    public func prepareConnection() async throws {
+        if let restoreTask { try await restoreTask.value; return }
+        guard !busy, let shared = try restoreShared?(), shared.revision != sharedRevision else { return }
+        let task = Task { try await self.applySharedConnection(shared) }
+        restoreTask = task
+        defer { restoreTask = nil }
+        try await task.value
+    }
+
+    private func applySharedConnection(_ shared: VaultSharedConnection) async throws {
+        let existing = try store.peer()
+        let changesMac = existing?.deviceID != shared.peer?.deviceID
+        let changesSessionPeer = connectionPeerID != shared.peer?.deviceID
+        guard try !(changesMac || changesSessionPeer) || store.pendingLocalChanges().isEmpty else {
+            throw VaultTransportError.internalError("Finish uploads to your current Mac before using the connection from iCloud.")
+        }
+        let changesIdentity = shared.localID != localID
+        if changesIdentity || changesMac || changesSessionPeer || shared.peer == nil {
+            await session.stop(reason: "Connection restored from iCloud")
+        }
+        if let peer = shared.peer {
+            // Do not copy another device’s index sequence or replace our cursor.
+            if changesMac { try store.savePeer(peer) }
+            else if var local = existing {
+                local.manualAddresses = peer.manualAddresses
+                local.name = peer.name
+                local.networkMode = peer.networkMode
+                local.lastConnectedAt = local.lastConnectedAt ?? peer.lastConnectedAt
+                try store.savePeer(local)
+            }
+        } else if existing != nil { try store.removePeer() }
+        if changesIdentity {
+            dialer = shared.dialer; lookup = shared.lookup; localID = shared.localID
+            session = VaultSyncSession(store: store, dialer: dialer, lookup: lookup,
+                localDevice: localID, localName: client.title)
+        }
+        connectionPeerID = shared.peer?.deviceID
+        sharedRevision = shared.revision
+    }
 
     public func pair(code: String) async throws {
         let value: VaultPairingCode
         do { value = try VaultPairingCode(string: code) }
         catch {
-            throw VaultTransportError.internalError("This pairing code isn’t valid. Copy a fresh code from Luna Vault on your Mac and paste the whole code here.")
+            throw VaultTransportError.internalError("This pairing code isn’t valid. Copy a fresh code from Luna Mac on your Mac and paste the whole code here.")
         }
         try await savePairing(VaultPairingDraft(remoteDeviceID: value.deviceID.description,
             remoteName: "Luna Mac", folderID: "vault", folderLabel: "Vault",
@@ -39,6 +98,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func savePairing(_ draft: VaultPairingDraft) async throws {
+        try await prepareConnection()
         guard !busy else { throw VaultTransportError.internalError("A connection is already in progress. Try again when it finishes.") }
         busy = true
         defer { busy = false }
@@ -75,10 +135,13 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         await session.stop(reason: "Pairing changed")
         var verified = peer
         verified.lastConnectedAt = Date()
+        try persistShared?(verified, localID)
         try store.savePeer(verified)
+        connectionPeerID = verified.deviceID
         // Reconnect the durable mirror before reporting success to the UI.
         try await session.start()
         try await session.waitForInitialIndex()
+        try await session.announce(client: client)
     }
 
     public func removePairing() async throws {
@@ -86,8 +149,10 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         guard try store.pendingLocalChanges().isEmpty else {
             throw VaultTransportError.internalError("Some files haven’t reached your Mac yet. Connect and let uploads finish before disconnecting.")
         }
+        try persistShared?(nil, localID)
         await session.stop(reason: "Unpaired")
         try store.removePeer()
+        connectionPeerID = nil
         try searchIndex.rebuild()
     }
 
@@ -101,6 +166,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func pairingSnapshot() async throws -> VaultPairingSnapshot {
+        try await prepareConnection()
         let peer = try store.peer()
         // Pre-repair code could create a row without ever contacting the Mac.
         let verified = peer?.lastConnectedAt != nil
@@ -115,12 +181,14 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     public func refresh() async { await reconnect(force: true) }
 
     public func reconnect(force: Bool = false) async {
+        do { try await prepareConnection() } catch { return }
         guard !busy, (try? store.peer()?.lastConnectedAt) != nil else { return }
         busy = true
         defer { busy = false }
         do {
             try await session.start(forceLookup: force)
             try await session.waitForInitialIndex()
+            try await session.announce(client: client)
             _ = await session.refreshInvalidatedCache()
         } catch {
             // In particular, an initial-index timeout must not leave a
@@ -142,12 +210,14 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     }
 
     public func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
-        try await session.browseMac(VaultMacBrowseRequest(path == nil ? .locations : .list,
+        try await prepareConnection(); try await session.announce(client: client)
+        return try await session.browseMac(VaultMacBrowseRequest(path == nil ? .locations : .list,
             path: path ?? "", offset: offset, showHidden: showHidden))
     }
 
     public func macFileURL(path: String) async throws -> URL {
-        try await session.downloadMacFile(path: path)
+        try await prepareConnection(); try await session.announce(client: client)
+        return try await session.downloadMacFile(path: path)
     }
 
     public func children(of path: String) async throws -> [VaultPresentedFile] {

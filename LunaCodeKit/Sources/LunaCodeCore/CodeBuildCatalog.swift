@@ -40,8 +40,8 @@ public final class CodeBuildCatalog {
     public func merge(_ discovered: [CodeBuildApp], path: String, peer: String) {
         let old = apps(peer: peer)
         let updated = discovered.map { app -> CodeBuildApp in
-            guard let previous = old.first(where: { $0.key == app.key || ($0.project.path == app.project.path && $0.bundleID == app.bundleID) }) else { return app }
-            var result = app; result.project.scheme = previous.project.scheme; result.branch = previous.branch; result.deviceID = previous.deviceID; result.jobID = previous.jobID
+            guard let previous = old.first(where: { $0.key == app.key }) else { return app }
+            var result = app; result.branch = previous.branch; result.deviceID = previous.deviceID; result.jobID = previous.jobID
             return result
         }
         save((old.filter { $0.project.path != path } + updated).sorted {

@@ -15,12 +15,17 @@ final class CodeIntelligenceTests: XCTestCase {
         XCTAssertEqual(apps.apps?.map(\.bundleID), ["dev.luna.code.fixture"])
         XCTAssertEqual(apps.apps?.first?.project.scheme, "Fixture")
         var build = CodeRequest(.build); build.project = project
-        let response = try await client.call(build)
+        // The submitting client can go away after acceptance. A fresh client
+        // observes the same Mac-owned build and its persisted completion.
+        var submittingClient: CodeClient? = CodeClient { await service.handle($0) }
+        let response = try await submittingClient!.call(build)
+        submittingClient = nil
+        let reconnectedClient = CodeClient { await service.handle($0) }
         let started = try XCTUnwrap(response.job)
         var status = CodeRequest(.job); status.jobID = started.id
         var job = started
         for _ in 0..<120 {
-            let response = try await client.call(status)
+            let response = try await reconnectedClient.call(status)
             job = try XCTUnwrap(response.job)
             if job.state != .running { break }
             try await Task.sleep(for: .seconds(1))

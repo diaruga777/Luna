@@ -32,6 +32,7 @@ import LunaCodeCore
     }
 }
 private actor PreviewFiles {
+    private var buildStartedAt: Date?
     private var injectConflict = ProcessInfo.processInfo.arguments.contains("--save-conflict")
     var text = """
     import UIKit
@@ -65,21 +66,22 @@ private actor PreviewFiles {
                 response.devices = [CodeDevice(id: "preview-phone", name: "Preview iPhone")]
                 return try JSONEncoder().encode(response)
             case .apps:
-                let schemes = request.project.map { [$0.scheme] } ?? ["Sample", "SampleCompanion"]
-                response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map { CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + $0) }
+                let schemes = request.project.map { [$0.scheme] } ?? ["Sample", "SampleAlias", "SampleCompanion"]
+                response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map { CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + ($0 == "SampleAlias" ? "Sample" : $0)) }
                 return try JSONEncoder().encode(response)
             case .branches:
                 response.branches = ["main", "feature/preview"]
                 return try JSONEncoder().encode(response)
             case .runOnDevice:
                 guard request.deviceBuild?.branch == "main", request.deviceBuild?.deviceID == "preview-phone" else { throw CodeFailure("Unexpected preview build settings.") }
-                response.job = CodeJob(id: "preview-build", title: "Build & Run · " + (request.project?.scheme ?? ""), state: .succeeded, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                buildStartedAt = Date()
+                response.job = CodeJob(id: "preview-build", title: "Build & Run · " + (request.project?.scheme ?? ""), state: .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
                 return try JSONEncoder().encode(response)
             case .job:
-                response.job = CodeJob(id: "preview-build", title: "Build & Run", state: .succeeded, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                response.job = CodeJob(id: "preview-build", title: "Build & Run", state: Date().timeIntervalSince(buildStartedAt ?? .distantPast) > 6 ? .succeeded : .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
                 return try JSONEncoder().encode(response)
             case .schemes:
-                response.schemes = ["Sample", "SampleCompanion", "SampleTests"]
+                response.schemes = ["Sample", "SampleAlias", "SampleCompanion", "SampleTests"]
                 return try JSONEncoder().encode(response)
             case .open: break
             case .save:

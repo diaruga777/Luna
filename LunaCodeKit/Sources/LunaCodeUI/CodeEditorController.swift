@@ -569,7 +569,7 @@ import LunaCodeCore
                 // Keep the originating Mac association even if the user switches while waiting.
                 environment.defaults.set(response.job?.id, forKey: "Code.job." + peer)
                 guard workspaceGeneration == workspace, environment.peerID() == peer else { return }
-                job = response.job; buildButton.menu = buildMenu(); showBuildLog()
+                job = response.job; buildButton.menu = buildMenu(); showBuildLog(showConsole: false)
             } catch { if workspaceGeneration == workspace { showError(error) } }
         }
     }
@@ -580,9 +580,9 @@ import LunaCodeCore
         buildButton?.menu = buildMenu()
         if let log = (presentedViewController as? UINavigationController)?.topViewController as? CodeLogController { log.update(job) }
     }
-    private func showBuildLog() {
+    private func showBuildLog(showConsole: Bool = true) {
         guard let job else { showError(CodeFailure("No build yet. Select a project, then choose Build or Build & Deploy.")); return }
-        let log = CodeLogController(job: job); present(UINavigationController(rootViewController: log), animated: true)
+        let log = CodeLogController(job: job, showConsole: showConsole); present(UINavigationController(rootViewController: log), animated: true)
     }
     private func cancelJob() {
         guard let job else { return }; var request = CodeRequest(.cancel); request.jobID = job.id
@@ -636,16 +636,59 @@ import LunaCodeCore
 }
 @MainActor final class CodeLogController: UIViewController {
     private let text = UITextView()
+    private let spinner = UIActivityIndicatorView(style: .large)
+    private let status = UILabel()
+    private let detail = UILabel()
+    private let console = UIButton(type: .system)
+    private var summary: UIStackView!
     private var job: CodeJob
+    private var showConsole: Bool
     var jobID: String { job.id }
-    init(job: CodeJob) { self.job = job; super.init(nibName: nil, bundle: nil) }
+    init(job: CodeJob, showConsole: Bool = false) {
+        self.job = job; self.showConsole = showConsole; super.init(nibName: nil, bundle: nil)
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .systemBackground
         text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.isEditable = false; text.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(text); NSLayoutConstraint.activate([text.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), text.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor), text.leadingAnchor.constraint(equalTo: view.leadingAnchor), text.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
+        text.accessibilityIdentifier = "CodeBuildConsole"
+        status.font = .preferredFont(forTextStyle: .title2); status.textAlignment = .center; status.numberOfLines = 0
+        detail.font = .preferredFont(forTextStyle: .body); detail.textAlignment = .center; detail.numberOfLines = 0
+        detail.accessibilityIdentifier = "CodeBuildStatus"
+        summary = UIStackView(arrangedSubviews: [spinner, status, detail]); summary.axis = .vertical; summary.spacing = 20
+        summary.translatesAutoresizingMaskIntoConstraints = false
+        console.addAction(UIAction { [weak self] _ in
+            guard let self else { return }; self.showConsole.toggle(); self.update(self.job)
+        }, for: .touchUpInside)
+        console.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(summary); view.addSubview(text); view.addSubview(console)
+        NSLayoutConstraint.activate([
+            summary.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
+            summary.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28), summary.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            console.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16), console.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            text.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), text.bottomAnchor.constraint(equalTo: console.topAnchor, constant: -12),
+            text.leadingAnchor.constraint(equalTo: view.leadingAnchor), text.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
         navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }); update(job)
     }
-    func update(_ value: CodeJob?) { guard let value else { return }; job = value; title = value.title + " · " + value.state.rawValue.capitalized; text.text = value.log.isEmpty ? "Starting on your Mac…" : value.log }
+    func update(_ value: CodeJob?) {
+        guard let value else { return }; job = value
+        guard isViewLoaded else { return }
+        title = value.title
+        text.isHidden = !showConsole; summary.isHidden = showConsole
+        text.text = value.log.isEmpty ? "Starting on your Mac…" : value.log
+        console.setTitle(showConsole ? "Hide Console" : "Show Console", for: .normal)
+        if value.state == .running { spinner.startAnimating() } else { spinner.stopAnimating() }
+        switch value.state {
+        case .running:
+            status.text = "Building on Your Mac…"
+            detail.text = "You can background Luna Code while this builds. Keep your Mac awake and your phone connected by cable or on the same network. Return here to check the result."
+        case .succeeded: status.text = "Build Completed"; detail.text = "Your Mac finished this job successfully."
+        case .failed:
+            status.text = "Build Failed"
+            detail.text = value.failureMessage ?? "Your Mac couldn’t complete this job. Open the console for details."
+        case .cancelled: status.text = "Build Cancelled"; detail.text = "This job was cancelled."
+        }
+    }
 }
 #endif

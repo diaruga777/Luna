@@ -12,7 +12,7 @@ public actor CodeJobs {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "json" {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
-                if job.state == .running { job.state = .failed; job.log += "\nMac companion restarted before this job completed." }
+                if job.state == .running { job.state = .failed; job.failureMessage = "Mac companion restarted before this job completed."; job.log += "\n" + job.failureMessage! }
                 jobs[job.id] = job
             }
         }
@@ -97,7 +97,7 @@ public actor CodeJobs {
             completed.state = exit == 0 ? .succeeded : .failed
             if exit == 0, request.operation == .deploy { completed.log = "\nAvailable to the internal group after processing. Open TestFlight on your iPhone to install." }
         } catch is CancellationError { completed.state = .cancelled }
-        catch { completed.state = .failed; completed.log = "\n" + error.localizedDescription }
+        catch { completed.state = .failed; completed.failureMessage = error.localizedDescription; completed.log = "\n" + error.localizedDescription }
         if jobs[job.id]?.state == .cancelled { completed.state = .cancelled }
         jobs[job.id] = completed; processes[job.id] = nil; persist(completed)
     }

@@ -5,14 +5,15 @@ extension CodeJobs {
     func runOnDevice(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess, log: URL) async throws {
         guard let options = request.deviceBuild else { throw CodeFailure("Choose a phone first.") }
         let phones = try await CodeDeviceSupport.devices(root: root)
-        guard phones.contains(where: { $0.id == options.deviceID }) else { throw CodeFailure("The selected phone is disconnected. Connect and unlock it, then try again.") }
+        guard phones.contains(where: { $0.id == options.deviceID }) else { throw CodeFailure("The selected phone is not connected. Connect it to your Mac by cable or on the same network, unlock it, then try again.") }
         let checkout = try await CodeDeviceCheckout.create(project: project, branch: options.branch, root: root,
             name: job.id, process: process)
         do {
             let buildProject = checkout.project
+            try await CodeDeviceSupport.validateDestination(buildProject, deviceID: options.deviceID, root: root, process: process)
             let destination = "platform=iOS,id=" + options.deviceID
             let settings = try await CodeDeviceSupport.settings(buildProject, root: root, process: process, destination: destination)
-            guard let app = settings.first, CodeDeviceSupport.isApp(app),
+            guard let app = try CodeDeviceSupport.primarySettings(settings, project: buildProject), CodeDeviceSupport.isApp(app),
                   let bundle = app["PRODUCT_BUNDLE_IDENTIFIER"], !bundle.lowercased().contains("webdriveragent"),
                   let product = app["FULL_PRODUCT_NAME"], product.hasSuffix(".app") else {
                 throw CodeFailure("Choose a runnable iOS app scheme in the row menu.")

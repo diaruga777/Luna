@@ -52,8 +52,8 @@ New files, deletion, rename, Git UI and graphical Xcode project editing are outs
 
 **Project** retains the single-project file browser, editor, scheme settings,
 code intelligence and TestFlight controls. **Builds** lists the runnable iOS apps
-from previously opened projects, with one row per app bundle/scheme (alias schemes
-for the same bundle share a row). The app restores the last selected tab.
+from previously opened projects, with one row per runnable iOS app scheme. Alias
+schemes sharing a bundle remain separate and keep independent branch, phone and job settings. The app restores the last selected tab.
 Project history, cached app rows, row options and job IDs are isolated by paired
 Mac and survive relaunch. Opening another project does not clear the build list.
 Rows remain visible offline; pull to refresh discovers new schemes and devices.
@@ -64,15 +64,23 @@ The default is the current phone when its device name uniquely matches, otherwis
 the only connected iOS device. If there are multiple choices, select a default
 once; iOS does not expose the phone's UDID. A saved but disconnected phone never
 silently falls back to a different device. Phones must be connected to the Mac,
-trusted, unlocked and set up for development in Xcode.
+trusted, unlocked and set up for development in Xcode. Remembered disconnected
+phones are excluded. Before compiling, the Mac rechecks the live connection and
+Xcode’s available iOS destinations for the selected scheme; an ineligible phone
+fails with connection, Developer Mode and Xcode setup guidance.
 
-The row's **•••** menu offers target device, branch, scheme, Open in Project,
+The row's **•••** menu offers target device, branch, Open in Project,
 persisted build log and cancellation. Row settings are independent of the editor.
 Quick builds default to committed local **main**. The Mac resolves the selected
 Git ref into an isolated detached checkout, builds there, then removes it. The
 editor's branch, index, unsaved files and iPhone drafts are not changed or saved
 by quick builds. Xcode signing must already be configured on the Mac.
 Installation and launch use Apple's `devicectl`; no device UI automation is used.
+Accepted jobs show a spinner and a message confirming that Luna Code can be
+backgrounded. Console output is opt-in via Show Console or the row’s Build Log
+menu. The Mac owns the job independently of the iPhone connection; status and
+logs persist, and the foregrounded app polls for completion. Keep the Mac awake
+and the target phone reachable for installation and launch.
 Update both Luna Code and Luna Mac for these new protocol operations.
 
 ## Editor
@@ -140,7 +148,7 @@ must already work for the selected project. No private API key is sent to iPhone
 ## Verification
 
 - `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
-  device filtering, detached main checkout isolation/cleanup, command-log retention,
+  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, detached main checkout isolation/cleanup, command-log retention,
   file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external
@@ -151,7 +159,8 @@ must already work for the selected project. No private API key is sent to iPhone
 - `xcodebuild test -scheme LunaCode -destination 'platform=iOS Simulator,id=…'`:
   isolated simulator preview, portrait/landscape typing, explicit Save,
   draft recovery, project/workspace selection and restoration, project switching,
-  scheme selection, cached app rows, one-tap main build requests, last-tab restoration,
+  scheme selection, cached app rows, one-tap main build requests, hidden console,
+  background/foreground job status, last-tab restoration,
   browser failure/recovery, and explicit save-conflict resolution;
   iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
 - `LunaVaultConnectionTests`: approved-peer gate for Code alongside existing pairing,

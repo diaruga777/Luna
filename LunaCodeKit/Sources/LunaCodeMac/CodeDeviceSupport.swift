@@ -33,6 +33,12 @@ enum CodeDeviceSupport {
         settings["PRODUCT_TYPE"] == "com.apple.product-type.application" &&
         (settings["SUPPORTED_PLATFORMS"] ?? settings["PLATFORM_NAME"] ?? "").components(separatedBy: " ").contains("iphoneos")
     }
+    static func primarySettings(_ settings: [[String: String]], project: CodeProject) throws -> [String: String]? {
+        if let target = try runnableTarget(path: project.path, scheme: project.scheme) {
+            return settings.first { $0["TARGET_NAME"] == target }
+        }
+        return settings.first
+    }
     static func apps(path: String, scheme selectedScheme: String? = nil, root: URL) async throws -> [CodeBuildApp] {
         var apps: [CodeBuildApp] = []
         let available: [String]
@@ -41,14 +47,40 @@ enum CodeDeviceSupport {
         for scheme in available where !scheme.lowercased().contains("webdriveragent") {
             let project = CodeProject(path: path, scheme: scheme)
             let settings = try await settings(project, root: root)
-            // A scheme can build dependencies too. Its primary target is first.
-            if let app = settings.first, isApp(app), let bundle = app["PRODUCT_BUNDLE_IDENTIFIER"], !bundle.lowercased().contains("webdriveragent") {
+            // An explicit scheme's Run action identifies its app even when
+            // build settings put a dependency first. Automatic schemes use
+            // Xcode's primary (first) target and never search dependencies.
+            let primary = try primarySettings(settings, project: project)
+            if let app = primary, isApp(app), let bundle = app["PRODUCT_BUNDLE_IDENTIFIER"], !bundle.lowercased().contains("webdriveragent") {
                 apps.append(CodeBuildApp(project: project, name: app["PRODUCT_NAME"] ?? scheme, bundleID: bundle))
             }
         }
-        // Alias schemes for the same application (e.g. Luna and LunaReader) share one row.
-        var bundles = Set<String>()
-        return apps.filter { bundles.insert($0.bundleID).inserted }
+        return apps
+    }
+    static func runnableTarget(path: String, scheme: String) throws -> String? {
+        let container = URL(fileURLWithPath: path)
+        var containers = [container]
+        if container.pathExtension == "xcworkspace" {
+            containers += (try? FileManager.default.contentsOfDirectory(at: container.deletingLastPathComponent(), includingPropertiesForKeys: nil))?.filter { $0.pathExtension == "xcodeproj" } ?? []
+        }
+        for container in containers {
+            let shared = container.appendingPathComponent("xcshareddata/xcschemes/" + scheme + ".xcscheme")
+            var candidates = [shared]
+            let users = container.appendingPathComponent("xcuserdata")
+            for user in (try? FileManager.default.contentsOfDirectory(at: users, includingPropertiesForKeys: nil)) ?? [] {
+                candidates.append(user.appendingPathComponent("xcschemes/" + scheme + ".xcscheme"))
+            }
+            for file in candidates where FileManager.default.fileExists(atPath: file.path) {
+                return try parseRunnableTarget(Data(contentsOf: file)) ?? ""
+            }
+        }
+        return nil
+    }
+    static func parseRunnableTarget(_ data: Data) throws -> String? {
+        let delegate = SchemeRunnable()
+        let parser = XMLParser(data: data); parser.delegate = delegate
+        guard parser.parse() else { throw CodeFailure("Could not read this Xcode scheme. Open it on your Mac and check its Run action.") }
+        return delegate.target
     }
     static func devices(root: URL) async throws -> [CodeDevice] {
         let output = root.appendingPathComponent(UUID().uuidString + ".json")
@@ -68,9 +100,32 @@ enum CodeDeviceSupport {
             let connection = properties?["connection"] as? [String: Any] ?? device["connectionProperties"] as? [String: Any] ?? [:]
             let connected = connection["state"] as? String ?? connection["tunnelState"] as? String
             guard hardware["reality"] as? String == "physical", hardware["platform"] as? String == "iOS",
-                  (connected == "connected" || (connected == "disconnected" && connection["pairingState"] as? String == "paired")), let id = hardware["udid"] as? String, let name = state["name"] as? String else { return nil }
+                  connected == "connected", let id = hardware["udid"] as? String, let name = state["name"] as? String else { return nil }
             return CodeDevice(id: id, name: name)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    static func validateDestination(_ project: CodeProject, deviceID: String, root: URL, process: CodeProcess) async throws {
+        let log = root.appendingPathComponent(UUID().uuidString + ".destinations")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let status = try await process.run("/usr/bin/xcodebuild", project.xcodeArguments + ["-showdestinations", "-destination-timeout", "10"], directory: project.root, log: log, timeout: 45)
+        let output = String(decoding: try Data(contentsOf: log), as: UTF8.self)
+        guard status == 0, destinationIsEligible(output, deviceID: deviceID) else {
+            throw CodeFailure("This phone is not available for \(project.scheme). Connect it to your Mac by cable or on the same network and unlock it. In Xcode’s Devices and Simulators, check pairing, Developer Mode, iOS support and the scheme’s deployment target.")
+        }
+    }
+    static func destinationIsEligible(_ output: String, deviceID: String) -> Bool {
+        var available = false
+        for line in output.components(separatedBy: "\n") {
+            if line.contains("Ineligible destinations") { available = false }
+            else if line.contains("Available destinations") { available = true }
+            guard available, let start = line.firstIndex(of: "{"), let end = line.lastIndex(of: "}") else { continue }
+            let fields = line[line.index(after: start)..<end].split(separator: ",").reduce(into: [String: String]()) { result, field in
+                let parts = field.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                if parts.count == 2 { result[parts[0]] = parts[1] }
+            }
+            if fields["platform"] == "iOS", fields["id"] == deviceID, fields["error"] == nil { return true }
+        }
+        return false
     }
     static func git(_ arguments: [String], directory: String, root: URL, process: CodeProcess = CodeProcess()) async throws -> String {
         let log = root.appendingPathComponent(UUID().uuidString + ".log")
@@ -84,4 +139,16 @@ enum CodeDeviceSupport {
         let output = try await git(["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"], directory: (path as NSString).deletingLastPathComponent, root: root)
         return output.components(separatedBy: "\n").filter { !$0.isEmpty && !$0.hasSuffix("/HEAD") }
     }
+}
+
+private final class SchemeRunnable: NSObject, XMLParserDelegate {
+    var target: String?
+    private var elements: [String] = []
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
+        elements.append(elementName)
+        if elementName == "BuildableReference", elements.contains("LaunchAction"), elements.contains("BuildableProductRunnable") {
+            target = attributes["BlueprintName"]
+        }
+    }
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) { elements.removeLast() }
 }

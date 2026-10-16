@@ -25,6 +25,7 @@ import LunaCodeCore
     private let environment: CodeEnvironment
     private var catalog: CodeBuildCatalog { CodeBuildCatalog(defaults: environment.defaults) }
     private var apps: [CodeBuildApp] { catalog.apps(peer: environment.peerID()) }
+    private var scannedProjects: Set<String> = []
     private var devices: [CodeDevice] = []
     private var jobs: [String: CodeJob] = [:]
     private var discovery: Task<Void, Never>?
@@ -59,7 +60,7 @@ import LunaCodeCore
     override func viewWillAppear(_ animated: Bool) { super.viewWillAppear(animated); activate() }
     @objc private func activate() {
         if peer != environment.peerID() {
-            discovery?.cancel(); loading = false; peer = environment.peerID(); devices = []; jobs = [:]; starting = nil; message = nil
+            discovery?.cancel(); loading = false; peer = environment.peerID(); devices = []; scannedProjects = []; jobs = [:]; starting = nil; message = nil
         }
         reload()
         if !loading { load(refreshAll: false) }
@@ -71,7 +72,7 @@ import LunaCodeCore
         loading = true; message = nil
         let peer = environment.peerID()
         let projects = environment.session.recentProjects(peer: peer)
-        let paths = projects.filter { project in refreshAll || !apps.contains { $0.project.path == project.path } }
+        let paths = projects.filter { refreshAll || !scannedProjects.contains($0.path) }
         reload()
         discovery = Task { [weak self] in
             guard let self else { return }
@@ -98,13 +99,14 @@ import LunaCodeCore
                         let response = try await environment.client.call(request)
                         guard peer == environment.peerID(), !Task.isCancelled else { return }
                         guard let discovered = response.apps else { throw CodeFailure("Update Luna Mac to use phone builds.") }
-                        for app in discovered where !found.contains(where: { $0.bundleID == app.bundleID }) { found.append(app) }
+                        for app in discovered where !found.contains(where: { $0.key == app.key }) { found.append(app) }
                         // Publish each result immediately; keep existing cached rows until scanning completes.
                         var partial = catalog.apps(peer: peer).filter { $0.project.path == project.path }
-                        for app in found where !partial.contains(where: { $0.bundleID == app.bundleID }) { partial.append(app) }
+                        for app in found where !partial.contains(where: { $0.key == app.key }) { partial.append(app) }
                         catalog.merge(partial, path: project.path, peer: peer); reload()
                     }
                     catalog.merge(found, path: project.path, peer: peer)
+                    scannedProjects.insert(project.path)
                     if found.isEmpty { message = "No runnable iOS apps found in " + (project.path as NSString).lastPathComponent + "." }
                 } catch { if peer == environment.peerID() { message = error.localizedDescription } }
             }
@@ -133,7 +135,7 @@ import LunaCodeCore
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "Previously Opened Projects" }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if let message { return message + "\nPull to refresh. Cached apps remain available." }
-        return loading ? "Finding app schemes on your Mac…" : "Builds use committed main by default. Use ••• to change a branch, scheme or phone. Pull to refresh apps and connected phones."
+        return loading ? "Finding app schemes on your Mac…" : "Builds use committed main by default. Use ••• to change a branch or phone. Pull to refresh apps and connected phones."
     }
     private func phone(for app: CodeBuildApp) -> CodeDevice? {
         CodeBuildCatalog.resolveDevice(devices, preferred: app.deviceID ?? catalog.defaultDevice(peer: environment.peerID()), currentName: UIDevice.current.name)
@@ -142,10 +144,10 @@ import LunaCodeCore
         let app = apps[indexPath.row]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         cell.selectionStyle = .none
-        cell.textLabel?.text = app.name
+        cell.textLabel?.text = app.project.scheme
         cell.textLabel?.font = .preferredFont(forTextStyle: .headline)
         cell.textLabel?.numberOfLines = 0
-        let target = phone(for: app)?.name ?? (app.deviceID == nil ? "Default phone" : "Phone disconnected")
+        let target = phone(for: app)?.name ?? "Phone disconnected"
         let status = app.jobID.flatMap { jobs[$0]?.state.rawValue.capitalized }
         cell.detailTextLabel?.text = [(app.project.root as NSString).lastPathComponent + " · " + app.project.scheme, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
         cell.detailTextLabel?.numberOfLines = 0
@@ -178,7 +180,6 @@ import LunaCodeCore
         var actions: [UIMenuElement] = [
             UIMenu(title: "Target Device", children: [defaults] + phones + [UIAction(title: "Refresh Connected Phones…") { [weak self] _ in self?.chooseDefaultPhone() }]),
             UIAction(title: "Branch: " + app.branch, image: UIImage(systemName: "arrow.triangle.branch")) { [weak self] _ in self?.chooseBranch(app) },
-            UIAction(title: "Scheme: " + app.project.scheme, image: UIImage(systemName: "list.bullet")) { [weak self] _ in self?.chooseScheme(app) },
             UIAction(title: "Open in Project", image: UIImage(systemName: "curlybraces")) { [weak self] _ in
                 guard let self else { return }
                 var project = self.environment.session.recentProjects(peer: self.environment.peerID()).first { $0.path == app.project.path } ?? app.project
@@ -209,13 +210,18 @@ import LunaCodeCore
                 guard let phones = try await environment.client.call(CodeRequest(.devices)).devices else { throw CodeFailure("Update Luna Mac to use phone builds.") }
                 guard peer == environment.peerID() else { return }
                 devices = phones
-                guard let target = phone(for: app) else { chooseDefaultPhone(for: app); return }
+                guard let target = phone(for: app) else {
+                    if app.deviceID != nil || catalog.defaultDevice(peer: peer) != nil || phones.isEmpty {
+                        throw CodeFailure("The selected phone is not connected. Connect it to your Mac by cable or on the same network, unlock it, and enable Developer Mode in Settings → Privacy & Security. Then try again.")
+                    }
+                    chooseDefaultPhone(for: app); return
+                }
                 if catalog.defaultDevice(peer: peer) == nil { catalog.setDefaultDevice(target.id, peer: peer) }
                 var request = CodeRequest(.runOnDevice); request.project = app.project
                 request.deviceBuild = CodeDeviceBuild(branch: app.branch, deviceID: target.id)
                 let response = try await environment.client.call(request)
                 guard peer == environment.peerID(), let job = response.job else { return }
-                jobs[job.id] = job; edit(app) { $0.jobID = job.id }; showLog(job.id)
+                jobs[job.id] = job; edit(app) { $0.jobID = job.id }; showLog(job.id, showConsole: false)
             } catch { if peer == environment.peerID() { showError(error) } }
         }
     }
@@ -235,24 +241,6 @@ import LunaCodeCore
         choose(title: "Branch", load: { [environment] in
             try await environment.client.call(CodeRequest(.branches, path: app.project.path)).branches ?? []
         }, label: { $0 }, select: { [weak self] branch in self?.edit(app) { $0.branch = branch } })
-    }
-    private func chooseScheme(_ app: CodeBuildApp) {
-        choose(title: "Build Scheme", load: { [environment] in
-            try await environment.client.call(CodeRequest(.schemes, path: app.project.path)).schemes
-        }, label: { $0 }, select: { [weak self] scheme in
-            guard let self else { return }; let peer = self.environment.peerID()
-            Task {
-                do {
-                    var request = CodeRequest(.apps, path: app.project.path); request.project = CodeProject(path: app.project.path, scheme: scheme)
-                    let response = try await self.environment.client.call(request)
-                    guard peer == self.environment.peerID() else { return }
-                    guard var updated = response.apps?.first else { throw CodeFailure("This scheme does not run an iOS app.") }
-                    updated.branch = app.branch; updated.deviceID = app.deviceID
-                    var rows = self.apps.filter { $0.key != app.key && !($0.project.path == updated.project.path && $0.bundleID == updated.bundleID) }
-                    rows.append(updated); self.catalog.save(rows, peer: peer); self.reload()
-                } catch { if peer == self.environment.peerID() { self.showError(error) } }
-            }
-        })
     }
     private func choose<T>(title: String, load: @escaping () async throws -> [T], label: @escaping (T) -> String, select: @escaping (T) -> Void) {
         let peer = environment.peerID()
@@ -284,7 +272,7 @@ import LunaCodeCore
         }
         if changed, peer == environment.peerID() { reload() }
     }
-    private func showLog(_ id: String) {
+    private func showLog(_ id: String, showConsole: Bool = true) {
         let peer = environment.peerID()
         Task {
             do {
@@ -294,7 +282,7 @@ import LunaCodeCore
                     guard peer == environment.peerID() else { return }; jobs[id] = job
                 }
                 guard peer == environment.peerID(), let job = jobs[id], presentedViewController == nil else { return }
-                let log = CodeLogController(job: job)
+                let log = CodeLogController(job: job, showConsole: showConsole)
                 present(UINavigationController(rootViewController: log), animated: true)
             } catch { if peer == environment.peerID() { showError(error) } }
         }

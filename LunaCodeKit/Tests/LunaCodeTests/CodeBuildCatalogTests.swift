@@ -16,7 +16,7 @@ final class CodeBuildCatalogTests: XCTestCase {
         let other = CodeBuildApp(project: CodeProject(path: "/Other/Other.xcodeproj", scheme: "Other"), name: "Other", bundleID: "other")
         catalog.save([reader, code, other], peer: "mac")
         catalog.selectedTab = 1; catalog.setDefaultDevice("phone", peer: "mac")
-        var refreshed = reader; refreshed.project.scheme = "ReaderDefault"; refreshed.name = "Luna Reader"; refreshed.branch = "main"; refreshed.deviceID = nil; refreshed.jobID = nil
+        var refreshed = reader; refreshed.name = "Luna Reader"; refreshed.branch = "main"; refreshed.deviceID = nil; refreshed.jobID = nil
         catalog.merge([refreshed, code], path: reader.project.path, peer: "mac")
         let restored = CodeBuildCatalog(defaults: UserDefaults(suiteName: suite)!)
         XCTAssertEqual(restored.selectedTab, 1)
@@ -27,6 +27,52 @@ final class CodeBuildCatalogTests: XCTestCase {
         XCTAssertEqual(restored.apps(peer: "mac").count, 3)
         XCTAssertTrue(restored.apps(peer: "anotherMac").isEmpty)
         XCTAssertNil(restored.defaultDevice(peer: "anotherMac"))
+    }
+    func testSchemesWithSameBundleRemainSeparateAndKeepTheirOwnSettings() {
+        let catalog = CodeBuildCatalog(defaults: defaults)
+        var first = CodeBuildApp(project: CodeProject(path: "/App.xcodeproj", scheme: "App"), name: "App", bundleID: "app", branch: "feature", deviceID: "phone")
+        first.jobID = "job"
+        let alias = CodeBuildApp(project: CodeProject(path: first.project.path, scheme: "App Release"), name: "App", bundleID: "app")
+        catalog.save([first], peer: "mac")
+        catalog.merge([CodeBuildApp(project: first.project, name: "App", bundleID: "app"), alias], path: first.project.path, peer: "mac")
+        let rows = catalog.apps(peer: "mac")
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.first { $0.key == first.key }?.jobID, "job")
+        XCTAssertEqual(rows.first { $0.key == alias.key }?.branch, "main")
+        XCTAssertNil(rows.first { $0.key == alias.key }?.deviceID)
+        XCTAssertNil(rows.first { $0.key == alias.key }?.jobID)
+    }
+    func testExplicitSchemeSelectsRunAppInsteadOfFirstDependency() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let project = CodeProject(path: root.appendingPathComponent("App.xcodeproj").path, scheme: "App")
+        let folder = URL(fileURLWithPath: project.path).appendingPathComponent("xcshareddata/xcschemes")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let xml = Data(#"<Scheme><BuildAction><BuildableReference BlueprintName="Library"/></BuildAction><LaunchAction><BuildableProductRunnable><BuildableReference BlueprintName="App"/></BuildableProductRunnable></LaunchAction></Scheme>"#.utf8)
+        try xml.write(to: folder.appendingPathComponent("App.xcscheme"))
+        let library = ["TARGET_NAME": "Library", "PRODUCT_TYPE": "com.apple.product-type.framework", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator"]
+        let app = ["TARGET_NAME": "App", "PRODUCT_TYPE": "com.apple.product-type.application", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator"]
+        XCTAssertEqual(try CodeDeviceSupport.primarySettings([library, app], project: project), app)
+        XCTAssertNil(try CodeDeviceSupport.primarySettings([library], project: project))
+        try Data(#"<Scheme><BuildAction><BuildableReference BlueprintName="App"/></BuildAction><TestAction/></Scheme>"#.utf8).write(to: folder.appendingPathComponent("App.xcscheme"))
+        XCTAssertNil(try CodeDeviceSupport.primarySettings([app], project: project), "A test-only scheme must not surface its app dependency")
+        XCTAssertTrue(CodeDeviceSupport.isApp(app))
+        XCTAssertFalse(CodeDeviceSupport.isApp(library))
+        XCTAssertFalse(CodeDeviceSupport.isApp(["PRODUCT_TYPE": "com.apple.product-type.application", "SUPPORTED_PLATFORMS": "macosx"]))
+    }
+    func testDestinationRequiresAvailablePhysicalIOSRowWithoutError() {
+        let output = """
+        Available destinations for the App scheme:
+          { platform:iOS, arch:arm64, id:phone, name:Phone }
+          { platform:iOS Simulator, id:sim, name:Simulator }
+          { platform:iOS, id:broken, name:Broken, error:Developer Mode disabled }
+        Ineligible destinations for the App scheme:
+          { platform:iOS, id:offline, name:Offline }
+        """
+        XCTAssertTrue(CodeDeviceSupport.destinationIsEligible(output, deviceID: "phone"))
+        for id in ["sim", "offline", "broken", "phon", "missing"] {
+            XCTAssertFalse(CodeDeviceSupport.destinationIsEligible(output, deviceID: id))
+        }
     }
     func testOpeningSeveralProjectsRetainsHistoryWithoutChangingSelectedProject() {
         let session = CodeSessionStore(defaults: defaults)
@@ -48,9 +94,9 @@ final class CodeBuildCatalogTests: XCTestCase {
         XCTAssertEqual(CodeBuildCatalog.resolveDevice([other], preferred: nil, currentName: "iPhone"), other)
         XCTAssertNil(CodeBuildCatalog.resolveDevice([], preferred: nil, currentName: "iPhone"))
     }
-    func testDeviceDiscoveryIncludesIdlePairedPhonesAndExcludesUnavailableAndSimulators() throws {
+    func testDeviceDiscoveryExcludesRememberedDisconnectedPhonesAndSimulators() throws {
         let data = Data(#"{"result":{"devices":[{"properties":{"hardware":{"reality":"physical","platform":"iOS","udid":"phone"},"state":{"name":"Phone"},"connection":{"state":"connected"}}},{"hardwareProperties":{"reality":"physical","platform":"iOS","udid":"legacy"},"deviceProperties":{"name":"Legacy"},"connectionProperties":{"tunnelState":"disconnected","pairingState":"paired"}},{"properties":{"hardware":{"reality":"simulated","platform":"iOS","udid":"sim"},"state":{"name":"Simulator"},"connection":{"state":"connected"}}},{"properties":{"hardware":{"reality":"physical","platform":"iOS","udid":"offline"},"state":{"name":"Offline"},"connection":{"state":"unavailable"}}},{"properties":{"hardware":{"reality":"physical","platform":"tvOS","udid":"tv"},"state":{"name":"TV"},"connection":{"state":"connected"}}}]}}"#.utf8)
-        XCTAssertEqual(try CodeDeviceSupport.parseDevices(data).map(\.id), ["legacy", "phone"])
+        XCTAssertEqual(try CodeDeviceSupport.parseDevices(data).map(\.id), ["phone"])
     }
     func testBuildOptionsRoundTripAndOldRequestsStillDecode() throws {
         var request = CodeRequest(.runOnDevice); request.project = CodeProject(path: "/App.xcodeproj", scheme: "App")

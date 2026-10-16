@@ -71,6 +71,7 @@ public struct CodeJob: Codable, Equatable, Sendable {
     public var title: String
     public var state: State
     public var log: String
+    public var failureMessage: String?
     public var startedAt: Date
     public init(id: String, title: String, state: State = .running, log: String = "") {
         self.id = id; self.title = title; self.state = state; self.log = log; startedAt = Date()

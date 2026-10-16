@@ -141,7 +141,7 @@ public final class XteinkCrossPointTransferRouter {
         articleID: UUID? = nil, queuedRemaining: Int? = nil
     ) async throws {
         guard ble.isRendezvousActive else { throw XteinkSyncError.unavailable }
-        let validName = Self.x3FileName(fileName)
+        let validName = Self.x3FileName(fileName, articleID: articleID)
         if policy.transport(forFinalXteinkEPUB: data) == .bluetoothLowEnergy {
             try await ble.send(
                 data, fileName: validName, title: title,
@@ -178,9 +178,15 @@ public final class XteinkCrossPointTransferRouter {
     /// CrossPoint's X3-side filename validator permits only this small ASCII
     /// set. Luna's display title remains untouched; only the transport name is
     /// normalized and kept deterministic for retries/resume.
-    static func x3FileName(_ name: String) -> String {
+    static func x3FileName(_ name: String, articleID: UUID? = nil) -> String {
         let permitted = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
         let normalized = name.unicodeScalars.map { permitted.contains($0) ? String($0) : "-" }.joined()
+        if let articleID {
+            var stem = normalized.lowercased().hasSuffix(".epub") ? String(normalized.dropLast(5)) : normalized
+            stem = String(stem.drop(while: { $0 == "." }))
+            if stem.isEmpty { stem = "Luna" }
+            return String(stem.prefix(54)) + "-" + articleID.uuidString.lowercased() + ".epub"
+        }
         return normalized.isEmpty ? "Luna.epub" : normalized
     }
 }

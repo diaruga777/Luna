@@ -21,6 +21,7 @@ private final class MockDestination: ArticleDestination {
     let displayName = "Mock"
     var configured = true
     var dequeuesOnRead = false
+    var receiverDriven = false
     var onSend: (() -> Void)?
     var mode: ArticleSendMode = .off
     /// Optional per-source override; when nil, `mode` applies to every source.
@@ -289,6 +290,38 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
     /// when an earlier soft failure scheduled a future backoff date — the
     /// receiving device holds a live window open RIGHT NOW, and skipping it
     /// silently was what left the reader hanging with nothing sent.
+    func testEmailAndLifecycleTriggersOnlyQueueForReceiverDrivenDestination() async {
+        second.receiverDriven = true
+        second.mode = .allSaves
+        let email = makeReadyItem("lunamail://newsletter-one", source: .email)
+        coordinator.saveBecameReady(email)
+        await drainDeliveries()
+        await coordinator.send(email, toDestinationID: second.id)
+        coordinator.retryPendingSends()
+        await drainDeliveries()
+        XCTAssertEqual(second.attemptCount, 0)
+        XCTAssertEqual(sendState(email, second.id), .queued)
+
+        // A second import missed the app-only readiness hook.
+        let missed = makeReadyItem("lunamail://newsletter-two", source: .email)
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+        XCTAssertEqual(second.attemptCount, 2)
+        XCTAssertEqual(sendState(email, second.id), .sent)
+        XCTAssertEqual(sendState(missed, second.id), .sent)
+    }
+
+    func testReceiverDrivenSoftFailuresRemainRetryableAcrossWindows() async {
+        second.receiverDriven = true
+        second.shouldFail = true
+        let email = makeReadyItem("lunamail://retryable-newsletter", source: .email)
+        await coordinator.send(email, toDestinationID: second.id)
+        for _ in 0..<5 { await coordinator.deliverQueuedSends(toDestinationID: second.id) }
+        XCTAssertEqual(sendState(email, second.id), .queued)
+        second.shouldFail = false
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+        XCTAssertEqual(sendState(email, second.id), .sent)
+    }
+
     func testDeliverQueuedSendsIgnoresBackoffAndDrainsEverything() async {
         second.shouldFail = true
         let first = makeReadyItem("https://example.com/one")

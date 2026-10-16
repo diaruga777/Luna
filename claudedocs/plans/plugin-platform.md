@@ -728,7 +728,7 @@ presenter's switch gains the case.
 | `classify` | 8 s wall | abandoned; plugin passes for this URL; 3 in a row disable the plugin |
 | `ingest` | pipeline 30 s idle (bridge calls touch) | as classify, then the walk continues |
 | `export` | 120 s wall | destination soft failure |
-| `onBluetooth` | 25 s wall per event, inside a background task lease | session closed; event recorded |
+| `onBluetooth` | 600 s wall for connected batch sweeps, 25 s for other events; background task lease | session closed; event recorded |
 | `onSettingsChanged`/`onAction` | 10 s wall | reported in Settings |
 
 A disabled-for-wedge plugin shows "Stopped: the plugin did not finish" in

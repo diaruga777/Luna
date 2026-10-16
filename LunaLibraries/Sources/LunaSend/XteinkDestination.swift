@@ -28,6 +28,7 @@ public final class XteinkDestination: ArticleDestination {
     ) {
         self.crossPoint = crossPoint
         self.rendezvousQueue = rendezvousQueue
+        XteinkSendSettings.repairLegacySyncQueue()
     }
 
     public var isConfigured: Bool { XteinkSendSettings.isConfigured }
@@ -35,6 +36,7 @@ public final class XteinkDestination: ArticleDestination {
     /// The X3 files a book away itself when its reader finishes it, so a save
     /// finished in Luna first is dropped from the queue instead of delivered.
     public var dequeuesOnRead: Bool { true }
+    public var receiverDriven: Bool { true }
 
     public func sendMode(for item: SavedItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
@@ -61,7 +63,7 @@ public final class XteinkDestination: ArticleDestination {
         // removal (see `XteinkRemoteDeleteRunner`).
         context.store.recordRemoteDelivery(
             for: context.itemID, destination: id,
-            remoteName: XteinkCrossPointTransferRouter.x3FileName(fileName))
+            remoteName: XteinkCrossPointTransferRouter.x3FileName(fileName, articleID: context.itemID))
     }
 
     private func send(

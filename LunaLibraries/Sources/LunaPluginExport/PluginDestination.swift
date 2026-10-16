@@ -117,6 +117,7 @@ public final class PluginDestination: ArticleDestination {
     /// Declared by the plugin: its receiver tracks reading of its own, so a
     /// save finished in Luna before delivery is dropped from the queue.
     public var dequeuesOnRead: Bool { export.dequeueOnRead }
+    public var receiverDriven: Bool { export.receiverDriven == true }
 
     /// The share row comes from the plugin's own declaration, through
     /// `PluginExportSeams.rows`.

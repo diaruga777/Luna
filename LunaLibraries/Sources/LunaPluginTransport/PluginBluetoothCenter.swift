@@ -51,6 +51,9 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
 
     /// How long an `onBluetooth` invocation may take (§7.5).
     public static let hookTimeout: TimeInterval = 25
+    /// A connected hook owns a complete serial batch, including EPUB preparation
+    /// and nested exports. Match the reader's ten-minute window cap.
+    public static let rendezvousTimeout: TimeInterval = 600
 
     public let pluginID: String
 
@@ -383,7 +386,8 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         let token = lease?.beginLease(name: "plugin.\(pluginID).bluetooth")
         _ = await invoker.invoke(
             .onBluetooth, pluginID: pluginID, argument: event,
-            timeout: Self.hookTimeout, decode: PluginBluetoothHookAnswer?.self)
+            timeout: session == nil ? Self.hookTimeout : Self.rendezvousTimeout,
+            decode: PluginBluetoothHookAnswer?.self)
         if session != nil {
             closeSession(reason: .unavailable("the hook finished"), matching: session)
             serviceLock.release()

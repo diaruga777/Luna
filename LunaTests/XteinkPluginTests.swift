@@ -213,6 +213,42 @@ final class XteinkPluginTests: XCTestCase {
 
     /// `article_id` and `queue_remaining` ride along on `start_put` so the
     /// reader can show "book i of n". An older reader ignores them.
+    func testAHealthyTransferCanOutliveTheOld25SecondWindowBudget() throws {
+        maker.transport.checkpointDelay = 0.55
+        let epub = try queueSend(bytes: 105 * 1024)
+        runRendezvous(timeout: 45)
+        XCTAssertEqual(exports.results, ["sent"])
+        XCTAssertEqual(maker.transport.assembled, epub)
+        XCTAssertTrue(maker.transport.operationNames.contains("commit"))
+    }
+
+    func testDelayedCheckpointsAtSmallMTUStayInsideTheReaders16FramePool() throws {
+        maker.transport.writeLength = 182
+        maker.transport.checkpointDelay = 0.05
+        let epub = try queueSend(bytes: 20 * 1024)
+        runRendezvous()
+        XCTAssertEqual(exports.results, ["sent"])
+        XCTAssertEqual(maker.transport.assembled, epub)
+        XCTAssertLessThanOrEqual(maker.transport.maximumBufferedFrames, 16)
+    }
+
+    func testLargeLocalWriteLimitDoesNotExceedReaderFrameSize() throws {
+        maker.transport.writeLength = 512
+        let epub = try queueSend(bytes: 4096)
+        runRendezvous()
+        XCTAssertEqual(maker.transport.assembled, epub)
+        XCTAssertLessThanOrEqual(maker.transport.maximumFrameBytes, 244)
+    }
+
+    func testNewsletterEditionsWithTheSameSubjectHaveDistinctStableRemoteNames() throws {
+        try queueSend(bytes: 4096, saveID: "11111111-1111-1111-1111-111111111111", fileName: "Daily Briefing.epub")
+        try queueSend(bytes: 4096, saveID: "22222222-2222-2222-2222-222222222222", fileName: "Daily Briefing.epub")
+        runRendezvous()
+        XCTAssertEqual(exports.results, ["sent", "sent"])
+        XCTAssertEqual(Set(exports.sentRemoteNames).count, 2)
+        XCTAssertTrue(exports.sentRemoteNames.allSatisfy { $0.utf8.count <= 96 })
+    }
+
     func testStartPutCarriesTheArticleIDAndTheRemainingQueue() throws {
         let saveID = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
         try queueSend(bytes: 4096, saveID: saveID, queuedRemaining: 2)
@@ -263,7 +299,7 @@ final class XteinkPluginTests: XCTestCase {
         let body = try XCTUnwrap(upload.body)
         XCTAssertTrue(body.count > epub.count, "the multipart body carries the whole book")
         XCTAssertTrue(
-            body.range(of: Data("filename=\"Article.epub\"".utf8)) != nil,
+            body.range(of: Data("filename=\"Article-3f2504e0-4f89-11d3-9a0c-0305e82c3301.epub\"".utf8)) != nil,
             "the reader's filename validator gets an ASCII basename")
         XCTAssertTrue(body.range(of: epub) != nil, "the EPUB bytes are in the body")
     }
@@ -449,7 +485,7 @@ final class XteinkPluginTests: XCTestCase {
     func testADeliveryReportsTheRemoteNameItPutOnTheWire() throws {
         try queueSend(bytes: 4096)
         runRendezvous()
-        XCTAssertEqual(exports.sentRemoteNames, ["Article.epub"])
+        XCTAssertEqual(exports.sentRemoteNames, ["Article-3f2504e0-4f89-11d3-9a0c-0305e82c3301.epub"])
     }
 
     // MARK: - Pairing
@@ -488,8 +524,8 @@ final class XteinkPluginTests: XCTestCase {
         // Two spaces and one emoji: three scalars, three dashes. Over UTF-16
         // units the emoji would be two, and the two apps would name the same
         // book differently on the same reader.
-        let expected = XteinkCrossPointTransferRouter.x3FileName("Party 🎉 Time.epub")
-        XCTAssertEqual(expected, "Party---Time.epub")
+        let expected = XteinkCrossPointTransferRouter.x3FileName("Party 🎉 Time.epub", articleID: item.id)
+        XCTAssertEqual(expected, "Party---Time-" + item.id.uuidString.lowercased() + ".epub")
         XCTAssertEqual(exports.sentRemoteNames, [expected])
     }
 

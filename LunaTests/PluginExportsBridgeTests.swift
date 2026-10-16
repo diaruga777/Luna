@@ -8,6 +8,7 @@ import LunaModels
 import LunaPluginExport
 import LunaPluginKit
 import LunaPluginRuntime
+import LunaSend
 import LunaStorage
 import XCTest
 
@@ -18,6 +19,38 @@ final class PluginExportsBridgeTests: XCTestCase {
     private var runner: PluginJSFixtureRunner!
     private var containerURL: URL!
     private var store: SavesStore!
+
+    private final class FailingDestination: ArticleDestination {
+        let id = "test.plugin.exports"
+        let displayName = "Test"
+        let isConfigured = true
+        let dequeuesOnRead = true
+        var appIntentsSendMode: ArticleSendMode { .off }
+        func sendMode(for item: SavedItem) -> ArticleSendMode { .off }
+        func send(epubData: Data, fileName: String, title: String) throws {
+            throw PluginDestinationError.hard("bad payload")
+        }
+    }
+
+    func testQueueCountsNeverCallReadDequeuesOrTerminalFailuresDelivered() async throws {
+        try boot()
+        let destination = FailingDestination()
+        let coordinator = ArticleSendCoordinator(store: store, destinations: [destination])
+        let queue = CoordinatorPluginExportQueue(store: store, coordinator: coordinator)
+        let first = store.add(urlString: "lunamail://read", source: .email)
+        let second = store.add(urlString: "lunamail://failed", source: .email)
+        for item in [first, second] {
+            _ = store.saveContent(ArticleContent(title: "Newsletter", blocks: [
+                ArticleContent.Block(kind: .paragraph, text: "News", links: [])
+            ]), for: item)
+            store.setSendState(.queued, for: item.id, destination: destination.id)
+        }
+        store.markFinishedReading(first.id)
+        let result = await queue.deliverQueuedSends(forDestinationID: destination.id)
+        XCTAssertEqual(result.delivered, 0)
+        XCTAssertEqual(result.remaining, 1)
+        XCTAssertEqual(store.item(withID: second.id)?.sendState(for: destination.id), .failed)
+    }
 
     private let pluginID = "test.plugin.exports"
     private let destinationID = "test.plugin.exports"

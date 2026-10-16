@@ -9,6 +9,17 @@ import XCTest
 @testable import LunaSend
 
 final class XteinkCrossPointTransferTests: XCTestCase {
+    func testSameSubjectNewsletterNamesUseSaveIdentityWithinFirmwareLimit() {
+        let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let subject = String(repeating: "é", count: 100) + ".epub"
+        let name = XteinkCrossPointTransferRouter.x3FileName(subject, articleID: first)
+        XCTAssertLessThanOrEqual(name.utf8.count, 96)
+        XCTAssertNotEqual(name, XteinkCrossPointTransferRouter.x3FileName(subject, articleID: second))
+        XCTAssertEqual(name, XteinkCrossPointTransferRouter.x3FileName(subject, articleID: first))
+        XCTAssertTrue(name.hasSuffix(first.uuidString.lowercased() + ".epub"))
+    }
+
     private var group: UserDefaults!
     private var legacy: UserDefaults!
     private var groupSuite: String!

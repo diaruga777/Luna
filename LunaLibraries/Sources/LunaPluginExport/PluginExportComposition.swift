@@ -41,6 +41,7 @@ public enum PluginExportComposition {
         PluginExportStage.shared.presenter = SystemPluginExportSharePresenter()
         PluginExportSeams.rows = PluginExportRowProvider()
         migrateKindleAddress()
+        XteinkSendSettings.repairLegacySyncQueue()
         installDestinations(invoker: invoker ?? PluginPlatformServices.invoker)
     }
 

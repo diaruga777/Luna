@@ -47,6 +47,8 @@ public protocol ArticleDestination {
     /// -queued send whose save was finished in Luna first, so the receiver
     /// never gets a book its owner already considers done.
     var dequeuesOnRead: Bool { get }
+    /// Delivery is owned by the receiver window; save/launch/share triggers only enqueue.
+    var receiverDriven: Bool { get }
     /// True for a destination whose share row is drawn from somewhere else —
     /// a plugin destination's row carries its declaration's title, symbol and
     /// status dot, none of which a `DestinationDescriptor` holds.
@@ -104,6 +106,7 @@ public extension ArticleDestination {
     /// otherwise: dropping a queued send is only right for a receiver that
     /// tracks reading of its own.
     var dequeuesOnRead: Bool { false }
+    var receiverDriven: Bool { false }
 
     /// An EPUB destination takes articles. The default `deliver` builds a book
     /// from the save's reader content, which only an article has.
@@ -336,6 +339,7 @@ public final class ArticleSendCoordinator {
     /// In-flight "<itemID>|<destinationID>" keys, to avoid duplicate concurrent
     /// deliveries of the same item to the same destination.
     private var inFlight = Set<String>()
+    private var receiverSweeps = Set<String>()
     private let lock = NSLock()
 
     /// Testing seam. `saveBecameReady`/`retryPendingSends` are synchronous
@@ -453,6 +457,14 @@ public final class ArticleSendCoordinator {
     /// (Terminal `.failed` items are not `.queued` and stay untouched.)
     public func deliverQueuedSends(toDestinationID id: String) async {
         guard let destination = destination(id: id), destination.isConfigured else { return }
+        guard lock.withLock({ receiverSweeps.insert(id).inserted }) else { return }
+        defer { lock.withLock { _ = receiverSweeps.remove(id) } }
+        for item in store.items() where item.state == .ready && destination.accepts(item) {
+            if item.sendState(for: id) == nil, destination.sendMode(for: item) == .allSaves,
+               !dequeueIfRead(item, destination: destination) {
+                store.setSendState(.queued, for: item.id, destination: id)
+            }
+        }
         // A save finished before its window opened is dropped here rather
         // than delivered, so a plugin driving its own sweep through
         // `luna.exports.deliverQueued()` gets the same pre-pass the Swift
@@ -466,7 +478,8 @@ public final class ArticleSendCoordinator {
         SharedDiagnosticLog.record(
             "Rendezvous sweep: delivering \(queued.count) queued send(s)", category: "xteink")
         for (index, item) in queued.enumerated() {
-            let error = await sendBuildingEPUB(item, to: destination, respectBackoff: false)
+            let error = await sendBuildingEPUB(
+                item, to: destination, respectBackoff: false, receiverWindow: true)
             // The reader's low_memory refusal is a device condition, not a
             // per-book one: every remaining start_put this window would be
             // refused the same way. Leave the rest queued for the next window.
@@ -530,7 +543,8 @@ public final class ArticleSendCoordinator {
     /// one.
     @discardableResult
     private func sendBuildingEPUB(
-        _ item: SavedItem, to destination: ArticleDestination, respectBackoff: Bool
+        _ item: SavedItem, to destination: ArticleDestination, respectBackoff: Bool,
+        receiverWindow: Bool = false
     ) async -> Error? {
         guard destination.isConfigured else { return nil }
         guard let fresh = store.item(withID: item.id) else { return nil }
@@ -540,6 +554,10 @@ public final class ArticleSendCoordinator {
             return nil
         }
 
+        guard !destination.receiverDriven || receiverWindow else {
+            store.setSendState(.queued, for: fresh.id, destination: destination.id)
+            return nil
+        }
         guard fresh.state == .ready else {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
             return nil
@@ -630,7 +648,7 @@ public final class ArticleSendCoordinator {
         }
 
         let failureCount = (item.sendFailureCounts[destination.id] ?? 0) + 1
-        guard failureCount < retryPolicy.maxSoftFailures else {
+        guard destination.receiverDriven || failureCount < retryPolicy.maxSoftFailures else {
             store.markSendTerminalFailure(
                 for: itemID, destination: destination.id,
                 errorMessage: L10n.string("Reader_export_giveUpAfterAttemptsMessage", message, failureCount),

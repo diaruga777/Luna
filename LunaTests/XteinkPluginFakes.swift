@@ -35,6 +35,10 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     var checkpointIntervalBytes = 2048
     var writeLength = 184
     var canWrite = true
+    var checkpointDelay: TimeInterval = 0
+    private var bufferedFrames = 0
+    private(set) var maximumBufferedFrames = 0
+    private(set) var maximumFrameBytes = 0
     /// A read-report ping window: the reader opened it purely to hand ids back.
     var isReadReportWindow = false
     /// Finished-reading ids the reader hands back. It publishes at most
@@ -183,6 +187,9 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
         let payload = data.dropFirst(4)
         lock.lock()
         assembled.append(payload)
+        bufferedFrames += 1
+        maximumBufferedFrames = max(maximumBufferedFrames, bufferedFrames)
+        maximumFrameBytes = max(maximumFrameBytes, data.count)
         let unconfirmed = assembled.count - lastConfirmed
         maximumUnconfirmedBytes = max(maximumUnconfirmedBytes, unconfirmed)
         let shouldConfirm = unconfirmed >= checkpointIntervalBytes
@@ -190,7 +197,17 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
         let received = assembled.count
         lock.unlock()
         guard shouldConfirm else { return }
-        publish(["received": received, "ckpt": checkpointIntervalBytes])
+        let acknowledge = {
+            self.lock.lock()
+            self.bufferedFrames = 0
+            self.lock.unlock()
+            self.publish(["received": received, "ckpt": self.checkpointIntervalBytes])
+        }
+        if checkpointDelay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + checkpointDelay, execute: acknowledge)
+        } else {
+            acknowledge()
+        }
     }
 
     /// The reader publishes in its own lower-case spelling, where `xteink.js`

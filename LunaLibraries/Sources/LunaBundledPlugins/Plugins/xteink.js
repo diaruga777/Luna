@@ -27,6 +27,7 @@
     "title": "Send to Xteink",
     "symbol": "books.vertical",
     "destination": true,
+    "receiverDriven": true,
     "dequeueOnRead": true,
     "requiresSettings": ["device"]
   }
@@ -58,8 +59,9 @@ const BLE_MAX_BYTES = 200 * 1024;
 /// The reader declares its durable-receipt stride as "ckpt" in every transfer
 /// status. This is the one firmware build that predates the field.
 const DEFAULT_CKPT_BYTES = 8192;
-/// Keeps the stream moving while a confirmation is in flight.
-const IN_FLIGHT_MARGIN_BYTES = 1024;
+/// Stop at the checkpoint boundary. A 1 KiB lead exceeded the 16-frame
+/// reader pool at a 185-byte ATT MTU while e-ink rendering paused its pump.
+const IN_FLIGHT_MARGIN_BYTES = 0;
 
 const CONTROL_ACK_TIMEOUT = 15;
 const CHECKPOINT_TIMEOUT = 10;
@@ -124,11 +126,15 @@ function frame(sequence, payload) {
 /// .x3FileName` does with `unicodeScalars`. A regular expression over UTF-16
 /// units would turn one emoji into two dashes here and one in Luna Reader,
 /// and the two apps would name the same book differently on the same reader.
-function x3FileName(name) {
+function x3FileName(name, saveID) {
     const permitted = /[A-Za-z0-9._-]/;
     const normalized = Array.from(String(name || ""))
         .map(function (character) { return permitted.test(character) ? character : "-"; })
         .join("");
+    if (saveID) {
+        const stem = normalized.replace(/\.epub$/i, "").replace(/^\.+/, "") || "Luna";
+        return stem.slice(0, 54) + "-" + String(saveID).toLowerCase() + ".epub";
+    }
     return normalized.length > 0 ? normalized : "Luna.epub";
 }
 
@@ -259,7 +265,7 @@ async function awaitCheckpoint(session, link) {
 
 async function sendOverBLE(session, link, bytes, fileName, articleID, queuedRemaining) {
     const digest = hexOfBase64(await luna.crypto.sha256({ base64: luna.bytes.toBase64(bytes) }));
-    const chunk = Math.max(1, session.mtu - 4);
+    const chunk = Math.max(1, Math.min(session.mtu, 244) - 4);
     const start = { kind: "book", name: fileName, size: bytes.length, sha256: digest,
                     resume: true, chunk_size: chunk };
     if (articleID) { start.article_id = String(articleID).toLowerCase(); }
@@ -434,7 +440,7 @@ luna.register({
         if (!input.file) {
             return { status: "failed", message: "no EPUB to send", hard: true };
         }
-        const fileName = x3FileName(input.file.name || input.title + ".epub");
+        const fileName = x3FileName(input.file.name || input.title + ".epub", input.saveId);
         try {
             let link = activeLink;
             if (!link) {
@@ -455,6 +461,10 @@ luna.register({
             }
             return { status: "sent", remoteName: fileName };
         } catch (error) {
+            if (activeLink && !(error && error.message === "exists")) {
+                try { await control(session, activeLink, "cancel", {}); }
+                catch (cancelError) { luna.log("cancel failed", { message: String(cancelError) }); }
+            }
             return exportFailure(error, fileName);
         }
     },
@@ -478,11 +488,14 @@ luna.register({
             await reconcile(session, state.link);
             // A read-report window exists purely to hand back finished ids.
             // Answering `no_work` lets the reader close it rather than idling.
+            let remaining = 0;
             if (!state.link.readReport) {
                 await drainPendingDeletes(session, state.link);
-                await luna.exports.deliverQueued();
+                const result = await luna.exports.deliverQueued();
+                remaining = result ? result.remaining : 0;
+                luna.log("sync sweep finished", result || {});
             }
-            await concludeWindow(session, state.link);
+            await concludeWindow(session, state.link, remaining);
         } catch (error) {
             luna.log("rendezvous failed", { message: String(error && error.message) });
         } finally {
@@ -508,9 +521,9 @@ luna.register({
 /// Concluding the window is unconditional. After everything the sweep could
 /// do, even when some of it failed, the reader must be released rather than
 /// left hanging until its idle cap.
-async function concludeWindow(session, link) {
+async function concludeWindow(session, link, remaining) {
     try {
-        await control(session, link, "no_work", {});
+        await control(session, link, "no_work", { remaining: remaining || 0 });
     } catch (error) {
         luna.log("no_work not delivered", { message: String(error && error.message) });
     }

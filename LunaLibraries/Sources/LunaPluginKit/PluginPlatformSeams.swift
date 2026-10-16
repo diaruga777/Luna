@@ -127,13 +127,16 @@ public struct PluginExportSummary: Equatable, Codable, Sendable {
     /// there, so Luna drops a still-queued send whose save was finished in
     /// Luna first (`ReadStateSendReconciler`).
     public let dequeueOnRead: Bool
+    /// Only a receiver-initiated sweep may deliver; other triggers enqueue.
+    public let receiverDriven: Bool?
 
     public init(kinds: [PluginModelKind], input: String, epubProfile: String?, epubImages: Bool,
                 title: String, symbol: String?, isDestination: Bool, requiresSettings: [String],
-                dequeueOnRead: Bool = false) {
+                dequeueOnRead: Bool = false, receiverDriven: Bool = false) {
         self.kinds = kinds; self.input = input; self.epubProfile = epubProfile; self.epubImages = epubImages
         self.title = title; self.symbol = symbol; self.isDestination = isDestination
         self.requiresSettings = requiresSettings; self.dequeueOnRead = dequeueOnRead
+        self.receiverDriven = receiverDriven
     }
 }
 

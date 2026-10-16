@@ -231,26 +231,31 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         if let queuedRemaining { startPutValues["queue_remaining"] = queuedRemaining }
         try await sendControl("start_put", values: startPutValues)
 
-        let resume = await currentCheckpoint()
-        var offset = min(resume.offset, epub.count)
-        var sequence = resume.sequence
-        while offset < epub.count {
-            do { try Task.checkCancellation() } catch {
-                try? await sendControl("cancel")
-                throw XteinkSyncError.cancelled
+        do {
+            let resume = await currentCheckpoint()
+            var offset = min(resume.offset, epub.count)
+            var sequence = resume.sequence
+            while offset < epub.count {
+                do { try Task.checkCancellation() } catch {
+                    try? await sendControl("cancel")
+                    throw XteinkSyncError.cancelled
+                }
+                while await shouldPauseForFlowControl(sentBytes: offset, totalBytes: epub.count) {
+                    try await waitForCheckpointAdvance()
+                }
+                let count = min(maximum, epub.count - offset)
+                let frame = XteinkSyncProtocol.frame(
+                    sequence: sequence, payload: epub.subdata(in: offset..<(offset + count)))
+                try await writeData(frame)
+                offset += count
+                sequence &+= 1
+                progress(XteinkSyncProgress(completedBytes: offset, totalBytes: epub.count))
             }
-            while await shouldPauseForFlowControl(sentBytes: offset, totalBytes: epub.count) {
-                try await waitForCheckpointAdvance()
-            }
-            let count = min(maximum, epub.count - offset)
-            let frame = XteinkSyncProtocol.frame(
-                sequence: sequence, payload: epub.subdata(in: offset..<(offset + count)))
-            try await writeData(frame)
-            offset += count
-            sequence &+= 1
-            progress(XteinkSyncProgress(completedBytes: offset, totalBytes: epub.count))
+            try await sendControl("commit", values: ["sha256": digest, "size": epub.count])
+        } catch {
+            try? await sendControl("cancel")
+            throw error
         }
-        try await sendControl("commit", values: ["sha256": digest, "size": epub.count])
     }
 
     public func requestWiFi() async throws -> XteinkWiFiOffer {
@@ -282,7 +287,9 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     public func reportNoWork() async throws {
         guard isRendezvousActive else { throw XteinkSyncError.unavailable }
         try await authenticatedHello()
-        try await sendControl("no_work")
+        try await sendControl("no_work", values: [
+            "remaining": SavesStore.shared.items(sendState: .queued, forDestination: ArticleDestinationID.xteink).count
+        ])
     }
 
 
@@ -290,7 +297,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         await withCheckedContinuation { continuation in
             queue.async { [weak self] in
                 let limit = self?.peripheral?.maximumWriteValueLength(for: .withoutResponse) ?? 20
-                continuation.resume(returning: max(1, limit - 4))
+                continuation.resume(returning: max(1, min(limit, 244) - 4))
             }
         }
     }

@@ -189,6 +189,9 @@ Return exactly one of `text`, `url`, `file` or `status`; null means no share
 output. Delivery statuses are `sent`, `failed` or `retry`, with optional
 message/hard/remoteName. A queued destination additionally declares
 `export.destination:true` and requires the full destination/device contract.
+Set `export.receiverDriven:true` when only the device hook may deliver: save,
+share and lifecycle triggers then only enqueue, and the hook drains the queue
+serially with `luna.exports.deliverQueued()`.
 
 Declare capabilities before using them:
 

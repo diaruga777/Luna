@@ -53,5 +53,30 @@ public enum XteinkSendSettings {
         set { defaults.set(newValue, forKey: peripheralIDKey) }
     }
 
+    /// Repair only known legacy transport failures and ambiguous newsletter
+    /// receipts. Distinct saves sharing a basename were previously all marked
+    /// sent on `exists`; the new save-ID names make the repair idempotent.
+    public static func repairLegacySyncQueue(store: SavesStore = .shared) {
+        let destination = ArticleDestinationID.xteink
+        let items = store.items()
+        let receipts = Dictionary(grouping: items.filter {
+            $0.remoteName(for: destination) != nil
+        }, by: { $0.remoteName(for: destination)! })
+        for item in items where item.state == .ready && item.readState != .read {
+            let state = item.sendState(for: destination)
+            let error = (item.sendLastErrors[destination] ?? "").lowercased()
+            let transient = state == .failed && [
+                "checkpoint", "timed out", "timed-out", "resume_mismatch", "low_memory", "sequence"
+            ].contains(where: error.contains)
+            let collision = state == .sent && item.effectiveCaptureSource == .email &&
+                item.remoteName(for: destination).map { name in
+                    !name.contains(item.id.uuidString.lowercased()) && (receipts[name]?.count ?? 0) > 1
+                } == true
+            if transient || collision {
+                store.setSendState(.queued, for: item.id, destination: destination)
+            }
+        }
+    }
+
     public static var isConfigured: Bool { isEnabled }
 }

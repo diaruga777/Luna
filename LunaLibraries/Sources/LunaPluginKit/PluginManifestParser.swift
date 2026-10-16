@@ -373,7 +373,8 @@ public enum PluginManifestParser {
         return PluginExportSummary(
             kinds: kinds, input: input, epubProfile: epubProfile, epubImages: epubImages,
             title: title, symbol: export["symbol"] as? String, isDestination: destination,
-            requiresSettings: requires, dequeueOnRead: dequeueOnRead)
+            requiresSettings: requires, dequeueOnRead: dequeueOnRead,
+            receiverDriven: try flag(export, "export.receiverDriven", lines, key: "receiverDriven") ?? false)
     }
 
     private static func settings(

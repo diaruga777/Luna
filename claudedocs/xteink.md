@@ -134,7 +134,7 @@ resume. Data frames have a 4-byte LE sequence header and commit with SHA-256.
 backpressure only, and an unpaced stream outran the X3's SD writes, overflowed
 its frame pool, and starved its allocator into an OOM `abort()` (measured:
 `lock_init_generic`, newlib locks.c:77). The sender stays within one
-checkpoint interval plus a 1 KiB margin of the reader's last confirmed
+checkpoint interval (rounded up to one frame) of the reader's last confirmed
 `resume_offset`. The interval is the READER'S to declare: every transfer
 status carries `"ckpt"` (2048 on current firmware, sized so the paced window
 fits its 16-slot frame pool), and the phone falls back to 8192 — the one
@@ -525,3 +525,32 @@ one path for the CrossPoint service UUID. `ArticleSendCoordinatorTests` pin that
 `deliverQueuedSends` ignores backoff and drains everything; the transfer
 tests pin `exists`-as-delivered and missing-pairing-as-deferral.
 `XteinkTransferSizePolicyTests` cover the inclusive 200 KiB boundary.
+
+## Sync reliability and legacy recovery
+
+The Xteink destination declares `receiverDriven: true`. Save readiness (including
+`lunamail://` newsletters), explicit sends, and lifecycle retries persist the
+queue without preparing EPUBs or starting competing exports. Only the serial
+receiver sweep delivers, and it first reconciles ready all-saves imports that
+missed a readiness callback. Transient failures remain queued across windows.
+The connected Bluetooth hook has a 600-second batch budget, matching the reader
+window; ordinary device events retain 25 seconds. Each export retains 120 seconds.
+
+BLE frames are capped at 244 bytes including their sequence header. The sender
+pauses at the durable checkpoint without a 1 KiB lead, which could exceed the
+16-frame reader pool at a smaller negotiated MTU. The firmware bounds checkpoints
+to twelve frames for smaller payload sizes. An abandoned transfer is cancelled
+before the next book so it cannot poison the batch with `resume_mismatch`.
+
+Remote basenames include the save UUID and stay within 96 ASCII bytes. Recurring
+newsletter subjects therefore cannot turn a different edition into a false
+`exists` success. Startup repairs known transport failures and unread email
+receipts sharing a legacy basename; new names make the repair idempotent. Existing
+legacy files are retained, so a repaired collision can leave an old copy on the SD
+card. Read items and authentication/content failures are not automatically retried.
+
+The plugin reports actual sent transitions, not queue shrinkage, and includes
+remaining work in `no_work`. The fork and firmware plugin latch failures and only
+show “Nothing new” after a completed empty sweep. Disconnects, timeouts, partial
+transfers and pending work show an incomplete-sync outcome with the committed
+book count. Automatic windows treat those outcomes as failures eligible for retry.

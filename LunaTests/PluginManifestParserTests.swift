@@ -249,7 +249,7 @@ final class PluginManifestParserTests: XCTestCase {
         let header = """
         { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
           "export": { "kinds": ["article"], "input": "epub", "title": "Send to Xteink",
-                      "destination": true, "requiresSettings": ["device"],
+                      "destination": true, "receiverDriven": true, "requiresSettings": ["device"],
                       "inputOptions": { "epub": { "profile": "compact", "images": false } } },
           "settings": [{ "key": "device", "type": "text", "label": "Device" }] }
         """
@@ -257,6 +257,7 @@ final class PluginManifestParserTests: XCTestCase {
         XCTAssertEqual(export?.epubProfile, "compact")
         XCTAssertEqual(export?.epubImages, false)
         XCTAssertEqual(export?.isDestination, true)
+        XCTAssertEqual(export?.receiverDriven, true)
         XCTAssertEqual(export?.requiresSettings, ["device"])
         XCTAssertEqual(manifest(source(header))?.requiredHooks, [.export])
     }

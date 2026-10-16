@@ -208,9 +208,11 @@ public final class PluginExportsBridge: PluginCapabilityInstalling {
 public final class CoordinatorPluginExportQueue: PluginExportQueueDriving {
 
     private let store: SavesStore
+    private let coordinator: ArticleSendCoordinator
 
-    public init(store: SavesStore = .shared) {
+    public init(store: SavesStore = .shared, coordinator: ArticleSendCoordinator = .shared) {
         self.store = store
+        self.coordinator = coordinator
     }
 
     public func queuedSends(forDestinationID id: String) -> [PluginQueuedSend] {
@@ -227,10 +229,17 @@ public final class CoordinatorPluginExportQueue: PluginExportQueueDriving {
     public func deliverQueuedSends(
         forDestinationID id: String
     ) async -> (delivered: Int, remaining: Int) {
-        let before = queuedSends(forDestinationID: id).count
-        await ArticleSendCoordinator.shared.deliverQueuedSends(toDestinationID: id)
-        let remaining = queuedSends(forDestinationID: id).count
-        return (delivered: max(0, before - remaining), remaining: remaining)
+        let before = store.items()
+        let sentBefore = Set(before.filter { $0.sendState(for: id) == .sent }.map(\.id))
+        let failedBefore = Set(before.filter { $0.sendState(for: id) == .failed }.map(\.id))
+        await coordinator.deliverQueuedSends(toDestinationID: id)
+        let after = store.items()
+        let delivered = after.filter { $0.sendState(for: id) == .sent && !sentBefore.contains($0.id) }.count
+        let remaining = after.filter {
+            $0.sendState(for: id) == .queued ||
+                ($0.sendState(for: id) == .failed && !failedBefore.contains($0.id))
+        }.count
+        return (delivered: delivered, remaining: remaining)
     }
 
     public func markSent(saveID: UUID, destinationID: String) {

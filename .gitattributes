@@ -1,0 +1,1 @@
+LunaVaultTailscale/Vendor/LibTailscale.xcframework/ios-arm64_x86_64-simulator/libtailscale_ios_sim.a filter=lfs diff=lfs merge=lfs -text

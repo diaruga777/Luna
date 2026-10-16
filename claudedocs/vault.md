@@ -1,5 +1,8 @@
 # Luna Vault
 
+Mac setup, restored connections, account credentials, and adaptive companion UI are
+shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
+
 Luna Vault is a file browser for one paired Mac, with one indexed, writable Vault folder. The
 Mac keeps the plaintext folder; iPhone keeps the mirrored index, a bounded
 plaintext cache, thumbnails, and on-device search data protected by iOS Data

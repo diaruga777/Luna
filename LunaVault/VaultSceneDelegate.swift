@@ -1,4 +1,5 @@
 import UIKit
+import LunaVaultUI
 
 final class VaultSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -10,9 +11,8 @@ final class VaultSceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let root = NSClassFromString("XCTestCase") == nil ? VaultConnectedWiring.makeRootViewController() : UIViewController()
-        let navigation = UINavigationController(rootViewController: root)
         let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = navigation
+        window.rootViewController = root
         self.window = window
         window.makeKeyAndVisible()
         if let url = connectionOptions.urlContexts.first?.url { openPairing(url) }
@@ -25,7 +25,7 @@ final class VaultSceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func openPairing(_ url: URL) {
         guard ["luna-vault", "lunavault"].contains(url.scheme ?? ""), url.host == "pair",
               let controller = VaultConnectedWiring.pairingController(code: url.absoluteString),
-              let navigation = window?.rootViewController as? UINavigationController else { return }
-        navigation.pushViewController(controller, animated: true)
+              let launch = window?.rootViewController as? LunaMacLaunchViewController else { return }
+        launch.showConnection(controller)
     }
 }

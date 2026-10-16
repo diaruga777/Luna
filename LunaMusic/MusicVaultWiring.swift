@@ -11,14 +11,13 @@ import LunaVaultTailscale
     static func install() {
         do {
             let store = try VaultFolderStore.production()
-            let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
-            let connection = try VaultConnectedRuntime(store: store, dialer: transport, lookup: transport, localID: transport.identity())
+            let connection = try LunaMacConnection.makeRuntime(client: .music, store: store)
             runtime = connection
             try VaultMusicController.shared.configure(peer: { (try? store.peer()?.deviceID.description) ?? "" }, request: { data in
                 try await connection.musicRequest(data)
             })
             MusicSettings.connectionController = {
-                let settings = VaultConnectedSettingsViewController(services: connection) { code in
+                let settings = LunaMacConnectionViewController(services: connection, client: .music) { code in
                     try await connection.pair(code: code)
                     await VaultMusicController.shared.refresh()
                 }
@@ -27,10 +26,17 @@ import LunaVaultTailscale
             }
         } catch { MusicSettings.connectionError = error.localizedDescription }
     }
+    static func launchController(makeContent: @escaping () -> UIViewController, onContinue: @escaping () -> Void) -> UIViewController {
+        guard let runtime else { return makeContent() }
+        let launch = LunaMacLaunchViewController(runtime: runtime, client: .music, makeContent: makeContent)
+        launch.onShowContent = onContinue
+        return launch
+    }
     static func foreground() {
         guard refreshTask == nil else { return }
         refreshTask = Task {
             while !Task.isCancelled {
+                await runtime?.reconnect()
                 await VaultMusicController.shared.refresh()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }

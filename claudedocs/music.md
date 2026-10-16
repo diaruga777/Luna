@@ -1,5 +1,8 @@
 # Luna Music
 
+Mac setup, restored connections, account credentials, and adaptive companion UI are
+shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
+
 Standalone iOS 26 player: scheme `LunaMusic`, bundle ID
 `$(PRODUCT_BUNDLE_PREFIX).music`, app module `LunaMusicApp`. Apple library songs
 and Luna Vault files coexist in the same songs, artists, albums and search views. Music uses its own library state; it does not use `saves.sqlite`.

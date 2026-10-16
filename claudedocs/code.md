@@ -1,5 +1,8 @@
 # Luna Code
 
+Mac setup, restored connections, account credentials, and adaptive companion UI are
+shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
+
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.
 The existing Mac companion is now displayed as **Luna Mac**. Its executable,

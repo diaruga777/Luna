@@ -1,8 +1,12 @@
 import UIKit
 import LunaVaultStore
+import LunaVaultBEP
 
 /// Connection setup and maintenance are distinct states, backed by the same verified runtime.
-public final class VaultConnectedSettingsViewController: UITableViewController, UITextFieldDelegate {
+public final class LunaMacConnectionViewController: UITableViewController, UITextFieldDelegate {
+    public var onContinue: (() -> Void)?
+    private let client: LunaMacClient
+    private var hasVaultOptions: Bool { client == .vault }
     private let runtime: any VaultPresentationProviding
     private let pairingHandler: (String) async throws -> Void
     private let code = UITextField()
@@ -15,16 +19,18 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
     private var message: String?
     private var messageIsError = false
     private var operation: Task<Void, Never>?
+    private var statusTask: Task<Void, Never>?
     private var loading = true
     private var needsNetworkSettings = false
     private var wantsPairing = false
     private var isPaired: Bool { snapshot?.isPaired == true && !wantsPairing }
 
-    public convenience init(runtime: VaultConnectedRuntime, prefilledCode: String? = nil) {
-        self.init(services: runtime, prefilledCode: prefilledCode, pairingHandler: { try await runtime.pair(code: $0) })
+    public convenience init(runtime: VaultConnectedRuntime, prefilledCode: String? = nil, client: LunaMacClient = .vault) {
+        self.init(services: runtime, prefilledCode: prefilledCode, client: client, pairingHandler: { try await runtime.pair(code: $0) })
     }
-    public init(services: any VaultPresentationProviding, prefilledCode: String? = nil,
+    public init(services: any VaultPresentationProviding, prefilledCode: String? = nil, client: LunaMacClient = .vault,
                 pairingHandler: @escaping (String) async throws -> Void) {
+        self.client = client
         self.runtime = services
         self.pairingHandler = pairingHandler
         super.init(style: .insetGrouped)
@@ -59,8 +65,24 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         toolbar.items = [UIBarButtonItem(systemItem: .flexibleSpace),
                          UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(dismissKeyboard))]
         code.inputAccessoryView = toolbar
-        Task { [weak self] in await self?.loadStatus() }
+        render()
     }
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        statusTask?.cancel()
+        statusTask = Task { [weak self] in
+            await self?.loadStatus()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { break }
+                await self?.loadStatus(onlyIfChanged: true)
+            }
+        }
+    }
+    public override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        statusTask?.cancel(); statusTask = nil
+    }
+    deinit { statusTask?.cancel() }
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let header = tableView.tableHeaderView else { return }
@@ -71,39 +93,77 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
             tableView.tableHeaderView = header
         }
     }
-    private func loadStatus() async {
+    private func loadStatus(onlyIfChanged: Bool = false) async {
+        let previousSnapshot = snapshot, previousConnection = connection
+        let previousMessage = message
         do {
             snapshot = try await runtime.pairingSnapshot()
             connection = await runtime.connectionStatus()
             cache = try await runtime.cachePresentation()
             (imageFormat, videoFormat) = try await runtime.photoExportFormats()
-        } catch { message = "Couldn’t load settings. Try reopening this screen."; messageIsError = true }
+        } catch { message = error.localizedDescription; messageIsError = true }
+        let wasLoading = loading
         loading = false
-        render()
+        if !onlyIfChanged || wasLoading || snapshot != previousSnapshot || connection != previousConnection || message != previousMessage { render() }
     }
     private func render() {
-        title = isPaired ? "Settings" : "Connect Mac"
+        title = "Luna Mac"
+        var progress = UIContentUnavailableConfiguration.loading()
+        progress.text = "Checking your Luna Mac connection…"
+        contentUnavailableConfiguration = loading ? progress : nil
         code.isEnabled = operation == nil
-        tableView.tableHeaderView = isPaired || loading ? nil : setupHeader()
+        tableView.tableHeaderView = loading ? nil : (isPaired ? connectedHeader() : setupHeader())
         tableView.reloadData()
         view.setNeedsLayout()
     }
+    private func connectedHeader() -> UIView {
+        let title = label("Already connected", style: .title2, color: .label)
+        title.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
+        title.accessibilityIdentifier = "luna.mac.already-connected"
+        let detail = label("This Mac connection is shared by Luna Vault, Music and Code, and syncs through iCloud Passwords & Keychain.\n\n" + client.introduction,
+            style: .body, color: .secondaryLabel)
+        let stack = UIStackView(arrangedSubviews: [title, detail])
+        if onContinue != nil {
+            let button = UIButton(type: .system)
+            var configuration: UIButton.Configuration
+            if #available(iOS 26.0, *) { configuration = .prominentGlass() }
+            else { configuration = .filled() }
+            configuration.title = "Continue to " + client.title
+            button.configuration = configuration
+            button.accessibilityIdentifier = "luna.mac.continue"
+            button.addAction(UIAction { [weak self] _ in self?.onContinue?() }, for: .primaryActionTriggered)
+            stack.addArrangedSubview(button)
+        }
+        return header(stack)
+    }
+    private func header(_ stack: UIStackView) -> UIView {
+        stack.axis = .vertical; stack.spacing = 16; stack.translatesAutoresizingMaskIntoConstraints = false
+        let container = UIView(); container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+        return container
+    }
+    private func settingsSection(_ section: Int) -> Int { hasVaultOptions || section == 0 ? section : 4 }
     private func setupHeader() -> UIView {
         let symbol = UIImageView(image: UIImage(systemName: "laptopcomputer.and.iphone"))
         symbol.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 52, weight: .light)
         symbol.tintColor = .tintColor
         symbol.contentMode = .scaleAspectFit
         symbol.isAccessibilityElement = false
-        let title = label("A place for everything.", style: .title2, color: .label)
+        let title = label("One Mac. All your Luna apps.", style: .title2, color: .label)
         title.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
         title.textAlignment = .center
-        let subtitle = label("Your Mac keeps your files. Vault brings them with you.", style: .body, color: .secondaryLabel)
+        let subtitle = label(client.introduction, style: .body, color: .secondaryLabel)
         subtitle.textAlignment = .center
         let intro = UIStackView(arrangedSubviews: [symbol, title, subtitle]); intro.axis = .vertical; intro.spacing = 12
         let steps = UIStackView(arrangedSubviews: [
-            step("1", "Open Luna Vault on your Mac.", "Keep both devices on the same network."),
-            step("2", "Copy the pairing code.", "Paste it below to connect this iPhone."),
-            step("3", "Approve on your Mac.", "Browse your Mac read only. The Vault folder supports search and uploads.")
+            step("1", "Open Luna Mac on your Mac.", "Keep both devices on the same network."),
+            step("2", "Copy the pairing code.", "Paste it below. You only need to pair once."),
+            step("3", "Approve on your Mac.", "Your other Luna apps and devices use the same connection through iCloud Passwords & Keychain.")
         ]); steps.axis = .vertical; steps.spacing = 20
         let stack = UIStackView(arrangedSubviews: [intro, steps]); stack.axis = .vertical; stack.spacing = 30
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -137,19 +197,20 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         guard !isPaired, let cell = tableView.cellForRow(at: IndexPath(row: 1, section: 0)) else { return }
         configurePairCell(cell)
     }
-    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? 5 : (needsNetworkSettings ? 2 : 1)) }
+    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? (hasVaultOptions ? 5 : 2) : (needsNetworkSettings ? 2 : 1)) }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !isPaired { return section == 0 ? 2 : 1 }
+        let section = settingsSection(section)
         return section == 0 ? 3 : (section == 1 || section == 3 ? 2 : 1)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? "Pairing Code" : nil }
-        return ["Connection", "On This iPhone", "Search", "Photos Export", ""][section]
+        return ["Connection", "On This iPhone", "Search", "Photos Export", ""][settingsSection(section)]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if !isPaired { return section == 0 ? (message ?? "Transfers are encrypted between this iPhone and your paired Mac.") : "Enable Local Network access for Vault, then try again." }
-        switch section {
-        case 0: return message ?? (connection == .offline ? "Keep Luna Vault open on your Mac to connect. Downloaded files are still available offline." : "Files download when you open them.")
+        if !isPaired { return section == 0 ? (message ?? "Already paired on another device? Enable iCloud Passwords & Keychain on both devices. Your connection appears here automatically when it syncs. Transfers are encrypted.") : "Enable Local Network access for this app, then try again." }
+        switch settingsSection(section) {
+        case 0: return message ?? (connection == .offline ? "Keep Luna Mac open on your Mac to connect. Downloaded files are still available offline." : "This connection is shared by your Luna apps. iCloud Passwords & Keychain must be enabled to use it on another device.")
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
         case 2: return "Search finds file names and text in downloaded files. Rebuild only if results seem incomplete."
         case 3: return "Choose the formats used when importing from Photos into Vault. Original keeps the library file unchanged."
@@ -183,7 +244,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
                 return cell
             } else { configurePairCell(cell); return cell }
         } else {
-            switch (indexPath.section, indexPath.row) {
+            switch (settingsSection(indexPath.section), indexPath.row) {
             case (0, 0):
                 content.text = snapshot?.remoteName ?? "My Mac"
                 content.secondaryText = connection == .syncing ? "Syncing files…" : connection.rawValue
@@ -205,7 +266,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
                 content.text = "Videos"; content.secondaryText = videoFormat.title
                 content.image = UIImage(systemName: "video"); cell.accessoryType = .disclosureIndicator
             default:
-                content.text = "Disconnect Mac"; content.textProperties.color = .systemRed
+                content.text = "Disconnect All Luna Apps"; content.textProperties.color = .systemRed
                 content.image = UIImage(systemName: "eject"); content.imageProperties.tintColor = .systemRed
             }
         }
@@ -231,7 +292,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         connectButton.configuration = configuration
         connectButton.isEnabled = enabled
         connectButton.accessibilityIdentifier = "vault.mac.pair"
-        connectButton.accessibilityHint = "Approve this iPhone in Luna Vault on your Mac"
+        connectButton.accessibilityHint = "Approve your Luna apps in Luna Mac on your Mac"
         if connectButton.superview !== cell.contentView {
             connectButton.removeFromSuperview()
             connectButton.translatesAutoresizingMaskIntoConstraints = false
@@ -258,14 +319,14 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
             else if indexPath.row == 1 { pair() }
             return
         }
-        switch (indexPath.section, indexPath.row) {
+        switch (settingsSection(indexPath.section), indexPath.row) {
         case (0, 1): run(message: "Connecting…") { [runtime] in
             await runtime.refresh()
-            return await runtime.connectionStatus() == .connected ? "Your Mac is connected." : "Your Mac is still offline. Keep Luna Vault open on your Mac and check your network."
+            return await runtime.connectionStatus() == .connected ? "Your Mac is connected." : "Your Mac is still offline. Keep Luna Mac open on your Mac and check your network."
         }
         case (0, 2):
-            navigationController?.pushViewController(VaultConnectedSettingsViewController(
-                services: runtime, prefilledCode: "", pairingHandler: pairingHandler), animated: true)
+            navigationController?.pushViewController(LunaMacConnectionViewController(
+                services: runtime, prefilledCode: "", client: client, pairingHandler: pairingHandler), animated: true)
         case (1, 1):
             confirm(title: "Remove Downloaded Files?", message: "Files on your Mac and pending uploads will be kept. You’ll need a connection to download other files again.", action: "Remove Downloads") { [weak self] in
                 guard let self else { return }
@@ -275,7 +336,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         case (3, 0): chooseImageFormat(from: indexPath)
         case (3, 1): chooseVideoFormat(from: indexPath)
         case (4, _):
-            confirm(title: "Disconnect Your Mac?", message: "Your Mac’s files will stay on your Mac. You’ll need its pairing code to connect again.", action: "Disconnect") { [weak self] in
+            confirm(title: "Disconnect All Luna Apps?", message: "This disconnects Vault, Music and Code on devices using this iCloud Keychain. Files on your Mac stay there. You can reconnect with the pairing code.", action: "Disconnect") { [weak self] in
                 guard let self else { return }
                 run(message: "Disconnecting…") { [runtime] in try await runtime.removePairing(); return "Mac disconnected." }
             }
@@ -324,7 +385,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
         dismissKeyboard()
         run(message: "Allow Local Network access if asked, then approve this iPhone on your Mac.", returnToFiles: true) { [pairingHandler] in
             try await pairingHandler(input)
-            return "Your Mac is connected. Your files are ready in Vault."
+            return "Your Mac is connected."
         }
     }
     private func run(message: String, returnToFiles: Bool = false, work: @escaping () async throws -> String) {
@@ -351,7 +412,7 @@ public final class VaultConnectedSettingsViewController: UITableViewController, 
             operation = nil
             await loadStatus()
             UIAccessibility.post(notification: .announcement, argument: self.message)
-            if returnToFiles && !messageIsError { navigationController?.popToRootViewController(animated: true) }
+            if returnToFiles && !messageIsError && onContinue == nil { navigationController?.popToRootViewController(animated: true) }
         }
         render()
     }
@@ -363,3 +424,6 @@ private extension UIFont {
         return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
+
+/// Compatibility for existing Vault callers and test fixtures.
+public typealias VaultConnectedSettingsViewController = LunaMacConnectionViewController

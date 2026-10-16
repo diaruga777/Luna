@@ -2,6 +2,7 @@ import UIKit
 import LunaMusicCore
 import LunaMusicUI
 import LunaPodcastCore
+import LunaVaultUI
 
 /// External navigation wins over the ordinary foreground search, including
 /// URLs delivered after sceneDidBecomeActive during a warm launch.
@@ -16,17 +17,17 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
-        let library = MusicLibraryViewController()
-        self.library = library
         let window = UIWindow(windowScene: scene)
         window.tintColor = .systemPink
-        let navigation = UINavigationController(rootViewController: library)
-        window.rootViewController = navigation
+        window.rootViewController = MusicVaultWiring.launchController(makeContent: { [weak self] in
+            let library = MusicLibraryViewController()
+            self?.library = library
+            return UINavigationController(rootViewController: library)
+        }, onContinue: { [weak self] in self?.resumeLibrary() })
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "LunaMusic.browsingPodcasts") == nil {
             defaults.set(defaults.integer(forKey: "LunaMusic.browsingTab") == 1, forKey: "LunaMusic.browsingPodcasts")
         }
-        if defaults.bool(forKey: "LunaMusic.browsingPodcasts") { library.showPodcasts(animated: false) }
         self.window = window
         window.makeKeyAndVisible()
         routeObservers.append(NotificationCenter.default.addObserver(forName: .lunaPodcastOpenEpisode, object: nil, queue: .main) { [weak self] notification in
@@ -64,16 +65,13 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         MusicVaultWiring.foreground()
         enteredBackground = false
         activationWork?.cancel()
+        guard isShowingLibrary else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let route = self.pendingRoute
-            self.pendingRoute = nil
-            if let route { self.apply(route) }
-            else if !self.browsingPodcasts { self.library?.foregroundSearch() }
+            self.resumeLibrary()
         }
         activationWork = work
         DispatchQueue.main.async(execute: work)
-        Task { await MusicLibraryController.shared.reload() }
     }
 
     func scene(_ scene: UIScene, openURLContexts contexts: Set<UIOpenURLContext>) {
@@ -82,11 +80,24 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         navigate(route)
     }
 
+    private var isShowingLibrary: Bool {
+        (window?.rootViewController as? LunaMacLaunchViewController)?.isShowingContent ?? true
+    }
+    private func resumeLibrary() {
+        guard isShowingLibrary else { return }
+        if let id = MusicIntentRoute.pendingPodcastEpisodeID { openPodcastEpisode(id); return }
+        if UserDefaults.standard.bool(forKey: "LunaMusic.browsingPodcasts") { library?.showPodcasts(animated: false) }
+        let route = pendingRoute; pendingRoute = nil
+        if let route { apply(route) }
+        else if !browsingPodcasts { library?.foregroundSearch() }
+        Task { await MusicLibraryController.shared.reload() }
+    }
     private var browsingPodcasts: Bool {
         library?.navigationController?.viewControllers.contains(where: { $0 is PodcastLibraryViewController }) == true
     }
 
     private func openPodcastEpisode(_ id: String) {
+        guard isShowingLibrary else { MusicIntentRoute.pendingPodcastEpisodeID = id; return }
         activationWork?.cancel()
         library?.showPodcasts(animated: false).openEpisode(id)
         MusicIntentRoute.pendingPodcastEpisodeID = nil
@@ -99,7 +110,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func navigate(_ route: MusicLaunchRoute) {
         activationWork?.cancel()
-        if window?.windowScene?.activationState == .foregroundActive {
+        if isShowingLibrary, window?.windowScene?.activationState == .foregroundActive {
             pendingRoute = nil
             apply(route)
         } else {

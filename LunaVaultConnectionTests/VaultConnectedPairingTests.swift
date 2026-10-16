@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import LunaVaultBEP
 import LunaVaultStore
 import LunaVaultSync
@@ -889,7 +890,7 @@ private final class LocalMacPeer: @unchecked Sendable {
     private let lock = NSLock()
     private var sessions: [(BEPConnection, CompanionBEPDelegate)] = []
 
-    init(root: URL, folder: URL) async throws {
+    init(root: URL, folder: URL, account: CompanionAccountGate? = nil, clients: ClientStartupRecorder? = nil) async throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: root.appendingPathComponent("Identity")))
         let identity = try transport.identity()
@@ -902,9 +903,13 @@ private final class LocalMacPeer: @unchecked Sendable {
                 do {
                     let peer = try await listener.accept()
                     guard let self else { peer.stream.close(); return }
+                    if let account {
+                        guard account.allows(peer.device, pairingOpen: true),
+                              account.approve(peer.device, generation: account.generation) else { peer.stream.close(); continue }
+                    }
                     let index = try CompanionIndex(databaseURL: root.appendingPathComponent("index.sqlite"))
                     try index.replace(with: CompanionFolderScanner(rootURL: folder, deviceShortID: identity.shortID).scan())
-                    let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: identity, folderID: "vault")
+                    let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: identity, folderID: "vault", clientStarted: { clients?.record($0) })
                     let connection = BEPConnection(stream: peer.stream, peerDevice: peer.device,
                         localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
                     self.retain(connection, delegate)
@@ -912,9 +917,9 @@ private final class LocalMacPeer: @unchecked Sendable {
                     try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",
                         devices: [BEPDevice(id: identity, name: "Mac"), BEPDevice(id: peer.device, name: "Phone")])]))
                     let files = try index.all()
+                    delegate.startServing(connection)
                     try await connection.send(index: BEPIndex(folder: "vault", files: files,
                         lastSequence: files.map(\.sequence).max() ?? 0, isUpdate: false))
-                    delegate.startServing(connection)
                 } catch { return }
             }
         }
@@ -988,5 +993,192 @@ private final class ControlledWriteStream: BEPByteStream, @unchecked Sendable {
         }
         base.close()
         waiters.forEach { $0.resume(throwing: BEPStreamError.closed) }
+    }
+}
+
+
+private final class MemoryMacCredentials: LunaMacCredentialStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: LunaMacCredentials?
+    func load() throws -> LunaMacCredentials? { lock.withLock { stored } }
+    func save(_ credentials: LunaMacCredentials) throws { lock.withLock { stored = credentials } }
+}
+
+private final class ClientStartupRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Set<LunaMacClient>()
+    var clients: Set<LunaMacClient> { lock.withLock { stored } }
+    func record(_ client: LunaMacClient) { lock.withLock { _ = stored.insert(client) } }
+}
+
+final class UnifiedMacConnectionTests: XCTestCase {
+    private var root: URL!
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("UnifiedMacTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testTwoDevicesRestoreOneIdentityAnnounceAppsRejectOutsiderAndShareDisconnect() async throws {
+        let credentials = MemoryMacCredentials(), account = CompanionAccountGate(), clients = ClientStartupRecorder()
+        let folder = root.appendingPathComponent("Files")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let mac = try await LocalMacPeer(root: root.appendingPathComponent("Mac"), folder: folder, account: account, clients: clients)
+        defer { mac.close() }
+        let firstStore = try VaultFolderStore(rootURL: root.appendingPathComponent("iPhone"))
+        let first = try LunaMacConnection.makeRuntime(client: .vault, store: firstStore, credentials: credentials)
+        try await first.pair(code: mac.code.text)
+        let firstSnapshot = try await first.pairingSnapshot()
+        XCTAssertEqual(account.trustedDevice?.description, firstSnapshot.localDeviceID)
+        // A second physical device has a different filesystem and no local pairing.
+        let secondStore = try VaultFolderStore(rootURL: root.appendingPathComponent("iPad"))
+        let second = try LunaMacConnection.makeRuntime(client: .music, store: secondStore, credentials: credentials)
+        let secondSnapshot = try await second.pairingSnapshot()
+        XCTAssertTrue(secondSnapshot.isPaired)
+        XCTAssertEqual(secondSnapshot.localDeviceID, firstSnapshot.localDeviceID)
+        await second.reconnect()
+        let secondStatus = await second.connectionStatus()
+        XCTAssertEqual(secondStatus, .connected)
+        XCTAssertEqual(clients.clients, [.vault, .music])
+        let code = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
+        await code.reconnect()
+        XCTAssertEqual(clients.clients, Set(LunaMacClient.allCases))
+        // A different iCloud Keychain cannot replace the approved identity.
+        let outsider = try LunaMacConnection.makeRuntime(client: .code,
+            store: VaultFolderStore(rootURL: root.appendingPathComponent("OtherAccount")), credentials: MemoryMacCredentials())
+        do { try await outsider.pair(code: mac.code.text); XCTFail("Allowed a second account") } catch { }
+        XCTAssertEqual(account.trustedDevice?.description, firstSnapshot.localDeviceID)
+        try await first.removePairing()
+        let disconnected = try await second.pairingSnapshot()
+        XCTAssertFalse(disconnected.isPaired)
+        XCTAssertNil(try secondStore.peer())
+        XCTAssertNil(try credentials.load()?.pairing)
+        // Code shares this iPad's SQLite store with Music but still has its
+        // own live session: the missing row must revoke that session too.
+        do { _ = try await code.codeRequest(Data()); XCTFail("Code retained access after shared disconnect") } catch { }
+        let codeStatus = await code.connectionStatus()
+        XCTAssertEqual(codeStatus, .notPaired)
+        await first.stop(); await second.stop(); await code.stop(); await outsider.stop()
+    }
+
+    func testCredentialsArrivingWhileAppIsOpenRestoreWithoutResettingLocalCursors() async throws {
+        let credentials = MemoryMacCredentials()
+        let secondStore = try VaultFolderStore(rootURL: root.appendingPathComponent("Second"))
+        let second = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
+        let original = try await second.pairingSnapshot()
+        XCTAssertFalse(original.isPaired)
+        let source = root.appendingPathComponent("SourceIdentity")
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: source))
+        let sharedID = try transport.identity()
+        let peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 44, count: 32)), name: "My Mac",
+            manualAddresses: [.tcp(host: "127.0.0.1", port: 49200)], folderID: "vault", folderLabel: "Vault", lastConnectedAt: Date())
+        let identity = LunaMacIdentityStore(root: root, credentials: credentials)
+        try identity.publish(peer: peer, identityDirectory: source, expectedID: sharedID)
+        let restored = try await second.pairingSnapshot()
+        XCTAssertTrue(restored.isPaired)
+        XCTAssertNotEqual(original.localDeviceID, restored.localDeviceID)
+        XCTAssertEqual(restored.localDeviceID, sharedID.description)
+        var local = try XCTUnwrap(secondStore.peer())
+        local.theirIndexID = 123; local.theirMaxSequence = 99; local.ourIndexID = 456
+        try secondStore.savePeer(local)
+        try identity.publish(peer: peer, identityDirectory: source, expectedID: sharedID)
+        _ = try await second.pairingSnapshot()
+        XCTAssertEqual(try secondStore.peer()?.theirIndexID, 123)
+        XCTAssertEqual(try secondStore.peer()?.theirMaxSequence, 99)
+        XCTAssertEqual(try secondStore.peer()?.ourIndexID, 456)
+        await second.stop()
+    }
+
+    func testOnlyVerifiedPairingsCanBePublishedAndCloudIdentityCannotBeOverwritten() throws {
+        let credentials = MemoryMacCredentials()
+        let identity = LunaMacIdentityStore(root: root, credentials: credentials)
+        let source = root.appendingPathComponent("Identity")
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: source))
+        let id = try transport.identity()
+        var peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 3, count: 32)), name: "Mac")
+        XCTAssertThrowsError(try identity.publish(peer: peer, identityDirectory: source, expectedID: id))
+        XCTAssertNil(try credentials.load())
+        peer.lastConnectedAt = Date()
+        try identity.publish(peer: peer, identityDirectory: source, expectedID: id)
+        let outsider = root.appendingPathComponent("OtherIdentity")
+        let other = LunaVaultGoTransport(configuration: .init(stateDirectory: outsider))
+        XCTAssertThrowsError(try identity.publish(peer: peer, identityDirectory: outsider, expectedID: other.identity()))
+        XCTAssertEqual(try identity.restore()?.1.identity(), id)
+    }
+
+    func testStartupRequiresApprovalValidatesVersionAndCannotResumeAfterRevocation() async throws {
+        let clients = ClientStartupRecorder()
+        let mac = try DeviceID(bytes: Data(repeating: 7, count: 32))
+        let phone = try DeviceID(bytes: Data(repeating: 8, count: 32))
+        let index = try CompanionIndex(databaseURL: root.appendingPathComponent("startup.sqlite"))
+        let delegate = CompanionBEPDelegate(rootURL: root, index: index, localDevice: mac,
+            folderID: "vault", clientStarted: { clients.record($0) })
+        let streams = PipeByteStream.pair()
+        defer { streams.0.close(); streams.1.close() }
+        let connection = BEPConnection(stream: streams.0, peerDevice: phone,
+            localHello: BEPHello(deviceName: "Mac", clientName: "Luna Mac", clientVersion: "1"), delegate: delegate)
+        let startup = try JSONEncoder().encode(LunaMacClientStartup(client: .code))
+        let request = BEPRequest(id: 1, folder: LunaMacClientStartup.folder,
+            name: startup.base64EncodedString(), offset: 0, size: 0, hash: Data())
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Startup before approval") }
+        XCTAssertTrue(clients.clients.isEmpty)
+        delegate.startServing(connection)
+        let unknown = BEPRequest(id: 2, folder: LunaMacClientStartup.folder,
+            name: Data(#"{"version":2,"client":"code"}"#.utf8).base64EncodedString(), offset: 0, size: 0, hash: Data())
+        if case .success = await delegate.connection(connection, serve: unknown) { XCTFail("Accepted unsupported protocol") }
+        XCTAssertTrue(clients.clients.isEmpty)
+        if case .failure = await delegate.connection(connection, serve: request) { XCTFail("Approved startup failed") }
+        XCTAssertEqual(clients.clients, [.code])
+        delegate.revoke()
+        delegate.startServing(connection)
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Revoked delegate reauthorized") }
+    }
+
+    func testAccountGateRequiresExplicitResetAndRejectsStaleApproval() throws {
+        let first = try DeviceID(bytes: Data(repeating: 1, count: 32))
+        let second = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let gate = CompanionAccountGate()
+        XCTAssertFalse(gate.allows(first, pairingOpen: false))
+        let generation = gate.generation
+        XCTAssertTrue(gate.approve(first, generation: generation))
+        XCTAssertTrue(gate.allows(first, pairingOpen: false))
+        XCTAssertFalse(gate.allows(second, pairingOpen: true))
+        XCTAssertFalse(gate.approve(second, generation: generation))
+        gate.reset()
+        XCTAssertFalse(gate.approve(first, generation: generation))
+        XCTAssertTrue(gate.approve(second, generation: gate.generation))
+    }
+
+    @MainActor func testEveryAppFirstLaunchShowsRestoredConnectionAndOnlyVaultShowsVaultSettings() async throws {
+        let credentials = MemoryMacCredentials()
+        let source = root.appendingPathComponent("Identity")
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: source))
+        let peer = VaultPeerRecord(deviceID: try DeviceID(bytes: Data(repeating: 4, count: 32)), name: "Studio Mac",
+            folderID: "vault", folderLabel: "Vault", lastConnectedAt: Date())
+        try LunaMacIdentityStore(root: root, credentials: credentials).publish(peer: peer, identityDirectory: source, expectedID: transport.identity())
+        for client in LunaMacClient.allCases {
+            let store = try VaultFolderStore(rootURL: root.appendingPathComponent(client.rawValue))
+            let runtime = try LunaMacConnection.makeRuntime(client: client, store: store, credentials: credentials)
+            let domain = "UnifiedMacUITests." + UUID().uuidString
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+            defer { defaults.removePersistentDomain(forName: domain) }
+            let content = UIViewController()
+            let launch = LunaMacLaunchViewController(runtime: runtime, client: client, content: content, defaults: defaults)
+            launch.loadViewIfNeeded()
+            let navigation = try XCTUnwrap(launch.children.first as? UINavigationController)
+            let connection = try XCTUnwrap(navigation.topViewController as? LunaMacConnectionViewController)
+            connection.loadViewIfNeeded(); connection.beginAppearanceTransition(true, animated: false); connection.endAppearanceTransition()
+            for _ in 0..<100 where connection.tableView.numberOfSections == 0 { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(connection.tableView.numberOfSections, client == .vault ? 5 : 2)
+            XCTAssertEqual(connection.title, "Luna Mac")
+            XCTAssertTrue(allLabels(connection.tableView.tableHeaderView).contains("Already connected"))
+            connection.onContinue?()
+            XCTAssertTrue(launch.children.first === content)
+            await runtime.stop()
+        }
+    }
+    @MainActor private func allLabels(_ view: UIView?) -> [String] {
+        guard let view else { return [] }
+        return (view as? UILabel).flatMap(\.text).map { [$0] } ?? view.subviews.flatMap { allLabels($0) }
     }
 }

@@ -9,6 +9,7 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).vault.keychain</string>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).mac.connection</string>
 	</array>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>

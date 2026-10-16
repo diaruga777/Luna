@@ -24,8 +24,7 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
         #endif
         do {
             let store = try VaultFolderStore.production()
-            let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
-            let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: transport, localID: transport.identity())
+            let runtime = try LunaMacConnection.makeRuntime(client: .code, store: store)
             self.runtime = runtime
             let drafts = try CodeDraftStore(root: store.rootURL.deletingLastPathComponent().appendingPathComponent("Code/Drafts"))
             let environment = CodeEnvironment(client: CodeClient { try await runtime.codeRequest($0) }, drafts: drafts,
@@ -33,10 +32,10 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
                     let response = try await runtime.macDirectory(path: path, offset: offset, showHidden: hidden)
                     return CodeBrowserPage(items: response.entries.map { CodeBrowserItem(path: $0.path, name: $0.name, directory: $0.isDirectory) }, next: response.nextOffset)
                 }, pairing: {
-                    let settings = VaultConnectedSettingsViewController(services: runtime) { try await runtime.pair(code: $0) }
+                    let settings = LunaMacConnectionViewController(services: runtime, client: .code) { try await runtime.pair(code: $0) }
                     settings.title = "Luna Mac"; return settings
                 }, peerID: { (try? store.peer()?.deviceID.description) ?? "unpaired" })
-            window.rootViewController = CodeTabsController(environment: environment)
+            window.rootViewController = LunaMacLaunchViewController(runtime: runtime, client: .code, content: CodeTabsController(environment: environment))
         } catch {
             let controller = UIViewController(); controller.view.backgroundColor = .systemBackground
             let label = UILabel(); label.numberOfLines = 0; label.textAlignment = .center
@@ -47,5 +46,6 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         window.makeKeyAndVisible()
     }
+    func sceneDidBecomeActive(_ scene: UIScene) { if let runtime { Task { await runtime.reconnect() } } }
     func sceneDidEnterBackground(_ scene: UIScene) { if let runtime { Task { await runtime.stop() } } }
 }

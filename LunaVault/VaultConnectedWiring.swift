@@ -19,9 +19,7 @@ import LunaVaultUI
     static func install() {
         do {
             let store = try VaultFolderStore.production()
-            // System networking also reaches a separately installed Tailscale client.
-            let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory, requestLocalNetworkAccess: true))
-            let connectedRuntime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: transport, localID: transport.identity())
+            let connectedRuntime = try LunaMacConnection.makeRuntime(client: .vault, store: store)
             runtime = connectedRuntime
             let queue = try VaultIncomingQueue.production()
             incomingQueue = queue
@@ -51,7 +49,7 @@ import LunaVaultUI
         transfers.didChange = { [weak root] in root?.refresh() }
         transfers.start()
         applicationWillEnterForeground()
-        return root
+        return LunaMacLaunchViewController(runtime: runtime, client: .vault, content: UINavigationController(rootViewController: root))
     }
 
     static func pairingController(code: String) -> UIViewController? {
@@ -59,7 +57,7 @@ import LunaVaultUI
     }
 
     private static func settingsController(runtime: VaultConnectedRuntime, prefilledCode: String? = nil) -> UIViewController {
-        VaultConnectedSettingsViewController(services: runtime, prefilledCode: prefilledCode) { code in
+        LunaMacConnectionViewController(services: runtime, prefilledCode: prefilledCode) { code in
             try await runtime.pair(code: code)
             await MainActor.run { transfers?.start() }
         }

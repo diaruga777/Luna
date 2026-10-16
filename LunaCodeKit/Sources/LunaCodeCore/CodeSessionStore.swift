@@ -12,6 +12,7 @@ public final class CodeSessionStore {
     public func setProject(_ project: CodeProject?, peer: String) {
         // Migrate the old per-Mac file before changing its project association.
         _ = lastFile(peer: peer)
+        if let project { remember(project, peer: peer) }
         defaults.set(project.flatMap { try? JSONEncoder().encode($0) }, forKey: "Code.project." + peer)
     }
 
@@ -32,6 +33,19 @@ public final class CodeSessionStore {
         // An explicit close must not resurrect a legacy last-file value.
         defaults.removeObject(forKey: "Code.lastFile." + peer)
         defaults.set(path ?? "", forKey: fileKey(peer: peer))
+    }
+
+    public func recentProjects(peer: String) -> [CodeProject] {
+        var projects = defaults.data(forKey: "Code.recentProjects." + peer)
+            .flatMap { try? JSONDecoder().decode([CodeProject].self, from: $0) } ?? []
+        if let current = project(peer: peer), !projects.contains(where: { $0.path == current.path }) { projects.insert(current, at: 0) }
+        return projects
+    }
+
+    private func remember(_ project: CodeProject, peer: String) {
+        var projects = recentProjects(peer: peer).filter { $0.path != project.path }
+        projects.insert(project, at: 0)
+        defaults.set(try? JSONEncoder().encode(projects), forKey: "Code.recentProjects." + peer)
     }
 
     private func fileKey(peer: String) -> String {

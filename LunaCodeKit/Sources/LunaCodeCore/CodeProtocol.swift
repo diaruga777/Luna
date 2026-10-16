@@ -77,19 +77,23 @@ public struct CodeJob: Codable, Equatable, Sendable {
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, analyze, complete, prepare, build, deploy, job, cancel }
+    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel }
     public var id: String = UUID().uuidString
     public var operation: Operation
     public var path: String = ""
     public var text: String = ""
     public var version: String = ""
     public var project: CodeProject?
+    public var deviceBuild: CodeDeviceBuild?
     public var position: CodePosition?
     public var jobID: String = ""
     public var bufferVersion: Int = 0
     public init(_ operation: Operation, path: String = "") { self.operation = operation; self.path = path }
 }
 public struct CodeResponse: Codable, Sendable {
+    public var apps: [CodeBuildApp]?
+    public var devices: [CodeDevice]?
+    public var branches: [String]?
     public var document: CodeDocument?
     public var conflict: Bool = false
     public var schemes: [String] = []

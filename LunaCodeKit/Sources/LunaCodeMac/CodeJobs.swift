@@ -23,13 +23,16 @@ public actor CodeJobs {
     }
     public func start(_ request: CodeRequest) throws -> CodeJob {
         if let id = requests[request.id], let existing = jobs[id] { return existing }
-        guard !jobs.values.contains(where: { $0.state == .running }) else { throw CodeFailure("A Mac build is already running. Wait for it or cancel it first.") }
+        guard processes.isEmpty else { throw CodeFailure("A Mac build is already running. Wait for it or cancel it first.") }
         guard let project = request.project, FileManager.default.fileExists(atPath: project.path),
               ["xcodeproj", "xcworkspace"].contains(URL(fileURLWithPath: project.path).pathExtension),
               !project.scheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CodeFailure("Select an Xcode project or workspace and scheme first.")
         }
-        let title = request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
+        if request.operation == .runOnDevice {
+            guard request.deviceBuild != nil, !project.scheme.lowercased().contains("webdriveragent") else { throw CodeFailure("Select an app scheme and phone first.") }
+        }
+        let title = request.operation == .runOnDevice ? "Build & Run · " + project.scheme : request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
         let job = CodeJob(id: UUID().uuidString, title: title)
         jobs[job.id] = job; requests[request.id] = job.id
         let process = CodeProcess(); processes[job.id] = process
@@ -61,7 +64,10 @@ public actor CodeJobs {
         let log = root.appendingPathComponent(job.id + ".log")
         do {
             let exit: Int32
-            if request.operation == .deploy {
+            if request.operation == .runOnDevice {
+                try await runOnDevice(request, project: project, job: job, process: process, log: log)
+                exit = 0
+            } else if request.operation == .deploy {
                 guard !project.appID.isEmpty, !project.groupID.isEmpty else { throw CodeFailure("Set the App Store Connect app ID and internal testing group ID in Project Settings.") }
                 let asc = try Self.ascExecutable()
                 // Verify the destination really is an internal group before uploading.

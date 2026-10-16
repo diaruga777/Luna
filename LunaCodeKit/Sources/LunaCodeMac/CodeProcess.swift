@@ -22,7 +22,7 @@ public final class CodeProcess: @unchecked Sendable {
                     log: URL, timeout: TimeInterval = 3600) async throws -> Int32 {
         try await withTaskCancellationHandler {
             try await Task.detached { [self] in
-                FileManager.default.createFile(atPath: log.path, contents: nil)
+                if !FileManager.default.fileExists(atPath: log.path) { FileManager.default.createFile(atPath: log.path, contents: nil) }
                 let output = try FileHandle(forWritingTo: log)
                 defer { try? output.close() }
                 try output.seekToEnd()
@@ -42,7 +42,8 @@ public final class CodeProcess: @unchecked Sendable {
                     if Date() > deadline { stop(p); throw CodeFailure("The command timed out. See the build log.") }
                     try await Task.sleep(for: .milliseconds(100))
                 }
-                p.waitUntilExit()
+                // isRunning is already false. A second waitUntilExit can stall
+                // Foundation’s run loop after short, sequential commands.
                 lock.withCriticalScope { process = nil }
                 if lock.withCriticalScope({ cancelled }) { throw CancellationError() }
                 return p.terminationStatus

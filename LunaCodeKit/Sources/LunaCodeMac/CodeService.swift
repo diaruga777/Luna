@@ -31,16 +31,13 @@ public actor CodeService {
             case .schemes:
                 let path = request.path
                 guard path.hasPrefix("/"), ["xcworkspace", "xcodeproj"].contains(URL(fileURLWithPath: path).pathExtension) else { throw CodeFailure("Choose an Xcode project or workspace.") }
-                let log = root.appendingPathComponent(UUID().uuidString + ".json")
-                defer { try? FileManager.default.removeItem(at: log) }
-                let status = try await CodeProcess().run("/usr/bin/xcodebuild", [path.hasSuffix(".xcworkspace") ? "-workspace" : "-project", path, "-list", "-json"], directory: (path as NSString).deletingLastPathComponent, log: log, timeout: 60)
-                let output = try Data(contentsOf: log)
-                // xcodebuild may prepend package-resolution progress before JSON.
-                guard status == 0, let start = output.firstIndex(of: 123),
-                    let object = try JSONSerialization.jsonObject(with: output.suffix(from: start)) as? [String: Any] else { throw CodeFailure("Xcode could not list schemes. Open the project on the Mac to resolve its packages.") }
-                let project = object["workspace"] as? [String: Any] ?? object["project"] as? [String: Any]
-                response.schemes = project?["schemes"] as? [String] ?? []
-            case .prepare, .build, .deploy:
+                response.schemes = try await CodeDeviceSupport.schemes(path: path, root: root)
+            case .apps:
+                guard request.path.hasPrefix("/"), ["xcworkspace", "xcodeproj"].contains(URL(fileURLWithPath: request.path).pathExtension) else { throw CodeFailure("Choose an Xcode project or workspace.") }
+                response.apps = try await CodeDeviceSupport.apps(path: request.path, scheme: request.project?.scheme, root: root)
+            case .devices: response.devices = try await CodeDeviceSupport.devices(root: root)
+            case .branches: response.branches = try await CodeDeviceSupport.branches(path: request.path, root: root)
+            case .prepare, .build, .deploy, .runOnDevice:
                 response.job = try await jobs.start(request)
                 if request.operation == .prepare { language?.cancel(); language = nil; projectKey = nil }
             case .job: response.job = try await jobs.status(request.jobID)

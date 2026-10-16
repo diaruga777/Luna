@@ -10,6 +10,10 @@ final class CodeIntelligenceTests: XCTestCase {
         let project = CodeProject(path: root + "/Fixture.xcodeproj", scheme: "Fixture")
         let schemes = try await client.call(CodeRequest(.schemes, path: project.path))
         XCTAssertTrue(schemes.schemes.contains("Fixture"))
+        var appRequest = CodeRequest(.apps, path: project.path); appRequest.project = project
+        let apps = try await client.call(appRequest)
+        XCTAssertEqual(apps.apps?.map(\.bundleID), ["dev.luna.code.fixture"])
+        XCTAssertEqual(apps.apps?.first?.project.scheme, "Fixture")
         var build = CodeRequest(.build); build.project = project
         let response = try await client.call(build)
         let started = try XCTUnwrap(response.job)

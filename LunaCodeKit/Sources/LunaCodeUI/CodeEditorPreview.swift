@@ -55,7 +55,7 @@ private actor PreviewFiles {
         }
     }
     """
-    func handle(_ data: Data) -> Data {
+    func handle(_ data: Data) async -> Data {
         var response = CodeResponse()
         do {
             let request = try JSONDecoder().decode(CodeRequest.self, from: data)
@@ -66,6 +66,11 @@ private actor PreviewFiles {
                 response.devices = [CodeDevice(id: "preview-phone", name: "Preview iPhone")]
                 return try JSONEncoder().encode(response)
             case .apps:
+                if ProcessInfo.processInfo.arguments.contains("--build-discovery-delay"), let scheme = request.project?.scheme, scheme != "Sample" {
+                    try await Task.sleep(for: .seconds(2))
+                    if scheme == "Broken" { throw CodeFailure("Preview scheme could not resolve its dependencies.") }
+                    if scheme == "SampleLibrary" { response.apps = []; return try JSONEncoder().encode(response) }
+                }
                 let schemes = request.project.map { [$0.scheme] } ?? ["Sample", "SampleAlias", "SampleCompanion"]
                 response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map { CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + ($0 == "SampleAlias" ? "Sample" : $0)) }
                 return try JSONEncoder().encode(response)
@@ -81,7 +86,9 @@ private actor PreviewFiles {
                 response.job = CodeJob(id: "preview-build", title: "Build & Run", state: Date().timeIntervalSince(buildStartedAt ?? .distantPast) > 6 ? .succeeded : .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
                 return try JSONEncoder().encode(response)
             case .schemes:
-                response.schemes = ["Sample", "SampleAlias", "SampleCompanion", "SampleTests"]
+                response.schemes = ProcessInfo.processInfo.arguments.contains("--build-discovery-delay")
+                    ? ["Sample", "SampleLibrary", "Broken", "SampleAlias", "SampleCompanion", "SampleTests"]
+                    : ["Sample", "SampleAlias", "SampleCompanion", "SampleTests"]
                 return try JSONEncoder().encode(response)
             case .open: break
             case .save:

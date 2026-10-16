@@ -25,6 +25,8 @@ import LunaCodeCore
     private let environment: CodeEnvironment
     private var catalog: CodeBuildCatalog { CodeBuildCatalog(defaults: environment.defaults) }
     private var apps: [CodeBuildApp] { catalog.apps(peer: environment.peerID()) }
+    private var dataSource: CodeBuildDataSource!
+    private var displayedApps: [String: CodeBuildApp] = [:]
     private var scannedProjects: Set<String> = []
     private var devices: [CodeDevice] = []
     private var jobs: [String: CodeJob] = [:]
@@ -42,6 +44,10 @@ import LunaCodeCore
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Builds"
+        dataSource = CodeBuildDataSource(tableView: tableView) { [weak self] _, _, key in
+            guard let self, let app = self.displayedApps[key] else { return nil }
+            return self.makeCell(app)
+        }
         tableView.accessibilityIdentifier = "CodeBuilds"
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
             guard let self else { return }; self.navigationController?.pushViewController(self.environment.pairing(), animated: true)
@@ -92,14 +98,22 @@ import LunaCodeCore
                 do {
                     let schemes = try await environment.client.call(CodeRequest(.schemes, path: project.path)).schemes
                     var found: [CodeBuildApp] = []
+                    var failures: [String] = []
                     for scheme in schemes {
                         guard peer == environment.peerID(), !Task.isCancelled else { return }
                         var request = CodeRequest(.apps, path: project.path)
                         request.project = CodeProject(path: project.path, scheme: scheme)
-                        let response = try await environment.client.call(request)
-                        guard peer == environment.peerID(), !Task.isCancelled else { return }
-                        guard let discovered = response.apps else { throw CodeFailure("Update Luna Mac to use phone builds.") }
-                        for app in discovered where !found.contains(where: { $0.key == app.key }) { found.append(app) }
+                        do {
+                            let response = try await environment.client.call(request)
+                            guard peer == environment.peerID(), !Task.isCancelled else { return }
+                            guard let discovered = response.apps else { throw CodeFailure("Update Luna Mac to use phone builds.") }
+                            for app in discovered where !found.contains(where: { $0.key == app.key }) { found.append(app) }
+                        } catch {
+                            guard peer == environment.peerID(), !Task.isCancelled else { return }
+                            failures.append(scheme + ": " + error.localizedDescription)
+                            // Keep this scheme's cached row while still discovering later apps.
+                            found += catalog.apps(peer: peer).filter { $0.project.path == project.path && $0.project.scheme == scheme }
+                        }
                         // Publish each result immediately; keep existing cached rows until scanning completes.
                         var partial = catalog.apps(peer: peer).filter { $0.project.path == project.path }
                         for app in found where !partial.contains(where: { $0.key == app.key }) { partial.append(app) }
@@ -107,15 +121,38 @@ import LunaCodeCore
                     }
                     catalog.merge(found, path: project.path, peer: peer)
                     scannedProjects.insert(project.path)
-                    if found.isEmpty { message = "No runnable iOS apps found in " + (project.path as NSString).lastPathComponent + "." }
+                    if !failures.isEmpty { message = failures.joined(separator: "\n") }
+                    else if found.isEmpty { message = "No runnable iOS apps found in " + (project.path as NSString).lastPathComponent + "." }
                 } catch { if peer == environment.peerID() { message = error.localizedDescription } }
             }
         }
     }
     private func reload() {
         guard isViewLoaded else { return }
-        tableView.reloadData()
-        if apps.isEmpty {
+        let rows = apps
+        displayedApps = Dictionary(uniqueKeysWithValues: rows.map { ($0.key, $0) })
+        let keys = rows.map(\.key)
+        dataSource.footer = footerText
+        if dataSource.snapshot().itemIdentifiers != keys || dataSource.snapshot().sectionIdentifiers.isEmpty {
+            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+            snapshot.appendSections([0]); snapshot.appendItems(keys)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+        // Keep the cell and its menu button alive during discovery and job polls.
+        var resizeRows = false
+        for cell in tableView.visibleCells {
+            if let index = tableView.indexPath(for: cell), let key = dataSource.itemIdentifier(for: index), let app = displayedApps[key] {
+                let previousDetail = cell.detailTextLabel?.text
+                update(cell, app: app)
+                resizeRows = resizeRows || previousDetail != cell.detailTextLabel?.text
+            }
+        }
+        if let footer = tableView.footerView(forSection: 0), footer.textLabel?.text != footerText {
+            footer.textLabel?.text = footerText
+            resizeRows = true
+        }
+        if resizeRows { tableView.beginUpdates(); tableView.endUpdates() }
+        if rows.isEmpty {
             var config = loading ? UIContentUnavailableConfiguration.loading() : .empty()
             config.image = loading ? nil : UIImage(systemName: "iphone.and.arrow.forward")
             config.text = loading ? "Finding Apps…" : "Build to Your Phone"
@@ -130,47 +167,58 @@ import LunaCodeCore
             tableView.backgroundView = UIContentUnavailableView(configuration: config)
         } else { tableView.backgroundView = nil }
     }
-    override func numberOfSections(in tableView: UITableView) -> Int { 1 }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { apps.count }
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "Previously Opened Projects" }
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    private var footerText: String {
         if let message { return message + "\nPull to refresh. Cached apps remain available." }
         return loading ? "Finding app schemes on your Mac…" : "Builds use committed main by default. Use ••• to change a branch or phone. Pull to refresh apps and connected phones."
     }
     private func phone(for app: CodeBuildApp) -> CodeDevice? {
         CodeBuildCatalog.resolveDevice(devices, preferred: app.deviceID ?? catalog.defaultDevice(peer: environment.peerID()), currentName: UIDevice.current.name)
     }
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let app = apps[indexPath.row]
+    private func makeCell(_ app: CodeBuildApp) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         cell.selectionStyle = .none
         cell.textLabel?.text = app.project.scheme
         cell.textLabel?.font = .preferredFont(forTextStyle: .headline)
         cell.textLabel?.numberOfLines = 0
-        let target = phone(for: app)?.name ?? "Phone disconnected"
-        let status = app.jobID.flatMap { jobs[$0]?.state.rawValue.capitalized }
-        cell.detailTextLabel?.text = [(app.project.root as NSString).lastPathComponent + " · " + app.project.scheme, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
         cell.detailTextLabel?.numberOfLines = 0
         cell.detailTextLabel?.font = .preferredFont(forTextStyle: .caption1)
         cell.accessibilityIdentifier = "CodeBuildApp:" + app.project.scheme
         let play = UIButton(type: .system)
-        var config = UIButton.Configuration.tinted(); config.image = UIImage(systemName: "play.fill"); config.cornerStyle = .capsule
-        config.showsActivityIndicator = starting == app.key || app.jobID.flatMap { jobs[$0]?.state } == .running
-        play.configuration = config
         play.accessibilityLabel = "Build and Run " + app.name
         play.accessibilityIdentifier = "CodeRun:" + app.project.scheme
-        play.isEnabled = starting == nil && !jobs.values.contains { $0.state == .running }
-        play.addAction(UIAction { [weak self] _ in self?.build(app) }, for: .touchUpInside)
+        play.addAction(UIAction { [weak self] _ in
+            guard let self, let current = self.displayedApps[app.key] else { return }
+            self.build(current)
+        }, for: .touchUpInside)
         let more = UIButton(type: .system)
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         more.accessibilityLabel = "Build Options for " + app.name
         more.accessibilityIdentifier = "CodeBuildOptions:" + app.project.scheme
-        more.menu = menu(app); more.showsMenuAsPrimaryAction = true
+        more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] completion in
+            guard let self, let current = self.displayedApps[app.key] else { completion([]); return }
+            completion(self.menu(current).children)
+        }])
+        more.showsMenuAsPrimaryAction = true
         more.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let controls = UIStackView(arrangedSubviews: [play, more]); controls.spacing = 8
         controls.frame = CGRect(x: 0, y: 0, width: 100, height: 44)
         cell.accessoryView = controls
+        update(cell, app: app)
         return cell
+    }
+    private func update(_ cell: UITableViewCell, app: CodeBuildApp) {
+        let target = phone(for: app)?.name ?? "Phone disconnected"
+        let status = app.jobID.flatMap { jobs[$0]?.state.rawValue.capitalized }
+        let detail = [(app.project.root as NSString).lastPathComponent + " · " + app.project.scheme, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
+        if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
+        guard let play = (cell.accessoryView as? UIStackView)?.arrangedSubviews.first as? UIButton else { return }
+        let busy = starting == app.key || app.jobID.flatMap { jobs[$0]?.state } == .running
+        if play.configuration?.showsActivityIndicator != busy || play.configuration == nil {
+            var config = UIButton.Configuration.tinted(); config.image = UIImage(systemName: "play.fill"); config.cornerStyle = .capsule
+            config.showsActivityIndicator = busy
+            play.configuration = config
+        }
+        play.isEnabled = starting == nil && !jobs.values.contains { $0.state == .running }
     }
     private func menu(_ app: CodeBuildApp) -> UIMenu {
         let defaults = UIAction(title: "Default Phone", state: app.deviceID == nil ? .on : .off) { [weak self] _ in self?.edit(app) { $0.deviceID = nil } }
@@ -301,5 +349,10 @@ import LunaCodeCore
         let alert = UIAlertController(title: "Builds", message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default)); present(alert, animated: true)
     }
+}
+private final class CodeBuildDataSource: UITableViewDiffableDataSource<Int, String> {
+    var footer: String = ""
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "Previously Opened Projects" }
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { footer }
 }
 #endif

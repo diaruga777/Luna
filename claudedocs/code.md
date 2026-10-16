@@ -63,6 +63,10 @@ Project history, cached app rows, row options and job IDs are isolated by paired
 Mac and survive relaunch. Opening another project does not clear the build list.
 Rows remain visible offline; pull to refresh discovers new schemes and devices.
 Discovery publishes apps progressively and excludes test, extension and Mac targets.
+Package schemes without a Build action are skipped. An individual scheme failure
+keeps its cached row, reports the error and allows discovery of later schemes.
+Discovery and job polling update existing rows in place, preserving open build
+options menus. Menus read current branch, device and job settings when opened.
 
 Tap a row's play button to build Debug, install and launch on the default phone.
 The default is the current phone when its device name uniquely matches, otherwise

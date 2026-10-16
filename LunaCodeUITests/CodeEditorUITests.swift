@@ -182,6 +182,31 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Project"].isSelected)
     }
 
+    func testBuildOptionsStayOpenWhileDiscoveryContinuesPastFailedAndLibrarySchemes() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview", "--build-discovery-delay"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let options = app.buttons["CodeBuildOptions:Sample"]
+        XCTAssertTrue(options.waitForExistence(timeout: 15)); options.tap()
+        let branch = app.buttons["Branch: main"]
+        XCTAssertTrue(branch.waitForExistence(timeout: 5))
+        // Discovery returns an empty scheme, an error and two new app rows,
+        // while several foreground job-poll ticks also pass.
+        Thread.sleep(forTimeInterval: 12)
+        XCTAssertTrue(branch.exists, "Discovery and polling must preserve an open row menu")
+        branch.tap()
+        XCTAssertTrue(app.cells.staticTexts["feature/preview"].waitForExistence(timeout: 5))
+        app.cells.staticTexts["feature/preview"].tap()
+        XCTAssertTrue(app.cells["CodeBuildApp:SampleCompanion"].waitForExistence(timeout: 10), "A failed scheme must not hide later apps")
+        XCTAssertFalse(app.cells["CodeBuildApp:SampleLibrary"].exists)
+        options.tap()
+        XCTAssertTrue(app.buttons["Branch: feature/preview"].waitForExistence(timeout: 5), "Preserved buttons must read the latest row settings")
+    }
+
     private func attach(_ name: String, _ app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }

@@ -76,6 +76,14 @@ while offline. Vault exposes file sync details; Music exposes its library folder
 Code exposes editing/build details. The folder chooser appears only for Vault or
 Music. CodeService is created lazily when a Code request arrives.
 
+Luna Mac uses a native SwiftUI grouped form with connection status, configured app
+rows and a shared-folder picker/Finder link when Vault or Music is configured.
+The connection code is copied with a brief confirmation rather than displayed
+in the window. After pairing, it is available under Connection Code. Folder-access
+recovery appears only when needed. Standard app/edit menus support keyboard use;
+copy feedback respects Reduce Motion. Existing identity and pairing storage remain
+unchanged.
+
 ## Verification
 
 `LunaVaultConnectionTests` covers real loopback TLS with two independent device

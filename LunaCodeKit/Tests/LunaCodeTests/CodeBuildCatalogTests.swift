@@ -117,9 +117,28 @@ final class CodeBuildCatalogTests: XCTestCase {
         XCTAssertEqual(CodeBuildCatalog.resolveDevice([other], preferred: nil, currentName: "iPhone"), other)
         XCTAssertNil(CodeBuildCatalog.resolveDevice([], preferred: nil, currentName: "iPhone"))
     }
-    func testDeviceDiscoveryExcludesRememberedDisconnectedPhonesAndSimulators() throws {
-        let data = Data(#"{"result":{"devices":[{"properties":{"hardware":{"reality":"physical","platform":"iOS","udid":"phone"},"state":{"name":"Phone"},"connection":{"state":"connected"}}},{"hardwareProperties":{"reality":"physical","platform":"iOS","udid":"legacy"},"deviceProperties":{"name":"Legacy"},"connectionProperties":{"tunnelState":"disconnected","pairingState":"paired"}},{"properties":{"hardware":{"reality":"simulated","platform":"iOS","udid":"sim"},"state":{"name":"Simulator"},"connection":{"state":"connected"}}},{"properties":{"hardware":{"reality":"physical","platform":"iOS","udid":"offline"},"state":{"name":"Offline"},"connection":{"state":"unavailable"}}},{"properties":{"hardware":{"reality":"physical","platform":"tvOS","udid":"tv"},"state":{"name":"TV"},"connection":{"state":"connected"}}}]}}"#.utf8)
-        XCTAssertEqual(try CodeDeviceSupport.parseDevices(data).map(\.id), ["phone"])
+    func testDeviceDiscoveryUsesXcodeAvailabilityForUSBAndWirelessPhones() throws {
+        // Both phones are available in Xcode even with no CoreDevice tunnel.
+        // Discovery must not require an existing build/debug connection.
+        let data = Data("""
+        Xcode device discovery warning [MT]
+        [
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"wifi","name":"Wi-Fi Phone","interface":"network","available":true,"ignored":false},
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"usb","name":"USB Phone","interface":"usb","available":true,"ignored":false},
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"offline","name":"Old Phone","available":false,"error":{"description":"Phone is not connected"}},
+          {"simulator":true,"platform":"com.apple.platform.iphonesimulator","identifier":"sim","name":"Simulator","available":true},
+          {"simulator":false,"platform":"com.apple.platform.appletvos","identifier":"tv","name":"TV","available":true},
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"broken","name":"Broken","available":true,"error":{"description":"Developer Mode disabled"}},
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"ignored","name":"Ignored","available":true,"ignored":true},
+          {"simulator":false,"platform":"com.apple.platform.iphoneos","identifier":"unknown","name":"Unknown"}
+        ]
+        """.utf8)
+        XCTAssertEqual(try CodeDeviceSupport.parseDevices(data), [CodeDevice(id: "usb", name: "USB Phone"), CodeDevice(id: "wifi", name: "Wi-Fi Phone")])
+    }
+    func testDeviceDiscoveryDistinguishesEmptyListFromInvalidOutput() throws {
+        XCTAssertEqual(try CodeDeviceSupport.parseDevices(Data("[]".utf8)), [])
+        XCTAssertThrowsError(try CodeDeviceSupport.parseDevices(Data("{}".utf8)))
+        XCTAssertThrowsError(try CodeDeviceSupport.parseDevices(Data("Xcode failed".utf8)))
     }
     func testBuildOptionsRoundTripAndOldRequestsStillDecode() throws {
         var request = CodeRequest(.runOnDevice); request.project = CodeProject(path: "/App.xcodeproj", scheme: "App")

@@ -73,9 +73,11 @@ The default is the current phone when its device name uniquely matches, otherwis
 the only connected iOS device. If there are multiple choices, select a default
 once; iOS does not expose the phone's UDID. A saved but disconnected phone never
 silently falls back to a different device. Phones must be connected to the Mac,
-trusted, unlocked and set up for development in Xcode. Remembered disconnected
-phones are excluded. Before compiling, the Mac rechecks the live connection and
-Xcode’s available iOS destinations for the selected scheme; an ineligible phone
+trusted, unlocked and set up for development in Xcode. Discovery uses Xcode’s
+available physical iOS devices (`xcdevice list`), including USB and Wi-Fi phones
+whose CoreDevice development tunnel has not opened yet. Remembered unavailable
+phones, simulators and devices with Xcode errors are excluded. Before compiling,
+the Mac rechecks availability and the selected scheme’s iOS destinations; an ineligible phone
 fails with connection, Developer Mode and Xcode setup guidance.
 
 The row's **•••** menu offers target device, branch, Open in Project,

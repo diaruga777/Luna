@@ -96,24 +96,26 @@ enum CodeDeviceSupport {
         return delegate.target
     }
     static func devices(root: URL) async throws -> [CodeDevice] {
-        let output = root.appendingPathComponent(UUID().uuidString + ".json")
-        let log = root.appendingPathComponent(UUID().uuidString + ".log")
-        defer { try? FileManager.default.removeItem(at: output); try? FileManager.default.removeItem(at: log) }
-        let status = try await CodeProcess().run("/usr/bin/xcrun", ["devicectl", "list", "devices", "--json-output", output.path], directory: root.path, log: log, timeout: 30)
+        let log = root.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: log) }
+        // CoreDevice's tunnel can be disconnected while Xcode still reports a
+        // paired phone as available. Xcode opens that tunnel on demand for a
+        // wireless build/install; requiring it here hides reachable phones.
+        let status = try await CodeProcess().run("/usr/bin/xcrun", ["xcdevice", "list", "--timeout", "5"], directory: root.path, log: log, timeout: 30)
         guard status == 0 else { throw CodeFailure("Could not list phones. Check Xcode and the device connection on the Mac.") }
-        return try parseDevices(Data(contentsOf: output))
+        return try parseDevices(Data(contentsOf: log))
     }
     static func parseDevices(_ data: Data) throws -> [CodeDevice] {
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let result = json?["result"] as? [String: Any]
-        return (result?["devices"] as? [[String: Any]] ?? []).compactMap { device in
-            let properties = device["properties"] as? [String: Any]
-            let hardware = properties?["hardware"] as? [String: Any] ?? device["hardwareProperties"] as? [String: Any] ?? [:]
-            let state = properties?["state"] as? [String: Any] ?? device["deviceProperties"] as? [String: Any] ?? [:]
-            let connection = properties?["connection"] as? [String: Any] ?? device["connectionProperties"] as? [String: Any] ?? [:]
-            let connected = connection["state"] as? String ?? connection["tunnelState"] as? String
-            guard hardware["reality"] as? String == "physical", hardware["platform"] as? String == "iOS",
-                  connected == "connected", let id = hardware["udid"] as? String, let name = state["name"] as? String else { return nil }
+        guard let devices = try parseJSONOutput(data) as? [[String: Any]] else {
+            throw CodeFailure("Xcode returned no readable phone list. Check Xcode on the Mac, then try again.")
+        }
+        return devices.compactMap { device in
+            guard device["simulator"] as? Bool == false,
+                  device["platform"] as? String == "com.apple.platform.iphoneos",
+                  device["available"] as? Bool == true, device["error"] == nil,
+                  device["ignored"] as? Bool != true,
+                  let id = device["identifier"] as? String, !id.isEmpty,
+                  let name = device["name"] as? String, !name.isEmpty else { return nil }
             return CodeDevice(id: id, name: name)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

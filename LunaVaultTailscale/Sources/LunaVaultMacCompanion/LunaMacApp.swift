@@ -97,14 +97,19 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
     @objc private func chooseFolder() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.allowsMultipleSelection = false; panel.prompt = "Choose"
-        if panel.runModal() == .OK, let url = panel.url { controller.selectFolder(url) }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.controller.selectFolder(url)
+        }
     }
     @objc private func forgetConnection() {
         let alert = NSAlert()
         alert.messageText = "Forget the Luna connection?"
         alert.informativeText = "All Luna apps and devices will disconnect. Files stay on your Mac."
         alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Forget Connection")
-        if alert.runModal() == .alertSecondButtonReturn { controller.forgetConnection() }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertSecondButtonReturn { self?.controller.forgetConnection() }
+        }
     }
     @objc private func openPrivacySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders") { NSWorkspace.shared.open(url) }

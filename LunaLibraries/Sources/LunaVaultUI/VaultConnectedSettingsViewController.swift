@@ -88,7 +88,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         guard let header = tableView.tableHeaderView else { return }
         let size = header.systemLayoutSizeFitting(CGSize(width: tableView.bounds.width, height: 0),
                                                   withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
-        if abs(header.frame.height - size.height) > 1 {
+        if abs(header.frame.height - size.height) > 1 || header.frame.width != tableView.bounds.width {
             header.frame.size = CGSize(width: tableView.bounds.width, height: size.height)
             tableView.tableHeaderView = header
         }
@@ -109,10 +109,10 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     private func render() {
         title = "Luna Mac"
         var progress = UIContentUnavailableConfiguration.loading()
-        progress.text = "Checking your Luna Mac connection…"
+        progress.text = "Loading…"
         contentUnavailableConfiguration = loading ? progress : nil
         code.isEnabled = operation == nil
-        tableView.tableHeaderView = loading ? nil : (isPaired ? connectedHeader() : setupHeader())
+        tableView.tableHeaderView = loading ? nil : (isPaired ? (onContinue == nil ? nil : connectedHeader()) : setupHeader())
         tableView.reloadData()
         view.setNeedsLayout()
     }
@@ -120,9 +120,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         let title = label("Already connected", style: .title2, color: .label)
         title.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
         title.accessibilityIdentifier = "luna.mac.already-connected"
-        let detail = label("This Mac connection is shared by Luna Vault, Music and Code, and syncs through iCloud Passwords & Keychain.\n\n" + client.introduction,
-            style: .body, color: .secondaryLabel)
-        let stack = UIStackView(arrangedSubviews: [title, detail])
+        let stack = UIStackView(arrangedSubviews: [title])
         if onContinue != nil {
             let button = UIButton(type: .system)
             var configuration: UIButton.Configuration
@@ -154,37 +152,13 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         symbol.tintColor = .tintColor
         symbol.contentMode = .scaleAspectFit
         symbol.isAccessibilityElement = false
-        let title = label("One Mac. All your Luna apps.", style: .title2, color: .label)
+        let title = label("Connect to Your Mac", style: .title2, color: .label)
         title.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
         title.textAlignment = .center
-        let subtitle = label(client.introduction, style: .body, color: .secondaryLabel)
+        let subtitle = label("Copy the connection code from Luna Mac and paste it below.", style: .body, color: .secondaryLabel)
         subtitle.textAlignment = .center
         let intro = UIStackView(arrangedSubviews: [symbol, title, subtitle]); intro.axis = .vertical; intro.spacing = 12
-        let steps = UIStackView(arrangedSubviews: [
-            step("1", "Open Luna Mac on your Mac.", "Keep both devices on the same network."),
-            step("2", "Copy the pairing code.", "Paste it below. You only need to pair once."),
-            step("3", "Approve on your Mac.", "Your other Luna apps and devices use the same connection through iCloud Passwords & Keychain.")
-        ]); steps.axis = .vertical; steps.spacing = 20
-        let stack = UIStackView(arrangedSubviews: [intro, steps]); stack.axis = .vertical; stack.spacing = 30
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let container = UIView(); container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
-        ])
-        return container
-    }
-    private func step(_ number: String, _ title: String, _ subtitle: String) -> UIView {
-        let badge = label(number, style: .headline, color: .tintColor)
-        badge.textAlignment = .center
-        badge.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        let texts = UIStackView(arrangedSubviews: [label(title, style: .body, color: .label), label(subtitle, style: .subheadline, color: .secondaryLabel)])
-        texts.axis = .vertical; texts.spacing = 3
-        let row = UIStackView(arrangedSubviews: [badge, texts]); row.spacing = 12; row.alignment = .top
-        row.isAccessibilityElement = true; row.accessibilityLabel = "Step \(number). \(title) \(subtitle)"
-        return row
+        return header(intro)
     }
     private func label(_ text: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
         let label = UILabel(); label.text = text; label.font = .preferredFont(forTextStyle: style)
@@ -208,9 +182,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         return ["Connection", "On This iPhone", "Search", "Photos Export", ""][settingsSection(section)]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if !isPaired { return section == 0 ? (message ?? "Already paired on another device? Enable iCloud Passwords & Keychain on both devices. Your connection appears here automatically when it syncs. Transfers are encrypted.") : "Enable Local Network access for this app, then try again." }
+        if !isPaired { return section == 0 ? (message ?? "Turn on iCloud Passwords & Keychain to use an existing connection.") : "Enable Local Network access for this app, then try again." }
         switch settingsSection(section) {
-        case 0: return message ?? (connection == .offline ? "Keep Luna Mac open on your Mac to connect. Downloaded files are still available offline." : "This connection is shared by your Luna apps. iCloud Passwords & Keychain must be enabled to use it on another device.")
+        case 0: return message ?? (connection == .offline ? "Open Luna Mac and check your network." : "Use iCloud Passwords & Keychain to connect your other devices.")
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
         case 2: return "Search finds file names and text in downloaded files. Rebuild only if results seem incomplete."
         case 3: return "Choose the formats used when importing from Photos into Vault. Original keeps the library file unchanged."

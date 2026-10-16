@@ -14,7 +14,8 @@ are preserved on upgrade.
 
 `LunaMacConnectionViewController` owns setup, connection status, reconnect, update,
 and disconnect for all three apps. Its app descriptor (`LunaMacClient`) supplies
-the containing app’s name and short introduction. Vault adds its download, search,
+the containing app’s name for Continue. Setup uses one connection-code instruction;
+connected settings show status without repeating onboarding. Vault adds its download, search,
 and Photos export settings; Music and Code do not display those controls.
 `VaultConnectedSettingsViewController` remains a compatibility alias.
 

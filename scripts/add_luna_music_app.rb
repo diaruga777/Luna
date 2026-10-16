@@ -19,7 +19,7 @@ def configure(project, name, type, suffix)
     c.build_settings.merge!({
       'PRODUCT_BUNDLE_IDENTIFIER' => "$(PRODUCT_BUNDLE_PREFIX).music#{suffix}",
       'PRODUCT_NAME' => '$(TARGET_NAME)', 'GENERATE_INFOPLIST_FILE' => 'YES',
-      'CODE_SIGN_STYLE' => 'Automatic', 'DEVELOPMENT_TEAM' => 'MM5QBNLXR6',
+      'CODE_SIGN_STYLE' => 'Automatic',
       'IPHONEOS_DEPLOYMENT_TARGET' => '26.0', 'SWIFT_VERSION' => '5.0',
       'CURRENT_PROJECT_VERSION' => '1', 'MARKETING_VERSION' => '1.0',
       'TARGETED_DEVICE_FAMILY' => '1,2', 'SUPPORTS_MACCATALYST' => 'NO',

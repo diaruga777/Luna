@@ -4,18 +4,21 @@ MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="LunaVaultMacCompanion"
 BUNDLE="$ROOT_DIR/.build-vault-mac/Luna Mac.app"
-# Keep macOS privacy grants tied to a certificate-backed app identity across
-# rebuilds. Resolve only valid identities; expired certificates can share a name.
-SIGNING_IDENTITY="${LUNA_MAC_SIGNING_IDENTITY:-Apple Development: Harry Sanabria (ALMQ68659D)}"
-SIGNING_MATCHES="$(security find-identity -v -p codesigning | awk -F '"' -v requested="$SIGNING_IDENTITY" '
-  { split($1, fields, " "); if (fields[2] == requested || $2 == requested) print fields[2] }
-')"
-if [[ -z "$SIGNING_MATCHES" || "$SIGNING_MATCHES" == *$'\n'* ]]; then
-  echo "Luna Mac needs one valid signing identity: $SIGNING_IDENTITY" >&2
-  echo "Set LUNA_MAC_SIGNING_IDENTITY to its exact certificate name or SHA-1 from: security find-identity -v -p codesigning" >&2
-  exit 1
+# When supplied, keep macOS privacy grants tied to a certificate-backed app
+# identity across rebuilds. Resolve only valid identities; expired certificates
+# can share a name.
+SIGNING_IDENTITY="${LUNA_MAC_SIGNING_IDENTITY:--}"
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  SIGNING_MATCHES="$(security find-identity -v -p codesigning | awk -F '"' -v requested="$SIGNING_IDENTITY" '
+    { split($1, fields, " "); if (fields[2] == requested || $2 == requested) print fields[2] }
+  ')"
+  if [[ -z "$SIGNING_MATCHES" || "$SIGNING_MATCHES" == *$'\n'* ]]; then
+    echo "No unique valid signing identity matches: $SIGNING_IDENTITY" >&2
+    echo "Set LUNA_MAC_SIGNING_IDENTITY to an exact certificate name or SHA-1 from: security find-identity -v -p codesigning" >&2
+    exit 1
+  fi
+  SIGNING_IDENTITY="$SIGNING_MATCHES"
 fi
-SIGNING_IDENTITY="$SIGNING_MATCHES"
 cd "$ROOT_DIR/LunaVaultTailscale"
 swift build --product "$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
@@ -27,12 +30,12 @@ cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
 for resource in "$BUILD_DIR"/*.bundle; do
   [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
 done
-cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
+cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>LunaVaultMacCompanion</string>
-<key>CFBundleIdentifier</key><string>com.hsanabria.luna.vault.mac</string>
+<key>CFBundleIdentifier</key><string>${LUNA_MAC_BUNDLE_ID:-com.hsanabria.luna.vault.mac}</string>
 <key>CFBundleName</key><string>Luna Mac</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>

@@ -30,8 +30,9 @@ at `-Onone`, so its dyld and first-frame cost do not describe the shipping
 binary — and dyld cost is what this measurement watches.
 
 Never add `CODE_SIGNING_ALLOWED=NO`. It strips the app-group entitlement, so the
-app dies at launch on its first container access. Automatic signing with team
-`MM5QBNLXR6` is already set up; the phone must be unlocked and trusted.
+app dies at launch on its first container access. For physical-device signing,
+set your own `DEVELOPMENT_TEAM` in the ignored `Config/Local.xcconfig`; the
+phone must be unlocked and trusted.
 
 The script terminates any running copy of the app first, so the first iteration
 is a cold start like the rest.

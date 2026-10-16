@@ -87,12 +87,11 @@ folder-specific snapshot reuse, and Code requests before the Vault rescan.
 
 ## Local signing and folder permissions
 
-`script/build_and_run.sh` signs the staged app with the installed Apple
-Development identity `Apple Development: Harry Sanabria (ALMQ68659D)` from
-Luna's team (`MM5QBNLXR6`). Set `LUNA_MAC_SIGNING_IDENTITY` to an exact certificate
-name or SHA-1 to override it. The script resolves valid identities before
-building and stops if none or multiple match; it never falls back to ad hoc
-signing. It verifies the completed bundle before launch.
+`script/build_and_run.sh` signs the staged app ad hoc by default. To keep macOS
+folder permissions stable across rebuilds, set `LUNA_MAC_SIGNING_IDENTITY` to
+an exact valid Apple Development certificate name or SHA-1 from that Mac's
+Keychain. The script verifies a supplied identity before signing and verifies
+the completed bundle before launch.
 
 Keep the bundle identifier and installed app location consistent. Certificate
 signing gives rebuilds a stable designated requirement instead of the

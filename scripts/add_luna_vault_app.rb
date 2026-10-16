@@ -25,7 +25,6 @@ def configure_target(target, bundle_id, info_plist, entitlements, icon_name = ni
     settings["INFOPLIST_FILE"] = info_plist
     settings["CODE_SIGN_ENTITLEMENTS"] = entitlements
     settings["CODE_SIGN_STYLE"] = "Automatic"
-    settings["DEVELOPMENT_TEAM"] = "MM5QBNLXR6"
     settings["CURRENT_PROJECT_VERSION"] = "1"
     settings["MARKETING_VERSION"] = "0.1"
     settings["IPHONEOS_DEPLOYMENT_TARGET"] = "18.0"

@@ -25,6 +25,7 @@ build/
 
 *.DS_Store
 .DS_Store
+Config/Local.xcconfig
 LunaVaultTailscale/.build/
 
 .build-vault-mac/

@@ -19,8 +19,8 @@
 # would measure the wrong thing.
 #
 # Do NOT add CODE_SIGNING_ALLOWED=NO. It strips the app-group entitlement and
-# the app dies at launch on its first container access. Automatic signing with
-# team MM5QBNLXR6 is already configured.
+# the app dies at launch on its first container access. Set DEVELOPMENT_TEAM
+# in Config/Local.xcconfig for device signing with your own Apple team.
 #
 # The two metrics:
 #   testLaunchPerformance             process start -> first frame

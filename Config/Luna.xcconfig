@@ -53,3 +53,8 @@ MTLLINKER_FLAGS = -fcikernel
 // hatch for exactly that, named in the deprecation message itself; it reaches
 // the Swift importer through the CoreImage headers.
 GCC_PREPROCESSOR_DEFINITIONS = $(inherited) CI_SILENCE_GL_DEPRECATION=1
+
+// Per-checkout signing overrides (for example DEVELOPMENT_TEAM) stay out of
+// version control. Create Config/Local.xcconfig on this Mac; .gitignore
+// excludes it. Consumers without one use Xcode's simulator signing defaults.
+#include? "Local.xcconfig"

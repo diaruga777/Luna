@@ -439,6 +439,17 @@ Podcast playback and interaction fixes (2026-10-08):
   episodes advance at natural completion. The Resume Last Podcast intent retains
   its separately specified deterministic fallback after natural exhaustion.
 
+Tapping Play on another podcast episode moves the unfinished current episode to
+the front of the existing queue, preserving its latest playback position. This
+also works when the current episode is paused or restored after relaunch. The
+selected episode and interrupted episode are not duplicated in the queue;
+completed episodes and repeat taps on the current episode do not add a queue
+entry. Automatic queue advancement and explicit Play All retain their existing
+behavior.
+Validation: all 17 `PodcastTransportTests` passed on iOS 26.2, including actual
+audio switching, return to the saved position, paused restoration, duplicate
+prevention and completion handling.
+
 Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 42 Music tests passed,
 including real AVPlayer podcast start, legacy queue migration, search loading,
 repeated taps and cancelled navigation; the additional bidirectional player

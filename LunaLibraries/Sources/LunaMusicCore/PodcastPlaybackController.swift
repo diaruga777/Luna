@@ -172,14 +172,25 @@ import LunaPodcastCore
     public func play(_ episode: PodcastEpisode) async throws {
         // A single episode never enrolls the rest of its show in the queue.
         if !library.state.continuation.isEmpty { try library.edit { $0.continuation = [] } }
-        do { try await select(episode) } catch { fail(error); throw error }
+        do { try await select(episode, queueInterruptedEpisode: true) } catch { fail(error); throw error }
     }
     public func playEpisodes(_ episodes: [PodcastEpisode]) async throws {
         guard let first = episodes.first else { return }
         try library.edit { $0.queue = episodes.dropFirst().map(\.id); $0.continuation = [] }
         do { try await select(first) } catch { fail(error); throw error }
     }
-    private func select(_ episode: PodcastEpisode, restorePosition: Bool = false) async throws {
+    private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false) async throws {
+        // Capture the outgoing clock before replacing its item. A pending seek
+        // already owns `position` and must not be overwritten by the old clock.
+        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
+            let time = player.currentTime().seconds
+            if time.isFinite { position = max(0, time) }
+        }
+        var interruptedID: String?
+        if queueInterruptedEpisode, let currentEpisode, currentEpisode.id != episode.id,
+           !isAtEnd, library.state.progress[currentEpisode.id]?.listened != true {
+            interruptedID = currentEpisode.id
+        }
         let retainedPosition = restorePosition && currentEpisode?.id == episode.id ? position : nil
         persistPosition()
         willPlay?()
@@ -196,7 +207,7 @@ import LunaPodcastCore
         if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         let local = downloads.localURL(episode.id)
-        let changesSelection = library.state.currentEpisodeID != episode.id || library.state.queue.contains(episode.id) ||
+        let changesSelection = interruptedID != nil || library.state.currentEpisodeID != episode.id || library.state.queue.contains(episode.id) ||
             library.state.continuation.contains(episode.id) || saved?.suppressAutomaticDownload == true ||
             (!restorePosition && saved?.listened == true)
         // Cold Resume usually changes none of these fields. Do not encode and
@@ -204,6 +215,11 @@ import LunaPodcastCore
         if changesSelection {
             try library.edit { state in
                 state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
+                if let interruptedID {
+                    state.queue.removeAll { $0 == interruptedID }
+                    state.queue.insert(interruptedID, at: 0)
+                    state.progress[interruptedID]?.suppressAutomaticDownload = false
+                }
                 state.progress[episode.id]?.suppressAutomaticDownload = false
                 if !restorePosition, state.progress[episode.id]?.listened == true {
                     state.progress[episode.id]?.listened = false; state.progress[episode.id]?.completedAt = nil

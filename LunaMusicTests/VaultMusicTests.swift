@@ -1043,6 +1043,52 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.playEpisodes(episodes)
         try await waitFor { playback.isPlaying }
     }
+    func testPlayingAnotherEpisodeQueuesInterruptedEpisodeAndResumesItsPosition() async throws {
+        try await startQueue()
+        var sought = false
+        playback.seek(to: 60, completion: { sought = $0 })
+        try await waitFor { sought }
+        // Include an existing copy to ensure interruption moves rather than duplicates it.
+        try library.edit { $0.queue = [episodes[1].id, episodes[2].id, episodes[0].id] }
+        try await playback.play(episodes[1])
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(library.state.queue, [episodes[0].id, episodes[2].id])
+        let saved = try XCTUnwrap(library.state.progress[episodes[0].id]?.position)
+        XCTAssertEqual(saved, 60, accuracy: 2)
+        XCTAssertFalse(library.state.progress[episodes[0].id]?.listened == true)
+        let restored = try PodcastStore(url: library.requireStore().url)
+        XCTAssertEqual(restored.state.queue, [episodes[0].id, episodes[2].id])
+        XCTAssertEqual(restored.state.progress[episodes[0].id]?.position, saved)
+        playback.seek(to: playback.duration)
+        try await waitFor { playback.currentEpisode?.id == episodes[0].id && playback.isPlaying }
+        XCTAssertEqual(playback.player.currentTime().seconds, saved, accuracy: 2)
+        XCTAssertEqual(library.state.queue, [episodes[2].id])
+    }
+    func testPlayingAnotherEpisodePreservesColdPausedEpisode() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 45)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try library.edit { $0.queue = [episodes[2].id] }
+        try await playback.play(episodes[1])
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(library.state.queue, [episodes[0].id, episodes[2].id])
+        XCTAssertEqual(library.state.progress[episodes[0].id]?.position, 45)
+    }
+    func testPlayingSameEpisodeDoesNotQueueItself() async throws {
+        try await startQueue()
+        try await playback.play(episodes[0])
+        XCTAssertEqual(library.state.queue, [episodes[1].id, episodes[2].id])
+    }
+    func testPlayingAnotherEpisodeDoesNotRequeueCompletedEpisode() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.play(episodes[1])
+        XCTAssertTrue(library.state.queue.isEmpty)
+    }
     func testPausedBackReportsActualSeekCompletionAndSupersededSeekFails() async throws {
         try await playback.playEpisodes(episodes)
         playback.pause()

@@ -112,9 +112,15 @@ extension MusicScreenViewController {
         }, for: [.touchUpInside, .touchUpOutside])
         slider.addAction(UIAction { [weak self] _ in self?.refresh() }, for: .touchCancel)
         elapsed.font = MusicStyle.font(17, weight: .medium); remaining.font = elapsed.font; remaining.textAlignment = .right
-        back = MusicStyle.plainButton("gobackward.15", label: "Skip Back", size: 32) { MediaPlaybackCoordinator.shared.skip(.backward) }
+        back = MusicStyle.plainButton("gobackward.15", label: "Skip Back", size: 32) { [weak self] in
+            if MediaPlaybackCoordinator.shared.active == .podcasts { MediaPlaybackCoordinator.shared.skip(.backward) }
+            else { self?.player.skip(backward: true) }
+        }
         play = MusicStyle.plainButton("play.fill", label: "Play", size: 48) { [weak self] in self?.player.toggle() }
-        forward = MusicStyle.plainButton("goforward.30", label: "Skip Forward", size: 32) { MediaPlaybackCoordinator.shared.skip(.forward) }
+        forward = MusicStyle.plainButton("goforward.30", label: "Skip Forward", size: 32) { [weak self] in
+            if MediaPlaybackCoordinator.shared.active == .podcasts { MediaPlaybackCoordinator.shared.skip(.forward) }
+            else { self?.player.skip(backward: false) }
+        }
         speed = UIButton(configuration: .plain()); speed.showsMenuAsPrimaryAction = true; speed.accessibilityLabel = "Playback Speed"
         speed.configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes; attributes.font = MusicStyle.font(16, weight: .semibold); return attributes
@@ -312,7 +318,7 @@ extension MusicScreenViewController {
         }
         artwork.accessibilityLabel = episode?.isVideo == true ? "Watch Video" : "Episode Artwork"
         if let episode {
-            let switchAction = UIAction(title: "Switch to Music", image: UIImage(systemName: "arrow.triangle.swap"), attributes: MediaPlaybackCoordinator.shared.canSwitch ? [] : .disabled) { [weak self] _ in
+            let switchAction = UIAction(title: "Switch to Music", image: UIImage(systemName: "arrow.triangle.swap"), attributes: queueSwitch.button.isEnabled ? [] : .disabled) { [weak self] _ in
                 self?.queueSwitch.button.sendActions(for: .touchUpInside)
             }
             let extras = UIMenu(options: .displayInline, children: [UIAction(title: "Chapters", image: UIImage(systemName: "list.number")) { [weak self] _ in self?.open(PodcastChaptersViewController()) }, switchAction])

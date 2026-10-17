@@ -8,7 +8,7 @@ import LunaVaultUI
 /// URLs delivered after sceneDidBecomeActive during a warm launch.
 final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
-    private var library: MusicLibraryViewController?
+    private var library: MediaLibraryNavigationController?
     private var pendingRoute: MusicLaunchRoute?
     private var searchQuery = ""
     private var activationWork: DispatchWorkItem?
@@ -20,9 +20,9 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: scene)
         window.tintColor = .systemPink
         window.rootViewController = MusicVaultWiring.launchController(makeContent: { [weak self] in
-            let library = MusicLibraryViewController()
+            let library = MediaLibraryNavigationController()
             self?.library = library
-            return UINavigationController(rootViewController: library)
+            return library
         }, onContinue: { [weak self] in self?.resumeLibrary() })
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "LunaMusic.browsingPodcasts") == nil {
@@ -93,13 +93,13 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { await MusicLibraryController.shared.reload() }
     }
     private var browsingPodcasts: Bool {
-        library?.navigationController?.viewControllers.contains(where: { $0 is PodcastLibraryViewController }) == true
+        library?.surface == .podcasts
     }
 
     private func openPodcastEpisode(_ id: String) {
         guard isShowingLibrary else { MusicIntentRoute.pendingPodcastEpisodeID = id; return }
         activationWork?.cancel()
-        library?.showPodcasts(animated: false).openEpisode(id)
+        library?.openPodcastEpisode(id)
         MusicIntentRoute.pendingPodcastEpisodeID = nil
     }
 
@@ -122,8 +122,8 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         switch route {
         case .search: library?.foregroundSearch(query: searchQuery); searchQuery = ""
         case .queue:
-            if MediaPlaybackCoordinator.shared.active == .podcasts { library?.showPodcasts(animated: false).showQueue() }
-            else { library?.showQueue() }
+            if MediaPlaybackCoordinator.shared.active == .podcasts { library?.showPodcastQueue() }
+            else { library?.showMusicQueue() }
         }
     }
 

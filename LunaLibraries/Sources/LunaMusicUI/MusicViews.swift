@@ -104,6 +104,9 @@ internal enum MusicListFilter {
 public class MusicScreenViewController: UIViewController {
     let table = UITableView(frame: .zero, style: .plain)
     let mini = MusicMiniPlayer()
+    private let playerBar = UIStackView()
+    private let musicPill = UIButton(type: .system)
+    private let podcastPill = UIButton(type: .system)
     var notificationTokens: [NSObjectProtocol] = []
     var tableTop: NSLayoutConstraint!
     private var defersUpdates = false
@@ -114,6 +117,7 @@ public class MusicScreenViewController: UIViewController {
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         defersUpdates = false
+        updatePlayerSurface()
         let updates = deferredUpdates; deferredUpdates.removeAll()
         updates.values.forEach { $0() }
     }
@@ -131,15 +135,39 @@ public class MusicScreenViewController: UIViewController {
         table.rowHeight = UITableView.automaticDimension
         table.estimatedRowHeight = 76
         table.translatesAutoresizingMaskIntoConstraints = false
-        mini.translatesAutoresizingMaskIntoConstraints = false
+        playerBar.translatesAutoresizingMaskIntoConstraints = false
+        playerBar.spacing = 8
+        playerBar.alignment = .fill
+        playerBar.semanticContentAttribute = .forceLeftToRight
+        for (button, surface, symbol, label) in [
+            (musicPill, MediaPlaybackCoordinator.Surface.music, "music.note", "Music"),
+            (podcastPill, .podcasts, "dot.radiowaves.left.and.right", "Podcasts")
+        ] {
+            var configuration: UIButton.Configuration
+            if #available(iOS 26, *) { configuration = .glass() }
+            else { configuration = .gray() }
+            configuration.image = UIImage(systemName: symbol)
+            configuration.cornerStyle = .capsule
+            button.configuration = configuration
+            button.tintColor = surface == .music ? MusicStyle.tint : .systemPurple
+            button.accessibilityLabel = "Switch to " + label
+            button.accessibilityIdentifier = "media.library." + surface.rawValue
+            button.accessibilityHint = "Opens your " + label.lowercased() + " library"
+            button.widthAnchor.constraint(equalToConstant: 56).isActive = true
+            button.addAction(UIAction { [weak self] _ in
+                (self?.navigationController as? MediaLibraryNavigationController)?.select(surface)
+            }, for: .touchUpInside)
+        }
+        [musicPill, mini, podcastPill].forEach(playerBar.addArrangedSubview)
         view.addSubview(table)
-        view.addSubview(mini)
+        view.addSubview(playerBar)
+        updatePlayerSurface()
         tableTop = table.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         NSLayoutConstraint.activate([
             tableTop, table.leadingAnchor.constraint(equalTo: view.leadingAnchor), table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            mini.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), mini.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            mini.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), mini.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
+            playerBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16), playerBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            playerBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), playerBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
         ])
         table.contentInset.bottom = 72
         table.verticalScrollIndicatorInsets.bottom = 72
@@ -151,11 +179,17 @@ public class MusicScreenViewController: UIViewController {
     }
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let inset = max(72, view.bounds.maxY - mini.frame.minY + 8)
+        let inset = max(72, view.bounds.maxY - playerBar.frame.minY + 8)
         if abs(table.contentInset.bottom - inset) > 1 {
             table.contentInset.bottom = inset
             table.verticalScrollIndicatorInsets.bottom = inset
         }
+    }
+    private func updatePlayerSurface() {
+        mini.surface = (navigationController as? MediaLibraryNavigationController)?.surface ?? .music
+        musicPill.isHidden = mini.surface == .music
+        podcastPill.isHidden = mini.surface == .podcasts
+        mini.refresh()
     }
     func observe(_ name: Notification.Name, action: @escaping @MainActor () -> Void) {
         notificationTokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
@@ -164,7 +198,7 @@ public class MusicScreenViewController: UIViewController {
     }
     deinit { notificationTokens.forEach(NotificationCenter.default.removeObserver) }
     func presentPlayer(queue: Bool) {
-        if MediaPlaybackCoordinator.shared.active == .podcasts { presentPodcastPlayer(queue: queue); return }
+        if mini.surface == .podcasts { presentPodcastPlayer(queue: queue); return }
         view.endEditing(true)
         let controller = MusicPlayerViewController(showQueue: queue)
         controller.modalPresentationStyle = .fullScreen
@@ -253,6 +287,7 @@ public class MusicScreenViewController: UIViewController {
 @MainActor
 internal final class MusicMiniPlayer: UIVisualEffectView {
     var onOpen: (() -> Void)?
+    var surface: MediaPlaybackCoordinator.Surface = .music
     let art = MusicStyle.artwork()
     let titleLabel = PodcastPlayerTitleView()
     let artistLabel = UILabel()
@@ -285,8 +320,24 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         let open = UIButton(type: .custom)
         open.addAction(UIAction { [weak self] _ in self?.onOpen?() }, for: .touchUpInside)
         open.accessibilityLabel = "Open Now Playing"
-        play = MusicStyle.plainButton("play.fill", label: "Play", size: 18) { Task { try? await MediaPlaybackCoordinator.shared.toggle() } }
-        nextButton = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 16) { MediaPlaybackCoordinator.shared.skip(.forward) }
+        play = MusicStyle.plainButton("play.fill", label: "Play", size: 18) { [weak self] in
+            guard let self else { return }
+            Task {
+                if self.surface == .podcasts {
+                    let player = PodcastPlaybackController.shared
+                    if player.isPlaying || player.isBuffering { player.pause() }
+                    else { try? await player.resume() }
+                } else {
+                    let player = MusicPlaybackController.shared
+                    if player.isPlaying || player.isBuffering { player.pause() }
+                    else { try? await player.resume() }
+                }
+            }
+        }
+        nextButton = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 16) { [weak self] in
+            if self?.surface == .podcasts { PodcastPlaybackController.shared.skip(backward: false) }
+            else { MusicPlaybackController.shared.next() }
+        }
         play.tintColor = .label; nextButton.tintColor = .label
         let stack = UIStackView(arrangedSubviews: [art, labels, play, nextButton]); stack.spacing = 8; stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
@@ -299,11 +350,11 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func refresh() {
-        if MediaPlaybackCoordinator.shared.active == .podcasts {
+        if surface == .podcasts {
             let player = PodcastPlaybackController.shared
-            titleLabel.text = player.currentEpisode?.title ?? "Not Playing"
+            titleLabel.text = player.currentEpisode?.title ?? "Podcasts"
             artistLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""]?.title ?? "Choose a podcast"
-            if podcastArtworkID != player.currentEpisode?.id {
+            if podcastArtworkID != player.currentEpisode?.id || art.image == nil {
                 podcastArtworkID = player.currentEpisode?.id; artworkID = nil
                 PodcastUI.artwork(player.currentEpisode?.artworkURL, into: art)
             }
@@ -319,9 +370,9 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
         podcastArtworkID = nil
         nextButton.configuration?.image = UIImage(systemName: "forward.fill"); nextButton.accessibilityLabel = "Next Song"
         let player = MusicPlaybackController.shared
-        titleLabel.text = player.nowPlaying?.title ?? "Not Playing"
+        titleLabel.text = player.nowPlaying?.title ?? "Music"
         artistLabel.text = player.nowPlaying?.artist ?? "Choose a song from your library"
-        if artworkID != player.nowPlaying?.persistentID {
+        if artworkID != player.nowPlaying?.persistentID || art.image == nil {
             MusicStyle.changeArtwork(art, to: MusicStyle.image(player.nowPlaying, size: 100), hasArtwork: MusicStyle.image(player.nowPlaying) != nil)
             artworkID = player.nowPlaying?.persistentID
         }

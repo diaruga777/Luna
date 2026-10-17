@@ -5,35 +5,25 @@ import LunaMusicCore
 
 @MainActor
 public final class MusicLibraryViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate, UISearchResultsUpdating {
-    private let searchController = UISearchController(searchResultsController: nil)
+    private let searchController = LibrarySearchController(placeholder: "Your Library", identifier: "music.library.search", label: "Search songs, albums, artists, and playlists")
     private var search: UISearchBar { searchController.searchBar }
     private var pendingSearchFocus = false
+    private var focusToken = UUID()
     private var searchTask: Task<Void, Never>?
     private var searchToken = UUID()
     private let library = MusicLibraryController.shared
     private var results: [MusicResult] = []
     private var showingSearchResults = false
     private var query: String { search.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
-    private lazy var podcasts = PodcastLibraryViewController()
     private var downloadedOnly = false
-    private var categories: [(String, String)] { [("Playlists", "music.note.list"), ("Artists", "mic.fill"), ("Albums", "square.stack"), ("Songs", "music.note"), ("Podcasts", "dot.radiowaves.left.and.right")] }
+    private var categories: [(String, String)] { [("Playlists", "music.note.list"), ("Artists", "mic.fill"), ("Albums", "square.stack"), ("Songs", "music.note")] }
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Library"
         navigationController?.navigationBar.prefersLargeTitles = true
-        searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchResultsUpdater = self
-        navigationItem.searchController = searchController
-        navigationItem.preferredSearchBarPlacement = .stacked
-        navigationItem.hidesSearchBarWhenScrolling = false
-        definesPresentationContext = true
-        search.placeholder = "Your Library"
-        search.searchTextField.font = .preferredFont(forTextStyle: .body)
-        search.searchTextField.accessibilityIdentifier = "music.library.search"
+        searchController.install(on: self)
         search.delegate = self
-        search.autocapitalizationType = .none
-        search.autocorrectionType = .no
-        search.accessibilityLabel = "Search songs, albums, artists, and playlists"
         table.dataSource = self; table.delegate = self
         table.register(UITableViewCell.self, forCellReuseIdentifier: "row")
         observe(.lunaMusicLibraryChanged) { [weak self] in self?.update() }
@@ -52,7 +42,9 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         super.viewDidAppear(animated)
         if pendingSearchFocus { searchController.isActive = true; search.becomeFirstResponder(); pendingSearchFocus = false }
     }
+    func cancelPendingSearchFocus() { pendingSearchFocus = false; focusToken = UUID() }
     public func foregroundSearch(query: String = "") {
+        let token = UUID(); focusToken = token
         pendingSearchFocus = true
         loadViewIfNeeded()
         if presentedViewController != nil { dismiss(animated: false) }
@@ -64,30 +56,14 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         search.text = query
         update()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.view.window != nil else { return }
+            guard let self, self.focusToken == token, self.view.window != nil else { return }
             self.searchController.isActive = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self, self.view.window != nil else { return }
+                guard let self, self.focusToken == token, self.view.window != nil else { return }
                 self.search.becomeFirstResponder()
                 self.pendingSearchFocus = false
             }
         }
-    }
-    @discardableResult
-    public func showPodcasts(animated: Bool = true) -> PodcastLibraryViewController {
-        pendingSearchFocus = false
-        loadViewIfNeeded()
-        searchController.isActive = false
-        view.endEditing(true)
-        if presentedViewController != nil { dismiss(animated: false) }
-        guard let navigationController else { return podcasts }
-        if navigationController.viewControllers.contains(where: { $0 === podcasts }) {
-            navigationController.popToViewController(podcasts, animated: false)
-        } else {
-            navigationController.popToRootViewController(animated: false)
-            navigationController.pushViewController(podcasts, animated: animated)
-        }
-        return podcasts
     }
     private func updateFilterMenu() {
         let filter = UIBarButtonItem(image: UIImage(systemName: downloadedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"), menu: MusicListFilter.menu(downloadedOnly: downloadedOnly) { [weak self] in
@@ -100,7 +76,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         navigationItem.rightBarButtonItems = (navigationItem.rightBarButtonItems ?? []).filter { $0.accessibilityLabel != "Music Filters" } + [filter]
     }
     public func showQueue() {
-        pendingSearchFocus = false
+        cancelPendingSearchFocus()
         loadViewIfNeeded()
         if presentedViewController != nil { dismiss(animated: false) }
         searchController.isActive = false
@@ -180,7 +156,6 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             open(results[indexPath.row]); return
         }
         guard indexPath.section == 0 else { return }
-        if indexPath.row == 4 { showPodcasts(); return }
         let items: [MusicResult]
         switch indexPath.row {
         case 0: items = library.playlists.map(MusicResult.playlist)

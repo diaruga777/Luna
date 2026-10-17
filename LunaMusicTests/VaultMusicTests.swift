@@ -1547,7 +1547,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         search.searchBar.text = ""
         controller.updateSearchResults(for: search)
         try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(controller.tableView(controller.table, numberOfRowsInSection: 0), 5)
+        XCTAssertEqual(controller.tableView(controller.table, numberOfRowsInSection: 0), 4)
     }
     func testCollectionSearchCannotApplyObsoleteResultsAfterClearing() async throws {
         let songs = (0..<2000).map { index in
@@ -1590,4 +1590,64 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
 @MainActor private final class CountingPodcastList: PodcastListViewController {
     var reloads = 0
     override func reload() { reloads += 1; super.reload() }
+}
+
+@MainActor final class MediaLibraryNavigationTests: XCTestCase {
+    func testSwitchingKeepsBothStacksWithoutChangingActiveAudio() {
+        let navigation = MediaLibraryNavigationController()
+        navigation.loadViewIfNeeded()
+        let musicDetail = MusicScreenViewController()
+        navigation.pushViewController(musicDetail, animated: false)
+        let active = MediaPlaybackCoordinator.shared.active
+        navigation.select(.podcasts, animated: false)
+        XCTAssertTrue(navigation.viewControllers.first === navigation.podcasts)
+        let podcastDetail = PodcastListViewController()
+        navigation.pushViewController(podcastDetail, animated: false)
+        navigation.select(.music, animated: false)
+        XCTAssertTrue(navigation.topViewController === musicDetail)
+        navigation.select(.podcasts, animated: false)
+        XCTAssertTrue(navigation.topViewController === podcastDetail)
+        XCTAssertEqual(MediaPlaybackCoordinator.shared.active, active)
+        navigation.foregroundSearch(query: "Example")
+        XCTAssertTrue(navigation.topViewController === navigation.music)
+        XCTAssertEqual(navigation.music.navigationItem.searchController?.searchBar.text, "Example")
+    }
+
+    func testPodcastRootSearchClearsBackToSelectionRows() throws {
+        let root = PodcastLibraryViewController()
+        root.loadViewIfNeeded()
+        let browser = try XCTUnwrap(root.children.first as? PodcastBrowserViewController)
+        let search = try XCTUnwrap(root.navigationItem.searchController)
+        XCTAssertNil(root.navigationItem.titleView)
+        func titles() -> [String] {
+            browser.sections.flatMap(\.rows).compactMap { if case .action(let title, _, _) = $0 { return title }; return nil }
+        }
+        XCTAssertEqual(Array(titles().prefix(7)), ["Home", "New", "Shows", "Latest Episodes", "Saved", "Downloaded", "Played"])
+        search.searchBar.text = "A podcast"
+        browser.updateSearchResults(for: search)
+        XCTAssertTrue(browser.isSearching)
+        XCTAssertTrue(titles().isEmpty)
+        search.searchBar.text = ""
+        browser.updateSearchResults(for: search)
+        XCTAssertFalse(browser.isSearching)
+        XCTAssertTrue(titles().contains("Saved"))
+        XCTAssertEqual(root.navigationItem.preferredSearchBarPlacement, .stacked)
+    }
+
+    func testBrowsingOtherSurfaceCanOpenItsPausedPlayer() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let navigation = MediaLibraryNavigationController()
+        window.rootViewController = navigation; window.makeKeyAndVisible()
+        defer { navigation.dismiss(animated: false); window.isHidden = true }
+        let active = MediaPlaybackCoordinator.shared.active
+        if active == .music { navigation.showPodcastQueue() }
+        else { navigation.showMusicQueue() }
+        try await Task.sleep(for: .milliseconds(700))
+        let presented = navigation.presentedViewController
+        if active == .music {
+            XCTAssertTrue((presented as? UINavigationController)?.topViewController is PodcastPlayerViewController)
+        } else { XCTAssertTrue(presented is MusicPlayerViewController) }
+        XCTAssertEqual(MediaPlaybackCoordinator.shared.active, active)
+    }
 }

@@ -19,16 +19,14 @@ final class MusicForegroundTests: XCTestCase {
     func testPodcastsNavigationAndPlaybackSettings() {
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        let podcasts = app.staticTexts["Podcasts"]
+        let podcasts = app.buttons["media.library.podcasts"]
         XCTAssertTrue(podcasts.waitForExistence(timeout: 5)); podcasts.tap()
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         let sections = app.segmentedControls["podcasts.sections"]
-        XCTAssertTrue(sections.waitForExistence(timeout: 5)); sections.buttons["Library"].tap()
+        XCTAssertFalse(sections.exists)
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Downloaded"].exists)
-        sections.buttons["Search"].tap()
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
-        sections.buttons["Home"].tap()
+        XCTAssertTrue(app.searchFields["podcasts.search"].waitForExistence(timeout: 5))
         let more = app.navigationBars.buttons["Podcast Options"]
         XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
         app.buttons["Settings"].tap()
@@ -43,7 +41,7 @@ final class MusicForegroundTests: XCTestCase {
         guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        app.staticTexts["Podcasts"].tap()
+        app.buttons["media.library.podcasts"].tap()
         app.navigationBars.buttons["Podcast Options"].tap()
         app.buttons["Follow a Show by URL"].tap()
         let field = app.alerts.textFields.firstMatch
@@ -66,7 +64,7 @@ final class MusicForegroundTests: XCTestCase {
         }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        app.staticTexts["Podcasts"].tap()
+        app.buttons["media.library.podcasts"].tap()
         app.navigationBars.buttons["Podcast Options"].tap()
         app.buttons["Follow a Show by URL"].tap()
         let field = app.alerts.textFields.firstMatch
@@ -102,7 +100,7 @@ final class MusicForegroundTests: XCTestCase {
         guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        app.staticTexts["Podcasts"].tap()
+        app.buttons["media.library.podcasts"].tap()
         app.navigationBars.buttons["Podcast Options"].tap()
         app.buttons["Follow a Show by URL"].tap()
         let field = app.alerts.textFields.firstMatch
@@ -176,15 +174,15 @@ final class MusicForegroundTests: XCTestCase {
         app.buttons["Close Now Playing"].tap()
         app.navigationBars.buttons["Following"].tap()
         app.navigationBars.buttons["BackButton"].tap()
-        app.navigationBars.buttons["BackButton"].tap()
-        XCTAssertTrue(app.staticTexts["Podcasts"].waitForExistence(timeout: 5))
+        app.buttons["media.library.music"].tap()
+        XCTAssertTrue(app.buttons["media.library.podcasts"].waitForExistence(timeout: 5))
     }
 
     func testDownloadedPodcastResumesAfterColdRelaunch() throws {
         guard let feedURL = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        app.staticTexts["Podcasts"].tap()
+        app.buttons["media.library.podcasts"].tap()
         app.navigationBars.buttons["Podcast Options"].tap()
         app.buttons["Follow a Show by URL"].tap()
         let field = app.alerts.textFields.firstMatch
@@ -224,7 +222,7 @@ final class MusicForegroundTests: XCTestCase {
     func testRootOptionsAndDownloadedFilters() {
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        XCTAssertTrue(app.staticTexts["Podcasts"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["media.library.podcasts"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Downloaded"].exists)
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         app.navigationBars.buttons["Music Filters"].tap()
@@ -238,7 +236,7 @@ final class MusicForegroundTests: XCTestCase {
             app.navigationBars.buttons["Library"].tap()
         }
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Library root with Podcasts and Downloaded filter"
+        screenshot.name = "Music player switch and Downloaded filter"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
@@ -246,19 +244,63 @@ final class MusicForegroundTests: XCTestCase {
     func testPodcastBrowsingSurvivesForegroundAndSearchLinkReturnsToMusic() {
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
-        app.staticTexts["Podcasts"].tap()
+        app.buttons["media.library.podcasts"].tap()
         let sections = app.segmentedControls["podcasts.sections"]
-        XCTAssertTrue(sections.waitForExistence(timeout: 5))
-        sections.buttons["Library"].tap()
+        XCTAssertFalse(sections.exists)
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(sections.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Saved"].exists)
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.keyboards.firstMatch.exists)
         app.open(URL(string: "lunamusic://search")!)
         XCTAssertTrue(app.searchFields["music.library.search"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(sections.exists)
+    }
+
+    func testPlayerPillsSwitchSurfacesAndPreserveNavigation() {
+        let podcastPill = app.buttons["media.library.podcasts"]
+        XCTAssertTrue(podcastPill.waitForExistence(timeout: 5))
+        let open = app.buttons["Open Now Playing"]
+        XCTAssertLessThan(open.frame.maxX, podcastPill.frame.minX)
+        podcastPill.tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.segmentedControls["podcasts.sections"].exists)
+        let musicPill = app.buttons["media.library.music"]
+        XCTAssertLessThan(musicPill.frame.maxX, open.frame.minX)
+        app.staticTexts["Saved"].tap()
+        XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 5))
+        musicPill.tap()
+        XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tables.cells.containing(.staticText, identifier: "Podcasts").firstMatch.exists)
+        podcastPill.tap()
+        XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let search = app.searchFields["podcasts.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
+        search.typeText("NoSuchPodcastLuna")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
+        musicPill.tap()
+        XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
+        podcastPill.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "NoSuchPodcastLuna")
+        search.tap()
+        let clear = app.buttons["Clear text"]
+        XCTAssertTrue(clear.exists); clear.tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Podcast root search and two-sided player bar"
+        screenshot.lifetime = .keepAlways; add(screenshot)
+        // Exercise the reverse switch while podcast search still owns the keyboard.
+        musicPill.tap()
+        XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
+        podcastPill.tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        app.buttons["Open Now Playing"].tap()
+        XCTAssertTrue(app.buttons["Playback Speed"].waitForExistence(timeout: 5))
+        app.buttons["Close Now Playing"].tap()
     }
 
     func testVaultCacheSettingsAndPlaylistSourceChoice() {

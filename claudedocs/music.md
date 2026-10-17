@@ -65,8 +65,13 @@ Both the app and Mac companion must be updated for the music service.
 
 ## Downloads
 
-The Library root lists Playlists, Artists, Albums, Songs and **Podcasts**, all in one
-navigation stack. There is no tab bar or separate Downloaded root destination.
+The Music Library root lists Playlists, Artists, Albums and Songs. The floating
+player bar switches libraries: Music stays on the left and Podcasts on the right.
+The selected surface expands to show its own artwork, title and playback controls;
+the other remains a 56-point icon pill. Switching preserves each library's navigation
+stack, search query and scroll position, and does not start or interrupt audio.
+Play explicitly resumes that surface's queue. There is no tab bar or separate
+Downloaded music root destination.
 **Downloaded** is a checked filter in the root search menu and every music list's
 filter/sort menu, including playlist options and Add Music. It combines with search,
 shows artists/albums/playlists with at least one local track, and carries into opened
@@ -99,7 +104,7 @@ backgrounded without active audio; retry/foreground refresh resumes the policy.
 return from background while browsing music. Podcast browsing stays open on return
 and is restored on cold launch; the former Podcasts tab preference migrates to this
 navigation state. Explicit search links return to the Library, and podcast episode/queue
-routes open Podcasts within the same stack. Permission alerts and transient inactive states do not
+routes select Podcasts and open the requested episode or queue. Permission alerts and transient inactive states do not
 reset navigation. An incoming `lunamusic://queue` URL takes precedence and opens
 the queue without the keyboard; `lunamusic://search?q=…` supplies a query. App
 Intent routes are retained until a cold-start scene has installed observers.
@@ -111,7 +116,8 @@ Shortcuts, widgets, Control Center and CarPlay. The app and
 widget use the family App Group for a small, separate music state snapshot.
 
 The UI uses native UIKit navigation search, sheets, controls and iOS 26 Liquid
-Glass for floating playback controls. The compact 48-point mini player opens the full-screen player with
+Glass for floating playback controls. The mini player grows from 56 points to fit
+Dynamic Type and opens the selected surface's full-screen player with
 UIKit's interactive zoom transition; artwork changes use a brief dissolve.
 List typography, artwork sizes, collection headers and search typography follow
 the supplied Apple Music references while retaining Dynamic Type.
@@ -230,11 +236,14 @@ The settings screenshot was inspected for layout and readable controls.
 
 ## Podcasts (2026-10-08)
 
-Podcasts opens from the Library root alongside the music categories. Music and
-Podcasts retain independent queues.
-The Podcasts surface includes Home (continue/latest/recent), New (public directory
-charts and categories), Library (followed shows/latest/saved/downloaded/played,
-custom stations and favorite categories), and show/episode/library search.
+Podcasts opens from the right-hand player pill. Music and Podcasts retain
+independent queues. Its root mirrors Music's selection table: Home
+(continue/latest/recent), New (public directory charts and categories), Shows,
+Latest Episodes, Saved, Downloaded and Played, followed by custom stations and
+favorite categories. Both roots share the native stacked navigation search UI.
+Podcast search is always available at the root, with Shows, Episodes and Your
+Library scopes; clearing the query restores the selection rows. The former top
+section selector and separate Search destination are removed.
 Apple's public iTunes directory supplies discovery; publisher RSS/Atom feeds
 supply the episodes. A URL entry point accepts private or public feed addresses.
 Podcast access does not depend on Apple Music authorization.
@@ -688,3 +697,21 @@ Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 21 focused layout,
 responsiveness and long-text tests passed. The large-archive UI check passed
 More/Less expansion, scrolling and full notes; the RSS playback/queue integration
 also passed. Screenshots of the player, rows and episode details were inspected.
+
+### Player-bar library switching (2026-10-18)
+
+`MediaLibraryNavigationController` retains a stack per library. Switching from an
+active search waits for UIKit's dismissal before replacing the stack, then restores
+the outgoing query. Foreground music focus uses a cancellation token so leaving
+Music cancels pending focus without suppressing the normal foreground retry.
+Queue and episode links dismiss current presentations before routing. Mini and
+full-player controls target the displayed surface; remote queue changes still
+replace an already-open player after its presentation finishes.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. Across targeted runs, 29 hosted
+navigation, layout, search and player regressions and seven UI checks passed.
+UI coverage includes both pill directions with the keyboard open, retained
+navigation/query, clearing podcast search, podcast settings, music filters,
+foreground search and warm/cold queue links. Both expanded-bar layouts and podcast
+search were visually inspected. The existing local-audio startup regression timed
+out both here and on unchanged main; audio startup is not claimed green.

@@ -135,9 +135,15 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
             label.textColor = UIColor.white.withAlphaComponent(0.5)
         }
         remaining.textAlignment = .right
-        let previous = MusicStyle.plainButton("backward.fill", label: "Previous Song", size: 24) { [weak self] in MediaPlaybackCoordinator.shared.skip(.backward) }
+        let previous = MusicStyle.plainButton("backward.fill", label: "Previous Song", size: 24) { [weak self] in
+            if MediaPlaybackCoordinator.shared.active == .music { MediaPlaybackCoordinator.shared.skip(.backward) }
+            else { self?.player.previous() }
+        }
         play = MusicStyle.plainButton("play.fill", label: "Play", size: 34) { [weak self] in self?.player.togglePlayPause() }
-        let next = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 24) { [weak self] in MediaPlaybackCoordinator.shared.skip(.forward) }
+        let next = MusicStyle.plainButton("forward.fill", label: "Next Song", size: 24) { [weak self] in
+            if MediaPlaybackCoordinator.shared.active == .music { MediaPlaybackCoordinator.shared.skip(.forward) }
+            else { self?.player.next() }
+        }
         [previous, play!, next].forEach { $0.configuration?.baseForegroundColor = .white; transport.addArrangedSubview($0) }
         transport.distribution = .fillEqually
         volume.showsRouteButton = false

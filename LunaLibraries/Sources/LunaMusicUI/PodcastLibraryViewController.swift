@@ -2,15 +2,13 @@ import UIKit
 import LunaPodcastCore
 import LunaMusicCore
 
-@MainActor public final class PodcastLibraryViewController: MusicScreenViewController {
-    private let pages = UISegmentedControl(items: ["Home", "New", "Library", "Search"])
+@MainActor public final class PodcastLibraryViewController: UIViewController {
     private let content = PodcastBrowserViewController()
     public override func viewDidLoad() {
-        super.viewDidLoad(); table.isHidden = true; mini.isHidden = true
+        super.viewDidLoad()
         title = "Podcasts"; view.tintColor = .systemPurple
-        navigationItem.titleView = pages; pages.selectedSegmentIndex = 0
-        pages.accessibilityIdentifier = "podcasts.sections"
-        pages.addAction(UIAction { [weak self] _ in guard let self else { return }; self.content.mode = self.pages.selectedSegmentIndex }, for: .valueChanged)
+        navigationController?.navigationBar.prefersLargeTitles = true
+        content.mode = 4
         addChild(content); view.addSubview(content.view); content.view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor), content.view.topAnchor.constraint(equalTo: view.topAnchor), content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
         content.didMove(toParent: self)
@@ -22,7 +20,6 @@ import LunaMusicCore
         ]))
         navigationItem.rightBarButtonItem?.accessibilityLabel = "Podcast Options"
         Task { await PodcastLibraryController.shared.refresh() }
-        Task { await content.discover() }
     }
     public func showQueue() { loadViewIfNeeded(); content.presentPodcastPlayer(queue: true) }
     public func openEpisode(_ id: String) {
@@ -61,7 +58,7 @@ import LunaMusicCore
 @MainActor final class PodcastBrowserViewController: PodcastListViewController, UISearchResultsUpdating {
     weak var navigationOwner: UIViewController? { didSet { configureSearch() } }
     var mode = 0 { didSet { cancelDirectoryOpening(); cancelPrefetching(); configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
-    private let search = UISearchController(searchResultsController: nil)
+    private let search = LibrarySearchController(placeholder: "All Podcasts", identifier: "podcasts.search", label: "Search podcasts")
     private var searchTask: Task<Void, Never>?
     private var results: [PodcastDirectoryResult] = []
     private var discoveryMessage: String?
@@ -73,14 +70,21 @@ import LunaMusicCore
     private(set) var isSearching = false
     var directory = PodcastDirectory()
     override func viewDidLoad() {
-        super.viewDidLoad(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
+        super.viewDidLoad(); search.searchResultsUpdater = self
         search.searchBar.placeholder = "All Podcasts"; search.searchBar.scopeButtonTitles = ["Shows", "Episodes", "Your Library"]
         search.searchBar.delegate = self; search.searchBar.accessibilityIdentifier = "podcasts.search"
-        reload()
+        configureSearch(); reload()
     }
     private func configureSearch() {
-        navigationOwner?.navigationItem.searchController = mode == 3 ? search : nil
-        navigationOwner?.navigationItem.hidesSearchBarWhenScrolling = false
+        if mode == 3 || mode == 4 { search.install(on: navigationOwner ?? self) }
+    }
+    private var showingSearch: Bool {
+        mode == 3 || (mode == 4 && !(search.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    private func openPage(_ mode: Int, title: String) {
+        view.endEditing(true)
+        let page = PodcastBrowserViewController(); page.mode = mode; page.title = title
+        navigationController?.pushViewController(page, animated: true)
     }
     func discover(force: Bool = false) async {
         guard charts.isEmpty, !isDiscovering else { return }
@@ -98,7 +102,7 @@ import LunaMusicCore
     }
     override func refreshContent() async {
         if mode == 1 { charts = []; await discover(force: true) }
-        else if mode == 3 { updateSearchResults(for: search); await searchTask?.value }
+        else if showingSearch { updateSearchResults(for: search); await searchTask?.value }
         else { await super.refreshContent() }
     }
     override func reload() {
@@ -106,7 +110,7 @@ import LunaMusicCore
         let followed = state.shows.values.filter(\.followed).sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         let latest = PodcastPolicies.ordered(state.episodes.values.filter { state.shows[$0.showID]?.followed == true && state.progress[$0.id]?.listened != true }, newestFirst: true)
         table.tableFooterView = nil; table.tableHeaderView = nil
-        switch mode {
+        switch showingSearch ? 3 : mode {
         case 0:
             sections = []
             if let id = state.lastPlayedEpisodeID, let episode = state.episodes[id] { sections.append(.init(title: "Continue Listening", rows: [.episode(episode)])) }
@@ -120,8 +124,12 @@ import LunaMusicCore
             })]
             if isDiscovering { loading("Loading Top Shows", atTop: true) }
             else if let message = discoveryMessage { empty("Unable to Load Shows", detail: message, atTop: true, retry: { [weak self] in Task { await self?.discover() } }) }
-        case 2:
-            sections = [.init(title: "Library", rows: [
+        case 2, 4:
+            let browsing: [Row] = mode == 4 ? [
+                .action("Home", "house") { [weak self] in self?.openPage(0, title: "Home") },
+                .action("New", "sparkles") { [weak self] in self?.openPage(1, title: "New") }
+            ] : []
+            sections = [.init(title: "", rows: browsing + [
                 .action("Shows", "dot.radiowaves.left.and.right") { [weak self] in self?.openEpisodes(title: "Shows", shows: followed) },
                 .action("Latest Episodes", "clock") { [weak self] in self?.openEpisodes(title: "Latest Episodes", episodes: latest) },
                 .action("Saved", "bookmark") { [weak self] in self?.openEpisodes(title: "Saved", episodes: PodcastPolicies.ordered(state.episodes.values.filter { state.progress[$0.id]?.saved == true }, newestFirst: true)) },
@@ -129,6 +137,7 @@ import LunaMusicCore
                 .action("Played", "checkmark.circle") { [weak self] in self?.openEpisodes(title: "Played", episodes: PodcastPolicies.ordered(state.episodes.values.filter { state.progress[$0.id]?.listened == true }, newestFirst: true)) }
             ]), .init(title: "Stations", rows: state.stations.map { station in .action(station.name, "rectangle.stack") { [weak self] in self?.navigationController?.pushViewController(PodcastStationViewController(id: station.id), animated: true) } }),
                 .init(title: "Favorite Categories", rows: PodcastDirectory.categories.filter { state.settings.favoriteCategories.contains($0.id) }.map { category in .action(category.name, "star") { [weak self] in self?.navigationController?.pushViewController(PodcastCategoryViewController(category: category), animated: true) } })]
+            sections.removeAll { $0.rows.isEmpty }
         default:
             let query = search.searchBar.text ?? ""
             if search.searchBar.selectedScopeButtonIndex == 2 {
@@ -139,6 +148,17 @@ import LunaMusicCore
             else if sections.allSatisfy({ $0.rows.isEmpty }) { empty(message == nil ? "No Results" : "Search Unavailable", detail: message ?? "Try another title or topic.", retry: message == nil ? nil : { [weak self] in guard let self else { return }; self.updateSearchResults(for: self.search) }) }
         }
         super.reload()
+    }
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
+        if mode == 4 && !showingSearch, var config = cell.contentConfiguration as? UIListContentConfiguration {
+            config.textProperties.font = .preferredFont(forTextStyle: .title2)
+            config.imageProperties.tintColor = .label
+            config.imageProperties.reservedLayoutSize = CGSize(width: 34, height: 34)
+            config.directionalLayoutMargins.top = 12; config.directionalLayoutMargins.bottom = 12
+            cell.contentConfiguration = config
+        }
+        return cell
     }
     func updateSearchResults(for searchController: UISearchController) {
         cancelDirectoryOpening(); cancelPrefetching()
@@ -162,6 +182,7 @@ import LunaMusicCore
     }
 }
 extension PodcastBrowserViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
     func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) { updateSearchResults(for: search) }
 }
 @MainActor final class PodcastStaticListViewController: PodcastListViewController {

@@ -1,3 +1,4 @@
+import LunaPremium
 import UIKit
 import LunaCodeCore
 import LunaCodeUI
@@ -6,6 +7,11 @@ import LunaVaultStore
 import LunaVaultTailscale
 
 @main final class CodeAppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        PremiumAccess.shared.start()
+        return true
+    }
+
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         let config = UISceneConfiguration(name: "Default", sessionRole: session.role); config.delegateClass = CodeSceneDelegate.self; return config
     }

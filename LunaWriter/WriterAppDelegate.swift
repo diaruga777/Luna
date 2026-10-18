@@ -1,3 +1,4 @@
+import LunaPremium
 import UIKit
 import LunaWriterLibraryUI
 
@@ -7,6 +8,7 @@ final class WriterAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        PremiumAccess.shared.start()
         WriterWiring.install()
         return true
     }

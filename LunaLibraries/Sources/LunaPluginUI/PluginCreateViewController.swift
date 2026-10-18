@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaPremium
 import LunaModels
 import LunaStorage
 import UIKit
@@ -16,8 +17,10 @@ import UIKit
 /// with the answer.
 public final class PluginCreateViewController: UIViewController {
 
+    private var requestingAccess = false
     private let handoffStore: LLMHandoffStore
     private let launcher: any LLMLaunching
+    private let premiumState: PremiumAccessState
 
     private let descriptionView = UITextView()
     private let placeholderLabel = UILabel()
@@ -29,10 +32,12 @@ public final class PluginCreateViewController: UIViewController {
     public init(
         prefill: String? = nil,
         handoffStore: LLMHandoffStore = .shared,
-        launcher: any LLMLaunching
+        launcher: any LLMLaunching,
+        premiumState: PremiumAccessState? = nil
     ) {
         self.handoffStore = handoffStore
         self.launcher = launcher
+        self.premiumState = premiumState ?? PremiumAccess.shared.state
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("Plugins_create1Title")
         descriptionView.text = prefill ?? ""
@@ -51,7 +56,29 @@ public final class PluginCreateViewController: UIViewController {
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        guard premiumState.hasAccess else {
+            requestPremiumAccess()
+            return
+        }
         if descriptionView.text.isEmpty { descriptionView.becomeFirstResponder() }
+    }
+
+    private func requestPremiumAccess() {
+        guard !requestingAccess else { return }
+        requestingAccess = true
+        descriptionView.resignFirstResponder()
+        let sheet = PremiumUnlockViewController { [weak self] allowed in
+            guard let self else { return }
+            requestingAccess = false
+            if allowed {
+                if descriptionView.text.isEmpty { descriptionView.becomeFirstResponder() }
+            } else if let navigationController, navigationController.viewControllers.first !== self {
+                navigationController.popViewController(animated: true)
+            } else { dismiss(animated: true) }
+        }
+        let navigation = UINavigationController(rootViewController: sheet)
+        navigation.sheetPresentationController?.detents = [.medium(), .large()]
+        present(navigation, animated: true)
     }
 
     private func build() {
@@ -170,6 +197,7 @@ extension PluginCreateViewController: UITextViewDelegate {
 
 extension PluginCreateViewController: LLMHandoffRowDelegate {
     public func row(_ row: LLMHandoffRowView, didChoose provider: LLMProvider) {
+        guard premiumState.hasAccess else { requestPremiumAccess(); return }
         let description = descriptionView.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !description.isEmpty else {
             descriptionView.becomeFirstResponder()

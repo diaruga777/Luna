@@ -26,7 +26,6 @@ file_ref ||= group.new_reference(source_name)
 
 NEW_TARGETS = {
   "LunaLaunchTests" => { host: "Luna", bundle_id: "$(PRODUCT_BUNDLE_PREFIX).launchtests" },
-  "LunaReaderLaunchTests" => { host: "LunaReader", bundle_id: "$(PRODUCT_BUNDLE_PREFIX).reader.launchtests" },
 }
 
 NEW_TARGETS.each do |name, spec|

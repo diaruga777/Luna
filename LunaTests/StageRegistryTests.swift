@@ -78,10 +78,10 @@ final class StageRegistryTests: XCTestCase {
     /// `LunaApp.handles*` has to be made deliberately in both places.
     func testKindAppSetsMatchTheDocumentedSplit() {
         XCTAssertEqual(StageDescriptor.Kind.shared.apps, LunaApp.legacyContentApps)
-        XCTAssertEqual(StageDescriptor.Kind.article.apps, [.luna, .reader])
-        XCTAssertEqual(StageDescriptor.Kind.email.apps, [.luna, .reader])
-        XCTAssertEqual(StageDescriptor.Kind.media.apps, [.luna, .downloader])
-        XCTAssertEqual(StageDescriptor.Kind.product.apps, [.luna, .priceTracker])
+        XCTAssertEqual(StageDescriptor.Kind.article.apps, [.luna])
+        XCTAssertEqual(StageDescriptor.Kind.email.apps, [.luna])
+        XCTAssertEqual(StageDescriptor.Kind.media.apps, [.luna])
+        XCTAssertEqual(StageDescriptor.Kind.product.apps, [.luna])
         XCTAssertEqual(StageDescriptor.Kind.plugin.apps, [.luna])
     }
 
@@ -143,26 +143,14 @@ final class StageRegistryTests: XCTestCase {
     /// (`claudedocs/surface-support.md`). A dropped exception compiles as a
     /// missing-symbol error, but only on a CLEAN build of that target, so pin
     /// the project file itself.
-    func testKindCatalogsAreExcludedFromForeignTargets() throws {
+    func testRetiredTargetsAreRemovedAndCoreKeepsAllCatalogs() throws {
         let exclusions = try membershipExceptionsByTarget()
-        let expected: [(catalog: String, foreignTargets: [String])] = [
-            ("Article", ["LunaDownloader", "LunaPriceTracker"]),
-            ("Email", ["LunaDownloader", "LunaPriceTracker"]),
-            ("Media", ["LunaReader", "LunaPriceTracker"]),
-            ("Product", ["LunaReader", "LunaDownloader"]),
-            ("Plugins", ["LunaReader", "LunaDownloader", "LunaPriceTracker"]),
-        ]
-        for (catalog, foreignTargets) in expected {
-            for target in foreignTargets {
-                let excluded = try XCTUnwrap(
-                    exclusions[target], "no exception set at all for \(target)")
-                XCTAssertTrue(
-                    excluded.contains("Stage/StageCatalog+\(catalog).swift"),
-                    """
-                    \(target) must exclude Stage/StageCatalog+\(catalog).swift — \
-                    it does not link that kind, so the file cannot compile there.
-                    """)
-            }
+        for target in ["LunaReader", "LunaDownloader", "LunaPriceTracker"] {
+            XCTAssertNil(exclusions[target])
+        }
+        let core = try XCTUnwrap(exclusions["Luna"])
+        for catalog in ["Article", "Email", "Media", "Product", "Plugins"] {
+            XCTAssertFalse(core.contains("Stage/StageCatalog+\(catalog).swift"))
         }
     }
 

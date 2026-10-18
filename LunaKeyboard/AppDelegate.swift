@@ -1,11 +1,17 @@
 import LunaKeyboardCore
 import LunaKeyboardUI
 import LunaStorage
+import LunaPremium
 import UIKit
 import UniformTypeIdentifiers
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
+  func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+      PremiumAccess.shared.start()
+      return true
+  }
+
   func application(
     _ application: UIApplication, configurationForConnecting session: UISceneSession,
     options: UIScene.ConnectionOptions

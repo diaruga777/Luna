@@ -10,17 +10,15 @@ deployment.
 
 | App | Xcode scheme | What it does |
 | --- | --- | --- |
-| Luna Reader | `Luna` or `LunaReader` | Reads articles, paywalled pages, and documents, with scrolling and RSVP speed-reading modes and Send to Kindle. |
-| Luna Downloader | `LunaDownloader` | Saves social, video, and audio links; includes optional friend sharing. |
-| Luna Price Tracker | `LunaPriceTracker` | Tracks product prices. |
+| Luna: Save Anything | `Luna` | Saves articles, documents, social/video/audio links and products; includes readers, Kindle export, friend sharing and price tracking. Media and transcript plugins are installed separately. |
 | Luna Keyboard | `LunaKeyboard` | A standalone keyboard with shortcuts, swipe typing, emoji, and Luna link/video suggestions. |
 | Luna Music | `LunaMusic` | A MusicKit and MediaPlayer library player with search, playlists, Siri, widgets, and a queue Live Activity. |
 | Luna Vault | `LunaVault` | An encrypted, search-first file library for on-device, iCloud, or a user-owned Mac storage. |
 | Luna Code | `LunaCode` | An iPhone/iPad source editor with local drafts and syntax checks, plus Mac-backed completion, diagnostics, builds, and TestFlight jobs. |
 | Luna Writer | `LunaWriter` | A native writing and document library app. |
 
-The three link apps, Vault, Keyboard, and Writer use the shared `saves.sqlite`
-store where applicable. Music has its own library and does not use that store.
+Luna and Keyboard share `saves.sqlite`. Vault and Writer have separate file
+stores, and Music has its own library.
 See [`claudedocs/`](claudedocs/) for feature and architecture details.
 
 ## Requirements

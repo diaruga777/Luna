@@ -1626,3 +1626,24 @@
 "Library_searchUnavailable_Luna" = "Search is temporarily unavailable.";
 
 "Common_retry_Luna" = "Try again";
+
+/* Plugin bundles and premium */
+"Premium_title_Luna" = "Premium features";
+"Premium_createPlugins_Luna" = "Create your own plugins";
+"Premium_supportDescription_Luna" = "Support Luna with a one-time purchase. Paid premium unlocks across all Luna apps.";
+"Premium_loadingPrice_Luna" = "Loading price…";
+"Premium_unlockWithoutPaying_Luna" = "Unlock without paying";
+"Premium_restorePurchases_Luna" = "Restore purchases";
+"Premium_retryPurchase_Luna" = "Retry purchase";
+"Premium_priceUnavailable_Luna" = "Apple’s price is unavailable. You can retry or unlock without paying.";
+"Premium_noPurchase_Luna" = "No previous premium purchase was found.";
+"Premium_freeMessage_Luna" = "Unlock for free. If you like Luna please support development by paying for premium features, but I want everyone to benefit so you can get in free if you want";
+"Premium_continueForFree_Luna" = "Continue for free";
+"Premium_purchaseUnavailable_Luna" = "The purchase is unavailable right now. Please try again later, or unlock without paying.";
+"Premium_unverified_Luna" = "Apple could not verify this purchase. Please try restoring purchases.";
+"Premium_pending_Luna" = "Your purchase is awaiting approval. Premium will unlock when Apple confirms it.";
+"PluginBundles_exportTitle_Luna" = "Export plugins";
+"PluginBundles_exportAccessibility_Luna" = "Export plugin bundle";
+"PluginBundles_exportDescription_Luna" = "Select plugins to share as a .lunabundle file. Settings, passwords and permissions are not included.";
+"PluginBundles_exportFailed_Luna" = "Export failed";
+"Premium_unlockPrice_Luna" = "Unlock Premium · %@";

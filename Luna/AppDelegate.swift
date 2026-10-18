@@ -13,6 +13,7 @@ import LunaDesignSystem
 import LunaStorage
 import LunaWeekly
 import BackgroundTasks
+import LunaPremium
 import UIKit
 import UserNotifications
 import os
@@ -78,6 +79,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // launch path, so one assert covers them.
         assert(AppConfig.resolvedFromInfoPlist, "LunaAppGroupID did not resolve from Info.plist")
         #endif
+
+        if NSClassFromString("XCTestCase") == nil { PremiumAccess.shared.start() }
 
         // Install only what the saved-card hierarchy reads while it is built.
         // Plugins, ingest handlers and maintenance wait for a displayed frame.

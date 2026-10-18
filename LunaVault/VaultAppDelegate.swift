@@ -1,4 +1,5 @@
 import BackgroundTasks
+import LunaPremium
 import UIKit
 import LunaVaultUI
 
@@ -8,6 +9,7 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        PremiumAccess.shared.start()
         // Unit tests inject isolated stores/transports. Never reconnect the
         // user's real paired Mac just because the app is their test host.
         if NSClassFromString("XCTestCase") == nil {

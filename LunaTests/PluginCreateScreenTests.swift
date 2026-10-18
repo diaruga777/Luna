@@ -8,6 +8,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaPremium
 import LunaPluginUI
 import LunaStorage
 import UIKit
@@ -15,6 +16,30 @@ import XCTest
 
 @MainActor
 final class PluginCreateScreenTests: XCTestCase {
+    private func unlockedState() -> PremiumAccessState {
+        let defaults = UserDefaults(suiteName: "test.premium.\(UUID().uuidString)")!
+        let state = PremiumAccessState(defaults: defaults)
+        state.continueForFree()
+        return state
+    }
+
+
+    func testTryingToCreateWithoutAccessShowsPremiumAndNeverHandsOff() {
+        let launcher = RecordingCreateLauncher()
+        let store = temporaryHandoffStore()
+        let state = PremiumAccessState(defaults: UserDefaults(suiteName: "test.premium.locked.\(UUID().uuidString)")!)
+        let screen = PluginCreateViewController(prefill: "https://example.com", handoffStore: store,
+            launcher: launcher, premiumState: state)
+        let window = UITestSupport.host(screen)
+        screen.row(LLMHandoffRowView(), didChoose: .chatGPT)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertTrue(launcher.opened.isEmpty)
+        XCTAssertNil(store.pluginRecord())
+        let sheet = screen.presentedViewController as? UINavigationController
+        XCTAssertEqual(sheet?.topViewController?.title, "Premium features")
+        sheet?.dismiss(animated: false)
+        window.isHidden = true
+    }
 
     func testAFailedSavePrefillsTheURLTheFailureAndTheMatchedPlugins() {
         let text = PluginCreateViewController.prefill(
@@ -47,7 +72,7 @@ final class PluginCreateScreenTests: XCTestCase {
         let launcher = RecordingCreateLauncher()
         let screen = PluginCreateViewController(
             prefill: "https://recipes.example.com/slow-roast — save the recipe",
-            handoffStore: temporaryHandoffStore(), launcher: launcher)
+            handoffStore: temporaryHandoffStore(), launcher: launcher, premiumState: unlockedState())
         _ = UITestSupport.host(screen)
 
         screen.row(LLMHandoffRowView(), didChoose: .chatGPT)
@@ -64,7 +89,7 @@ final class PluginCreateScreenTests: XCTestCase {
         let store = temporaryHandoffStore()
         let first = PluginCreateViewController(
             prefill: "https://recipes.example.com/a — save the recipe",
-            handoffStore: store, launcher: RecordingCreateLauncher())
+            handoffStore: store, launcher: RecordingCreateLauncher(), premiumState: unlockedState())
         _ = UITestSupport.host(first)
         first.row(LLMHandoffRowView(), didChoose: .chatGPT)
 
@@ -76,7 +101,7 @@ final class PluginCreateScreenTests: XCTestCase {
         XCTAssertEqual(host, "recipes.example.com")
 
         let second = PluginCreateViewController(
-            handoffStore: store, launcher: RecordingCreateLauncher())
+            handoffStore: store, launcher: RecordingCreateLauncher(), premiumState: unlockedState())
         _ = UITestSupport.host(second)
         XCTAssertTrue(
             textViews(in: second).contains(
@@ -85,7 +110,7 @@ final class PluginCreateScreenTests: XCTestCase {
 
     func testAnEmptyDescriptionAsksForOneRatherThanOpeningAProvider() {
         let launcher = RecordingCreateLauncher()
-        let screen = PluginCreateViewController(handoffStore: temporaryHandoffStore(), launcher: launcher)
+        let screen = PluginCreateViewController(handoffStore: temporaryHandoffStore(), launcher: launcher, premiumState: unlockedState())
         _ = UITestSupport.host(screen)
 
         screen.row(LLMHandoffRowView(), didChoose: .claude)
@@ -98,7 +123,7 @@ final class PluginCreateScreenTests: XCTestCase {
         let store = temporaryHandoffStore()
         let description = String(repeating: "保存", count: 600)
         let screen = PluginCreateViewController(
-            prefill: description, handoffStore: store, launcher: launcher)
+            prefill: description, handoffStore: store, launcher: launcher, premiumState: unlockedState())
         _ = UITestSupport.host(screen)
         let prompt = LLMHandoffPrompts.pluginCreation(description: description, host: nil)
         XCTAssertNil(LLMDeepLink.url(for: .chatGPT, prompt: prompt))

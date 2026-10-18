@@ -1,0 +1,32 @@
+{
+  "identifier": "6941A394-1425-4B0D-8852-F8C17B0DD229",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "2.00",
+      "familyShareable": false,
+      "internalID": "6824195803",
+      "localizations": [
+        {
+          "description": "Premium features across Luna apps.",
+          "displayName": "Luna Premium",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.hsanabria.luna.premium",
+      "referenceName": "Luna Premium",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "6800900997",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA"
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

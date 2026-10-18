@@ -29,7 +29,7 @@ let package = Package(
         // Each kit lists every target its app group reaches directly.
         // Transitive dependencies come along on their own.
         .library(name: "LunaKit", type: .dynamic, targets: [
-            "LunaAppConfig", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",
+            "LunaAppConfig", "LunaPremium", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",
             "LunaBundledPlugins", "LunaDesignSystem", "LunaDocuments", "LunaEpub",
             "LunaFetch", "LunaGaze", "LunaHTMLClassification", "LunaIngest",
             "LunaIntents", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload",
@@ -44,32 +44,6 @@ let package = Package(
             // central app's Reader eye tracking uses. The rest of the Writer
             // tier is in the `LunaWriter` app and `LunaWriterTests` alone.
             "LunaWriterModels",
-        ]),
-        .library(name: "LunaReaderKit", type: .dynamic, targets: [
-            "LunaAppConfig", "LunaArchiveReader", "LunaArticleIngest", "LunaAudioPlayback",
-            "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaFetch",
-            "LunaHTMLClassification", "LunaIngest", "LunaIntents", "LunaMailAccount",
-            "LunaMailTransport", "LunaMediaResolve", "LunaModels", "LunaPaywallBypass",
-            "LunaPriceCompare", "LunaPriceMetadata", "LunaReaderEngine", "LunaReaderUI",
-            "LunaSaves", "LunaSavesUI", "LunaSend", "LunaShareSurface",
-            "LunaSocial", "LunaSocialUI", "LunaStorage", "LunaTransitions",
-            "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
-        ]),
-        .library(name: "LunaDownloaderKit", type: .dynamic, targets: [
-            "LunaAppConfig", "LunaDesignSystem", "LunaFetch", "LunaHTMLClassification",
-            "LunaIngest", "LunaIntents", "LunaMailAccount", "LunaMailTransport",
-            "LunaMediaDownload", "LunaMediaResolve", "LunaModels", "LunaPlatforms",
-            "LunaPriceCompare", "LunaPriceMetadata", "LunaSaves", "LunaSavesUI",
-            "LunaShareSurface", "LunaSocial", "LunaSocialUI", "LunaStorage",
-            "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
-        ]),
-        .library(name: "LunaPriceTrackerKit", type: .dynamic, targets: [
-            "LunaAppConfig", "LunaDesignSystem", "LunaFetch", "LunaHTMLClassification",
-            "LunaIngest", "LunaIntents", "LunaMailAccount", "LunaMailTransport",
-            "LunaMediaResolve", "LunaModels", "LunaPriceCompare", "LunaPriceIngest",
-            "LunaPriceMetadata", "LunaPriceUI", "LunaSaves", "LunaSavesUI",
-            "LunaShareSurface", "LunaSocial", "LunaSocialUI", "LunaStorage",
-            "LunaTransitions", "LunaURLClassification", "LunaURLRescue", "LunaWeekly",
         ]),
         // MARK: - Static products
         //
@@ -110,6 +84,7 @@ let package = Package(
         .library(name: "LunaSocialUI", targets: ["LunaSocialUI"]),
         .library(name: "LunaIntents", targets: ["LunaIntents"]),
         .library(name: "LunaSavesUI", targets: ["LunaSavesUI"]),
+        .library(name: "LunaPremium", targets: ["LunaPremium"]),
         .library(name: "LunaPluginKit", targets: ["LunaPluginKit"]),
         .library(name: "LunaPluginRuntime", targets: ["LunaPluginRuntime"]),
         .library(name: "LunaPluginIngest", targets: ["LunaPluginIngest"]),
@@ -148,6 +123,7 @@ let package = Package(
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
     ],
     targets: [
+        .target(name: "LunaPremium", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicFiles"),
@@ -374,7 +350,7 @@ let package = Package(
         // the prompts and the browser lock modal.
         .target(name: "LunaPluginUI", dependencies: [
             "LunaPluginRuntime", "LunaPluginIngest", "LunaPluginExport",
-            "LunaDesignSystem", "LunaSavesUI", "LunaArchiveReader",
+            "LunaDesignSystem", "LunaSavesUI", "LunaArchiveReader", "LunaPremium",
         ]),
         // Resources only: the plugins Luna ships with. `.copy` keeps the
         // directory shape, so the catalog enumerates one folder rather than a

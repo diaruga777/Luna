@@ -1,3 +1,4 @@
+import LunaPremium
 import UIKit
 import CarPlay
 import BackgroundTasks
@@ -8,6 +9,7 @@ import LunaPodcastCore
 @main
 final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        PremiumAccess.shared.start()
         MediaPlaybackCoordinator.shared.install()
         PodcastBackgroundServices.shared.start()
         MusicVaultWiring.install()

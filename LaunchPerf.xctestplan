@@ -1,35 +1,25 @@
 {
-  "configurations" : [
+  "configurations": [
     {
-      "id" : "6C1A0000-0000-4000-8000-0000000000A1",
-      "name" : "Launch performance",
-      "options" : {
-
-      }
+      "id": "6C1A0000-0000-4000-8000-0000000000A1",
+      "name": "Launch performance",
+      "options": {}
     }
   ],
-  "defaultOptions" : {
-    "defaultTestExecutionTimeAllowance" : 1200,
-    "maximumTestExecutionTimeAllowance" : 1800,
-    "testTimeoutsEnabled" : true
+  "defaultOptions": {
+    "defaultTestExecutionTimeAllowance": 1200,
+    "maximumTestExecutionTimeAllowance": 1800,
+    "testTimeoutsEnabled": true
   },
-  "testTargets" : [
+  "testTargets": [
     {
-      "parallelizable" : false,
-      "target" : {
-        "containerPath" : "container:Luna.xcodeproj",
-        "identifier" : "AA604D746FF6D36646361865",
-        "name" : "LunaLaunchTests"
-      }
-    },
-    {
-      "parallelizable" : false,
-      "target" : {
-        "containerPath" : "container:Luna.xcodeproj",
-        "identifier" : "403E6C0BAED38E54BEFF9097",
-        "name" : "LunaReaderLaunchTests"
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:Luna.xcodeproj",
+        "identifier": "AA604D746FF6D36646361865",
+        "name": "LunaLaunchTests"
       }
     }
   ],
-  "version" : 1
+  "version": 1
 }

@@ -1,9 +1,8 @@
 #!/usr/bin/env ruby
 # Points every content-app target at its app's ONE dynamic kit product.
 #
-# `LunaLibraries/Package.swift` declares four dynamic libraries — `LunaKit`,
-# `LunaReaderKit`, `LunaDownloaderKit`, `LunaPriceTrackerKit` — each holding
-# every package target its app group reaches. This script makes the project
+# `LunaLibraries/Package.swift` declares `LunaKit`, holding the core app and
+# extension modules. Reader, Downloader and Price Tracker targets are retired. This script makes the project
 # match:
 #
 #   * the app, each of its extensions, and the test bundle hosted on it link
@@ -28,19 +27,6 @@ GROUPS = {
   'LunaKit' => {
     app: 'Luna',
     clients: %w[LunaShare LunaAction LunaSafari LunaLiveActivity LunaTests],
-  },
-  'LunaReaderKit' => {
-    app: 'LunaReader',
-    clients: %w[LunaReaderShare LunaReaderAction LunaReaderSafari],
-  },
-  'LunaDownloaderKit' => {
-    app: 'LunaDownloader',
-    clients: %w[LunaDownloaderShare LunaDownloaderAction LunaDownloaderSafari
-                LunaDownloaderLiveActivity],
-  },
-  'LunaPriceTrackerKit' => {
-    app: 'LunaPriceTracker',
-    clients: %w[LunaPriceTrackerShare LunaPriceTrackerAction LunaPriceTrackerSafari],
   },
 }.freeze
 

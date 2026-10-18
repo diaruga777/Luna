@@ -1,8 +1,8 @@
 import Foundation
 import LunaAppConfig
 
-/// Which standalone Luna app a running process belongs to — the central
-/// all-content **Luna** app or one of the four standalone apps. Derived
+/// A Luna surface identity, including retired facets retained for stored data
+/// and old file compatibility. New link-app installs use core Luna. Derived
 /// from the bundle identifier, using contains-matching so it also resolves
 /// from inside an app's extensions (`…reader.share`, `…downloader.safari`, …).
 ///
@@ -21,13 +21,16 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// URL content-kind surface and not on the shared saves store.
     case writer
 
+    // Legacy cases remain for old saved files and stored surface identifiers.
+    // Only these surfaces ship now; Music, Keyboard and Code own other shells.
+    public static let allCases: [LunaApp] = [.luna, .vault, .writer]
+
     public static var current: LunaApp {
         detect(bundleIdentifier: Bundle.main.bundleIdentifier)
     }
 
-    /// The standalone apps' product order used when the central Luna app needs
-    /// one representative lesson. Keep this separate from `allCases`: the
-    /// central app is a host, not one of the sibling products being ranked.
+    /// Feature-family order for core Luna's lessons and weekly picks. These
+    /// legacy facet identities label examples; they are no longer app targets.
     public static let onboardingRankedSiblings: [LunaApp] = [
         .reader, .downloader, .priceTracker,
     ]
@@ -36,7 +39,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// staged-screen catalogs. Vault is a standalone file surface and joins
     /// these systems only when central integration is implemented explicitly.
     public static let legacyContentApps: [LunaApp] = [
-        .luna, .reader, .downloader, .priceTracker,
+        .luna,
     ]
 
     public static func detect(bundleIdentifier: String?) -> LunaApp {
@@ -135,7 +138,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// family's files, a single-content app only its own.
     public var acceptedFileExtensions: [String] {
         switch self {
-        case .luna: return LunaApp.allCases.compactMap { $0.fileExtension }
+        case .luna: return ["luna", "lunar", "lunad", "lunas"]
         default: return fileExtension.map { [$0] } ?? []
         }
     }

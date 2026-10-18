@@ -83,7 +83,8 @@ final class LunaAppTests: XCTestCase {
             [.reader, .downloader, .priceTracker])
         XCTAssertEqual(
             LunaApp.legacyContentApps,
-            [.luna, .reader, .downloader, .priceTracker])
+            [.luna])
+        XCTAssertEqual(LunaApp.allCases, [.luna, .vault, .writer])
         XCTAssertFalse(LunaApp.onboardingRankedSiblings.contains(.vault))
         XCTAssertFalse(LunaApp.onboardingRankedSiblings.contains(.writer))
     }

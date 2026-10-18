@@ -122,10 +122,26 @@
       "apps": ["luna", "reader"]
     },
     {
+      "id": "deck.article.imported-email",
+      "screen": "Card deck",
+      "variant": "imported email",
+      "summary": "An imported email with no web link: Share offers the export formats directly.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
       "id": "deck.article.in-progress",
       "screen": "Card deck",
       "variant": "part-read article",
       "summary": "A save opened and left a third of the way in: the progress the card carries back.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.article.library",
+      "screen": "Library",
+      "variant": "banner card rows",
+      "summary": "Swipe-up library with local search, toggle filters, and matching reader banners.",
       "kind": "article",
       "apps": ["luna", "reader"]
     },
@@ -142,6 +158,14 @@
       "screen": "Card deck",
       "variant": "paywalled article",
       "summary": "A hard-paywalled save: the locked overlay over the card, with no extracted text behind it.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.article.rail",
+      "screen": "Card deck",
+      "variant": "two-row article library",
+      "summary": "Several readable articles for testing horizontal browsing and viewport expansion.",
       "kind": "article",
       "apps": ["luna", "reader"]
     },

@@ -94,6 +94,19 @@ enum ArticleStageCatalog {
                     ])
                 }),
             StageDescriptor(
+                id: "deck.article.imported-email", screen: "Card deck", variant: "imported email",
+                summary: "An imported email with no web link: Share offers the export formats directly.",
+                kind: .article,
+                seed: {
+                    StageFixtures.completeOnboarding()
+                    let item = SavedItem(
+                        seed: "stage-imported-email", urlString: "lunamail://123",
+                        title: "Imported Newsletter", dateAdded: StageFixtures.ago(hours: 1),
+                        state: .ready, wordCount: 480, captureSource: .email)
+                    StageFixtures.seed(
+                        [item], contents: [item.id: StageFixtures.content("Imported Newsletter")])
+                }),
+            StageDescriptor(
                 id: "deck.article.from-contact", screen: "Card deck", variant: "shared by a contact",
                 summary: "An article that arrived by email from a contact — the sender "
                     + "attribution on the card.",

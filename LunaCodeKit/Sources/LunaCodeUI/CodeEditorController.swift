@@ -141,9 +141,10 @@ import LunaCodeCore
     }
     @objc private func buildChanged() {
         let monitor = environment.builds
+        if monitor.job?.installHandoff != nil { persistAll() }
         if let value = monitor.job, value.id == job?.id { job = value; buildButton.menu = buildMenu() }
         buildSummary.isHidden = !monitor.isStarting && monitor.job?.state != .running
-        buildStatus.text = "\(Int(monitor.fraction * 100))% estimated · \(monitor.stage)\n" + monitor.backgroundMessage
+        buildStatus.text = "\(Int(monitor.fraction * 100))% estimated · \(monitor.stage)\n" + (monitor.job?.progressDetail.map { $0 + "\n" } ?? "") + monitor.backgroundMessage
         buildProgress.progress = Float(monitor.fraction)
         buildProgress.accessibilityValue = "\(Int(monitor.fraction * 100)) percent estimated"
     }
@@ -663,6 +664,7 @@ import LunaCodeCore
     private let text = UITextView()
     private let progress = UIProgressView(progressViewStyle: .default)
     private let percent = UILabel()
+    private let work = UILabel()
     private weak var monitor: CodeBuildMonitor?
     private let status = UILabel()
     private let detail = UILabel()
@@ -691,7 +693,10 @@ import LunaCodeCore
         percent.font = .preferredFont(forTextStyle: .headline); percent.textAlignment = .center
         percent.adjustsFontForContentSizeCategory = true
         NotificationCenter.default.addObserver(self, selector: #selector(buildChanged), name: CodeBuildMonitor.changed, object: monitor)
-        summary = UIStackView(arrangedSubviews: [status, progress, percent, detail]); summary.axis = .vertical; summary.spacing = 20
+        work.font = .preferredFont(forTextStyle: .subheadline); work.textAlignment = .center
+        work.adjustsFontForContentSizeCategory = true; work.numberOfLines = 0
+        work.accessibilityIdentifier = "CodeBuildWork"
+        summary = UIStackView(arrangedSubviews: [status, progress, percent, work, detail]); summary.axis = .vertical; summary.spacing = 20
         summary.translatesAutoresizingMaskIntoConstraints = false
         console.addAction(UIAction { [weak self] _ in
             guard let self else { return }; self.showConsole.toggle(); self.update(self.job)
@@ -720,13 +725,14 @@ import LunaCodeCore
         console.setTitle(showConsole ? "Hide Console" : "Show Console", for: .normal)
         let fraction = monitor?.fraction(for: value) ?? value.progressFraction()
         progress.progress = Float(fraction)
+        work.text = value.progressDetail; work.isHidden = value.progressDetail == nil
         progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
         percent.text = value.state == .running ? "\(Int(fraction * 100))% · Estimated" : (value.state == .succeeded ? "100%" : nil)
         progress.isHidden = value.state == .failed || value.state == .cancelled
         detail.isHidden = value.state == .succeeded || value.state == .cancelled
         switch value.state {
         case .running:
-            status.text = value.progressStage
+            status.text = value.installHandoff == nil ? value.progressStage : "Build Complete — Updating Luna Code"
             detail.text = monitor?.backgroundMessage ?? "You can leave Luna Code. Your Mac has the build."
         case .succeeded: status.text = "Build Completed"; detail.text = nil
         case .failed:

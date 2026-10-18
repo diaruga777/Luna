@@ -229,6 +229,58 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertEqual(percentage(), 100)
     }
 
+    func testActualBuildTaskDetailsAndProgressUpdateTogether() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview", "--build-events"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let run = app.buttons["CodeRun:Sample"]
+        XCTAssertTrue(run.waitForExistence(timeout: 15)); run.tap()
+        let work = app.staticTexts["CodeBuildWork"]
+        XCTAssertTrue(work.waitForExistence(timeout: 10))
+        XCTAssertTrue(work.label.contains("build tasks completed"))
+        XCTAssertTrue(app.staticTexts["Compile Feature.swift (arm64)"].exists)
+        let initial = work.label
+        let progress = app.descendants(matching: .any)["CodeBuildProgress"]
+        let initialProgress = progress.value as? String
+        expectation(for: NSPredicate { _, _ in work.label != initial && progress.value as? String != initialProgress }, evaluatedWith: work)
+        waitForExpectations(timeout: 6)
+        attach("Real task count and current operation", app)
+        XCTAssertTrue(app.staticTexts["Build Completed"].waitForExistence(timeout: 25))
+    }
+    func testSelfUpdateHandoffRestoresInstallationAfterProcessReplacement() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview", "--build-self-update"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let run = app.buttons["CodeRun:Sample"]
+        XCTAssertTrue(run.waitForExistence(timeout: 15)); run.tap()
+        XCTAssertTrue(app.staticTexts["Build Complete — Updating Luna Code"].waitForExistence(timeout: 15))
+        let detail = app.staticTexts["CodeBuildStatus"]
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "Your Mac is installing the update"), evaluatedWith: detail)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.staticTexts["Build Completed"].exists, "Installation has not completed yet")
+        attach("Self-update handed off", app)
+        app.terminate()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--build-self-update"]
+        app.launch()
+        let options = app.buttons["CodeBuildOptions:Sample"]
+        XCTAssertTrue(options.waitForExistence(timeout: 15)); options.tap()
+        app.buttons["Build Log"].tap()
+        let hideConsole = app.buttons["Hide Console"]
+        XCTAssertTrue(hideConsole.waitForExistence(timeout: 5)); hideConsole.tap()
+        XCTAssertTrue(app.staticTexts["Build Completed"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts["Build Failed"].exists)
+        app.buttons["Show Console"].tap()
+        XCTAssertTrue(app.textViews.containing(NSPredicate(format: "value CONTAINS %@", "only after the activity handoff was acknowledged")).firstMatch.exists)
+    }
+
     func testBuildOptionsStayOpenWhileDiscoveryContinuesPastFailedAndLibrarySchemes() {
         continueAfterFailure = false
         let app = XCUIApplication()

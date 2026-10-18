@@ -100,16 +100,25 @@ After acknowledgement, it explicitly says that Luna Code can be backgrounded.
 The scene keeps the Mac connection alive during startup and active monitoring;
 backgrounding no longer tears down an in-flight start request.
 
-Build rows and the build summary show an estimated percentage and progress bar.
-The Mac persists stage boundaries for preparation, checkout, destination/signing,
-compilation, installation, launch and cleanup. Within each stage the estimate
-advances toward a bounded ceiling; only Mac-confirmed success reaches 100%.
-TestFlight uses a broad archive/upload/processing estimate. Failure and cancellation
-freeze progress. When a companion omits stage data, Luna Code advances an elapsed-time estimate
-from 5% toward a ceiling below 95% rather than leaving the bar fixed at 5%.
-That local estimate survives repeated status replies, freezes on failure/cancellation,
-and uses the local receipt clock if the Mac clock is ahead. Confirmed stage data
-takes precedence; displayed progress never moves backward within a job.
+Build rows, the editor and the build summary show a work-based estimated bar,
+the current compiler/linker/signing operation and the actual completed task count.
+Luna Mac tails `xcodebuild -resultStreamPath` while the command runs, counting
+command-invocation start/close events rather than console lines or elapsed seconds.
+Fragmented, duplicate, malformed and oversized stream records are handled without
+blocking build logs or cancellation. Completed counts and operation names persist
+with the job, including the final result.
+
+Xcode's result stream does not provide a reliable total task count. The percentage
+uses the last successful workload for that project/scheme/destination, or a bounded
+work-count estimate on the first build. Real task completions advance it; time alone
+does not. Preparation, checkout, signing checks, installation, launch and cleanup
+advance at confirmed milestones. The overall percentage remains labelled estimated,
+never moves backward within a job, and reaches 100% only after confirmed job success.
+TestFlight captures the archive's real task events, then holds an explicit
+archive-complete/export/upload/processing phase until `asc publish` finishes.
+Older companions without progress metadata retain the bounded elapsed-time fallback.
+Failure, cancellation and a lost Mac connection freeze displayed progress.
+
 The shared, tab-independent monitor polls accepted jobs and drives the app UI and
 `BGContinuedProcessingTask.progress` from the same estimate. iOS supplies the
 system progress Live Activity; no custom widget or push service is needed.
@@ -120,10 +129,24 @@ System expiration or dismissal stops monitoring, preserving the Mac's build;
 use Cancel Build in Luna Code to cancel the actual job. Active job IDs survive
 relaunch, and foregrounding resumes status checks.
 
-Console output is opt-in via Show Console or the row’s Build Log menu. The Mac owns the job independently of the iPhone connection; status and
-logs persist, and the app polls for completion while foregrounded or granted
-continued background runtime. Keep the Mac awake and the target phone reachable for installation and launch.
-Update both Luna Code and Luna Mac for these new protocol operations.
+When the built app's actual bundle ID matches the monitoring app's bundle ID,
+Luna Mac pauses before installation and publishes a tokenized handoff. Luna Code
+flushes open drafts and ends its system activity successfully as **Build complete —
+updating Luna Code**, then acknowledges the token under a short background lease.
+Only that acknowledgement releases installation. The Mac job remains running;
+installation/launch can still fail and the replacement app restores the final result.
+A persisted handoff marker and the Mac's job metadata suppress a replacement activity
+on relaunch. A missing acknowledgement times out after two minutes and fails without
+installing; cancellation also prevents installation. The bundle comparison is
+conservative when building the same app for another phone: its monitoring activity
+also ends at the compilation boundary. This avoids guessing the current phone's UDID.
+Update both Luna Code and Luna Mac for this protocol; older clients don't request
+the handoff. TestFlight's later user-initiated app update is separate from this direct
+Build & Run installation flow.
+
+Console output is opt-in via Show Console or the row’s Build Log menu. The Mac owns
+the job independently of the iPhone connection; status and logs persist. Keep the
+Mac awake and the target phone reachable for installation and launch.
 
 ## Editor
 
@@ -197,7 +220,9 @@ must already work for the selected project. No private API key is sent to iPhone
 
 - `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
   live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
-  bounded stage estimates, terminal progress, backward-compatible job payloads, interrupted-job recovery,
+  structured build-event parsing, fragmented/duplicate/oversized records, event-driven progress,
+  acknowledged self-install gates, timeouts/cancellation, bundle matching,
+  terminal progress, backward-compatible job payloads, interrupted-job recovery,
   file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external
@@ -210,7 +235,8 @@ must already work for the selected project. No private API key is sent to iPhone
   draft recovery, project/workspace selection and restoration, project switching,
   scheme selection, cached app rows, one-tap main build requests, hidden console,
   background/foreground job status, immediate backgrounding during delayed startup,
-  progress accessibility, last-tab restoration,
+  progress accessibility, completed task/current operation display,
+  self-update handoff and final-result restoration after process replacement, last-tab restoration,
   browser failure/recovery, and explicit save-conflict resolution;
   iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
 - `LunaVaultConnectionTests`: approved-peer gate for Code alongside existing pairing,

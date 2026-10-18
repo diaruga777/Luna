@@ -226,7 +226,7 @@ import LunaCodeCore
         let busy = starting == app.key || job?.state == .running
         let fraction = starting == app.key ? environment.builds.fraction : (job.map { environment.builds.fraction(for: $0) } ?? 0)
         let status = starting == app.key ? "Starting… · Keep Luna Code open" : job.map {
-            $0.state == .running ? "\(Int(fraction * 100))% estimated · " + $0.progressStage : $0.state.rawValue.capitalized
+            $0.state == .running ? "\(Int(fraction * 100))% estimated · " + $0.progressStage + ($0.progressDetail.map { "\n" + $0 } ?? "") : $0.state.rawValue.capitalized
         }
         let detail = [(app.project.root as NSString).lastPathComponent, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
         if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
@@ -292,7 +292,7 @@ import LunaCodeCore
                 }
                 if catalog.defaultDevice(peer: peer) == nil { catalog.setDefaultDevice(target.id, peer: peer) }
                 var request = CodeRequest(.runOnDevice); request.project = app.project
-                request.deviceBuild = CodeDeviceBuild(branch: app.branch, deviceID: target.id)
+                request.deviceBuild = CodeDeviceBuild(branch: app.branch, deviceID: target.id, monitorBundleID: Bundle.main.bundleIdentifier)
                 let response = try await environment.client.call(request)
                 guard peer == environment.peerID() else { return }
                 guard let job = response.job else { throw CodeFailure("The Mac did not confirm the build. Update Luna Mac and try again.") }

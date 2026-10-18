@@ -12,6 +12,8 @@ import LunaCodeCore
     private var peer = ""
     private var timer: Timer?
     private var polling = false
+    private var acknowledgingInstall = false
+    private var installLease: UIBackgroundTaskIdentifier = .invalid
     private var lease: UIBackgroundTaskIdentifier = .invalid
     private var continued: BGContinuedProcessingTask?
     private var requested = false
@@ -23,13 +25,20 @@ import LunaCodeCore
     public private(set) var job: CodeJob?
     public private(set) var isStarting = false
     public var becameIdle: (() -> Void)?
-    public var needsConnection: Bool { isStarting || (job?.state == .running && !monitoringStopped) }
+    private var handoffKey: String { "Code.installHandoff." + peer }
+    private var didHandOff: Bool { job.map { defaults.string(forKey: handoffKey) == $0.id } ?? false }
+    public var needsConnection: Bool { isStarting || acknowledgingInstall || (job?.state == .running && !monitoringStopped && !didHandOff) }
     private var identifier: String { (Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.code") + ".remote-build" }
     var fraction: Double { reportedFraction }
     func fraction(for value: CodeJob) -> Double { job?.id == value.id ? fraction : value.progressFraction() }
     var stage: String { isStarting ? "Starting on your Mac…" : (job?.progressStage ?? "Build") }
     var backgroundMessage: String {
         if isStarting { return "Keep Luna Code open until your Mac confirms the build has started." }
+        if let handoff = job?.installHandoff {
+            return handoff.acknowledged
+                ? "Build complete. Your Mac is installing the update. Luna Code may close and reopen; the installation result will be restored."
+                : "Build complete. Preparing to update Luna Code; keep it open until installation starts."
+        }
         if disconnected { return "Reconnecting to your Mac. Progress is paused until it responds. The Mac can continue building." }
         if monitoringStopped || !requested {
             return "You can leave Luna Code. Your Mac has the build; reopen Luna Code to refresh progress. Background progress is unavailable."
@@ -42,7 +51,13 @@ import LunaCodeCore
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
             guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
             Task { @MainActor in
-                guard let self, self.needsConnection else { task.setTaskCompleted(success: false); return }
+                guard let self else { task.setTaskCompleted(success: false); return }
+                if self.didHandOff || self.job?.installHandoff != nil {
+                    task.updateTitle("Build complete", subtitle: "Updating Luna Code…")
+                    task.progress.totalUnitCount = 1000; task.progress.completedUnitCount = 1000
+                    task.setTaskCompleted(success: true); return
+                }
+                guard self.needsConnection else { task.setTaskCompleted(success: false); return }
                 self.continued = task
                 task.progress.totalUnitCount = 1000
                 task.expirationHandler = { [weak self] in
@@ -62,6 +77,7 @@ import LunaCodeCore
         guard !isStarting, job?.state != .running else { throw CodeFailure("A build is already running. Wait for it or cancel it first.") }
         self.title = title; peer = peerID(); job = nil; reportedFraction = 0; isStarting = true; startingAt = Date()
         monitoringStopped = false; disconnected = false
+        defaults.removeObject(forKey: handoffKey)
         lease = UIApplication.shared.beginBackgroundTask(withName: "Start remote build") { [weak self] in
             Task { @MainActor in self?.endLease() }
         }
@@ -76,12 +92,15 @@ import LunaCodeCore
     }
     func accept(_ received: CodeJob) {
         guard peer == peerID() else { return }
+        // A late status reply must not resurrect a completed job.
+        if job?.id == received.id, job?.state != .running, received.state == .running { return }
         let value = received.estimatingProgress(from: job)
         if job?.id != value.id { reportedFraction = 0 }
         job = value; isStarting = false; disconnected = false
         defaults.set(value.id, forKey: "Code.activeJob." + peer)
         endLease(); publish()
         if value.state != .running { complete(success: value.state == .succeeded) }
+        else if value.installHandoff != nil { prepareForInstall(value) }
     }
     /// Reattach status monitoring without starting another Mac build.
     func observe(_ value: CodeJob) {
@@ -89,7 +108,7 @@ import LunaCodeCore
         if job?.id == value.id, peer == peerID() { accept(value) }
         else if job?.state != .running, value.state == .running {
             peer = peerID(); job = nil; title = value.title; monitoringStopped = false
-            if UIApplication.shared.applicationState == .active { requestBackgroundMonitoring() }
+            if value.shouldMonitorInBackground, defaults.string(forKey: handoffKey) != value.id, UIApplication.shared.applicationState == .active { requestBackgroundMonitoring() }
             accept(value)
         }
     }
@@ -103,7 +122,7 @@ import LunaCodeCore
     @objc private func activated() {
         if peer != peerID() { job = nil; isStarting = false; complete(success: false); peer = peerID() }
         monitoringStopped = false
-        if job?.state == .running, !requested { requestBackgroundMonitoring() }
+        if job?.shouldMonitorInBackground == true, !requested, !didHandOff { requestBackgroundMonitoring() }
         Task {
             let origin = peerID(), key = "Code.activeJob." + peerID()
             if job == nil, let id = defaults.string(forKey: key) {
@@ -117,11 +136,11 @@ import LunaCodeCore
         }
     }
     private func tick() async {
-        guard needsConnection, peer == peerID() else { return }
+        guard peer == peerID(), needsConnection || (UIApplication.shared.applicationState == .active && job?.state == .running) else { return }
         // Keep the system activity honest while the Mac is unreachable.
         if !disconnected { publish() }
         guard let job, job.state == .running, !polling,
-              UIApplication.shared.applicationState == .active || continued != nil else { return }
+              UIApplication.shared.applicationState == .active || continued != nil || acknowledgingInstall else { return }
         polling = true; defer { polling = false }
         let origin = peer
         var request = CodeRequest(.job); request.jobID = job.id
@@ -141,9 +160,43 @@ import LunaCodeCore
             let estimate = job?.progressFraction() ?? min(0.04, 0.01 + max(0, Date().timeIntervalSince(startingAt ?? Date())) / 2000)
             reportedFraction = max(reportedFraction, estimate)
             continued?.progress.completedUnitCount = Int64((fraction * 1000).rounded(.down))
-            continued?.updateTitle(title, subtitle: "\(Int(fraction * 100))% estimated · \(stage)")
+            let detail = job?.progressDetail.map { $0 + " · " } ?? ""
+            continued?.updateTitle(title, subtitle: String("\(Int(fraction * 100))% estimated · \(detail)\(stage)".prefix(180)))
         }
         NotificationCenter.default.post(name: Self.changed, object: self)
+    }
+    private func prepareForInstall(_ value: CodeJob) {
+        guard let handoff = value.installHandoff else { return }
+        let origin = peer, id = value.id
+        // Persist before acknowledging. Relaunch must never create another
+        // continued-processing activity for the installation that replaces us.
+        defaults.set(id, forKey: handoffKey)
+        continued?.updateTitle("Build complete", subtitle: "Updating Luna Code…")
+        continued?.progress.completedUnitCount = continued?.progress.totalUnitCount ?? 1000
+        continued?.setTaskCompleted(success: true); continued = nil
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier); requested = false
+        if handoff.acknowledged { if !acknowledgingInstall { becameIdle?() }; return }
+        guard !acknowledgingInstall else { return }
+        acknowledgingInstall = true
+        installLease = UIApplication.shared.beginBackgroundTask(withName: "Acknowledge Luna Code update") { [weak self] in
+            Task { @MainActor in self?.endInstallLease() }
+        }
+        Task {
+            defer { acknowledgingInstall = false; endInstallLease(); becameIdle?() }
+            var request = CodeRequest(.acknowledgeInstall); request.jobID = id; request.handoffToken = handoff.token
+            do {
+                guard let reply = try await client.call(request).job else { throw CodeFailure("The Mac did not acknowledge the update handoff.") }
+                guard origin == peerID(), job?.id == id else { return }
+                accept(reply)
+            } catch {
+                guard origin == peerID(), job?.id == id else { return }
+                disconnected = true
+                NotificationCenter.default.post(name: Self.changed, object: self)
+            }
+        }
+    }
+    private func endInstallLease() {
+        if installLease != .invalid { UIApplication.shared.endBackgroundTask(installLease); installLease = .invalid }
     }
     private func endLease() {
         if lease != .invalid { UIApplication.shared.endBackgroundTask(lease); lease = .invalid }
@@ -159,7 +212,7 @@ import LunaCodeCore
         continued?.setTaskCompleted(success: success); continued = nil
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier); requested = false
         endLease()
-        if job?.state != .running { defaults.removeObject(forKey: "Code.activeJob." + peer) }
+        if job?.state != .running { defaults.removeObject(forKey: "Code.activeJob." + peer); defaults.removeObject(forKey: handoffKey) }
         becameIdle?()
     }
 }

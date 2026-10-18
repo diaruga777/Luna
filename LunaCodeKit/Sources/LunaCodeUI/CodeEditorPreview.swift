@@ -13,7 +13,7 @@ import LunaCodeCore
         let defaults = UserDefaults(suiteName: "LunaCodeEditorUITests")!
         if reset { defaults.removePersistentDomain(forName: "LunaCodeEditorUITests") }
         if !workspace && reset { defaults.set("/Preview/Welcome.swift", forKey: "Code.lastFile.preview") }
-        let files = PreviewFiles()
+        let files = PreviewFiles(stateURL: root.appendingPathComponent("RemoteBuild.json"))
         let environment = CodeEnvironment(client: CodeClient { await files.handle($0) }, drafts: drafts, defaults: defaults,
             browse: { path, _, _ in
                 if ProcessInfo.processInfo.arguments.contains("--browser-failure") { throw CodeFailure("Preview Mac is offline.") }
@@ -33,6 +33,19 @@ import LunaCodeCore
 }
 private actor PreviewFiles {
     private var buildStartedAt: Date?
+    private var handoffAcknowledgedAt: Date?
+    private let stateURL: URL
+    private struct BuildState: Codable { var startedAt: Date?; var acknowledgedAt: Date? }
+    init(stateURL: URL) {
+        self.stateURL = stateURL
+        if ProcessInfo.processInfo.arguments.contains("--build-self-update"),
+           let state = try? JSONDecoder().decode(BuildState.self, from: Data(contentsOf: stateURL)) {
+            buildStartedAt = state.startedAt; handoffAcknowledgedAt = state.acknowledgedAt
+        }
+    }
+    private func persistBuild() {
+        try? JSONEncoder().encode(BuildState(startedAt: buildStartedAt, acknowledgedAt: handoffAcknowledgedAt)).write(to: stateURL, options: .atomic)
+    }
     private var injectConflict = ProcessInfo.processInfo.arguments.contains("--save-conflict")
     var text = """
     import UIKit
@@ -55,6 +68,20 @@ private actor PreviewFiles {
         }
     }
     """
+    private func selfUpdateJob() -> CodeJob {
+        var job = CodeJob(id: "preview-build", title: "Build & Run")
+        job.startedAt = buildStartedAt ?? Date()
+        let elapsed = Date().timeIntervalSince(job.startedAt)
+        if elapsed >= 3 {
+            job.installHandoff = CodeInstallHandoff(token: "preview-install", acknowledged: handoffAcknowledgedAt != nil)
+            job.progress = CodeJobProgress(stage: "Build complete — ready to update Luna Code", start: 0.80, end: 0.80, estimatedSeconds: 1, reportedFraction: 0.80)
+        }
+        if let handoffAcknowledgedAt {
+            job.log = "Installation permitted only after the activity handoff was acknowledged."
+            if Date().timeIntervalSince(handoffAcknowledgedAt) > 10 { job.state = .succeeded }
+        }
+        return job
+    }
     func handle(_ data: Data) async -> Data {
         var response = CodeResponse()
         do {
@@ -80,18 +107,35 @@ private actor PreviewFiles {
             case .runOnDevice:
                 guard request.deviceBuild?.branch == "main", request.deviceBuild?.deviceID == "preview-phone" else { throw CodeFailure("Unexpected preview build settings.") }
                 if ProcessInfo.processInfo.arguments.contains("--build-start-delay") { try await Task.sleep(for: .seconds(5)) }
-                buildStartedAt = Date()
+                buildStartedAt = Date(); handoffAcknowledgedAt = nil
+                if ProcessInfo.processInfo.arguments.contains("--build-self-update") { persistBuild() }
                 response.job = CodeJob(id: "preview-build", title: "Build & Run · " + (request.project?.scheme ?? ""), state: .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
                 response.job?.startedAt = buildStartedAt ?? Date()
                 response.job?.progress = CodeJobProgress(stage: "Preparing checkout…", start: 0.05, end: 0.25, estimatedSeconds: 3)
                 if ProcessInfo.processInfo.arguments.contains("--build-no-progress") { response.job?.progress = nil }
                 return try JSONEncoder().encode(response)
             case .job:
-                let duration: TimeInterval = ProcessInfo.processInfo.arguments.contains("--build-no-progress") ? 25 : 6
+                let flags = ProcessInfo.processInfo.arguments
+                let duration: TimeInterval = flags.contains("--build-no-progress") ? 25 : flags.contains("--build-events") ? 18 : 6
                 response.job = CodeJob(id: "preview-build", title: "Build & Run", state: Date().timeIntervalSince(buildStartedAt ?? .distantPast) > duration ? .succeeded : .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
                 response.job?.startedAt = buildStartedAt ?? Date()
                 response.job?.progress = CodeJobProgress(stage: "Compiling on your Mac…", start: 0.25, end: 0.80, estimatedSeconds: 4, startedAt: buildStartedAt ?? Date())
-                if ProcessInfo.processInfo.arguments.contains("--build-no-progress") { response.job?.progress = nil }
+                if flags.contains("--build-no-progress") { response.job?.progress = nil }
+                if flags.contains("--build-events") {
+                    let completed = Int(Date().timeIntervalSince(buildStartedAt ?? Date())) * 3
+                    response.job?.progress = CodeJobProgress(stage: "Compile Feature.swift (arm64)", start: 0.25, end: 0.80,
+                        estimatedSeconds: 1, reportedFraction: min(0.79, 0.25 + Double(completed) / 100))
+                    response.job?.progress?.completedTasks = completed; response.job?.progress?.activeTasks = 2
+                }
+                if flags.contains("--build-self-update") {
+                    response.job = selfUpdateJob()
+                }
+                return try JSONEncoder().encode(response)
+            case .acknowledgeInstall:
+                guard ProcessInfo.processInfo.arguments.contains("--build-self-update"), request.jobID == "preview-build",
+                      request.handoffToken == "preview-install", buildStartedAt != nil else { throw CodeFailure("Invalid preview update handoff.") }
+                handoffAcknowledgedAt = handoffAcknowledgedAt ?? Date(); persistBuild()
+                response.job = selfUpdateJob()
                 return try JSONEncoder().encode(response)
             case .schemes:
                 response.schemes = ProcessInfo.processInfo.arguments.contains("--build-discovery-delay")

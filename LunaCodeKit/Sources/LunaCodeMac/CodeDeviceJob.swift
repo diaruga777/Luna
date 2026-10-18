@@ -18,11 +18,20 @@ extension CodeJobs {
                   let product = app["FULL_PRODUCT_NAME"], product.hasSuffix(".app") else {
                 throw CodeFailure("Choose a runnable iOS app scheme in the row menu.")
             }
+            var localApp: [String: String]?
+            if CodeDeviceSigning.team(app) == nil {
+                // Git worktrees omit ignored local signing configuration. Resolve
+                // only the team from the original project; source still builds
+                // from the selected committed revision in the detached checkout.
+                let localSettings = try await CodeDeviceSupport.settings(project, root: root, process: process, destination: destination)
+                localApp = try CodeDeviceSupport.primarySettings(localSettings, project: project)
+            }
+            let signing = try CodeDeviceSigning.arguments(checkout: app, local: localApp)
             let derived = derivedData(project).appendingPathComponent("Device")
             let products = derived.appendingPathComponent("Products")
             try await command("/usr/bin/xcodebuild", buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
                 "-derivedDataPath", derived.path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path,
-                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path, "build"], directory: checkout.directory.path, process: process, log: log)
+                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + ["build"], directory: checkout.directory.path, process: process, log: log)
             let appURL = products.appendingPathComponent(product)
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
@@ -37,6 +46,24 @@ extension CodeJobs {
     }
     private func command(_ executable: String, _ arguments: [String], directory: String, process: CodeProcess, log: URL) async throws {
         guard try await process.run(executable, arguments, directory: directory, log: log) == 0 else { throw CodeFailure("Build & Run stopped. See the Mac job log for details.") }
+    }
+}
+
+enum CodeDeviceSigning {
+    static func team(_ settings: [String: String]) -> String? {
+        let value = (settings["DEVELOPMENT_TEAM"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+    static func arguments(checkout: [String: String], local: [String: String]?) throws -> [String] {
+        // A team committed on the selected branch takes precedence over local
+        // settings on the editor's branch.
+        if team(checkout) != nil { return [] }
+        guard let local, let team = team(local) else {
+            throw CodeFailure("No development team is configured for this app. Set its Signing & Capabilities team in the original project on your Mac (or its local signing configuration), then retry Build & Run.")
+        }
+        // Apply to the entire build so embedded extensions share the app's team.
+        // Keep provisioning, certificates and entitlements under Xcode's control.
+        return ["DEVELOPMENT_TEAM=" + team]
     }
 }
 

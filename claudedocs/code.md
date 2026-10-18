@@ -85,7 +85,13 @@ persisted build log and cancellation. Row settings are independent of the editor
 Quick builds default to committed local **main**. The Mac resolves the selected
 Git ref into an isolated detached checkout, builds there, then removes it. The
 editor's branch, index, unsaved files and iPhone drafts are not changed or saved
-by quick builds. Xcode signing must already be configured on the Mac.
+by quick builds. Xcode signing must already be configured on the Mac. If the
+detached checkout has no development team, Build & Run resolves the original
+project's Debug iOS team (including ignored local `.xcconfig` settings) and passes
+it to Xcode for the app and embedded extensions. A team committed on the selected
+branch takes precedence. Local configuration files and edited source are never
+copied into the checkout. A missing team in both projects returns setup guidance
+before compilation.
 Installation and launch use Apple's `devicectl`; no device UI automation is used.
 Accepted jobs show a spinner and a message confirming that Luna Code can be
 backgrounded. Console output is opt-in via Show Console or the row’s Build Log
@@ -165,7 +171,7 @@ must already work for the selected project. No private API key is sent to iPhone
 ## Verification
 
 - `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
-  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, command-log retention,
+  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
   file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external

@@ -74,12 +74,13 @@ public struct CodeJob: Codable, Equatable, Sendable {
     public var failureMessage: String?
     public var startedAt: Date
     public var progress: CodeJobProgress?
+    public var installHandoff: CodeInstallHandoff?
     public init(id: String, title: String, state: State = .running, log: String = "") {
         self.id = id; self.title = title; self.state = state; self.log = log; startedAt = Date()
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel }
+    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall }
     public var id: String = UUID().uuidString
     public var operation: Operation
     public var path: String = ""
@@ -89,6 +90,7 @@ public struct CodeRequest: Codable, Sendable {
     public var deviceBuild: CodeDeviceBuild?
     public var position: CodePosition?
     public var jobID: String = ""
+    public var handoffToken: String?
     public var bufferVersion: Int = 0
     public init(_ operation: Operation, path: String = "") { self.operation = operation; self.path = path }
 }

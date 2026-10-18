@@ -37,6 +37,12 @@ final class CodeIntelligenceTests: XCTestCase {
             var cancel = CodeRequest(.cancel); cancel.jobID = job.id
             _ = try await client.call(cancel)
         }
+        XCTAssertGreaterThan(job.progress?.completedTasks ?? 0, 0, "Real xcodebuild events must reach the persisted job")
+        XCTAssertNotNil(job.progress?.reportedFraction)
+        var legacyProgress = try XCTUnwrap(job.progress)
+        legacyProgress.reportedFraction = nil // Simulate an older reader ignoring the new field.
+        XCTAssertEqual(legacyProgress.fraction(), legacyProgress.fraction(at: Date().addingTimeInterval(1000)),
+                       "Observed work must also remain fixed for older progress-aware clients")
         XCTAssertEqual(job.state, .succeeded, job.log)
         XCTAssertTrue(job.log.contains("BUILD SUCCEEDED"), job.log)
         let restarted = try CodeService(root: URL(fileURLWithPath: root).appendingPathComponent("Service"))

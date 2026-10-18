@@ -25,7 +25,7 @@ public actor CodeService {
                 return previous.1
             }
             switch request.operation {
-            case .job, .cancel, .devices: break
+            case .job, .cancel, .devices, .acknowledgeInstall: break
             default:
                 let path = request.project?.path ?? request.path
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
@@ -51,6 +51,7 @@ public actor CodeService {
                 if request.operation == .prepare { language?.cancel(); language = nil; projectKey = nil }
             case .job: response.job = try await jobs.status(request.jobID)
             case .cancel: response.job = try await jobs.cancel(request.jobID)
+            case .acknowledgeInstall: response.job = try await jobs.acknowledgeInstall(request.jobID, token: request.handoffToken)
             case .analyze, .complete:
                 guard let project = request.project, !project.scheme.isEmpty, request.text.utf8.count <= CodeWire.maxFileBytes else { throw CodeFailure("Select a project and scheme to enable Mac code intelligence.") }
                 let key = project.path + "\u{0}" + project.scheme

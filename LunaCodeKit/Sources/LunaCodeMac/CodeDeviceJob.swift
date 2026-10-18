@@ -32,13 +32,19 @@ extension CodeJobs {
             let derived = derivedData(project).appendingPathComponent("Device")
             let products = derived.appendingPathComponent("Products")
             stage(job.id, "Compiling on your Mac…", from: 0.25, to: 0.80, seconds: 240)
-            try await command("/usr/bin/xcodebuild", buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
+            guard try await runBuildCommand(arguments: buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
                 "-derivedDataPath", derived.path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path,
-                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + ["build"], directory: checkout.directory.path, process: process, log: log)
+                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + ["build"], directory: checkout.directory.path, process: process, log: log, id: job.id,
+                workloadKey: project.path + "|" + project.scheme + "|device", from: 0.25, to: 0.80) == 0 else {
+                throw CodeFailure("Build & Run stopped. See the Mac job log for details.")
+            }
             let appURL = products.appendingPathComponent(product)
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
             guard plist?["CFBundleIdentifier"] as? String == bundle else { throw CodeFailure("The built app does not match the selected scheme.") }
+            if options.requiresInstallHandoff(for: bundle) {
+                try await waitForInstallHandoff(job.id)
+            }
             stage(job.id, "Installing on your phone…", from: 0.80, to: 0.93, seconds: 40)
             try await command("/usr/bin/xcrun", ["devicectl", "device", "install", "app", "--device", options.deviceID, appURL.path], directory: checkout.directory.path, process: process, log: log)
             stage(job.id, "Launching on your phone…", from: 0.93, to: 0.97, seconds: 10)

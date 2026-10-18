@@ -20,7 +20,10 @@ public struct CodeBuildApp: Codable, Equatable, Sendable {
 public struct CodeDeviceBuild: Codable, Equatable, Sendable {
     public var branch: String
     public var deviceID: String
-    public init(branch: String = "main", deviceID: String) { self.branch = branch; self.deviceID = deviceID }
+    public var monitorBundleID: String?
+    public init(branch: String = "main", deviceID: String, monitorBundleID: String? = nil) {
+        self.branch = branch; self.deviceID = deviceID; self.monitorBundleID = monitorBundleID
+    }
 }
 
 /// Local cache is isolated by paired Mac. Row settings never change the editor's project.

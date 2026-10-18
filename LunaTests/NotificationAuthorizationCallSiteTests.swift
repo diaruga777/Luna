@@ -6,7 +6,7 @@
 import XCTest
 
 /// Luna asks for notification authorization in exactly THREE places, and launch is
-/// not one of them: pasting the Save of the Week key, connecting a sending account,
+/// not one of them: pasting the Luna’s pick key, connecting a sending account,
 /// and committing a price alert threshold. Each is the moment a user opts into the
 /// one thing Luna will notify them about (proposals, incoming shares, price drops),
 /// so the prompt always arrives with its reason already on screen.

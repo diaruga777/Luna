@@ -28,7 +28,7 @@ public enum NotificationManager {
     /// Requests alert/sound authorization (no-op if already decided).
     ///
     /// Called only from the moments a user opts into something Luna will notify
-    /// about — the Save of the Week key, connecting a sending account, committing a
+    /// about — the Luna’s pick key, connecting a sending account, committing a
     /// price alert threshold. Launch does not ask (see `AppDelegate`).
     ///
     /// Skipped in an extension process: the price editor is reachable from the share

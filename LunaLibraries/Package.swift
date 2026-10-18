@@ -246,7 +246,7 @@ let package = Package(
             dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaMediaResolve", "LunaStorage", "LunaDesignSystem", "LunaShareSurface"],
             resources: [.process("Resources")]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
-        // Save of the Week (claudedocs/save-of-the-week.md): the signed,
+        // Luna’s pick (claudedocs/save-of-the-week.md): the signed,
         // CloudKit-public-database-backed weekly pick, its local mirror, and the
         // proposal channel. Linked by the four APPS only — no extension writes
         // or reads it. CloudKit/CryptoKit/UserNotifications are system

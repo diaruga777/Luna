@@ -123,20 +123,20 @@
 "UnsupportedSave_upsell_Luna" = "Get the %@ app to save this link";
 "UnsupportedSave_pluginFileMessage_Luna" = "Plugins run in Luna.";
 
-/* ===================== Weekly — From the Luna team ===================== */
-"Weekly_subtitle_Luna" = "From the Luna team";
-"Weekly_promoteMenuTitle_Luna" = "Promote to Save of the Week";
-"Weekly_promoteMenuTitle_Reader" = "Promote to Read of the Week";
-"Weekly_promoteMenuTitle_Downloader" = "Promote to Video of the Week";
-"Weekly_promoteMenuTitle_PriceTracker" = "Promote to Deal of the Week";
-"Weekly_proposeMenuTitle_Luna" = "Propose Save of the Week";
-"Weekly_proposeMenuTitle_Reader" = "Propose Read of the Week";
-"Weekly_proposeMenuTitle_Downloader" = "Propose Video of the Week";
-"Weekly_proposeMenuTitle_PriceTracker" = "Propose Deal of the Week";
+/* ===================== Weekly — Luna’s pick ===================== */
+"Weekly_subtitle_Luna" = "Luna’s pick";
+"Weekly_promoteMenuTitle_Luna" = "Promote to Luna’s pick";
+"Weekly_promoteMenuTitle_Reader" = "Promote to Luna’s pick";
+"Weekly_promoteMenuTitle_Downloader" = "Promote to Luna’s pick";
+"Weekly_promoteMenuTitle_PriceTracker" = "Promote to Luna’s pick";
+"Weekly_proposeMenuTitle_Luna" = "Suggest for Luna’s pick";
+"Weekly_proposeMenuTitle_Reader" = "Suggest for Luna’s pick";
+"Weekly_proposeMenuTitle_Downloader" = "Suggest for Luna’s pick";
+"Weekly_proposeMenuTitle_PriceTracker" = "Suggest for Luna’s pick";
 "SaveOfWeek_promote_successTitle_Luna" = "Promoted";
 "SaveOfWeek_promote_successMessage_Luna" = "Every app will show it on its next check.";
 "SaveOfWeek_propose_needsICloudTitle_Luna" = "Sign in to iCloud";
-"SaveOfWeek_propose_needsICloudMessage_Luna" = "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again.";
+"SaveOfWeek_propose_needsICloudMessage_Luna" = "Suggesting Luna’s pick requires an iCloud account. Sign in from Settings and try again.";
 "SaveOfWeek_propose_sentTitle_Luna" = "Proposal Sent";
 "SaveOfWeek_propose_sentMessage_Luna" = "Thanks!";
 "SaveOfWeek_propose_couldntProposeTitle_Luna" = "Couldn't propose link";
@@ -452,7 +452,7 @@
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
 
 /* ===== Settings_diagnostics — Settings → (5-tap) Diagnostics screen: header
- * chrome, the Save-of-the-Week signing-key flow, log display/export/clear,
+ * chrome, the Luna’s pick signing-key flow, log display/export/clear,
  * and the factory-reset flow. Luna/Diagnostics/DiagnosticsViewController.swift ===== */
 "Settings_diagnostics_title_Luna" = "Diagnostics";
 "Settings_diagnostics_clearButton_Luna" = "Clear";
@@ -460,14 +460,14 @@
 
 "Settings_diagnostics_weeklyKeyActiveButton_Luna" = "Weekly Key ✓";
 "Settings_diagnostics_weeklyKeyEnterLabel_Luna" = "Enter Weekly Key";
-"Settings_diagnostics_weeklyKeySheetTitle_Luna" = "Save of the Week Key";
-"Settings_diagnostics_weeklyKeyCanPromote_Luna" = "This device can promote Saves of the Week.";
+"Settings_diagnostics_weeklyKeySheetTitle_Luna" = "Luna’s pick key";
+"Settings_diagnostics_weeklyKeyCanPromote_Luna" = "This device can promote Luna’s picks.";
 "Settings_diagnostics_weeklyKeyReplaceButton_Luna" = "Replace";
 "Settings_diagnostics_weeklyKeyPasteInstructions_Luna" = "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored.";
 "Settings_diagnostics_weeklyKeyWrongTitle_Luna" = "Wrong Key";
 "Settings_diagnostics_weeklyKeyWrongMessage_Luna" = "That key doesn't match this build. Nothing was stored.";
 "Settings_diagnostics_weeklyKeyAcceptedTitle_Luna" = "Key Accepted";
-"Settings_diagnostics_weeklyKeyAcceptedMessage_Luna" = "This device can now promote Saves of the Week.";
+"Settings_diagnostics_weeklyKeyAcceptedMessage_Luna" = "This device can now promote Luna’s picks.";
 
 "Settings_diagnostics_rescueStatsNone_Luna" = "Rescue: nothing attempted yet.";
 "Settings_diagnostics_rescueStatsRecovered_Luna" = "%lld recovered";
@@ -704,9 +704,9 @@
 "Settings_shortcut_unknownTimeFallback_Luna" = "unknown time";
 "Settings_shortcut_noSafariURLStatus_Luna" = "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page.";
 
-/* ===== Settings_weeklyProposals — Settings → Save of the Week (curator's
+/* ===== Settings_weeklyProposals — Settings → Luna’s pick (curator's
  * proposal inbox). Luna/Settings/WeeklyProposalsScreen.swift ===== */
-"Settings_weeklyProposals_title_Luna" = "Save of the Week";
+"Settings_weeklyProposals_title_Luna" = "Luna’s pick";
 "Settings_weeklyProposals_checkingFooter_Luna" = "Checking…";
 "Settings_weeklyProposals_emptyFooter_Luna" = "No proposals right now.";
 "Settings_weeklyProposals_deleteFailedTitle_Luna" = "Couldn't Delete";
@@ -1102,10 +1102,10 @@
 "Sharing_sendToFriend_setupEmailMessage_Luna" = "Connect your email account in settings to send articles to contacts.";
 
 /* ===== SaveOfWeek — WeeklySaveRefresher.swift (key-holder proposal notifications / errors) ===== */
-"SaveOfWeek_refresher_notKeyHolderError_Luna" = "This device doesn't have the Save of the Week key.";
-"SaveOfWeek_refresher_proposalNotification_pluralHeadline_Luna" = "%lld new Save of the Week proposals";
+"SaveOfWeek_refresher_notKeyHolderError_Luna" = "This device doesn't have the key for Luna’s pick.";
+"SaveOfWeek_refresher_proposalNotification_pluralHeadline_Luna" = "%lld new proposals for Luna’s pick";
 "SaveOfWeek_refresher_proposalNotification_pluralMessage_Luna" = "Open Settings to review them.";
-"SaveOfWeek_refresher_proposalNotification_singularHeadline_Luna" = "New Save of the Week proposal";
+"SaveOfWeek_refresher_proposalNotification_singularHeadline_Luna" = "New proposal for Luna’s pick";
 "SaveOfWeek_refresher_proposalNotification_singularMessage_Luna" = "Open Settings to review it.";
 
 /* ===== CardDeck_archiveTray — the swipe-in archive drawer (ArchiveTrayController.swift) ===== */

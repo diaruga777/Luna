@@ -891,7 +891,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         // A device without the curator's key gets the propose verb, above the
         // deck's own tail.
         XCTAssertEqual(
-            actions.map(\.title), ["Propose Save of the Week", "Archive", "Delete"])
+            actions.map(\.title), ["Suggest for Luna’s pick", "Archive", "Delete"])
         let delete = try XCTUnwrap(actions.last)
         XCTAssertTrue(delete.attributes.contains(.destructive))
 

@@ -9,12 +9,17 @@ public struct CodeJobProgress: Codable, Equatable, Sendable {
     public var startedAt: Date
     public var estimatedSeconds: Double
     public var stoppedAt: Date?
+    /// Event-driven progress has a fixed value until more work actually finishes.
+    public var reportedFraction: Double?
+    public var completedTasks: Int?
+    public var activeTasks: Int?
 
-    public init(stage: String, start: Double, end: Double, estimatedSeconds: Double, startedAt: Date = Date()) {
+    public init(stage: String, start: Double, end: Double, estimatedSeconds: Double, startedAt: Date = Date(), reportedFraction: Double? = nil) {
         self.stage = stage; self.start = start; self.end = end
-        self.estimatedSeconds = estimatedSeconds; self.startedAt = startedAt
+        self.estimatedSeconds = estimatedSeconds; self.startedAt = startedAt; self.reportedFraction = reportedFraction
     }
     public func fraction(at date: Date = Date()) -> Double {
+        if let reportedFraction { return min(0.99, max(0, reportedFraction)) }
         let elapsed = max(0, (stoppedAt ?? date).timeIntervalSince(startedAt))
         let movement = 0.9 * (1 - exp(-elapsed / max(1, estimatedSeconds)))
         return min(0.99, max(0, start + (end - start) * movement))
@@ -40,6 +45,11 @@ extension CodeJob {
         if let progress { return progress.fraction(at: date) }
         guard state == .running else { return 0.05 }
         return estimatingProgress(at: date).progress?.fraction(at: date) ?? 0.05
+    }
+    public var progressDetail: String? {
+        guard let count = progress?.completedTasks else { return nil }
+        let active = progress?.activeTasks ?? 0
+        return "\(count) build tasks completed" + (active > 0 ? " · \(active) running" : "")
     }
     public var progressStage: String { progress?.stage ?? "Building on your Mac…" }
 }

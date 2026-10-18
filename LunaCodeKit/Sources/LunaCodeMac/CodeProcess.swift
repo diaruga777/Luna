@@ -19,7 +19,7 @@ public final class CodeProcess: @unchecked Sendable {
         else { process.interrupt(); process.terminate() }
     }
     public func run(_ executable: String, _ arguments: [String], directory: String,
-                    log: URL, timeout: TimeInterval = 3600) async throws -> Int32 {
+                    log: URL, timeout: TimeInterval = 3600, onTick: (@Sendable () async -> Void)? = nil) async throws -> Int32 {
         try await withTaskCancellationHandler {
             try await Task.detached { [self] in
                 if !FileManager.default.fileExists(atPath: log.path) { FileManager.default.createFile(atPath: log.path, contents: nil) }
@@ -39,9 +39,11 @@ public final class CodeProcess: @unchecked Sendable {
                 }
                 let deadline = Date().addingTimeInterval(timeout)
                 while p.isRunning {
+                    await onTick?()
                     if Date() > deadline { stop(p); throw CodeFailure("The command timed out. See the build log.") }
                     try await Task.sleep(for: .milliseconds(100))
                 }
+                await onTick?()
                 // isRunning is already false. A second waitUntilExit can stall
                 // Foundation’s run loop after short, sequential commands.
                 lock.withCriticalScope { process = nil }

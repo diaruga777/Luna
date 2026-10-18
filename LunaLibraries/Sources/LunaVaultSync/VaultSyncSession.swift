@@ -201,6 +201,13 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         return try await connection.codeRequest(payload)
     }
 
+    public func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        return try await connection.macStorage(refresh: refresh)
+    }
+
     public func browseMac(_ request: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
         if !isConnected { try await start() }
         try await waitForInitialIndex()

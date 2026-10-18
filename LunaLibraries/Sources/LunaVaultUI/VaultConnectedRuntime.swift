@@ -209,6 +209,11 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             .map(Self.present)
     }
 
+    public func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot {
+        try await prepareConnection(); try await session.announce(client: client)
+        return try await session.macStorage(refresh: refresh)
+    }
+
     public func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
         try await prepareConnection(); try await session.announce(client: client)
         return try await session.browseMac(VaultMacBrowseRequest(path == nil ? .locations : .list,

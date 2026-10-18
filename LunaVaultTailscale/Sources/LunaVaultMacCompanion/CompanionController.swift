@@ -112,7 +112,7 @@ final class CompanionController: @unchecked Sendable {
             let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
             // Reuse the durable snapshot for the handshake; refresh it after services are ready.
             let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
-            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", codeHandler: { [weak self] data in
+            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", stateURL: stateURL, codeHandler: { [weak self] data in
                 guard let self else { return Data() }; return await self.handleCode(data)
             }, clientStarted: { [weak self] client in
                 self?.clientStarted(client, device: accepted.device, generation: generation)

@@ -140,6 +140,24 @@ public actor BEPConnection {
         return value
     }
 
+    public func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot {
+        let request = BEPRequest(id: allocateRequestID(), folder: LunaMacStorageProtocol.folder,
+            name: refresh ? "refresh" : "", offset: 0, size: 0, hash: Data())
+        let response: BEPResponse
+        do { response = try await sendRequest(request, requestTimeout: 30) }
+        catch BEPRequestError.peerCode {
+            throw VaultMacBrowseError("Update and reopen Luna Mac on your Mac to see disk usage.")
+        }
+        guard response.data.count <= LunaMacStorageProtocol.maximumResponseSize else {
+            throw VaultMacBrowseError("The Mac returned too much storage data.")
+        }
+        let value = try JSONDecoder().decode(LunaMacStorageResponse.self, from: response.data)
+        if let error = value.error { throw VaultMacBrowseError(error) }
+        guard let snapshot = value.snapshot else { throw VaultMacBrowseError("Mac storage information is unavailable.") }
+        try snapshot.validate()
+        return snapshot
+    }
+
     public func announce(client: LunaMacClient) async throws {
         let payload = try JSONEncoder().encode(LunaMacClientStartup(client: client))
         let request = BEPRequest(id: allocateRequestID(), folder: LunaMacClientStartup.folder,

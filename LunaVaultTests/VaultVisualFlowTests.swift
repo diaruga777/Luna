@@ -210,14 +210,90 @@ final class VaultVisualFlowTests: XCTestCase {
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote", remoteName: "MacBook Pro") },
             cachePresentation: { VaultCachePresentation(usedBytes: 24_500_000, quotaBytes: 500_000_000, fileCount: 12) }), pairingHandler: { _ in })
         try await host(controller)
-        try await waitUntil { controller.tableView.numberOfSections == 5 }
-        XCTAssertEqual(controller.tableView.numberOfRows(inSection: 3), 2)
-        let image = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 3))
-        let video = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 1, section: 3))
+        try await waitUntil { controller.tableView.numberOfSections == 6 }
+        XCTAssertEqual(controller.tableView.numberOfRows(inSection: 4), 2)
+        let image = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 4))
+        let video = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 1, section: 4))
         XCTAssertEqual(image.accessibilityLabel, "Images, JPEG")
         XCTAssertEqual(video.accessibilityLabel, "Videos, MP4")
         try await capture("10-connected-settings")
     }
+    func testMacDiskUsageAppearsForEveryLunaMacClient() async throws {
+        let volume = LunaMacStorageVolume(id: "disk", name: "Macintosh HD", totalBytes: 1_000_000_000_000,
+            freeBytes: 400_000_000_000, categories: [.music: 120_000_000_000, .photos: 60_000_000_000,
+                .videos: 40_000_000_000, .files: 20_000_000_000, .code: 8_000_000_000, .appData: 2_000_000_000])
+        for client in LunaMacClient.allCases {
+            let controller = LunaMacConnectionViewController(services: VaultPresentationServices(
+                macStorage: { _ in LunaMacStorageSnapshot(volumes: [volume]) },
+                connectionStatus: { .connected },
+                pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
+                client: client, pairingHandler: { _ in })
+            try await host(controller)
+            try await waitUntil {
+                guard controller.tableView.numberOfSections > 1 else { return false }
+                let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+                return cell.contentView.subviews.contains { $0.accessibilityIdentifier == "luna.mac.storage.volume" }
+            }
+            XCTAssertEqual(controller.tableView.numberOfSections, client == .vault ? 6 : 3)
+            XCTAssertEqual(controller.tableView(controller.tableView, titleForHeaderInSection: 1), "Mac Disk Usage")
+            controller.tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
+            try await capture("mac-storage-" + client.rawValue)
+            if client == .vault {
+                controller.traitOverrides.userInterfaceStyle = .dark
+                controller.traitOverrides.preferredContentSizeCategory = .accessibilityExtraLarge
+                try await host(controller, size: CGSize(width: 320, height: 568))
+                controller.tableView.scrollToRow(at: IndexPath(row: 0, section: 1), at: .top, animated: false)
+                try await capture("mac-storage-small-large-text-dark")
+            }
+        }
+    }
+
+    func testMacStorageShowsEachVolumeSeparately() async throws {
+        let volumes = [
+            LunaMacStorageVolume(id: "internal", name: "Macintosh HD", totalBytes: 1_000_000, freeBytes: 400_000, categories: [.appData: 1_000]),
+            LunaMacStorageVolume(id: "external", name: "External Library", totalBytes: 2_000_000, freeBytes: 800_000, categories: [.music: 500_000])
+        ]
+        let controller = LunaMacConnectionViewController(services: VaultPresentationServices(
+            macStorage: { _ in LunaMacStorageSnapshot(volumes: volumes) },
+            connectionStatus: { .connected },
+            pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
+            client: .code, pairingHandler: { _ in })
+        try await host(controller)
+        try await waitUntil { controller.tableView.numberOfSections == 3 && controller.tableView.numberOfRows(inSection: 1) == 3 }
+        for row in 0..<2 {
+            let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: row, section: 1))
+            XCTAssertTrue(cell.contentView.subviews.contains { $0.accessibilityIdentifier == "luna.mac.storage.volume" })
+        }
+    }
+
+    func testOfflineMacStorageDoesNotInventZeroUsage() async throws {
+        let controller = LunaMacConnectionViewController(services: VaultPresentationServices(
+            macStorage: { _ in XCTFail("Offline settings must not start a storage request"); throw TestError.failed },
+            connectionStatus: { .offline },
+            pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
+            client: .vault, pairingHandler: { _ in })
+        try await host(controller)
+        try await waitUntil { controller.tableView.numberOfSections == 6 }
+        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertEqual((cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText, "Connect to your Mac to see disk usage.")
+    }
+
+    func testMacStorageFailureKeepsConnectionSettingsUsable() async throws {
+        let controller = LunaMacConnectionViewController(services: VaultPresentationServices(
+            macStorage: { _ in throw VaultMacBrowseError("Update Luna Mac to see disk usage.") },
+            connectionStatus: { .connected },
+            pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
+            client: .music, pairingHandler: { _ in })
+        try await host(controller)
+        try await waitUntil {
+            guard controller.tableView.numberOfSections == 3 else { return false }
+            let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+            return (cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText == "Update Luna Mac to see disk usage."
+        }
+        let reconnect = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 1, section: 0))
+        XCTAssertEqual(reconnect.accessibilityLabel, "Reconnect")
+    }
+
     func testSetupAdaptsToLargeTextAndSmallScreen() async throws {
         let controller = VaultConnectedSettingsViewController(services: VaultPresentationServices(), pairingHandler: { _ in })
         try await host(controller)

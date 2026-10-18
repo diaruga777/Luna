@@ -106,3 +106,32 @@ macOS Files and Folders / Full Disk Access can restrict access; the phone shows
 an actionable error. `/` and `/Volumes` expose the filesystem and mounted disks.
 Only the existing `vault` sync namespace can create, replace, or delete files;
 its folder-relative path and symlink restrictions remain in force.
+
+### Mac disk usage in connection settings
+
+Vault, Music, and Code use `LunaMacConnectionViewController`. Once paired, its
+**Mac Disk Usage** section reports total capacity, Luna Mac usage, other disk
+usage, and free space. A second bar breaks Luna usage into Music, Photos, Videos,
+Files, Code & Builds, and App Data. Each volume containing Luna data gets its own
+card, so an external shared folder is compared with that disk’s capacity.
+
+`luna-storage-v1` is a bounded, read-only RPC over the existing approved BEP
+connection. `CompanionStorageScanner` measures allocated bytes in the selected
+shared folder and the companion’s Application Support/Luna Vault folder. Code job
+artifacts and DerivedData inside its Code directory belong to Code & Builds;
+indexes, identity state, hidden staging files, and directory overhead belong to
+App Data. User files are classified by extension. Browsing or editing a file
+elsewhere on the Mac does not make it Luna-managed storage.
+
+The scanner uses metadata only, skips symbolic links, and counts hard links and
+overlapping roots once. It obtains capacity/free space from each containing
+volume; other usage is used capacity minus Luna’s allocated bytes. APFS clones
+and snapshots can affect allocation estimates. If allocations exceed used
+capacity, or a folder cannot be measured, the UI reports unavailable rather than
+presenting invented totals. Older companions display an update instruction;
+offline settings do not show stale numbers as current.
+
+Settings refreshes while visible every 30 seconds, with a matching companion
+cache and one in-flight scan per connection. **Refresh Disk Usage** bypasses that
+cache. Storage work is independent of the connection status poll, with explicit
+loading/error states and accessible text values alongside the charts.

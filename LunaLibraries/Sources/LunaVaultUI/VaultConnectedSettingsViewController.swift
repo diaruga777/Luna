@@ -13,6 +13,12 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     private let connectButton = UIButton(type: .system)
     private var snapshot: VaultPairingSnapshot?
     private var connection: VaultConnectionStatus = .notPaired
+    private var storage: LunaMacStorageSnapshot?
+    private var storageMessage: String?
+    private var storageLoading = false
+    private var storageTask: Task<Void, Never>?
+    private var storageAttemptAt = Date.distantPast
+    private var storagePeerID: String?
     private var cache: VaultCachePresentation?
     private var imageFormat: VaultPhotoImageFormat = .jpeg
     private var videoFormat: VaultPhotoVideoFormat = .mp4
@@ -81,8 +87,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         statusTask?.cancel(); statusTask = nil
+        storageTask?.cancel(); storageTask = nil; storageLoading = false; storageAttemptAt = .distantPast
     }
-    deinit { statusTask?.cancel() }
+    deinit { statusTask?.cancel(); storageTask?.cancel() }
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let header = tableView.tableHeaderView else { return }
@@ -104,7 +111,32 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         } catch { message = error.localizedDescription; messageIsError = true }
         let wasLoading = loading
         loading = false
+        if storagePeerID != snapshot?.remoteDeviceID || connection == .offline || connection == .notPaired {
+            storageTask?.cancel(); storageTask = nil; storageLoading = false
+            storage = nil; storageMessage = nil; storageAttemptAt = .distantPast
+            storagePeerID = snapshot?.remoteDeviceID
+        }
         if !onlyIfChanged || wasLoading || snapshot != previousSnapshot || connection != previousConnection || message != previousMessage { render() }
+        if isPaired, connection == .connected || connection == .syncing { loadStorage() }
+    }
+    private func loadStorage(force: Bool = false) {
+        guard storageTask == nil, force || Date().timeIntervalSince(storageAttemptAt) >= 30 else { return }
+        guard connection == .connected || connection == .syncing else { return }
+        storageAttemptAt = Date(); storageLoading = true; storageMessage = nil
+        let peerID = snapshot?.remoteDeviceID
+        storageTask = Task { [weak self, runtime] in
+            let result: Result<LunaMacStorageSnapshot, Error>
+            do { result = .success(try await runtime.macStorage(refresh: force)) }
+            catch { result = .failure(error) }
+            guard !Task.isCancelled, let self, self.snapshot?.remoteDeviceID == peerID else { return }
+            self.storageLoading = false; self.storageTask = nil
+            switch result {
+            case .success(let value): self.storage = value
+            case .failure(let error): self.storage = nil; self.storageMessage = error.localizedDescription
+            }
+            self.render()
+        }
+        render()
     }
     private func render() {
         title = "Luna Mac"
@@ -145,7 +177,11 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         ])
         return container
     }
-    private func settingsSection(_ section: Int) -> Int { hasVaultOptions || section == 0 ? section : 4 }
+    private func settingsSection(_ section: Int) -> Int {
+        if section == 0 { return 0 }
+        if section == 1 { return 5 } // Mac storage appears for every client.
+        return hasVaultOptions ? section - 1 : 4
+    }
     private func setupHeader() -> UIView {
         let symbol = UIImageView(image: UIImage(systemName: "laptopcomputer.and.iphone"))
         symbol.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 52, weight: .light)
@@ -171,20 +207,24 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         guard !isPaired, let cell = tableView.cellForRow(at: IndexPath(row: 1, section: 0)) else { return }
         configurePairCell(cell)
     }
-    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? (hasVaultOptions ? 5 : 2) : (needsNetworkSettings ? 2 : 1)) }
+    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? (hasVaultOptions ? 6 : 3) : (needsNetworkSettings ? 2 : 1)) }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !isPaired { return section == 0 ? 2 : 1 }
         let section = settingsSection(section)
+        if section == 5 { return max(1, storage?.volumes.count ?? 0) + 1 }
         return section == 0 ? 3 : (section == 1 || section == 3 ? 2 : 1)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? "Pairing Code" : nil }
-        return ["Connection", "On This iPhone", "Search", "Photos Export", ""][settingsSection(section)]
+        return ["Connection", "On This iPhone", "Search", "Photos Export", "", "Mac Disk Usage"][settingsSection(section)]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? (message ?? "Turn on iCloud Passwords & Keychain to use an existing connection.") : "Enable Local Network access for this app, then try again." }
         switch settingsSection(section) {
         case 0: return message ?? (connection == .offline ? "Open Luna Mac and check your network." : "Use iCloud Passwords & Keychain to connect your other devices.")
+        case 5:
+            guard let storage else { return nil }
+            return "Measured \(storage.measuredAt.formatted(date: .omitted, time: .shortened)). Includes Luna’s shared folder and app data on this disk. Other Disk Usage covers everything else. Storage sizes are estimates."
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
         case 2: return "Search finds file names and text in downloaded files. Rebuild only if results seem incomplete."
         case 3: return "Choose the formats used when importing from Photos into Vault. Original keeps the library file unchanged."
@@ -218,6 +258,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
                 return cell
             } else { configurePairCell(cell); return cell }
         } else {
+            if settingsSection(indexPath.section) == 5 { return storageCell(at: indexPath) }
             switch (settingsSection(indexPath.section), indexPath.row) {
             case (0, 0):
                 content.text = snapshot?.remoteName ?? "My Mac"
@@ -252,6 +293,41 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         cell.isAccessibilityElement = true
         cell.accessibilityLabel = [content.text, content.secondaryText].compactMap { $0 }.joined(separator: ", ")
         if cell.selectionStyle != .none { cell.accessibilityTraits = .button }
+        return cell
+    }
+    private func storageCell(at indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        let count = max(1, storage?.volumes.count ?? 0)
+        if indexPath.row == count {
+            var content = cell.defaultContentConfiguration()
+            let canRefresh = connection == .connected || connection == .syncing
+            content.text = storageLoading ? "Measuring Storage…" : "Refresh Disk Usage"
+            content.image = UIImage(systemName: "arrow.clockwise")
+            content.textProperties.color = storageLoading || !canRefresh ? .secondaryLabel : .tintColor
+            cell.contentConfiguration = content
+            cell.isUserInteractionEnabled = !storageLoading && canRefresh
+            cell.accessibilityIdentifier = "luna.mac.storage.refresh"
+            cell.accessibilityTraits = .button
+        } else if let volume = storage?.volumes[indexPath.row] {
+            let usage = LunaMacStorageView(volume: volume)
+            usage.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(usage)
+            NSLayoutConstraint.activate([
+                usage.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+                usage.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+                usage.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+                usage.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor)
+            ])
+            cell.selectionStyle = .none
+        } else {
+            var content = cell.defaultContentConfiguration()
+            content.text = storageLoading ? "Measuring Mac Storage…" : "Mac Storage Unavailable"
+            content.secondaryText = storageMessage ?? (storageLoading ? "Checking disk space on your Mac." : "Connect to your Mac to see disk usage.")
+            content.textProperties.numberOfLines = 0; content.secondaryTextProperties.numberOfLines = 0
+            content.image = UIImage(systemName: "internaldrive")
+            cell.contentConfiguration = content; cell.selectionStyle = .none
+            cell.accessibilityIdentifier = "luna.mac.storage.status"
+        }
         return cell
     }
     private func configurePairCell(_ cell: UITableViewCell) {
@@ -294,6 +370,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             return
         }
         switch (settingsSection(indexPath.section), indexPath.row) {
+        case (5, _): loadStorage(force: true)
         case (0, 1): run(message: "Connecting…") { [runtime] in
             await runtime.refresh()
             return await runtime.connectionStatus() == .connected ? "Your Mac is connected." : "Your Mac is still offline. Keep Luna Mac open on your Mac and check your network."

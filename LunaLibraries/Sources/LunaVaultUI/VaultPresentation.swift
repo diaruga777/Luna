@@ -150,6 +150,7 @@ public struct VaultIndexPresentation: Equatable, Sendable {
 /// exposed to UIKit.
 public protocol VaultPresentationProviding: Sendable {
     func connectionStatus() async -> VaultConnectionStatus
+    func macStorage(refresh: Bool) async throws -> LunaMacStorageSnapshot
     func pendingUploadCount() async throws -> Int
     func pendingUploads() async throws -> [VaultPendingUpload]
     func queuedImportCount() async throws -> Int
@@ -179,6 +180,9 @@ public protocol VaultPresentationProviding: Sendable {
 }
 
 public extension VaultPresentationProviding {
+    func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot {
+        throw VaultMacBrowseError("Update and reopen Luna Mac on your Mac to see disk usage.")
+    }
     func macDirectory(path: String?, offset: Int64, showHidden: Bool) async throws -> VaultMacBrowseResponse {
         throw VaultMacBrowseError("Connect to an updated Luna Vault companion on your Mac to browse files.")
     }
@@ -197,6 +201,7 @@ public extension VaultPresentationProviding {
 /// Defaults describe an empty, unpaired Vault, so unavailable optional work
 /// fails quietly without inventing transport state.
 public struct VaultPresentationServices: VaultPresentationProviding, @unchecked Sendable {
+    public var macStorageHandler: @Sendable (Bool) async throws -> LunaMacStorageSnapshot
     public var connectionStatusHandler: @Sendable () async -> VaultConnectionStatus
     public var pendingUploadsHandler: @Sendable () async throws -> [VaultPendingUpload]
     public var downloadedFilesHandler: @Sendable () async throws -> [VaultPresentedFile]
@@ -216,6 +221,9 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
     public var rebuildIndexHandler: @Sendable () async throws -> Void
 
     public init(
+        macStorage: @escaping @Sendable (Bool) async throws -> LunaMacStorageSnapshot = { _ in
+            throw VaultMacBrowseError("Update and reopen Luna Mac on your Mac to see disk usage.")
+        },
         connectionStatus: @escaping @Sendable () async -> VaultConnectionStatus = { .notPaired },
         pendingUploads: @escaping @Sendable () async throws -> [VaultPendingUpload] = { [] },
         downloadedFiles: @escaping @Sendable () async throws -> [VaultPresentedFile] = { [] },
@@ -242,6 +250,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
         setScratchQuota: @escaping @Sendable (Int64) async throws -> Void = { _ in },
         rebuildIndex: @escaping @Sendable () async throws -> Void = {}
     ) {
+        macStorageHandler = macStorage
         connectionStatusHandler = connectionStatus
         pendingUploadsHandler = pendingUploads
         downloadedFilesHandler = downloadedFiles
@@ -261,6 +270,7 @@ public struct VaultPresentationServices: VaultPresentationProviding, @unchecked 
         rebuildIndexHandler = rebuildIndex
     }
 
+    public func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot { try await macStorageHandler(refresh) }
     public func connectionStatus() async -> VaultConnectionStatus { await connectionStatusHandler() }
     public func pendingUploads() async throws -> [VaultPendingUpload] { try await pendingUploadsHandler() }
     public func downloadedFiles() async throws -> [VaultPresentedFile] { try await downloadedFilesHandler() }

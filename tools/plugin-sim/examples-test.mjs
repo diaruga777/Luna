@@ -7,7 +7,7 @@ import { parseHeader, manifestErrors } from "./manifest.mjs";
 const root = new URL("../../", import.meta.url);
 const examples = new URL("docs/plugins/examples/", root);
 const bundled = new URL("LunaLibraries/Sources/LunaBundledPlugins/Plugins/", root);
-for (const dir of [examples, bundled]) {
+for (const dir of [examples, bundled, new URL("docs/plugins/media/", root)]) {
   for (const file of readdirSync(dir).filter((name) => name.endsWith(".js"))) {
     const result = spawnSync(process.execPath, [fileURLToPath(new URL("run.mjs", import.meta.url)), "validate", fileURLToPath(new URL(file, dir))], {encoding:"utf8"});
     assert.equal(result.status, 0, `${file}: ${result.stdout}\n${result.stderr}`);

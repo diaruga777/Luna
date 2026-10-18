@@ -25,6 +25,7 @@ public final class PluginImportCoordinator: NSObject {
 
     private weak var presenter: UIViewController?
     private var pendingOrigin: PluginImportOrigin?
+    private var pendingSources: [String] = []
     /// Exposed for the import UI to disable duplicate submissions while the
     /// candidate is being preflighted off the main actor.
     public private(set) var isInstalling = false
@@ -61,13 +62,14 @@ public final class PluginImportCoordinator: NSObject {
         from presenter: UIViewController
     ) {
         self.presenter = presenter
+        pendingSources = []
         handle(sourceText: sourceText, origin: origin)
     }
 
     private func pickFile() {
         let picker = UIDocumentPickerViewController(
             forOpeningContentTypes: LunaApp.current.acceptedFileTypeIdentifiers.compactMap { UTType($0) }
-                + [.javaScript, .plainText], asCopy: true)
+                + [UTType(PluginBundleArchive.typeIdentifier) ?? .zip, .zip, .javaScript, .plainText], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
         presenter?.present(picker, animated: true)
@@ -111,7 +113,7 @@ public final class PluginImportCoordinator: NSObject {
             message: L10n.string(
                 "Plugins_updateConfirmMessage", oldVersion, preview.summary.version),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel) { [weak self] _ in self?.pendingSources = [] })
         alert.addAction(
             UIAlertAction(title: L10n.string("Plugins_updateConfirmButton"), style: .default) {
                 [weak self] _ in self?.install(preview, origin: origin)
@@ -124,17 +126,52 @@ public final class PluginImportCoordinator: NSObject {
         isInstalling = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.isInstalling = false }
             do {
                 try await self.importer.installAsync(preview, origin: origin)
                 self.observer?.pluginImportDidFinish(self)
+                self.isInstalling = false
+                self.importNextSource()
             } catch {
+                self.isInstalling = false
                 self.report(error)
             }
         }
     }
 
+    /// Opens either a single source or an entire bundle. Preflight every header
+    /// before showing consent, so malformed later members cannot partially import.
+    public func begin(fileURL url: URL, from presenter: UIViewController) {
+        self.presenter = presenter
+        guard !isInstalling else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            if [PluginBundleArchive.fileExtension, "zip"].contains(url.pathExtension.lowercased()) {
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= PluginBundleArchive.maximumBytes else {
+                    throw PluginBundleArchive.ArchiveError.invalid("bundle is too large.")
+                }
+                let file = try FileHandle(forReadingFrom: url)
+                defer { try? file.close() }
+                let data = try file.read(upToCount: PluginBundleArchive.maximumBytes + 1) ?? Data()
+                let sources = try PluginBundleArchive.sources(in: data)
+                for source in sources { _ = try importer.preview(sourceText: source) }
+                pendingSources = sources
+                importNextSource()
+            } else {
+                pendingSources = []
+                handle(sourceText: try LunaFileReader.readText(at: url).get(), origin: .files)
+            }
+        } catch { report(error) }
+    }
+
+    private func importNextSource() {
+        guard !pendingSources.isEmpty else { return }
+        handle(sourceText: pendingSources.removeFirst(), origin: .files)
+    }
+
     private func report(_ error: Error) {
+        pendingSources = []
         let alert = UIAlertController(
             title: L10n.string("Plugins_importFailedTitle"),
             message: error.localizedDescription, preferredStyle: .alert)
@@ -148,11 +185,9 @@ extension PluginImportCoordinator: UIDocumentPickerDelegate {
         _ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]
     ) {
         guard let url = urls.first else { return }
-        do {
-            let text = try LunaFileReader.readText(at: url).get()
-            handle(sourceText: text, origin: .files)
-        } catch {
-            report(error)
+        guard let presenter else { return }
+        controller.dismiss(animated: true) { [weak self] in
+            self?.begin(fileURL: url, from: presenter)
         }
     }
 }
@@ -175,7 +210,7 @@ extension PluginImportCoordinator: PluginConsentDelegate {
         let origin = pendingOrigin ?? .paste
         pendingOrigin = nil
         controller.dismiss(animated: true) { [weak self] in
-            guard accepted else { return }
+            guard accepted else { self?.pendingSources = []; return }
             self?.install(preview, origin: origin)
         }
     }

@@ -120,6 +120,50 @@ final class PluginImportCoordinatorTests: XCTestCase {
         XCTFail("condition did not become true within \(timeout)s", file: file, line: line)
     }
 
+    private func bundleURL() throws -> URL {
+        let sources = ["one", "two"].map { id in
+            """
+            /* luna-plugin
+            {"id":"test.\(id)","name":"\(id)","version":"1.0.0","api":1,"produces":["article"],"match":{"any":true}}
+            */
+            luna.register({});
+            """
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".lunabundle")
+        try PluginBundleArchive.data(sources: sources).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    func testBundleWaitsForEachMembersConsentAndCancellationStopsTheQueue() throws {
+        let importer = FakeImporter()
+        importer.previewResult = .success(preview(requiresConsent: true))
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        pollUntil { self.presenter.presentedViewController is PluginConsentViewController }
+        XCTAssertTrue(importer.installCalls.isEmpty)
+        let first = try XCTUnwrap(presenter.presentedViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(first, didDecide: true, for: preview(requiresConsent: true))
+        pollUntil { importer.installCalls.count == 1 && self.presenter.presentedViewController is PluginConsentViewController }
+        let second = try XCTUnwrap(presenter.presentedViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(second, didDecide: false, for: preview(requiresConsent: true))
+        pump()
+        XCTAssertEqual(importer.installCalls.count, 1)
+        XCTAssertNil(presenter.presentedViewController)
+    }
+
+    func testBundleWithoutRequiredConsentsInstallsAllMembersAndNotifies() throws {
+        let importer = FakeImporter()
+        importer.previewResult = .success(preview(requiresConsent: false))
+        let observer = FakeObserver()
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.observer = observer
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        pollUntil { observer.finishedCount == 2 }
+        XCTAssertEqual(importer.installCalls.count, 2)
+        XCTAssertTrue(importer.installCalls.allSatisfy { $0.origin == .files })
+    }
+
     // MARK: - No consent required
 
     func testAnImportThatNeedsNoConsentInstallsDirectlyAndNotifiesTheObserver() {

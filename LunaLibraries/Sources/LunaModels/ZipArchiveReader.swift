@@ -28,6 +28,7 @@ public struct ZipArchiveReader {
 
     private struct Entry {
         let path: String
+        let crc32: UInt32
         let compressionMethod: UInt16
         let compressedSize: Int
         let uncompressedSize: Int
@@ -47,11 +48,15 @@ public struct ZipArchiveReader {
 
     /// The decompressed bytes of one entry, or nil when it is absent or cannot
     /// be read. Paths are matched exactly — zip paths are already normalized to
-    /// forward slashes with no leading one.
-    public func data(at path: String, maximumBytes: Int = 128 * 1024 * 1024) -> Data? {
+    /// forward slashes with no leading one. `requireIntegrity` additionally
+    /// checks the exact central-directory size and CRC for executable imports;
+    /// document import retains support for streaming files with unknown sizes.
+    public func data(at path: String, maximumBytes: Int = 128 * 1024 * 1024, requireIntegrity: Bool = false) -> Data? {
         guard let entry = entries.first(where: { $0.path == path }),
               maximumBytes >= 0, entry.uncompressedSize <= maximumBytes,
-              let result = data(for: entry, maximumBytes: maximumBytes), result.count <= maximumBytes else { return nil }
+              let result = data(for: entry, maximumBytes: maximumBytes),
+              result.count <= maximumBytes,
+              !requireIntegrity || (result.count == entry.uncompressedSize && ZipArchiveWriter.crc32(of: result) == entry.crc32) else { return nil }
         return result
     }
 
@@ -92,28 +97,40 @@ public struct ZipArchiveReader {
 
     private static func readCentralDirectory(_ bytes: [UInt8]) -> [Entry]? {
         guard let eocd = endOfCentralDirectoryOffset(bytes) else { return nil }
+        guard readUInt16(bytes, at: eocd + 4) == 0, readUInt16(bytes, at: eocd + 6) == 0,
+              readUInt16(bytes, at: eocd + 8) == readUInt16(bytes, at: eocd + 10),
+              readUInt16(bytes, at: eocd + 10) != 0xFFFF else { return nil }
+        let expectedCount = Int(readUInt16(bytes, at: eocd + 10))
         let directoryOffset = Int(readUInt32(bytes, at: eocd + 16))
         // 0xFFFFFFFF is the ZIP64 escape: the real offset lives in a record this
         // reader doesn't parse, so stop rather than seek to a bogus place.
-        guard directoryOffset != 0xFFFF_FFFF, directoryOffset < bytes.count else { return nil }
+        guard directoryOffset != 0xFFFF_FFFF, directoryOffset < eocd,
+              directoryOffset + Int(readUInt32(bytes, at: eocd + 12)) == eocd else { return nil }
 
         var entries: [Entry] = []
+        var recordCount = 0
         var cursor = directoryOffset
         // Walked until the signature stops matching rather than for the record
         // count in the EOCD, which is a UInt16 and saturates at 0xFFFF.
-        while cursor + 46 <= bytes.count, readUInt32(bytes, at: cursor) == 0x0201_4b50 {
+        while cursor + 46 <= eocd, readUInt32(bytes, at: cursor) == 0x0201_4b50 {
             let nameLength = Int(readUInt16(bytes, at: cursor + 28))
             let extraLength = Int(readUInt16(bytes, at: cursor + 30))
             let commentLength = Int(readUInt16(bytes, at: cursor + 32))
             let nameStart = cursor + 46
             let nameEnd = nameStart + nameLength
-            guard nameEnd <= bytes.count else { return entries.isEmpty ? nil : entries }
+            guard nameEnd + extraLength + commentLength <= eocd,
+                  readUInt16(bytes, at: cursor + 8) & 1 == 0,
+                  readUInt16(bytes, at: cursor + 34) == 0,
+                  readUInt32(bytes, at: cursor + 20) != 0xFFFF_FFFF,
+                  readUInt32(bytes, at: cursor + 24) != 0xFFFF_FFFF else { return nil }
+            recordCount += 1
 
             let path = String(decoding: bytes[nameStart..<nameEnd], as: UTF8.self)
             // A directory record (trailing slash, no payload) is not an entry.
             if !path.hasSuffix("/") {
                 entries.append(Entry(
                     path: path,
+                    crc32: readUInt32(bytes, at: cursor + 16),
                     compressionMethod: readUInt16(bytes, at: cursor + 10),
                     compressedSize: Int(readUInt32(bytes, at: cursor + 20)),
                     uncompressedSize: Int(readUInt32(bytes, at: cursor + 24)),
@@ -121,7 +138,7 @@ public struct ZipArchiveReader {
             }
             cursor = nameEnd + extraLength + commentLength
         }
-        return entries.isEmpty ? nil : entries
+        return cursor == eocd && recordCount == expectedCount && !entries.isEmpty ? entries : nil
     }
 
     /// The end-of-central-directory record, found by scanning backwards for its
@@ -133,7 +150,8 @@ public struct ZipArchiveReader {
         let lowest = max(0, bytes.count - minimum - 0xFFFF)
         var offset = bytes.count - minimum
         while offset >= lowest {
-            if readUInt32(bytes, at: offset) == 0x0605_4b50 { return offset }
+            if readUInt32(bytes, at: offset) == 0x0605_4b50,
+               offset + minimum + Int(readUInt16(bytes, at: offset + 20)) == bytes.count { return offset }
             offset -= 1
         }
         return nil

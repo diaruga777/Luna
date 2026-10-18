@@ -80,7 +80,8 @@ final class CorePluginOwnershipTests: XCTestCase {
         let runner = PluginJSFixtureRunner()
         defer { runner.cleanUp() }
         let catalog = BundledPluginCatalog(source: .directory(root.appendingPathComponent("LunaLibraries/Sources/LunaBundledPlugins/Plugins")), store: runner.store)
-        XCTAssertGreaterThan(catalog.plugins().count, 15)
+        XCTAssertEqual(catalog.plugins().count, 6)
+        XCTAssertFalse(catalog.sourceURLs().contains { $0.lastPathComponent.contains("transcript") })
         for plugin in catalog.plugins() { runner.store.setEnabled(false, pluginID: plugin.manifest.id, isBundled: true) }
         let runtime = PluginRuntime(store: runner.store, bundled: catalog,
             processContext: PluginProcessContext(kind: .app), isolated: true)

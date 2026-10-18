@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {readFileSync} from 'node:fs';
+import {readFileSync, existsSync} from 'node:fs';
 import {createBridge} from './bridge.mjs';
-const source = (name) => readFileSync(new URL('../../LunaLibraries/Sources/LunaBundledPlugins/Plugins/'+name+'.js',import.meta.url),'utf8');
+const source = (name) => { const bundled = new URL('../../LunaLibraries/Sources/LunaBundledPlugins/Plugins/'+name+'.js',import.meta.url); return readFileSync(existsSync(bundled) ? bundled : new URL('../../docs/plugins/media/'+name+'.js',import.meta.url),'utf8'); };
 function load(name,payload) {
   const luna = createBridge({capabilities:['html','fetch']});
   let fetches=0;

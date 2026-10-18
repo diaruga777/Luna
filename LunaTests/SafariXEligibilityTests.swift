@@ -168,7 +168,7 @@ final class SafariXEligibilityTests: XCTestCase {
     /// Use the same host table as Safari: without it, isXHost() is false and
     /// the old DOM veto is never exercised by these plugin-path tests.
     private func offerCore(_ payload: String, context: String = "", deferred: Bool = false, failFirstSource: Bool = false, stallFirstSource: Bool = false, url: String = "https://x.com/ZetaPlusCG/status/2108409488554222078") {
-        let plugin = SafariJSTestHarness.source("LunaLibraries/Sources/LunaBundledPlugins/Plugins/x.js")
+        let plugin = SafariJSTestHarness.source("docs/plugins/media/x.js")
         let host = SafariJSTestHarness.source("LunaSafari/Resources/plugin_host.js")
         js.load(html: "<html><body><p>Loading X</p>\(tweet("999", media: "<video></video>"))</body></html>",
                 urlString: url,

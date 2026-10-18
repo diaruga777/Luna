@@ -8,6 +8,8 @@
 //  sent to a Kindle.
 //
 
+import LunaPluginUI
+import LunaPluginKit
 import LunaModels
 import LunaSavesUI
 import LunaSocialUI
@@ -191,7 +193,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// will ever look at it — and the surface's own intake witness decides what
     /// the user sees. A file that is not a Luna file at all says so in one
     /// line; Luna claims only its own document types, so this is rare.
+    private var pluginFileImport: PluginImportCoordinator?
+
     private func openLunaFile(at url: URL) {
+        if ["lunabundle", "zip", "js"].contains(url.pathExtension.lowercased()),
+           let importer = PluginPlatformServices.importer, let navigation = mainNavigationController {
+            let coordinator = PluginImportCoordinator(importer: importer)
+            pluginFileImport = coordinator
+            let presenter = navigation.presentedViewController ?? navigation
+            coordinator.begin(fileURL: url, from: presenter)
+            _ = LunaFileReader.deleteInboxCopy(at: url)
+            return
+        }
         let text: String
         switch LunaFileReader.readText(at: url) {
         case .success(let value):

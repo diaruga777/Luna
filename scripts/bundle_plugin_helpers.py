@@ -2,7 +2,8 @@
 """Embed explicitly requested plugin-owned helpers; no native runtime fallbacks."""
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
-for path in (root / 'LunaLibraries/Sources/LunaBundledPlugins/Plugins').glob('*.js'):
+for path in [*(root / 'LunaLibraries/Sources/LunaBundledPlugins/Plugins').glob('*.js'),
+             *(root / 'docs/plugins/media').glob('*.js')]:
     source = path.read_text()
     for name in ['web', 'newyorker', 'retail-data', 'shop', 'access-data', 'access']:
         tag = name.upper().replace('-', '_')

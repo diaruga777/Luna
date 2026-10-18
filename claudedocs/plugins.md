@@ -8,13 +8,41 @@
 Central Luna (`com.hsanabria.luna`) alone runs a JavaScriptCore plugin
 runtime that extends two of the three ingest pipeline steps — **ingest**
 (URL → Model) and **export** (save → delivered file) — plus Bluetooth/Wi-Fi
-transport for one bundled reader integration. Luna Reader, Luna Downloader
-and Luna Price Tracker are untouched: they keep their Swift-only paths.
+transport for one bundled reader integration. The former Reader, Downloader
+and Price Tracker app targets are retired; all three feature sets live in core Luna.
 
 This is the CURRENT reference. `claudedocs/plans/plugin-platform.md` is now
 history — it records the design decisions and each wave's departures from
 plan; where the two disagree, this document and the code win. Read the plan
 once for the "why"; read this for the "what, exactly."
+
+## Plugin bundles and optional media (2026-10-18)
+
+Only `web`, `nytimes`, `publisher-access`, `url-rewrites`, `kindle` and `xteink`
+ship as app resources. The seven media plugins and their seven transcript twins
+are preserved under `docs/plugins/media`, outside all SwiftPM resource targets.
+Install `docs/plugins/bundles/Luna-Media.lunabundle` through Settings → Plugins →
+Import from Files, or open it in Luna. Rebuild it with
+`python3 scripts/build_media_plugin_bundle.py` after editing its sources.
+
+A `.lunabundle` is an ordinary ZIP of UTF-8 JavaScript plugin files. Nested
+folders are supported; README and macOS metadata files are ignored. There is no
+bundle-level executable or implicit permission grant. Every manifest is validated
+before import starts; duplicate paths/IDs, traversal, invalid ZIP metadata/CRC,
+non-UTF-8 scripts and excessive sizes are rejected. Limits: 128 plugins, 4 MiB
+per script, 32 MiB archived or expanded, and 512 ZIP file entries. ZIP64,
+encrypted and multi-disk archives are unsupported.
+
+The import coordinator runs the existing consent/update and transactional runtime
+activation for each member. Cancelling stops the remaining queue. Earlier accepted
+members stay installed if a later activation fails or the user cancels. Import and
+export are free. Export in the Plugins header lets users select several installed
+plugins (including bundled ones), then share one `.lunabundle`. Only source travels:
+settings, passwords, pairing keys and granted permissions stay on the device.
+Single `.js`, pasted source and existing `.luna` handoffs still work.
+
+Creating a new plugin from Settings, a failed save or a handoff uses the shared
+premium gate in `PluginCreateViewController`; see [premium.md](premium.md).
 
 ## Core URL ownership migration (2026-10-04)
 

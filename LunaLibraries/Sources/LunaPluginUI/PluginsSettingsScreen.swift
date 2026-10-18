@@ -62,7 +62,9 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
 
     public override func makeTrailingControls() -> [UIView] {
         guard importer != nil else { return [] }
-        var controls: [UIView] = []
+        var controls: [UIView] = [NavHeaderBar.imageButton(
+            systemName: "square.and.arrow.up", target: self, action: #selector(exportTapped),
+            accessibilityLabel: L10n.string("PluginBundles_exportAccessibility"))]
         if launcher != nil {
             controls.append(NavHeaderBar.imageButton(
                 systemName: "wand.and.stars", target: self, action: #selector(createTapped),
@@ -81,6 +83,10 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
 
     @objc private func addTapped() {
         importCoordinator?.begin(from: self, sourceView: header)
+    }
+
+    @objc private func exportTapped() {
+        present(UINavigationController(rootViewController: PluginBundleExportViewController(catalog: catalog)), animated: true)
     }
 
     @objc private func createTapped() {

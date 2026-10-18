@@ -36,8 +36,10 @@ final class MediaPluginHarness {
     init(_ name: String, id: String, file: StaticString = #filePath, line: UInt = #line) throws {
         pluginID = id
         runner = PluginJSFixtureRunner()
+        let mediaURL = Self.pluginsDirectory.appendingPathComponent("\(name).js")
+        let sourceURL = FileManager.default.fileExists(atPath: mediaURL.path) ? mediaURL : Self.pluginsDirectory.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("LunaLibraries/Sources/LunaBundledPlugins/Plugins/\(name).js")
         let source = try String(
-            contentsOf: Self.pluginsDirectory.appendingPathComponent("\(name).js"),
+            contentsOf: sourceURL,
             encoding: .utf8)
         let reports = try runner.load(source, file: file, line: line)
         XCTAssertEqual(reports.count, 1, "\(name).js did not load", file: file, line: line)
@@ -51,7 +53,7 @@ final class MediaPluginHarness {
     static let pluginsDirectory = URL(fileURLWithPath: "\(#filePath)")
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-        .appendingPathComponent("LunaLibraries/Sources/LunaBundledPlugins/Plugins")
+        .appendingPathComponent("docs/plugins/media")
 
     /// A recorded fixture beside this suite, as text.
     static func fixture(

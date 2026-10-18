@@ -466,11 +466,12 @@ public final class CardCarouselViewController: UIViewController {
     private var pagingTransition: PagingTransition = .none
     /// Finger-travel distance mapping the pan translation to the fraction.
     private var interactiveTravel: CGFloat = 1
+    private var interactiveDirection: CGFloat = 1
     /// Set when a page pan already paged non-interactively (Reduce Motion), so
     /// further .changed events in the same gesture don't page again.
     private var pagePanConsumed = false
     /// True from the moment a page pan is accepted until the touch leaves. The
-    /// transition it drives is created one touch-move later, so `isTransitioning`
+    /// transition may wait for a nonzero translation, so `isTransitioning`
     /// alone leaves a frame in which the deck still takes immersion changes from
     /// a card the same gesture is already paging away.
     private(set) var isPagingGesture = false
@@ -1785,30 +1786,24 @@ public final class CardCarouselViewController: UIViewController {
             pagePanConsumed = false
             recordCardPagingSwipeForPullTabHint()
             relinquishScrollingClaimedByPagePan()
+            updateInteractivePage(translation: translation)
         case .changed:
-            if case .none = pagingTransition, !pagePanConsumed {
-                beginInteractivePage(translation: translation)
-            }
-            guard case .interactive(let activeTransition) = pagingTransition else { return }
-            activeTransition.update(fraction: abs(translation) / interactiveTravel)
+            updateInteractivePage(translation: translation)
         case .ended, .cancelled, .failed:
-            // Cleared before the transition guard below: a pan that never
-            // became a page must still hand the deck back.
             isPagingGesture = false
-            guard case .interactive(let interactiveTransition) = pagingTransition
-            else { return }
-            let fraction = min(max(abs(translation) / interactiveTravel, 0), 1)
+            guard case .interactive(let transition) = pagingTransition else { return }
+            // Keep progress signed relative to the original target. Reversing
+            // past the touch origin must cancel, never advance the same card.
+            let fraction = min(max(translation * interactiveDirection / interactiveTravel, 0), 1)
             let velocity = gesture.velocity(in: cardArea).x * style.pageSwipeMovementMultiplier
-            // The drag direction and the paging direction are opposite signs
-            // (dragging left brings the next card in from the right).
-            let towardTarget = translation < 0 ? -velocity : velocity
+            let towardTarget = velocity * interactiveDirection
             let shouldFinish = gesture.state == .ended
                 && (fraction > 0.5 || (fraction > 0.08 && towardTarget > 350))
                 && towardTarget > -350
             if shouldFinish {
-                interactiveTransition.finishInteractive()
+                transition.finishInteractive()
             } else {
-                interactiveTransition.cancelInteractive()
+                transition.cancelInteractive()
             }
         default:
             break
@@ -1841,12 +1836,20 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
+    private func updateInteractivePage(translation: CGFloat) {
+        if case .none = pagingTransition, !pagePanConsumed {
+            beginInteractivePage(translation: translation)
+        }
+        guard case .interactive(let transition) = pagingTransition else { return }
+        transition.update(fraction: translation * interactiveDirection / interactiveTravel)
+    }
+
     private func beginInteractivePage(translation: CGFloat) {
         guard abs(translation) > 0, let metrics else { return }
         let step = translation < 0 ? 1 : -1
         let target = currentIndex + step
         guard target >= 0, target < count else { return }
-        if UIAccessibility.isReduceMotionEnabled || slots[target] == nil {
+        if UIAccessibility.isReduceMotionEnabled {
             // No interactive tracking — settle the gesture as a plain page.
             pagePanConsumed = true
             page(by: step)
@@ -1859,6 +1862,7 @@ public final class CardCarouselViewController: UIViewController {
         interactiveTravel = max(
             abs(metrics.centerX(forSlotOffset: step) - metrics.centerX(forSlotOffset: 0)),
             1)
+        interactiveDirection = translation < 0 ? -1 : 1
         pagingTransition = .interactive(transition)
     }
 

@@ -1102,3 +1102,70 @@ final class ReaderDuoLayoutTests: XCTestCase {
         XCTAssertEqual(edge.minX, 70)
     }
 }
+
+@MainActor
+final class CardCarouselInteractivePagingTests: XCTestCase {
+    private final class Pan: UIPanGestureRecognizer {
+        var reportedState: UIGestureRecognizer.State = .began
+        var drag: CGFloat = -20
+        var speed: CGFloat = -400
+        override var state: UIGestureRecognizer.State { get { reportedState } set { reportedState = newValue } }
+        override func translation(in view: UIView?) -> CGPoint { CGPoint(x: drag, y: 0) }
+        override func velocity(in view: UIView?) -> CGPoint { CGPoint(x: speed, y: 0) }
+    }
+
+    func testQuickFlickWithoutAChangedEventFinishesOneCard() async throws {
+        let source = MiniCardPagingDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = carousel
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 3)
+        let pan = Pan()
+        carousel.perform(NSSelectorFromString("handlePagePan:"), with: pan)
+        XCTAssertEqual(carousel.currentIndex, 3, "the finger starts an interactive transition")
+        pan.reportedState = .ended
+        pan.drag = -100
+        pan.speed = -800
+        carousel.perform(NSSelectorFromString("handlePagePan:"), with: pan)
+        let centered = expectation(for: NSPredicate { _, _ in
+            carousel.currentIndex == 4 && (source.contentControllers[4]?.centerCount ?? 0) > 0
+        }, evaluatedWith: carousel)
+        await fulfillment(of: [centered], timeout: 2)
+        XCTAssertEqual(carousel.currentIndex, 4)
+    }
+
+    func testFastSwipeStartsTrackingOnBeganAndReversePastOriginCancels() async throws {
+        let source = MiniCardPagingDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = carousel
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 3)
+        let incoming = try XCTUnwrap(carousel.cardView(at: 4))
+        let resting = incoming.center
+        let pan = Pan()
+        carousel.perform(NSSelectorFromString("handlePagePan:"), with: pan)
+        // Property animator model values move to their target as soon as an
+        // interactive run starts; presentation values are scrubbed by the pan.
+        XCTAssertNotEqual(incoming.center, resting, "Even a flick with no changed event must start tracking")
+        XCTAssertEqual(carousel.currentIndex, 3)
+        pan.reportedState = .changed
+        pan.drag = 300
+        carousel.perform(NSSelectorFromString("handlePagePan:"), with: pan)
+        pan.reportedState = .ended
+        pan.speed = 500
+        carousel.perform(NSSelectorFromString("handlePagePan:"), with: pan)
+        let settled = expectation(description: "reversed swipe settles")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { settled.fulfill() }
+        await fulfillment(of: [settled], timeout: 2)
+        XCTAssertEqual(carousel.currentIndex, 3, "Crossing the origin must not finish the original page")
+        XCTAssertEqual(incoming.center.x, resting.x, accuracy: 0.5)
+    }
+}

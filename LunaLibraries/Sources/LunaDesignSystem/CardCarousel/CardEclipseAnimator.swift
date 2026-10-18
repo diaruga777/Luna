@@ -250,8 +250,9 @@ public final class CardEclipseTransition {
         guard phase == .ready || phase == .ingress else { return }
         if phase == .ready {
             phase = .ingress
-            ingress.startAnimation()
         }
+        // Starting paused avoids committing an automatic first frame before
+        // the gesture has supplied its interactive progress.
         ingress.pauseAnimation()
         ingress.fractionComplete = min(max(fraction, 0), 0.999)
     }

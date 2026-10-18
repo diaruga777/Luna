@@ -900,3 +900,8 @@ inline email images stay in the body and are never promoted into the masthead.
 
 A library selection centers and lays out its card synchronously before sheet
 dismissal starts. Items requiring an external viewer open after dismissal.
+
+Interactive paging starts on the pan's began event, with its animator paused for
+finger tracking. Progress stays signed toward the original target, so dragging
+back across the origin cancels that page instead of advancing it. Unmounted
+neighbors are staged into the same interactive transition.

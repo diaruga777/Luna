@@ -64,6 +64,22 @@ final class LLMHandoffPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("…"), "a cut is marked, not silent")
     }
 
+    func testEveryPromptRequiresTheSameBinaryAttachmentWithoutTextFallback() {
+        let prompts = [
+            LLMHandoffPrompts.recovery(url: longURL, app: .luna, failure: failure),
+            LLMHandoffPrompts.pluginCreation(description: "Save recipes", host: nil),
+            LLMHandoffPrompts.pluginCorrection(description: "Save recipes", host: nil, errors: ["Missing hook"])
+        ]
+        for prompt in prompts {
+            XCTAssertTrue(prompt.contains("bytes.fromhex('894c554e410d0a1a0a01') + zlib.compress(source.encode('utf-8'))"))
+            XCTAssertTrue(prompt.contains("MIME application/octet-stream"))
+            XCTAssertTrue(prompt.contains("write data in 'wb' mode"))
+            XCTAssertTrue(prompt.contains("If binary attachments are unavailable, say so"))
+            XCTAssertFalse(prompt.contains("single code block"))
+            XCTAssertFalse(prompt.contains("or one complete code block"))
+        }
+    }
+
     // MARK: Plugin creation
 
     private var longDescription: String {

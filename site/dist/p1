@@ -1,12 +1,29 @@
 # Luna plugin authoring contract
 
-Deliver ONE ES2022 JavaScript file named `<name>.luna`. No imports, packages
-or `require`. Luna runs the JavaScript and renders its data with native UI.
+Deliver ONE binary downloadable attachment named `<name>.luna`, MIME
+`application/octet-stream`. Construct the ES2022 JavaScript source described
+below, then encode it with your code tool (Python standard library):
+
+```python
+import zlib
+from pathlib import Path
+# source is the complete plugin source, including its luna-plugin header.
+data = bytes.fromhex('894c554e410d0a1a0a01') + zlib.compress(source.encode('utf-8'))
+Path('my-plugin.luna').write_bytes(data)
+```
+
+Source limit: 1 MiB of UTF-8. The 10-byte prefix is Luna's binary signature and
+container version 1; the rest is one zlib stream (not ZIP, gzip, or raw deflate).
+Attach the binary itself, never plaintext, Base64, or a code block. If your tools
+cannot create binary attachments, say so. Compression is not encryption.
+
+No JavaScript imports, packages or `require`. Luna decodes the source, runs the
+JavaScript and renders its data with native UI.
 A plugin extracts articles, products or media from URLs, or exports saved items.
 
 ## File and manifest
 
-The first non-whitespace token is a block comment with `luna-plugin` on its
+In the decoded source, the first non-whitespace token is a block comment with `luna-plugin` on its
 first line and JSON on the following lines. Call `luna.register` once at top
 level. Every supplied hook must be a function. Return JSON-compatible data;
 cycles, BigInt, DOM objects and functions are not Models.
@@ -31,8 +48,10 @@ luna.register({
   async ingest({ url, page }) {
     const source = page?.html ? {ok:true, text:page.html, url:page.url} : await luna.fetch(url);
     if (!source.ok) return null;
-    const article = await luna.html.article(source.text, source.url);
-    return article ? {kind:"article", ...article, baseURL:source.url} : null;
+    const doc = luna.html.parse(source.text, source.url);
+    const body = doc.querySelector('article'); // choose this site's actual body
+    if (!body || body.textContent.length < 300) return null;
+    return {kind:"article", title:doc.title || url, html:body.innerHTML, baseURL:source.url};
   },
 });
 ```
@@ -64,10 +83,10 @@ export(input): {text:string} | {url:string} | {file:FileHandle} | DeliveryStatus
 
 All hooks may be async. `context` is `app`, `share`, `action` or `safari`;
 `page` may supply `{url, html?, title?, source}`. Reuse its HTML if present.
-`reason` is `save`, `resume` or `reresolve`. `classify` should decide cheaply
+`reason` is `save`, `resume`, `refresh`, `compare`, `rescue` or `reresolve`. `classify` should decide cheaply
 from the URL (8-second budget). Ingest has a 30-second idle budget refreshed
 by bridge activity. Return `null` to decline; Luna tries the next plugin and
-then native extraction. Ordinary errors also fall through and are logged.
+then preserves the URL as a plain link. Ordinary errors also fall through and are logged.
 
 Let `browser-deferred` propagate. A blanket catch returning null loses the
 browser handoff. Media extractors should return false when
@@ -152,14 +171,14 @@ doc.querySelector(css); doc.querySelectorAll(css); // element or null; array
 // elements: textContent, innerHTML, outerHTML, children, parentElement, tagName,
 // getAttribute, hasAttribute, attributes, matches, closest, absoluteURL(attr)
 // documents also have title, documentElement, head and body
-luna.html.meta(doc); // title, description, canonical, image, author, published, siteName, language, type
+// Select metadata explicitly with doc.querySelector(...).
 luna.html.jsonLD(doc); // objects; flattens @graph, skips bad JSON
 luna.html.jsonScripts(doc, type); // default: application/ld+json
-await luna.html.article(html, baseURL); // {title,html,text,author?,...} or null; ALWAYS await
+// Select the body with DOM/CSS, or bundle docs/plugins/lib/web.js.
 luna.html.text(html);
 luna.text.clean(text);
-luna.text.price(text); // {amount, currency?} or null
-luna.text.date(text); // ISO date or null
+// Parse prices and dates in your plugin; return declared decimal/ISO values.
+
 ```
 
 Selectors support tags, classes, IDs, attributes, descendant/child
@@ -187,6 +206,9 @@ Return exactly one of `text`, `url`, `file` or `status`; null means no share
 output. Delivery statuses are `sent`, `failed` or `retry`, with optional
 message/hard/remoteName. A queued destination additionally declares
 `export.destination:true` and requires the full destination/device contract.
+Set `export.receiverDriven:true` when only the device hook may deliver: save,
+share and lifecycle triggers then only enqueue, and the hook drains the queue
+serially with `luna.exports.deliverQueued()`.
 
 Declare capabilities before using them:
 
@@ -211,3 +233,9 @@ Check the JSON header, capabilities, hook names, path matching and Model
 fields. Return false on unrelated paths and null on missing content. Keep
 browser deferrals intact. Use saved fixtures when running the Node harness;
 passing validation is not proof of live extraction or delivery. Test in Luna.
+
+Core never supplies native extraction after plugins decline. The retired helpers
+`luna.html.article/meta` and `luna.text.price/date` reject at runtime. Helpers in
+`docs/plugins/lib/` are source to embed in a plugin, not implicit runtime globals.
+For seller discovery handle `reason: "compare"` and return validated product sellers;
+refresh uses the same owner with `reason: "refresh"`.

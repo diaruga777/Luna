@@ -64,6 +64,34 @@ final class AppReaderShareProviderTests: XCTestCase {
         XCTAssertEqual(submenu?.children.count, ArticleExportFormat.shareMenuFormats.count)
     }
 
+    /// Menu-primary share buttons never invoke the sheet fallback when the
+    /// provider returns nil. Imports must supply the formats in the menu itself.
+    @MainActor
+    func testImportedEmailAndDocumentOfferEveryFormatDirectly() throws {
+        for urlString in ["lunamail://123", "lunadoc://123"] {
+            seed(urlString: urlString, state: .ready)
+            let menu = try XCTUnwrap(AppReaderShareProvider.shared.shareMenu(
+                urlString: urlString, title: "Shareable",
+                from: presenter, sourceView: presenter.view))
+            XCTAssertEqual(menu.children.map(\.title),
+                           ArticleExportFormat.shareMenuFormats.map(\.displayName))
+            XCTAssertEqual(menu.children.compactMap { $0 as? UIAction }.count,
+                           ArticleExportFormat.shareMenuFormats.count)
+        }
+    }
+
+    @MainActor
+    func testUnreadyImportsOfferNoExport() {
+        for urlString in ["lunamail://123", "lunadoc://123"] {
+            for state in [SavedItem.State.pending, .failed, .needsCaptcha] {
+                seed(urlString: urlString, state: state, withContent: false)
+                XCTAssertNil(AppReaderShareProvider.shared.shareMenu(
+                    urlString: urlString, title: "Shareable",
+                    from: presenter, sourceView: presenter.view), "\(urlString): \(state)")
+            }
+        }
+    }
+
     /// A pending, failed, or locked save has no extracted text. It must not
     /// offer any export format.
     @MainActor

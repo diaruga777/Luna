@@ -23,32 +23,31 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     public func shareMenu(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) -> UIMenu? {
-        // A no-url text article has exactly one verb, and it's already a system
-        // sheet — a one-item popover in front of it would be pure ceremony.
-        guard let rows = rows(
+        let rows = rows(
             urlString: urlString, title: title, from: presenter, sourceView: sourceView)
-        else { return nil }
+        guard !rows.isEmpty else { return nil }
         return ReaderShareSheet.menu(rows: rows)
     }
 
     public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
-        guard let rows = rows(
+        let rows = rows(
             urlString: urlString, title: title, from: presenter, sourceView: sourceView)
-        else {
-            presentExportOnlyShare(urlString: urlString, from: presenter, sourceView: sourceView)
-            return
-        }
-        ReaderShareSheet.present(from: presenter, rows: rows)
+        guard !rows.isEmpty else { return }
+        ReaderShareSheet.present(
+            from: presenter, rows: rows,
+            title: SavedItem.isWebPageURL(urlString)
+                ? L10n.string("Common_share") : ReaderShareSheet.exportTitle)
     }
 
-    /// The one option list behind both the menu and the fallback sheet. Nil means the
-    /// item is a no-url text article (email/document) whose only share is the file
-    /// export — see `presentExportOnlyShare`.
+    /// The one option list behind both the menu and the fallback sheet. Imported
+    /// emails/documents offer formats directly because their synthetic URL cannot
+    /// be shared. Menu-primary buttons need these rows too: an empty menu does not
+    /// invoke the button's tap fallback.
     private func rows(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
-    ) -> [ReaderShareSheet.Row]? {
+    ) -> [ReaderShareSheet.Row] {
         let item = SavesStore.shared.item(forURLString: urlString)
         // File export is for readable articles/documents only — never media posts,
         // and only once the text is actually extracted: a pending, failed or
@@ -57,7 +56,15 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         // time. `state` is the cheap signal — reading the content back to check
         // would decode the whole article just to build a menu.
         let isArticle = item.map { !$0.isPlatformItem } ?? false
-        if let item, isArticle, !item.isShareable { return nil }
+        let onExport: (ArticleExportFormat) -> Void = { [weak presenter] format in
+            guard let presenter, let item else { return }
+            ArticleExportService().presentShareSheet(
+                format, for: item, from: presenter, sourceView: sourceView)
+        }
+        if let item, isArticle, !item.isShareable {
+            guard item.state == .ready else { return [] }
+            return ReaderShareSheet.exportRows(onExport: onExport)
+        }
         return ReaderShareSheet.rows(
             includeExport: isArticle && item?.state == .ready,
             ereaderRows: ereaderRows(for: item, isArticle: isArticle, from: presenter),
@@ -76,11 +83,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 guard let presenter else { return }
                 SendToFriendSheet.copyLink(urlString: urlString, from: presenter)
             },
-            onExport: { [weak presenter] format in
-                guard let presenter, let item else { return }
-                ArticleExportService().presentShareSheet(
-                    format, for: item, from: presenter, sourceView: sourceView)
-            })
+            onExport: onExport)
     }
 
     /// One "Send to …" row per configured ereader destination, for ready
@@ -135,22 +138,6 @@ public final class AppReaderShareProvider: ReaderShareProviding {
             }
         }
             + ReaderShareSheet.pluginRows(forSaveID: item.id, kind: .article)
-    }
-
-    /// A no-url text article (email/document) can only leave as a file, so skip
-    /// the option list and go straight to the format picker.
-    private func presentExportOnlyShare(
-        urlString: String, from presenter: UIViewController, sourceView: UIView
-    ) {
-        guard let item = SavesStore.shared.item(forURLString: urlString) else { return }
-        ReaderShareSheet.present(
-            from: presenter,
-            rows: ReaderShareSheet.exportRows { [weak presenter] format in
-                guard let presenter else { return }
-                ArticleExportService().presentShareSheet(
-                    format, for: item, from: presenter, sourceView: sourceView)
-            },
-            title: ReaderShareSheet.exportTitle)
     }
 
     public func saveLink(urlString: String) {

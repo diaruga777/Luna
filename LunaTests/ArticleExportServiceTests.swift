@@ -174,6 +174,26 @@ final class ArticleExportServiceTests: XCTestCase {
 
     // MARK: - Every format
 
+    func testImportedEmailExportsInEveryMenuFormat() async throws {
+        let item = readyItem(title: "Imported newsletter", url: "lunamail://123")
+        XCTAssertFalse(item.isShareable)
+        let service = ArticleExportService(store: store)
+        for format in ArticleExportFormat.shareMenuFormats {
+            let url = try await service.writePreparingImages(format, for: item)
+            defer { try? FileManager.default.removeItem(at: url) }
+            XCTAssertEqual(url.pathExtension, format.fileExtension, "\(format)")
+            let data = try Data(contentsOf: url)
+            switch format {
+            case .epub, .compactEpub, .document:
+                XCTAssertEqual(data.prefix(4), Data([0x50, 0x4B, 0x03, 0x04]), "\(format)")
+            case .pdf:
+                XCTAssertEqual(String(decoding: data.prefix(4), as: UTF8.self), "%PDF")
+            case .plainText, .markdown:
+                XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Body text."))
+            }
+        }
+    }
+
     /// Each format writes a non-empty file under its own extension, off the one
     /// shared sanitized stem.
     func testEveryFormatWritesItsOwnExtension() throws {

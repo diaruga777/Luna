@@ -890,3 +890,13 @@ Two consequences worth knowing:
 - Media cards preview as posters and build the real player only on settle; the
   scrub path has no prepared-content API and therefore cannot create an
   AVPlayer per visible chip.
+
+### Card presentation and navigation details
+
+Missing card headlines (nil, blank, or legacy `Untitled` placeholders) hide the
+headline label in both the deck and library. Source badges and sender lines remain.
+Email body imports (`lunamail://`) use only an explicit cover for their banner;
+inline email images stay in the body and are never promoted into the masthead.
+
+A library selection centers and lays out its card synchronously before sheet
+dismissal starts. Items requiring an external viewer open after dismissal.

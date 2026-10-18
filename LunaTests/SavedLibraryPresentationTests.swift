@@ -137,6 +137,82 @@ final class SavedLibraryPresentationTests: XCTestCase {
         let labels = descendants(collection).compactMap { ($0 as? UILabel)?.text }
         XCTAssertFalse(labels.contains { $0.contains("example.com") })
     }
+    func testEmailBodyImageStaysInlineWithoutAnExplicitCover() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SavesStore(containerURL: directory)
+        let image = "email-body.png"
+        let data = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 40)).pngData { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 80, height: 40))
+        }
+        try data.write(to: store.articlesDirectory.appendingPathComponent(image))
+        let item = store.add(urlString: "lunamail://newsletter", source: .email)
+        let content = ArticleContent(title: "Newsletter", blocks: [
+            .init(kind: .image, text: "", links: [], imageFileName: image),
+            .init(kind: .paragraph, text: "Email body", links: []),
+        ])
+        let presentation = ArticleBanner.prepare(content: content, item: item, store: store)
+        XCTAssertNil(presentation.imageURL)
+        XCTAssertEqual(presentation.content, content)
+
+        store.setThumbnail(data, for: item.id)
+        let withCover = try XCTUnwrap(store.item(withID: item.id))
+        XCTAssertNotNil(ArticleBanner.prepare(content: content, item: withCover, store: store).imageURL)
+    }
+
+    func testMissingCardTitlesHideLabelsInReaderAndLibrary() throws {
+        for title in [nil, "", "  ", "Untitled", " untitled "] as [String?] {
+            var item = SavedItem(urlString: "https://example.com/no-title")
+            item.title = title
+            item.state = .ready
+            XCTAssertNil(item.cardTitle)
+            let content = ArticleContent(title: title ?? "", blocks: [
+                .init(kind: .paragraph, text: "Body text", links: []),
+            ])
+            let card = ReaderCardContentViewController(item: item, senderName: nil, knownContent: content)
+            card.loadViewIfNeeded()
+            card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 600)
+            card.view.layoutIfNeeded()
+            let titleLabels = descendants(card.view).compactMap { $0 as? UILabel }.filter {
+                $0.accessibilityIdentifier == UtilCardSaveTransitionAnchor.title
+            }
+            XCTAssertFalse(titleLabels.isEmpty)
+            XCTAssertTrue(titleLabels.allSatisfy(\.isHidden))
+
+            let library = SavedLibraryViewController()
+            library.entries = [SavedLibraryEntry(item: item, isVideo: false,
+                loadBanner: { $0(nil) }, loadBadge: { $0(nil) })]
+            library.loadViewIfNeeded()
+            let collection = try XCTUnwrap(descendants(library.view).compactMap { $0 as? UICollectionView }.first)
+            let cell = library.collectionView(collection, cellForItemAt: IndexPath(item: 0, section: 0))
+            XCTAssertTrue(descendants(cell).compactMap { $0 as? UILabel }.allSatisfy { $0.isHidden || $0.text?.isEmpty != false })
+        }
+        XCTAssertEqual(SavedItem.cardTitle(" A real title "), "A real title")
+    }
+
+    func testLibraryCentersSelectionBeforeDismissalStarts() throws {
+        let library = SavedLibraryViewController()
+        let item = SavedItem(urlString: "https://example.com/selected")
+        library.entries = [SavedLibraryEntry(item: item, isVideo: false,
+            loadBanner: { $0(nil) }, loadBadge: { $0(nil) })]
+        let host = UIViewController()
+        let window = UITestSupport.host(host)
+        defer { window.isHidden = true }
+        host.present(library, animated: false)
+        var selected: UUID?
+        library.willSelect = { id in
+            XCTAssertFalse(library.isBeingDismissed)
+            XCTAssertTrue(host.presentedViewController === library)
+            selected = id
+            return true
+        }
+        library.didSelect = { _ in XCTFail("A centered card needs no external-open fallback") }
+        let collection = try XCTUnwrap(descendants(library.view).compactMap { $0 as? UICollectionView }.first)
+        library.collectionView(collection, didSelectItemAt: IndexPath(item: 0, section: 0))
+        XCTAssertEqual(selected, item.id, "selection must be synchronous with the tap")
+    }
+
     private func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
 
     func testSearchUsesSavedTextAndRejectsSupersededQueries() throws {

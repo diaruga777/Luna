@@ -40,6 +40,8 @@ struct SavedLibraryEntry {
 final class SavedLibraryViewController: UIViewController, UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout, UISearchBarDelegate {
     var entries: [SavedLibraryEntry] = [] { didSet { if isViewLoaded { applyResults() } } }
+    /// Returns true when the underlying deck has already centered the item.
+    var willSelect: ((UUID) -> Bool)?
     var didSelect: ((UUID) -> Void)?
     private let searchBar = UISearchBar()
     private let pills = UIStackView()
@@ -231,7 +233,11 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         let id = visible[indexPath.item].item.id
         view.endEditing(true)
-        dismiss(animated: true) { [weak self] in self?.didSelect?(id) }
+        // Position the underlying deck before UIKit starts revealing it.
+        let centered = willSelect?(id) ?? false
+        dismiss(animated: true) { [weak self] in
+            if !centered { self?.didSelect?(id) }
+        }
     }
 }
 
@@ -284,7 +290,8 @@ private final class SavedLibraryCell: UICollectionViewCell {
         generation += 1
         let generation = self.generation
         // URLs are deliberately absent, including the untitled fallback.
-        title.text = entry.item.title?.isEmpty == false ? entry.item.title : L10n.string("Common_untitled")
+        title.text = entry.item.cardTitle
+        title.isHidden = title.text == nil
         accessibilityLabel = title.text
         setBanner(nil)
         badge.setBadge(.symbol("globe"))

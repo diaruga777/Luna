@@ -1583,9 +1583,14 @@ extension CardCarouselHostViewController {
         let library = savedLibrary ?? SavedLibraryViewController()
         savedLibrary = library
         library.entries = libraryEntries()
+        library.willSelect = { [weak self] id in
+            guard let self else { return false }
+            let centered = self.centerCard(onItemID: id)
+            self.carousel.view.layoutIfNeeded()
+            return centered
+        }
         library.didSelect = { [weak self] id in
             guard let self else { return }
-            if self.centerCard(onItemID: id) { return }
             if let item = SavesStore.shared.items().first(where: { $0.id == id }) {
                 self.openExternally(item)
             }

@@ -14,7 +14,11 @@ public enum ArticleBanner {
         let lead = resolved.blocks.firstIndex { $0.kind == .image && $0.imageFileName != nil }
         let leadURL = lead.flatMap { resolved.blocks[$0].imageFileName }.map { directory.appendingPathComponent($0) }
         let coverURL = item.thumbnailFileName.map { directory.appendingPathComponent($0) }
-        let imageURL = [coverURL, leadURL].compactMap { $0 }.first {
+        // Email bodies may contain screenshots, logos and tracking artwork.
+        // Only an explicit cover may become their masthead; body images stay
+        // inline. Web articles retain the lead-image fallback.
+        let candidates = item.url?.scheme == "lunamail" ? [coverURL] : [coverURL, leadURL]
+        let imageURL = candidates.compactMap { $0 }.first {
             CGImageSourceCreateWithURL($0 as CFURL, nil) != nil
         }
         guard let imageURL else { return (resolved, nil) }

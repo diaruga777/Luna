@@ -1268,9 +1268,9 @@ final class ReaderCardContentViewController: CardContentViewController,
             return trimmed.isEmpty ? nil : L10n.string("Reader_senderFromSubtitle", trimmed)
         }
         self.titleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? L10n.string("Common_untitled"), subtitle: senderSubtitle)
+            title: item.cardTitle ?? "", subtitle: senderSubtitle)
         self.scrollTitleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? L10n.string("Common_untitled"), subtitle: senderSubtitle)
+            title: item.cardTitle ?? "", subtitle: senderSubtitle)
         super.init()
         immersionTracker.delegate = self
     }
@@ -1906,7 +1906,7 @@ private final class ReaderCardTitleHeaderView: UIView {
     private let baseTitleFont = ReaderCardTitleHeaderView.readerTitleFont
 
     init(title: String, subtitle: String?) {
-        fullTitle = title
+        fullTitle = SavedItem.cardTitle(title) ?? ""
         super.init(frame: .zero)
         backgroundColor = LunaColors.background
 
@@ -1917,7 +1917,8 @@ private final class ReaderCardTitleHeaderView: UIView {
         iconView.layer.cornerRadius = 6
         iconView.clipsToBounds = true
 
-        titleLabel.text = title
+        titleLabel.text = fullTitle
+        titleLabel.isHidden = fullTitle.isEmpty
         titleLabel.accessibilityIdentifier = UtilCardSaveTransitionAnchor.title
         titleLabel.font = baseTitleFont
         titleLabel.textColor = LunaColors.primaryText
@@ -1951,7 +1952,7 @@ private final class ReaderCardTitleHeaderView: UIView {
         addSubview(overflowLabel)
         addSubview(subtitleLabel)
         isAccessibilityElement = true
-        accessibilityLabel = title
+        accessibilityLabel = SavedItem.cardTitle(title)
         accessibilityValue = subtitle
         accessibilityTraits = .header
     }
@@ -1973,10 +1974,10 @@ private final class ReaderCardTitleHeaderView: UIView {
     }
 
     func setTitle(_ title: String) {
-        fullTitle = title
+        fullTitle = SavedItem.cardTitle(title) ?? ""
         splitWidth = 0
         // VoiceOver reads the headline whole, however it is split visually.
-        accessibilityLabel = title
+        accessibilityLabel = SavedItem.cardTitle(title)
         setNeedsLayout()
         superview?.setNeedsLayout()
     }
@@ -1993,6 +1994,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             maxLines: Self.titleLineLimit)
         titleLabel.font = fit.font
         titleLabel.text = fit.head
+        titleLabel.isHidden = fullTitle.isEmpty
         overflowLabel.text = fit.overflow.map(ReaderTitleOverflow.displayString(forOverflow:))
         overflowLabel.isHidden = fit.overflow == nil
     }
@@ -2003,7 +2005,7 @@ private final class ReaderCardTitleHeaderView: UIView {
         func height(_ label: UILabel) -> CGFloat {
             label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
         }
-        var total = height(titleLabel)
+        var total = titleLabel.isHidden ? 0 : height(titleLabel)
         if !overflowLabel.isHidden { total += Self.overflowGap + height(overflowLabel) }
         if !subtitleLabel.isHidden { total += 4 + height(subtitleLabel) }
         return total
@@ -2041,7 +2043,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             label.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
         }
         titleLabel.frame = CGRect(
-            x: titleX, y: topInset + 10, width: textWidth, height: height(titleLabel))
+            x: titleX, y: topInset + 10, width: textWidth, height: titleLabel.isHidden ? 0 : height(titleLabel))
         var bottom = titleLabel.frame.maxY
         if overflowLabel.isHidden {
             overflowLabel.frame = .zero
@@ -2061,7 +2063,7 @@ private final class ReaderCardTitleHeaderView: UIView {
         // The favicon identifies the headline, not the headline + secondary
         // metadata stack. Keep it beside the title even when a source/sender
         // line makes the overall header taller.
-        iconView.frame.origin.y = titleLabel.frame.midY - iconSide / 2
+        iconView.frame.origin.y = (titleLabel.isHidden ? subtitleLabel.frame.midY : titleLabel.frame.midY) - iconSide / 2
     }
 
     private static var readerTitleFont: UIFont {

@@ -12,6 +12,19 @@ import Foundation
 /// `SavesStore` detect a mutation that changed nothing and skip both the
 /// row write and the `.savesChanged` notification.
 public struct SavedItem: Identifiable, Equatable {
+    /// Missing extraction titles are absent in card chrome, including legacy
+    /// rows that persisted the extractor's localized placeholder.
+    public var cardTitle: String? { Self.cardTitle(title) }
+
+    public static func cardTitle(_ title: String?) -> String? {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty,
+              title.caseInsensitiveCompare("Untitled") != .orderedSame,
+              title.caseInsensitiveCompare(L10n.string("Common_untitled")) != .orderedSame
+        else { return nil }
+        return title
+    }
+
     /// Lifecycle of the item's downloaded content.
     public enum State: String, Codable {
         /// A plain saved URL, without extracted content or pending extraction.

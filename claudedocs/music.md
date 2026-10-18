@@ -729,3 +729,18 @@ verifies both switchers are square, and confirms a dismissed keyboard stays
 dismissed. Focused switches skip the crossfade so focus can transfer as soon as
 UIKit attaches the incoming navigation search. The focused podcast search and
 circular switcher screenshot was visually inspected.
+
+### Remembered player view (2026-10-18)
+
+Music and podcast players each remember whether their upper stage last showed the
+queue list or the current item's artwork. Opening the mini player restores that
+view after dismissal and across app launches. Queue buttons, completed drag
+transitions and VoiceOver actions save the choice immediately. Explicit queue
+links still open the list, and switching between the full music/podcast players
+keeps the displayed mode and remembers it for the destination player. A fresh
+installation starts with artwork.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All four focused UI tests
+passed: music and podcast queue/artwork restoration after close/reopen and actual
+terminate/relaunch, existing queue controls/drag behavior, and warm/cold explicit
+queue links. No audio playback is required by these view-state checks.

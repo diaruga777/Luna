@@ -6,7 +6,7 @@ import LunaPodcastCore
 import LunaMusicCore
 
 extension MusicScreenViewController {
-    func presentPodcastPlayer(queue: Bool = false) {
+    func presentPodcastPlayer(queue: Bool? = nil) {
         view.endEditing(true)
         let controller = UINavigationController(rootViewController: PodcastPlayerViewController(showQueue: queue))
         controller.modalPresentationStyle = .fullScreen
@@ -45,18 +45,25 @@ extension MusicScreenViewController {
     private var subscriptions = Set<AnyCancellable>()
     private var artworkID: URL?
     private var artworkTask: Task<Void, Never>?
+    private static let queueViewKey = "LunaMusic.podcastPlayer.showsQueue"
     private(set) var showsQueue: Bool
     private var queueProgress: CGFloat
     private var panStart: CGFloat = 0
     private var animator: UIViewPropertyAnimator?
     private lazy var queuePan = UIPanGestureRecognizer(target: self, action: #selector(panQueue(_:)))
 
-    init(showQueue: Bool, player: PodcastPlaybackController = .shared, library: PodcastLibraryController = .shared) {
+    init(showQueue: Bool? = nil, player: PodcastPlaybackController = .shared, library: PodcastLibraryController = .shared) {
         self.player = player; self.library = library
+        let showQueue = showQueue ?? UserDefaults.standard.bool(forKey: Self.queueViewKey)
         showsQueue = showQueue; queueProgress = showQueue ? 1 : 0
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        UserDefaults.standard.set(showsQueue, forKey: Self.queueViewKey)
+    }
+
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     override func viewDidLoad() {
@@ -240,7 +247,9 @@ extension MusicScreenViewController {
     }
 
     func setQueue(_ show: Bool, animated: Bool = true) {
-        stopTransition(); showsQueue = show; updateQueueAccessibility(); panStart = queueProgress
+        stopTransition(); showsQueue = show
+        UserDefaults.standard.set(show, forKey: Self.queueViewKey)
+        updateQueueAccessibility(); panStart = queueProgress
         let changes = { self.queueProgress = show ? 1 : 0; self.layoutStage() }
         guard animated, !UIAccessibility.isReduceMotionEnabled else { changes(); return }
         let animation = UIViewPropertyAnimator(duration: 0.42, dampingRatio: 0.88, animations: changes)

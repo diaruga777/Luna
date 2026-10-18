@@ -40,6 +40,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var token: NSObjectProtocol?
     private var routeToken: NSObjectProtocol?
     private var timer: Timer?
+    private static let queueViewKey = "LunaMusic.player.showsQueue"
     private var showsQueue: Bool
     private var artworkID: MusicID?
     private var queueProgress: CGFloat
@@ -47,7 +48,8 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private var animator: UIViewPropertyAnimator?
     private lazy var queuePan = UIPanGestureRecognizer(target: self, action: #selector(panQueue(_:)))
 
-    init(showQueue: Bool) {
+    init(showQueue: Bool? = nil) {
+        let showQueue = showQueue ?? UserDefaults.standard.bool(forKey: Self.queueViewKey)
         showsQueue = showQueue
         queueProgress = showQueue ? 1 : 0
         super.init(nibName: nil, bundle: nil)
@@ -175,6 +177,11 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         refresh()
         updateQueueAccessibility()
     }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        UserDefaults.standard.set(showsQueue, forKey: Self.queueViewKey)
+    }
+
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     deinit {
@@ -264,6 +271,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private func setQueue(_ show: Bool, animated: Bool = true) {
         stopTransition()
         showsQueue = show
+        UserDefaults.standard.set(show, forKey: Self.queueViewKey)
         updateQueueAccessibility()
         panStart = queueProgress
         let changes = {

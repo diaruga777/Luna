@@ -404,6 +404,41 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(app.otherElements["music.playback.queue"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.keyboards.firstMatch.exists)
     }
+    func testMusicPlayerRemembersQueueAndArtworkAcrossReopeningAndRelaunch() {
+        checkPlayerViewRestoration(surface: "music")
+    }
+
+    func testPodcastPlayerRemembersQueueAndArtworkAcrossReopeningAndRelaunch() {
+        checkPlayerViewRestoration(surface: "podcasts")
+    }
+
+    private func checkPlayerViewRestoration(surface: String) {
+        func openPlayer() {
+            if surface == "podcasts" {
+                let podcasts = app.buttons["media.library.podcasts"]
+                if podcasts.waitForExistence(timeout: 3) { podcasts.tap() }
+            }
+            let mini = app.buttons["Open Now Playing"]
+            XCTAssertTrue(mini.waitForExistence(timeout: 5)); mini.tap()
+        }
+        openPlayer()
+        let queueButton = app.buttons["\(surface).playback.queueButton"]
+        XCTAssertTrue(queueButton.waitForExistence(timeout: 5))
+        if !queueButton.isSelected { queueButton.tap() }
+        for mode in ["queue", "nowPlaying"] {
+            let identifier = "\(surface).playback.\(mode)"
+            XCTAssertTrue(app.otherElements[identifier].waitForExistence(timeout: 5))
+            app.buttons["Close Now Playing"].tap()
+            openPlayer()
+            XCTAssertTrue(app.otherElements[identifier].waitForExistence(timeout: 5))
+            app.buttons["Close Now Playing"].tap()
+            app.terminate(); app.launch()
+            openPlayer()
+            XCTAssertTrue(app.otherElements[identifier].waitForExistence(timeout: 5))
+            if mode == "queue" { queueButton.tap() }
+        }
+    }
+
     func testPlayerQueueKeepsControlsVisibleAndShowsPlaybackModes() {
         app.open(URL(string: "lunamusic://queue")!)
         XCTAssertTrue(app.otherElements["music.playback.queue"].waitForExistence(timeout: 5))

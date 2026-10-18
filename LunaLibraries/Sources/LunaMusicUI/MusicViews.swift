@@ -172,7 +172,7 @@ public class MusicScreenViewController: UIViewController {
         ])
         table.contentInset.bottom = 72
         table.verticalScrollIndicatorInsets.bottom = 72
-        mini.onOpen = { [weak self] in self?.presentPlayer(queue: false) }
+        mini.onOpen = { [weak self] in self?.presentPlayer() }
         observe(.lunaMusicPlaybackChanged) { [weak self] in self?.mini.refresh() }
         observe(.lunaPodcastPlaybackChanged) { [weak self] in self?.mini.refresh() }
         observe(.lunaMediaSurfaceChanged) { [weak self] in self?.mini.refresh() }
@@ -198,7 +198,7 @@ public class MusicScreenViewController: UIViewController {
         })
     }
     deinit { notificationTokens.forEach(NotificationCenter.default.removeObserver) }
-    func presentPlayer(queue: Bool) {
+    func presentPlayer(queue: Bool? = nil) {
         if mini.surface == .podcasts { presentPodcastPlayer(queue: queue); return }
         view.endEditing(true)
         let controller = MusicPlayerViewController(showQueue: queue)

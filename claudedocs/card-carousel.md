@@ -387,6 +387,10 @@ when the pull ends or is cancelled, and inherits the mini carousel's chrome
 fade and drift during immersion. A pull opens the library on release after
 40pt, or after 10pt with upward velocity over 300pt/s. Horizontal motion still
 belongs to native scrubbing; embedded onboarding carousels omit the hint.
+The upward pan's direction gate is installed as its gesture-recognizer delegate,
+so horizontal or downward drags starting on any mini-card descendant fail it
+immediately and release the native collection pan. An outer-view-only
+`gestureRecognizerShouldBegin` override does not gate touches hitting chip cells.
 Its cards contain only a title and a favicon/source badge on the left, with a
 saved banner image behind a dark legibility treatment when available. iPhone
 shows one card per row and several rows at once; wide iPad sheets use two

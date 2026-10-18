@@ -51,7 +51,7 @@ public extension CarouselScrubberViewDelegate {
     }
 }
 
-public final class CarouselScrubberView: UIView {
+public final class CarouselScrubberView: UIView, UIGestureRecognizerDelegate {
 
     public weak var delegate: CarouselScrubberViewDelegate?
 
@@ -183,6 +183,10 @@ public final class CarouselScrubberView: UIView {
         ])
 
         libraryPullPan = UIPanGestureRecognizer(target: self, action: #selector(pullLibrary(_:)))
+        // Gate at the recognizer, regardless of which mini-card descendant
+        // receives the touch. UIView's should-begin hook on this outer view
+        // cannot arbitrate touches hit-tested to the collection's cells.
+        libraryPullPan.delegate = self
         addGestureRecognizer(libraryPullPan)
         collectionView.panGestureRecognizer.require(toFail: libraryPullPan)
         tap.require(toFail: libraryPullPan)

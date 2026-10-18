@@ -27,6 +27,22 @@ final class SavedLibraryPresentationTests: XCTestCase {
         func scrubberDidRequestLibrary(_ scrubber: CarouselScrubberView) { requests += 1 }
     }
 
+    func testLibraryPullDirectionGateIsInstalledOnTheRecognizer() throws {
+        let strip = CarouselScrubberView()
+        strip.frame = CGRect(x: 0, y: 0, width: 250, height: strip.preferredHeight)
+        strip.setThumbnailCount(8)
+        strip.layoutIfNeeded()
+        let pull = try XCTUnwrap(strip.gestureRecognizers?.compactMap {
+            $0 as? UIPanGestureRecognizer
+        }.first)
+        // Mini-card descendants receive the touches. UIView's should-begin
+        // override on the strip does not gate a recognizer for those touches.
+        let directionGate = try XCTUnwrap(pull.delegate)
+        XCTAssertTrue(directionGate === strip)
+        XCTAssertEqual(directionGate.gestureRecognizerShouldBegin?(pull), false,
+                       "a stationary touch must not claim the strip for search")
+    }
+
     func testSearchHintTracksPullReversalCancellationAndLibraryCommit() throws {
         let strip = CarouselScrubberView()
         strip.frame = CGRect(x: 0, y: 0, width: 250, height: strip.preferredHeight)

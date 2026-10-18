@@ -258,9 +258,9 @@
       "apps": ["luna", "pricetracker"]
     },
     {
-      "id": "deck.save-of-the-week",
+      "id": "deck.lunas-pick",
       "screen": "Card deck",
-      "variant": "Save of the Week",
+      "variant": "Luna’s pick",
       "summary": "The util card carrying a live weekly pick — the ribbon, the row, and its save affordance.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
@@ -746,9 +746,9 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
-      "id": "util.save-of-the-week",
+      "id": "util.lunas-pick",
       "screen": "Util card",
-      "variant": "weekly pick",
+      "variant": "Luna’s pick",
       "summary": "A pick two days old: the week-tier label and the ribbon.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]

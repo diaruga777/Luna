@@ -1301,7 +1301,7 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
     /// The bubble's own text inset, each side.
     private static let textInset: CGFloat = 14
     /// How many lines a link may take before it finally gives up and truncates.
-    /// A weekly Save of the Week is a real editorial URL — a publisher, a dated
+    /// The Luna’s pick is a real editorial URL — a publisher, a dated
     /// path, a slug — and the whole of it is what the lesson is asking the user
     /// to look at, so it wraps like a link in a real conversation instead of
     /// ending in an ellipsis three characters in.

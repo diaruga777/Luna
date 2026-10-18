@@ -67,7 +67,7 @@ SOURCE_ROOTS = APP_TARGETS_AND_EXTENSIONS
 # report. Purely descriptive now — nothing auto-groups by this anymore.
 SECTIONS = [
     ("Luna/Reader/Onboarding", "Onboarding"),
-    ("Luna/UtilCard/WeeklyPromotionMenu.swift", "Save of the Week"),
+    ("Luna/UtilCard/WeeklyPromotionMenu.swift", "Luna’s pick"),
     ("Luna/UtilCard", "Onboarding"),
     ("Luna/Settings", "Settings"),
     ("Luna/Diagnostics", "Settings · Diagnostics"),
@@ -98,7 +98,7 @@ SECTIONS = [
     ("LunaMailTransport", "Email & Sending"),
     ("LunaSocialUI", "Sharing with Friends"),
     ("LunaSocial", "Sharing with Friends"),
-    ("LunaWeekly", "Save of the Week"),
+    ("LunaWeekly", "Luna’s pick"),
     ("LunaDesignSystem", "Shared UI"),
     ("LunaSavesUI", "Card Deck"),
     ("LunaSaves", "Card Deck"),

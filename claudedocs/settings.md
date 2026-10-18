@@ -17,7 +17,7 @@ and finished by `SettingsViewController`.
   bar puts them.
 - Diagnostics has no visible row. Five taps in blank space on the top-level
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
-  do not count. That screen also holds the Save of the Week signing key entry
+  do not count. That screen also holds the Luna’s pick signing key entry
   (`save-of-the-week.md`) and **Erase All Data**, the factory reset.
 - **Erase All Data is a factory reset, not an onboarding reset** (it replaced
   one). `FactoryReset.eraseEverything` (LunaStorage) empties BOTH containers —
@@ -36,7 +36,7 @@ and finished by `SettingsViewController`.
   Out of reach: another app's or extension's private container (nothing in Luna
   keeps state there) and the Safari web extension's `browser.storage`, which
   lives inside Safari.
-- Save of the Week appears as a top-level category ONLY on a device holding the
+- Luna’s pick appears as a top-level category ONLY on a device holding the
   curator's signing key. It is the proposal inbox: promote or delete, both of
   which retire the proposal record.
 - Shortcut & Safari contains Safari suggestion visibility, Cookie Popups,

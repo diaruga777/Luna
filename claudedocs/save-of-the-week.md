@@ -1,4 +1,4 @@
-# From the Luna team
+# Luna’s pick
 
 One curated pick per save type, published to every Luna install through a
 public CloudKit database, signed so that only the curator can set it, and
@@ -16,7 +16,7 @@ extension reads or writes it). UI: `Luna/UtilCard/WeeklySaveRowHost.swift`,
 `media`, `product` — one live entry per kind at any time. `date` records when
 the current entry was published; it remains part of the signed value but no
 longer affects presentation or availability. Every app and every kind uses
-the single ribbon label **From the Luna team**. Entries remain live until a
+the single ribbon label **Luna’s pick**. Entries remain live until a
 newer entry replaces them or the store explicitly clears them.
 
 Which kinds an app fetches and shows is `WeeklySaveKind.kinds(for:)`: the
@@ -123,7 +123,7 @@ so it never reads as the first entry of the recents list.
 
 **The attribution is a corner flag, not a phrase in the subtitle.**
 `WeeklyRibbonView` is a small tinted tab pinned flush to the row's TOP-LEFT
-corner, carrying `WeeklySaveLabels.subtitle` ("From the Luna team"). Three
+corner, carrying `WeeklySaveLabels.subtitle` ("Luna’s pick"). Three
 shape decisions, all of them
 corrections of a first pass that was a bright pennant across the artwork:
 
@@ -196,7 +196,7 @@ page-pan test), so the two gestures never fight.
 `WeeklyPromotionMenu` adds one or two actions to all three decks' long-press
 menus, above Archive/Delete. Failed saves get no verb at all.
 
-- **Everyone, key-holder included**: "Propose Save of the Week" — writes a
+- **Everyone, key-holder included**: "Suggest for Luna’s pick" — writes a
   proposal record. A signed-out iCloud account is reported rather than failing
   silently.
 - **Key-holder, additionally and first**: "Promote to {Save|Read|Download|Deal}
@@ -212,7 +212,7 @@ consequence: `createProposal` marks its own record name seen in the store
 `markProposalsSeen` the inbox check uses), so the curator is never notified
 about their own submission.
 
-The curator's inbox is `Settings → Save of the Week`, a category
+The curator's inbox is `Settings → Luna’s pick`, a category
 `SettingsViewController` appends only when `WeeklyPromotionKeyStore.isKeyHolder`
 (Settings is rebuilt on every visit, so pasting the key and coming back is
 enough). Promote and Delete both retire the proposal record.

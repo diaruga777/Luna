@@ -65,7 +65,7 @@ frame.
 so it clears the thumbnail instead of crossing it, closed by a single arc on its
 trailing edge, and filled with the app's colour dimmed into the row's own black —
 so each app still flies its own without outshining the pick it labels. It carries
-the single label "From the Luna team" for every app and every entry age. The
+the single label "Luna’s pick" for every app and every entry age. The
 subtitle underneath is the URL host and NOTHING else: the attribution used to
 share that line behind a bullet and truncate the host. The row is 96pt for
 it (`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
@@ -278,7 +278,7 @@ host is constructed. The card shows, top to bottom:
 1. the surface-specific two-beat intro headline — ONE line in every app, its
    second beat animating the difference between two states of the same sentence
    (`claudedocs/reader-onboarding.md`, "Surface headlines");
-2. Save of the Week, when there is one;
+2. Luna’s pick, when there is one;
 3. the setup block (above);
 4. the “or” separator, when it applies (see below);
 5. the permanent paste row at the bottom.
@@ -343,7 +343,7 @@ the host observes completion and constructs the completed variant.
 ## Completed state and recent URLs
 
 Once setup is complete the headline is absent, and so are the lesson buttons as
-soon as they are retired. **Save of the Week sits at its own seat above the
+soon as they are retired. **Luna’s pick sits at its own seat above the
 headline's**: `UtilCardLayout.weeklyTopRatio` (0.14 of the card, half
 `headlineTopRatio`), so the flag is the first thing the card says. Beneath it the
 card adds as many matching, unsaved recent Safari URLs as fit above whatever the
@@ -355,7 +355,7 @@ the weekly row on its own. With no live pick there is no seat to keep and the
 history block starts at `recentsTop` instead, taking the whole card (one row more
 fits).
 
-Recent rows use the same black layout as Save of the Week but the neutral Liquid
+Recent rows use the same black layout as Luna’s pick but the neutral Liquid
 Glass rim, no palette wash, no corner flag (and so 74pt tall, with the title back
 at its 13pt top), and only the URL host as the subtitle. They come from
 `RecentURLMatcher.shared.matches`, so source, classification, cache, newest-first

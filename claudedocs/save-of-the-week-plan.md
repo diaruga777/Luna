@@ -1,6 +1,6 @@
-# Save of the Week — CloudKit-driven, signed, per-kind (implementation plan)
+# Luna’s pick — CloudKit-driven, signed, per-kind (implementation plan)
 
-Replaces the hardcoded util-card "Save of the Week" row with a live, signed,
+Replaces the hardcoded util-card "Luna’s pick" row with a live, signed,
 CloudKit-public-database-driven value: one entry per save type (article / media /
 product) at any time, readable by every Luna app install, writable only by the
 holder of a private key, with a public "propose" channel for everyone else.
@@ -23,8 +23,8 @@ work to `main` in the primary checkout — touch `Luna/Reader/Onboarding/*` and
 - The row itself, `UtilURLRow` (same file, L337–428, `style: .saveOfTheWeek`,
   accessibility id `utilCard.saveOfTheWeek`), its glass rim, its tap-to-save
   handoff (`save(_:source:sourceView:)` → `UtilCardSaveTransition`) all stay.
-- Subtitle today: `host + "  •  " + L10n.string("Save of the week")` (L396–398).
-  `"Save of the week"` is in NO string catalog today.
+- Subtitle today: `host + "  •  " + L10n.string("Luna’s pick")` (L396–398).
+  `"Luna’s pick"` is in NO string catalog today.
 - `LunaTests/UtilCardTests.swift:72` pins the literal Lewis Society URL; L33/L48
   assert the weekly row is always present in both launch variants; L78 pins the
   tap→save callback. These tests get rewritten (row is now conditional).
@@ -33,8 +33,8 @@ work to `main` in the primary checkout — touch `Luna/Reader/Onboarding/*` and
   `AppConfig`. Every "CloudKit" string is a stale comment.
 - Docs to update at the end: `claudedocs/util-card.md` (L32–45 "For now its
   canonical URL is…"), `CLAUDE.md` surface-gating paragraph ("Paste and the
-  fixed Save of the Week remain in both states" — reword to "Paste remains in
-  both states; the Save of the Week row appears whenever a live signed entry
+  fixed Luna’s pick remain in both states" — reword to "Paste remains in
+  both states; the Luna’s pick row appears whenever a live signed entry
   exists"), plus a new `claudedocs/save-of-the-week.md` feature doc.
 
 ## 2. Decisions already made (do not re-litigate; flag in the final report)
@@ -42,7 +42,7 @@ work to `main` in the primary checkout — touch `Luna/Reader/Onboarding/*` and
 1. **"Parallel but separate database" = a second record type in the same public
    CloudKit database.** CloudKit gives one public DB per container; the
    proposals channel is `WeeklySaveProposal` records alongside `WeeklySave`.
-2. **Central Luna keeps the noun "Save"** ("Save of the week" / "Save of the
+2. **Central Luna keeps the noun "Save"** ("Luna’s pick" / "Save of the
    month") for all three kinds as it cycles; only the faceted apps rename
    (Read / Download / Deal). The spec assigned nouns per app, not per kind.
 3. **Signature scheme is Ed25519** (`CryptoKit.Curve25519.Signing`), signing the
@@ -230,15 +230,15 @@ Mirror the App Group exactly:
   configure a `RecentURLPreview` from it for the existing
   `UtilURLRow.configure` path; kind maps to the SF-symbol fallbacks already in
   place. Tap keeps the existing `save(urlString, source: .manual, ...)` path.
-- Subtitle label text (replaces the bare `L10n.string("Save of the week")`):
+- Subtitle label text (replaces the bare `L10n.string("Luna’s pick")`):
   per app × per age tier, via `L10n.string` with catalog entries added per
   `claudedocs/strings.md` ownership rules:
   | app | < 9 days | ≥ 9 days |
   |---|---|---|
-  | Luna | Save of the week | Save of the month |
-  | Reader | Read of the week | Read of the month |
-  | Downloader | Download of the week | Download of the month |
-  | Price Tracker | Deal of the week | Deal of the month |
+  | Luna | Luna’s pick | Luna’s pick |
+  | Reader | Luna’s pick | Luna’s pick |
+  | Downloader | Luna’s pick | Luna’s pick |
+  | Price Tracker | Luna’s pick | Luna’s pick |
   Age tier computed from `save.date` with the injected clock at configure time.
 - Live change handling: observe `WeeklySaveStore.didChange` in the util card.
   - Row absent → value appears: lay the row in with a simple fade/settle
@@ -327,7 +327,7 @@ configured row views (one per kind with a live display), in the single row slot:
   corner radius matching the row) so rows never bleed onto the card.
   Interruptible: a new swipe mid-flight grabs the running animator
   (`pauseAnimation`, retarget) rather than queuing.
-- The label ("Save of the week" etc.) and rim tint stay constant in the central
+- The label ("Luna’s pick" etc.) and rim tint stay constant in the central
   app (decision §2.2), so only row content slides.
 - The 2s cadence pauses while the row is mid-replacement (eclipse) and while
   the user is touching the row.
@@ -356,7 +356,7 @@ UIViewController) -> UIAction?`:
   immediately (self-promotion shows up without waiting for the next fetch) and
   if it was promoted from a proposal, delete that proposal record. Errors →
   alert with the CK error's localizedDescription.
-- Non-key-holder: title "Propose Save of the Week", runs `createProposal`
+- Non-key-holder: title "Suggest for Luna’s pick", runs `createProposal`
   (kind, url, now). No iCloud account (`accountStatus` false or CK
   `.notAuthenticated`) → alert "Sign in to iCloud to propose…". Success → brief
   confirmation alert (the decks already use `presentInfoAlert`-style alerts).
@@ -372,13 +372,13 @@ UIViewController) -> UIAction?`:
   Empty state: a footer "No proposals right now."
 - Category appended in `SettingsViewController.swift:56–67`'s universal tail,
   ONLY when `WeeklyPromotionKeyStore.isKeyHolder`: `SettingsCategory(title:
-  "Save of the Week", symbol: "crown")`. (The categories array is `let` built
+  "Luna’s pick", symbol: "crown")`. (The categories array is `let` built
   at init; the screen is constructed fresh each visit so key-holder status at
   Settings-open time is fine.)
 - Opportunistic fetch: `WeeklySaveRefresher.checkProposalsIfKeyHolder()` called
   from the same launch/foreground hooks (§5a). Diffs fetched proposal
   recordNames against the store's seen-ID set; NEW ones → local notification
-  ("New Save of the Week proposal: <host>", one per batch is fine:
+  ("New proposal for Luna’s pick: <host>", one per batch is fine:
   "3 new proposals") via a `NotificationManager`-style helper in LunaWeekly
   (immediate `UNNotificationRequest`, no trigger — pattern
   NotificationManager.swift:78–83, userInfo type key
@@ -411,7 +411,7 @@ space in Settings — SettingsViewController.swift:77–89):
   `WeeklySigning.privateKeyMatchesBundledPublicKey` → on success: store in
   `WeeklyPromotionKeyStore`, `NotificationManager.requestAuthorization()`,
   schedule the proposal BG task, confirmation alert ("This device can now
-  promote Saves of the Week"), and log to DiagnosticLog. On mismatch: error
+  promote Luna’s picks"), and log to DiagnosticLog. On mismatch: error
   alert, nothing stored.
 - When a key is already stored, the button reads "Weekly Key ✓" and offers
   Replace / Remove (remove deletes from Keychain).

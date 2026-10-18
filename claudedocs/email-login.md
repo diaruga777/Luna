@@ -155,7 +155,7 @@ left disabled with no cover and no way to retry.
 
 `NotificationManager.requestAuthorization()` (`LunaSocial`) is **not** requested at
 launch. Connecting an account is one of exactly three moments Luna asks (the others
-are pasting the Save of the Week key and committing a price alert threshold), because
+are pasting the Luna’s pick key and committing a price alert threshold), because
 until an account exists there is no incoming share to announce. The app-password path
 asks in `signIn()` — once the cover is up and verification is underway, so the network
 round trip and the system dialog share the same dead time — and the Outlook OAuth path

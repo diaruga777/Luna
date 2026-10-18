@@ -161,7 +161,7 @@ enum StageFixtures {
             state: .ready, captureSource: .manual, priceTracker: tracker)
     }
 
-    // MARK: - Save of the Week
+    // MARK: - Luna’s pick
 
     /// Puts a live pick in the weekly store. The signature is empty on purpose:
     /// verification happens on the FETCH path (`WeeklySaveRefresher`), never on

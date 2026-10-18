@@ -16,28 +16,49 @@ import LunaMusicCore
     public func select(_ destination: MediaPlaybackCoordinator.Surface, animated: Bool = true, completion: (() -> Void)? = nil) {
         guard surface != destination else { completion?(); return }
         music.cancelPendingSearchFocus()
-        view.endEditing(true)
-        if let search = topViewController?.navigationItem.searchController, search.isActive {
+        let search = topViewController?.navigationItem.searchController
+        let keepsSearchFocus = search?.searchBar.searchTextField.isFirstResponder == true
+        let finish = { [weak self] in
+            guard let self else { return }
+            // Avoid a crossfade gap between the outgoing and incoming keyboard
+            // owners. UIKit installs the new navigation search on the next turn.
+            self.replaceStack(destination, animated: animated && !keepsSearchFocus) {
+                self.topViewController?.loadViewIfNeeded()
+                guard keepsSearchFocus,
+                      let owner = self.topViewController,
+                      let incomingSearch = owner.navigationItem.searchController as? LibrarySearchController else {
+                    completion?(); return
+                }
+                self.view.layoutIfNeeded()
+                DispatchQueue.main.async { [weak self, weak owner] in
+                    guard let self, let owner, self.surface == destination,
+                          self.topViewController === owner, owner.view.window != nil,
+                          self.presentedViewController == nil else { completion?(); return }
+                    incomingSearch.focusSearch()
+                    completion?()
+                }
+            }
+        }
+        if !keepsSearchFocus { view.endEditing(true) }
+        if let search, search.isActive {
             // Wait until UIKit finishes restoring the search owner's navigation
             // item before replacing the root, including for incoming deep links.
             let query = search.searchBar.text
-            search.dismiss(animated: false) { [weak self] in
+            search.dismiss(animated: false) {
                 search.isActive = false
-                self?.replaceStack(destination, animated: animated)
                 // UIKit clears the field when ending search presentation. A
                 // surface switch should retain the query for the return trip.
                 search.searchBar.text = query
                 search.searchResultsUpdater?.updateSearchResults(for: search)
-                completion?()
+                finish()
             }
         } else {
-            replaceStack(destination, animated: animated)
-            completion?()
+            finish()
         }
     }
 
-    private func replaceStack(_ destination: MediaPlaybackCoordinator.Surface, animated: Bool) {
-        guard surface != destination else { return }
+    private func replaceStack(_ destination: MediaPlaybackCoordinator.Surface, animated: Bool, completion: @escaping () -> Void) {
+        guard surface != destination else { completion(); return }
         if surface == .music { musicStack = viewControllers }
         else { podcastStack = viewControllers }
         surface = destination
@@ -47,8 +68,8 @@ import LunaMusicCore
         // Replacing the root avoids a misleading Back button between surfaces.
         let update = { self.setViewControllers(stack.isEmpty ? [root] : stack, animated: false) }
         if animated && !UIAccessibility.isReduceMotionEnabled {
-            UIView.transition(with: view, duration: 0.25, options: [.transitionCrossDissolve, .allowAnimatedContent], animations: update)
-        } else { update() }
+            UIView.transition(with: view, duration: 0.25, options: [.transitionCrossDissolve, .allowAnimatedContent], animations: update, completion: { _ in completion() })
+        } else { update(); completion() }
     }
 
     public func showPodcasts(animated: Bool = true) {
@@ -94,9 +115,11 @@ import LunaMusicCore
 }
 
 /// Both libraries use the same native, always-visible navigation search.
-@MainActor final class LibrarySearchController: UISearchController {
+@MainActor final class LibrarySearchController: UISearchController, UISearchControllerDelegate {
+    private var pendingSearchFocus = false
     init(placeholder: String, identifier: String, label: String) {
         super.init(searchResultsController: nil)
+        delegate = self
         obscuresBackgroundDuringPresentation = false
         searchBar.placeholder = placeholder
         searchBar.searchTextField.font = .preferredFont(forTextStyle: .body)
@@ -106,6 +129,22 @@ import LunaMusicCore
         searchBar.autocorrectionType = .no
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func focusSearch() {
+        pendingSearchFocus = true
+        isActive = true
+        searchBar.becomeFirstResponder()
+    }
+    func didPresentSearchController(_ searchController: UISearchController) {
+        // The incoming navigation search is not ready to receive keyboard focus
+        // until UIKit has finished its presentation after the stack replacement.
+        if pendingSearchFocus {
+            searchBar.becomeFirstResponder()
+            pendingSearchFocus = false
+        }
+    }
+    func didDismissSearchController(_ searchController: UISearchController) {
+        pendingSearchFocus = false
+    }
     func install(on owner: UIViewController) {
         owner.navigationItem.searchController = self
         owner.navigationItem.preferredSearchBarPlacement = .stacked

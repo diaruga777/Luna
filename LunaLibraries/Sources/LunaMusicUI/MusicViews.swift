@@ -137,7 +137,7 @@ public class MusicScreenViewController: UIViewController {
         table.translatesAutoresizingMaskIntoConstraints = false
         playerBar.translatesAutoresizingMaskIntoConstraints = false
         playerBar.spacing = 8
-        playerBar.alignment = .fill
+        playerBar.alignment = .center
         playerBar.semanticContentAttribute = .forceLeftToRight
         for (button, surface, symbol, label) in [
             (musicPill, MediaPlaybackCoordinator.Surface.music, "music.note", "Music"),
@@ -154,6 +154,7 @@ public class MusicScreenViewController: UIViewController {
             button.accessibilityIdentifier = "media.library." + surface.rawValue
             button.accessibilityHint = "Opens your " + label.lowercased() + " library"
             button.widthAnchor.constraint(equalToConstant: 56).isActive = true
+            button.heightAnchor.constraint(equalTo: button.widthAnchor).isActive = true
             button.addAction(UIAction { [weak self] _ in
                 (self?.navigationController as? MediaLibraryNavigationController)?.select(surface)
             }, for: .touchUpInside)

@@ -258,6 +258,44 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertFalse(sections.exists)
     }
 
+    func testLibrarySwitchTransfersSearchFocusAndKeepsSwitchersCircular() {
+        let musicSearch = app.searchFields["music.library.search"]
+        XCTAssertTrue(musicSearch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        musicSearch.typeText("NoSuchSongLuna")
+        let podcasts = app.buttons["media.library.podcasts"]
+        XCTAssertEqual(podcasts.frame.width, podcasts.frame.height, accuracy: 1)
+        podcasts.tap()
+        let podcastSearch = app.searchFields["podcasts.search"]
+        XCTAssertTrue(podcastSearch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        // Type without tapping search again: keyboard visibility alone does not
+        // prove the destination field became first responder.
+        app.typeText("NoSuchPodcastLuna")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLuna")
+        let music = app.buttons["media.library.music"]
+        XCTAssertEqual(music.frame.width, music.frame.height, accuracy: 1)
+        music.tap()
+        XCTAssertTrue(musicSearch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLuna")
+        app.typeText("Again")
+        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLunaAgain")
+        podcasts.tap()
+        XCTAssertTrue(podcastSearch.waitForExistence(timeout: 5))
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLuna")
+        app.typeText("Again")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLunaAgain")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Focused podcast search and circular music switcher"
+        screenshot.lifetime = .keepAlways; add(screenshot)
+        app.keyboards.buttons["Search"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        music.tap()
+        XCTAssertTrue(musicSearch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+    }
+
     func testPlayerPillsSwitchSurfacesAndPreserveNavigation() {
         let podcastPill = app.buttons["media.library.podcasts"]
         XCTAssertTrue(podcastPill.waitForExistence(timeout: 5))

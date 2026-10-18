@@ -68,8 +68,11 @@ Both the app and Mac companion must be updated for the music service.
 The Music Library root lists Playlists, Artists, Albums and Songs. The floating
 player bar switches libraries: Music stays on the left and Podcasts on the right.
 The selected surface expands to show its own artwork, title and playback controls;
-the other remains a 56-point icon pill. Switching preserves each library's navigation
+the other remains a 56-point circular icon button, centered beside the player even
+when larger text makes the bar taller. Switching preserves each library's navigation
 stack, search query and scroll position, and does not start or interrupt audio.
+If search is focused, focus transfers to the destination's visible search field;
+switching with the keyboard dismissed leaves it dismissed.
 Play explicitly resumes that surface's queue. There is no tab bar or separate
 Downloaded music root destination.
 **Downloaded** is a checked filter in the root search menu and every music list's
@@ -702,7 +705,10 @@ also passed. Screenshots of the player, rows and episode details were inspected.
 
 `MediaLibraryNavigationController` retains a stack per library. Switching from an
 active search waits for UIKit's dismissal before replacing the stack, then restores
-the outgoing query. Foreground music focus uses a cancellation token so leaving
+the outgoing query. A focused outgoing search transfers first responder to the
+destination's search without clearing either query. Returning to a saved detail
+screen without search does not force navigation back to its library root.
+Foreground music focus uses a cancellation token so leaving
 Music cancels pending focus without suppressing the normal foreground retry.
 Queue and episode links dismiss current presentations before routing. Mini and
 full-player controls target the displayed surface; remote queue changes still
@@ -715,3 +721,11 @@ navigation/query, clearing podcast search, podcast settings, music filters,
 foreground search and warm/cold queue links. Both expanded-bar layouts and podcast
 search were visually inspected. The existing local-audio startup regression timed
 out both here and on unchanged main; audio startup is not claimed green.
+
+The search-focus follow-up passes four focused UI checks plus four hosted
+navigation/layout checks on the same simulator. The new UI regression types into
+both destination search fields without refocusing, checks each retained query,
+verifies both switchers are square, and confirms a dismissed keyboard stays
+dismissed. Focused switches skip the crossfade so focus can transfer as soon as
+UIKit attaches the incoming navigation search. The focused podcast search and
+circular switcher screenshot was visually inspected.

@@ -13,6 +13,7 @@ import LunaVaultTailscale
 final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var runtime: VaultConnectedRuntime?
+    private var builds: CodeBuildMonitor?
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: scene); self.window = window
@@ -35,6 +36,13 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
                     let settings = LunaMacConnectionViewController(services: runtime, client: .code) { try await runtime.pair(code: $0) }
                     settings.title = "Luna Mac"; return settings
                 }, peerID: { (try? store.peer()?.deviceID.description) ?? "unpaired" })
+            builds = environment.builds
+            environment.builds.becameIdle = { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, UIApplication.shared.applicationState == .background, self.builds?.needsConnection != true else { return }
+                    await self.runtime?.stop()
+                }
+            }
             window.rootViewController = LunaMacLaunchViewController(runtime: runtime, client: .code, content: CodeTabsController(environment: environment))
         } catch {
             let controller = UIViewController(); controller.view.backgroundColor = .systemBackground
@@ -47,5 +55,8 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
     }
     func sceneDidBecomeActive(_ scene: UIScene) { if let runtime { Task { await runtime.reconnect() } } }
-    func sceneDidEnterBackground(_ scene: UIScene) { if let runtime { Task { await runtime.stop() } } }
+    func sceneDidEnterBackground(_ scene: UIScene) { if builds?.needsConnection != true, let runtime { Task { @MainActor [weak self] in
+        guard UIApplication.shared.applicationState == .background, self?.builds?.needsConnection != true else { return }
+        await runtime.stop()
+    } } }
 }

@@ -44,6 +44,7 @@ import LunaCodeCore
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Builds"
+        NotificationCenter.default.addObserver(self, selector: #selector(buildChanged), name: CodeBuildMonitor.changed, object: environment.builds)
         dataSource = CodeBuildDataSource(tableView: tableView) { [weak self] _, _, key in
             guard let self, let app = self.displayedApps[key] else { return nil }
             return self.makeCell(app)
@@ -71,6 +72,10 @@ import LunaCodeCore
         reload()
         if !loading { load(refreshAll: false) }
         Task { await refreshJobs() }
+    }
+    @objc private func buildChanged() {
+        if let job = environment.builds.job { jobs[job.id] = job }
+        reload()
     }
     @objc private func refresh() { load(refreshAll: true) }
     private func load(refreshAll: Bool) {
@@ -169,6 +174,7 @@ import LunaCodeCore
     }
     private var footerText: String {
         if let message { return message }
+        if starting != nil { return environment.builds.backgroundMessage }
         return loading ? "Finding Apps…" : ""
     }
     private func phone(for app: CodeBuildApp) -> CodeDevice? {
@@ -203,21 +209,37 @@ import LunaCodeCore
         more.showsMenuAsPrimaryAction = true
         more.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let controls = UIStackView(arrangedSubviews: [play, more]); controls.spacing = 8
-        controls.frame = CGRect(x: 0, y: 0, width: 100, height: 44)
-        cell.accessoryView = controls
+        let progress = UIProgressView(progressViewStyle: .default)
+        progress.isAccessibilityElement = true
+        progress.accessibilityLabel = "Build progress"
+        progress.accessibilityIdentifier = "CodeRowProgress:" + app.project.scheme
+        let accessory = UIStackView(arrangedSubviews: [controls, progress]); accessory.axis = .vertical; accessory.spacing = 5
+        accessory.frame = CGRect(x: 0, y: 0, width: 100, height: 50)
+        cell.accessoryView = accessory
+        cell.accessibilityElements = [cell.textLabel!, cell.detailTextLabel!, play, more, progress]
         update(cell, app: app)
         return cell
     }
     private func update(_ cell: UITableViewCell, app: CodeBuildApp) {
         let target = phone(for: app)?.name ?? "Phone disconnected"
-        let status = app.jobID.flatMap { jobs[$0]?.state.rawValue.capitalized }
+        let job = app.jobID.flatMap { jobs[$0] }
+        let busy = starting == app.key || job?.state == .running
+        let fraction = starting == app.key ? environment.builds.fraction : (job.map { environment.builds.fraction(for: $0) } ?? 0)
+        let status = starting == app.key ? "Starting… · Keep Luna Code open" : job.map {
+            $0.state == .running ? "\(Int(fraction * 100))% estimated · " + $0.progressStage : $0.state.rawValue.capitalized
+        }
         let detail = [(app.project.root as NSString).lastPathComponent, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
         if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
-        guard let play = (cell.accessoryView as? UIStackView)?.arrangedSubviews.first as? UIButton else { return }
-        let busy = starting == app.key || app.jobID.flatMap { jobs[$0]?.state } == .running
-        if play.configuration?.showsActivityIndicator != busy || play.configuration == nil {
+        guard let accessory = cell.accessoryView as? UIStackView,
+              let controls = accessory.arrangedSubviews.first as? UIStackView,
+              let play = controls.arrangedSubviews.first as? UIButton else { return }
+        if let progress = accessory.arrangedSubviews.last as? UIProgressView {
+            progress.isHidden = !busy; progress.progress = Float(fraction)
+            progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
+        }
+        if play.configuration == nil {
             var config = UIButton.Configuration.tinted(); config.image = UIImage(systemName: "play.fill"); config.cornerStyle = .capsule
-            config.showsActivityIndicator = busy
+            config.showsActivityIndicator = false
             play.configuration = config
         }
         play.isEnabled = starting == nil && !jobs.values.contains { $0.state == .running }
@@ -252,10 +274,12 @@ import LunaCodeCore
     }
     private func build(_ app: CodeBuildApp) {
         guard starting == nil else { return }
+        do { try environment.builds.begin(title: "Build & Run · " + app.project.scheme) }
+        catch { showError(error); return }
         starting = app.key; reload()
         let peer = environment.peerID()
         Task {
-            defer { if peer == environment.peerID() { starting = nil; reload() } }
+            defer { environment.builds.endStarting(peer: peer); if peer == environment.peerID() { starting = nil; reload() } }
             do {
                 guard let phones = try await environment.client.call(CodeRequest(.devices)).devices else { throw CodeFailure("Update Luna Mac to use phone builds.") }
                 guard peer == environment.peerID() else { return }
@@ -270,7 +294,9 @@ import LunaCodeCore
                 var request = CodeRequest(.runOnDevice); request.project = app.project
                 request.deviceBuild = CodeDeviceBuild(branch: app.branch, deviceID: target.id)
                 let response = try await environment.client.call(request)
-                guard peer == environment.peerID(), let job = response.job else { return }
+                guard peer == environment.peerID() else { return }
+                guard let job = response.job else { throw CodeFailure("The Mac did not confirm the build. Update Luna Mac and try again.") }
+                environment.builds.accept(job)
                 jobs[job.id] = job; edit(app) { $0.jobID = job.id }; showLog(job.id, showConsole: false)
             } catch { if peer == environment.peerID() { showError(error) } }
         }
@@ -317,6 +343,7 @@ import LunaCodeCore
             if let job = try? await environment.client.call(request).job, peer == environment.peerID() {
                 changed = changed || jobs[id]?.state != job.state
                 jobs[id] = job
+                environment.builds.observe(job)
                 if let log = (presentedViewController as? UINavigationController)?.topViewController as? CodeLogController, log.jobID == job.id { log.update(job) }
             }
         }
@@ -332,7 +359,7 @@ import LunaCodeCore
                     guard peer == environment.peerID() else { return }; jobs[id] = job
                 }
                 guard peer == environment.peerID(), let job = jobs[id], presentedViewController == nil else { return }
-                let log = CodeLogController(job: job, showConsole: showConsole)
+                let log = CodeLogController(job: job, showConsole: showConsole, monitor: environment.builds)
                 present(UINavigationController(rootViewController: log), animated: true)
             } catch { if peer == environment.peerID() { showError(error) } }
         }

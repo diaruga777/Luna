@@ -21,6 +21,7 @@ public struct CodeBrowserPage: Sendable {
     public let pairing: () -> UIViewController
     public let peerID: () -> String
     public let defaults: UserDefaults
+    public lazy var builds = CodeBuildMonitor(client: client, defaults: defaults, peerID: peerID)
     public var session: CodeSessionStore { CodeSessionStore(defaults: defaults) }
     var projectChanged: (() -> Void)?
     public var project: CodeProject? {

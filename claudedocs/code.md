@@ -93,11 +93,32 @@ branch takes precedence. Local configuration files and edited source are never
 copied into the checkout. A missing team in both projects returns setup guidance
 before compilation.
 Installation and launch use Apple's `devicectl`; no device UI automation is used.
-Accepted jobs show a spinner and a message confirming that Luna Code can be
-backgrounded. Console output is opt-in via Show Console or the row’s Build Log
-menu. The Mac owns the job independently of the iPhone connection; status and
-logs persist, and the foregrounded app polls for completion. Keep the Mac awake
-and the target phone reachable for installation and launch.
+Build startup holds a finite iOS background lease before device discovery, saves
+and the start RPC, and requests an iOS 26 continued-processing task. During this
+handoff, the app says to keep Luna Code open until the Mac acknowledges the job.
+After acknowledgement, it explicitly says that Luna Code can be backgrounded.
+The scene keeps the Mac connection alive during startup and active monitoring;
+backgrounding no longer tears down an in-flight start request.
+
+Build rows and the build summary show an estimated percentage and progress bar.
+The Mac persists stage boundaries for preparation, checkout, destination/signing,
+compilation, installation, launch and cleanup. Within each stage the estimate
+advances toward a bounded ceiling; only Mac-confirmed success reaches 100%.
+TestFlight uses a broad archive/upload/processing estimate. Failure and cancellation
+freeze progress. Older companion job payloads still decode without stage data.
+The shared, tab-independent monitor polls accepted jobs and drives the app UI and
+`BGContinuedProcessingTask.progress` from the same estimate. iOS supplies the
+system progress Live Activity; no custom widget or push service is needed.
+If iOS declines background runtime, the app says background progress is unavailable;
+the Mac still owns accepted work and reopening refreshes status. If the Mac becomes
+unreachable, the displayed estimate freezes and the app reports reconnection.
+System expiration or dismissal stops monitoring, preserving the Mac's build;
+use Cancel Build in Luna Code to cancel the actual job. Active job IDs survive
+relaunch, and foregrounding resumes status checks.
+
+Console output is opt-in via Show Console or the row’s Build Log menu. The Mac owns the job independently of the iPhone connection; status and
+logs persist, and the app polls for completion while foregrounded or granted
+continued background runtime. Keep the Mac awake and the target phone reachable for installation and launch.
 Update both Luna Code and Luna Mac for these new protocol operations.
 
 ## Editor
@@ -172,6 +193,7 @@ must already work for the selected project. No private API key is sent to iPhone
 
 - `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
   live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
+  bounded stage estimates, terminal progress, backward-compatible job payloads, interrupted-job recovery,
   file versions/conflicts, encoding,
   permissions, binary/oversize rejection, symlinks, draft isolation and RPC retries.
 - `scripts/test_code_intelligence.sh`: disposable real UIKit app plus external
@@ -183,7 +205,8 @@ must already work for the selected project. No private API key is sent to iPhone
   isolated simulator preview, portrait/landscape typing, explicit Save,
   draft recovery, project/workspace selection and restoration, project switching,
   scheme selection, cached app rows, one-tap main build requests, hidden console,
-  background/foreground job status, last-tab restoration,
+  background/foreground job status, immediate backgrounding during delayed startup,
+  progress accessibility, last-tab restoration,
   browser failure/recovery, and explicit save-conflict resolution;
   iPadOS hardware Save shortcut. Preview mode is unavailable in Release and on physical devices.
 - `LunaVaultConnectionTests`: approved-peer gate for Code alongside existing pairing,

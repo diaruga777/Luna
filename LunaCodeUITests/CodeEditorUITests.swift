@@ -182,6 +182,28 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Project"].isSelected)
     }
 
+    func testBuildStartupSurvivesImmediateBackgroundAndShowsProgress() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview", "--build-start-delay"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let run = app.buttons["CodeRun:Sample"]
+        XCTAssertTrue(run.waitForExistence(timeout: 15)); run.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Starting… · Keep Luna Code open")).firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["CodeRowProgress:Sample"].exists, app.debugDescription)
+        attach("Remote build startup", app)
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 13)
+        app.activate()
+        XCTAssertTrue(app.staticTexts["Build Completed"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any)["CodeBuildProgress"].exists)
+        XCTAssertTrue(app.staticTexts["100%"].exists)
+        attach("Background build completed", app)
+    }
+
     func testBuildOptionsStayOpenWhileDiscoveryContinuesPastFailedAndLibrarySchemes() {
         continueAfterFailure = false
         let app = XCUIApplication()

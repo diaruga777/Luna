@@ -28,6 +28,9 @@ import LunaCodeCore
     private let status = UIButton(type: .system)
     private let positionLabel = UILabel()
     private let footer = UIStackView()
+    private let buildProgress = UIProgressView(progressViewStyle: .default)
+    private let buildStatus = UILabel()
+    private let buildSummary = UIStackView()
     private let empty = UIContentUnavailableView(configuration: .empty())
     private var workspaceGeneration = 0
     private var openGeneration = 0
@@ -91,7 +94,18 @@ import LunaCodeCore
         footer.isLayoutMarginsRelativeArrangement = true; footer.layoutMargins = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         footer.backgroundColor = .secondarySystemBackground
         footer.heightAnchor.constraint(greaterThanOrEqualTo: status.heightAnchor).isActive = true
-        let vertical = UIStackView(arrangedSubviews: [tabs, container, footer]); vertical.axis = .vertical
+        buildStatus.font = .preferredFont(forTextStyle: .caption1); buildStatus.numberOfLines = 0
+        buildStatus.adjustsFontForContentSizeCategory = true
+        buildStatus.accessibilityIdentifier = "CodeEditorBuildStatus"
+        buildProgress.isAccessibilityElement = true; buildProgress.accessibilityLabel = "Build progress"
+        buildProgress.accessibilityIdentifier = "CodeEditorBuildProgress"
+        buildSummary.axis = .vertical; buildSummary.spacing = 6
+        buildSummary.isLayoutMarginsRelativeArrangement = true
+        buildSummary.layoutMargins = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        buildSummary.addArrangedSubview(buildStatus); buildSummary.addArrangedSubview(buildProgress)
+        buildSummary.isHidden = true
+        NotificationCenter.default.addObserver(self, selector: #selector(buildChanged), name: CodeBuildMonitor.changed, object: environment.builds)
+        let vertical = UIStackView(arrangedSubviews: [tabs, buildSummary, container, footer]); vertical.axis = .vertical
         vertical.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(vertical)
         NSLayoutConstraint.activate([
             vertical.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor), vertical.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
@@ -124,6 +138,14 @@ import LunaCodeCore
         coordinator.animate(alongsideTransition: { _ in self.view.setNeedsLayout() }) { _ in
             if let range { self.active?.view.scrollRangeToVisible(range) }
         }
+    }
+    @objc private func buildChanged() {
+        let monitor = environment.builds
+        if let value = monitor.job, value.id == job?.id { job = value; buildButton.menu = buildMenu() }
+        buildSummary.isHidden = !monitor.isStarting && monitor.job?.state != .running
+        buildStatus.text = "\(Int(monitor.fraction * 100))% estimated · \(monitor.stage)\n" + monitor.backgroundMessage
+        buildProgress.progress = Float(monitor.fraction)
+        buildProgress.accessibilityValue = "\(Int(monitor.fraction * 100)) percent estimated"
     }
     @objc private func files() { openFiles?() }
     @objc private func background() { persistAll(); poll?.invalidate(); poll = nil; analysis?.cancel(); hideCompletions() }
@@ -550,10 +572,12 @@ import LunaCodeCore
             configureProject(); return
         }
         guard !startingJob else { return }
+        do { try environment.builds.begin(title: operation == .deploy ? "Build & Deploy" : "Build · " + project.scheme) }
+        catch { showError(error); return }
         startingJob = true
         let workspace = workspaceGeneration, peer = environment.peerID()
         Task {
-            defer { startingJob = false }
+            defer { startingJob = false; environment.builds.endStarting(peer: peer) }
             let original = active
             for doc in documents where doc.draft.modified {
                 guard workspaceGeneration == workspace, environment.peerID() == peer else { return }
@@ -566,21 +590,24 @@ import LunaCodeCore
                 let response = try await environment.client.call(request)
                 // Keep the originating Mac association even if the user switches while waiting.
                 environment.defaults.set(response.job?.id, forKey: "Code.job." + peer)
-                guard workspaceGeneration == workspace, environment.peerID() == peer else { return }
-                job = response.job; buildButton.menu = buildMenu(); showBuildLog(showConsole: false)
+                guard environment.peerID() == peer else { return }
+                guard let accepted = response.job else { throw CodeFailure("The Mac did not confirm the build. Update Luna Mac and try again.") }
+                environment.builds.accept(accepted)
+                guard workspaceGeneration == workspace else { return }
+                job = accepted; buildButton.menu = buildMenu(); showBuildLog(showConsole: false)
             } catch { if workspaceGeneration == workspace { showError(error) } }
         }
     }
     private func refreshJob(_ id: String) async {
         let peer = environment.peerID(), workspace = workspaceGeneration
         var request = CodeRequest(.job); request.jobID = id
-        if let response = try? await environment.client.call(request), peer == environment.peerID(), workspace == workspaceGeneration { job = response.job }
+        if let response = try? await environment.client.call(request), peer == environment.peerID(), workspace == workspaceGeneration { job = response.job; if let job { environment.builds.observe(job) } }
         buildButton?.menu = buildMenu()
         if let log = (presentedViewController as? UINavigationController)?.topViewController as? CodeLogController { log.update(job) }
     }
     private func showBuildLog(showConsole: Bool = true) {
         guard let job else { showError(CodeFailure("No build yet. Select a project, then choose Build or Build & Deploy.")); return }
-        let log = CodeLogController(job: job, showConsole: showConsole); present(UINavigationController(rootViewController: log), animated: true)
+        let log = CodeLogController(job: job, showConsole: showConsole, monitor: environment.builds); present(UINavigationController(rootViewController: log), animated: true)
     }
     private func cancelJob() {
         guard let job else { return }; var request = CodeRequest(.cancel); request.jobID = job.id
@@ -634,7 +661,9 @@ import LunaCodeCore
 }
 @MainActor final class CodeLogController: UIViewController {
     private let text = UITextView()
-    private let spinner = UIActivityIndicatorView(style: .large)
+    private let progress = UIProgressView(progressViewStyle: .default)
+    private let percent = UILabel()
+    private weak var monitor: CodeBuildMonitor?
     private let status = UILabel()
     private let detail = UILabel()
     private let console = UIButton(type: .system)
@@ -642,7 +671,8 @@ import LunaCodeCore
     private var job: CodeJob
     private var showConsole: Bool
     var jobID: String { job.id }
-    init(job: CodeJob, showConsole: Bool = false) {
+    init(job: CodeJob, showConsole: Bool = false, monitor: CodeBuildMonitor) {
+        self.monitor = monitor
         self.job = job; self.showConsole = showConsole; super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -655,7 +685,13 @@ import LunaCodeCore
         detail.adjustsFontForContentSizeCategory = true; detail.textColor = .secondaryLabel
         detail.font = .preferredFont(forTextStyle: .body); detail.textAlignment = .center; detail.numberOfLines = 0
         detail.accessibilityIdentifier = "CodeBuildStatus"
-        summary = UIStackView(arrangedSubviews: [spinner, status, detail]); summary.axis = .vertical; summary.spacing = 20
+        progress.isAccessibilityElement = true
+        progress.accessibilityLabel = "Build progress"
+        progress.accessibilityIdentifier = "CodeBuildProgress"
+        percent.font = .preferredFont(forTextStyle: .headline); percent.textAlignment = .center
+        percent.adjustsFontForContentSizeCategory = true
+        NotificationCenter.default.addObserver(self, selector: #selector(buildChanged), name: CodeBuildMonitor.changed, object: monitor)
+        summary = UIStackView(arrangedSubviews: [status, progress, percent, detail]); summary.axis = .vertical; summary.spacing = 20
         summary.translatesAutoresizingMaskIntoConstraints = false
         console.addAction(UIAction { [weak self] _ in
             guard let self else { return }; self.showConsole.toggle(); self.update(self.job)
@@ -671,6 +707,10 @@ import LunaCodeCore
         ])
         navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }); update(job)
     }
+    @objc private func buildChanged() {
+        guard let monitor, monitor.job?.id == job.id else { return }
+        update(monitor.job)
+    }
     func update(_ value: CodeJob?) {
         guard let value else { return }; job = value
         guard isViewLoaded else { return }
@@ -678,12 +718,16 @@ import LunaCodeCore
         text.isHidden = !showConsole; summary.isHidden = showConsole
         text.text = value.log.isEmpty ? "Starting on your Mac…" : value.log
         console.setTitle(showConsole ? "Hide Console" : "Show Console", for: .normal)
-        if value.state == .running { spinner.startAnimating() } else { spinner.stopAnimating() }
+        let fraction = monitor?.fraction(for: value) ?? value.progressFraction()
+        progress.progress = Float(fraction)
+        progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
+        percent.text = value.state == .running ? "\(Int(fraction * 100))% · Estimated" : (value.state == .succeeded ? "100%" : nil)
+        progress.isHidden = value.state == .failed || value.state == .cancelled
         detail.isHidden = value.state == .succeeded || value.state == .cancelled
         switch value.state {
         case .running:
-            status.text = "Building on Your Mac…"
-            detail.text = "You can leave Luna Code while this builds."
+            status.text = value.progressStage
+            detail.text = monitor?.backgroundMessage ?? "You can leave Luna Code. Your Mac has the build."
         case .succeeded: status.text = "Build Completed"; detail.text = nil
         case .failed:
             status.text = "Build Failed"

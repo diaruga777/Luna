@@ -159,10 +159,12 @@ nothing to fetch.
 Both go through `AppReaderShareProvider` (`Luna/Social/AppReaderProviders.swift`):
 
 - save row long-press / reader share button → **"Export as…"**, a
-  submenu of the four formats. Shown for ready articles/documents, not videos.
+  submenu of the five formats. Shown for ready articles/documents, not videos.
 - A no-url text article (email/document) has no link to share, so its share
-  button skips the option list and presents the format picker directly
-  (`presentExportOnlyShare`).
+  button offers all five formats directly in its native menu. The fallback
+  sheet uses the same rows, titled **"Export as…"**. Both paths require a ready
+  item. Menu-primary buttons need a nonempty menu: returning nil does not invoke
+  their tap fallback.
 
 `ReaderShareSheet.Row` (LunaSocialUI) is `.action`/`.submenu` for this: a
 `.submenu` row renders as a nested `UIMenu` off the share button, or — in the

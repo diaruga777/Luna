@@ -17,7 +17,8 @@ public protocol ReaderShareProviding: AnyObject {
     /// sheet) — those buttons keep their plain tap.
     var providesShareMenu: Bool { get }
     /// The share options as a native menu, for a share button to present. Returning
-    /// nil means "no menu for this article" and the button falls back to a tap.
+    /// nil means no options for this article; menu-primary buttons do not invoke
+    /// their tap fallback when a deferred menu is empty.
     func shareMenu(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) -> UIMenu?

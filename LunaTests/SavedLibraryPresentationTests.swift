@@ -8,6 +8,71 @@ import XCTest
 
 @MainActor
 final class SavedLibraryPresentationTests: XCTestCase {
+    private final class LibraryPullPan: UIPanGestureRecognizer {
+        var reportedState: UIGestureRecognizer.State = .changed
+        var drag: CGFloat = 0
+        var speed: CGFloat = 0
+        override var state: UIGestureRecognizer.State {
+            get { reportedState }
+            set { reportedState = newValue }
+        }
+        override func translation(in view: UIView?) -> CGPoint { CGPoint(x: 0, y: drag) }
+        override func velocity(in view: UIView?) -> CGPoint { CGPoint(x: 0, y: speed) }
+    }
+
+    private final class LibraryPullDelegate: CarouselScrubberViewDelegate {
+        var requests = 0
+        func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int) {}
+        func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int) {}
+        func scrubberDidRequestLibrary(_ scrubber: CarouselScrubberView) { requests += 1 }
+    }
+
+    func testSearchHintTracksPullReversalCancellationAndLibraryCommit() throws {
+        let strip = CarouselScrubberView()
+        strip.frame = CGRect(x: 0, y: 0, width: 250, height: strip.preferredHeight)
+        let hint = try XCTUnwrap(descendants(strip).first {
+            $0.accessibilityIdentifier == "carousel.librarySearchHint"
+        })
+        XCTAssertTrue(hint.isHidden, "embedded strips omit the root affordance")
+        strip.showsLibrarySearchHint = true
+        strip.setThumbnailCount(3)
+        strip.layoutIfNeeded()
+        XCTAssertFalse(hint.isHidden)
+        let chips = try XCTUnwrap(descendants(strip).compactMap { $0 as? UICollectionView }.first)
+        XCTAssertLessThan(chips.frame.maxY, hint.frame.minY)
+        let delegate = LibraryPullDelegate()
+        strip.delegate = delegate
+        let pan = LibraryPullPan()
+        func pull(_ distance: CGFloat, _ state: UIGestureRecognizer.State = .changed,
+                  speed: CGFloat = 0) {
+            pan.drag = -distance
+            pan.speed = speed
+            pan.reportedState = state
+            strip.perform(NSSelectorFromString("pullLibrary:"), with: pan)
+        }
+        let animated = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animated) }
+        pull(32)
+        XCTAssertEqual(hint.alpha, 0.5, accuracy: 0.001)
+        pull(64)
+        XCTAssertEqual(hint.alpha, 0, accuracy: 0.001)
+        pull(16)
+        XCTAssertEqual(hint.alpha, 0.75, accuracy: 0.001)
+        pull(64, .cancelled)
+        XCTAssertEqual(hint.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(delegate.requests, 0)
+        pull(39, .ended)
+        XCTAssertEqual(delegate.requests, 0)
+        pull(40, .ended)
+        XCTAssertEqual(delegate.requests, 1)
+        XCTAssertEqual(hint.alpha, 1, accuracy: 0.001)
+        pull(12, .ended, speed: -400)
+        XCTAssertEqual(delegate.requests, 2)
+        pull(0, .ended, speed: -400)
+        XCTAssertEqual(delegate.requests, 2, "retracting the pull must not open search")
+    }
+
     func testFilterDefaultsTypeUnionAndActualProgress() {
         var text = SavedItem(urlString: "https://example.com/article")
         var video = SavedItem(urlString: "https://example.com/movie")

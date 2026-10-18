@@ -102,6 +102,12 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertGreaterThan(modeSwitcher.frame.minY, controller.view.bounds.midY)
         XCTAssertEqual(modeSwitcher.alpha, 0, accuracy: 0.001)
         XCTAssertFalse(modeSwitcher.isUserInteractionEnabled)
+        let searchHint = try XCTUnwrap(allSubviews(in: miniCarousel).first {
+            $0.accessibilityIdentifier == "carousel.librarySearchHint"
+        })
+        XCTAssertFalse(searchHint.isHidden)
+        XCTAssertTrue(searchHint.isDescendant(of: miniCarousel),
+                      "search hint must inherit the strip's immersion fade and drift")
         XCTAssertEqual(miniCarousel.alpha, 1, accuracy: 0.001)
         XCTAssertEqual(miniCarousel.transform, .identity)
 

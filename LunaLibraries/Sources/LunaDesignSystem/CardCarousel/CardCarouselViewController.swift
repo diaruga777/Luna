@@ -364,6 +364,11 @@ public final class CardCarouselViewController: UIViewController {
         didSet { updatePullTabHint() }
     }
 
+    /// Shows the swipe-up search affordance beneath the root mini carousel.
+    public var showsLibrarySearchHint = false {
+        didSet { scrubber.showsLibrarySearchHint = showsLibrarySearchHint }
+    }
+
     /// The persistence seam is public so a host can use its own durable store
     /// and tests can isolate their defaults. The default is App-Group backed,
     /// which makes a swipe in one Luna app dismiss the hint in all of them.

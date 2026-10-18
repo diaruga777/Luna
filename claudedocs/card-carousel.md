@@ -381,6 +381,12 @@ Consequences for the deck:
 ## Swipe-up library
 
 Swipe up on the mini carousel to present the library at full sheet height.
+Root decks show a small magnifying glass and up caret beneath the previews.
+The hint fades with upward drag distance (fully transparent at 64pt), returns
+when the pull ends or is cancelled, and inherits the mini carousel's chrome
+fade and drift during immersion. A pull opens the library on release after
+40pt, or after 10pt with upward velocity over 300pt/s. Horizontal motion still
+belongs to native scrubbing; embedded onboarding carousels omit the hint.
 Its cards contain only a title and a favicon/source badge on the left, with a
 saved banner image behind a dark legibility treatment when available. iPhone
 shows one card per row and several rows at once; wide iPad sheets use two

@@ -62,6 +62,15 @@ public final class CarouselScrubberView: UIView {
         didSet { setNeedsLayout() }
     }
 
+    /// Root decks opt in; embedded onboarding strips keep their original layout.
+    public var showsLibrarySearchHint = false {
+        didSet {
+            librarySearchHint.isHidden = !showsLibrarySearchHint
+            collectionBottomConstraint.constant = showsLibrarySearchHint ? -16 : 0
+            setNeedsLayout()
+        }
+    }
+
     private var itemSize: CGSize { CGSize(width: 44, height: 64) }
 
     /// The selected mini-card scales to 1.1× and casts a 5pt shadow. Leave
@@ -86,6 +95,9 @@ public final class CarouselScrubberView: UIView {
     private lazy var collectionView = UICollectionView(
         frame: .zero, collectionViewLayout: layout)
     private let fadeMask = GradientMaskView()
+    private let librarySearchHint = UIStackView()
+    private var collectionBottomConstraint: NSLayoutConstraint!
+    private var libraryPullPan: UIPanGestureRecognizer!
     private var itemCount = 0
     private var selectedIndex = 0
     private var reportedVisibleIndices = IndexSet()
@@ -136,9 +148,10 @@ public final class CarouselScrubberView: UIView {
             forCellWithReuseIdentifier: ScrubberItemCell.reuseIdentifier)
         stripContainer.addSubview(collectionView)
 
+        collectionBottomConstraint = collectionView.bottomAnchor.constraint(equalTo: stripContainer.bottomAnchor)
         NSLayoutConstraint.activate([
             collectionView.topAnchor.constraint(equalTo: stripContainer.topAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: stripContainer.bottomAnchor),
+            collectionBottomConstraint,
             collectionView.leadingAnchor.constraint(equalTo: stripContainer.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: stripContainer.trailingAnchor),
         ])
@@ -146,10 +159,33 @@ public final class CarouselScrubberView: UIView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
         collectionView.addGestureRecognizer(tap)
-        let up = UISwipeGestureRecognizer(target: self, action: #selector(openLibrary))
-        up.direction = .up
-        collectionView.addGestureRecognizer(up)
-        collectionView.panGestureRecognizer.require(toFail: up)
+        // This hint belongs to the strip, so immersion fades and moves it with
+        // the rest of the carousel chrome. It sits outside the chip edge mask.
+        librarySearchHint.axis = .horizontal
+        librarySearchHint.alignment = .center
+        librarySearchHint.spacing = 5
+        librarySearchHint.isUserInteractionEnabled = false
+        librarySearchHint.isAccessibilityElement = false
+        librarySearchHint.accessibilityIdentifier = "carousel.librarySearchHint"
+        librarySearchHint.isHidden = true
+        for (symbol, size) in [("magnifyingglass", CGFloat(10)), ("chevron.up", CGFloat(8))] {
+            let icon = UIImageView(image: UIImage(systemName: symbol,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)))
+            icon.tintColor = .secondaryLabel
+            librarySearchHint.addArrangedSubview(icon)
+        }
+        librarySearchHint.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(librarySearchHint)
+        NSLayoutConstraint.activate([
+            librarySearchHint.centerXAnchor.constraint(equalTo: centerXAnchor),
+            librarySearchHint.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            librarySearchHint.heightAnchor.constraint(equalToConstant: 12),
+        ])
+
+        libraryPullPan = UIPanGestureRecognizer(target: self, action: #selector(pullLibrary(_:)))
+        addGestureRecognizer(libraryPullPan)
+        collectionView.panGestureRecognizer.require(toFail: libraryPullPan)
+        tap.require(toFail: libraryPullPan)
         let libraryAction = UIAccessibilityCustomAction(
             name: "Open library", target: self, selector: #selector(accessibilityOpenLibrary))
         accessibilityCustomActions = [libraryAction]
@@ -310,6 +346,39 @@ public final class CarouselScrubberView: UIView {
         guard visible != reportedVisibleIndices else { return }
         reportedVisibleIndices = visible
         delegate?.scrubber(self, didShow: visible)
+    }
+
+    public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === libraryPullPan else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+        let velocity = libraryPullPan.velocity(in: self)
+        return velocity.y < 0 && abs(velocity.y) > abs(velocity.x)
+    }
+
+    @objc private func pullLibrary(_ gesture: UIPanGestureRecognizer) {
+        let distance = max(0, -gesture.translation(in: self).y)
+        switch gesture.state {
+        case .began, .changed:
+            librarySearchHint.layer.removeAllAnimations()
+            librarySearchHint.alpha = 1 - min(1, distance / 64)
+        case .ended:
+            if distance >= 40 || (distance >= 10 && gesture.velocity(in: self).y < -300) {
+                openLibrary()
+            }
+            restoreLibrarySearchHint()
+        case .cancelled, .failed:
+            restoreLibrarySearchHint()
+        default:
+            break
+        }
+    }
+
+    private func restoreLibrarySearchHint() {
+        UIView.animate(withDuration: 0.2, delay: 0,
+                       options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
+            self.librarySearchHint.alpha = 1
+        }
     }
 
     @objc private func openLibrary() { delegate?.scrubberDidRequestLibrary(self) }

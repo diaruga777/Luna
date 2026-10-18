@@ -5,6 +5,7 @@
 
 import XCTest
 import LunaModels
+import zlib
 
 /// The one file format Luna reads back from a chat reply
 /// (`claudedocs/luna-file.md`). Two readers share this parser — the plugin
@@ -204,6 +205,83 @@ final class LunaFileTests: XCTestCase {
             LunaFileIntake.looksLikeLunaFile(text: "Here is a luna-plugin for you:\n/* luna-plugin"))
         XCTAssertFalse(LunaFileIntake.looksLikeLunaFile(text: "/* a plain comment\nluna-plugin\n*/"))
         XCTAssertFalse(LunaFileIntake.looksLikeLunaFile(text: "https://example.com/page"))
+    }
+
+    // MARK: - Binary attachments
+
+    // Produced by the exact Python expression sent to chat models, independently
+    // of Swift's decoder. Includes Unicode to catch byte/character confusion.
+    private var pythonAttachment: Data {
+        Data(base64Encoded: "iUxVTkENChoKAXicXY1NCsIwEIX3PUWYZYkObkMpeJQQBxPMzxCnUim5gRdw5RU9gunW1YPH972Ho4pLtodKrjyoPocNLAcwJw1LjWDAi/DdINJqE0c6upKQ7ZVAwy3kSydsleAiQRtG7LorWSgLmO0f0CBBeho4q31CfT+vd2+9pP1p4tlTjGVCnqG1H1lyMxg=")!
+    }
+
+    func testPythonBinaryAttachmentRecoversASaveFromDisk() throws {
+        let data = pythonAttachment
+        let sliced = (Data([0]) + data).dropFirst()
+        XCTAssertEqual(LunaFileReader.decode(sliced), LunaFileReader.decode(data))
+        XCTAssertNil(String(data: data, encoding: .utf8))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).LUNA")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = try LunaFileReader.readText(at: url).get()
+        let result = try XCTUnwrap(LunaFileIntake.classify(text: source)).get()
+        guard case .recovery(let file) = result else { return XCTFail("expected recovery") }
+        XCTAssertEqual(file.url.absoluteString, "https://example.com/page")
+        XCTAssertTrue(source.contains("A page 🌙"))
+    }
+
+    func testBinaryPluginDecodesBeforeClassification() throws {
+        let source = "/* luna-plugin\n{\"id\":\"user.test\",\"api\":1}\n*/\nluna.register({});"
+        let decoded = try LunaFileReader.decode(binary(Data(source.utf8))).get()
+        guard case .plugin(_, let pluginSource) = try XCTUnwrap(LunaFileIntake.classify(text: decoded)).get()
+        else { return XCTFail("expected plugin") }
+        XCTAssertEqual(pluginSource, source)
+    }
+
+    func testLegacyTextFileStillOpens() throws {
+        let source = try LunaFileReader.decode(pythonAttachment).get()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).luna")
+        try Data(source.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(try LunaFileReader.readText(at: url).get(), source)
+    }
+
+    func testBinaryAttachmentRejectsTruncationCorruptionAndTrailingBytes() {
+        let valid = pythonAttachment
+        var corrupt = valid
+        corrupt[corrupt.count - 1] ^= 0xff
+        var unknownVersion = valid
+        unknownVersion[9] = 2
+        for invalid in [Data(valid.prefix(9)), Data(valid.prefix(10)), Data(valid.dropLast()),
+                        corrupt, unknownVersion, valid + Data([0])] {
+            XCTAssertEqual(LunaFileReader.decode(invalid), .failure(.invalidContainer))
+        }
+        XCTAssertEqual(LunaFileReader.decode(binary(Data([0xff]))), .failure(.notText))
+    }
+
+    func testInflatedSourceAndStoredBytesAreBounded() throws {
+        let limit = LunaFileLimits.maxSourceKB * 1024
+        XCTAssertEqual(try LunaFileReader.decode(binary(Data(repeating: 0x61, count: limit))).get().utf8.count, limit)
+        XCTAssertEqual(LunaFileReader.decode(binary(Data(repeating: 0x61, count: limit + 1))),
+                       .failure(.fileTooLarge(limitKB: LunaFileLimits.maxSourceKB)))
+        XCTAssertEqual(LunaFileReader.decode(Data(repeating: 0x61, count: LunaFileReader.maxFileBytes + 1)),
+                       .failure(.fileTooLarge(limitKB: LunaFileLimits.maxSourceKB)))
+        XCTAssertEqual(LunaFileReader.decode(Data(repeating: 0x61, count: limit + 1)),
+                       .failure(.fileTooLarge(limitKB: LunaFileLimits.maxSourceKB)))
+    }
+
+    private func binary(_ source: Data) -> Data {
+        var compressed = Data(count: Int(compressBound(uLong(source.count))))
+        var size = uLongf(compressed.count)
+        let status = compressed.withUnsafeMutableBytes { destination in
+            source.withUnsafeBytes { input in
+                compress2(destination.bindMemory(to: Bytef.self).baseAddress!, &size,
+                          input.bindMemory(to: Bytef.self).baseAddress!, uLong(source.count), Z_DEFAULT_COMPRESSION)
+            }
+        }
+        XCTAssertEqual(status, Z_OK)
+        compressed.count = Int(size)
+        return Data([0x89, 0x4c, 0x55, 0x4e, 0x41, 0x0d, 0x0a, 0x1a, 0x0a, 1]) + compressed
     }
 
     // MARK: - Reading a file off disk

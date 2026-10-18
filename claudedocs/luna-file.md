@@ -1,14 +1,33 @@
 # The Luna file
 
 A Luna file is how a chat reply comes back into Luna. The user asks ChatGPT or
-Claude to recover a page or to write a plugin, the model answers with one text
-file, and the user taps it. The file names its own format, so the same four
-bytes work from Open In, from the Files app, from the share sheet, and from a
-code block the user long-presses and shares as text.
+Claude to recover a page or to write a plugin, the model answers with one binary
+attachment, and the user taps it. The system registers it as custom data, so
+Open In, Files and the share sheet can send it to Luna without advertising a
+generic text preview.
 
 ## The shape
 
-One UTF-8 text file. The first non-whitespace token is a block comment whose
+New attachments are a binary container:
+
+- Bytes 0–8: `89 4c 55 4e 41 0d 0a 1a 0a` (Luna signature).
+- Byte 9: `01` (container version 1, separate from the header's API version).
+- Remaining bytes: exactly one RFC 1950 zlib stream of the complete UTF-8 source.
+
+Python generation: `bytes.fromhex('894c554e410d0a1a0a01') +
+zlib.compress(source.encode('utf-8'))`, written in binary mode and delivered as
+`application/octet-stream`. Prompts for recovery, plugin creation and correction
+all require this attachment and explicitly reject plaintext/code-block fallback.
+If a provider cannot create binary attachments, it must say so. This prevents
+ordinary text previews; it is compression, not encryption or access control.
+
+`LunaFileReader` decodes the envelope in Open In, share/action, and manual plugin
+imports. It caps compressed bytes at zlib's `compressBound(1 MiB)` plus 10 bytes,
+caps decoded source at 1 MiB, and rejects truncation, corrupt checksums, trailing
+bytes and unknown versions. Legacy UTF-8 attachments and pasted source remain
+readable for compatibility. The plugin simulator reads both formats too.
+
+In the decoded source, the first non-whitespace token is a block comment whose
 first line, trimmed, is the **marker**. The rest of the comment is one JSON
 object. Everything after the comment's closing `*/` is the body.
 
@@ -26,8 +45,8 @@ source at 1.5 MB, so a larger file could never run everywhere it must.
 `LunaFileHeader.parse` (LunaModels) reads this shape, once, for both readers.
 `PluginManifestParser.extractHeader` calls it and translates a failure into the
 plugin author's vocabulary; `LunaRecoveryFile.parse` reads the recovery half.
-Line numbers count from the first line of the FILE, because that is the number
-the author is looking at.
+Line numbers count from the first line of the decoded SOURCE, as shown in
+Luna's source viewer.
 
 ## A recovery file
 
@@ -63,11 +82,15 @@ replays the recipe validates its destination against its own rules.
 
 Each app owns one file extension, and all four apps EXPORT all four
 declarations — an exporter set that agrees is harmless, and it means each app
-knows the family whether or not its siblings are installed.
+knows the family whether or not its siblings are installed. During migration,
+update the installed sibling apps as well: an older sibling still exports the
+previous text conformance and can keep that definition in the system registry.
+Registration tests should run with matching app versions or on a fresh simulator;
+never erase a user's simulator just to change this cache.
 
 | UTI | Extension | Conforms to | App |
 | --- | --- | --- | --- |
-| `<prefix>.file` | `luna` | `public.plain-text`, `public.content` | central Luna |
+| `<prefix>.file` | `luna` | `public.data`, `public.content` | central Luna |
 | `<prefix>.reader.file` | `lunar` | `<prefix>.file` | Luna Reader |
 | `<prefix>.downloader.file` | `lunad` | `<prefix>.file` | Luna Downloader |
 | `<prefix>.pricetracker.file` | `lunas` | `<prefix>.file` | Luna Price Tracker |
@@ -119,10 +142,12 @@ on anything else that writes either one.
 | A `.js` or `.luna` plugin file | Settings → Plugins → + | the existing manual import |
 
 The router matches a Luna file FIRST and **by identifier**, not by `UTType`
-conformance: a Luna file conforms to `public.plain-text`, so any later branch
-would claim it, and a `UTType` resolves only while an app that exports it is
-installed. `handleDocument` keeps a second check on the text it reads, for a
-host that advertised the file as plain text and nothing else.
+conformance: a `UTType` resolves only while an app that exports it is installed.
+The custom type conforms to data and content, never text. A file-URL-only share
+checks the family's extensions (case-insensitively) before importing an ordinary
+document. `handleDocument` retains its legacy source check for a host advertising
+an old attachment as plain text. `LunaFileTypeTests` checks the built declarations
+and verifies all four system types conform to data and do not conform to text.
 
 A recovery file whose kind the app does not handle meets the ordinary surface
 gate (`SurfaceSupport`) and shows `UnsupportedSaveCardViewController`. A plugin

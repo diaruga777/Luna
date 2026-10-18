@@ -50,7 +50,9 @@ public enum LLMHandoffPrompts {
         parts.append("""
         Recover it for me. Open the URL yourself. If it is blocked, try its print, AMP or mobile variant, its canonical URL, a Web Archive copy (web.archive.org), or search for its title. Never invent content: if you truly cannot read the page, say so instead of guessing.
 
-        Reply with ONE file named "<title>.\(ext)" and nothing else. Attach it as a downloadable file; if you cannot attach files, put the whole file in a single code block. The file is:
+        Reply with ONE file named "<title>.\(ext)" and nothing else.
+        \(binaryDeliveryInstructions)
+        The source to encode is:
 
         /* luna-recovery
         {"api":1,"url":"\(link)","kind":"<kind>"}
@@ -61,7 +63,7 @@ public enum LLMHandoffPrompts {
 
         "recipe" is optional. Include it when a different route got you the page, so Luna can fetch it that way itself: {"url":"https://…","headers":{"user-agent":"googlebot","referer":"…"},"javascript":"…"}. The url must be on the same site, or on web.archive.org or r.jina.ai. Allowed headers: user-agent (iphone_safari, desktop_safari, googlebot, facebook_crawler, or a literal string), referer, accept-language. javascript is optional, under 8 KB, runs on that page in a browser and must return the content HTML as a string. Omit the key entirely when there is no recipe.
 
-        Rules: valid UTF-8 JSON after the header, no comments, no Markdown, no explanation outside the file. Copy text verbatim; never summarize or paraphrase.
+        Source rules: valid UTF-8 JSON after the header, no comments or Markdown. Copy text verbatim; never summarize or paraphrase.
         """)
         return parts.joined(separator: "\n")
     }
@@ -98,7 +100,7 @@ public enum LLMHandoffPrompts {
     /// is the site to name in the manifest skeleton when known.
     public static func pluginCreation(description: String, host: String?) -> String {
         """
-        Write a plugin for Luna, an iOS save-it-for-later app. A Luna plugin is ONE JavaScript file that extracts articles, products or media from URLs, or exports saved items. Read the API reference first: \(pluginAPIReferenceURL)
+        Write a Luna JavaScript plugin to extract articles/products/media or export saves. Read first: \(pluginAPIReferenceURL)
 
         What I want:
         --- REQUEST ---
@@ -115,7 +117,7 @@ public enum LLMHandoffPrompts {
         let list = errors.map { "- " + $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .joined(separator: "\n")
         return """
-        A Luna plugin generated for the request below failed Luna's checks. Write a corrected plugin from scratch that avoids every listed problem. Luna is an iOS save-it-for-later app; a plugin is ONE JavaScript file for URL extraction or exporting saved items. Read the API reference first: \(pluginAPIReferenceURL)
+        This Luna JavaScript plugin failed validation. Write a corrected plugin from scratch for the request below, fixing every listed problem. Read the API reference first: \(pluginAPIReferenceURL)
 
         --- REQUEST ---
         \(bounded(description, limit: maxCorrectionDescriptionCharacters) ?? "")
@@ -137,15 +139,16 @@ public enum LLMHandoffPrompts {
         let requirements = compact ? "" : """
 
         Requirements:
-        - ES2022, no import/export/require or libraries. Use luna.parseURL and luna.bytes; URL, fetch and TextEncoder globals are unavailable. No polling or busy loops.
-        - Never invent content, prices or URLs. Prefer luna.fetch.json/doc, luna.html.meta/jsonLD/article and luna.text.price/date. Await article(). Keep final URLs after redirects. Let browser-deferred propagate through catch handlers.
-        - For exports, omit produces/match and replace the ingest hooks with export(input). Declare export:{kinds:["article"],input:"markdown",title:"Export"}; read input.text. Return {text}, {url}, {file}, a delivery status, or null. See the reference for settings/device APIs.
+        - ES2022; no imports, packages, polling or busy loops. Use luna.parseURL/luna.bytes; no URL, fetch or TextEncoder globals.
+        - Never invent data. Use luna.fetch.json/doc, luna.html.jsonLD/article and luna.text.price/date. Await article(); keep redirect URLs; propagate browser-deferred.
+        - Exports: omit produces/match; replace ingest hooks with export(input). Declare export:{kinds:["article"],input:"markdown",title:"Export"}; read input.text. Return {text}, {url}, {file}, delivery status or null. Settings/device APIs: see reference.
 
         """
         return """
-        Deliver ONE file named "<name>.luna" as a downloadable attachment (or one complete code block). No text outside the file.
-        Start with the JSON header; register once. Use a stable [a-z0-9.-] id, name ≤40 characters and only needed capabilities.
-        Host-specific plugins precede match.any, then higher priority runs first. Bundled extractors use 100; use 101 to override one for the same host, or 0 for a new site. A valid result stops the walk.
+        Deliver ONE file named "<name>.luna".
+        \(binaryDeliveryInstructions)
+        Source starts with the JSON header; register once. Stable [a-z0-9.-] id, name ≤40 chars, only needed capabilities.
+        Host matches precede match.any; higher priority first. Bundled priority is 100: use 101 to override the same host, 0 for new sites. A valid result stops the walk.
 
         Article starter (adapt hosts and paths):
         /* luna-plugin
@@ -161,9 +164,14 @@ public enum LLMHandoffPrompts {
           }
         });
         \(requirements)
-        Check the header, capabilities, required hooks and returned Model fields. An article needs title and html, document or transcription; a product needs name and price:{amount:"12.34",currency:"USD"}; media needs assets:[{url,type:"video"|"image"|"gif"|"audio"}].
+        Check header, capabilities, hooks and Model fields. Article: title + html/document/transcription. Product: name + price:{amount:"12.34",currency:"USD"}. Media: assets:[{url,type:"video"|"image"|"gif"|"audio"}].
         """
     }
+
+    /// Shared byte-level contract for recovery, plugin creation, and correction.
+    private static let binaryDeliveryInstructions = """
+    Create a BINARY attachment with your code tool, MIME application/octet-stream. source is the complete UTF-8 source below (max 1 MiB). Python: import zlib; data = bytes.fromhex('894c554e410d0a1a0a01') + zlib.compress(source.encode('utf-8')); write data in 'wb' mode. No plaintext, Base64, ZIP or code-block fallback. If binary attachments are unavailable, say so.
+    """
 
     // MARK: - Helpers
 

@@ -1,12 +1,29 @@
 # Luna plugin authoring contract
 
-Deliver ONE ES2022 JavaScript file named `<name>.luna`. No imports, packages
-or `require`. Luna runs the JavaScript and renders its data with native UI.
+Deliver ONE binary downloadable attachment named `<name>.luna`, MIME
+`application/octet-stream`. Construct the ES2022 JavaScript source described
+below, then encode it with your code tool (Python standard library):
+
+```python
+import zlib
+from pathlib import Path
+# source is the complete plugin source, including its luna-plugin header.
+data = bytes.fromhex('894c554e410d0a1a0a01') + zlib.compress(source.encode('utf-8'))
+Path('my-plugin.luna').write_bytes(data)
+```
+
+Source limit: 1 MiB of UTF-8. The 10-byte prefix is Luna's binary signature and
+container version 1; the rest is one zlib stream (not ZIP, gzip, or raw deflate).
+Attach the binary itself, never plaintext, Base64, or a code block. If your tools
+cannot create binary attachments, say so. Compression is not encryption.
+
+No JavaScript imports, packages or `require`. Luna decodes the source, runs the
+JavaScript and renders its data with native UI.
 A plugin extracts articles, products or media from URLs, or exports saved items.
 
 ## File and manifest
 
-The first non-whitespace token is a block comment with `luna-plugin` on its
+In the decoded source, the first non-whitespace token is a block comment with `luna-plugin` on its
 first line and JSON on the following lines. Call `luna.register` once at top
 level. Every supplied hook must be a function. Return JSON-compatible data;
 cycles, BigInt, DOM objects and functions are not Models.

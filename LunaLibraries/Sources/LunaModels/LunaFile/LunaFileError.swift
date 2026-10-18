@@ -19,7 +19,9 @@ public enum LunaFileError: Error, Equatable {
     case kindMismatch(header: PluginModelKind, content: PluginModelKind)
     case bodyNotJSON(detail: String)
     case fileTooLarge(limitKB: Int)
-    /// The bytes are not UTF-8 text.
+    /// The binary envelope is corrupt or uses an unsupported container version.
+    case invalidContainer
+    /// The decoded source is not UTF-8 text.
     case notText
 
     /// The 1-based line in the file, or nil when the error is about the file
@@ -27,7 +29,7 @@ public enum LunaFileError: Error, Equatable {
     public var line: Int? {
         switch self {
         case .noHeader, .unsupportedAPIVersion, .kindMismatch, .bodyNotJSON,
-             .fileTooLarge, .notText:
+             .fileTooLarge, .notText, .invalidContainer:
             return nil
         case .headerNotJSON(let line, _): return line
         case .missingField(_, let line): return line
@@ -66,6 +68,8 @@ public enum LunaFileError: Error, Equatable {
             return L10n.string("LunaFileError_bodyNotJSON", detail)
         case .fileTooLarge(let limitKB):
             return L10n.string("LunaFileError_fileTooLarge", limitKB)
+        case .invalidContainer:
+            return L10n.string("LunaFileError_invalidContainer")
         case .notText:
             return L10n.string("LunaFileError_notText")
         }

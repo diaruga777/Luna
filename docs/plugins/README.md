@@ -5,6 +5,11 @@ call. It either extracts an article, media item or product from a URL, or
 exports a saved item. Luna owns the UI. Only central Luna runs plugins;
 the Reader, Downloader and Price Tracker sibling apps use their native paths.
 
+Binary `.luna` attachments wrap the complete source with the version 1 Luna
+container described in [the authoring contract](llm-api.md). The app and plugin
+simulator decode them before validation. Local `.js` sources and legacy text
+`.luna` files still work; renaming a `.js` file does not produce a binary file.
+
 ## Start from a working file
 
 | Task | Starter | What to change |
@@ -18,16 +23,16 @@ From the repository root:
 
 ```sh
 npm ci --prefix tools/plugin-sim
-cp docs/plugins/examples/minimal-media.js my-plugin.luna
-node tools/plugin-sim/run.mjs validate my-plugin.luna
-node tools/plugin-sim/run.mjs test my-plugin.luna https://clipvault.example/clip/abc123 \
+cp docs/plugins/examples/minimal-media.js my-plugin.js
+node tools/plugin-sim/run.mjs validate my-plugin.js
+node tools/plugin-sim/run.mjs test my-plugin.js https://clipvault.example/clip/abc123 \
   --fixture docs/plugins/examples/fixtures/clipvault
 ```
 
 Change the manifest's `id`, `name`, `match.hosts`, and the path/selector rules
-for your site. Keep the ID stable for updates. Import the `.luna` file into
-Luna and review its permissions and draft test. A `.js` file works for manual
-plugin import too. Run a real save in Luna before relying on it.
+for your site. Keep the ID stable for updates. Import the `.js` source or binary
+`.luna` attachment into Luna and review its permissions and draft test. Run a
+real save in Luna before relying on it.
 
 The fixture command makes no network requests. A report with `ok: true`
 means the checks passed; look at `result.ingest` to see the actual Model.

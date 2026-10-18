@@ -66,7 +66,8 @@ public final class PluginImportCoordinator: NSObject {
 
     private func pickFile() {
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [.javaScript, .plainText], asCopy: true)
+            forOpeningContentTypes: LunaApp.current.acceptedFileTypeIdentifiers.compactMap { UTType($0) }
+                + [.javaScript, .plainText], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
         presenter?.present(picker, animated: true)
@@ -148,7 +149,7 @@ extension PluginImportCoordinator: UIDocumentPickerDelegate {
     ) {
         guard let url = urls.first else { return }
         do {
-            let text = try String(contentsOf: url, encoding: .utf8)
+            let text = try LunaFileReader.readText(at: url).get()
             handle(sourceText: text, origin: .files)
         } catch {
             report(error)

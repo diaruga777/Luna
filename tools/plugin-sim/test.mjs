@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import os from "node:os";
+import { deflateSync } from "node:zlib";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -41,6 +42,19 @@ try {
       `luna.register({ classify: () => ({kind:"article"}), ingest: async ({url}) => { const r = await luna.fetch(url); return {kind:"article", title:String(r.ok), html:r.text}; } });`,
   );
   assert.equal(invoke(["validate", ingest]).report.ok, true);
+  const binary = path.join(temp, "binary.luna");
+  const binaryBytes = Buffer.concat([
+    Buffer.from("894c554e410d0a1a0a01", "hex"),
+    deflateSync(Buffer.from(header("test.binary") + "luna.register({});")),
+  ]);
+  writeFileSync(binary, binaryBytes);
+  assert.equal(invoke(["validate", binary]).report.ok, true);
+  for (const bad of [binaryBytes.subarray(0, -1), Buffer.concat([binaryBytes, Buffer.from([0])]),
+                     Buffer.concat([binaryBytes.subarray(0, 9), Buffer.from([2]), binaryBytes.subarray(10)]),
+                     Buffer.concat([binaryBytes.subarray(0, 10), deflateSync(Buffer.alloc(1024 * 1024 + 1, 97))])]) {
+    writeFileSync(binary, bad);
+    assert.equal(invoke(["validate", binary]).report.ok, false);
+  }
   const control = path.join(temp, "control.js");
   writeFileSync(control, header("test.control") + "luna.register({});");
   assert.equal(

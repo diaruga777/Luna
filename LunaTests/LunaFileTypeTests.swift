@@ -49,6 +49,10 @@ final class LunaFileTypeTests: XCTestCase {
             XCTAssertEqual(
                 tags?["public.filename-extension"] as? [String], [fileExtension],
                 "\(identifier) does not claim .\(fileExtension)")
+            let systemType = try XCTUnwrap(UTType(filenameExtension: fileExtension))
+            XCTAssertEqual(systemType.identifier, identifier)
+            XCTAssertTrue(systemType.conforms(to: .data))
+            XCTAssertFalse(systemType.conforms(to: .text))
             XCTAssertFalse(
                 (declaration["UTTypeDescription"] as? String ?? "").isEmpty,
                 "\(identifier) has no description for the Files app to show")
@@ -77,7 +81,13 @@ final class LunaFileTypeTests: XCTestCase {
             let type = try XCTUnwrap(UTType(identifier), "\(identifier) is not registered")
             XCTAssertTrue(type.conforms(to: central), "\(identifier) does not conform to \(central)")
         }
-        XCTAssertTrue(central.conforms(to: .plainText))
+        XCTAssertTrue(central.conforms(to: .data))
+        XCTAssertFalse(central.conforms(to: .text))
+        for app in [LunaApp.reader, .downloader, .priceTracker] {
+            let type = try XCTUnwrap(UTType(try XCTUnwrap(app.fileTypeIdentifier)))
+            XCTAssertTrue(type.conforms(to: .data))
+            XCTAssertFalse(type.conforms(to: .text))
+        }
     }
 
     // MARK: - The document type

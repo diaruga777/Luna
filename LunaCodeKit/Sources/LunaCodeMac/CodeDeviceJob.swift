@@ -6,9 +6,11 @@ extension CodeJobs {
         guard let options = request.deviceBuild else { throw CodeFailure("Choose a phone first.") }
         let phones = try await CodeDeviceSupport.devices(root: root)
         guard phones.contains(where: { $0.id == options.deviceID }) else { throw CodeFailure("The selected phone is not connected. Connect it to your Mac by cable or on the same network, unlock it, then try again.") }
+        stage(job.id, "Creating isolated checkout…", from: 0.10, to: 0.15, seconds: 15)
         let checkout = try await CodeDeviceCheckout.create(project: project, branch: options.branch, root: root,
             name: job.id, process: process)
         do {
+            stage(job.id, "Checking destination and signing…", from: 0.15, to: 0.25, seconds: 45)
             let buildProject = checkout.project
             try await CodeDeviceSupport.validateDestination(buildProject, deviceID: options.deviceID, root: root, process: process)
             let destination = "platform=iOS,id=" + options.deviceID
@@ -29,6 +31,7 @@ extension CodeJobs {
             let signing = try CodeDeviceSigning.arguments(checkout: app, local: localApp)
             let derived = derivedData(project).appendingPathComponent("Device")
             let products = derived.appendingPathComponent("Products")
+            stage(job.id, "Compiling on your Mac…", from: 0.25, to: 0.80, seconds: 240)
             try await command("/usr/bin/xcodebuild", buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
                 "-derivedDataPath", derived.path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path,
                 "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + ["build"], directory: checkout.directory.path, process: process, log: log)
@@ -36,12 +39,15 @@ extension CodeJobs {
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
             guard plist?["CFBundleIdentifier"] as? String == bundle else { throw CodeFailure("The built app does not match the selected scheme.") }
+            stage(job.id, "Installing on your phone…", from: 0.80, to: 0.93, seconds: 40)
             try await command("/usr/bin/xcrun", ["devicectl", "device", "install", "app", "--device", options.deviceID, appURL.path], directory: checkout.directory.path, process: process, log: log)
+            stage(job.id, "Launching on your phone…", from: 0.93, to: 0.97, seconds: 10)
             try await command("/usr/bin/xcrun", ["devicectl", "device", "process", "launch", "--device", options.deviceID, "--terminate-existing", bundle], directory: checkout.directory.path, process: process, log: log)
         } catch {
             await checkout.remove(root: root)
             throw error
         }
+        stage(job.id, "Cleaning up checkout…", from: 0.97, to: 0.99, seconds: 10)
         await checkout.remove(root: root)
     }
     private func command(_ executable: String, _ arguments: [String], directory: String, process: CodeProcess, log: URL) async throws {

@@ -12,7 +12,7 @@ public actor CodeJobs {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "json" {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
-                if job.state == .running { job.state = .failed; job.failureMessage = "Mac companion restarted before this job completed."; job.log += "\n" + job.failureMessage! }
+                if job.state == .running { job.progress?.stoppedAt = Date(); job.state = .failed; job.failureMessage = "Mac companion restarted before this job completed."; job.log += "\n" + job.failureMessage! }
                 jobs[job.id] = job
             }
         }
@@ -33,7 +33,8 @@ public actor CodeJobs {
             guard request.deviceBuild != nil, !project.scheme.lowercased().contains("webdriveragent") else { throw CodeFailure("Select an app scheme and phone first.") }
         }
         let title = request.operation == .runOnDevice ? "Build & Run · " + project.scheme : request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
-        let job = CodeJob(id: UUID().uuidString, title: title)
+        var job = CodeJob(id: UUID().uuidString, title: title)
+        job.progress = CodeJobProgress(stage: "Preparing on your Mac…", start: 0.05, end: 0.10, estimatedSeconds: 15)
         jobs[job.id] = job; requests[request.id] = job.id
         let process = CodeProcess(); processes[job.id] = process
         persist(job)
@@ -55,8 +56,13 @@ public actor CodeJobs {
     }
     public func cancel(_ id: String) throws -> CodeJob {
         guard var job = jobs[id] else { throw CodeFailure("Unknown build job.") }
-        if job.state == .running { processes[id]?.cancel(); job.state = .cancelled; jobs[id] = job; persist(job) }
+        if job.state == .running { processes[id]?.cancel(); job.progress?.stoppedAt = Date(); job.state = .cancelled; jobs[id] = job; persist(job) }
         return try status(id)
+    }
+    func stage(_ id: String, _ title: String, from start: Double, to end: Double, seconds: Double) {
+        guard var job = jobs[id], job.state == .running else { return }
+        job.progress = CodeJobProgress(stage: title, start: start, end: end, estimatedSeconds: seconds)
+        jobs[id] = job; persist(job)
     }
     private func persist(_ job: CodeJob) { try? JSONEncoder().encode(job).write(to: root.appendingPathComponent(job.id + ".json"), options: .atomic) }
     private func execute(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess) async {
@@ -71,6 +77,7 @@ public actor CodeJobs {
                 guard !project.appID.isEmpty, !project.groupID.isEmpty else { throw CodeFailure("Set the App Store Connect app ID and internal testing group ID in Project Settings.") }
                 let asc = try Self.ascExecutable()
                 // Verify the destination really is an internal group before uploading.
+                stage(job.id, "Checking TestFlight group…", from: 0.10, to: 0.15, seconds: 15)
                 let groupsLog = root.appendingPathComponent(job.id + "-groups.log")
                 let result = try await process.run(asc, ["testflight", "groups", "list", "--app", project.appID, "--paginate", "--output", "json"], directory: project.root, log: groupsLog, timeout: 60)
                 guard result == 0, let json = try JSONSerialization.jsonObject(with: Data(contentsOf: groupsLog)) as? [String: Any],
@@ -81,6 +88,7 @@ public actor CodeJobs {
                 let options: [String: Any] = ["method": "app-store-connect", "signingStyle": "automatic", "destination": "export", "manageAppVersionAndBuildNumber": false]
                 try PropertyListSerialization.data(fromPropertyList: options, format: .xml, options: 0).write(to: export)
                 let target = project.path.hasSuffix(".xcworkspace") ? "--workspace" : "--project"
+                stage(job.id, "Archiving, uploading and processing TestFlight build…", from: 0.15, to: 0.99, seconds: 900)
                 exit = try await process.run(asc, ["publish", "testflight", "--app", project.appID,
                     target, project.path, "--scheme", project.scheme, "--configuration", "Release",
                     "--group", project.groupID, "--wait", "--timeout", "60m",
@@ -90,6 +98,7 @@ public actor CodeJobs {
                     "--archive-xcodebuild-flag=-allowProvisioningUpdates", "--export-xcodebuild-flag=-allowProvisioningUpdates"],
                     directory: project.root, log: log, timeout: 7200)
             } else {
+                stage(job.id, "Compiling on your Mac…", from: 0.10, to: 0.99, seconds: 240)
                 exit = try await process.run("/usr/bin/xcodebuild", project.xcodeArguments + ["-configuration", "Debug",
                     "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", derivedData(project).path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path, "build"],
                     directory: project.root, log: log)
@@ -99,6 +108,8 @@ public actor CodeJobs {
         } catch is CancellationError { completed.state = .cancelled }
         catch { completed.state = .failed; completed.failureMessage = error.localizedDescription; completed.log = "\n" + error.localizedDescription }
         if jobs[job.id]?.state == .cancelled { completed.state = .cancelled }
+        completed.progress = jobs[job.id]?.progress
+        if completed.progress?.stoppedAt == nil { completed.progress?.stoppedAt = Date() }
         jobs[job.id] = completed; processes[job.id] = nil; persist(completed)
     }
     public static func ascExecutable() throws -> String {

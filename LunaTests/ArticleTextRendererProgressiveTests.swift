@@ -309,7 +309,13 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
             XCTAssertEqual(text.text, originalString, "Layout must not edit the article")
         }
 
+        func displayedX(for range: NSRange) throws -> CGFloat {
+            let start = try XCTUnwrap(text.position(from: text.beginningOfDocument, offset: range.location))
+            let end = try XCTUnwrap(text.position(from: start, offset: 1))
+            return text.firstRect(for: try XCTUnwrap(text.textRange(from: start, to: end))).minX
+        }
         let narrow = visibleLines()
+        let normalTextX = try displayedX(for: XCTUnwrap(narrow.first).0)
         XCTAssertGreaterThan(narrow.count, 5)
         resize(to: 600)
         assertPreserved(narrow)
@@ -327,6 +333,8 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         text.contentOffset.y -= 900
         reader.scrollViewDidScroll(text)
         let returnedNarrow = visibleLines()
+        XCTAssertEqual(try displayedX(for: XCTUnwrap(returnedNarrow.first).0), normalTextX, accuracy: 0.5,
+                       "Retained wide lines must not shift the canvas for newly revealed narrow text")
         XCTAssertTrue(returnedNarrow.allSatisfy { abs($0.1.width - narrow[0].1.width) < 0.5 },
                       "Lines re-entering from above must use the current narrow width")
 

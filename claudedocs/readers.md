@@ -118,7 +118,8 @@ inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
 the selected article to the rail or the compact deck. Scroll-driven changes use
 `ScrollStableTextContainer`: visible lines retain their exact character ranges and
-column widths, centered inside the changing card and clipped if the card contracts.
+column widths, centered as the card expands and clipped at the trailing edge if
+it contracts.
 Lines entering from either edge use the current width; once a preserved line leaves
 the viewport it can lay out at that width on re-entry. A measured TextKit seam prevents
 new text above the retained passage from consuming its first characters, including

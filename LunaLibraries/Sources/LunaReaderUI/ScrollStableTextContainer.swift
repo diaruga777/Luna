@@ -94,9 +94,10 @@ final class ScrollStableTextContainer: NSTextContainer {
             return rect
         }
         remainingRect?.pointee = .zero
-        // Deliberately permit an old, wider line to extend beyond a contracting
-        // viewport. Clipping can hide its edges; shrinking it would rewrap words.
-        return CGRect(x: (size.width - line.width) / 2, y: proposedRect.minY,
+        // Keep wider old lines at the leading edge and clip their trailing
+        // edge. Negative fragment origins make UITextView shift the entire
+        // text canvas, including new lines, to accommodate their used rect.
+        return CGRect(x: max(0, (size.width - line.width) / 2), y: proposedRect.minY,
                       width: line.width, height: proposedRect.height)
     }
 

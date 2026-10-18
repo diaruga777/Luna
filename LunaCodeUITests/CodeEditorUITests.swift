@@ -204,6 +204,31 @@ final class CodeEditorUITests: XCTestCase {
         attach("Background build completed", app)
     }
 
+    func testBuildWithoutStageMetadataAdvancesBeforeCompletion() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview", "--build-no-progress"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let run = app.buttons["CodeRun:Sample"]
+        XCTAssertTrue(run.waitForExistence(timeout: 15)); run.tap()
+        let progress = app.descendants(matching: .any)["CodeBuildProgress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 10))
+        func percentage() -> Int { Int((progress.value as? String ?? "").split(separator: " ").first ?? "0") ?? 0 }
+        let first = percentage()
+        expectation(for: NSPredicate { _, _ in percentage() > first && percentage() < 100 }, evaluatedWith: progress)
+        waitForExpectations(timeout: 6)
+        let second = percentage()
+        expectation(for: NSPredicate { _, _ in percentage() > second && percentage() < 100 }, evaluatedWith: progress)
+        waitForExpectations(timeout: 6)
+        XCTAssertFalse(app.staticTexts["Build Completed"].exists)
+        attach("Incremental estimate without Mac stage metadata", app)
+        XCTAssertTrue(app.staticTexts["Build Completed"].waitForExistence(timeout: 30))
+        XCTAssertEqual(percentage(), 100)
+    }
+
     func testBuildOptionsStayOpenWhileDiscoveryContinuesPastFailedAndLibrarySchemes() {
         continueAfterFailure = false
         let app = XCUIApplication()

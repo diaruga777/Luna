@@ -22,10 +22,24 @@ public struct CodeJobProgress: Codable, Equatable, Sendable {
 }
 
 extension CodeJob {
+    /// Attach an elapsed-time estimate once, retaining its clock and terminal value
+    /// across status replies from companions that don't send stage metadata.
+    public func estimatingProgress(from previous: CodeJob? = nil, at date: Date = Date()) -> CodeJob {
+        var value = self
+        if value.progress == nil {
+            value.progress = (previous?.id == id ? previous?.progress : nil) ?? CodeJobProgress(
+                stage: "Building on your Mac…", start: 0.05, end: 0.95,
+                estimatedSeconds: title.contains("Deploy") ? 900 : 120,
+                startedAt: min(startedAt, date))
+        }
+        if state != .running, value.progress?.stoppedAt == nil { value.progress?.stoppedAt = date }
+        return value
+    }
     public func progressFraction(at date: Date = Date()) -> Double {
         if state == .succeeded { return 1 }
-        // Older companions have no stage data. Never claim completion from a timer.
-        return progress?.fraction(at: date) ?? 0.05
+        if let progress { return progress.fraction(at: date) }
+        guard state == .running else { return 0.05 }
+        return estimatingProgress(at: date).progress?.fraction(at: date) ?? 0.05
     }
-    public var progressStage: String { progress?.stage ?? "Starting on your Mac…" }
+    public var progressStage: String { progress?.stage ?? "Building on your Mac…" }
 }

@@ -60,7 +60,7 @@ import LunaCodeCore
 
     func begin(title: String) throws {
         guard !isStarting, job?.state != .running else { throw CodeFailure("A build is already running. Wait for it or cancel it first.") }
-        self.title = title; peer = peerID(); job = nil; isStarting = true; startingAt = Date()
+        self.title = title; peer = peerID(); job = nil; reportedFraction = 0; isStarting = true; startingAt = Date()
         monitoringStopped = false; disconnected = false
         lease = UIApplication.shared.beginBackgroundTask(withName: "Start remote build") { [weak self] in
             Task { @MainActor in self?.endLease() }
@@ -74,8 +74,10 @@ import LunaCodeCore
         if job == nil { complete(success: false) }
         publish()
     }
-    func accept(_ value: CodeJob) {
+    func accept(_ received: CodeJob) {
         guard peer == peerID() else { return }
+        let value = received.estimatingProgress(from: job)
+        if job?.id != value.id { reportedFraction = 0 }
         job = value; isStarting = false; disconnected = false
         defaults.set(value.id, forKey: "Code.activeJob." + peer)
         endLease(); publish()
@@ -86,7 +88,7 @@ import LunaCodeCore
         guard !isStarting else { return }
         if job?.id == value.id, peer == peerID() { accept(value) }
         else if job?.state != .running, value.state == .running {
-            peer = peerID(); job = value; title = value.title; monitoringStopped = false
+            peer = peerID(); job = nil; title = value.title; monitoringStopped = false
             if UIApplication.shared.applicationState == .active { requestBackgroundMonitoring() }
             accept(value)
         }
@@ -136,7 +138,8 @@ import LunaCodeCore
     }
     private func publish() {
         if !disconnected {
-            reportedFraction = job?.progressFraction() ?? min(0.04, 0.01 + max(0, Date().timeIntervalSince(startingAt ?? Date())) / 2000)
+            let estimate = job?.progressFraction() ?? min(0.04, 0.01 + max(0, Date().timeIntervalSince(startingAt ?? Date())) / 2000)
+            reportedFraction = max(reportedFraction, estimate)
             continued?.progress.completedUnitCount = Int64((fraction * 1000).rounded(.down))
             continued?.updateTitle(title, subtitle: "\(Int(fraction * 100))% estimated · \(stage)")
         }

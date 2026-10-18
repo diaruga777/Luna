@@ -82,11 +82,16 @@ private actor PreviewFiles {
                 if ProcessInfo.processInfo.arguments.contains("--build-start-delay") { try await Task.sleep(for: .seconds(5)) }
                 buildStartedAt = Date()
                 response.job = CodeJob(id: "preview-build", title: "Build & Run · " + (request.project?.scheme ?? ""), state: .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                response.job?.startedAt = buildStartedAt ?? Date()
                 response.job?.progress = CodeJobProgress(stage: "Preparing checkout…", start: 0.05, end: 0.25, estimatedSeconds: 3)
+                if ProcessInfo.processInfo.arguments.contains("--build-no-progress") { response.job?.progress = nil }
                 return try JSONEncoder().encode(response)
             case .job:
-                response.job = CodeJob(id: "preview-build", title: "Build & Run", state: Date().timeIntervalSince(buildStartedAt ?? .distantPast) > 6 ? .succeeded : .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                let duration: TimeInterval = ProcessInfo.processInfo.arguments.contains("--build-no-progress") ? 25 : 6
+                response.job = CodeJob(id: "preview-build", title: "Build & Run", state: Date().timeIntervalSince(buildStartedAt ?? .distantPast) > duration ? .succeeded : .running, log: "Preview build from main on Preview iPhone. No Mac command was executed.")
+                response.job?.startedAt = buildStartedAt ?? Date()
                 response.job?.progress = CodeJobProgress(stage: "Compiling on your Mac…", start: 0.25, end: 0.80, estimatedSeconds: 4, startedAt: buildStartedAt ?? Date())
+                if ProcessInfo.processInfo.arguments.contains("--build-no-progress") { response.job?.progress = nil }
                 return try JSONEncoder().encode(response)
             case .schemes:
                 response.schemes = ProcessInfo.processInfo.arguments.contains("--build-discovery-delay")

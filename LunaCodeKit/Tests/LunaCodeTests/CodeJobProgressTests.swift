@@ -28,7 +28,39 @@ final class CodeJobProgressTests: XCTestCase {
         let data = Data(#"{"id":"old","title":"Build","state":"running","log":"","startedAt":100}"#.utf8)
         let job = try JSONDecoder().decode(CodeJob.self, from: data)
         XCTAssertNil(job.progress)
-        XCTAssertEqual(job.progressFraction(), 0.05)
+        XCTAssertEqual(job.progressFraction(at: job.startedAt), 0.05)
+        let fractions = [2.0, 10, 30, 60, 120, 600].map { job.progressFraction(at: job.startedAt.addingTimeInterval($0)) }
+        XCTAssertGreaterThan(fractions[0], 0.05)
+        for (before, after) in zip(fractions, fractions.dropFirst()) { XCTAssertGreaterThan(after, before) }
+        XCTAssertLessThan(fractions.last!, 0.95)
+    }
+    func testMissingProgressRepliesPreserveEstimateAndFreezeOnFailure() {
+        let start = Date(timeIntervalSince1970: 100)
+        var reply = CodeJob(id: "legacy", title: "Build")
+        reply.startedAt = start
+        let initial = reply.estimatingProgress(at: start)
+        let refreshed = reply.estimatingProgress(from: initial, at: start.addingTimeInterval(30))
+        XCTAssertEqual(refreshed.progress, initial.progress)
+        XCTAssertGreaterThan(refreshed.progressFraction(at: start.addingTimeInterval(30)), initial.progressFraction(at: start))
+        reply.state = .failed
+        let failed = reply.estimatingProgress(from: refreshed, at: start.addingTimeInterval(40))
+        XCTAssertGreaterThan(failed.progressFraction(), 0.05)
+        XCTAssertEqual(failed.progressFraction(at: start.addingTimeInterval(50)), failed.progressFraction(at: start.addingTimeInterval(500)))
+        reply.state = .cancelled
+        let cancelled = reply.estimatingProgress(from: failed, at: start.addingTimeInterval(60))
+        XCTAssertEqual(cancelled.progress, failed.progress)
+        reply.state = .succeeded
+        XCTAssertEqual(reply.estimatingProgress(from: refreshed).progressFraction(), 1)
+    }
+    func testEstimateUsesLocalReceiptClockWhenMacClockIsAhead() {
+        let received = Date(timeIntervalSince1970: 100)
+        var reply = CodeJob(id: "legacy", title: "Build")
+        reply.startedAt = received.addingTimeInterval(3600)
+        let initial = reply.estimatingProgress(at: received)
+        let refreshed = reply.estimatingProgress(from: initial, at: received.addingTimeInterval(10))
+        XCTAssertGreaterThan(refreshed.progressFraction(at: received.addingTimeInterval(10)), 0.05)
+        var other = reply; other.id = "another"
+        XCTAssertEqual(other.estimatingProgress(from: initial, at: received.addingTimeInterval(10)).progress?.startedAt, received.addingTimeInterval(10))
     }
     func testStagesAndFrozenProgressSurviveWireRoundTrip() throws {
         var job = CodeJob(id: "job", title: "Build")

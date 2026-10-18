@@ -105,7 +105,11 @@ The Mac persists stage boundaries for preparation, checkout, destination/signing
 compilation, installation, launch and cleanup. Within each stage the estimate
 advances toward a bounded ceiling; only Mac-confirmed success reaches 100%.
 TestFlight uses a broad archive/upload/processing estimate. Failure and cancellation
-freeze progress. Older companion job payloads still decode without stage data.
+freeze progress. When a companion omits stage data, Luna Code advances an elapsed-time estimate
+from 5% toward a ceiling below 95% rather than leaving the bar fixed at 5%.
+That local estimate survives repeated status replies, freezes on failure/cancellation,
+and uses the local receipt clock if the Mac clock is ahead. Confirmed stage data
+takes precedence; displayed progress never moves backward within a job.
 The shared, tab-independent monitor polls accepted jobs and drives the app UI and
 `BGContinuedProcessingTask.progress` from the same estimate. iOS supplies the
 system progress Live Activity; no custom widget or push service is needed.

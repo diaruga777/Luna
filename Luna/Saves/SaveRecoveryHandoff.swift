@@ -20,29 +20,37 @@ import UIKit
 @MainActor
 enum SaveRecoveryHandoff {
 
+    static func prompt(for item: SavedItem, failure: String?) -> String? {
+        guard let url = item.url else { return nil }
+        return LLMHandoffPrompts.recovery(url: url, app: LunaApp.current, failure: failure)
+    }
+
     /// Builds the prompt for `item`, records the hand-off and opens
-    /// `provider`. False when the page has no URL or the built link is over
-    /// `LLMDeepLink.maxURLCharacters`; nothing is recorded then.
+    /// `provider`. Oversized links open an empty composer with the full prompt
+    /// on the clipboard. False when the save has no URL.
     @discardableResult
     static func begin(
         item: SavedItem,
         provider: LLMProvider,
         claudeTarget: LLMClaudeTarget = LLMProviderPreferences.claudeTarget,
-        failure: String?
+        failure: String?,
+        launcher: any LLMLaunching = LLMLauncher.shared
     ) -> Bool {
-        guard let url = item.url else { return false }
-        let prompt = LLMHandoffPrompts.recovery(
-            url: url, app: LunaApp.current, failure: failure)
+        guard let prompt = prompt(for: item, failure: failure) else { return false }
+        // Preserve the whole prompt even if a native app ignores query text,
+        // or Unicode percent-encoding pushes it past the URL limit.
+        UIPasteboard.general.string = prompt
+        let linkPrompt = LLMDeepLink.url(
+            for: provider, prompt: prompt, claudeTarget: claudeTarget) == nil ? "" : prompt
         guard let link = LLMDeepLink.url(
-            for: provider, prompt: prompt, claudeTarget: claudeTarget)
-        else { return false }
+            for: provider, prompt: linkPrompt, claudeTarget: claudeTarget) else { return false }
         LLMHandoffStore.shared.begin(
             .recovery(itemID: item.id, urlString: item.urlString),
             provider: provider, claudeTarget: claudeTarget)
-        LLMLauncher.shared.openLLM(
+        launcher.openLLM(
             link,
             fallback: LLMDeepLink.fallbackURL(
-                for: provider, prompt: prompt, claudeTarget: claudeTarget))
+                for: provider, prompt: linkPrompt, claudeTarget: claudeTarget))
         return true
     }
 }

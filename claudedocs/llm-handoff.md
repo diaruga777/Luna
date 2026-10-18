@@ -80,9 +80,14 @@ there when it happened.
 A save can land `.ready` holding the wrong thing: the teaser behind a consent
 wall, a different product, a preview clip. There is no failure to explain and no
 card chin to put a row in, so the offer is a submenu on the card's LONG PRESS —
-**Recover with AI**, one row per provider plus Claude Code — in every app
+**Recover with AI**, with ChatGPT, Claude, and Copy prompt — in every app
 (`KindDeckProvider.deckMenu`). It is offered for a `.ready` save with an http(s)
 page behind it; an imported `lunadoc://` document has no page to read again.
+The menu's Claude action always uses ordinary chat, independent of a remembered
+Claude Code preference elsewhere. Copy prompt builds the identical wrong-content
+recovery prompt without opening another app or recording a waiting handoff.
+Recovery launches also preserve the whole prompt on the clipboard; oversized
+percent-encoded URLs open the provider's empty composer instead of dropping the tap.
 
 The prompt is the recovery prompt with a different sentence:
 `SaveFailureReason.wrongContentSentence`, which names the ways a "successful"

@@ -422,17 +422,16 @@ final class KindDeckProvider: CardDeckProviding {
             children.append(UIAction(
                 title: provider.displayName, image: LLMProviderGlyph.image(for: provider)
             ) { [weak self] _ in
-                self?.recover(item, with: provider, claudeTarget: LLMProviderPreferences.claudeTarget)
+                self?.recover(item, with: provider, claudeTarget: .chat)
             })
         }
-        // Claude Code is a target of the same provider, and picking it here
-        // remembers it — the same bargain the row's long press makes.
         children.append(UIAction(
-            title: LLMClaudeTarget.code.displayName,
-            image: LLMProviderGlyph.image(for: .claude)
-        ) { [weak self] _ in
-            LLMProviderPreferences.claudeTarget = .code
-            self?.recover(item, with: .claude, claudeTarget: .code)
+            title: L10n.string("LLMHandoff_copyPrompt"),
+            image: UIImage(systemName: "doc.on.doc")
+        ) { _ in
+            UIPasteboard.general.string = SaveRecoveryHandoff.prompt(
+                for: item, failure: SaveFailureReason.wrongContentSentence(
+                    SaveFailureReason.attemptKind(for: item, reason: nil)))
         })
         return UIMenu(
             title: L10n.string("CardDeck_recoverWithAI"),

@@ -887,7 +887,17 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         let recover = try XCTUnwrap(menu.children[recoverIndex] as? UIMenu)
         XCTAssertEqual(
-            recover.children.map(\.title), ["ChatGPT", "Claude", "Use Claude Code"])
+            recover.children.map(\.title), ["ChatGPT", "Claude", "Copy prompt"])
+
+        let item = try XCTUnwrap(controller.deckProvider?.deckItem(forSlot: slot))
+        let copy = try XCTUnwrap(recover.children.last as? UIAction)
+        let button = UIButton(type: .system)
+        button.addAction(copy, for: .touchUpInside)
+        button.sendActions(for: .touchUpInside)
+        XCTAssertEqual(UIPasteboard.general.string, SaveRecoveryHandoff.prompt(
+            for: item, failure: SaveFailureReason.wrongContentSentence(
+                SaveFailureReason.attemptKind(for: item, reason: nil))))
+        XCTAssertNil(LLMHandoffStore.shared.record(forItemID: item.id))
     }
 
     /// An imported document has no page for a model to read again, so it is not

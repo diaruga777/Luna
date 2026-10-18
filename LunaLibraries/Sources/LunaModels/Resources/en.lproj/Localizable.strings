@@ -112,6 +112,7 @@
 "LLMProvider_claude_Luna" = "Claude";
 "LLMProvider_claudeChat_Luna" = "Use Claude chat";
 "LLMProvider_claudeCode_Luna" = "Use Claude Code";
+"LLMHandoff_copyPrompt_Luna" = "Copy prompt";
 "LLMHandoff_rowCaption_Luna" = "Recover with";
 "LLMHandoff_waitingHint_Luna" = "Tap the .%@ file in the reply and choose Luna.";
 

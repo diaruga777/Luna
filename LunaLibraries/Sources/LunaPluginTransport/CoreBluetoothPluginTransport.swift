@@ -14,8 +14,9 @@ import LunaSend
 /// suspension or termination when the peripheral advertises again. It cannot
 /// relaunch an app the user force-quit.
 ///
-/// Everything runs on this transport's own queue. The manager is nil only while
-/// AccessorySetupKit's picker is on screen: the picker refuses to appear while
+/// Everything runs on this transport's own queue. The manager starts after its
+/// delegate is installed, and is released while AccessorySetupKit's picker is
+/// on screen: the picker refuses to appear while
 /// the process holds any live `CBManager` once the app has the global Bluetooth
 /// permission (ASErrorDomain 550).
 public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransporting {
@@ -46,7 +47,13 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
         queue = DispatchQueue(label: "com.hsanabria.luna.pluginBluetooth.\(pluginID)")
         super.init()
         queue.setSpecific(key: Self.queueKey, value: true)
-        queue.async { [self] in manager = makeManager() }
+    }
+
+    public func activate() {
+        queue.async { [self] in
+            guard manager == nil else { return }
+            manager = makeManager()
+        }
     }
 
     private static let queueKey = DispatchSpecificKey<Bool>()

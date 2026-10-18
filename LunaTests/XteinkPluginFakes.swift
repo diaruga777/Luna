@@ -27,6 +27,8 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     static let status = "6F9F0A03-9B1D-4D1F-9F53-5B6B8B3D0F10"
     static let dataOut = "6F9F0A04-9B1D-4D1F-9F53-5B6B8B3D0F10"
 
+    func activate() {}
+
     weak var transportDelegate: PluginBluetoothTransportDelegate?
 
     var state: PluginBluetoothState = .poweredOn

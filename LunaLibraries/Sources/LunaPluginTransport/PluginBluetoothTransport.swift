@@ -107,6 +107,8 @@ public protocol PluginBluetoothTransporting: AnyObject {
     var state: PluginBluetoothState { get }
     var transportDelegate: PluginBluetoothTransportDelegate? { get set }
 
+    /// Starts system callbacks after the center has installed its delegate.
+    func activate()
     /// Scans for peripherals advertising any of `services`. A peripheral
     /// another process already holds has stopped advertising, so the adapter
     /// asks the system for connected ones first.

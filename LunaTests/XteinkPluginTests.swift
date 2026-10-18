@@ -71,8 +71,10 @@ final class XteinkPluginTests: XCTestCase {
 
         PluginSecretsStore.shared.setSecret(secret, pluginID: pluginID, key: "pairingSecret")
         let source = try String(
-            contentsOf: MediaPluginHarness.pluginsDirectory
-                .appendingPathComponent("xteink.js"), encoding: .utf8)
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("LunaLibraries/Sources/LunaBundledPlugins/Plugins/xteink.js"),
+            encoding: .utf8)
         try runner.load(source)
         XCTAssertEqual(runner.runtime.loadedPlugins.first?.id, pluginID)
         _ = runner.scratch.openScratchGeneration(

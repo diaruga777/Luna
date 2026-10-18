@@ -123,8 +123,11 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         }
         let transport = makers.makeTransport(pluginID: pluginID)
         self.transport = transport
-        lock.unlock()
         transport.transportDelegate = self
+        lock.unlock()
+        // Restoration can deliver an already-connected peripheral immediately.
+        // Its sweep must have a delegate before the manager starts callbacks.
+        transport.activate()
         return transport
     }
 

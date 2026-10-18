@@ -473,17 +473,24 @@ window, which drives the same trigger and queue sweep.
 - **No Xteink cloud sync.** The official cloud path requires patching the
   device firmware to point at a custom server. If direct Wi-Fi upload proves
   too fiddly, that is the revisit.
-- **No timer wake in the plugin build.** The X3 firmware fork arms a 12-hour
+- **No timer wake in the plugin build.** The X3 firmware fork arms a four-hour
   deep-sleep timer when Luna Sync is enabled and paired. Its timer boot leaves
   the e-ink display and frontlight untouched, opens the usual authenticated
   BLE window, then returns to deep sleep. A valid X3 clock anchors the first
-  check after a user sleep to 00:00/12:00 UTC; later automatic checks are 12
-  hours apart after a completed sweep. Without a set clock, user sleep arms
-  a 12-hour delay. A missed/incomplete automatic BLE window or SD mount failure
-  gets up to three retries 15 minutes apart, then resumes the 12-hour interval.
+  check after a user sleep to 00:00/04:00/08:00/12:00/16:00/20:00 UTC; later
+  automatic checks are four hours apart after a completed sweep. Without a set clock, user sleep arms
+  a four-hour delay. A missed/incomplete automatic BLE window or SD mount failure
+  gets up to three retries 15 minutes apart, then resumes the four-hour interval.
   `/.crosspoint/luna_auto_sync.txt` records whether the timer was armed, woke,
   completed its sweep, or failed, with the next delay and retry count. Timer
   wakes skip the display-controller probe, which would reset the panel.
+  Automatic discovery waits up to three minutes for background Bluetooth;
+  both sync modes allow 150 seconds to prepare each EPUB, covering the phone's
+  120-second export budget. Active-transfer idle and the ten-minute absolute
+  cap remain bounded. The schedule record includes retained wake/SD-failure
+  counters; `luna_auto_sync_window.txt` separately records the last automatic
+  result, authentication, book count and elapsed time, so manual sync cannot
+  overwrite the evidence.
   Luna's existing `no_work` response ends an empty-queue window immediately.
   If Wi-Fi escalation starts but no phone joins the reader's AP, the
   automatic window closes that AP after 20 seconds; manual sync retains its
@@ -554,3 +561,10 @@ remaining work in `no_work`. The fork and firmware plugin latch failures and onl
 show “Nothing new” after a completed empty sweep. Disconnects, timeouts, partial
 transfers and pending work show an incomplete-sync outcome with the committed
 book count. Automatic windows treat those outcomes as failures eligible for retry.
+
+The plugin transport installs its delegate before activating `CBCentralManager`.
+A Bluetooth restoration can immediately report an already-connected reader;
+starting the manager in the transport initializer could announce that link before
+the center was listening, consume the restoration event, and leave no sweep to
+run. `PluginBluetoothCenterTests` covers restoration during activation as well
+as an ordinary restored connection.

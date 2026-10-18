@@ -14,6 +14,9 @@ final class FakePluginBluetoothTransport: PluginBluetoothTransporting, @unchecke
 
     weak var transportDelegate: PluginBluetoothTransportDelegate?
 
+    var onActivate: (() -> Void)?
+    func activate() { onActivate?() }
+
     var state: PluginBluetoothState = .poweredOn
     var writeLength = 180
     var canWrite = true

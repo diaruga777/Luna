@@ -77,7 +77,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// draws attachments as static bitmaps, so a real image view is required for GIF
     /// playback. Views are enabled only while visible to bound decode/CPU cost.
     private var animatedImageViews: [AnimatedArticleImageView] = []
-    private let textView = QuotingTextView(usingTextLayoutManager: false)
+    private let stableTextContainer = ScrollStableTextContainer(size: .zero)
+    private lazy var textView: QuotingTextView = {
+        let storage = NSTextStorage()
+        let manager = NSLayoutManager()
+        storage.addLayoutManager(manager)
+        manager.addTextContainer(stableTextContainer)
+        stableTextContainer.widthTracksTextView = true
+        let textView = QuotingTextView(frame: .zero, textContainer: stableTextContainer)
+        return textView
+    }()
+    private var updatingPreservedLines = false
+    private var preservingViewportTransition = false
     /// Temporary per-glyph presentation used only while a large card changes
     /// width. The live text view stays masked but hidden until its final TextKit
     /// layout and anchored content offset are ready.
@@ -333,6 +344,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
         guard isViewLoaded else { return }
         UIView.performWithoutAnimation {
+            stableTextContainer.reset(in: textView)
             textView.attributedText = rendered.text
             textView.layoutIfNeeded()
             textView.layoutManager.ensureLayout(for: textView.textContainer)
@@ -454,16 +466,25 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     // MARK: - Card viewport reflow
 
     /// Captures this scroll reader's current TextKit layout and a hypothetical
-    /// layout at `size`. Kept public for the card host; standalone readers never
+    /// layout at `size`. Scroll-driven changes instead retain visible lines in
+    /// the live layout, letting incoming text adopt the new column. Kept public for the card host; standalone readers never
     /// call it and retain their ordinary UIKit resizing behavior.
     @discardableResult
     public func prepareForCardViewportTransition(
         to size: CGSize,
-        destinationTopChromeInset: CGFloat? = nil
+        destinationTopChromeInset: CGFloat? = nil,
+        preservingVisibleLines: Bool = false
     ) -> Bool {
         viewportReflowTransition?.finish()
         viewportReflowTransition = nil
         guard isViewLoaded else { return false }
+        preservingViewportTransition = false
+        if preservingVisibleLines {
+            stableTextContainer.preserveVisibleLines(in: textView)
+            captureResizeAnchor()
+            preservingViewportTransition = true
+            return false
+        }
         let horizontal = Self.horizontalTextInset(forViewportWidth: size.width)
         let insets = UIEdgeInsets(top: 20, left: horizontal, bottom: 40, right: horizontal)
         let destinationAdjustedTopInset: CGFloat
@@ -479,6 +500,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             destinationSize: size,
             destinationTextInsets: insets,
             destinationAdjustedTopInset: destinationAdjustedTopInset)
+        stableTextContainer.reset(in: textView)
         return viewportReflowTransition != nil
     }
 
@@ -497,7 +519,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Reveals the live final TextKit layout at exactly the endpoint occupied by
     /// the temporary glyphs, then retires their clipped overlay.
     public func finishCardViewportTransition(completed: Bool) {
-        guard let transition = viewportReflowTransition else { return }
+        preservingViewportTransition = false
+        guard let transition = viewportReflowTransition else {
+            captureResizeAnchor()
+            return
+        }
         viewportReflowTransition = nil
         view.layoutIfNeeded()
         ScrollPresentationState.setSuppressed(true, for: textView)
@@ -692,6 +718,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         super.viewDidLayoutSubviews()
         let widthChanged = lastTextViewportWidth > 0
             && abs(lastTextViewportWidth - textView.bounds.width) > 0.5
+        if widthChanged, !preservingViewportTransition {
+            stableTextContainer.reset(in: textView)
+        }
         // Keep the text in a readable column on wide screens (iPad / landscape).
         let horizontal = Self.horizontalTextInset(forViewportWidth: view.bounds.width)
         if abs(textView.textContainerInset.left - horizontal) > 0.5 {
@@ -1418,7 +1447,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     // MARK: - Read tracking
 
     private func captureResizeAnchor() {
-        guard viewportReflowTransition == nil,
+        guard viewportReflowTransition == nil, !preservingViewportTransition,
               abs(lastTextViewportWidth - textView.bounds.width) < 0.5 else { return }
         resizeWasAtTop = textView.contentOffset.y + textView.adjustedContentInset.top <= 1
         resizeAnchor = TextViewportReflowTransition.anchorGeometry(
@@ -1426,6 +1455,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if !updatingPreservedLines, !preservingViewportTransition, stableTextContainer.hasPreservedLines,
+           viewportReflowTransition == nil {
+            updatingPreservedLines = true
+            let anchor = TextViewportReflowTransition.anchorGeometry(
+                in: textView, layoutManager: textView.layoutManager)
+            if stableTextContainer.releaseOffscreenLines(in: textView), let anchor {
+                ScrollPresentationState.setSuppressed(true, for: textView)
+                textView.layoutManager.ensureLayout(for: textView.textContainer)
+                textView.contentOffset.y = clampedContentOffsetY(
+                    TextViewportReflowTransition.restoredOffset(for: anchor, in: textView))
+                ScrollPresentationState.setSuppressed(false, for: textView)
+                layoutCompletionArea()
+                layoutAnimatedImageViews()
+            }
+            updatingPreservedLines = false
+        }
         captureResizeAnchor()
         updateReadPullPrompt()
         updateAnimatedImagePlayback()

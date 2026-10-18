@@ -259,6 +259,116 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
+    func testInteractiveWidthChangesKeepVisibleLinesAndUseNewWidthOutsideViewport() throws {
+        var item = SavedItem(urlString: "https://example.com/stable-lines")
+        item.state = .ready
+        let article = ArticleContent(title: "Stable lines", blocks: [paragraph(String(
+            repeating: "Existing words stay on their original line while new lines fill the available column. ",
+            count: 120))])
+        let reader = ScrollReaderViewController(item: item, content: article)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 350, height: 600)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+        text.contentOffset.y = 650
+        reader.scrollViewDidScroll(text)
+        let originalString = text.text
+
+        func visibleLines() -> [(NSRange, CGRect)] {
+            text.layoutManager.ensureLayout(for: text.textContainer)
+            var result: [(NSRange, CGRect)] = []
+            text.layoutManager.enumerateLineFragments(forGlyphRange: NSRange(
+                location: 0, length: text.layoutManager.numberOfGlyphs)) { rect, _, _, glyphs, _ in
+                let screen = rect.offsetBy(dx: text.textContainerInset.left,
+                    dy: text.textContainerInset.top - text.contentOffset.y)
+                if screen.intersects(CGRect(origin: .zero, size: text.bounds.size)) {
+                    result.append((text.layoutManager.characterRange(
+                        forGlyphRange: glyphs, actualGlyphRange: nil), screen))
+                }
+            }
+            return result
+        }
+        func resize(to width: CGFloat) {
+            reader.prepareForCardViewportTransition(
+                to: CGSize(width: width, height: 600), preservingVisibleLines: true)
+            XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
+            XCTAssertEqual(text.alpha, 1)
+            reader.view.frame.size.width = width
+            reader.view.layoutIfNeeded()
+            reader.finishCardViewportTransition(completed: true)
+        }
+        func assertPreserved(_ before: [(NSRange, CGRect)], file: StaticString = #filePath, line: UInt = #line) {
+            let after = visibleLines()
+            for (range, rect) in before {
+                let matching = after.first { $0.0 == range }
+                XCTAssertNotNil(matching, "Visible line changed its characters: \(range)", file: file, line: line)
+                if let matching {
+                    XCTAssertEqual(matching.1.width, rect.width, accuracy: 0.5, file: file, line: line)
+                    XCTAssertEqual(matching.1.minY, rect.minY, accuracy: 0.5, file: file, line: line)
+                }
+            }
+            XCTAssertEqual(text.text, originalString, "Layout must not edit the article")
+        }
+
+        let narrow = visibleLines()
+        XCTAssertGreaterThan(narrow.count, 5)
+        resize(to: 600)
+        assertPreserved(narrow)
+
+        // Scroll the old lines entirely out, then reverse the width change.
+        text.contentOffset.y += 900
+        reader.scrollViewDidScroll(text)
+        let wide = visibleLines()
+        XCTAssertGreaterThan(try XCTUnwrap(wide.first).1.width, try XCTUnwrap(narrow.first).1.width + 100)
+        resize(to: 350)
+        assertPreserved(wide)
+        XCTAssertLessThanOrEqual(text.contentSize.width, text.bounds.width + 0.5,
+                                 "Clipped old lines must not make the article scroll horizontally")
+
+        text.contentOffset.y -= 900
+        reader.scrollViewDidScroll(text)
+        let returnedNarrow = visibleLines()
+        XCTAssertTrue(returnedNarrow.allSatisfy { abs($0.1.width - narrow[0].1.width) < 0.5 },
+                      "Lines re-entering from above must use the current narrow width")
+
+        // Tap-driven transitions still reflow the live text to one uniform column.
+        reader.prepareForCardViewportTransition(to: CGSize(width: 600, height: 600))
+        reader.animatePreparedCardViewportTransition()
+        reader.view.frame.size.width = 600
+        reader.view.layoutIfNeeded()
+        reader.finishCardViewportTransition(completed: true)
+        XCTAssertTrue(visibleLines().allSatisfy { abs($0.1.width - wide[0].1.width) < 0.5 })
+    }
+
+    @MainActor
+    func testInteractiveWidthPreservesLinesWithoutWordSeparators() throws {
+        var item = SavedItem(urlString: "https://example.com/stable-cjk")
+        item.state = .ready
+        let reader = ScrollReaderViewController(item: item, content: ArticleContent(
+            title: "Reading", blocks: [paragraph(String(repeating: "既存の行は幅を保ち新しい行だけが変化します。", count: 200))]))
+        reader.view.frame = CGRect(x: 0, y: 0, width: 350, height: 600)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+        text.contentOffset.y = 650
+        reader.scrollViewDidScroll(text)
+        let probe = CGPoint(x: 10, y: text.contentOffset.y + 150)
+        let glyph = text.layoutManager.glyphIndex(for: probe, in: text.textContainer)
+        var before = NSRange()
+        let source = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &before)
+        let characters = text.layoutManager.characterRange(forGlyphRange: before, actualGlyphRange: nil)
+        reader.prepareForCardViewportTransition(
+            to: CGSize(width: 600, height: 600), preservingVisibleLines: true)
+        reader.view.frame.size.width = 600
+        reader.view.layoutIfNeeded()
+        reader.finishCardViewportTransition(completed: true)
+        let destinationGlyphs = text.layoutManager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
+        var after = NSRange()
+        let destination = text.layoutManager.lineFragmentRect(
+            forGlyphAt: destinationGlyphs.location, effectiveRange: &after)
+        XCTAssertEqual(text.layoutManager.characterRange(forGlyphRange: after, actualGlyphRange: nil), characters)
+        XCTAssertEqual(destination.width, source.width, accuracy: 0.5)
+    }
+
+    @MainActor
     func testLiveResizeKeepsTheSamePassageAtTheSameHeight() throws {
         var item = SavedItem(urlString: "https://example.com/resize")
         item.state = .ready

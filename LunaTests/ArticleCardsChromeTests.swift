@@ -454,6 +454,49 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(card.frame, frame)
     }
 
+    @MainActor
+    func testScrollDrivenCardExpansionPreservesBodyLinesAndVisibleTitle() throws {
+        let title = "A deliberately long article title whose existing lines stay fixed during scrolling"
+        let controller = makeArticleController(seed: "scroll-stable-card", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let reader = try XCTUnwrap(card.rabbitHoleReader?.focusedScrollReader)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        let scrollingTitle = try XCTUnwrap(headerViews(labelled: title, in: card.view)
+            .first { hasScrollViewAncestor($0) })
+        text.contentOffset.y = -text.adjustedContentInset.top + 60
+        let oldTitleWidth = scrollingTitle.bounds.width
+        let manager = text.layoutManager
+        manager.ensureLayout(for: text.textContainer)
+        let glyph = manager.glyphIndex(for: CGPoint(x: 10, y: 80), in: text.textContainer)
+        var before = NSRange()
+        let oldLine = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &before)
+        let characters = manager.characterRange(forGlyphRange: before, actualGlyphRange: nil)
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: true, extendsCard: true)
+        controller.view.layoutIfNeeded()
+        card.view.layoutIfNeeded()
+        reader.view.layoutIfNeeded()
+        XCTAssertTrue(controller.carousel.isImmersed)
+        XCTAssertGreaterThan(text.bounds.width, oldTitleWidth)
+        XCTAssertEqual(scrollingTitle.bounds.width, oldTitleWidth, accuracy: 0.5)
+        XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
+        XCTAssertEqual(text.alpha, 1)
+        let currentGlyphs = manager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
+        var after = NSRange()
+        let newLine = manager.lineFragmentRect(forGlyphAt: currentGlyphs.location, effectiveRange: &after)
+        XCTAssertEqual(manager.characterRange(forGlyphRange: after, actualGlyphRange: nil), characters)
+        XCTAssertEqual(newLine.width, oldLine.width, accuracy: 0.5)
+
+        controller.toggleImmersion(for: card)
+        controller.view.layoutIfNeeded()
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(scrollingTitle.bounds.width, card.view.bounds.width, accuracy: 0.5)
+    }
+
     func testScrollableTitleCopyKeepsInsetStableAndCentersFaviconBesideMultilineTitle() throws {
         let title = "A deliberately long article title that wraps across multiple header lines"
         let controller = makeArticleController(seed: "stable-title", title: title)

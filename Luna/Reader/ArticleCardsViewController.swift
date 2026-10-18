@@ -1229,6 +1229,8 @@ final class ReaderCardContentViewController: CardContentViewController,
     private let knownContent: ArticleContent?
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
+    private var scrollDrivenViewportTransition = false
+    private var preservedScrollTitleSize: CGSize?
     private var baseTopContentInset: CGFloat = 0
     private var titleHeaderHeight: CGFloat = 0
     private var cardChromeVisible = true
@@ -1290,6 +1292,8 @@ final class ReaderCardContentViewController: CardContentViewController,
         // those synthetic offsets so they cannot reverse this transition and
         // start an endless sequence of width animations.
         tracker.suppressScrollDrivenImmersion(for: 0.45)
+        scrollDrivenViewportTransition = true
+        defer { scrollDrivenViewportTransition = false }
         delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
         if restoringAtArticleEnd {
             keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
@@ -1448,12 +1452,13 @@ final class ReaderCardContentViewController: CardContentViewController,
         let height = titleHeader.heightThatFits(
             width: view.bounds.width, topInset: baseTopContentInset)
         _ = scrollTitleHeader.heightThatFits(
-            width: view.bounds.width, topInset: baseTopContentInset)
+            width: preservedScrollTitleSize?.width ?? view.bounds.width, topInset: baseTopContentInset)
         // The background begins at the card's top edge while the title/icon keep
         // their normal clearance below the edge dissolve.
         titleHeader.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
-        if abs(height - titleHeaderHeight) > 0.5 {
-            titleHeaderHeight = height
+        let contentTitleHeight = preservedScrollTitleSize?.height ?? height
+        if abs(contentTitleHeight - titleHeaderHeight) > 0.5 {
+            titleHeaderHeight = contentTitleHeight
             applyReaderTopInset()
         }
         synchronizeScrollableTitleHeader()
@@ -1686,8 +1691,23 @@ final class ReaderCardContentViewController: CardContentViewController,
         viewportTitleSnapshot = nil
         viewportTitleDestinationFrame = nil
         viewportTransitionScrollReader = nil
+        if scrollDrivenViewportTransition {
+            if scrollTitleHeader.alpha > 0,
+               scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).intersects(view.bounds) {
+                preservedScrollTitleSize = scrollTitleHeader.bounds.size
+            }
+        } else {
+            preservedScrollTitleSize = nil
+        }
         let destinationTitleHeight = titleHeader.heightThatFits(
             width: size.width, topInset: baseTopContentInset)
+        if scrollDrivenViewportTransition, let scrollReader = rabbitHoleReader?.focusedScrollReader {
+            viewportTransitionScrollReader = scrollReader
+            scrollReader.prepareForCardViewportTransition(
+                to: size, destinationTopChromeInset: destinationTitleHeight,
+                preservingVisibleLines: true)
+            return
+        }
         guard let scrollReader = rabbitHoleReader?.focusedScrollReader,
               scrollReader.prepareForCardViewportTransition(
                 to: size,
@@ -1733,6 +1753,7 @@ final class ReaderCardContentViewController: CardContentViewController,
     private func synchronizeScrollableTitleHeader() {
         let focused = rabbitHoleReader?.focusedContentScrollView
         if focused !== titleScrollView {
+            preservedScrollTitleSize = nil
             pendingProgrammaticTitleUpdate?.cancel()
             pendingProgrammaticTitleUpdate = nil
             titleScrollObservation = nil
@@ -1756,15 +1777,21 @@ final class ReaderCardContentViewController: CardContentViewController,
         // screen-wide bounds, even though the card already has its final width.
         // Size both title copies from the card so the scrolling copy cannot
         // paint wide and then visibly re-wrap on the reader's following pass.
+        let scrollingWidth = preservedScrollTitleSize?.width ?? view.bounds.width
         scrollTitleHeader.frame = CGRect(
-            x: 0, y: -titleHeaderHeight,
-            width: view.bounds.width, height: titleHeaderHeight)
+            x: (view.bounds.width - scrollingWidth) / 2, y: -titleHeaderHeight,
+            width: scrollingWidth, height: titleHeaderHeight)
         focused.bringSubviewToFront(scrollTitleHeader)
         updatePinnedTitleVisibility(animated: false)
     }
 
     private func scrollOffsetDidChange(in scrollView: UIScrollView?) {
         guard let scrollView, scrollView === titleScrollView else { return }
+        if preservedScrollTitleSize != nil,
+           !scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).intersects(view.bounds) {
+            preservedScrollTitleSize = nil
+            view.setNeedsLayout()
+        }
         guard isCentered else {
             pendingProgrammaticTitleUpdate?.cancel()
             pendingProgrammaticTitleUpdate = nil

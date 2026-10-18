@@ -116,7 +116,16 @@ does not gain text width expansion.
 Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
 inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
-the selected article to the rail or the compact deck. `TextViewportReflowTransition`
+the selected article to the rail or the compact deck. Scroll-driven changes use
+`ScrollStableTextContainer`: visible lines retain their exact character ranges and
+column widths, centered inside the changing card and clipped if the card contracts.
+Lines entering from either edge use the current width; once a preserved line leaves
+the viewport it can lay out at that width on re-entry. A measured TextKit seam prevents
+new text above the retained passage from consuming its first characters, including
+scripts without spaces. Reading-position anchoring compensates for changed layout
+above the viewport. A visible scrolling masthead also keeps its existing width until
+it leaves the viewport. Text, selection, links and WordMap character indexes remain
+unchanged. Taps clear these retained widths and use `TextViewportReflowTransition`, which
 builds a second TextKit layout for the destination width before the 0.32s transition,
 anchors the glyph around the upper quarter of the viewport, and temporarily replaces
 the live jumping layout with per-glyph images. Every glyph whose old→new path intersects
@@ -125,7 +134,8 @@ real hypothetical offscreen endpoint. The overlay clips continuously while the c
 rounded content viewport expands/contracts, then the final live TextKit layout is
 revealed at the anchored offset. Reduce Motion skips the per-glyph overlay. Tests:
 `ReaderCardViewportPolicyTests`, `CardCarouselExpandedImmersionTests`, and
-`ArticleTextRendererProgressiveTests.testCardWidthTransitionBuildsIndividualGlyphMovesAndRestoresLiveText`.
+`ArticleTextRendererProgressiveTests` (scroll-driven expansion/contraction, re-entry,
+non-space scripts, live resizing and tap-driven glyph reflow).
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout

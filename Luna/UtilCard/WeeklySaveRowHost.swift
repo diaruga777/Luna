@@ -224,7 +224,7 @@ final class WeeklySaveRowHost: UIView {
     }
 
     private func makeRow(_ display: WeeklySaveDisplay?) -> UtilURLRow {
-        let row = UtilURLRow(style: .saveOfTheWeek)
+        let row = UtilURLRow(style: .lunasPick)
         if let display {
             configure(row, with: display)
         } else {

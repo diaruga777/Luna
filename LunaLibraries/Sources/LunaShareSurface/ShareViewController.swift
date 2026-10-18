@@ -458,7 +458,7 @@ open class ShareViewController: UIViewController {
     /// lesson watches for when the real share sheet comes back.
     ///
     /// Recorded for any handled URL, not just the bundled practice link.
-    /// The lesson hands the sheet a live Save of the Week when there is
+    /// The lesson hands the sheet Luna’s pick when there is
     /// one, and a real save of a real link through the real extension is
     /// more convincing evidence than a rehearsal, not less. The practice
     /// path keeps its own idempotent write, since it deliberately never
@@ -627,7 +627,7 @@ open class ShareViewController: UIViewController {
     }
 
     /// Matches the product visible in the bundled Amayzon mock. This is only
-    /// the no-weekly-save fallback; a live Save of the Week goes through the
+    /// the no-weekly-save fallback; Luna’s pick goes through the
     /// ordinary ingest pipeline and presents its own extracted product data.
     private static let productSetupPracticeInfo = ProductInfo(
         name: L10n.string("Onboarding_Demo_amayzonProductTitle"),

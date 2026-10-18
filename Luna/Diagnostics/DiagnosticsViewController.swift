@@ -27,7 +27,7 @@ final class DiagnosticsViewController: UIViewController {
     /// rendered line without screenshotting a live log.
     let rescueStatsLabel = UILabel()
     private let rescueStats: RescueStatsStore
-    /// Where the curator pastes the Save of the Week signing key. Hidden behind
+    /// Where the curator pastes the Luna’s pick signing key. Hidden behind
     /// the same five taps as the log itself: it is not a user-facing feature.
     private let weeklyKeyButton = UIButton(type: .system)
     private let bottomButtons = UIStackView()
@@ -118,7 +118,7 @@ final class DiagnosticsViewController: UIViewController {
         ])
     }
 
-    // MARK: - Save of the Week key
+    // MARK: - Luna’s pick key
 
     private func updateWeeklyKeyButton() {
         var configuration = UIButton.Configuration.plain()

@@ -170,7 +170,7 @@ save at index one; only an empty store starts on the util card.
 On the central util card, the Safari and shortcut labels cycle through the
 Reader, Downloader, and Price Tracker labels in that same rank order. The
 buttons themselves stay fixed; only their clipped labels translate and fade.
-The labels and Save of the Week use one eight-second clock, so their changes
+The labels and Luna’s pick use one eight-second clock, so their changes
 start together. The central row cycles those three kinds in rank order; a
 missing kind is a fully empty turn, not a blank card.
 
@@ -649,7 +649,7 @@ taps in:
 
 | condition | link | what the surface does |
 |---|---|---|
-| online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
+| online, live Luna’s pick for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
 | online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice route → the production UI for that link's kind; the temporary row is deleted after the pass |
 | offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
 

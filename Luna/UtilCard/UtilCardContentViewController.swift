@@ -733,7 +733,7 @@ final class UtilCardContentViewController: CardContentViewController {
             urlString: urlString, source: source, sourceView: sourceView) { _ in }
     }
 
-    // MARK: - Save of the week
+    // MARK: - Luna’s pick
 
     /// The weekly recommendation may already be in the deck. Then its row is
     /// shown as answered rather than offered.
@@ -1062,7 +1062,7 @@ final class UtilCardContentViewController: CardContentViewController {
     }
 }
 
-// MARK: - The Save of the Week slot's delegate
+// MARK: - The delegate for Luna’s pick
 
 extension UtilCardContentViewController: WeeklySaveRowHostDelegate {
     func weeklySaveRowHost(
@@ -1141,7 +1141,7 @@ protocol UtilURLRowDelegate: AnyObject {
 /// attribution line in the accent — so the two
 /// never read as one list of equals.
 final class UtilURLRow: UIControl {
-    enum Style: Equatable { case saveOfTheWeek, recent }
+    enum Style: Equatable { case lunasPick, recent }
 
     /// Shared by the row, its glass rim, and the slot that clips a replacement
     /// slide, so all three round by the same amount.
@@ -1183,10 +1183,10 @@ final class UtilURLRow: UIControl {
 
     init(style: Style) {
         self.style = style
-        weeklyRibbon = style == .saveOfTheWeek ? WeeklyRibbonView() : nil
+        weeklyRibbon = style == .lunasPick ? WeeklyRibbonView() : nil
         super.init(frame: .zero)
-        accessibilityIdentifier = style == .saveOfTheWeek
-            ? "utilCard.saveOfTheWeek"
+        accessibilityIdentifier = style == .lunasPick
+            ? "utilCard.lunasPick"
             : "utilCard.recent"
         isAccessibilityElement = true
         backgroundColor = Self.rowBackground
@@ -1203,8 +1203,8 @@ final class UtilURLRow: UIControl {
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 2
         subtitleLabel.font = .systemFont(
-            ofSize: 12, weight: style == .saveOfTheWeek ? .semibold : .regular)
-        subtitleLabel.textColor = style == .saveOfTheWeek
+            ofSize: 12, weight: style == .lunasPick ? .semibold : .regular)
+        subtitleLabel.textColor = style == .lunasPick
             ? LunaSurfacePalette.progressAccent
             : LunaColors.secondaryText
         subtitleLabel.lineBreakMode = .byTruncatingMiddle
@@ -1221,7 +1221,7 @@ final class UtilURLRow: UIControl {
         savedCheckmark.contentMode = .scaleAspectFit
         savedOverlay.addSubview(savedCheckmark)
 
-        if style == .saveOfTheWeek {
+        if style == .lunasPick {
             applyWeeklyTint(weeklyTint)
             wash.isUserInteractionEnabled = false
             addSubview(wash)
@@ -1246,7 +1246,7 @@ final class UtilURLRow: UIControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// - Parameter weeklyLabel: The "From the Luna team" attribution. It goes
+    /// - Parameter weeklyLabel: The "Luna’s pick" attribution. It goes
     ///   in the corner flag, which is why the subtitle is the host and nothing
     ///   else. Ignored by history rows.
     func configure(
@@ -1320,7 +1320,7 @@ final class UtilURLRow: UIControl {
     /// view, so it takes this rather than the base plus a wash it cannot layer.
     private var compositedFill: UIColor {
         let base = backgroundColor ?? .black
-        guard style == .saveOfTheWeek else { return base }
+        guard style == .lunasPick else { return base }
         var baseRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
         var washRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
         guard base.getRed(&baseRGBA.r, green: &baseRGBA.g, blue: &baseRGBA.b, alpha: &baseRGBA.a),

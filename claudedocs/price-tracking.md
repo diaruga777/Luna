@@ -412,7 +412,7 @@ this app posts, so the one commit funnel calls
 so only the first commit prompts and no "have we asked yet" flag is needed; it also
 self-skips in an `.appex`, so a threshold set inside the share/action sheet doesn't
 spend the one-time prompt on a surface that's about to dismiss — the next in-app
-commit asks. The other two ask-moments are the Save of the Week key and connecting a
+commit asks. The other two ask-moments are the Luna’s pick key and connecting a
 sending account; nothing else in Luna requests authorization.
 
 ## Deck integration (`SavesSectioning` / the card roots)

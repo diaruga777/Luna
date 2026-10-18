@@ -123,14 +123,14 @@ final class UtilCardTests: XCTestCase {
         withoutRow.loadViewIfNeeded()
         withoutRow.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         withoutRow.view.layoutIfNeeded()
-        XCTAssertNil(withoutRow.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNil(withoutRow.view.descendant(identifier: "utilCard.lunasPick"))
 
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
         let withRow = makeCard(showsOnboarding: true)
         withRow.loadViewIfNeeded()
         withRow.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         withRow.view.layoutIfNeeded()
-        XCTAssertNotNil(withRow.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNotNil(withRow.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     // MARK: - The “or” seam
@@ -304,7 +304,7 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(buttons.count, 2)
         let host = try XCTUnwrap(card.view.descendant(identifier: "utilCard.weeklyHost"))
         XCTAssertFalse(host.isHidden)
-        let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.lunasPick"))
         // The row lives inside the host's clipping child, so its own frame is
         // in that child's space — compare it in card coordinates.
         let weeklyFrame = weekly.convert(weekly.bounds, to: card.view)
@@ -761,7 +761,7 @@ final class UtilCardTests: XCTestCase {
         card.loadViewIfNeeded()
 
         let weekly = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+            card.view.descendant(identifier: "utilCard.lunasPick") as? UtilURLRow)
         XCTAssertTrue(weekly.isShownAsSaved)
         XCTAssertLessThan(weekly.alpha, 1)
     }
@@ -772,7 +772,7 @@ final class UtilCardTests: XCTestCase {
         card.loadViewIfNeeded()
 
         let weekly = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+            card.view.descendant(identifier: "utilCard.lunasPick") as? UtilURLRow)
         XCTAssertFalse(weekly.isShownAsSaved)
         XCTAssertEqual(weekly.alpha, 1)
     }
@@ -783,14 +783,14 @@ final class UtilCardTests: XCTestCase {
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         card.view.layoutIfNeeded()
-        XCTAssertNotNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNotNil(card.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     func testAnExpiredEntryIsNoEntry() {
         seedWeekly(.article, url: "https://example.com/a", title: "A Read", daysOld: 31)
         let card = makeCard(showsOnboarding: false)
         card.loadViewIfNeeded()
-        XCTAssertNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     func testTappingTheWeeklyRowHandsItsStoredURLToTheDeck() throws {
@@ -800,7 +800,7 @@ final class UtilCardTests: XCTestCase {
         card.loadViewIfNeeded()
 
         let row = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UIControl)
+            card.view.descendant(identifier: "utilCard.lunasPick") as? UIControl)
         row.sendActions(for: .touchUpInside)
 
         XCTAssertEqual(environment.savedURL, "https://example.com/weekly")
@@ -817,7 +817,7 @@ final class UtilCardTests: XCTestCase {
         card.view.layoutIfNeeded()
 
         let row = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+            card.view.descendant(identifier: "utilCard.lunasPick"))
         let flag = try XCTUnwrap(
             row.descendant(identifier: "utilCard.weeklyRibbon"))
         let artwork = try XCTUnwrap(row.descendants(of: UIImageView.self).first)
@@ -875,17 +875,17 @@ final class UtilCardTests: XCTestCase {
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         card.view.layoutIfNeeded()
-        XCTAssertNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.lunasPick"))
 
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
         // The store's change notification is delivered on the main queue.
         let deadline = Date().addingTimeInterval(2)
-        while card.view.descendant(identifier: "utilCard.saveOfTheWeek") == nil,
+        while card.view.descendant(identifier: "utilCard.lunasPick") == nil,
               Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         card.view.layoutIfNeeded()
-        XCTAssertNotNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNotNil(card.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     /// A faceted app never renders another app's kind, even if the shared store
@@ -894,11 +894,11 @@ final class UtilCardTests: XCTestCase {
         seedWeekly(.media, url: "https://video.example/v", title: "A Clip")
         let reader = makeCard(showsOnboarding: false, app: .reader)
         reader.loadViewIfNeeded()
-        XCTAssertNil(reader.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNil(reader.view.descendant(identifier: "utilCard.lunasPick"))
 
         let central = makeCard(showsOnboarding: false, app: .luna)
         central.loadViewIfNeeded()
-        XCTAssertNotNil(central.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNotNil(central.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     // MARK: - The completed card's horizon
@@ -917,7 +917,7 @@ final class UtilCardTests: XCTestCase {
         card.view.layoutIfNeeded()
 
         let weeklyRow = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+            card.view.descendant(identifier: "utilCard.lunasPick"))
         let weekly = weeklyRow.convert(weeklyRow.bounds, to: card.view)
         let recents = visibleRecentRows(in: card)
         XCTAssertEqual(recents.count, 2)
@@ -940,7 +940,7 @@ final class UtilCardTests: XCTestCase {
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
         card.view.layoutIfNeeded()
 
-        XCTAssertNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.lunasPick"))
         let recents = visibleRecentRows(in: card)
         XCTAssertEqual(recents.first?.frame.minY, UtilCardLayout.recentsTop)
     }
@@ -954,7 +954,7 @@ final class UtilCardTests: XCTestCase {
         card.view.layoutIfNeeded()
 
         let weeklyRow = try XCTUnwrap(
-            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+            card.view.descendant(identifier: "utilCard.lunasPick") as? UtilURLRow)
         let recentRow = try XCTUnwrap(visibleRecentRows(in: card).first)
         // The save transition's artwork is the row's own dressing, flattened.
         let weekly = try XCTUnwrap(

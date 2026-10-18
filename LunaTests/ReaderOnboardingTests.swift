@@ -929,7 +929,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     /// The conversation's link is whatever the lesson resolved — and when that is
-    /// a live Save of the Week it is a real editorial URL, publisher and dated
+    /// a live Luna’s pick it is a real editorial URL, publisher and dated
     /// path and slug. The whole of it is the thing the user is being pointed at,
     /// so the bubble wraps it rather than truncating a spaceless string on its
     /// first line. Three lines is where it finally gives up.

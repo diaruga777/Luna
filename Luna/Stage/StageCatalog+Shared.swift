@@ -218,7 +218,7 @@ enum SharedStageCatalog {
                         contents: [ready.id: StageFixtures.content("A Ready Article To Read")])
                 }),
             StageDescriptor(
-                id: "deck.save-of-the-week", screen: "Card deck", variant: "Save of the Week",
+                id: "deck.lunas-pick", screen: "Card deck", variant: "Luna’s pick",
                 summary: "The util card carrying a live weekly pick — the ribbon, the row, "
                     + "and its save affordance.",
                 kind: .shared,
@@ -318,7 +318,7 @@ enum SharedStageCatalog {
                         emailConnected: false)
                 }),
             StageDescriptor(
-                id: "util.save-of-the-week", screen: "Util card", variant: "weekly pick",
+                id: "util.lunas-pick", screen: "Util card", variant: "Luna’s pick",
                 summary: "A pick two days old: the week-tier label and the ribbon.",
                 kind: .shared,
                 seed: { StageFixtures.seedEmpty() },

@@ -101,7 +101,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // authorization — a fresh install has nothing to notify anyone about, so the
         // prompt would arrive before its reason exists. Every posting feature asks
         // at the moment the user opts into it instead, and there are exactly three:
-        // pasting the Save of the Week key (`DiagnosticsViewController`), connecting
+        // pasting the Luna’s pick key (`DiagnosticsViewController`), connecting
         // a sending account (`CredentialViewController`), and committing a price
         // alert threshold (the two price editors). `requestAuthorization` is a no-op
         // once the choice has been made, so each of those may ask unconditionally.
@@ -202,7 +202,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // never has a locked save to resume.
         PluginResumeSeams.resumer = SavesIngestor.shared
 
-        // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
+        // Luna’s pick (claudedocs/save-of-the-week.md): LunaWeekly can't see
         // the ingest pipeline, so the shell hands it the one metadata read the
         // row needs.
         WeeklySaveRefresher.metadataFetcher = WeeklyRowMetadataFetcher()
@@ -519,7 +519,7 @@ private final class DropCardDismisser: UnsupportedSaveCardDelegate {
     }
 }
 
-/// The one metadata read the Save of the Week row needs. `.luna` deliberately —
+/// The one metadata read the Luna’s pick row needs. `.luna` deliberately —
 /// a faceted app must be able to render whichever kind it fetched, and it only
 /// ever fetches its own.
 private struct WeeklyRowMetadataFetcher: WeeklyMetadataFetching {

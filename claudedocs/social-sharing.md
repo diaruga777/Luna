@@ -81,7 +81,7 @@ Local only (`UNUserNotificationCenter`, no APNs/remote push — the old CloudKit
 silent-push wake-up is gone). `NotificationManager.requestAuthorization()` is
 NOT called at launch — a fresh install has nothing to notify about yet. It's
 called at the moment the user opts into one of three features: pasting the
-Save of the Week key (Diagnostics), connecting a sending account (both the
+Luna’s pick key (Diagnostics), connecting a sending account (both the
 app-password and Outlook-OAuth paths), and committing a price alert threshold
 (either price editor); it's idempotent, so those call sites need no state of
 their own. Tapping a "share received" notification just opens the app;

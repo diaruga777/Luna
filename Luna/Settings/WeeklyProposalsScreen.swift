@@ -8,7 +8,7 @@ import LunaModels
 import LunaWeekly
 import UIKit
 
-/// The curator's inbox: everything anyone has proposed as a Save of the Week.
+/// The curator's inbox for proposals for Luna’s pick.
 ///
 /// Reachable only from Settings, and only on a device holding the signing key
 /// (`SettingsViewController` appends the category conditionally). Promoting and

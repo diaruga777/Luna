@@ -4,7 +4,7 @@
 //
 //  Merges WeeklyKeyHolderSurfaceTests, WeeklyPromotionMenuTests,
 //  WeeklyRowHostTests, WeeklySaveRefresherTests, WeeklySaveStoreTests, and
-//  WeeklySigningTests: the whole Save-of-the-Week feature (signing, storage,
+//  WeeklySigningTests: the whole Luna’s pick feature (signing, storage,
 //  refresh, the curator-only surfaces, the promotion menu, and the card-deck
 //  row host).
 //
@@ -18,7 +18,7 @@ import UIKit
 import XCTest
 @testable import Luna
 
-/// Stands in for the util card that holds the Save of the Week slot.
+/// Stands in for the util card that holds the slot for Luna’s pick.
 @MainActor
 final class RecordingWeeklySaveRowHostDelegate: WeeklySaveRowHostDelegate {
     private(set) var chosenURLStrings: [String] = []
@@ -212,7 +212,7 @@ final class WeeklySaveTests: XCTestCase {
             ).contentConfiguration as? UIListContentConfiguration
         }.compactMap(\.text)
         XCTAssertFalse(
-            titles.contains("Save of the Week"),
+            titles.contains("Luna’s pick"),
             "The proposals inbox is for the key-holder only")
     }
 
@@ -292,7 +292,7 @@ final class WeeklySaveTests: XCTestCase {
     func testANonKeyHolderIsOfferedTheProposeVerbAlone() {
         let actions = WeeklyPromotionMenu.actions(
             for: readySave(), presenter: UIViewController(), isKeyHolder: false)
-        XCTAssertEqual(actions.map(\.title), ["Propose Save of the Week"])
+        XCTAssertEqual(actions.map(\.title), ["Suggest for Luna’s pick"])
     }
 
     /// Holding the key ADDS the promote verb; it never takes the propose one
@@ -304,14 +304,14 @@ final class WeeklySaveTests: XCTestCase {
                 for: readySave(), presenter: UIViewController(),
                 isKeyHolder: true, app: .reader
             ).map(\.title),
-            ["Promote to Read of the Week", "Propose Save of the Week"])
+            ["Promote to Luna’s pick", "Suggest for Luna’s pick"])
 
         XCTAssertEqual(
             WeeklyPromotionMenu.actions(
                 for: readySave(), presenter: UIViewController(),
                 isKeyHolder: true, app: .luna
             ).map(\.title),
-            ["Promote to Save of the Week", "Propose Save of the Week"])
+            ["Promote to Luna’s pick", "Suggest for Luna’s pick"])
     }
 
     /// A failed save has nothing behind it to recommend, so no verb at all
@@ -897,9 +897,9 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertNotNil(makeStore().display(for: .article), "entries do not expire")
     }
 
-    func testTeamLabelIsStableForEveryAppAndAge() {
+    func testPickLabelIsStableForEveryAppAndAge() {
         for app in [LunaApp.luna, .reader, .downloader, .priceTracker] {
-            XCTAssertEqual(WeeklySaveLabels.subtitle(for: app), "From the Luna team")
+            XCTAssertEqual(WeeklySaveLabels.subtitle(for: app), "Luna’s pick")
         }
     }
 

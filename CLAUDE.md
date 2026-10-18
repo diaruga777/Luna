@@ -152,7 +152,7 @@ stable Xcode 26.2.
 > attempt opens Luna's own page in Settings, since iOS prompts once. The card names no media symbol: `DownloadStorageChoice.installed`
 > (LunaModels) is the seam and `MediaUtilCardStorageChoice.install()` fills it
 > from the two media `KindWiring`s.
-> Paste remains in both states; the Save of the Week row
+> Paste remains in both states; the Luna’s pick row
 > appears whenever a live signed entry exists (`claudedocs/save-of-the-week.md`).
 > With saves present the first save, not the util card, is the launch selection.
 > **A save from any surface answers the first run**: onboarding stamps its start

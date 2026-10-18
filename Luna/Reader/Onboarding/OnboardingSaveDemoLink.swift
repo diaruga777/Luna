@@ -11,7 +11,7 @@ import LunaWeekly
 /// into it.
 ///
 /// The lesson runs the REAL share surface, which means it needs a REAL link —
-/// and the best one available is this app's live Save of the Week, because it
+/// and the best one available is this app's Luna’s pick, because it
 /// is a genuine page of the kind this app is for, chosen this week, that the
 /// user has not seen. Failing that (no signed entry yet, or the
 /// weekly feature undeployed) the bundled practice link stands in: the extensions
@@ -24,7 +24,7 @@ struct OnboardingSaveDemoLink: Equatable {
     /// What the conversation's bubble reads, what the real share sheet shares,
     /// and what the hosted surface is handed.
     let urlString: String
-    /// True when it came from a live Save of the Week. The only case that reaches
+    /// True when it came from Luna’s pick. The only case that reaches
     /// the network — a practice link never does.
     let isWeeklySave: Bool
     /// True when there is no usable connection at all, so the hosted surface is

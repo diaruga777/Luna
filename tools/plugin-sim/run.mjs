@@ -3,6 +3,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createBridge } from "./bridge.mjs";
@@ -81,8 +82,26 @@ function options(argv) {
   return out;
 }
 
+// Same binary attachment contract as LunaFileReader; plain .js/legacy .luna
+// sources remain usable during local plugin development.
+function decodeSource(data) {
+  const limit = 1024 * 1024;
+  const maxFileBytes = limit + (limit >>> 12) + (limit >>> 14) + (limit >>> 25) + 13 + 10;
+  if (data.length > maxFileBytes) throw new Error("Luna file exceeds 1 MiB");
+  const signature = Buffer.from("894c554e410d0a1a0a", "hex");
+  if (data.subarray(0, signature.length).equals(signature)) {
+    if (data[9] !== 1) throw new Error("Unsupported Luna container version");
+    const payload = data.subarray(10);
+    const { buffer, engine } = inflateSync(payload, { maxOutputLength: limit, info: true });
+    if (engine.bytesWritten !== payload.length) throw new Error("Trailing Luna container data");
+    data = buffer;
+  }
+  if (data.length > limit) throw new Error("Luna source exceeds 1 MiB");
+  return new TextDecoder("utf-8", { fatal: true }).decode(data);
+}
+
 function load(pluginPath, opts) {
-  const source = readFileSync(pluginPath, "utf8");
+  const source = decodeSource(readFileSync(pluginPath));
   const manifest = parseHeader(source);
   const errors = manifestErrors(manifest);
   if (errors.length) return { source, manifest, errors, hooks: null };

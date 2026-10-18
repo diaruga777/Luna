@@ -796,6 +796,18 @@ open class ShareViewController: UIViewController {
     /// append, since the system deletes the source file when the provider
     /// callback returns, so the copy cannot be deferred.
     private func saveDocumentDirectly(sourceURL: URL) {
+        // Some hosts advertise only a file URL, omitting the custom Luna UTI.
+        // Route the family's extensions before generic document import.
+        if LunaApp.current.acceptedFileExtensions.contains(sourceURL.pathExtension.lowercased()) {
+            switch LunaFileReader.readText(at: sourceURL) {
+            case .success(let text):
+                if dispatchLunaFile(text: text, sourceURL: sourceURL) { return }
+                failOrComplete(L10n.string("LunaFile_notALunaFileMessage"))
+            case .failure(let error):
+                failOrComplete(error.message)
+            }
+            return
+        }
         switch SurfaceSupport.evaluateForCurrentProcess(owner: .reader) {
         case .supported:
             SavesStore.shared.addImportedDocument(sourceURL: sourceURL)

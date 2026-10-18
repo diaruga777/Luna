@@ -93,10 +93,8 @@ public enum ShareAttachmentRouter {
     /// a file routes to `.text`, where a link inside it wins over the text
     /// itself.
     public static func route(providerTypes: [[String]]) -> ShareAttachmentRoute {
-        // A Luna file is matched FIRST and by identifier. It conforms to
-        // `public.plain-text`, so every later branch would claim it — the text
-        // branch would hunt for a link in it, the document branch would store
-        // it as a file.
+        // Match the custom data type before generic URL/document routes,
+        // including providers that also advertise a legacy text representation.
         if let match = firstLunaFile(in: providerTypes) {
             return .lunaFile(index: match.index, typeIdentifier: match.identifier)
         }

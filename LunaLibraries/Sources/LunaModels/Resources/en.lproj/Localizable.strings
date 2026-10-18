@@ -983,7 +983,8 @@
 "LunaFileError_kindMismatch_Luna" = "The Luna file's header says %@ but its content is %@.";
 "LunaFileError_bodyNotJSON_Luna" = "The Luna file's content did not read: %@";
 "LunaFileError_fileTooLarge_Luna" = "A Luna file may be at most %lld KB.";
-"LunaFileError_notText_Luna" = "That file is not UTF-8 text, so it is not a Luna file.";
+"LunaFileError_notText_Luna" = "That file does not contain readable Luna source.";
+"LunaFileError_invalidContainer_Luna" = "That Luna file is damaged or uses a newer file format. Ask for a new attachment or update Luna.";
 
 /* ===== PluginImportError — PluginManifestError.swift + PluginStoreError.swift (what the import screen shows when a plugin file is refused), in reading order ===== */
 "PluginImportError_noHeader_Luna" = "This file has no plugin header. A plugin starts with a block comment whose first line is luna-plugin, holding its manifest JSON.";

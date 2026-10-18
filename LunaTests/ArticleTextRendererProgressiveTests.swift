@@ -348,6 +348,64 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
+    func testAnimatedCardExpansionKeepsRetainedLinesAtTheirScreenX() throws {
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        var item = SavedItem(urlString: "https://example.com/stationary-lines")
+        item.state = .ready
+        let reader = ScrollReaderViewController(item: item, content: ArticleContent(
+            title: "Stationary lines", blocks: [paragraph(String(
+                repeating: "These existing rows should never blink sideways as the card expands. ", count: 100))]))
+        let host = UIViewController()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .dark
+        host.view.backgroundColor = .black
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        host.addChild(reader)
+        reader.view.frame = CGRect(x: 26, y: 80, width: 350, height: 600)
+        host.view.addSubview(reader.view)
+        reader.didMove(toParent: host)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+        text.contentOffset.y = 150
+        reader.scrollViewDidScroll(text)
+
+        reader.prepareForCardViewportTransition(
+            to: CGSize(width: 402, height: 600), preservingVisibleLines: true)
+        let lines = text.subviews.compactMap { $0 as? UIImageView }
+        XCTAssertGreaterThan(lines.count, 5)
+        let sourceX = lines.map { $0.convert(.zero, to: window).x }
+        // Commit the source frames before starting the card's transaction.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        let finished = expectation(description: "card expansion")
+        defer { wait(for: [finished], timeout: 2) }
+        UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
+            reader.view.frame = CGRect(x: 0, y: 80, width: 402, height: 600)
+            reader.view.layoutIfNeeded()
+        } completion: { _ in finished.fulfill() }
+
+        for _ in 0..<8 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+            let windowLayer = try XCTUnwrap(window.layer.presentation())
+            for (line, x) in zip(lines, sourceX) {
+                let presentation = try XCTUnwrap(line.layer.presentation())
+                XCTAssertEqual(presentation.convert(.zero, to: windowLayer).x, x, accuracy: 0.5,
+                    "Existing text must stay at its original screen X throughout the animation")
+            }
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        for (line, x) in zip(lines, sourceX) {
+            XCTAssertEqual(line.convert(.zero, to: window).x, x, accuracy: 0.5)
+        }
+        reader.finishCardViewportTransition(completed: true)
+        XCTAssertTrue(lines.allSatisfy { $0.superview == nil }, "Return drawing to live TextKit at the endpoint")
+    }
+
+    @MainActor
     func testInteractiveWidthPreservesLinesWithoutWordSeparators() throws {
         var item = SavedItem(urlString: "https://example.com/stable-cjk")
         item.state = .ready

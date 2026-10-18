@@ -80,7 +80,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private let stableTextContainer = ScrollStableTextContainer(size: .zero)
     private lazy var textView: QuotingTextView = {
         let storage = NSTextStorage()
-        let manager = NSLayoutManager()
+        let manager = ScrollStableLayoutManager()
         storage.addLayoutManager(manager)
         manager.addTextContainer(stableTextContainer)
         stableTextContainer.widthTracksTextView = true
@@ -485,6 +485,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             preservingViewportTransition = true
             return false
         }
+        stableTextContainer.finishLinePresentation(in: textView)
         let horizontal = Self.horizontalTextInset(forViewportWidth: size.width)
         let insets = UIEdgeInsets(top: 20, left: horizontal, bottom: 40, right: horizontal)
         let destinationAdjustedTopInset: CGFloat
@@ -521,6 +522,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func finishCardViewportTransition(completed: Bool) {
         preservingViewportTransition = false
         guard let transition = viewportReflowTransition else {
+            stableTextContainer.finishLinePresentation(in: textView)
             captureResizeAnchor()
             return
         }
@@ -735,6 +737,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 : clampedContentOffsetY(TextViewportReflowTransition.restoredOffset(for: resizeAnchor, in: textView))
             ScrollPresentationState.setSuppressed(false, for: textView)
         }
+        stableTextContainer.layoutPreservedLines(in: textView)
         lastTextViewportWidth = textView.bounds.width
         captureResizeAnchor()
         layoutAnimatedImageViews()
@@ -1466,6 +1469,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 textView.contentOffset.y = clampedContentOffsetY(
                     TextViewportReflowTransition.restoredOffset(for: anchor, in: textView))
                 ScrollPresentationState.setSuppressed(false, for: textView)
+                stableTextContainer.layoutPreservedLines(in: textView)
                 layoutCompletionArea()
                 layoutAnimatedImageViews()
             }

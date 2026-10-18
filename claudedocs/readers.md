@@ -119,7 +119,12 @@ cards also take the unused space above their previews. Restoring chrome returns
 the selected article to the rail or the compact deck. Scroll-driven changes use
 `ScrollStableTextContainer`: visible lines retain their exact character ranges and
 column widths, centered as the card expands and clipped at the trailing edge if
-it contracts.
+it contracts. During the card animation, retained lines draw in temporary line
+views whose frames animate with the card; TextKit's immediate redraw at the final
+fragment origins must not blink the text sideways ahead of the moving viewport.
+The line views replace only those glyphs (including their backgrounds) and return
+drawing to live TextKit at the endpoint, while TextKit continues to own layout,
+selection, links and accessibility throughout.
 Lines entering from either edge use the current width; once a preserved line leaves
 the viewport it can lay out at that width on re-entry. A measured TextKit seam prevents
 new text above the retained passage from consuming its first characters, including
@@ -136,7 +141,8 @@ rounded content viewport expands/contracts, then the final live TextKit layout i
 revealed at the anchored offset. Reduce Motion skips the per-glyph overlay. Tests:
 `ReaderCardViewportPolicyTests`, `CardCarouselExpandedImmersionTests`, and
 `ArticleTextRendererProgressiveTests` (scroll-driven expansion/contraction, re-entry,
-non-space scripts, live resizing and tap-driven glyph reflow).
+non-space scripts, live resizing, tap-driven glyph reflow, and sampled presentation
+positions during animated card expansion).
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout

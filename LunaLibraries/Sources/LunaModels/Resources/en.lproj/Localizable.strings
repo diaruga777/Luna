@@ -1236,7 +1236,7 @@
 "Plugins_review08Settings_Luna" = "Asks you to fill in: %@";
 "Plugins_review09ResultHeader_Luna" = "Test result";
 "Plugins_review10Testing_Luna" = "Testing the plugin…";
-"Plugins_review11Passed_Luna" = "Test passed: readable %@.";
+"Plugins_review11Passed_Luna" = "Test passed · %@";
 "Plugins_review12Loaded_Luna" = "Plugin loaded. It hasn’t been tested on a page.";
 "Plugins_review13Save_Luna" = "Save Plugin";
 "Plugins_review14SaveAnyway_Luna" = "Save Anyway";
@@ -1264,9 +1264,9 @@
 "PluginCapability_crypto_Luna" = "Perform basic encryption and hashing.";
 "PluginCapability_downloads_Luna" = "See the status of your downloads.";
 "PluginCapability_exports_Luna" = "Deliver your queued sends.";
-"PluginCapability_fetch_Luna" = "Download web pages and files on your behalf.";
+"PluginCapability_fetch_Luna" = "Download web pages and files.";
 "PluginCapability_files_Luna" = "Create temporary files while it runs.";
-"PluginCapability_html_Luna" = "Read the structure of a web page it downloads.";
+"PluginCapability_html_Luna" = "Read downloaded web pages.";
 "PluginCapability_mail_Luna" = "Send email from your connected account.";
 "PluginCapability_notifications_Luna" = "Post notifications.";
 "PluginCapability_page_Luna" = "Read the page open in Safari.";

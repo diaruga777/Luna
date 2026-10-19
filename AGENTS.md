@@ -66,6 +66,17 @@ member before activation. Plugin creation is gated by `LunaPremium`; paid access
 is shared in the App Group after StoreKit verification. Free access is strictly
 in memory for the current app launch. See `claudedocs/premium.md`.
 
+## User-facing copy
+
+- Write like a person: short, casual, and clear. Never put prompt instructions,
+  acceptance criteria, implementation plans, or descriptions of the UI into
+  display text. Do not narrate controls or content the user can already see.
+- Omit redundant helper text. Keep explanations only when they help someone
+  decide, recover from an error, understand permissions/privacy, or discover an
+  interaction. Describe the outcome or next step in familiar words.
+- Keep technical details in diagnostics and source comments unless they are
+  needed for the user's task (for example, an Xcode scheme in Luna Code).
+
 ## Agent workflow
 
 - Keep publisher-specific ingestion fixes in the owning JavaScript plugin (and

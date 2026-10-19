@@ -1,6 +1,6 @@
 # Strings — one file, edited anywhere, keyed by name not by wording
 
-Every user-visible string in all four Luna apps lives in one flat text file:
+The shared catalog for Luna and Writer lives in this flat text file:
 
 ```
 LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings
@@ -13,16 +13,30 @@ Each line is
 ```
 
 The **key is a descriptive name, never the English text** — e.g.
-`"Onboarding_Util_headline_Luna"`. `<suffix>` is always one of five values:
-`Luna`, `Core`, `Reader`, `Downloader`, `PriceTracker`. That split is the whole
+`"Onboarding_Util_headline_Luna"`. `<suffix>` is one of:
+`Luna`, `Core`, `Reader`, `Downloader`, `PriceTracker`, `Vault`, or `Writer`. That split is the whole
 point, twice over: copy can be rewritten in any text editor without touching
 Swift, AND an app can get its own wording for a shared string by adding one
 more line — no code change either way.
 
-That is the only file. It reaches every surface two ways: LunaModels' resource
+The catalog reaches its consumers two ways: LunaModels' resource
 bundle (which every app, extension, clip and widget links) and a copy in each
 app's own bundle for the App Intents strings — see
 [Shortcuts and Siri](#shortcuts-and-siri).
+
+## Writing display text
+
+Use short, natural wording. Omit helper text that repeats the title, controls,
+or contents already on screen. Explain only what helps someone decide or act:
+a hidden gesture, permission, privacy detail, consequence, or useful next step.
+Prompt instructions, acceptance criteria, architecture, and implementation rules
+belong in development docs, not in the product.
+
+Keyboard, Music, Vault, Code, the Mac companion, permission prompts, and plugin
+manifests also contain display text outside this catalog. Include those sources
+in a copy audit. Keep protocol values, identifiers, model prompts, and diagnostic
+logs separate from display copy. Use static localization keys so
+`strings_sync.py --check` can verify them.
 
 ## The suffix mechanism
 

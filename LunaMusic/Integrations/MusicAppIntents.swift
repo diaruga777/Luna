@@ -112,15 +112,6 @@ extension Notification.Name {
     }
 }
 
-struct OpenMusicQueueIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Playback Queue"
-    static var openAppWhenRun = true
-    @MainActor func perform() async throws -> some IntentResult {
-        MusicIntentRoute.open(URL(string: "lunamusic://queue")!)
-        return .result()
-    }
-}
-
 struct SearchMusicLibraryIntent: AppIntent {
     static var title: LocalizedStringResource = "Search Music Library"
     static var openAppWhenRun = true
@@ -135,11 +126,10 @@ struct SearchMusicLibraryIntent: AppIntent {
 
 struct LunaMusicShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: ResumeLastPodcastIntent(), phrases: ["Resume my last podcast in \(.applicationName)"], shortTitle: "Resume Last Podcast", systemImageName: "dot.radiowaves.left.and.right")
+        AppShortcut(intent: ResumeLastPodcastIntent(), phrases: ["Resume my podcast queue in \(.applicationName)"], shortTitle: "Resume Podcast Queue", systemImageName: "dot.radiowaves.left.and.right")
         AppShortcut(intent: SwitchMediaQueueIntent(), phrases: ["Switch queues in \(.applicationName)"], shortTitle: "Switch Music and Podcasts", systemImageName: "arrow.triangle.swap")
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
-        AppShortcut(intent: OpenMusicQueueIntent(), phrases: ["Open my queue in \(.applicationName)"], shortTitle: "Playback Queue", systemImageName: "list.bullet")
         AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Music", systemImageName: "pause.fill")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
@@ -148,10 +138,10 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
 
 
 struct ResumeLastPodcastIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Resume Last Podcast"
+    static var title: LocalizedStringResource = "Resume Podcast Queue"
     static var description = IntentDescription("Pick up where you left off, then continue with unplayed episodes from the shows you follow.")
     static var openAppWhenRun = false
-    @Parameter(title: "Override Other Audio", default: false) var overrideOtherAudio: Bool
+    @Parameter(title: "Override Other Audio", default: true) var overrideOtherAudio: Bool
     @MainActor func perform() async throws -> some IntentResult {
         guard overrideOtherAudio || !AVAudioSession.sharedInstance().isOtherAudioPlaying else {
             return .result()

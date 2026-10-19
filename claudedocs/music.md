@@ -331,11 +331,12 @@ Music entitlements include them.
 
 ### Resume and queue switching contract
 
-`ResumeLastPodcastIntent` is an AudioPlaybackIntent with `openAppWhenRun = false`.
-Its Boolean `overrideOtherAudio` parameter defaults to `false`: if
-`AVAudioSession.sharedInstance().isOtherAudioPlaying` is true, it returns without
-installing the playback coordinator or resuming playback. Setting the parameter to
-`true` allows resuming even when other audio is playing.
+`ResumeLastPodcastIntent` appears as **Resume Podcast Queue** and is an
+AudioPlaybackIntent with `openAppWhenRun = false`. Its Boolean `overrideOtherAudio`
+parameter defaults to `true`, allowing resuming even when other audio is playing.
+When explicitly set to `false`, it returns without installing the playback
+coordinator or resuming playback if
+`AVAudioSession.sharedInstance().isOtherAudioPlaying` is true.
 It resumes the actual last-played episode, preserving position across launches and
 regardless of the selected media surface. Preparation alone does not overwrite
 last-played history: AVPlayer must start playing. An empty history does nothing.
@@ -466,7 +467,7 @@ Podcast playback and interaction fixes (2026-10-08):
   selections, and discards late navigation after leaving or changing the search.
 - Automatic show continuation and its settings have been removed. The old model
   fields remain readable for persistence compatibility; only explicit queued
-  episodes advance at natural completion. The Resume Last Podcast intent retains
+  episodes advance at natural completion. The Resume Podcast Queue intent retains
   its separately specified deterministic fallback after natural exhaustion.
 
 Tapping Play on another podcast episode moves the unfinished current episode to
@@ -565,7 +566,7 @@ Natural completion advances the explicit queue before asynchronous download
 reconciliation. Completion notifications are checked against the current item and
 play intent, and duplicate/late events cannot advance twice or autoplay after
 Pause. Seeking/skipping to EOF advances an existing explicit queue while preserving
-paused state; manual completion never grants the Resume Last Podcast intent's
+paused state; manual completion never grants the Resume Podcast Queue intent's
 natural-exhaustion fallback. The final episode can replay with Play. Restoration
 prefers the persisted current item, recovers stale terminal positions into queued
 work while paused, and resolves the actual asset duration on resumed seeks when

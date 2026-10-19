@@ -2,7 +2,7 @@
 
 ## Implemented
 
-- Siri and Shortcuts: Play Library Music resolves songs, albums, artists and playlists through an `EntityStringQuery`. Individual songs use the same playlist continuation rule as the app; playlists and artists shuffle, albums play in album order. Pause, Resume, Next Song, Search Library and Open Playback Queue have App Shortcuts phrases. Entity suggestions return only authorized device-library items; they never prompt from an extension.
+- Siri and Shortcuts: Play Library Music resolves songs, albums, artists and playlists through an `EntityStringQuery`. Individual songs use the same playlist continuation rule as the app; playlists and artists shuffle, albums play in album order. Pause, Resume, Next Song, Search Library and Resume Podcast Queue have App Shortcuts phrases. The overlapping Open Playback Queue intent has been removed. Entity suggestions return only authorized device-library items; they never prompt from an extension.
 - Lock Screen, Control Center media transport, headphones and the system Dynamic Island Now Playing surface belong to `MPMusicPlayerController.applicationQueuePlayer`. Luna does not overwrite `MPNowPlayingInfoCenter` or add duplicate remote command handlers.
 - Luna does not create a separate playback Live Activity. At launch it dismisses queue activities left by older builds, leaving the system media controls as the playback surface.
 - Home Screen small/medium and Lock Screen circular/rectangular widgets open library search or the queue. Home Screen widgets include playback controls. Control Center has Play/Pause and Next Song controls.
@@ -38,10 +38,11 @@ Verified: shared/widget sources and app integration sources typecheck against th
 
 ## Podcast integration (2026-10-08)
 
-`ResumeLastPodcastIntent` resumes the exact last-played podcast; it never redirects
-to generic Now Playing. Its `overrideOtherAudio` Boolean defaults to `false`, so it
-returns without changing playback when `AVAudioSession.isOtherAudioPlaying` reports
-other audio. Setting the parameter to `true` bypasses this check.
+`ResumeLastPodcastIntent`, displayed as **Resume Podcast Queue**, resumes the exact
+last-played podcast; it never redirects to generic Now Playing. Its
+`overrideOtherAudio` Boolean defaults to `true`. Explicitly setting it to `false`
+makes it return without changing playback when `AVAudioSession.isOtherAudioPlaying`
+reports other audio. The intent type retains its identity for existing shortcuts.
 Natural exhaustion of the final queued item alone allows
 the chronological subscription continuation policy documented in `music.md`.
 `SwitchMediaQueueIntent`, the CarPlay switch button and the shared media coordinator

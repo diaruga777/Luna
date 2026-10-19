@@ -9,6 +9,18 @@ import LunaVaultTailscale
 @main final class CodeAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         PremiumAccess.shared.start()
+        CodeNightlyScheduler.shared.register {
+            let connection = try await LunaMacConnection.makeOvernightCodeRuntime()
+            do {
+                let client = CodeClient { try await LunaMacConnection.overnightCodeRequest($0, runtime: connection.runtime) }
+                let runner = CodeNightlyBuilds(catalog: CodeBuildCatalog(defaults: .standard), client: client)
+                try await runner.run(peer: connection.peerID)
+                await connection.runtime.stop()
+            } catch {
+                await connection.runtime.stop()
+                throw error
+            }
+        }
         return true
     }
 

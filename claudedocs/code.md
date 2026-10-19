@@ -61,6 +61,12 @@ from previously opened projects, with one row per runnable iOS app scheme. Alias
 schemes sharing a bundle remain separate and keep independent branch, phone and job settings. The app restores the last selected tab.
 Project history, cached app rows, row options and job IDs are isolated by paired
 Mac and survive relaunch. Opening another project does not clear the build list.
+Rows show scheme, last successful compilation time and the short Git commit hash,
+plus the current job state. Project, branch and phone details remain in row options.
+Compilation history is persisted on both Mac and phone, survives refresh/relaunch,
+and remains visible even if subsequent installation fails. Alias schemes retain
+independent history. Older jobs without metadata display “Not built yet” until a
+new build records its revision.
 Rows remain visible offline; pull to refresh discovers new schemes and devices.
 Discovery publishes apps progressively and excludes test, extension and Mac targets.
 Package schemes without a Build action are skipped. An individual scheme failure
@@ -82,6 +88,40 @@ fails with connection, Developer Mode and Xcode setup guidance.
 
 The row's **•••** menu offers target device, branch, Open in Project,
 persisted build log and cancellation. Row settings are independent of the editor.
+Each row also has an **Overnight** switch, off by default. Enabled schemes request
+one Debug build/install per local calendar day, from 1–6 AM. Charging and an Internet
+connection are not required; the phone checks for local Wi-Fi before each RPC. A `BGProcessingTask` is registered at app launch so a scene is not needed.
+The task submits all due jobs promptly; Luna Mac queues and executes them serially
+without requiring the phone to keep running. Accepted job IDs and daily attempts
+persist on phone, and request IDs persist on Mac to prevent duplicate work after
+lost replies or restarts. Restarting Luna Mac marks interrupted/queued jobs failed;
+they are eligible again the following night. A missing target phone never silently
+selects another device. Update both Luna Code and Luna Mac to use this feature.
+
+Scheduled work uses a separate authenticated connection, with only numeric IPv4
+addresses on the phone’s current Wi-Fi subnet. It checks Wi-Fi before each RPC
+and each dial, and has no discovery, relay, Tailscale or cellular fallback. It
+skips unsupported/routed/IPv6-only networks or stale pairing addresses; reconnect
+with a fresh Mac pairing code if its LAN address changed. Local Network permission
+must already have been granted while the app is open. This does not add a new LAN
+connection mode to the shared connection UI.
+
+Background credentials and identity files are accessible after the first unlock
+following a reboot. Overnight compilation uses a generic iOS destination so a
+locked phone doesn’t block the build. Installation uses `devicectl` and never
+launches the app, requests an unlock or changes lock settings. Apple’s development
+services may refuse installation while locked/unavailable; the job reports that
+failure and retains the successful compilation record. The user must unlock and
+retry in that case. No guaranteed daily execution or guaranteed locked-device
+installation is possible: iOS decides background launch time, may skip nights,
+and may expire runtime. The Mac must remain awake. Turning off a switch cancels
+future submissions; accepted Mac jobs can still be cancelled through the row menu.
+
+Direct LAN access is already available with a pairing code containing the Mac’s
+LAN address. It cannot reliably cover guest/client-isolated Wi-Fi, VLAN boundaries,
+blocked peer traffic or multicast restrictions. No additional general-purpose LAN
+feature was added because those network policies cannot be bypassed by an app.
+
 Quick builds default to committed local **main**. The Mac resolves the selected
 Git ref into an isolated detached checkout, builds there, then removes it. The
 editor's branch, index, unsaved files and iPhone drafts are not changed or saved
@@ -168,8 +208,7 @@ undo and redo remain available. Touch has equivalent editor/accessory actions.
 
 Project Settings uses a grouped form with separate Project and TestFlight sections.
 Empty editor and browser states use system unavailable-content views with direct
-actions. Build rows show project, branch, phone and job state without permanent
-instructional footers; the build screen keeps console output optional. Editor tabs
+actions. Build rows show scheme, compilation date, commit hash and job state; the build screen keeps console output optional. Editor tabs
 retain their views while typing and truncate long filenames in the middle.
 
 ## Compiler investigation and implementation
@@ -209,7 +248,7 @@ file switch and explicit Save). Local Mac applications that bypass file coordina
 can still race the final replacement; v1 does not offer collaborative editing.
 
 Build jobs have IDs, disk logs and persisted status under the companion's Code/Jobs
-state. Only one build/deployment runs at a time; restarting the companion marks
+state. Only one build/deployment executes at a time; accepted overnight jobs queue behind it; restarting the companion marks
 interrupted jobs failed. Commands use argument arrays, never shell interpolation.
 `asc publish testflight` handles build-number allocation, archive, export, upload,
 processing and internal distribution. Credentials remain on Mac using existing
@@ -218,7 +257,7 @@ must already work for the selected project. No private API key is sent to iPhone
 
 ## Verification
 
-- `swift test --package-path LunaCodeKit`: build-cache/option persistence, phone selection,
+- `swift test --package-path LunaCodeKit`: daily overnight windows/DST, default-off switches, complete batch submission without polling, Mac queue draining, companion capability checks, persistent idempotency and compilation history, build-cache/option persistence, phone selection,
   live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
   structured build-event parsing, fragmented/duplicate/oversized records, event-driven progress,
   acknowledged self-install gates, timeouts/cancellation, bundle matching,

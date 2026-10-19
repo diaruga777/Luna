@@ -3,7 +3,10 @@
 <plist version="1.0">
 <dict>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array><string>$(PRODUCT_BUNDLE_IDENTIFIER).remote-build</string></array>
+    <array>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER).remote-build</string>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER).overnight-builds</string>
+    </array>
     <key>UIBackgroundModes</key>
     <array><string>processing</string></array>
 	<key>LunaMacKeychainAccessGroup</key>

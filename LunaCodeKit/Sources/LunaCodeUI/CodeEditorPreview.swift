@@ -90,6 +90,7 @@ private actor PreviewFiles {
             let version = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
             switch request.operation {
             case .devices:
+                response.supportsOvernightBuilds = true
                 response.devices = [CodeDevice(id: "preview-phone", name: "Preview iPhone")]
                 return try JSONEncoder().encode(response)
             case .apps:
@@ -129,6 +130,10 @@ private actor PreviewFiles {
                 }
                 if flags.contains("--build-self-update") {
                     response.job = selfUpdateJob()
+                }
+                if response.job?.state == .succeeded {
+                    response.job?.builtAt = buildStartedAt?.addingTimeInterval(6)
+                    response.job?.commitHash = "abc12345def67890"
                 }
                 return try JSONEncoder().encode(response)
             case .acknowledgeInstall:

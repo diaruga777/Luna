@@ -50,6 +50,8 @@ import LunaCodeCore
             return self.makeCell(app)
         }
         tableView.accessibilityIdentifier = "CodeBuilds"
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 120
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
             guard let self else { return }; self.navigationController?.pushViewController(self.environment.pairing(), animated: true)
         })
@@ -69,12 +71,13 @@ import LunaCodeCore
         if peer != environment.peerID() {
             discovery?.cancel(); loading = false; peer = environment.peerID(); devices = []; scannedProjects = []; jobs = [:]; starting = nil; message = nil
         }
+        CodeNightlyScheduler.shared.schedule(peer: environment.peerID())
         reload()
         if !loading { load(refreshAll: false) }
         Task { await refreshJobs() }
     }
     @objc private func buildChanged() {
-        if let job = environment.builds.job { jobs[job.id] = job }
+        if let job = environment.builds.job { jobs[job.id] = job; catalog.record(job, peer: environment.peerID()) }
         reload()
     }
     @objc private func refresh() { load(refreshAll: true) }
@@ -175,7 +178,10 @@ import LunaCodeCore
     private var footerText: String {
         if let message { return message }
         if starting != nil { return environment.builds.backgroundMessage }
-        return loading ? "Finding Apps…" : ""
+        if loading { return "Finding Apps…" }
+        return apps.contains { $0.nightlyEnabled == true }
+            ? "Overnight builds use your Mac’s local Wi-Fi. iOS chooses when to run them. Installation may need you to unlock your phone."
+            : ""
     }
     private func phone(for app: CodeBuildApp) -> CodeDevice? {
         CodeBuildCatalog.resolveDevice(devices, preferred: app.deviceID ?? catalog.defaultDevice(peer: environment.peerID()), currentName: UIDevice.current.name)
@@ -213,26 +219,37 @@ import LunaCodeCore
         progress.isAccessibilityElement = true
         progress.accessibilityLabel = "Build progress"
         progress.accessibilityIdentifier = "CodeRowProgress:" + app.project.scheme
-        let accessory = UIStackView(arrangedSubviews: [controls, progress]); accessory.axis = .vertical; accessory.spacing = 5
-        accessory.frame = CGRect(x: 0, y: 0, width: 100, height: 50)
+        let nightly = UISwitch()
+        nightly.accessibilityLabel = "Overnight builds for " + app.project.scheme
+        nightly.accessibilityIdentifier = "CodeNightly:" + app.project.scheme
+        nightly.addAction(UIAction { [weak self, weak nightly] _ in
+            guard let self, let nightly, let current = self.displayedApps[app.key] else { return }
+            self.edit(current) { $0.nightlyEnabled = nightly.isOn }
+            CodeNightlyScheduler.shared.schedule(peer: self.environment.peerID())
+        }, for: .valueChanged)
+        let nightlyLabel = UILabel(); nightlyLabel.text = "Overnight"
+        nightlyLabel.font = .preferredFont(forTextStyle: .caption2)
+        nightlyLabel.adjustsFontForContentSizeCategory = true
+        let nightlyControls = UIStackView(arrangedSubviews: [nightlyLabel, nightly]); nightlyControls.spacing = 6; nightlyControls.alignment = .center
+        let accessory = UIStackView(arrangedSubviews: [controls, nightlyControls, progress]); accessory.axis = .vertical; accessory.spacing = 5
+        accessory.frame = CGRect(x: 0, y: 0, width: 118, height: 88)
         cell.accessoryView = accessory
-        cell.accessibilityElements = [cell.textLabel!, cell.detailTextLabel!, play, more, progress]
+        cell.accessibilityElements = [cell.textLabel!, cell.detailTextLabel!, play, more, nightly, progress]
         update(cell, app: app)
         return cell
     }
     private func update(_ cell: UITableViewCell, app: CodeBuildApp) {
-        let target = phone(for: app)?.name ?? "Phone disconnected"
         let job = app.jobID.flatMap { jobs[$0] }
         let busy = starting == app.key || job?.state == .running
         let fraction = starting == app.key ? environment.builds.fraction : (job.map { environment.builds.fraction(for: $0) } ?? 0)
-        let status = starting == app.key ? "Starting… · Keep Luna Code open" : job.map {
-            $0.state == .running ? "\(Int(fraction * 100))% estimated · " + $0.progressStage + ($0.progressDetail.map { "\n" + $0 } ?? "") : $0.state.rawValue.capitalized
-        }
-        let detail = [(app.project.root as NSString).lastPathComponent, app.branch + " · " + target, status].compactMap { $0 }.joined(separator: "\n")
+        let detail = rowDetail(app)
         if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
         guard let accessory = cell.accessoryView as? UIStackView,
               let controls = accessory.arrangedSubviews.first as? UIStackView,
               let play = controls.arrangedSubviews.first as? UIButton else { return }
+        if let nightly = (accessory.arrangedSubviews.dropFirst().first as? UIStackView)?.arrangedSubviews.last as? UISwitch {
+            nightly.isOn = app.nightlyEnabled == true
+        }
         if let progress = accessory.arrangedSubviews.last as? UIProgressView {
             progress.isHidden = !busy; progress.progress = Float(fraction)
             progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
@@ -243,6 +260,31 @@ import LunaCodeCore
             play.configuration = config
         }
         play.isEnabled = starting == nil && !jobs.values.contains { $0.state == .running }
+    }
+    private func rowDetail(_ app: CodeBuildApp) -> String {
+        let job = app.jobID.flatMap { jobs[$0] }
+        let fraction = starting == app.key ? environment.builds.fraction : (job.map { environment.builds.fraction(for: $0) } ?? 0)
+        let status = starting == app.key ? "Starting… · Keep Luna Code open" : job.map {
+            $0.state == .running ? "\(Int(fraction * 100))% estimated · " + $0.progressStage + ($0.progressDetail.map { "\n" + $0 } ?? "") : $0.state.rawValue.capitalized
+        }
+        let history = app.lastBuiltAt.map { "Built " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not built yet"
+        let revision = app.commitHash.map { String($0.prefix(8)) }
+        return [history, revision, status, app.nightlyFailure].compactMap { $0 }.joined(separator: "\n")
+    }
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        guard let key = dataSource.itemIdentifier(for: indexPath), let app = displayedApps[key] else { return 112 }
+        // Native subtitle cells size for their text and ignore tall accessory
+        // stacks. Reserve room for both controls, then expand for Dynamic Type
+        // or multi-line build progress without clipping either side.
+        let width = max(80, tableView.bounds.width - tableView.safeAreaInsets.left - tableView.safeAreaInsets.right - 198)
+        let headline = UIFont.preferredFont(forTextStyle: .headline)
+        let detail = UIFont.preferredFont(forTextStyle: .subheadline)
+        func height(_ text: String, font: UIFont) -> CGFloat {
+            (text as NSString).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font], context: nil).height
+        }
+        let title = min(headline.lineHeight * 2, height(app.project.scheme, font: headline))
+        return max(112, ceil(title + height(rowDetail(app), font: detail)) + 24)
     }
     private func menu(_ app: CodeBuildApp) -> UIMenu {
         let defaults = UIAction(title: "Default Phone", state: app.deviceID == nil ? .on : .off) { [weak self] _ in self?.edit(app) { $0.deviceID = nil } }
@@ -343,6 +385,7 @@ import LunaCodeCore
             if let job = try? await environment.client.call(request).job, peer == environment.peerID() {
                 changed = changed || jobs[id]?.state != job.state
                 jobs[id] = job
+                catalog.record(job, peer: peer)
                 environment.builds.observe(job)
                 if let log = (presentedViewController as? UINavigationController)?.topViewController as? CodeLogController, log.jobID == job.id { log.update(job) }
             }

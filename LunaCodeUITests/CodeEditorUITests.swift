@@ -142,6 +142,34 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String ?? "").contains("keep my draft"))
     }
 
+    func testBuildRowHistoryAndOvernightTogglePersistOffline() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let row = app.cells["CodeBuildApp:Sample"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        let toggle = app.switches["CodeNightly:Sample"]
+        XCTAssertEqual(toggle.value as? String, "0")
+        toggle.tap(); XCTAssertEqual(toggle.value as? String, "1")
+        app.buttons["CodeRun:Sample"].tap()
+        XCTAssertTrue(app.staticTexts["Build Completed"].waitForExistence(timeout: 20))
+        app.buttons["Done"].tap()
+        XCTAssertTrue(row.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "abc12345")).firstMatch.waitForExistence(timeout: 5))
+        let copy = row.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " ")
+        XCTAssertFalse(copy.contains("Preview iPhone")); XCTAssertFalse(copy.contains("main"))
+        attach("Build history and overnight switch", app)
+        app.terminate()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--build-offline"]
+        app.launch()
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(row.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "abc12345")).firstMatch.exists)
+    }
+
     func testBuildsCacheOneTapMainBuildAndLastTabRestoration() {
         continueAfterFailure = false
         let app = XCUIApplication()

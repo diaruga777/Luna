@@ -95,6 +95,7 @@ import LunaCodeCore
         // A late status reply must not resurrect a completed job.
         if job?.id == received.id, job?.state != .running, received.state == .running { return }
         let value = received.estimatingProgress(from: job)
+        CodeBuildCatalog(defaults: defaults).record(value, peer: peer)
         if job?.id != value.id { reportedFraction = 0 }
         job = value; isStarting = false; disconnected = false
         defaults.set(value.id, forKey: "Code.activeJob." + peer)

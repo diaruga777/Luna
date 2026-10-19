@@ -66,6 +66,7 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
         title.accessibilityTraits = .header
         let close = UIButton(type: .system)
         close.setImage(UIImage(systemName: "xmark"), for: .normal)
+        close.tintColor = LunaColors.primaryText
         close.accessibilityLabel = L10n.string("Library_close")
         close.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
         let heading = UIStackView(arrangedSubviews: [title, UIView(), close])

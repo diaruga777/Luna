@@ -332,8 +332,12 @@ Music entitlements include them.
 ### Resume and queue switching contract
 
 `ResumeLastPodcastIntent` is an AudioPlaybackIntent with `openAppWhenRun = false`.
+Its Boolean `overrideOtherAudio` parameter defaults to `false`: if
+`AVAudioSession.sharedInstance().isOtherAudioPlaying` is true, it returns without
+installing the playback coordinator or resuming playback. Setting the parameter to
+`true` allows resuming even when other audio is playing.
 It resumes the actual last-played episode, preserving position across launches and
-regardless of what media is currently active. Preparation alone does not overwrite
+regardless of the selected media surface. Preparation alone does not overwrite
 last-played history: AVPlayer must start playing. An empty history does nothing.
 Starting playback through this intent preserves the explicit Up Next list and its
 order, including when the selected episode is already queued. It does not requeue

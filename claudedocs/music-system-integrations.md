@@ -39,7 +39,10 @@ Verified: shared/widget sources and app integration sources typecheck against th
 ## Podcast integration (2026-10-08)
 
 `ResumeLastPodcastIntent` resumes the exact last-played podcast; it never redirects
-to generic Now Playing. Natural exhaustion of the final queued item alone allows
+to generic Now Playing. Its `overrideOtherAudio` Boolean defaults to `false`, so it
+returns without changing playback when `AVAudioSession.isOtherAudioPlaying` reports
+other audio. Setting the parameter to `true` bypasses this check.
+Natural exhaustion of the final queued item alone allows
 the chronological subscription continuation policy documented in `music.md`.
 `SwitchMediaQueueIntent`, the CarPlay switch button and the shared media coordinator
 preserve independent music/podcast positions. Widget transport/status follows the

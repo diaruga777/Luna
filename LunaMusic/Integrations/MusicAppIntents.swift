@@ -1,5 +1,6 @@
 import LunaMusicCore
 import AppIntents
+import AVFAudio
 import Foundation
 import MediaPlayer
 
@@ -150,7 +151,11 @@ struct ResumeLastPodcastIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Resume Last Podcast"
     static var description = IntentDescription("Pick up where you left off, then continue with unplayed episodes from the shows you follow.")
     static var openAppWhenRun = false
+    @Parameter(title: "Override Other Audio", default: false) var overrideOtherAudio: Bool
     @MainActor func perform() async throws -> some IntentResult {
+        guard overrideOtherAudio || !AVAudioSession.sharedInstance().isOtherAudioPlaying else {
+            return .result()
+        }
         MediaPlaybackCoordinator.shared.install()
         try await PodcastPlaybackController.shared.resumeLastPodcast()
         return .result()

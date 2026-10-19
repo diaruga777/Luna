@@ -175,7 +175,7 @@ private enum VaultUploadNetworkPreference {
                 // remote operation as local-only and instructs the user to
                 // revoke the companion before pairing again.
                 invalidateRuntime()
-                return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
+                return .localOnly(reason: "Forget this connection in Luna Mac on your Mac.")
             },
             tailnet: makeTailnetRunner()
         )

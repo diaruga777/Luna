@@ -224,10 +224,10 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         case 0: return message ?? (connection == .offline ? "Open Luna Mac and check your network." : "Use iCloud Passwords & Keychain to connect your other devices.")
         case 5:
             guard let storage else { return nil }
-            return "Measured \(storage.measuredAt.formatted(date: .omitted, time: .shortened)). Includes Luna’s shared folder and app data on this disk. Other Disk Usage covers everything else. Storage sizes are estimates."
+            return "Updated \(storage.measuredAt.formatted(date: .omitted, time: .shortened)). Storage sizes are estimates."
         case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
-        case 2: return "Search finds file names and text in downloaded files. Rebuild only if results seem incomplete."
-        case 3: return "Choose the formats used when importing from Photos into Vault. Original keeps the library file unchanged."
+        case 2: return "Missing files in search results? Try rebuilding search."
+        case 3: return "Original keeps photos and videos in their existing format."
         default: return nil
         }
     }
@@ -387,7 +387,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         case (3, 0): chooseImageFormat(from: indexPath)
         case (3, 1): chooseVideoFormat(from: indexPath)
         case (4, _):
-            confirm(title: "Disconnect All Luna Apps?", message: "This disconnects Vault, Music and Code on devices using this iCloud Keychain. Files on your Mac stay there. You can reconnect with the pairing code.", action: "Disconnect") { [weak self] in
+            confirm(title: "Disconnect All Luna Apps?", message: "This disconnects Vault, Music, and Code on all devices sharing your iCloud Passwords & Keychain. Files stay on your Mac. You can reconnect with a new pairing code.", action: "Disconnect") { [weak self] in
                 guard let self else { return }
                 run(message: "Disconnecting…") { [runtime] in try await runtime.removePairing(); return "Mac disconnected." }
             }

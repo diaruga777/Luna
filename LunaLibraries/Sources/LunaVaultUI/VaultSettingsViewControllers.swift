@@ -247,7 +247,7 @@ public final class VaultStorageSettingsViewController: UIViewController {
     }
 
     private func renderState() {
-        status.text = policy.location == .mac ? "Mac storage requires a paired, user-owned Mac."
+        status.text = policy.location == .mac ? "Connect your Mac in Settings to store files there."
             : "Files remain on this iPhone."
         status.accessibilityLabel = status.text
     }
@@ -276,11 +276,11 @@ public final class VaultCacheSettingsViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad(); title = "Cache"; view.backgroundColor = .systemBackground
         let text = UILabel()
-        text.text = "Vault cache is local working data protected by iOS Data Protection. Pinned files are kept until you change their policy."
+        text.text = "Free up space by removing downloaded copies. Pinned files are kept."
         text.numberOfLines = 0
-        button.setTitle("Clear unpinned cache", for: .normal)
+        button.setTitle("Remove Unpinned Downloads", for: .normal)
         button.accessibilityIdentifier = "vault.cache.clear"
-        button.accessibilityLabel = "Clear unpinned Vault cache"
+        button.accessibilityLabel = "Remove unpinned Vault downloads"
         button.addTarget(self, action: #selector(clearCache), for: .touchUpInside)
         status.numberOfLines = 0; status.textColor = .secondaryLabel
         status.accessibilityIdentifier = "vault.cache.status"
@@ -289,11 +289,11 @@ public final class VaultCacheSettingsViewController: UIViewController {
 
     @objc private func clearCache() {
         guard let onClearCache else { status.text = "Cache clearing is unavailable."; return }
-        button.isEnabled = false; status.text = "Clearing unpinned cache…"
+        button.isEnabled = false; status.text = "Removing downloads…"
         Task { [weak self] in
             do {
                 try await onClearCache()
-                await MainActor.run { self?.status.text = "Unpinned cache cleared." }
+                await MainActor.run { self?.status.text = "Downloads removed. Pinned files were kept." }
             } catch {
                 await MainActor.run { self?.status.text = "Cache could not be cleared: \(error)." }
             }
@@ -318,9 +318,9 @@ public final class VaultIndexSettingsViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad(); title = "Search index"; view.backgroundColor = .systemBackground
         let text = UILabel()
-        text.text = "Search is on-device. Filename, extracted text, OCR and transcripts stay in the local protected Vault index."
+        text.text = "Search stays on this device. Rebuild it if files seem to be missing from results."
         text.numberOfLines = 0
-        button.setTitle("Rebuild index", for: .normal)
+        button.setTitle("Rebuild Search", for: .normal)
         button.accessibilityIdentifier = "vault.index.rebuild"
         button.accessibilityLabel = "Rebuild Vault search index"
         button.addTarget(self, action: #selector(rebuildIndex), for: .touchUpInside)
@@ -331,11 +331,11 @@ public final class VaultIndexSettingsViewController: UIViewController {
 
     @objc private func rebuildIndex() {
         guard let onRebuildIndex else { status.text = "Index rebuilding is unavailable."; return }
-        button.isEnabled = false; status.text = "Rebuilding the local index…"
+        button.isEnabled = false; status.text = "Rebuilding search…"
         Task { [weak self] in
             do {
                 try await onRebuildIndex()
-                await MainActor.run { self?.status.text = "Index rebuilt." }
+                await MainActor.run { self?.status.text = "Search is ready." }
             } catch {
                 await MainActor.run { self?.status.text = "Index rebuild failed: \(error)." }
             }
@@ -368,7 +368,7 @@ public final class VaultUploadSettingsViewController: UIViewController {
         heading.numberOfLines = 0
 
         let explanation = UILabel()
-        explanation.text = "Queued uploads wait for Wi-Fi when this is on. Downloads and other sync work can still use cellular."
+        explanation.text = "Downloads and other syncing can still use mobile data."
         explanation.font = .preferredFont(forTextStyle: .body)
         explanation.textColor = .secondaryLabel
         explanation.numberOfLines = 0
@@ -395,7 +395,7 @@ public final class VaultSecuritySettingsViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad(); title = "Security"; view.backgroundColor = .systemBackground
         let text = UILabel()
-        text.text = "The Vault root key is created once during first-run setup and loaded from Keychain thereafter. The Share extension never receives the root key."
+        text.text = "Your files are encrypted with a key stored securely on this device."
         text.numberOfLines = 0
         let stack = settingsStack([text]); view.addSubview(stack); pin(stack)
     }
@@ -510,35 +510,35 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
         capsuleField.layer.borderWidth = 1; capsuleField.layer.cornerRadius = 8
         capsuleField.heightAnchor.constraint(equalToConstant: 110).isActive = true
         capsuleField.accessibilityIdentifier = "vault.mac.capsule"
-        capsuleField.accessibilityLabel = "Pairing capsule JSON or base64"
+        capsuleField.accessibilityLabel = "Mac pairing code"
         configure(pairingIDField, label: "Pairing ID", id: "vault.mac.pairing-id")
         configure(endpointField, label: "Endpoint", id: "vault.mac.endpoint")
         configure(serverBindingField, label: "Server binding, base64", id: "vault.mac.server-binding")
         configure(nonceField, label: "Offer nonce, base64", id: "vault.mac.nonce")
         configure(expiryField, label: "Expiry, ISO 8601", id: "vault.mac.expiry")
         configure(codeField, label: "One-time code, base64", id: "vault.mac.code")
-        prepareButton.setTitle("Confirm fingerprint and prepare enrollment", for: .normal)
+        prepareButton.setTitle("Confirm Mac and Continue", for: .normal)
         prepareButton.addTarget(self, action: #selector(preparePairingTapped), for: .touchUpInside)
         prepareButton.accessibilityIdentifier = "vault.mac.prepare"
-        prepareButton.accessibilityLabel = "Confirm Mac fingerprint and prepare enrollment"
-        unpairButton.setTitle("Revoke and unpair this Mac", for: .normal)
+        prepareButton.accessibilityLabel = "Confirm Mac and continue pairing"
+        unpairButton.setTitle("Disconnect This Mac", for: .normal)
         unpairButton.setTitleColor(.systemRed, for: .normal)
         unpairButton.addTarget(self, action: #selector(unpair), for: .touchUpInside)
         unpairButton.accessibilityIdentifier = "vault.mac.unpair"
-        unpairButton.accessibilityLabel = "Revoke and unpair this Mac"
+        unpairButton.accessibilityLabel = "Disconnect This Mac"
         configureEnrollmentOutput()
         status.numberOfLines = 0; status.textColor = .secondaryLabel
         status.accessibilityIdentifier = "vault.mac.status"
-        let heading = UILabel(); heading.text = "Pair a user-owned Mac"
+        let heading = UILabel(); heading.text = "Connect Your Mac"
         heading.font = .preferredFont(forTextStyle: .headline)
         let instructions = UILabel()
-        instructions.text = "Paste the Mac's capsule, or enter every offer field exactly. Compare the fingerprint on both devices. Enrollment is exchanged out of band by file, copy, or share; Vault never sends it to an unauthenticated listener."
+        instructions.text = "Paste the pairing code from your Mac, or enter its details below. Check that the fingerprints match on both devices. Send the reply back to your Mac using Copy or Share to finish pairing."
         instructions.numberOfLines = 0; instructions.textColor = .secondaryLabel
         configureTailnetSection()
         let stack = UIStackView(arrangedSubviews: [
             tailnetHeading, tailnetInstructions, tailnetStatus,
             connectTailnetButton, disconnectTailnetButton,
-            heading, instructions, fieldLabel("Pairing capsule (JSON or base64)"), capsuleField,
+            heading, instructions, fieldLabel("Mac Pairing Code"), capsuleField,
             labeledField("Pairing ID", pairingIDField), labeledField("Endpoint", endpointField),
             labeledField("Server binding (base64)", serverBindingField),
             labeledField("Offer nonce (base64)", nonceField),
@@ -567,9 +567,9 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
     }
 
     private func configureTailnetSection() {
-        tailnetHeading.text = "Tailscale routing"
+        tailnetHeading.text = "Tailscale"
         tailnetHeading.font = .preferredFont(forTextStyle: .headline)
-        tailnetInstructions.text = "Vault reaches the Mac companion over its own embedded Tailscale connection. Connect once with your Tailscale account; pairing below stays separate and still authenticates the Mac."
+        tailnetInstructions.text = "Sign in to Tailscale to reach your Mac away from home. You’ll also need to pair your Mac below."
         tailnetInstructions.numberOfLines = 0
         tailnetInstructions.textColor = .secondaryLabel
         tailnetStatus.numberOfLines = 0
@@ -615,7 +615,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
             connectTailnetButton.isHidden = true
             disconnectTailnetButton.isHidden = false
         default:
-            tailnetStatus.text = "Not connected. Tailscale endpoints stay unreachable until you connect."
+            tailnetStatus.text = "Connect to Tailscale to reach your Mac through it."
             connectTailnetButton.isHidden = false
             connectTailnetButton.isEnabled = true
             disconnectTailnetButton.isHidden = true
@@ -653,7 +653,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
             present(browser, animated: true)
         case .loginFinished:
             tailnetLoginBrowser?.dismiss(animated: true)
-            tailnetStatus.text = "Login accepted. Waiting for the tailnet…"
+            tailnetStatus.text = "Signed in. Connecting…"
         case .running(let summary):
             tailnetLoginBrowser?.dismiss(animated: true)
             renderTailnet(summary)
@@ -704,7 +704,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
         enrollmentOutput.layer.cornerRadius = 8
         enrollmentOutput.heightAnchor.constraint(equalToConstant: 120).isActive = true
         enrollmentOutput.accessibilityIdentifier = "vault.mac.enrollment-output"
-        enrollmentOutput.accessibilityLabel = "Prepared enrollment JSON"
+        enrollmentOutput.accessibilityLabel = "Pairing reply"
         enrollmentOutput.isHidden = true
         outputButtons.axis = .horizontal; outputButtons.distribution = .fillEqually
         outputButtons.spacing = 8; outputButtons.isHidden = true
@@ -730,20 +730,20 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
                         self.onEnrollmentPrepared?(result.enrollment)
                         self.onCredentialSaved?(result.credential)
                         self.showEnrollment(result.enrollment)
-                        self.status.text = "Enrollment prepared and the credential was saved. Exchange it with the Mac out of band, then keep fingerprint \(result.credential.fingerprint)."
+                        self.status.text = "Send the pairing reply to your Mac to finish. Mac fingerprint: \(result.credential.fingerprint)."
                     }
                 } catch { await MainActor.run { self.status.text = "Pairing was not completed: \(error)." } }
                 await MainActor.run { self.prepareButton.isEnabled = true }
             }
         } catch {
-            status.text = "Invalid pairing capsule or offer. Check the pairing ID, endpoint, 32-byte base64 values, and ISO 8601 expiry."
+            status.text = "This pairing code isn’t valid. Copy a fresh code from your Mac and try again."
         }
     }
 
     @objc private func copyEnrollment() {
         guard let enrollmentData, let text = String(data: enrollmentData, encoding: .utf8) else { return }
         UIPasteboard.general.string = text
-        status.text = "Prepared enrollment copied. Treat it as one-use setup material."
+        status.text = "Pairing reply copied. Paste it on your Mac to finish connecting. This reply can only be used once."
     }
 
     @objc private func shareEnrollment() {
@@ -763,7 +763,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
             let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
             picker.delegate = self
             present(picker, animated: true)
-        } catch { status.text = "Prepared enrollment could not be exported: \(error)." }
+        } catch { status.text = "Couldn’t share the pairing reply: \(error)." }
     }
 
     /// Both picker outcomes (exported or cancelled) must remove the
@@ -785,9 +785,9 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
     }
 
     @objc private func unpair() {
-        guard let credential else { status.text = "No paired Mac credential is stored."; return }
+        guard let credential else { status.text = "No Mac connected."; return }
         unpairButton.isEnabled = false
-        status.text = "Attempting remote revocation before removing the local credential…"
+        status.text = "Disconnecting this Mac…"
         Task { [weak self] in
             guard let self else { return }
             let revoked = (try? credential.revoked(now: Date())) ?? credential
@@ -799,16 +799,16 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
                     self.credential = nil; self.unpairButton.isEnabled = true
                     switch outcome {
                     case .revokedRemotely:
-                        self.status.text = "The Mac acknowledged revocation and the local credential was removed."
+                        self.status.text = "Mac disconnected."
                     case .localOnly(let reason):
-                        self.status.text = "The local credential was removed, but the Mac could not be revoked remotely. \(reason) Revoke it on the Mac before pairing again."
+                        self.status.text = "Disconnected on this device, but couldn’t remove access on your Mac. \(reason) Forget this connection in Luna Mac before pairing again."
                     }
                     self.onUnpaired?(outcome)
                 }
             } catch {
                 await MainActor.run {
                     self.unpairButton.isEnabled = true
-                    self.status.text = "The local credential could not be removed: \(error)."
+                    self.status.text = "Couldn’t disconnect this Mac: \(error)."
                 }
             }
         }
@@ -850,7 +850,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
     private func showEnrollment(_ enrollment: VaultMacPairingEnrollment) {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(enrollment) else {
-            status.text = "Enrollment was prepared but could not be displayed."; return
+            status.text = "Couldn’t show the pairing reply. Try again."; return
         }
         enrollmentData = data; enrollmentOutput.text = String(data: data, encoding: .utf8)
         enrollmentOutput.isHidden = false; outputButtons.isHidden = false
@@ -875,7 +875,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
 
     private func actionButton(_ title: String, id: String, action: Selector) -> UIButton {
         let button = UIButton(type: .system); button.setTitle(title, for: .normal)
-        button.accessibilityIdentifier = id; button.accessibilityLabel = "\(title) prepared enrollment"
+        button.accessibilityIdentifier = id; button.accessibilityLabel = "\(title) pairing reply"
         button.addTarget(self, action: action, for: .touchUpInside); return button
     }
 }
@@ -896,7 +896,7 @@ private final class VaultMacUIIdentityConfirmer: VaultMacServerIdentityConfirmin
                 guard topmost.presentedViewController == nil else { continuation.resume(returning: nil); return }
                 let resume = VaultSettingsOneShotResume(continuation)
                 let alert = VaultSettingsConfirmAlertController(title: "Confirm your Mac",
-                    message: "Compare this fingerprint on both devices:\n\n\(fingerprint)\n\nEndpoint: \(endpointBinding)\n\nThis is an out-of-band confirmation.",
+                    message: "Compare this fingerprint on both devices:\n\n\(fingerprint)\n\nEndpoint: \(endpointBinding)",
                     preferredStyle: .alert)
                 // A dismissal with neither button tapped — the presenting
                 // screen disappearing out from under the alert — must still

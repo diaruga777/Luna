@@ -35,7 +35,7 @@ public enum VaultPhotoSelectionError: LocalizedError {
         switch self {
         case .accessDenied: return "Photos access is required to select photos and videos."
         case .noAssetIdentifier: return "The selected photo could not be identified."
-        case .assetUnavailable(let id): return "The selected photo is no longer available (\(id))."
+        case .assetUnavailable: return "This photo is no longer in your library."
         case .exportFailed(let reason): return "The selected photo could not be exported: \(reason)"
         case .cancelled: return "Photo selection was cancelled."
         }

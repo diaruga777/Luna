@@ -50,7 +50,7 @@ public enum LunaMacCredentialError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .keychain: return "Luna couldn’t access the shared Mac connection. Unlock this device and try again."
-        case .missingAccessGroup: return "This build is missing its shared Mac Keychain configuration."
+        case .missingAccessGroup: return "This version of Luna can’t share your Mac connection. Try updating the app."
         case .invalid: return "The shared Mac connection could not be read. Try connecting again."
         case .unverified: return "Approve the connection on your Mac before sharing it."
         case .changedIdentity: return "A Mac connection arrived from iCloud. Reopen the connection screen to use it."

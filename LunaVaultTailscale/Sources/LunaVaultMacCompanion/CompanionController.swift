@@ -128,7 +128,7 @@ final class CompanionController: @unchecked Sendable {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
                     alert.messageText = "Connect your Luna apps to this Mac?"
-                    alert.informativeText = "\(hello.deviceName) can read files throughout this Mac, subject to macOS permissions. Vault syncs \(folder.path). Luna Code can save text files and run Xcode builds and TestFlight deployments using this Mac’s configured account.\n\nDevices with the same iCloud Passwords & Keychain will share this authorization. A different account cannot connect until you forget this connection here.\n\nIdentity: \(accepted.device.description)"
+                    alert.informativeText = "Allow \(hello.deviceName) to browse files this Mac permits Luna to access. Vault will sync \(folder.path). Luna Code can edit text files, build apps, and upload to TestFlight with the account set up on this Mac.\n\nThis access is shared with devices using the same iCloud Passwords & Keychain. To connect a different account, forget this connection first.\n\nDevice ID: \(accepted.device.description)"
                     alert.addButton(withTitle: "Accept"); alert.addButton(withTitle: "Reject")
                     return alert.runModal() == .alertFirstButtonReturn
                 }

@@ -17,7 +17,7 @@ final class VaultShareViewController: UIViewController {
         var content = UIContentUnavailableConfiguration.empty()
         content.image = UIImage(systemName: "externaldrive.badge.plus")
         content.text = "Add to Luna Vault"
-        content.secondaryText = "Files are copied into Vault's queue, then synced to your paired Mac when Vault runs."
+        content.secondaryText = "Add files now. Vault will send them to your Mac when it connects."
         content.button = .filled()
         content.button.title = "Add Files"
         content.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.save() }
@@ -34,7 +34,7 @@ final class VaultShareViewController: UIViewController {
         saving = true
         var loading = UIContentUnavailableConfiguration.loading()
         loading.text = "Copying to Vault"
-        loading.secondaryText = "Keep this sheet open until the files are queued."
+        loading.secondaryText = "Keep this sheet open while your files are added."
         contentUnavailableConfiguration = loading
         let providers = (extensionContext?.inputItems as? [NSExtensionItem])?.flatMap { $0.attachments ?? [] } ?? []
         Task {
@@ -49,8 +49,8 @@ final class VaultShareViewController: UIViewController {
                 let started = submitTransferRequest()
                 var done = UIContentUnavailableConfiguration.empty()
                 done.image = UIImage(systemName: "checkmark.circle.fill")
-                done.text = count == 1 ? "File queued" : "\(count) files queued"
-                done.secondaryText = started ? "Vault is syncing these files to your Mac in the background." : "Open Luna Vault to resume syncing to your Mac."
+                done.text = count == 1 ? "File added" : "\(count) files added"
+                done.secondaryText = started ? "Sending your files to your Mac." : "Open Luna Vault to resume syncing to your Mac."
                 done.button = .filled()
                 done.button.title = "Done"
                 done.buttonProperties.primaryAction = UIAction { [weak self] _ in
@@ -61,9 +61,9 @@ final class VaultShareViewController: UIViewController {
                 if count > 0 { _ = submitTransferRequest() }
                 var failed = UIContentUnavailableConfiguration.empty()
                 failed.image = UIImage(systemName: "exclamationmark.triangle")
-                failed.text = count > 0 ? "\(count) files queued" : "Couldn’t queue files"
+                failed.text = count > 0 ? "\(count) files added" : "Couldn’t add files"
                 failed.secondaryText = count > 0
-                    ? "One item couldn’t be copied: \(error.localizedDescription) The queued files will still sync."
+                    ? "One item couldn’t be copied: \(error.localizedDescription) Your other files will still be sent."
                     : error.localizedDescription
                 failed.button = .filled()
                 failed.button.title = "Done"

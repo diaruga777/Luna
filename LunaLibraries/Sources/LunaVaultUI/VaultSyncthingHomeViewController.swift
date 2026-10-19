@@ -206,7 +206,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         } else if needsSetup {
             empty.image = UIImage(systemName: "laptopcomputer.and.iphone")
             empty.text = "Your files. With you."
-            empty.secondaryText = "Connect your Mac to browse and search your files here. Download what you need, when you need it."
+            empty.secondaryText = "Connect your Mac to get started."
             if #available(iOS 26.0, *) { empty.button = .prominentGlass() }
             else { empty.button = .filled() }
             empty.button.title = "Connect Mac"
@@ -425,7 +425,7 @@ public final class VaultBrowseViewController: UITableViewController {
                 items = loaded; sortItems()
                 if loaded.isEmpty {
                     showEmpty(title: downloadsOnly ? "No Downloads Yet" : "This Folder Is Empty",
-                        message: downloadsOnly ? "Open a file while connected to your Mac to keep a copy here. Downloads can be removed to free space." : "Files added on your Mac will appear here after syncing.", error: false)
+                        message: downloadsOnly ? "Open a file while connected to your Mac to keep it for offline use." : "Files added on your Mac will appear here after syncing.", error: false)
                 }
                 else { emptyStateConfiguration = nil }
             case .failure:

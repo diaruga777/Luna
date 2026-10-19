@@ -266,8 +266,8 @@ public final class VaultRootViewController: UIViewController {
 
     private func configureSetupPanel() {
         styleOverlayPanel(setupPanel, identifier: VaultAccessibilityID.setup)
-        let heading = labeledText("Set up your encrypted Vault", style: .headline)
-        let detail = labeledText("Choose where the encrypted working copy lives. You can change this later in Settings.", style: .body)
+        let heading = labeledText("Set up your Vault", style: .headline)
+        let detail = labeledText("Choose where to keep your files. You can change this later.", style: .body)
         detail.textColor = .secondaryLabel
         policyControl.accessibilityLabel = "Vault storage location"
         policyControl.accessibilityIdentifier = VaultAccessibilityID.setupPolicy
@@ -364,7 +364,7 @@ public final class VaultRootViewController: UIViewController {
 
     @objc private func confirmReset() {
         let alert = UIAlertController(title: "Reset Vault setup?",
-            message: "This removes this device's Vault setup and root key. Existing encrypted files may become inaccessible.",
+            message: "This resets Vault on this device and removes its encryption key. You may lose access to existing files.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Reset", style: .destructive) { [weak self] _ in
@@ -443,7 +443,7 @@ public final class VaultRootViewController: UIViewController {
             hideContentStatus()
             return true
         } catch {
-            showContentStatus("The Vault index could not be opened. Check available storage, then try again.") { [weak self] in
+            showContentStatus("Couldn’t open your library. Check your available storage, then try again.") { [weak self] in
                 self?.searchFacade = nil
                 self?.updateReadyContent()
             }
@@ -477,7 +477,7 @@ public final class VaultRootViewController: UIViewController {
             case .success(let recents):
                 self.renderRecents(recents)
             case .failure:
-                self.showContentStatus("The Vault index could not be read. Try opening it again.") { [weak self] in
+                self.showContentStatus("Couldn’t load your library. Try opening Vault again.") { [weak self] in
                     self?.searchFacade = nil
                     self?.updateReadyContent()
                 }
@@ -594,7 +594,7 @@ public final class VaultRootViewController: UIViewController {
     private func showGroupsUnavailable() {
         removeArrangedSubviews(from: groupsStack)
         groupsStack.addArrangedSubview(emptyLabel("Groups are unavailable."))
-        showContentStatus("Groups could not be loaded. Try reopening the index.", origin: .groups) { [weak self] in
+        showContentStatus("Couldn’t load your groups. Try opening Vault again.", origin: .groups) { [weak self] in
             self?.searchFacade = nil
             self?.updateReadyContent()
         }
@@ -602,7 +602,7 @@ public final class VaultRootViewController: UIViewController {
 
     private func renderResults(_ hits: [VaultSearchHit]) {
         removeArrangedSubviews(from: resultsStack)
-        if hits.isEmpty { resultsStack.addArrangedSubview(emptyLabel("Search by name or extracted text")); return }
+        if hits.isEmpty { resultsStack.addArrangedSubview(emptyLabel("Search file names or contents")); return }
         for hit in hits {
             let row = UIStackView()
             row.axis = .vertical
@@ -614,9 +614,6 @@ public final class VaultRootViewController: UIViewController {
             let title = labeledText(hit.filename, style: .headline)
             let detail = labeledText(hit.snippet, style: .body)
             detail.textColor = .secondaryLabel
-            let provenance = hit.isSymbolicAlias ? "Group alias · " : ""
-            let fields = labeledText(provenance + hit.matchedFields.joined(separator: ", "), style: .caption1)
-            fields.textColor = .tertiaryLabel
             let open = UIButton(type: .system)
             open.setTitle("Open", for: .normal)
             open.contentHorizontalAlignment = .leading
@@ -629,7 +626,7 @@ public final class VaultRootViewController: UIViewController {
             add.accessibilityIdentifier = "vault.result.add-to-group.\(hit.canonicalObjectID.rawValue.uuidString)"
             add.accessibilityLabel = "Add \(hit.filename) to a group"
             add.addAction(UIAction { [weak self] _ in self?.showAddToGroup(for: hit.canonicalObjectID) }, for: .touchUpInside)
-            [title, detail, fields, open, add].forEach(row.addArrangedSubview)
+            [title, detail, open, add].forEach(row.addArrangedSubview)
             row.accessibilityIdentifier = "vault.result.\(hit.canonicalObjectID.rawValue.uuidString)"
             resultsStack.addArrangedSubview(row)
         }
@@ -637,12 +634,12 @@ public final class VaultRootViewController: UIViewController {
 
     private func showGroup(_ group: VaultGroup) {
         showInfo(title: group.label,
-            message: "\(group.memberIDs.count) files · \(group.frozen ? "Manual" : "Semantic") group")
+            message: "\(group.memberIDs.count) files · \(group.frozen ? "Manually grouped" : "Grouped by similarity")")
     }
 
     private func showQueryGroup(_ group: VaultQueryGroup) {
         showInfo(title: group.query,
-            message: "\(group.memberIDs.count) files · \(group.live ? "Live" : "Snapshot") query group")
+            message: "\(group.memberIDs.count) files · \(group.live ? "Updates automatically" : "Saved search results")")
     }
 
     private func showInfo(title: String, message: String) {
@@ -665,7 +662,7 @@ public final class VaultRootViewController: UIViewController {
     private func showAddToGroup(for objectID: VaultObjectID) {
         do {
             guard let groups = try searchFacade?.index.groups(), !groups.isEmpty else {
-                showContentStatus("Create a semantic or manual group before adding files.")
+                showContentStatus("Create a group first, then add your files.")
                 return
             }
             let sheet = UIAlertController(title: "Add to group", message: nil, preferredStyle: .actionSheet)
@@ -678,7 +675,7 @@ public final class VaultRootViewController: UIViewController {
             configurePopover(sheet)
             present(sheet, animated: true)
         } catch {
-            showContentStatus("Groups could not be loaded. Try reopening the index.") { [weak self] in
+            showContentStatus("Couldn’t load your groups. Try opening Vault again.") { [weak self] in
                 self?.searchFacade = nil; self?.updateReadyContent()
             }
         }
@@ -686,7 +683,7 @@ public final class VaultRootViewController: UIViewController {
 
     private func promptForQueryGroup() {
         let alert = UIAlertController(title: "New query group",
-            message: "Files matching this query are saved as the group's initial membership.", preferredStyle: .alert)
+            message: "Start a group with the files matching this search.", preferredStyle: .alert)
         alert.addTextField { field in
             field.placeholder = "Search query"
             field.accessibilityIdentifier = "vault.group.query"
@@ -737,7 +734,7 @@ public final class VaultRootViewController: UIViewController {
             else { _ = try index.addManualMembership(objectID: objectID, toGroup: groupID, modelVersion: modelVersion) }
             renderGroups()
         } catch {
-            showContentStatus("This file could not be added. Its active index model is unavailable; rebuild the index and try again.")
+            showContentStatus("Couldn’t add this file. Rebuild search in Settings, then try again.")
         }
     }
 
@@ -794,7 +791,7 @@ public final class VaultRootViewController: UIViewController {
 
     private func setupMessage(_ reason: VaultSetupUnavailableReason) -> String {
         switch reason {
-        case .keychainUnavailable: return "Vault Keychain access is unavailable. Unlock this iPhone and try again."
+        case .keychainUnavailable: return "Unlock this iPhone and try opening Vault again."
         case .storageUnavailable: return "Vault storage is unavailable. Check device storage and try again."
         case .iCloudUnavailable: return "Vault storage is unavailable. Check device storage and try again."
         case .macNotPaired: return "Your Mac is not paired. Pair it in Settings, then try again."

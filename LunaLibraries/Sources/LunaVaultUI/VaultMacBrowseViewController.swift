@@ -110,7 +110,7 @@ public final class VaultMacBrowseViewController: UITableViewController {
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { path ?? "Locations on your Mac" }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Read only · Open a file to download and preview it. Use Share to save a copy. Search and uploads are available in the Vault folder."
+        "Files here are read-only. To upload or search, use your Vault folder."
     }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         emptyStateConfiguration != nil ? 1 : entries.count + (nextOffset == nil ? 0 : 1)

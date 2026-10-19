@@ -59,7 +59,8 @@ public final class VaultTransfersViewController: UITableViewController {
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { items.isEmpty ? nil : "To Vault on your Mac" }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        items.isEmpty && queued == 0 ? nil : connected ? "Uploads finish when your Mac confirms they are saved." : "Waiting for your Mac. Queued files will resume when it reconnects."
+        guard !connected, !items.isEmpty || queued > 0 else { return nil }
+        return "Waiting for your Mac. Files will resume uploading when it reconnects."
     }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         errorMessage != nil ? 1 : max(1, items.count + (queued > 0 ? 1 : 0))
@@ -70,7 +71,7 @@ public final class VaultTransfersViewController: UITableViewController {
             if loaded {
                 empty.image = UIImage(systemName: errorMessage == nil ? "checkmark.circle" : "exclamationmark.arrow.triangle.2.circlepath")
                 empty.text = errorMessage == nil ? "No Transfers" : "Couldn’t Load Transfers"
-                empty.secondaryText = errorMessage ?? "Files you add will appear here while they upload to your Mac’s Vault folder."
+                empty.secondaryText = errorMessage ?? "No transfers waiting."
             }
             return vaultEmptyCell(configuration: empty, minimumHeight: 340)
         }
@@ -92,7 +93,7 @@ public final class VaultTransfersViewController: UITableViewController {
     private func cancel(_ item: VaultPendingUpload) {
         guard !item.isDeleting else { return }
         let alert = UIAlertController(title: "Cancel \((item.name as NSString).lastPathComponent)?",
-            message: "Vault will stop this transfer and delete its local copy. If the Mac already saved it, Vault will remove that copy too.", preferredStyle: .alert)
+            message: "This deletes the file from this iPhone and, if it’s already arrived, from your Mac too.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Keep", style: .cancel))
         alert.addAction(UIAlertAction(title: "Cancel and Delete", style: .destructive) { [weak self, runtime] _ in
             Task {

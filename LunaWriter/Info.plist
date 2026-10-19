@@ -55,9 +55,9 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Luna Writer uses the front camera to follow where you are reading, so a spoken comment lands on the passage you were looking at. Nothing is recorded or stored.</string>
+	<string>Luna Writer uses the front camera to attach spoken comments to the passage you’re reading. Camera images aren’t recorded or stored.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Luna Writer listens while you read aloud so a spoken remark becomes a highlight or a note on that passage. Speech is transcribed on this device.</string>
+	<string>Luna Writer turns your spoken comments into highlights and notes. Speech is transcribed on this device.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Luna Writer transcribes what you say on this device to turn it into highlights and notes.</string>
 	<key>CFBundleURLTypes</key>

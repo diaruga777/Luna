@@ -30,7 +30,7 @@ final class PluginDraftValidatorTests: XCTestCase {
             sourceText: source(classify: "false", ingest: "null"),
             recoveryCase: recoveryCase())
         XCTAssertFalse(report.passed)
-        XCTAssertTrue(report.errors.joined().contains("declined"))
+        XCTAssertTrue(report.errors.joined().contains("didn’t recognize this page"))
     }
 
     func testValidatorCanUseAPrivateUnredactedURL() async {
@@ -93,7 +93,7 @@ final class PluginDraftValidatorTests: XCTestCase {
 
         XCTAssertTrue(report.passed, report.errors.joined(separator: "\n"))
         XCTAssertNil(report.modelKind)
-        XCTAssertTrue(report.warnings.joined().contains("not run against a page"))
+        XCTAssertTrue(report.warnings.joined().contains("hasn’t been tested on a page"))
         XCTAssertEqual(Set(report.registeredHooks), [.classify, .ingest])
     }
 
@@ -113,7 +113,7 @@ final class PluginDraftValidatorTests: XCTestCase {
                 ingest: "{ kind: 'article', title: 'Wrong site', html: '<p>Body</p>' }"),
             targetURL: URL(string: "https://other.example/story"))
         XCTAssertFalse(report.passed)
-        XCTAssertTrue(report.errors.joined().contains("does not match the host"))
+        XCTAssertTrue(report.errors.joined().contains("doesn’t support"))
     }
 
     func testExportOnlyDraftLoadsWithoutSendingAnything() async {
@@ -127,7 +127,7 @@ final class PluginDraftValidatorTests: XCTestCase {
         XCTAssertTrue(report.passed, report.errors.joined())
         XCTAssertEqual(report.registeredHooks, [.export])
         XCTAssertNil(report.modelKind)
-        XCTAssertTrue(report.warnings.joined().contains("were not run"))
+        XCTAssertTrue(report.warnings.joined().contains("haven’t been tested"))
     }
 
     private func recoveryCase() -> PluginRecoveryCase {

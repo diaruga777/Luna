@@ -4,7 +4,7 @@
   "name": "Reddit",
   "version": "1.1.0",
   "api": 1,
-  "description": "Resolves a Reddit post's hosted video, with its separate audio track.",
+  "description": "Save videos from Reddit.",
   "produces": ["media"],
   "match": { "hosts": ["reddit.com", "*.reddit.com", "redd.it", "*.redd.it"] },
   "priority": 100,

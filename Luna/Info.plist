@@ -29,7 +29,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos from social posts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Luna loads media you saved to Photos so it remains available in Luna Video.</string>
+	<string>Luna opens photos and videos you’ve saved to your photo library.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

@@ -1,6 +1,6 @@
 /* luna-plugin
 {"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.7","api":1,
- "description":"Reads gated articles using publisher rules, crawler requests, archives and plugin-declared browser steps.",
+ "description":"Save articles from subscription sites and archives.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
 // BEGIN BUNDLED WEB HELPER

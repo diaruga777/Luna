@@ -255,9 +255,14 @@ public final class SheetsViewController: UICollectionViewController {
         }
         updateEmptyState(rowCount: snapshot.numberOfItems)
         let count = snapshot.numberOfItems
-        let key = currentSelection == .notes ? "notes" : (isChapterList ? "chapters" : "documents")
         if #available(iOS 26, *) {
-            navigationItem.subtitle = L10n.string("WriterLibrary_navigation_\(key)\(count == 1 ? "One" : "Many")", count)
+            if currentSelection == .notes {
+                navigationItem.subtitle = L10n.string(count == 1 ? "WriterLibrary_navigation_notesOne" : "WriterLibrary_navigation_notesMany", count)
+            } else if isChapterList {
+                navigationItem.subtitle = L10n.string(count == 1 ? "WriterLibrary_navigation_chaptersOne" : "WriterLibrary_navigation_chaptersMany", count)
+            } else {
+                navigationItem.subtitle = L10n.string(count == 1 ? "WriterLibrary_navigation_documentsOne" : "WriterLibrary_navigation_documentsMany", count)
+            }
         }
         navigationItem.rightBarButtonItems = trailingBarButtons()
     }
@@ -269,8 +274,9 @@ public final class SheetsViewController: UICollectionViewController {
         if searching {
             empty.secondaryText = L10n.string("WriterLibrary_sheets_emptySearch")
         } else {
-            let key = currentSelection == .notes ? "notes" : (isChapterList ? "chapters" : (currentSelection == .trash ? "trash" : "documents"))
-            empty.text = L10n.string("WriterLibrary_navigation_empty_\(key)")
+            empty.text = L10n.string(currentSelection == .notes ? "WriterLibrary_navigation_empty_notes"
+                : (isChapterList ? "WriterLibrary_navigation_empty_chapters"
+                   : (currentSelection == .trash ? "WriterLibrary_navigation_empty_trash" : "WriterLibrary_navigation_empty_documents")))
             empty.secondaryText = L10n.string(currentSelection == .notes ? "WriterLibrary_polish_notesEmpty"
                 : (isChapterList ? "WriterLibrary_polish_bookEmpty"
                    : (currentSelection == .trash ? "WriterLibrary_sheets_emptyTrash" : "WriterLibrary_sheets_emptyScope")))

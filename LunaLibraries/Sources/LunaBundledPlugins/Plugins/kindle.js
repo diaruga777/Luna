@@ -4,7 +4,7 @@
   "name": "Kindle",
   "version": "1.0.0",
   "api": 1,
-  "description": "Emails an article to your Kindle as an EPUB, through the account Luna sends from.",
+  "description": "Send articles to your Kindle using your connected email account.",
   "priority": 100,
   "capabilities": ["mail", "settings"],
   "export": {
@@ -21,14 +21,14 @@
       "type": "email",
       "label": "Kindle Address",
       "placeholder": "you@kindle.com",
-      "help": "Your Send-to-Kindle address. Add the account Luna sends from to Amazon's approved sender list, or the delivery is dropped.",
+      "help": "Add your connected email address to Amazon's approved sender list so books can reach your Kindle.",
       "required": true
     },
     {
       "key": "senderNote",
       "type": "toggle",
       "label": "Include a note from Luna",
-      "help": "Adds one line naming the article's source to the email body.",
+      "help": "Include the article's source in the email.",
       "default": true
     }
   ]

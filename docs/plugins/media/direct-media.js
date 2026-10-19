@@ -4,7 +4,7 @@
   "name": "Direct media",
   "version": "1.0.0",
   "api": 1,
-  "description": "Saves a URL that is itself an image, GIF, video or audio file.",
+  "description": "Save photos, GIFs, videos, and audio from direct links.",
   "produces": ["media"],
   "match": { "any": true },
   "priority": 90,

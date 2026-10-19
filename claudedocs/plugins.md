@@ -190,9 +190,10 @@ The model answers with a `{name}.luna` file. Tapping it — from Files, from a
 chat's share sheet, in the app or in an extension — reaches
 `LunaFileIntake.pluginHandler` (`claudedocs/luna-file.md`), which opens
 `PluginDraftReviewViewController`: the nutrition label. It shows what the
-header declares (name, version, what it replaces, produces, hosts, priority,
-hooks, capabilities in plain language, settings fields, background, export)
-and then what Luna's own test made of the draft. **Save is the consent** on
+header declares (name, version, what it replaces, supported content and sites,
+permissions in plain language, settings fields, background work, and export)
+and then what Luna's own test made of the draft. Internal priority values and
+hook names stay out of the review screen; validation still checks required hooks. **Save is the consent** on
 this route, so `PluginConsentViewController` is not presented after it; the
 consent screen still serves the manual `+` import, where the user chose the
 file themselves.

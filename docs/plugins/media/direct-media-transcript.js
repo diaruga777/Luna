@@ -4,7 +4,7 @@
   "name": "Direct media transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads a URL that is itself an audio or video file as a transcript article.",
+  "description": "Turn audio and video links into readable transcripts.",
   "produces": ["article"],
   "match": { "any": true },
   "priority": 80,

@@ -4,7 +4,7 @@
   "name": "Facebook",
   "version": "1.0.0",
   "api": 1,
-  "description": "Resolves a Facebook video or reel from the page's own inline JSON.",
+  "description": "Save Facebook videos and reels.",
   "produces": ["media"],
   "match": { "hosts": ["facebook.com", "*.facebook.com", "fb.watch", "fb.com", "*.fb.com"] },
   "priority": 100,

@@ -1,6 +1,6 @@
 /* luna-plugin
 {"id":"app.luna.web","name":"Web articles and products","version":"1.1.2","api":1,
- "description":"Reads articles, remote documents and structured product pages using plugin-owned rules.",
+ "description":"Save articles, documents, and products from the web.",
  "produces":["article","product"],"match":{"any":true},"priority":-100,"capabilities":["fetch","html"]}
 */
 // BEGIN BUNDLED WEB HELPER

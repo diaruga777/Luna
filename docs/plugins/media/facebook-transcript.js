@@ -4,7 +4,7 @@
   "name": "Facebook transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads a Facebook video or reel as an article by transcribing the video's audio.",
+  "description": "Read Facebook videos and reels as text.",
   "produces": ["article"],
   "match": { "hosts": ["facebook.com", "*.facebook.com", "fb.watch", "fb.com", "*.fb.com"] },
   "priority": 90,

@@ -134,9 +134,9 @@
 "Weekly_proposeMenuTitle_Downloader" = "Suggest for Luna’s pick";
 "Weekly_proposeMenuTitle_PriceTracker" = "Suggest for Luna’s pick";
 "SaveOfWeek_promote_successTitle_Luna" = "Promoted";
-"SaveOfWeek_promote_successMessage_Luna" = "Every app will show it on its next check.";
+"SaveOfWeek_promote_successMessage_Luna" = "Your pick will appear across Luna soon.";
 "SaveOfWeek_propose_needsICloudTitle_Luna" = "Sign in to iCloud";
-"SaveOfWeek_propose_needsICloudMessage_Luna" = "Suggesting Luna’s pick requires an iCloud account. Sign in from Settings and try again.";
+"SaveOfWeek_propose_needsICloudMessage_Luna" = "Sign in to iCloud in Settings, then try again.";
 "SaveOfWeek_propose_sentTitle_Luna" = "Proposal Sent";
 "SaveOfWeek_propose_sentMessage_Luna" = "Thanks!";
 "SaveOfWeek_propose_couldntProposeTitle_Luna" = "Couldn't propose link";
@@ -234,27 +234,27 @@
 "SaveFailure_timedOut_Luna" = "The site took too long to respond";
 "SaveFailure_refused_Luna" = "The site refused the request (%lld)";
 "SaveFailure_gone_Luna" = "The page is gone (%lld)";
-"SaveFailure_rateLimited_Luna" = "The site is rate-limiting you";
+"SaveFailure_rateLimited_Luna" = "The site is getting too many requests";
 "SaveFailure_serverError_Luna" = "The site had a server error (%lld)";
 "SaveFailure_httpStatus_Luna" = "The site had an error (%lld)";
 "SaveFailure_couldntLoadPage_Luna" = "Couldn't load this page.";
 "SaveFailure_nothingReadable_Luna" = "Nothing readable was found on the page";
 "SaveFailure_nothingToSave_Luna" = "There's nothing on this page to save";
 "SaveFailure_notReadableWebPage_Luna" = "The link isn't a readable web page";
-"SaveFailure_tooLarge_Luna" = "Oops! The page is too large to read";
-"SaveFailure_noMediaFound_Luna" = "There was no playable video to fetch";
-"SaveFailure_couldntStoreDownload_Luna" = "Unable to save the file, is your phone out of space?";
+"SaveFailure_tooLarge_Luna" = "This page is too large to open";
+"SaveFailure_noMediaFound_Luna" = "Couldn’t find a playable video";
+"SaveFailure_couldntStoreDownload_Luna" = "Couldn’t save the file. Check your available storage.";
 "SaveFailure_sentToSubscribePage_Luna" = "The site sent Luna to its subscribe page";
 "SaveFailure_noTranscriptSource_Luna" = "Nothing here could be transcribed";
 "SaveFailure_transcriptionFailed_Luna" = "%@";
-"SaveFailure_couldntFetchLink_Luna" = "Luna couldn't fetch this link";
+"SaveFailure_couldntFetchLink_Luna" = "Luna couldn’t open this link";
 "SaveFailure_willRetryHint_Luna" = "It will retry automatically once you're back online.";
 "SaveFailure_pullToRetryHint_Luna" = "Pull to retry, or open it in your browser.";
 "SaveFailure_openInBrowserHint_Luna" = "Opening it in your browser might work.";
 "SaveFailure_mayHaveMovedHint_Luna" = "The page may have moved — try the browser to check.";
-"SaveFailure_sitesProblemHint_Luna" = "The site's problem, not yours. Retry in a little while.";
+"SaveFailure_sitesProblemHint_Luna" = "Try again in a little while.";
 "SaveFailure_appleIntelligenceHint_Luna" = "Apple Intelligence can sometimes recover the save anyway.";
-"SaveFailure_searchResultsHint_Luna" = "If you're trying a page with search results or some other list, try going to a particular item's page and save that instead.";
+"SaveFailure_searchResultsHint_Luna" = "Open the item you want, then save its page.";
 "SaveFailure_openInBrowserToReadHint_Luna" = "Open it in your browser to read it there.";
 
 /* ===================== ShareSetupPractice — the "practice mode" article
@@ -446,7 +446,7 @@
 "Onboarding_Util_storage1Label_Luna" = "Store files";
 "Onboarding_Util_storage2InLuna_Luna" = "in Luna";
 "Onboarding_Util_storage3InPhotos_Luna" = "in Photos";
-"Onboarding_Util_storagePermissionAlertMessage_Luna" = "Files are set to save to Photos, but this app hasn't been given permission yet. Allow Photos access in Settings to continue.";
+"Onboarding_Util_storagePermissionAlertMessage_Luna" = "Allow Photos access in Settings to save files there.";
 "Onboarding_Util_storagePermissionAlertTitle_Luna" = "Photos Access Needed";
 "Onboarding_Util_storagePermissionBadgeLabel_Luna" = "Photos access needed";
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
@@ -497,10 +497,10 @@
  * and enhanced-voice status/setup. Luna/Settings/AudioSettingsScreen.swift ===== */
 "Settings_audio_listeningSectionHeader_Luna" = "Listening";
 "Settings_audio_autoplayToggleLabel_Luna" = "Autoplay Next Article";
-"Settings_audio_autoplayFooter_Luna" = "When read-aloud is finished, mark the save as read and continue with the next unread save";
+"Settings_audio_autoplayFooter_Luna" = "After each article, mark it as read and play the next unread one.";
 "Settings_audio_cleanupToggleLabel_Luna" = "Clean up text for listening";
 "Settings_audio_cleanupToggleSecondary_Luna" = "Apple Intelligence";
-"Settings_audio_cleanupFooter_Luna" = "Don't read aloud photo captions, bylines, related-link lists, and other non-article text. Uses on-device Apple Intelligence. No data leaves your phone.";
+"Settings_audio_cleanupFooter_Luna" = "Skip captions, bylines, and related links when reading aloud. This happens on your phone.";
 "Settings_audio_voiceSectionHeader_Luna" = "Read-Aloud Voice";
 "Settings_audio_voiceInstalledStatus_Luna" = "Enhanced voices installed";
 "Settings_audio_voiceNotInstalledStatus_Luna" = "Not installed";
@@ -520,7 +520,7 @@
 "Settings_downloads_autoDownloadLabel_Luna" = "Begin Streaming";
 "Settings_downloads_autoDownloadFooter_Luna" = "Start streaming immediately when you save a link, or wait until you're on Wi-Fi or you tap to view.";
 "Settings_downloads_storageLabel_Luna" = "Storage";
-"Settings_downloads_storageFooter_Luna" = "Store files in Photos or in Luna with auto-delete. Photos storage is managed by your device and iCloud.";
+"Settings_downloads_storageFooter_Luna" = "Files stored in Luna can be deleted automatically. Photos manages its own storage.";
 "Settings_downloads_storagePermissionErrorLabel_Luna" = "Photos access needed";
 "Settings_video_notifySaveProgressLabel_Luna" = "Notify save progress";
 
@@ -529,15 +529,15 @@
  * Subject Filters. Luna/Settings/EmailAndKindleSettingsScreen.swift ===== */
 "Settings_email_accountSectionHeader_Luna" = "Connected Email";
 "Settings_email_accountFooterConnected_Luna" = "Connected. Send and receive articles and newsletters.";
-"Settings_email_accountFooterUnconfigured_Luna" = "Connect your email account to automatically pull incoming newsletters into Luna.";
+"Settings_email_accountFooterUnconfigured_Luna" = "Connect your email to get newsletters in Luna.";
 "Settings_email_accountFooterIssue_Luna" = "Email login was rejected by the provider. Please reconnect.";
 "Settings_email_issueTitle_Luna" = "Email login needs attention";
-"Settings_email_issueCredentialsRejected_Luna" = "The provider rejected the saved app password.";
-"Settings_email_issueAuthorizationExpired_Luna" = "The provider authorization expired or was revoked.";
+"Settings_email_issueCredentialsRejected_Luna" = "Your email provider no longer accepts this app password.";
+"Settings_email_issueAuthorizationExpired_Luna" = "Your email sign-in has expired. Sign in again.";
 "Settings_email_reconnectLabel_Luna" = "Reconnect email";
 "Settings_email_reconnectSecondary_Luna" = "Sign in again with this account";
 "Settings_email_inboxFilterLabel_Luna" = "Inbox Filter";
-"Settings_email_inboxFilterSecondary_Luna" = "When you receive a Luna share via email from a friend, skip your email inbox and show it only in Luna.";
+"Settings_email_inboxFilterSecondary_Luna" = "Keep links from friends in Luna and out of your email inbox.";
 "Settings_email_signOutLabel_Luna" = "Sign Out";
 "Settings_email_connectButton_Luna" = "Connect";
 "Settings_email_filterActiveTitle_Luna" = "Filter Active";
@@ -545,14 +545,14 @@
 "Settings_email_openFilterSettingsButton_Luna" = "Open Filter Settings";
 
 "Settings_email_importFromEmailLabel_Luna" = "Import from Email";
-"Settings_email_importFooter_Luna" = "Emails you receive from these senders (e.g. newsletters) are automatically imported into Luna, and optionally sent to your Kindle.";
+"Settings_email_importFooter_Luna" = "Automatically save emails from these senders. You can send them to Kindle too.";
 "Settings_email_autoSendToKindleLabel_Luna" = "Also Send to Kindle";
 "Settings_email_addSenderRow_Luna" = "Add Sender…";
 "Settings_email_addSenderTitle_Luna" = "Add Sender";
 "Settings_email_addSenderMessage_Luna" = "Emails from this address will be imported.";
 
 "Settings_email_subjectFiltersSectionHeader_Luna" = "Import matching";
-"Settings_email_subjectFiltersFooter_Luna" = "Additionally, auto-import emails whose subject contains one of these phrases, regardless of sender.";
+"Settings_email_subjectFiltersFooter_Luna" = "Also save emails with these phrases in the subject, from any sender.";
 "Settings_email_addSubjectFilterRow_Luna" = "Add matching phrase…";
 "Settings_email_addSubjectFilterTitle_Luna" = "Add matching phrase";
 "Settings_email_addSubjectFilterMessage_Luna" = "Email whose subject contains this phrase will be imported.";
@@ -577,23 +577,23 @@
 "Settings_xteink_pairDetail_Luna" = "Tap to pair over Bluetooth";
 "Settings_xteink_pairedDetail_Luna" = "Paired. Tap to pair again.";
 "Settings_xteink_pairTitle_Luna" = "Pair Xteink";
-"Settings_xteink_pairMessage_Luna" = "Start pairing on the reader, then continue: File Transfer → Pair Luna, or Settings → Plugins → Pair Luna on a plugin build (its home-menu Luna Sync row also pairs while nothing is paired). iOS asks you to confirm pairing once the reader appears.";
+"Settings_xteink_pairMessage_Luna" = "On your Xteink, open File Transfer → Pair Luna, or Settings → Plugins → Pair Luna. Then choose your reader on this iPhone.";
 "Settings_xteink_pairConfirm_Luna" = "Continue";
 "Settings_xteink_pickerAccessoryName_Luna" = "Luna X3";
 "Settings_xteink_pairingProgressTitle_Luna" = "Pairing…";
 "Settings_xteink_pairSuccessTitle_Luna" = "Xteink Paired";
 "Settings_xteink_pairSuccessMessage_Luna" = "Luna sends articles during the reader's sync windows.";
 "Settings_xteink_pairFailedTitle_Luna" = "Pairing Failed";
-"Settings_xteink_setupFooter_Luna" = "Open File Transfer on the Xteink, then tap Pair Xteink and choose the reader from the Bluetooth picker. Sends wait on your phone until you run Luna Sync from the reader's home menu. A finished book marks itself read back in Luna.";
+"Settings_xteink_setupFooter_Luna" = "Run Luna Sync on your Xteink to receive waiting articles. Books you finish there are marked as read in Luna.";
 "Settings_xteink_unpairRow_Luna" = "Unpair";
 "Settings_xteink_unpairTitle_Luna" = "Unpair Xteink?";
-"Settings_xteink_unpairMessage_Luna" = "Luna forgets this reader. Pair again from this screen whenever you're ready to send to it.";
+"Settings_xteink_unpairMessage_Luna" = "You can pair this reader again whenever you like.";
 "Settings_xteink_unpairConfirm_Luna" = "Unpair";
 
 /* ===== Settings_importExport — Settings → Import & Export: export/import
  * buttons and their outcome alerts. Luna/Settings/ImportExportSettingsScreen.swift ===== */
 "Settings_importExport_title_Luna" = "Import & Export";
-"Settings_importExport_footer_Luna" = "You can export a file with every link you've saved in Luna.\n\nYou can import any text file containing a list of links, including a Luna export.";
+"Settings_importExport_footer_Luna" = "Export your saved links, or import a Markdown, CSV, or text file containing links.";
 "Settings_importExport_exportRow_Luna" = "Export Links";
 "Settings_importExport_importRow_Luna" = "Import Links";
 "Settings_importExport_nothingToExportTitle_Luna" = "Nothing to Export";
@@ -654,7 +654,7 @@
 "Settings_reader_preloadSectionHeader_Luna" = "Preload Links";
 "Settings_reader_preloadWiFiOnlyLabel_Luna" = "Only on Wi-Fi";
 "Settings_reader_preloadDepthLabel_Luna" = "Preload Depth";
-"Settings_reader_preloadFooter_Luna" = "Links in articles are preloaded so they're available offline instantly. Links within links are loaded, and so on, up to the depth setting.\n\nPreloading uses data. Set to Wi-Fi only or configure depth to conserve storage space and cellular data.";
+"Settings_reader_preloadFooter_Luna" = "Download linked pages for offline reading. Depth sets how many links to follow from the original article. Use Wi-Fi only to save mobile data.";
 
 /* ===== Settings_safariSuggestion — the Safari-extension suggestion-button
  * visibility picker's non-Never options ("Common_never" covers Never).
@@ -683,16 +683,16 @@
 "Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari, choose when the \"%@\" button appears.";
 "Settings_shortcut_cookiePopupsSectionHeader_Luna" = "Cookie Popups";
 "Settings_shortcut_cookiePopupsToggleLabel_Luna" = "Decline cookies for me";
-"Settings_shortcut_cookiePopupsFooter_Luna" = "When a site asks about cookies, Luna answers \"necessary cookies only\" before the popup can appear — it never accepts anything on your behalf. Turn this off to answer cookie prompts yourself; newsletter and app-install popups are hidden either way.";
+"Settings_shortcut_cookiePopupsFooter_Luna" = "Choose necessary cookies only and dismiss cookie prompts. Turn this off to choose for yourself. Newsletter and app-install popups are still hidden.";
 "Settings_shortcut_videoPlayerSectionHeader_Luna" = "Video Player";
 "Settings_shortcut_videoPlayerToggleLabel_Luna" = "Play in Safari";
-"Settings_shortcut_videoPlayerFooter_Luna" = "Open a video post in Safari and Luna plays it right there, with one button to open it in Luna. Turn this off to leave the page alone — the \"%@\" button still hands the video to Luna.";
+"Settings_shortcut_videoPlayerFooter_Luna" = "Play videos right in Safari. When this is off, you can still use “%@” to watch in Luna.";
 "Settings_shortcut_onScreenURLsSectionHeader_Luna" = "Apple Intelligence";
 "Settings_shortcut_onScreenURLsToggleLabel_Luna" = "On-Screen URLs";
-"Settings_shortcut_onScreenURLsFooter_Luna" = "When enabled, use Apple Intelligence to save any url on screen with the Action Button. URLs are identified on-device and may not be perfect.";
+"Settings_shortcut_onScreenURLsFooter_Luna" = "Use Apple Intelligence to find links on your screen when you press the Action Button. It runs on your phone and may miss some links.";
 "Settings_shortcut_doubleSaveSectionHeader_Luna" = "Double Save Action";
 "Settings_shortcut_doubleSaveActionLabel_Luna" = "Save 2x to:";
-"Settings_shortcut_doubleSaveFooter_Luna" = "Configure what happens when you press the Action Button to save twice in a row.";
+"Settings_shortcut_doubleSaveFooter_Luna" = "Choose what a second press of the Action Button does.";
 "Settings_shortcut_kindleSetupPromptTitle_Luna" = "Set up Kindle first";
 "Settings_shortcut_kindleSetupPromptMessage_Luna" = "Can't send to Kindle until you connect your email account and set up Kindle.";
 "Settings_shortcut_kindleSetupPromptButton_Luna" = "Set Up";
@@ -769,11 +769,11 @@
 "Intents_saveResultEntity_mediaProperty_title_Luna" = "Media";
 
 /* ===== App Intents metadata — ProvideContextIntent.swift ===== */
-"Intents_provideContext_description_Luna" = "Provide the current app and optionally URLs detected on screen. Returns a structured outcome:done, unhandled, screenshot required, or must continue using the Save intent.";
-"Intents_provideContext_currentAppParam_title_Luna" = "CurrentApp";
+"Intents_provideContext_description_Luna" = "Find a link in the current app to save with Luna.";
+"Intents_provideContext_currentAppParam_title_Luna" = "Current App";
 "Intents_provideContext_currentAppParam_description_Luna" = "The current app, from Get Current App.";
-"Intents_provideContext_onScreenURLsParam_title_Luna" = "OnScreenURLs";
-"Intents_provideContext_onScreenURLsParam_description_Luna" = "The output from Get On-Screen URLs. Compatible complete values may be saved directly.";
+"Intents_provideContext_onScreenURLsParam_title_Luna" = "On-Screen Links";
+"Intents_provideContext_onScreenURLsParam_description_Luna" = "Links from the Get On-Screen URLs action.";
 "Intents_provideContext_noTrackedPageError_Luna" = "No link available. Is the Luna Safari extension disabled?";
 "Intents_provideContext_multipleURLsError_Luna" = "Multiple links are on screen. Open just one and try again.";
 "Intents_provideContext_saveFailedError_Luna" = "Luna couldn't save this link.";
@@ -785,8 +785,8 @@
 "Intents_readArticle_contentMissingError_Luna" = "That article isn't ready to read yet.";
 
 /* ===== App Intents metadata — SaveIntent.swift ===== */
-"Intents_save_description_Luna" = "Provide the current app, optional screenshot, and optional Metadata from Provide Context. Luna saves urls it finds, resuming in-progress downloads when possible, or reading the screenshot using Apple Intelligence for extractable url information.";
-"Intents_save_currentAppParam_title_Luna" = "CurrentApp";
+"Intents_save_description_Luna" = "Save a link from the current app or a screenshot to Luna.";
+"Intents_save_currentAppParam_title_Luna" = "Current App";
 "Intents_save_currentAppParam_description_Luna" = "The current app, from Get Current App.";
 "Intents_save_screenshotParam_title_Luna" = "Screenshot";
 "Intents_save_screenshotParam_description_Luna" = "An optional screenshot of the current screen.";
@@ -815,7 +815,7 @@
 "Reader_audio_nextArticleFallbackTitle_Luna" = "Next article";
 "Reader_audio_nowReadingAnnouncement_Luna" = "Now Reading — %@";
 "Reader_audio_voicePromptTitle_Luna" = "Better Voices Available";
-"Reader_audio_voicePromptMessage_Luna" = "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings.";
+"Reader_audio_voicePromptMessage_Luna" = "For a more natural reading voice, download an Enhanced Voice in Settings.";
 
 /* ===== Reader — read-aloud toggle, shared by the chrome row, the RSVP link preview's chin, and the split-web overlay (ArticleCardsViewController, LinkRSVPPreview, ReaderViewController, SplitWebOverlayViewController) ===== */
 "Reader_readAloudAccessibilityLabel_Luna" = "Read aloud";
@@ -832,9 +832,9 @@
 "Reader_cardCouldntFetchStatus_Luna" = "Couldn't fetch this article";
 
 /* ===== Reader — archive.today unlock flow (ArchiveWebReaderViewController) ===== */
-"Reader_archiveUnlock_rateLimitMessage_Luna" = "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there";
+"Reader_archiveUnlock_rateLimitMessage_Luna" = "The archive is getting too many requests. Try again later, switch networks, or open the page in Safari.";
 "Reader_archiveUnlock_cannotArchiveMessage_Luna" = "This site can't be opened right now. Try again in a little while, or open it in Safari.";
-"Reader_archiveUnlock_stuckMessage_Luna" = "This archive is taking longer than usual. It may be stuck, but we’re still waiting.";
+"Reader_archiveUnlock_stuckMessage_Luna" = "The archive is taking longer than usual. You can keep waiting or try again.";
 "Reader_archiveUnlock_unlockingStatus_Luna" = "Accessing full article…";
 
 /* ===== Reader — eye tracking toggle, RSVP reader (EyeTrackingToggleButton, RSVPGazeCoordinator) ===== */
@@ -901,7 +901,7 @@
 "Reader_export_giveUpAfterAttemptsMessage_Luna" = "%@ Luna gave up after %lld attempts.";
 "Reader_export_deliveryFailedMessage_Luna" = "Delivery failed.";
 "Reader_export_testDocumentTitle_Luna" = "Luna Setup Successful";
-"Reader_export_testDocumentBody_Luna" = "If you're seeting this on your Kindle, you're all set up in Luna!";
+"Reader_export_testDocumentBody_Luna" = "If you’re reading this on your Kindle, you’re all set!";
 "Reader_export_testDocumentFileName_Luna" = "Luna Setup Successful.epub";
 "Reader_export_sendModeOffTitle_Luna" = "Off";
 "Reader_export_sendModeAllSavesTitle_Luna" = "All Saved Articles";
@@ -975,27 +975,27 @@
 "LunaFile_recoveryNotSavedMessage_Luna" = "Luna read the file but could not save it.";
 
 /* ===== LunaFileError — LunaFileError.swift (why a .luna / .lunar / .lunad / .lunas file was refused), in reading order ===== */
-"LunaFileError_noHeader_Luna" = "This is not a Luna file. A Luna file starts with a block comment whose first line is luna-plugin or luna-recovery.";
+"LunaFileError_noHeader_Luna" = "Luna doesn’t recognize this file. Ask for a new copy.";
 "LunaFileError_headerNotJSON_Luna" = "The Luna file's header on line %lld is not a JSON object: %@";
 "LunaFileError_missingField_Luna" = "The Luna file needs a \"%@\" field (line %lld).";
 "LunaFileError_invalidField_Luna" = "The Luna file's \"%@\" on line %lld is not usable: %@";
-"LunaFileError_unsupportedAPIVersion_Luna" = "This Luna file is written for format %lld. This build reads format %lld.";
+"LunaFileError_unsupportedAPIVersion_Luna" = "This file uses format %lld; Luna supports format %lld. Try updating Luna.";
 "LunaFileError_kindMismatch_Luna" = "The Luna file's header says %@ but its content is %@.";
-"LunaFileError_bodyNotJSON_Luna" = "The Luna file's content did not read: %@";
+"LunaFileError_bodyNotJSON_Luna" = "Luna couldn’t read the file’s content: %@";
 "LunaFileError_fileTooLarge_Luna" = "A Luna file may be at most %lld KB.";
 "LunaFileError_notText_Luna" = "That file does not contain readable Luna source.";
 "LunaFileError_invalidContainer_Luna" = "That Luna file is damaged or uses a newer file format. Ask for a new attachment or update Luna.";
 
 /* ===== PluginImportError — PluginManifestError.swift + PluginStoreError.swift (what the import screen shows when a plugin file is refused), in reading order ===== */
-"PluginImportError_noHeader_Luna" = "This file has no plugin header. A plugin starts with a block comment whose first line is luna-plugin, holding its manifest JSON.";
+"PluginImportError_noHeader_Luna" = "This file is missing its plugin information. Ask for a new copy.";
 "PluginImportError_headerNotJSON_Luna" = "The plugin header on line %lld is not a JSON object: %@";
 "PluginImportError_missingField_Luna" = "The plugin header needs a \"%@\" field (line %lld).";
 "PluginImportError_invalidField_Luna" = "The plugin header's \"%@\" on line %lld is not usable: %@";
-"PluginImportError_apiTooNew_Luna" = "This plugin needs plugin API %lld. This build has %lld, so it cannot run the plugin. Update Luna.";
+"PluginImportError_apiTooNew_Luna" = "This plugin needs version %lld of Luna’s plugin tools; this app supports version %lld. Update Luna to use it.";
 "PluginImportError_unknownCapability_Luna" = "The plugin header names a capability Luna does not have: \"%@\" (line %lld).";
 "PluginImportError_notText_Luna" = "%@ is not UTF-8 text.";
 "PluginImportError_sourceTooLarge_Luna" = "A plugin file may be at most %lld KB.";
-"PluginImportError_writeFailed_Luna" = "The plugin could not be written to disk: %@";
+"PluginImportError_writeFailed_Luna" = "Couldn’t save the plugin: %@";
 "PluginImportError_notInstalled_Luna" = "No plugin named %@ is installed.";
 "PluginImportError_bundledCannotBeDeleted_Luna" = "%@ ships with Luna. It can be switched off, but not deleted.";
 
@@ -1181,7 +1181,7 @@
 
 /* ===== PluginBrowser — the plugin browser step and the lock it leaves behind (LunaPluginUI) ===== */
 "PluginBrowser_defaultTitle_Luna" = "Finishing the Save";
-"PluginBrowser_failedMessage_Luna" = "This page didn't get there. Open it in Safari and try the save again.";
+"PluginBrowser_failedMessage_Luna" = "Couldn’t open this page. Try opening it in Safari and saving again.";
 "PluginBrowser_timedOutMessage_Luna" = "This is taking too long. Open the page in Safari and try the save again.";
 "PluginBrowser_workingStatus_Luna" = "Working on it…";
 "PluginLocked_cardCaption_Luna" = "Waiting on a page — tap to finish";
@@ -1198,12 +1198,12 @@
 "Plugins_consentDontAllowButton_Luna" = "Don't Allow";
 "Plugins_consentExportLine_Luna" = "Exports to: %@";
 "Plugins_consentHeadline_Luna" = "Allow this plugin?";
-"Plugins_consentNoCapabilities_Luna" = "This plugin asks for nothing beyond running.";
-"Plugins_consentProducesLine_Luna" = "Produces: %@";
+"Plugins_consentNoCapabilities_Luna" = "No special permissions requested.";
+"Plugins_consentProducesLine_Luna" = "Saves: %@";
 "Plugins_consentReplacesLine_Luna" = "Replaces version %@";
 "Plugins_consentUpdateHeadline_Luna" = "This update wants more access";
 "Plugins_consentVersionLine_Luna" = "Version %@";
-"Plugins_containmentDisclosure_Luna" = "Luna limits what a plugin can reach, but cannot stop a plugin that does not finish.";
+"Plugins_containmentDisclosure_Luna" = "Plugins can use the permissions you allow. A faulty plugin may freeze Luna.";
 "Plugins_countDetail_Luna" = "%lld plugins";
 "Plugins_create1Title_Luna" = "Create with AI";
 "Plugins_create2Placeholder_Luna" = "Describe the site or the kind of link, and paste an example URL";
@@ -1232,15 +1232,12 @@
 "Plugins_review01Title_Luna" = "Review Plugin";
 "Plugins_review02Matches_Luna" = "Runs on: %@";
 "Plugins_review03AnyWebsite_Luna" = "any website";
-"Plugins_review04Priority_Luna" = "Priority %lld";
-"Plugins_review05Hooks_Luna" = "Hooks: %@";
-"Plugins_review06HookMissing_Luna" = "%@ (not registered)";
 "Plugins_review07CapabilityNotTested_Luna" = "%@ (not tested)";
 "Plugins_review08Settings_Luna" = "Asks you to fill in: %@";
 "Plugins_review09ResultHeader_Luna" = "Test result";
-"Plugins_review10Testing_Luna" = "Testing the draft in an isolated temporary runtime…";
-"Plugins_review11Passed_Luna" = "Passed: it produced a valid %@.";
-"Plugins_review12Loaded_Luna" = "Loaded. It was not run against a page.";
+"Plugins_review10Testing_Luna" = "Testing the plugin…";
+"Plugins_review11Passed_Luna" = "Test passed: readable %@.";
+"Plugins_review12Loaded_Luna" = "Plugin loaded. It hasn’t been tested on a page.";
 "Plugins_review13Save_Luna" = "Save Plugin";
 "Plugins_review14SaveAnyway_Luna" = "Save Anyway";
 "Plugins_review15Discard_Luna" = "Discard";
@@ -1250,7 +1247,7 @@
 "Plugins_reenableRow_Luna" = "Re-enable";
 "Plugins_rowVersionAndSummary_Luna" = "Version %@ · %@";
 "Plugins_runsInBackgroundLine_Luna" = "Runs in the background.";
-"Plugins_screenFooter_Luna" = "Plugins add support for sites and services Luna doesn't know natively.";
+"Plugins_screenFooter_Luna" = "Add support for more sites and services.";
 "Plugins_secretSetPlaceholder_Luna" = "Set — enter a new value to replace it";
 "Plugins_settingsSectionHeader_Luna" = "Settings";
 "Plugins_showSourceRow_Luna" = "Show Source";
@@ -1260,10 +1257,10 @@
 "Plugins_statusStopped_Luna" = "Stopped — %@";
 "Plugins_unpairButton_Luna" = "Unpair";
 "Plugins_updateConfirmButton_Luna" = "Update";
-"Plugins_updateConfirmMessage_Luna" = "This replaces version %@ with version %@. It asks for nothing new.";
+"Plugins_updateConfirmMessage_Luna" = "Update version %@ to %@? No new permissions are needed.";
 "Plugins_updateConfirmTitle_Luna" = "Update %@?";
 "PluginCapability_bluetooth_Luna" = "Connect to Bluetooth accessories.";
-"PluginCapability_browser_Luna" = "Open a web page for you to sign in or solve a challenge, and give it the page and the cookies you signed in with.";
+"PluginCapability_browser_Luna" = "Open a page for you to sign in or complete a security check. The plugin can read that page and use its sign-in cookies.";
 "PluginCapability_crypto_Luna" = "Perform basic encryption and hashing.";
 "PluginCapability_downloads_Luna" = "See the status of your downloads.";
 "PluginCapability_exports_Luna" = "Deliver your queued sends.";
@@ -1286,7 +1283,7 @@
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
 "WriterStorage_untitledProjectName_Luna" = "Untitled Project";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
-"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nThis is a document. Write in Markdown: **bold**, *italic*, `code`, and lists.\n\n- A heading names the document. Change this one and the file on disk is renamed with it.\n- Tap space twice, quickly, to open the palette: look up a note, make one, insert a symbol, find another word, format, or start a new chapter.\n- Focus mode dims everything but the sentence you are in.\n- Create a book from the Library, then add chapters and collections from Contents.\n- All Notes keeps your ideas and research together, with links to the documents they belong to.\n\nYour documents are plain .md files in Files, under Luna Writer › Library.";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nMake yourself at home. Start with a sentence, a rough idea, or a whole new chapter.\n\nDouble-tap the spacebar for notes, formatting, and more.\n\nYour writing is saved as Markdown in Files › Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
 "WriterLibrary_command_export_Luna" = "Export…";
@@ -1357,7 +1354,7 @@
 "WriterLibrary_keyword_title_Luna" = "Keywords";
 "WriterLibrary_move_title_Luna" = "Move to…";
 "WriterLibrary_notes_composePlaceholder_Luna" = "Add a note";
-"WriterLibrary_notes_emptyMessage_Luna" = "No notes yet. Write one below, or open the palette in the document.";
+"WriterLibrary_notes_emptyMessage_Luna" = "Jot down an idea or a reminder.";
 "WriterLibrary_notes_title_Luna" = "Notes";
 "WriterLibrary_settings_aboutSectionHeader_Luna" = "About";
 "WriterLibrary_settings_authorshipRow_Luna" = "Show Authorship";
@@ -1388,7 +1385,7 @@
 "WriterLibrary_settings_voiceRow_Luna" = "Voice";
 "WriterLibrary_sheets_attachToTitle_Luna" = "Attach to…";
 "WriterLibrary_sheets_duplicateAction_Luna" = "Duplicate";
-"WriterLibrary_sheets_emptyScope_Luna" = "Start a new document to capture your next idea.";
+"WriterLibrary_sheets_emptyScope_Luna" = "Start a new document.";
 "WriterLibrary_sheets_emptySearch_Luna" = "Try a different word or phrase.";
 "WriterLibrary_sheets_emptyTrash_Luna" = "Deleted documents will appear here.";
 "WriterLibrary_sheets_emptyTrashAction_Luna" = "Empty Trash";
@@ -1460,7 +1457,7 @@
 "WriterReadAlong_calibrationBegin_Luna" = "Begin";
 "WriterReadAlong_calibrationCancel_Luna" = "Not now";
 "WriterReadAlong_calibrationDone_Luna" = "Done";
-"WriterReadAlong_calibrationFailedBody_Luna" = "Too few frames were usable. Hold the phone steady, light your face, and try again.";
+"WriterReadAlong_calibrationFailedBody_Luna" = "Couldn’t track your eyes. Try again with the phone steady and your face well lit.";
 "WriterReadAlong_calibrationFailedTitle_Luna" = "That did not take";
 "WriterReadAlong_calibrationGradeGood_Luna" = "Good";
 "WriterReadAlong_calibrationGradeRough_Luna" = "Rough";
@@ -1477,7 +1474,7 @@
 "WriterReadAlong_permissionRefusedGazeTitle_Luna" = "Camera Access Needed";
 "WriterReadAlong_permissionRefusedGazeBody_Luna" = "Read-along follows where you are reading with the front camera. Allow camera access in Settings to turn it on.";
 "WriterReadAlong_permissionRefusedVoiceTitle_Luna" = "Microphone Access Needed";
-"WriterReadAlong_permissionRefusedVoiceBody_Luna" = "Spoken comments need the microphone and on-device speech recognition. Allow both in Settings to turn them on.";
+"WriterReadAlong_permissionRefusedVoiceBody_Luna" = "Allow microphone and speech recognition access in Settings to add spoken comments.";
 "WriterReadAlong_hudAccessibilityLabel_Luna" = "Read-along";
 "WriterReadAlong_kindComment_Luna" = "Comment";
 "WriterReadAlong_kindCut_Luna" = "Cut";
@@ -1528,7 +1525,7 @@
 "WriterLibrary_polish_addExistingDocument_Luna" = "Add Existing Document…";
 "WriterLibrary_polish_addToBook_Luna" = "Add to Book";
 "WriterLibrary_polish_allNotes_Luna" = "All Notes";
-"WriterLibrary_polish_bookEmpty_Luna" = "Start with a new chapter, or open Contents to add collections and existing documents.";
+"WriterLibrary_polish_bookEmpty_Luna" = "Add your first chapter.";
 "WriterLibrary_polish_booksCollections_Luna" = "Books & Collections";
 "WriterLibrary_polish_chapters_Luna" = "Chapters";
 "WriterLibrary_polish_contents_Luna" = "Contents";
@@ -1554,7 +1551,7 @@
 "WriterLibrary_polish_nextChapter_Luna" = "Next Chapter";
 "WriterLibrary_polish_noteText_Luna" = "Note text";
 "WriterLibrary_polish_noteTitle_Luna" = "Note";
-"WriterLibrary_polish_notesEmpty_Luna" = "Keep ideas and research together, ready for your next draft.";
+"WriterLibrary_polish_notesEmpty_Luna" = "Jot down an idea or a reminder.";
 "WriterLibrary_polish_organizeAsBook_Luna" = "Organize as a Book";
 "WriterLibrary_polish_organizeAsBookDetail_Luna" = "Create a book around this document and add the next chapter.";
 "WriterLibrary_polish_previousChapter_Luna" = "Previous Chapter";
@@ -1588,30 +1585,30 @@
 
 /* Plugin-owned product comparison */
 "PriceTracker_pluginRequiredTitle_Luna" = "Plugin required";
-"PriceTracker_pluginRequiredMessage_Luna" = "Re-save this product with an enabled product plugin to find sellers.";
+"PriceTracker_pluginRequiredMessage_Luna" = "Enable a plugin for this store in Settings, then save the product again.";
 "PriceTracker_noNewSellersTitle_Luna" = "No new sellers";
-"PriceTracker_noNewSellersMessage_Luna" = "The product plugin did not return any new matching sellers.";
+"PriceTracker_noNewSellersMessage_Luna" = "Couldn’t find any more sellers for this product.";
 
 "ExportFormat_compactEpub_Luna" = "EPUB (Small, Black & White)";
 "Settings_importExport_importEpubRow_Luna" = "Import EPUB Book";
-"Settings_importExport_epubImported_Luna" = "Book imported. It is now in your reading list.";
+"Settings_importExport_epubImported_Luna" = "Book added to your reading list.";
 "Settings_importExport_epubFailed_Luna" = "This EPUB could not be read. Choose an unencrypted book with readable text.";
 
 "Reader_finishedBadge_pullToReadTitle_Luna" = "Pull up to mark read";
 "Reader_finishedBadge_releaseToReadTitle_Luna" = "Release to mark read";
-"Reader_finishedBadge_markReadAccessibilityHint_Luna" = "Marks this article read and sends it to the archive on next load";
+"Reader_finishedBadge_markReadAccessibilityHint_Luna" = "Marks this article as read and moves it to the archive";
 
 /* Manual incoming mail recovery */
-"Settings_email_pullRecent_Luna" = "Pull Recent Emails";
-"Settings_email_pullingRecent_Luna" = "Pulling Recent Emails…";
-"Settings_email_pullRecentDetail_Luna" = "Apply your sender and subject filters to the past 7 days. Already processed emails are skipped.";
+"Settings_email_pullRecent_Luna" = "Check Recent Emails";
+"Settings_email_pullingRecent_Luna" = "Checking Recent Emails…";
+"Settings_email_pullRecentDetail_Luna" = "Save matching emails from the past 7 days without importing duplicates.";
 "Settings_email_pullComplete_Luna" = "Recent Emails Checked";
-"Settings_email_pullSummary_Luna" = "Processed %d emails. Skipped %d already processed emails.";
-"Settings_email_pullFailed_Luna" = "Couldn’t Pull Recent Emails";
+"Settings_email_pullSummary_Luna" = "Checked %d emails. Skipped %d already checked.";
+"Settings_email_pullFailed_Luna" = "Couldn’t Check Recent Emails";
 "Settings_email_pullNotConfigured_Luna" = "Connect or reconnect your email account first.";
 "Settings_email_pullBusy_Luna" = "An email check is already running. Try again once it finishes.";
 "Settings_email_pullAccountChanged_Luna" = "The connected account changed. Try again with the current account.";
-"Settings_email_pullSaveFailed_Luna" = "An email could not be saved. Try again; completed imports will be skipped.";
+"Settings_email_pullSaveFailed_Luna" = "Couldn’t save an email. Try again; emails already saved won’t be duplicated.";
 
 /* Swipe-up library */
 "Library_title_Luna" = "Library";
@@ -1621,7 +1618,7 @@
 "Library_text_Luna" = "Text";
 "Library_video_Luna" = "Video";
 "Library_shopping_Luna" = "Shopping";
-"Library_empty_Luna" = "Your saved items will appear here.";
+"Library_empty_Luna" = "Nothing saved yet.";
 "Library_noMatches_Luna" = "No matching items";
 "Library_searchUnavailable_Luna" = "Search is temporarily unavailable.";
 
@@ -1630,14 +1627,14 @@
 /* Plugin bundles and premium */
 "Premium_title_Luna" = "Premium features";
 "Premium_createPlugins_Luna" = "Create your own plugins";
-"Premium_supportDescription_Luna" = "Support Luna with a one-time purchase. Paid premium unlocks across all Luna apps.";
+"Premium_supportDescription_Luna" = "A one-time purchase supports Luna and unlocks premium in all Luna apps.";
 "Premium_loadingPrice_Luna" = "Loading price…";
 "Premium_unlockWithoutPaying_Luna" = "Unlock without paying";
 "Premium_restorePurchases_Luna" = "Restore purchases";
 "Premium_retryPurchase_Luna" = "Retry purchase";
 "Premium_priceUnavailable_Luna" = "Apple’s price is unavailable. You can retry or unlock without paying.";
 "Premium_noPurchase_Luna" = "No previous premium purchase was found.";
-"Premium_freeMessage_Luna" = "Unlock for free. If you like Luna please support development by paying for premium features, but I want everyone to benefit so you can get in free if you want";
+"Premium_freeMessage_Luna" = "You’re welcome to use premium for free for this app session. If Luna helps you, a purchase supports its development and keeps premium unlocked across your Luna apps.";
 "Premium_continueForFree_Luna" = "Continue for free";
 "Premium_purchaseUnavailable_Luna" = "The purchase is unavailable right now. Please try again later, or unlock without paying.";
 "Premium_unverified_Luna" = "Apple could not verify this purchase. Please try restoring purchases.";

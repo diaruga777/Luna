@@ -4,7 +4,7 @@
   "name": "X",
   "version": "1.0.1",
   "api": 1,
-  "description": "Resolves an X post's photos and video through the keyless fxtwitter mirror.",
+  "description": "Save photos and videos from X.",
   "produces": ["media", "article"],
   "match": { "hosts": ["x.com", "*.x.com", "twitter.com", "*.twitter.com"] },
   "priority": 100,

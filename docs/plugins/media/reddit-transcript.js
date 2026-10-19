@@ -4,7 +4,7 @@
   "name": "Reddit transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads a Reddit-hosted video as an article by transcribing its separate audio track.",
+  "description": "Read Reddit videos as text.",
   "produces": ["article"],
   "match": { "hosts": ["reddit.com", "*.reddit.com", "redd.it", "*.redd.it"] },
   "priority": 90,

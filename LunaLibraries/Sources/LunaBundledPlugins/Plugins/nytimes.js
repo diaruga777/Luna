@@ -4,7 +4,7 @@
   "name": "New York Times",
   "version": "1.1.2",
   "api": 1,
-  "description": "Reads New York Times articles through the trailing-dot hostname and plugin-owned article extraction.",
+  "description": "Save and read New York Times articles.",
   "produces": ["article"],
   "match": {
     "hosts": ["nytimes.com", "*.nytimes.com", "nyt.com", "*.nyt.com"]

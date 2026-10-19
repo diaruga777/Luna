@@ -4,7 +4,7 @@
   "name": "YouTube",
   "version": "1.0.1",
   "api": 1,
-  "description": "Resolves a YouTube video, Short or clip to a progressive MP4 with sound.",
+  "description": "Save YouTube videos, Shorts, and clips with sound.",
   "produces": ["media"],
   "match": {
     "hosts": [

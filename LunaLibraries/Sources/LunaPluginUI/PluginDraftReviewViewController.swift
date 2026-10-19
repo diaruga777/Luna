@@ -59,7 +59,6 @@ public final class PluginDraftReviewViewController: UIViewController {
 
     private let scroll = UIScrollView()
     private let stack = UIStackView()
-    private let hooksLabel = UILabel()
     private let resultLabel = UILabel()
     private let saveButton = UIButton(type: .system)
     private let discardButton = UIButton(type: .system)
@@ -154,7 +153,6 @@ public final class PluginDraftReviewViewController: UIViewController {
         }
 
         addProducesAndMatches(parsed.summary)
-        addHooks()
         addCapabilities(parsed)
         addDeclarations(parsed)
         addResultSection()
@@ -177,36 +175,6 @@ public final class PluginDraftReviewViewController: UIViewController {
             ? L10n.string("Plugins_review03AnyWebsite")
             : summary.hostPatterns.joined(separator: ", ")
         stack.addArrangedSubview(label(L10n.string("Plugins_review02Matches", where_)))
-        stack.addArrangedSubview(
-            label(
-                L10n.string("Plugins_review04Priority", summary.priority),
-                color: LunaColors.secondaryText))
-    }
-
-    /// The manifest's required hooks, joined with the ones the load step saw. A
-    /// required hook the draft never registered is named as missing, which is
-    /// the one difference a reader cannot get from the header. The line is
-    /// rewritten once validation has run, because only then is the registered
-    /// set known.
-    private func addHooks() {
-        hooksLabel.font = .preferredFont(forTextStyle: .body)
-        hooksLabel.textColor = LunaColors.primaryText
-        hooksLabel.numberOfLines = 0
-        stack.addArrangedSubview(hooksLabel)
-        refreshHooks()
-    }
-
-    private func refreshHooks() {
-        guard let manifest else { return }
-        let registered = Set(report?.registeredHooks ?? [])
-        let hooks = manifest.requiredHooks.union(registered).sorted { $0.rawValue < $1.rawValue }
-        let names = hooks.map { hook -> String in
-            registered.isEmpty || registered.contains(hook)
-                ? hook.rawValue
-                : L10n.string("Plugins_review06HookMissing", hook.rawValue)
-        }
-        hooksLabel.isHidden = names.isEmpty
-        hooksLabel.text = L10n.string("Plugins_review05Hooks", names.joined(separator: ", "))
     }
 
     private func addCapabilities(_ parsed: PluginImportPreview) {
@@ -305,7 +273,6 @@ public final class PluginDraftReviewViewController: UIViewController {
                 sourceText: sourceText, recoveryCase: recoveryCase,
                 targetURL: origin?.targetURL)
             report = result
-            refreshHooks()
             showResult(result)
         }
     }

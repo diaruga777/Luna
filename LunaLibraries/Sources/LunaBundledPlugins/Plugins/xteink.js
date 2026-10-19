@@ -4,7 +4,7 @@
   "name": "Xteink",
   "version": "1.0.0",
   "api": 1,
-  "description": "Delivers saved articles to an Xteink X3 pocket e-reader over the CrossPoint rendezvous.",
+  "description": "Send saved articles to your Xteink X3 reader.",
   "capabilities": ["bluetooth", "wifi", "fetch", "files", "crypto", "secrets", "settings", "notifications", "exports", "ui"],
   "background": true,
   "bluetooth": {
@@ -15,9 +15,9 @@
   },
   "settings": [
     { "key": "enabled", "type": "toggle", "label": "Send to Xteink", "default": false,
-      "help": "Queued articles are delivered when the reader opens a Luna Sync window." },
+      "help": "Run Luna Sync on your reader to receive waiting articles." },
     { "key": "device", "type": "pairedDevice", "label": "Reader", "required": true,
-      "help": "Start pairing on the reader (File Transfer → Pair Luna, or Settings → Plugins → Pair Luna on a plugin build), then pair here." },
+      "help": "On your reader, open File Transfer → Pair Luna, or Settings → Plugins → Pair Luna. Then pair here." },
     { "key": "unpair", "type": "action", "label": "Unpair" }
   ],
   "export": {

@@ -4,7 +4,7 @@
   "name": "YouTube transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads a YouTube video as an article: its captions when it has them, else a transcript of its audio.",
+  "description": "Read YouTube videos as text, using captions or audio.",
   "produces": ["article"],
   "match": {
     "hosts": [

@@ -4,7 +4,7 @@
   "name": "TikTok",
   "version": "1.0.1",
   "api": 1,
-  "description": "Resolves a TikTok video or photo carousel from the watch page's own JSON.",
+  "description": "Save TikTok videos and photo posts.",
   "produces": ["media"],
   "match": { "hosts": ["tiktok.com", "*.tiktok.com"] },
   "priority": 100,

@@ -4,7 +4,7 @@
   "name": "X transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads an X video post as an article by transcribing the video's audio.",
+  "description": "Read videos from X as text.",
   "produces": ["article"],
   "match": { "hosts": ["x.com", "*.x.com", "twitter.com", "*.twitter.com"] },
   "priority": 90,

@@ -1,6 +1,6 @@
 /* luna-plugin
 {"id":"app.luna.url-rewrites","name":"Shared link destinations","version":"1.0.1","api":1,
- "description":"Unwraps news, retailer and social redirect links before redispatching to the destination plugin.",
+ "description":"Open shared news, shopping, and social links at their original page.",
  "produces":["article"],"match":{"any":true},"priority":1000,"capabilities":["fetch","html"]}
 */
 const shorteners = ['flip.it','trib.al','t.co','bit.ly','buff.ly','apple.co','nyti.ms','wapo.st','on.ft.com','econ.st','reut.rs','cnn.it','bbc.in','nbcnews.to','abcn.ws','cbsn.ws','links.message.bloomberg.com','bloom.bg','amzn.to','amzn.asia','a.co','share.google'];

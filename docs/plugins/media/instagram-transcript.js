@@ -4,7 +4,7 @@
   "name": "Instagram transcript",
   "version": "1.0.0",
   "api": 1,
-  "description": "Reads an Instagram reel or video post as an article by transcribing the video's audio.",
+  "description": "Read Instagram videos and reels as text.",
   "produces": ["article"],
   "match": { "hosts": ["instagram.com", "*.instagram.com", "instagr.am", "*.instagr.am"] },
   "priority": 90,

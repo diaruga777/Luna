@@ -43,14 +43,14 @@ public enum PluginDraftValidator {
         let target = targetURL ?? recoveryCase.flatMap { URL(string: $0.canonicalURL) }
         if manifest.isIngestPlugin, let host = target?.host,
            !manifest.summary(hooks: [.classify, .ingest], isBundled: false).matches(host: host) {
-            return failed("The plugin does not match the host \(host).", phase: "host")
+            return failed("This plugin doesn’t support \(host).", phase: "host")
         }
 
         let untested = Set(manifest.capabilities).subtracting(servedCapabilities)
         var warnings: [String] = []
         if !untested.isEmpty {
             warnings.append(
-                "This test serves only fetch and html. Not tested: "
+                "Only web requests and page reading were tested. Not tested: "
                     + untested.map(\.rawValue).sorted().joined(separator: ", ") + ".")
         }
 
@@ -95,8 +95,8 @@ public enum PluginDraftValidator {
             // declares and registers. The warning is what stops a green
             // result from reading as "it worked on the site".
             warnings.append(manifest.isIngestPlugin
-                ? "The draft was not run against a page."
-                : "Registration checked only. Export, settings actions and device hooks were not run.")
+                ? "This plugin hasn’t been tested on a page."
+                : "The plugin loaded, but exporting, settings, and device connections haven’t been tested.")
             return PluginValidationReport(
                 passed: true, warnings: warnings, attempts: attempts,
                 registeredHooks: registered)
@@ -114,13 +114,13 @@ public enum PluginDraftValidator {
                 registeredHooks: registered)
         case .success(.declined):
             return failed(
-                "classify declined the target URL; it must claim this page.",
+                "The plugin didn’t recognize this page.",
                 phase: "classify", attempts: attempts, warnings: warnings,
                 registeredHooks: registered)
         case let .success(.claimed(kind, itemID, _)):
             guard manifest.produces.contains(kind) else {
                 return failed(
-                    "classify claimed \(kind.rawValue), which is absent from produces.",
+                    "The plugin recognized a \(kind.rawValue), which it doesn’t list as supported.",
                     phase: "classify", attempts: attempts, warnings: warnings,
                     registeredHooks: registered)
             }
@@ -142,19 +142,19 @@ public enum PluginDraftValidator {
                 registeredHooks: registered)
         case .success(.declined), .success(.rewrite):
             return failed(
-                "ingest returned null for the target URL; it must produce a valid Model.",
+                "The plugin couldn’t save anything from this page.",
                 phase: "ingest", attempts: attempts, warnings: warnings,
                 registeredHooks: registered)
         case .success(.model(let model)):
             if let host = networkViolations.firstHost {
                 return failed(
-                    "The draft tried to contact \(host). Validation permits only the page's own site.",
+                    "The plugin tried to contact \(host). During testing, it can only contact the site you chose.",
                     phase: "network", attempts: attempts, warnings: warnings,
                     registeredHooks: registered)
             }
             guard manifest.produces.contains(model.kind) else {
                 return failed(
-                    "ingest returned \(model.kind.rawValue), which is absent from produces.",
+                    "The plugin returned a \(model.kind.rawValue), which it doesn’t list as supported.",
                     phase: "ingest", attempts: attempts, warnings: warnings,
                     registeredHooks: registered)
             }
@@ -188,10 +188,10 @@ public enum PluginDraftValidator {
     private static func describe(_ failure: PluginInvocationFailure) -> String {
         switch failure {
         case .notLoaded: return "The draft did not load."
-        case .missingHook: return "The draft did not register the required hook."
-        case .timedOut: return "The draft did not finish before the validation deadline."
-        case .wedged: return "The draft's JavaScript runtime stopped responding."
-        case .browserDeferred: return "The draft requested an interactive browser step."
+        case .missingHook: return "The plugin is missing a required function."
+        case .timedOut: return "The plugin took too long to respond."
+        case .wedged: return "The plugin stopped responding."
+        case .browserDeferred: return "The plugin needs you to open a page to continue."
         case .exception(let message, _), .malformedResult(let message), .runtime(let message):
             return message
         }

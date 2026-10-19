@@ -4,7 +4,7 @@
   "name": "Instagram",
   "version": "1.0.0",
   "api": 1,
-  "description": "Resolves an Instagram post, reel or carousel through three keyless sources.",
+  "description": "Save Instagram posts, reels, and carousels.",
   "produces": ["media"],
   "match": { "hosts": ["instagram.com", "*.instagram.com", "instagr.am", "*.instagr.am"] },
   "priority": 100,

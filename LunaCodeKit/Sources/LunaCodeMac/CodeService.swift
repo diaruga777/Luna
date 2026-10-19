@@ -43,8 +43,10 @@ public actor CodeService {
                 response.schemes = try await CodeDeviceSupport.schemes(path: path, root: root)
             case .apps:
                 guard request.path.hasPrefix("/"), ["xcworkspace", "xcodeproj"].contains(URL(fileURLWithPath: request.path).pathExtension) else { throw CodeFailure("Choose an Xcode project or workspace.") }
-                response.apps = try await CodeDeviceSupport.apps(path: request.path, scheme: request.project?.scheme, root: root)
-            case .devices: response.devices = try await CodeDeviceSupport.devices(root: root)
+                response.apps = await jobs.history(try await CodeDeviceSupport.apps(path: request.path, scheme: request.project?.scheme, root: root))
+            case .devices:
+                response.supportsOvernightBuilds = true
+                response.devices = try await CodeDeviceSupport.devices(root: root)
             case .branches: response.branches = try await CodeDeviceSupport.branches(path: request.path, root: root)
             case .prepare, .build, .deploy, .runOnDevice:
                 response.job = try await jobs.start(request)

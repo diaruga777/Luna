@@ -75,6 +75,10 @@ public struct CodeJob: Codable, Equatable, Sendable {
     public var startedAt: Date
     public var progress: CodeJobProgress?
     public var installHandoff: CodeInstallHandoff?
+    public var projectKey: String?
+    public var requestID: String?
+    public var builtAt: Date?
+    public var commitHash: String?
     public init(id: String, title: String, state: State = .running, log: String = "") {
         self.id = id; self.title = title; self.state = state; self.log = log; startedAt = Date()
     }
@@ -95,6 +99,7 @@ public struct CodeRequest: Codable, Sendable {
     public init(_ operation: Operation, path: String = "") { self.operation = operation; self.path = path }
 }
 public struct CodeResponse: Codable, Sendable {
+    public var supportsOvernightBuilds: Bool?
     public var apps: [CodeBuildApp]?
     public var devices: [CodeDevice]?
     public var branches: [String]?

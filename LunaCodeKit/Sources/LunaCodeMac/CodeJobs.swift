@@ -6,6 +6,7 @@ public actor CodeJobs {
     public let root: URL
     private var jobs: [String: CodeJob] = [:]
     private var processes: [String: CodeProcess] = [:]
+    private var waiting: [(CodeRequest, CodeProject, CodeJob, CodeProcess)] = []
     private let installGate = CodeInstallHandoffGate()
     private var workloads: [String: Int] = [:]
     private var requests: [String: String] = [:]
@@ -17,6 +18,7 @@ public actor CodeJobs {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
                 if job.state == .running { job.progress?.stoppedAt = Date(); job.state = .failed; job.failureMessage = "Mac companion restarted before this job completed."; job.log += "\n" + job.failureMessage! }
                 jobs[job.id] = job
+                if let request = job.requestID { requests[request] = job.id }
             }
         }
     }
@@ -26,7 +28,8 @@ public actor CodeJobs {
     }
     public func start(_ request: CodeRequest) throws -> CodeJob {
         if let id = requests[request.id], let existing = jobs[id] { return existing }
-        guard processes.isEmpty else { throw CodeFailure("A Mac build is already running. Wait for it or cancel it first.") }
+        let overnight = request.operation == .runOnDevice && request.deviceBuild?.installOnly == true
+        guard processes.isEmpty || overnight else { throw CodeFailure("A Mac build is already running. Wait for it or cancel it first.") }
         guard let project = request.project, FileManager.default.fileExists(atPath: project.path),
               ["xcodeproj", "xcworkspace"].contains(URL(fileURLWithPath: project.path).pathExtension),
               !project.scheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -35,14 +38,34 @@ public actor CodeJobs {
         if request.operation == .runOnDevice {
             guard request.deviceBuild != nil, !project.scheme.lowercased().contains("webdriveragent") else { throw CodeFailure("Select an app scheme and phone first.") }
         }
-        let title = request.operation == .runOnDevice ? "Build & Run · " + project.scheme : request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
+        let title = overnight ? "Overnight Build · " + project.scheme : request.operation == .runOnDevice ? "Build & Run · " + project.scheme : request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
         var job = CodeJob(id: UUID().uuidString, title: title)
+        job.projectKey = project.path + "\u{0}" + project.scheme; job.requestID = request.id
         job.progress = CodeJobProgress(stage: "Preparing on your Mac…", start: 0.05, end: 0.05, estimatedSeconds: 15, reportedFraction: 0.05)
         jobs[job.id] = job; requests[request.id] = job.id
         let process = CodeProcess(); processes[job.id] = process
         persist(job)
-        Task { await execute(request, project: project, job: job, process: process) }
-        return job
+        if processes.count == 1 {
+            Task { await execute(request, project: project, job: job, process: process) }
+        } else {
+            stage(job.id, "Waiting for another Mac build…", from: 0.05, to: 0.05, seconds: 1)
+            waiting.append((request, project, job, process))
+        }
+        return jobs[job.id]!
+    }
+    public func history(_ apps: [CodeBuildApp]) -> [CodeBuildApp] {
+        apps.map { app in
+            var app = app
+            if let latest = jobs.values.filter({ $0.projectKey == app.key && $0.builtAt != nil })
+                .max(by: { $0.builtAt! < $1.builtAt! }) {
+                app.lastBuiltAt = latest.builtAt; app.commitHash = latest.commitHash
+            }
+            return app
+        }
+    }
+    func recordCompilation(_ id: String, revision: String?) {
+        guard var job = jobs[id] else { return }
+        job.builtAt = Date(); job.commitHash = revision; jobs[id] = job; persist(job)
     }
     public func status(_ id: String) throws -> CodeJob {
         guard var job = jobs[id] else { throw CodeFailure("This build job is no longer available.") }
@@ -122,6 +145,9 @@ public actor CodeJobs {
     private func execute(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess) async {
         var completed = job
         let log = root.appendingPathComponent(job.id + ".log")
+        let revision: String?
+        if request.operation == .runOnDevice { revision = nil } // Uses the detached checkout's exact revision instead.
+        else { revision = try? await CodeDeviceSupport.git(["rev-parse", "HEAD"], directory: project.root, root: root, process: process) }
         do {
             let exit: Int32
             if request.operation == .runOnDevice {
@@ -159,16 +185,25 @@ public actor CodeJobs {
                     directory: project.root, process: process, log: log, id: job.id,
                     workloadKey: project.path + "|" + project.scheme + "|simulator", from: 0.10, to: 0.99)
             }
+            if exit == 0, request.operation != .runOnDevice { recordCompilation(job.id, revision: revision) }
             completed.state = exit == 0 ? .succeeded : .failed
             if exit == 0, request.operation == .deploy { completed.log = "\nAvailable to the internal group after processing. Open TestFlight on your iPhone to install." }
         } catch is CancellationError { completed.state = .cancelled }
         catch { completed.state = .failed; completed.failureMessage = error.localizedDescription; completed.log = "\n" + error.localizedDescription }
         if jobs[job.id]?.state == .cancelled { completed.state = .cancelled }
+        completed.builtAt = jobs[job.id]?.builtAt
+        completed.commitHash = jobs[job.id]?.commitHash
         completed.installHandoff = jobs[job.id]?.installHandoff
         completed.progress = jobs[job.id]?.progress
         if completed.progress?.stoppedAt == nil { completed.progress?.stoppedAt = Date() }
         jobs[job.id] = completed; processes[job.id] = nil; persist(completed)
         await installGate.cancel(job.id)
+        while !waiting.isEmpty {
+            let (next, project, job, process) = waiting.removeFirst()
+            guard jobs[job.id]?.state == .running else { processes[job.id] = nil; continue }
+            Task { await execute(next, project: project, job: job, process: process) }
+            break
+        }
     }
     public static func ascExecutable() throws -> String {
         let paths = [ProcessInfo.processInfo.environment["LUNA_ASC_PATH"], NSHomeDirectory() + "/.blitz/bin/asc", "/opt/homebrew/bin/asc", "/usr/local/bin/asc"].compactMap { $0 }

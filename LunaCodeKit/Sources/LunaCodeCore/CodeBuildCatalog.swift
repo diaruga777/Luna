@@ -12,6 +12,12 @@ public struct CodeBuildApp: Codable, Equatable, Sendable {
     public var branch: String
     public var deviceID: String?
     public var jobID: String?
+    public var lastBuiltAt: Date?
+    public var commitHash: String?
+    // Optional wire fields preserve caches and requests from older versions.
+    public var nightlyEnabled: Bool?
+    public var lastNightlyAttempt: Date?
+    public var nightlyFailure: String?
     public var key: String { project.path + "\u{0}" + project.scheme }
     public init(project: CodeProject, name: String, bundleID: String, branch: String = "main", deviceID: String? = nil) {
         self.project = project; self.name = name; self.bundleID = bundleID; self.branch = branch; self.deviceID = deviceID
@@ -21,6 +27,7 @@ public struct CodeDeviceBuild: Codable, Equatable, Sendable {
     public var branch: String
     public var deviceID: String
     public var monitorBundleID: String?
+    public var installOnly: Bool?
     public init(branch: String = "main", deviceID: String, monitorBundleID: String? = nil) {
         self.branch = branch; self.deviceID = deviceID; self.monitorBundleID = monitorBundleID
     }
@@ -45,6 +52,12 @@ public final class CodeBuildCatalog {
         let updated = discovered.map { app -> CodeBuildApp in
             guard let previous = old.first(where: { $0.key == app.key }) else { return app }
             var result = app; result.branch = previous.branch; result.deviceID = previous.deviceID; result.jobID = previous.jobID
+            result.nightlyEnabled = previous.nightlyEnabled
+            result.lastNightlyAttempt = previous.lastNightlyAttempt
+            result.nightlyFailure = previous.nightlyFailure
+            if let date = previous.lastBuiltAt, date > (result.lastBuiltAt ?? .distantPast) {
+                result.lastBuiltAt = date; result.commitHash = previous.commitHash
+            }
             return result
         }
         save((old.filter { $0.project.path != path } + updated).sorted {
@@ -53,6 +66,20 @@ public final class CodeBuildCatalog {
     }
     public func defaultDevice(peer: String) -> String? { defaults.string(forKey: "Code.defaultDevice." + peer) }
     public func setDefaultDevice(_ id: String?, peer: String) { defaults.set(id, forKey: "Code.defaultDevice." + peer) }
+
+    public func record(_ job: CodeJob, peer: String) {
+        var rows = apps(peer: peer)
+        for index in rows.indices where rows[index].jobID == job.id || rows[index].key == job.projectKey {
+            guard let date = job.builtAt, date >= (rows[index].lastBuiltAt ?? .distantPast) else { continue }
+            rows[index].lastBuiltAt = date; rows[index].commitHash = job.commitHash
+        }
+        save(rows, peer: peer)
+    }
+    public func edit(key: String, peer: String, _ change: (inout CodeBuildApp) -> Void) {
+        var rows = apps(peer: peer)
+        guard let index = rows.firstIndex(where: { $0.key == key }) else { return }
+        change(&rows[index]); save(rows, peer: peer)
+    }
 
     public static func resolveDevice(_ devices: [CodeDevice], preferred: String?, currentName: String) -> CodeDevice? {
         // A saved device never silently falls back to a different phone.

@@ -4,16 +4,20 @@ import LunaCodeCore
 extension CodeJobs {
     func runOnDevice(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess, log: URL) async throws {
         guard let options = request.deviceBuild else { throw CodeFailure("Choose a phone first.") }
-        let phones = try await CodeDeviceSupport.devices(root: root)
-        guard phones.contains(where: { $0.id == options.deviceID }) else { throw CodeFailure("The selected phone is not connected. Connect it to your Mac by cable or on the same network, unlock it, then try again.") }
+        if options.installOnly != true {
+            let phones = try await CodeDeviceSupport.devices(root: root)
+            guard phones.contains(where: { $0.id == options.deviceID }) else { throw CodeFailure("The selected phone is not connected. Connect it to your Mac by cable or on the same network, unlock it, then try again.") }
+        }
         stage(job.id, "Creating isolated checkout…", from: 0.10, to: 0.15, seconds: 15)
         let checkout = try await CodeDeviceCheckout.create(project: project, branch: options.branch, root: root,
             name: job.id, process: process)
         do {
             stage(job.id, "Checking destination and signing…", from: 0.15, to: 0.25, seconds: 45)
             let buildProject = checkout.project
-            try await CodeDeviceSupport.validateDestination(buildProject, deviceID: options.deviceID, root: root, process: process)
-            let destination = "platform=iOS,id=" + options.deviceID
+            if options.installOnly != true {
+                try await CodeDeviceSupport.validateDestination(buildProject, deviceID: options.deviceID, root: root, process: process)
+            }
+            let destination = options.installOnly == true ? "generic/platform=iOS" : "platform=iOS,id=" + options.deviceID
             let settings = try await CodeDeviceSupport.settings(buildProject, root: root, process: process, destination: destination)
             guard let app = try CodeDeviceSupport.primarySettings(settings, project: buildProject), CodeDeviceSupport.isApp(app),
                   let bundle = app["PRODUCT_BUNDLE_IDENTIFIER"], !bundle.lowercased().contains("webdriveragent"),
@@ -38,6 +42,7 @@ extension CodeJobs {
                 workloadKey: project.path + "|" + project.scheme + "|device", from: 0.25, to: 0.80) == 0 else {
                 throw CodeFailure("Build & Run stopped. See the Mac job log for details.")
             }
+            recordCompilation(job.id, revision: checkout.revision)
             let appURL = products.appendingPathComponent(product)
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
@@ -46,9 +51,15 @@ extension CodeJobs {
                 try await waitForInstallHandoff(job.id)
             }
             stage(job.id, "Installing on your phone…", from: 0.80, to: 0.93, seconds: 40)
-            try await command("/usr/bin/xcrun", ["devicectl", "device", "install", "app", "--device", options.deviceID, appURL.path], directory: checkout.directory.path, process: process, log: log)
-            stage(job.id, "Launching on your phone…", from: 0.93, to: 0.97, seconds: 10)
-            try await command("/usr/bin/xcrun", ["devicectl", "device", "process", "launch", "--device", options.deviceID, "--terminate-existing", bundle], directory: checkout.directory.path, process: process, log: log)
+            do {
+                try await command("/usr/bin/xcrun", ["devicectl", "device", "install", "app", "--timeout", "120", "--device", options.deviceID, appURL.path], directory: checkout.directory.path, process: process, log: log)
+            } catch {
+                throw CodeFailure("The app built, but installation failed. Unlock your phone, check its connection to Xcode, then try again. See the Mac job log for details.")
+            }
+            if options.installOnly != true {
+                stage(job.id, "Launching on your phone…", from: 0.93, to: 0.97, seconds: 10)
+                try await command("/usr/bin/xcrun", ["devicectl", "device", "process", "launch", "--device", options.deviceID, "--terminate-existing", bundle], directory: checkout.directory.path, process: process, log: log)
+            }
         } catch {
             await checkout.remove(root: root)
             throw error
@@ -57,7 +68,7 @@ extension CodeJobs {
         await checkout.remove(root: root)
     }
     private func command(_ executable: String, _ arguments: [String], directory: String, process: CodeProcess, log: URL) async throws {
-        guard try await process.run(executable, arguments, directory: directory, log: log) == 0 else { throw CodeFailure("Build & Run stopped. See the Mac job log for details.") }
+        guard try await process.run(executable, arguments, directory: directory, log: log, timeout: 180) == 0 else { throw CodeFailure("Build & Run stopped. See the Mac job log for details.") }
     }
 }
 
@@ -82,6 +93,7 @@ enum CodeDeviceSigning {
 /// A detached checkout protects the editor's branch, index and unsaved Mac files.
 struct CodeDeviceCheckout {
     var directory: URL
+    var revision: String
     var repository: String
     var project: CodeProject
     static func create(project: CodeProject, branch: String, root: URL, name: String, process: CodeProcess = CodeProcess()) async throws -> Self {
@@ -99,7 +111,7 @@ struct CodeDeviceCheckout {
         }
         var selected = project
         selected.path = directory.appendingPathComponent(String(source.dropFirst(repo.count + 1))).path
-        return Self(directory: directory, repository: repo, project: selected)
+        return Self(directory: directory, revision: revision, repository: repo, project: selected)
     }
     func remove(root: URL) async {
         _ = try? await CodeDeviceSupport.git(["worktree", "remove", "--force", directory.path], directory: repository, root: root)

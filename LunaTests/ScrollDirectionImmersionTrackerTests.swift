@@ -134,9 +134,10 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testUpwardTravelPastThresholdFiresImmersedFalse() {
         drag(to: 600)
-        drag(to: 570)  // run -30, below the 50pt fade-in threshold
+        drag(to: 570)  // run -30, below the 90pt fade-in threshold
+        drag(to: 511)  // run -89, still below the threshold
         XCTAssertTrue(events.isEmpty)
-        drag(to: 549)  // run -51, beyond the threshold
+        drag(to: 509)  // run -91, beyond the threshold
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
         XCTAssertEqual(events.first?.extendsCard, true)

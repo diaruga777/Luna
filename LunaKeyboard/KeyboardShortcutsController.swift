@@ -25,7 +25,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
     let search = UISearchController(searchResultsController: nil)
     search.searchResultsUpdater = self
     search.obscuresBackgroundDuringPresentation = false
-    search.searchBar.placeholder = "Search shortcuts and every emoji"
+    search.searchBar.placeholder = "Search shortcuts and emoji"
     navigationItem.searchController = search
   }
   override func viewWillAppear(_ animated: Bool) {
@@ -48,7 +48,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
   override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String?
   {
     section == 1
-      ? "Every Unicode emoji has keyword mappings, including skin tones, flags and joined sequences. Search for a name or keyword; tap a result to give it your own keywords."
+      ? "Tap an emoji to add your own keywords."
       : nil
   }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -64,8 +64,8 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
     let r = shortcuts[indexPath.row]
     let c = cell(
       r.text, detail: (store.mediaIsMissing(r) ? "Missing file · tap to repair. " : "")
-        + r.keywords.joined(separator: ", ") + (r.suggestWhileTyping ? "" : " · Lookup only")
-        + (r.isCosmetic ? " · Cosmetic" : ""), icon: r.kind == "text" ? nil : "photo")
+        + r.keywords.joined(separator: ", ") + (r.suggestWhileTyping ? "" : " · Search only")
+        + (r.isCosmetic ? " · Suggest only" : ""), icon: r.kind == "text" ? nil : "photo")
     c.accessoryType = .disclosureIndicator
     return c
   }
@@ -92,7 +92,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
   private func edit(_ existing: KeyboardShortcut?, importing: URL? = nil) {
     let a = UIAlertController(
       title: existing == nil ? "New Shortcut" : "Edit Shortcut",
-      message: "Separate keywords with commas. Lookup keeps it in Saved search only. Cosmetic suggestions are never applied automatically.",
+      message: "Separate keywords with commas.",
       preferredStyle: .alert)
     a.addTextField {
       $0.placeholder = "Keywords"
@@ -136,11 +136,11 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
     let menu = UIAlertController(title: entry.text, message: store.mediaIsMissing(entry)
       ? "The media file is missing. Choose it again from Photos or Files, or remove this shortcut." : nil, preferredStyle: .actionSheet)
     menu.addAction(UIAlertAction(title: "Edit", style: .default) { [weak self] _ in self?.edit(entry) })
-    menu.addAction(UIAlertAction(title: entry.suggestWhileTyping ? "Use for Lookup Only" : "Suggest While Typing", style: .default) { [weak self] _ in
+    menu.addAction(UIAlertAction(title: entry.suggestWhileTyping ? "Show Only in Search" : "Suggest While Typing", style: .default) { [weak self] _ in
       var updated = entry; updated.suggestWhileTyping.toggle(); self?.saveOptions(updated)
     })
     if entry.kind == "text" {
-      menu.addAction(UIAlertAction(title: entry.isCosmetic ? "Use as Text Replacement" : "Mark as Cosmetic", style: .default) { [weak self] _ in
+      menu.addAction(UIAlertAction(title: entry.isCosmetic ? "Use as Text Replacement" : "Suggest Without Replacing", style: .default) { [weak self] _ in
         var updated = entry; updated.isCosmetic.toggle(); self?.saveOptions(updated)
       })
     }
@@ -191,7 +191,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
     })
     menu.addAction(UIAlertAction(title: "Remove Missing Media Shortcuts", style: .destructive) { [weak self] _ in
       guard let self else { return }
-      let confirm = UIAlertController(title: "Remove missing shortcuts?", message: "Their keywords will also be deleted. You can instead replace a missing file from its shortcut menu.", preferredStyle: .alert)
+      let confirm = UIAlertController(title: "Remove missing shortcuts?", message: "This also removes their keywords. To keep a shortcut, replace its missing file instead.", preferredStyle: .alert)
       confirm.addAction(UIAlertAction(title: "Cancel", style: .cancel))
       confirm.addAction(UIAlertAction(title: "Remove", style: .destructive) { [weak self] _ in
         guard let self else { return }

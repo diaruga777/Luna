@@ -188,7 +188,7 @@ final class KeyboardTutorialController: KeyboardTryoutController {
     guard success, !completed else { return }
     completed = true
     scene.progress = step + 1
-    instruction.text = step == 3 ? "Quest complete! You restored the dragon’s name, unlocked numbers, cast a spell, and raised a shield." : "Well done! " + lessons[step].2
+    instruction.text = step == 3 ? "You did it! The dragon is safe." : "Well done! " + lessons[step].2
     nextLesson.setTitle(step == 3 ? "Play Again" : "Next", for: .normal)
     UIAccessibility.post(notification: .announcement, argument: step == 3 ? "Quest complete" : "Lesson complete")
   }

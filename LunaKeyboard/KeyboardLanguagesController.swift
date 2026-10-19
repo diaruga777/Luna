@@ -16,12 +16,6 @@ final class KeyboardLanguagesController: KeyboardTableController {
   override func numberOfSections(in tableView: UITableView) -> Int { 2 }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String?
   { section == 0 ? "Primary" : "Secondary" }
-  override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String?
-  {
-    section == 1
-      ? "A secondary dictionary uses additional system memory. Leave it off if you type in one language."
-      : nil
-  }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     KeyboardPreferences.languages.count + (section == 1 ? 1 : 0)
   }

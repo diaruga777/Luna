@@ -16,7 +16,7 @@ final class KeyboardHomeController: KeyboardTableController {
     icon.clipsToBounds = true
     header.addSubview(icon)
     let label = UILabel(frame: CGRect(x: 24, y: 105, width: 320, height: 50))
-    label.text = "Your words. Your shortcuts.\nEverything you save in Luna."
+    label.text = "Your shortcuts, wherever you type."
     label.numberOfLines = 2
     label.font = .preferredFont(forTextStyle: .body)
     label.textColor = .secondaryLabel
@@ -32,7 +32,7 @@ final class KeyboardHomeController: KeyboardTableController {
   override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String?
   {
     section == 0
-      ? "Add Luna Keyboard in Settings → General → Keyboard → Keyboards. Full Access lets the keyboard read your Luna shortcuts and saved links, and enables GIF search. Double-tap the spacebar to search emoji, shortcuts and GIFs. Typing stays on your device. Search terms are sent only when you use media search."
+      ? "Add Luna Keyboard in Settings → General → Keyboard → Keyboards. Allow Full Access for Luna shortcuts, saved links, and GIF search. Double-tap the spacebar to search. Your typing stays on your device; media searches send only your search terms."
       : nil
   }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath)
@@ -47,8 +47,8 @@ final class KeyboardHomeController: KeyboardTableController {
       ]
       : [
         ("Shortcuts", "Words, emoji, images and GIFs", "text.badge.plus"),
-        ("Personal Dictionary", "Words that should stay yours", "character.book.closed"),
-        ("Languages", "Primary and optional secondary language", "globe"),
+        ("Personal Dictionary", "Add names, slang, and your own words", "character.book.closed"),
+        ("Languages", "The languages you type in", "globe"),
         ("Preferences", "Typing, feedback and Luna suggestions", "slider.horizontal.3"),
       ]
     let r = rows[indexPath.row]

@@ -110,7 +110,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
             var empty = UIContentUnavailableConfiguration.empty()
             empty.image = UIImage(systemName: "music.note")
             empty.text = "Allow Music Access"
-            empty.secondaryText = "Allow access for Apple Music, or connect Luna Mac in Luna Music Settings to play your Vault files."
+            empty.secondaryText = "Allow music library access, or connect your Mac in Settings."
             empty.button.title = "Open Settings"
             empty.buttonProperties.primaryAction = UIAction { _ in if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             configuration = empty
@@ -119,7 +119,7 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         } else if !query.isEmpty && results.isEmpty {
             var empty = UIContentUnavailableConfiguration.search(); empty.secondaryText = downloadedOnly ? "Try another search or turn off the Downloaded filter." : "Try another song, artist, album, or playlist."; configuration = empty
         } else if library.songs.isEmpty && library.authorizationStatus == .authorized {
-            var empty = UIContentUnavailableConfiguration.empty(); empty.image = UIImage(systemName: "music.note.list"); empty.text = "Your Library Is Empty"; empty.secondaryText = library.errorMessage ?? "Add music to your Apple library or connect Luna Mac in Settings to discover Vault songs."; configuration = empty
+            var empty = UIContentUnavailableConfiguration.empty(); empty.image = UIImage(systemName: "music.note.list"); empty.text = "Your Library Is Empty"; empty.secondaryText = library.errorMessage ?? "Add songs to your music library, or connect your Mac in Settings."; configuration = empty
         }
         table.backgroundView = nil
         table.tableFooterView = nil

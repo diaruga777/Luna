@@ -8,7 +8,7 @@ actor CodeInstallHandoffGate {
         let value = CodeInstallHandoff(); pending[id] = value; return value
     }
     func acknowledge(_ id: String, token: String?) throws -> CodeInstallHandoff {
-        guard var value = pending[id], value.token == token else { throw CodeFailure("This update handoff is no longer available. Refresh the build status.") }
+        guard var value = pending[id], value.token == token else { throw CodeFailure("This update is no longer ready to install. Refresh the build status.") }
         value.acknowledged = true; pending[id] = value; return value
     }
     func cancel(_ id: String) { pending[id] = nil }
@@ -19,7 +19,7 @@ actor CodeInstallHandoffGate {
             guard let value = pending[id] else { throw CancellationError() }
             if value.acknowledged { return }
             guard clock.now < deadline else {
-                throw CodeFailure("Build completed, but Luna Code did not acknowledge the update handoff. No replacement was installed. Reopen Luna Code and retry Build & Run.")
+                throw CodeFailure("The build finished, but the update couldn’t start installing. Reopen Luna Code and try Build & Run again.")
             }
             try await Task.sleep(for: .milliseconds(100))
         }

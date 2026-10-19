@@ -29,13 +29,13 @@ public final class MusicSettingsViewController: UITableViewController {
         section == 0 ? 2 : section == 1 ? 2 : cached.count
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        ["Music Sources", "Automatic Downloads", "Cached Songs (\(cached.count))"][section]
+        ["Music Sources", "Automatic Downloads", "Downloaded Songs (\(cached.count))"][section]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 { return MusicSettings.connectionError ?? vault.errorMessage ?? "Put files in Music/Artist/Album inside your Mac’s Vault folder. New songs appear when the library refreshes." }
-        if section == 1 { return vault.cacheProgress ?? "Keep songs from your most-played Vault playlists on this iPhone. Manually downloaded songs stay cached. Set 0 to disable automatic downloads." }
+        if section == 0 { return MusicSettings.connectionError ?? vault.errorMessage ?? "Add songs to the Music folder inside your Mac’s Vault folder, organized by artist and album." }
+        if section == 1 { return vault.cacheProgress ?? "Automatically download your most-played Vault playlists. Set to 0 to turn this off. Songs you download yourself are kept." }
         let bytes = cached.reduce(Int64(0)) { $0 + ($1.file?.size ?? 0) }
-        return "\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) on this iPhone. Swipe a song to remove its cache. The original stays on your Mac. Removed songs won’t download automatically again unless you choose Download."
+        return "\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) on this iPhone. Swipe to remove a download. The original stays on your Mac. To download it again, choose Download."
     }
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
@@ -51,7 +51,7 @@ public final class MusicSettingsViewController: UITableViewController {
                 config.text = "Top \(vault.state.automaticPlaylistCount) playlists"
                 let stepper = UIStepper(); stepper.minimumValue = 0; stepper.maximumValue = 10
                 stepper.value = Double(vault.state.automaticPlaylistCount)
-                stepper.accessibilityLabel = "Automatically cached playlists"
+                stepper.accessibilityLabel = "Playlists to download automatically"
                 stepper.accessibilityValue = String(vault.state.automaticPlaylistCount)
                 stepper.addAction(UIAction { [weak self, weak stepper] _ in
                     guard let self, let stepper else { return }
@@ -77,9 +77,9 @@ public final class MusicSettingsViewController: UITableViewController {
     public override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard indexPath.section == 2 else { return nil }
         let song = cached[indexPath.row]
-        let action = UIContextualAction(style: .destructive, title: "Remove Cache") { [weak self] _, _, done in
+        let action = UIContextualAction(style: .destructive, title: "Remove Download") { [weak self] _, _, done in
             guard let self else { done(false); return }
-            MusicStyle.run(from: self, errorTitle: "Couldn’t Remove Cache") { try await self.vault.removeCachedSong(song); done(true) }
+            MusicStyle.run(from: self, errorTitle: "Couldn’t Remove Download") { try await self.vault.removeCachedSong(song); done(true) }
         }
         return UISwipeActionsConfiguration(actions: [action])
     }

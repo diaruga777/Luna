@@ -60,7 +60,7 @@ public final class VaultMusicController: ObservableObject {
                 generation = response.generation
                 files.append(contentsOf: response.files)
                 guard let next = response.nextOffset else { break }
-                guard next > offset, !response.files.isEmpty else { throw MusicFileError("The Mac returned an invalid music page.") }
+                guard next > offset, !response.files.isEmpty else { throw MusicFileError("Couldn’t load your Mac’s music library. Try refreshing it.") }
                 offset = next
             } while true
             var next = state

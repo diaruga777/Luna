@@ -315,7 +315,7 @@ import LunaCodeCore
         var request = CodeRequest(.save, path: doc.draft.base.path); request.text = submitted; request.version = doc.draft.base.version
         do {
             let response = try await environment.client.call(request)
-            guard let remote = response.document else { throw CodeFailure("The Mac did not acknowledge the saved file.") }
+            guard let remote = response.document else { throw CodeFailure("Couldn’t confirm the file was saved on your Mac. Check the file before trying again.") }
             if response.conflict {
                 doc.remote = remote
                 if workspaceGeneration == workspace, active === doc { resolveConflict(doc) }
@@ -337,7 +337,7 @@ import LunaCodeCore
     }
     private func resolveConflict(_ doc: Document) {
         guard let remote = doc.remote else { return }
-        let alert = UIAlertController(title: "This file changed on your Mac", message: "Choose which version to keep. Your iPhone draft remains saved until you choose.", preferredStyle: .alert)
+        let alert = UIAlertController(title: "This file changed on your Mac", message: "Choose which version to keep. Your iPhone draft is safe until you decide.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Keep Editing", style: .cancel))
         alert.addAction(UIAlertAction(title: "Use Mac Version", style: .destructive) { [weak self] _ in
             guard let self else { return }; doc.draft = CodeDraft(base: remote); doc.remote = nil
@@ -412,7 +412,7 @@ import LunaCodeCore
                 guard !Task.isCancelled, active === doc, doc.peer == environment.peerID(), doc.generation == generation, doc.view.selectedRange == selection else { return }
                 completions = response.completions; completionIndex = 0; completionGeneration = generation; completionPath = doc.draft.base.path; completionSelection = selection
                 completionTable.reloadData(); completionTable.isHidden = completions.isEmpty; doc.view.hasCompletions = !completions.isEmpty
-                if completions.isEmpty { setStatus("No completions · Build to refresh index") }
+                if completions.isEmpty { setStatus("No suggestions · Try building the project") }
                 else { completionTable.selectRow(at: IndexPath(row: 0, section: 0), animated: false, scrollPosition: .top); placeCompletions() }
             } catch { if !Task.isCancelled { setStatus("Completion unavailable · Prepare project", color: .systemOrange) } }
         }
@@ -733,7 +733,7 @@ import LunaCodeCore
         switch value.state {
         case .running:
             status.text = value.installHandoff == nil ? value.progressStage : "Build Complete — Updating Luna Code"
-            detail.text = monitor?.backgroundMessage ?? "You can leave Luna Code. Your Mac has the build."
+            detail.text = monitor?.backgroundMessage ?? "You can leave Luna Code while your Mac builds."
         case .succeeded: status.text = "Build Completed"; detail.text = nil
         case .failed:
             status.text = "Build Failed"

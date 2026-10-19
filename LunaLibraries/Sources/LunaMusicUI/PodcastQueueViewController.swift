@@ -146,7 +146,7 @@ import LunaMusicCore
         cues = PodcastPlaybackController.shared.transcript.filter { query.isEmpty || $0.text.localizedStandardContains(query) }
         if PodcastPlaybackController.shared.isLoadingTranscript { tableView.backgroundView = PodcastUI.supplementaryState(loading: true, error: nil, title: "Loading Transcript") }
         else if let error = PodcastPlaybackController.shared.transcriptError { tableView.backgroundView = PodcastUI.supplementaryState(loading: false, error: error, title: "Unable to Load Transcript") }
-        else if cues.isEmpty { var configuration = UIContentUnavailableConfiguration.empty(); configuration.text = "No Transcript"; configuration.secondaryText = query.isEmpty ? "This episode has no available publisher transcript." : "No transcript text matches your search."; tableView.backgroundView = UIContentUnavailableView(configuration: configuration) }
+        else if cues.isEmpty { var configuration = UIContentUnavailableConfiguration.empty(); configuration.text = "No Transcript"; configuration.secondaryText = query.isEmpty ? nil : "Try another word or phrase."; tableView.backgroundView = UIContentUnavailableView(configuration: configuration) }
         else { tableView.backgroundView = nil }
         tableView.reloadData()
     }
@@ -174,7 +174,7 @@ import LunaMusicCore
     private func reload() {
         if PodcastPlaybackController.shared.isLoadingChapters { tableView.backgroundView = PodcastUI.supplementaryState(loading: true, error: nil, title: "Loading Chapters") }
         else if let error = PodcastPlaybackController.shared.chaptersError { tableView.backgroundView = PodcastUI.supplementaryState(loading: false, error: error, title: "Unable to Load Chapters") }
-        else if chapters.isEmpty { var content = UIContentUnavailableConfiguration.empty(); content.text = "No Chapters"; content.secondaryText = "The publisher has not supplied chapters for this episode."; tableView.backgroundView = UIContentUnavailableView(configuration: content) }
+        else if chapters.isEmpty { var content = UIContentUnavailableConfiguration.empty(); content.text = "No Chapters"; content.secondaryText = nil; tableView.backgroundView = UIContentUnavailableView(configuration: content) }
         else { tableView.backgroundView = nil }; tableView.reloadData()
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { chapters.count }

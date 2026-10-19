@@ -55,7 +55,7 @@ private enum MusicIntentError: LocalizedError {
 
 struct PlayLibraryMusicIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Play Library Music"
-    static var description = IntentDescription("Play a song with its shuffled playlist continuation, an album, artist, or playlist from your library.")
+    static var description = IntentDescription("Play a song, album, artist, or playlist from your library.")
     static var openAppWhenRun = true
     @Parameter(title: "Music") var music: LibraryMusicEntity
     static var parameterSummary: some ParameterSummary { Summary("Play \(\.$music)") }
@@ -148,7 +148,7 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
 
 struct ResumeLastPodcastIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Resume Last Podcast"
-    static var description = IntentDescription("Resume the exact podcast episode last played. Only after the last queued episode naturally finishes, play the oldest unplayed episode after each followed show's listening cursor. Do nothing when caught up.")
+    static var description = IntentDescription("Pick up where you left off, then continue with unplayed episodes from the shows you follow.")
     static var openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         MediaPlaybackCoordinator.shared.install()

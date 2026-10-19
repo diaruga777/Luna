@@ -117,7 +117,7 @@ import LunaMusicCore
             let recent = state.progress.filter { $0.value.lastPlayedAt != nil }.sorted { $0.value.lastPlayedAt! > $1.value.lastPlayedAt! }.prefix(20).compactMap { state.episodes[$0.key] }
             sections += [.init(title: "Latest Episodes", rows: latest.prefix(30).map(Row.episode)), .init(title: "Recently Played", rows: recent.map(Row.episode))]
             if podcasts.isRefreshing { loading("Updating Podcasts") }
-            else if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Podcasts", detail: "Find a show in New or Search, then follow it to see new episodes here.") }
+            else if sections.allSatisfy({ $0.rows.isEmpty }) { empty("Your Podcasts", detail: "Follow a show to get new episodes.") }
         case 1:
             sections = [.init(title: "Top Shows", rows: charts.prefix(20).map(Row.directory)), .init(title: "Browse Categories", rows: PodcastDirectory.categories.map { category in
                 .action(category.name, "square.grid.2x2") { [weak self] in self?.navigationController?.pushViewController(PodcastCategoryViewController(category: category), animated: true) }
@@ -143,7 +143,7 @@ import LunaMusicCore
             if search.searchBar.selectedScopeButtonIndex == 2 {
                 sections = [.init(title: "Your Library", rows: state.shows.values.filter { $0.title.localizedStandardContains(query) }.map(Row.show) + PodcastPolicies.ordered(state.episodes.values.filter { $0.title.localizedStandardContains(query) || PodcastUI.text($0.summary).localizedStandardContains(query) }, newestFirst: true).map(Row.episode))]
             } else { sections = [.init(title: search.searchBar.selectedScopeButtonIndex == 1 ? "Episodes" : "Shows", rows: results.map(Row.directory))] }
-            if query.isEmpty { empty("Search Podcasts", detail: "Find shows and episodes by title, topic, or creator.") }
+            if query.isEmpty { empty("Search Podcasts", detail: "Try a show name, topic, or creator.") }
             else if isSearching { loading("Searching Podcasts") }
             else if sections.allSatisfy({ $0.rows.isEmpty }) { empty(message == nil ? "No Results" : "Search Unavailable", detail: message ?? "Try another title or topic.", retry: message == nil ? nil : { [weak self] in guard let self else { return }; self.updateSearchResults(for: self.search) }) }
         }
@@ -192,7 +192,7 @@ extension PodcastBrowserViewController: UISearchBarDelegate {
     override func viewDidLoad() { super.viewDidLoad(); reload() }
     override func reload() {
         sections = [.init(title: "", rows: showIDs.compactMap { podcasts.state.shows[$0] }.map(Row.show) + ids.compactMap { podcasts.state.episodes[$0] }.map(Row.episode))]
-        if sections[0].rows.isEmpty { empty("No Episodes", detail: "Episodes you add to this part of your library will appear here.") }
+        if sections[0].rows.isEmpty { empty("No Episodes", detail: "No episodes yet.") }
         super.reload()
     }
 }

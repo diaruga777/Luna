@@ -52,7 +52,7 @@ public actor VaultMusicCache {
                                 if let peerID, peerID() != song.peer { throw MusicFileError("The paired Mac changed during playback. Refresh your library.") }
                                 let response = try JSONDecoder().decode(MusicFileResponse.self, from: data)
                                 if let error = response.error { throw MusicFileError(error) }
-                                guard let bytes = response.data, bytes.count == blockLength else { throw MusicFileError("The Mac returned an incomplete music range.") }
+                                guard let bytes = response.data, bytes.count == blockLength else { throw MusicFileError("Couldn’t download the whole song. Reconnect to your Mac and try again.") }
                                 return bytes
                             } catch {
                                 if error is CancellationError || error is MusicFileError || attempt == 2 { throw error }
@@ -80,7 +80,7 @@ public actor VaultMusicCache {
         let destination = Self.url(root: root, song: song)
         if Self.complete(destination, size: file.size) { return destination }
         let free = try FileManager.default.attributesOfFileSystem(forPath: root.path)[.systemFreeSize] as? NSNumber
-        guard let free, file.size <= max(0, free.int64Value - 200 * 1024 * 1024) else { throw MusicFileError("There isn’t enough space to cache this song. Free some storage and try again.") }
+        guard let free, file.size <= max(0, free.int64Value - 200 * 1024 * 1024) else { throw MusicFileError("There isn’t enough space to download this song. Free some storage and try again.") }
         let staging = root.appendingPathComponent(UUID().uuidString + ".partial")
         guard FileManager.default.createFile(atPath: staging.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
         #if os(iOS)

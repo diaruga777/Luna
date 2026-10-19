@@ -908,7 +908,7 @@ public final class LiveMediaDownloadManager: NSObject {
         case .resolving:
             if URLBehaviorPolicy.pluginsOnly {
                 if await reresolvePluginJob(job) { return }
-                await failJob(job, message: "A supported plugin is required to resolve this download.")
+                await failJob(job, message: "Enable a plugin for this site in Settings, then try downloading again.")
                 return
             }
             guard let sourceURL = URL(string: job.sourceURLString)
@@ -1706,7 +1706,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private func startRedditManifestFallback(jobID: String) {
         if URLBehaviorPolicy.pluginsOnly {
-            if let job = store.job(id: jobID) { Task { await self.failJob(job, message: "The plugin did not provide a usable audio track.") } }
+            if let job = store.job(id: jobID) { Task { await self.failJob(job, message: "Couldn’t find playable audio for this download.") } }
             return
         }
         guard let job = store.job(id: jobID), job.phase != .suspended else { return }
@@ -1722,7 +1722,7 @@ public final class LiveMediaDownloadManager: NSObject {
         job: LiveMediaDownloadJob, location: URL, response: URLResponse?
     ) {
         guard !URLBehaviorPolicy.pluginsOnly else {
-            Task { await self.failJob(job, message: "The plugin must resolve the audio track.") }
+            Task { await self.failJob(job, message: "Couldn’t find the audio. Try saving this link again.") }
             return
         }
         guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
@@ -1796,7 +1796,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
         guard !URLBehaviorPolicy.pluginsOnly else {
-            Task { await self.failJob(job, message: "This legacy download needs to be resolved by an installed plugin.") }
+            Task { await self.failJob(job, message: "Save this link again with a plugin for this site enabled in Settings.") }
             return
         }
         var job = job

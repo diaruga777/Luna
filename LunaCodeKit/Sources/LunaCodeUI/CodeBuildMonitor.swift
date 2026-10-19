@@ -33,17 +33,17 @@ import LunaCodeCore
     func fraction(for value: CodeJob) -> Double { job?.id == value.id ? fraction : value.progressFraction() }
     var stage: String { isStarting ? "Starting on your Mac…" : (job?.progressStage ?? "Build") }
     var backgroundMessage: String {
-        if isStarting { return "Keep Luna Code open until your Mac confirms the build has started." }
+        if isStarting { return "Keep Luna Code open while the build starts." }
         if let handoff = job?.installHandoff {
             return handoff.acknowledged
-                ? "Build complete. Your Mac is installing the update. Luna Code may close and reopen; the installation result will be restored."
-                : "Build complete. Preparing to update Luna Code; keep it open until installation starts."
+                ? "Installing the update. Luna Code may close and reopen."
+                : "Keep Luna Code open until the update starts installing."
         }
-        if disconnected { return "Reconnecting to your Mac. Progress is paused until it responds. The Mac can continue building." }
+        if disconnected { return "Reconnecting… Your Mac can keep building while you wait." }
         if monitoringStopped || !requested {
-            return "You can leave Luna Code. Your Mac has the build; reopen Luna Code to refresh progress. Background progress is unavailable."
+            return "You can leave Luna Code. Come back to check progress."
         }
-        return "You can leave Luna Code. Your Mac has the build, and iOS will show its progress while background monitoring is available."
+        return "You can leave Luna Code while your Mac builds."
     }
 
     init(client: CodeClient, defaults: UserDefaults, peerID: @escaping () -> String) {
@@ -185,7 +185,7 @@ import LunaCodeCore
             defer { acknowledgingInstall = false; endInstallLease(); becameIdle?() }
             var request = CodeRequest(.acknowledgeInstall); request.jobID = id; request.handoffToken = handoff.token
             do {
-                guard let reply = try await client.call(request).job else { throw CodeFailure("The Mac did not acknowledge the update handoff.") }
+                guard let reply = try await client.call(request).job else { throw CodeFailure("Couldn’t start installing the update. Reconnect to your Mac and try again.") }
                 guard origin == peerID(), job?.id == id else { return }
                 accept(reply)
             } catch {

@@ -59,6 +59,7 @@ struct SettingsCategory {
     let title: String
     let symbol: String
     var detail: (() -> String?)? = nil
+    var isVisible: () -> Bool = { true }
     var requiresEmail = false
     var makePrerequisite: (() -> UIViewController)? = nil
     let make: () -> UIViewController
@@ -82,11 +83,13 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
     /// one. Injected so a test can pin either answer without the App Group.
     private let emailStatus: any EmailAccountStatusProviding
 
-    private let categories: [SettingsCategory] =
+    private var categories: [SettingsCategory] = []
+
+    private func makeCategories() -> [SettingsCategory] {
         // Kind rows first (Reader/Audio/Email/Kindle for article apps,
         // Auto-Download for media apps), then the universal tail. Contacts is
         // email sharing's address book, so it appears only where email exists.
-        KindWiring.settingsCategories()
+        let categories = KindWiring.settingsCategories()
         + (LunaApp.current.sharesByEmail
             ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
@@ -112,10 +115,13 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         + (WeeklyPromotionKeyStore.isKeyHolder
             ? [SettingsCategory(title: L10n.string("Settings_weeklyProposals_title"), symbol: "crown") { WeeklyProposalsScreen() }]
             : [])
+        return categories.filter { $0.isVisible() }
+    }
 
     init(emailStatus: any EmailAccountStatusProviding = ConnectedEmailAccountStatus()) {
         self.emailStatus = emailStatus
         super.init(style: .insetGrouped)
+        categories = makeCategories()
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
@@ -135,6 +141,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        categories = makeCategories()
         // Detail values can change on pushed screens. Refresh rows when the
         // user comes back so they are immediately visible.
         tableView.reloadData()
@@ -290,7 +297,9 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         // The in-page video player is media handling, and only the two
         // media-handling apps' extensions ever open one
         // (`claudedocs/safari-extension.md`).
-        if LunaApp.current.handlesMedia { sections.append(.videoPlayer) }
+        if LunaApp.current.handlesMedia && PluginFeatureAvailability.hasVideoPlugin {
+            sections.append(.videoPlayer)
+        }
         guard showsShortcutSetup else { return sections }
         sections.append(.onScreenURLs)
         // Double save is a behavior of the Action Button shortcut, so it
@@ -311,6 +320,11 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         headerTitle = Self.screenTitle(showsShortcutSetup: showsShortcutSetup)
         super.viewDidLoad()
         refreshSafariStatus()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        tableView.reloadData()
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { visibleSections.count }
@@ -445,10 +459,14 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     /// A pull-down picker showing what a second Action Button press on the same
     /// saved article does.
     private func doubleSaveActionCell() -> UITableViewCell {
-        let current = doubleSaveSurface.map {
+        let actions = DoubleSaveAction.allCases.filter {
+            $0 != .sendToKindle || PluginFeatureAvailability.hasKindlePlugin
+        }
+        let stored = doubleSaveSurface.map {
             DoubleSaveActionStore.shared.action(forSurface: $0)
         } ?? DoubleSaveAction.nothing
-        let menu = UIMenu(children: DoubleSaveAction.allCases.map { action in
+        let current = actions.contains(stored) ? stored : .nothing
+        let menu = UIMenu(children: actions.map { action in
             UIAction(
                 title: action.displayName, state: action == current ? .on : .off
             ) { [weak self] _ in

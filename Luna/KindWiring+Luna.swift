@@ -172,8 +172,7 @@ enum KindWiring {
     }
 
     /// The Kindle plugin's own settings screen, where its address lives.
-    /// With no listing the plugin is not loaded, so the Swift destination is
-    /// still the live one and its screen is the right answer.
+    /// A removed plugin has no native setup fallback in core Luna.
     private struct PluginKindleSetupRoute: KindleSetupPresenting {
         @MainActor
         func presentKindleSetup(from presenter: UIViewController) {
@@ -184,8 +183,6 @@ enum KindWiring {
             guard let catalog = PluginPlatformServices.catalog,
                   let listing = catalog.listing(pluginID: KindlePlugin.pluginID)
             else {
-                presenter.navigationController?.pushViewController(
-                    KindleSettingsScreen(), animated: true)
                 return
             }
             presenter.navigationController?.pushViewController(
@@ -305,7 +302,10 @@ enum KindWiring {
                         ? nil : L10n.string("Common_signInRequired")
                 }
             ) { EmailAndKindleSettingsScreen() },
-            SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
+            SettingsCategory(
+                title: L10n.string("Common_downloads"), symbol: "play.fill",
+                isVisible: { PluginFeatureAvailability.hasVideoPlugin }
+            ) {
                 DownloadsSettingsScreen()
             },
             PluginsSettingsCategory.make(),

@@ -26,7 +26,7 @@ final class CodeInstallHandoffTests: XCTestCase {
         let gate = CodeInstallHandoffGate()
         _ = await gate.prepare("timeout")
         do { try await gate.wait("timeout", timeout: 0.05); XCTFail("Expected timeout") }
-        catch { XCTAssertTrue(error.localizedDescription.contains("No replacement was installed")) }
+        catch { XCTAssertTrue(error.localizedDescription.contains("update couldn’t start installing")) }
         _ = await gate.prepare("cancelled")
         let task = Task { try await gate.wait("cancelled", timeout: 2) }
         await gate.cancel("cancelled")

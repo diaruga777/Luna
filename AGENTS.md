@@ -56,6 +56,21 @@ Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music, Code,
 Keyboard and Writer remain independent. Dev uses Xcode 27 beta; archive/upload
 uses stable Xcode 26.2. Preserve the existing handmade Action extension icons.
 
+**Luna Mac signing.** `script/build_and_run.sh` stages and signs the
+`LunaVaultMacCompanion` app. Its default is ad-hoc signing, which changes the
+app's designated signing requirement and can make macOS ask for Files and
+Folders access again. For any Luna Mac build that will be used on this Mac,
+always set `LUNA_MAC_SIGNING_IDENTITY` to the same valid Apple Development
+certificate used for the existing Luna Mac app, using its exact certificate
+name or SHA-1 from `security find-identity -v -p codesigning`. Keep the bundle
+identifier and app bundle location unchanged as well. Do this for every build,
+including worktree builds and `--build-only` builds that will later be launched.
+Never run the default ad-hoc signing path to relaunch a persistent client. If
+the matching certificate cannot be identified or is unavailable, inspect the
+existing app and keychain; if it is still uncertain, ask the user instead of
+guessing or signing ad hoc. Verify the staged app's signature before launch
+with `codesign -dv --verbose=2`.
+
 **Plugins and premium.** Only the six non-media scripts under
 `LunaLibraries/Sources/LunaBundledPlugins/Plugins` ship in app resources. Media
 and transcript sources live under `docs/plugins/media`; regenerate the optional

@@ -107,15 +107,21 @@ must be running on the Mac whose source projects you want to edit or build.
    ```
 
    This builds and opens **Luna Mac**. To compile without opening it, use
-   `./script/build_and_run.sh --build-only`. By default the helper signs the
-   local app ad hoc, which is sufficient for development. To preserve macOS
-   Files and Folders permissions across rebuilds, sign with a certificate
-   available in that Mac's Keychain:
+   `./script/build_and_run.sh --build-only`. For a persistent Luna Mac install,
+   set the same valid Apple Development certificate for every build and launch
+   so macOS keeps its Files and Folders permission grant:
 
    ```sh
    LUNA_MAC_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' \
      ./script/build_and_run.sh
    ```
+
+   Use the exact certificate name or SHA-1 from
+   `security find-identity -v -p codesigning`. The helper defaults to ad-hoc
+   signing when this variable is unset; do not use that default for a client
+   whose folder permissions should persist. Switching an existing ad-hoc build
+   to a certificate can require approving folder access once for the new
+   signing identity.
 
 2. Build and install/run `LunaCode` on an iPhone/iPad simulator or device.
    Pair from Luna Code's Mac connection setup (or from Luna Vault, which shares

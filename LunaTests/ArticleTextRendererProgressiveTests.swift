@@ -259,7 +259,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
-    func testInteractiveWidthChangesKeepVisibleLinesAndUseNewWidthOutsideViewport() throws {
+    func testInteractiveWidthChangesKeepAllLinesStableThroughScrollingAndReversal() throws {
         var item = SavedItem(urlString: "https://example.com/stable-lines")
         item.state = .ready
         let article = ArticleContent(title: "Stable lines", blocks: [paragraph(String(
@@ -320,11 +320,27 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         resize(to: 600)
         assertPreserved(narrow)
 
-        // Scroll the old lines entirely out, then reverse the width change.
+        // Newly entering lines use the same fixed layout. Releasing a line at
+        // either viewport edge must never move another line or adjust the offset.
         text.contentOffset.y += 900
         reader.scrollViewDidScroll(text)
         let wide = visibleLines()
-        XCTAssertGreaterThan(try XCTUnwrap(wide.first).1.width, try XCTUnwrap(narrow.first).1.width + 100)
+        XCTAssertEqual(try XCTUnwrap(wide.first).1.width, try XCTUnwrap(narrow.first).1.width, accuracy: 0.5)
+        for _ in 0..<100 {
+            let before = visibleLines()
+            let offset = text.contentOffset.y + 7
+            text.contentOffset.y = offset
+            reader.scrollViewDidScroll(text)
+            XCTAssertEqual(text.contentOffset.y, offset, accuracy: 0.01)
+            let after = visibleLines()
+            for (range, rect) in before {
+                if let match = after.first(where: { $0.0 == range }) {
+                    XCTAssertEqual(match.1.minY, rect.minY - 7, accuracy: 0.01)
+                    XCTAssertEqual(match.1.width, rect.width, accuracy: 0.01)
+                }
+            }
+        }
+        text.contentOffset.y -= 700
         resize(to: 350)
         assertPreserved(wide)
         XCTAssertLessThanOrEqual(text.contentSize.width, text.bounds.width + 0.5,
@@ -344,7 +360,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         reader.view.frame.size.width = 600
         reader.view.layoutIfNeeded()
         reader.finishCardViewportTransition(completed: true)
-        XCTAssertTrue(visibleLines().allSatisfy { abs($0.1.width - wide[0].1.width) < 0.5 })
+        XCTAssertTrue(visibleLines().allSatisfy { $0.1.width > narrow[0].1.width + 100 })
     }
 
     @MainActor
@@ -376,9 +392,10 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
 
         reader.prepareForCardViewportTransition(
             to: CGSize(width: 402, height: 600), preservingVisibleLines: true)
-        let lines = text.subviews.compactMap { $0 as? UIImageView }
-        XCTAssertGreaterThan(lines.count, 5)
-        let sourceX = lines.map { $0.convert(.zero, to: window).x }
+        XCTAssertTrue(text.subviews.compactMap { $0 as? UIImageView }.isEmpty)
+        let sourceX = text.convert(.zero, to: window).x
+        let sourceWidth = text.bounds.width
+        let sourceOffset = text.contentOffset.y
         // Commit the source frames before starting the card's transaction.
         RunLoop.main.run(until: Date().addingTimeInterval(0.03))
         let finished = expectation(description: "card expansion")
@@ -391,18 +408,16 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         for _ in 0..<8 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.03))
             let windowLayer = try XCTUnwrap(window.layer.presentation())
-            for (line, x) in zip(lines, sourceX) {
-                let presentation = try XCTUnwrap(line.layer.presentation())
-                XCTAssertEqual(presentation.convert(.zero, to: windowLayer).x, x, accuracy: 0.5,
-                    "Existing text must stay at its original screen X throughout the animation")
-            }
+            let presentation = try XCTUnwrap(text.layer.presentation())
+            XCTAssertEqual(presentation.convert(.zero, to: windowLayer).x, sourceX, accuracy: 0.5,
+                "The live text canvas must stay at its screen X throughout the animation")
+            XCTAssertEqual(presentation.bounds.width, sourceWidth, accuracy: 0.5)
+            XCTAssertEqual(text.contentOffset.y, sourceOffset, accuracy: 0.01)
         }
         RunLoop.main.run(until: Date().addingTimeInterval(0.15))
-        for (line, x) in zip(lines, sourceX) {
-            XCTAssertEqual(line.convert(.zero, to: window).x, x, accuracy: 0.5)
-        }
+        XCTAssertEqual(text.convert(.zero, to: window).x, sourceX, accuracy: 0.5)
         reader.finishCardViewportTransition(completed: true)
-        XCTAssertTrue(lines.allSatisfy { $0.superview == nil }, "Return drawing to live TextKit at the endpoint")
+        XCTAssertEqual(text.alpha, 1, "Text stays live throughout the transition")
     }
 
     @MainActor
@@ -458,6 +473,11 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
                 + text.textContainerInset.top - text.contentOffset.y
         }
         let before = screenY()
+        reader.prepareForCardViewportTransition(to: CGSize(width: 600, height: 750), preservingVisibleLines: true)
+        reader.view.frame.size.width = 600
+        reader.view.layoutIfNeeded()
+        reader.finishCardViewportTransition(completed: true)
+        XCTAssertEqual(text.bounds.width, 350, accuracy: 0.5)
         reader.view.frame.size.width = 900
         reader.view.setNeedsLayout()
         reader.view.layoutIfNeeded()

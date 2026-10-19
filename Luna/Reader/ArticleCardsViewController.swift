@@ -972,6 +972,13 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
             viewportSize: view.bounds.size)
     }
 
+    func readerCardExpandedWidth(_ card: ReaderCardContentViewController) -> CGFloat {
+        let safeWidth = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right
+        let inset = (carousel.usesReaderGrid || LunaLayout.isWide(containerWidth: view.bounds.width))
+            ? Self.expandedReaderHorizontalInset : 0
+        return max(1, safeWidth - inset * 2)
+    }
+
     private func expandedReaderInset(
         for card: ReaderCardContentViewController,
         immersed: Bool
@@ -1187,6 +1194,8 @@ protocol ReaderCardContentDelegate: AnyObject {
     /// This card's own resting footprint in window coordinates — what the live
     /// card measures its immersion bottom-extension against.
     func readerCardRestingFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
+    /// The banner is rendered at this width even while the card crops its sides.
+    func readerCardExpandedWidth(_ card: ReaderCardContentViewController) -> CGFloat
     /// Where a nested reader opened from this card belongs: this card's footprint
     /// on a phone, the column beside it on a wide screen.
     func readerCardInlineReaderFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
@@ -1231,6 +1240,7 @@ final class ReaderCardContentViewController: CardContentViewController,
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private var scrollDrivenViewportTransition = false
     private var preservedScrollTitleSize: CGSize?
+    private var preparedViewportWidth: CGFloat?
     private var baseTopContentInset: CGFloat = 0
     private var titleHeaderHeight: CGFloat = 0
     private var cardChromeVisible = true
@@ -1287,8 +1297,8 @@ final class ReaderCardContentViewController: CardContentViewController,
         // reaching the article's end owes the content a compensating slide.
         let restoringAtArticleEnd = !immersed && extendsCard && isFocusedContentAtEnd
         let extensionBeforeRestore = immersionBottomExtension
-        // The card's 0.32s immersion animation reflows TextKit and can adjust
-        // contentOffset while the original pan is still decelerating. Ignore
+        // The card's 0.32s immersion animation changes viewport height and can
+        // adjust contentOffset while the original pan is still decelerating. Ignore
         // those synthetic offsets so they cannot reverse this transition and
         // start an endless sequence of width animations.
         tracker.suppressScrollDrivenImmersion(for: 0.45)
@@ -1449,6 +1459,18 @@ final class ReaderCardContentViewController: CardContentViewController,
         // The reader fills the card — the fade-out's bottom extension just
         // grows this frame, revealing more content; nothing inside shifts.
         reader?.view.frame = view.bounds
+        if let preparedViewportWidth, !scrollDrivenViewportTransition,
+           abs(preparedViewportWidth - view.bounds.width) > 0.5 {
+            preservedScrollTitleSize = nil
+            self.preparedViewportWidth = nil
+        }
+        let bannerWidth = max(view.bounds.width, delegate?.readerCardExpandedWidth(self) ?? view.bounds.width)
+        let restingWidth = delegate?.readerCardRestingFrameInWindow(self)?.width ?? view.bounds.width
+        let bannerHeight = titleHeader.bannerHeightThatFits(width: restingWidth, topInset: baseTopContentInset)
+        for header in [titleHeader, scrollTitleHeader] {
+            header.setBannerGeometry(viewportWidth: view.bounds.width,
+                                     canvasSize: CGSize(width: bannerWidth, height: bannerHeight))
+        }
         let height = titleHeader.heightThatFits(
             width: view.bounds.width, topInset: baseTopContentInset)
         _ = scrollTitleHeader.heightThatFits(
@@ -1692,12 +1714,11 @@ final class ReaderCardContentViewController: CardContentViewController,
         viewportTitleDestinationFrame = nil
         viewportTransitionScrollReader = nil
         if scrollDrivenViewportTransition {
-            if scrollTitleHeader.alpha > 0,
-               scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).intersects(view.bounds) {
-                preservedScrollTitleSize = scrollTitleHeader.bounds.size
-            }
+            preservedScrollTitleSize = preservedScrollTitleSize ?? scrollTitleHeader.bounds.size
+            preparedViewportWidth = size.width
         } else {
             preservedScrollTitleSize = nil
+            preparedViewportWidth = nil
         }
         let destinationTitleHeight = titleHeader.heightThatFits(
             width: size.width, topInset: baseTopContentInset)
@@ -1778,8 +1799,9 @@ final class ReaderCardContentViewController: CardContentViewController,
         // Size both title copies from the card so the scrolling copy cannot
         // paint wide and then visibly re-wrap on the reader's following pass.
         let scrollingWidth = preservedScrollTitleSize?.width ?? view.bounds.width
+        let scrollViewportWidth = preservedScrollTitleSize == nil ? view.bounds.width : focused.bounds.width
         scrollTitleHeader.frame = CGRect(
-            x: (view.bounds.width - scrollingWidth) / 2, y: -titleHeaderHeight,
+            x: (scrollViewportWidth - scrollingWidth) / 2, y: -titleHeaderHeight,
             width: scrollingWidth, height: titleHeaderHeight)
         focused.bringSubviewToFront(scrollTitleHeader)
         updatePinnedTitleVisibility(animated: false)
@@ -1787,11 +1809,6 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     private func scrollOffsetDidChange(in scrollView: UIScrollView?) {
         guard let scrollView, scrollView === titleScrollView else { return }
-        if preservedScrollTitleSize != nil,
-           !scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).intersects(view.bounds) {
-            preservedScrollTitleSize = nil
-            view.setNeedsLayout()
-        }
         guard isCentered else {
             pendingProgrammaticTitleUpdate?.cancel()
             pendingProgrammaticTitleUpdate = nil
@@ -1915,8 +1932,12 @@ private final class ReaderCardTitleHeaderView: UIView {
     private static let overflowLineLimit = 6
     private static let overflowGap: CGFloat = 6
 
+    private let bannerCrop = UIView()
     private let bannerView = UIImageView()
     private let bannerTreatment = UIView()
+    private var bannerViewportWidth: CGFloat = 0
+    private var bannerCanvasSize: CGSize = .zero
+    private var bannerFit: (width: CGFloat, topInset: CGFloat, height: CGFloat)?
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     /// The rest of a title too long for the line cap, shown in smaller type
@@ -1972,8 +1993,11 @@ private final class ReaderCardTitleHeaderView: UIView {
         bannerView.clipsToBounds = true
         bannerTreatment.backgroundColor = UIColor.black.withAlphaComponent(0.68)
         bannerTreatment.isHidden = true
-        addSubview(bannerView)
-        addSubview(bannerTreatment)
+        bannerCrop.clipsToBounds = true
+        bannerCrop.backgroundColor = LunaColors.background
+        addSubview(bannerCrop)
+        bannerCrop.addSubview(bannerView)
+        bannerCrop.addSubview(bannerTreatment)
         addSubview(iconView)
         addSubview(titleLabel)
         addSubview(overflowLabel)
@@ -1995,6 +2019,13 @@ private final class ReaderCardTitleHeaderView: UIView {
         setNeedsLayout()
     }
 
+    func setBannerGeometry(viewportWidth: CGFloat, canvasSize: CGSize) {
+        guard bannerViewportWidth != viewportWidth || bannerCanvasSize != canvasSize else { return }
+        bannerViewportWidth = viewportWidth
+        bannerCanvasSize = canvasSize
+        setNeedsLayout()
+    }
+
     func setIcon(_ image: UIImage) {
         iconView.image = image
         iconView.tintColor = nil
@@ -2003,6 +2034,7 @@ private final class ReaderCardTitleHeaderView: UIView {
     func setTitle(_ title: String) {
         fullTitle = SavedItem.cardTitle(title) ?? ""
         splitWidth = 0
+        bannerFit = nil
         // VoiceOver reads the headline whole, however it is split visually.
         accessibilityLabel = SavedItem.cardTitle(title)
         setNeedsLayout()
@@ -2038,6 +2070,17 @@ private final class ReaderCardTitleHeaderView: UIView {
         return total
     }
 
+    /// Keep the fixed image canvas measurement separate from the live title
+    /// fit, so scrolling an expanded card does not repeatedly re-typeset both.
+    func bannerHeightThatFits(width: CGFloat, topInset: CGFloat) -> CGFloat {
+        if let bannerFit, bannerFit.width == width, bannerFit.topInset == topInset {
+            return bannerFit.height
+        }
+        let height = heightThatFits(width: width, topInset: topInset)
+        bannerFit = (width, topInset, height)
+        return height
+    }
+
     func heightThatFits(width: CGFloat, topInset: CGFloat) -> CGFloat {
         self.topInset = topInset
         let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
@@ -2047,8 +2090,14 @@ private final class ReaderCardTitleHeaderView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        bannerView.frame = bounds
-        bannerTreatment.frame = bounds
+        let cropWidth = max(bounds.width, bannerViewportWidth)
+        let canvasWidth = max(cropWidth, bannerCanvasSize.width)
+        let canvasHeight = max(bounds.height, bannerCanvasSize.height)
+        bannerCrop.frame = CGRect(x: (bounds.width - cropWidth) / 2, y: 0,
+                                  width: cropWidth, height: bounds.height)
+        bannerView.frame = CGRect(x: (cropWidth - canvasWidth) / 2, y: 0,
+                                  width: canvasWidth, height: canvasHeight)
+        bannerTreatment.frame = bannerCrop.bounds
         let iconSide: CGFloat = 30
         let contentHeight = max(bounds.height - topInset, 0)
         iconView.frame = CGRect(

@@ -55,10 +55,11 @@ back in behind it. An
 offset within that title region is normalized to zero when Scroll or Original persists,
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore
-(`-adjustedContentInset.top`); applying it as raw zero would hide the title again. On every host, hiding Scroll chrome widens the text viewport. The wider title may
-wrap to a different height;
-the TextKit transition resolves that destination inset up front and anchors the same
-reading glyph, so the title-height change cannot jump the passage. Both copies'
+(`-adjustedContentInset.top`); applying it as raw zero would hide the title again.
+Hiding Scroll chrome widens the card. Scroll-driven changes keep the text and title
+column fixed; tap-driven changes may wrap the wider title to a different height.
+The tap's TextKit transition resolves that destination inset up front and anchors
+the same reading glyph, so the title-height change cannot jump the passage. Both copies'
 backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.
 The host applies that stable inset when each card controller is constructed, including
@@ -116,22 +117,21 @@ does not gain text width expansion.
 Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
 inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
-the selected article to the rail or the compact deck. Scroll-driven changes use
-`ScrollStableTextContainer`: visible lines retain their exact character ranges and
-column widths, centered as the card expands and clipped at the trailing edge if
-it contracts. During the card animation, retained lines draw in temporary line
-views whose frames animate with the card; TextKit's immediate redraw at the final
-fragment origins must not blink the text sideways ahead of the moving viewport.
-The line views replace only those glyphs (including their backgrounds) and return
-drawing to live TextKit at the endpoint, while TextKit continues to own layout,
-selection, links and accessibility throughout.
-Lines entering from either edge use the current width; once a preserved line leaves
-the viewport it can lay out at that width on re-entry. A measured TextKit seam prevents
-new text above the retained passage from consuming its first characters, including
-scripts without spaces. Reading-position anchoring compensates for changed layout
-above the viewport. A visible scrolling masthead also keeps its existing width until
-it leaves the viewport. Text, selection, links and WordMap character indexes remain
-unchanged. Taps clear these retained widths and use `TextViewportReflowTransition`, which
+the selected article to the rail or the compact deck. Scroll-driven changes retain
+one fixed live text viewport, centered inside the changing card. The whole article
+keeps its line breaks and column width, including lines entering from either edge
+and lines returning after a direction reversal. Scrolling never invalidates line
+layout or compensates the content offset as individual lines leave the viewport.
+The scrolling masthead keeps its text geometry for the same period. Selection,
+links, attachments, accessibility and WordMap continue to use the live TextKit
+layout. Its scroll pan recognizer stays on the full card viewport so the revealed
+margins still accept drags. A real window resize releases the retained width and
+anchors the passage.
+Both masthead copies render their banner at the chrome-less card width and a fixed
+height derived from the resting header; only the surrounding crop changes with
+chrome. The image is revealed without rescaling or moving horizontally. The scroll
+reader clips at the card boundary so this banner can extend past the retained text
+column. Taps release the retained column and use `TextViewportReflowTransition`, which
 builds a second TextKit layout for the destination width before the 0.32s transition,
 anchors the glyph around the upper quarter of the viewport, and temporarily replaces
 the live jumping layout with per-glyph images. Every glyph whose old→new path intersects

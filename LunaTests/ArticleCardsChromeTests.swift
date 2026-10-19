@@ -355,7 +355,9 @@ final class ArticleCardsChromeTests: XCTestCase {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
 
-        controller.carousel(carousel, didTapCenteredCardAt: carousel.currentIndex)
+        // Exercise deck visibility directly: the initial slot can be the utility
+        // card, whose tap opens its own flow instead of immersing the reader.
+        XCTAssertTrue(carousel.setImmersed(true, extendsCard: true, animated: false))
         XCTAssertTrue(carousel.isImmersed)
 
         let centered = try XCTUnwrap(carousel.cardView(at: carousel.currentIndex))
@@ -481,7 +483,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         card.view.layoutIfNeeded()
         reader.view.layoutIfNeeded()
         XCTAssertTrue(controller.carousel.isImmersed)
-        XCTAssertGreaterThan(text.bounds.width, oldTitleWidth)
+        XCTAssertGreaterThan(card.view.bounds.width, oldTitleWidth)
+        XCTAssertEqual(text.bounds.width, oldTitleWidth, accuracy: 0.5)
         XCTAssertEqual(scrollingTitle.bounds.width, oldTitleWidth, accuracy: 0.5)
         XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
         XCTAssertEqual(text.alpha, 1)
@@ -495,6 +498,47 @@ final class ArticleCardsChromeTests: XCTestCase {
         controller.view.layoutIfNeeded()
         XCTAssertFalse(controller.carousel.isImmersed)
         XCTAssertEqual(scrollingTitle.bounds.width, card.view.bounds.width, accuracy: 0.5)
+    }
+
+    func testBannerKeepsFullCanvasWhileBothHeaderCopiesAreCropped() throws {
+        let title = "A long headline that makes the resting header taller than the expanded header"
+        let controller = makeArticleController(seed: "stable-banner-crop", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let headers = headerViews(labelled: title, in: card.view)
+        XCTAssertEqual(headers.count, 2)
+        let expandedWidth = controller.readerCardExpandedWidth(card)
+        func banners() throws -> [UIImageView] {
+            try headers.map { header in
+                try XCTUnwrap(allSubviews(in: header).compactMap { $0 as? UIImageView }
+                    .first { $0.contentMode == .scaleAspectFill })
+            }
+        }
+        card.view.layoutIfNeeded()
+        for header in headers { header.layoutIfNeeded() }
+        let images = try banners()
+        let sizes = images.map { $0.bounds.size }
+        let origins = images.map { $0.convert(.zero, to: controller.view).x }
+        for image in images {
+            XCTAssertEqual(image.bounds.width, expandedWidth, accuracy: 0.5)
+            XCTAssertTrue(try XCTUnwrap(image.superview).clipsToBounds)
+            XCTAssertLessThan(try XCTUnwrap(image.superview).bounds.width, image.bounds.width)
+        }
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        for immersed in [true, false, true, false] {
+            card.immersionTracker(ScrollDirectionImmersionTracker(),
+                                  didChangeImmersion: immersed, extendsCard: true)
+            controller.view.layoutIfNeeded()
+            card.view.layoutIfNeeded()
+            for header in headers { header.layoutIfNeeded() }
+            for (index, image) in images.enumerated() {
+                XCTAssertEqual(image.bounds.size, sizes[index], "Only the crop may change")
+                XCTAssertEqual(image.convert(.zero, to: controller.view).x, origins[index], accuracy: 0.5)
+                XCTAssertEqual(image.superview?.bounds.width ?? 0, card.view.bounds.width, accuracy: 0.5)
+            }
+        }
     }
 
     func testScrollableTitleCopyKeepsInsetStableAndCentersFaviconBesideMultilineTitle() throws {
@@ -534,8 +578,9 @@ final class ArticleCardsChromeTests: XCTestCase {
                 y: -textView.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
-        controller.carousel(
-            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: true, extendsCard: true)
 
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)

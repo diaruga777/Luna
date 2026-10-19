@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaPluginKit
 import LunaModels
 import LunaStorage
 import UIKit
@@ -20,12 +21,93 @@ struct StubEmailAccountStatus: EmailAccountStatusProviding {
 @MainActor
 final class SettingsHierarchyTests: XCTestCase {
     private var window: UIWindow?
+    private var oldCatalog: (any PluginCatalogProviding)?
+    private var catalog: SettingsPluginCatalog!
+
+    override func setUp() {
+        super.setUp()
+        oldCatalog = PluginPlatformServices.catalog
+        catalog = SettingsPluginCatalog()
+        catalog.items = [plugin(id: "test.video", produces: [.media])]
+        PluginPlatformServices.catalog = catalog
+    }
 
     override func tearDown() {
         window?.isHidden = true
         window?.rootViewController = nil
         window = nil
+        PluginPlatformServices.catalog = oldCatalog
+        catalog = nil
         super.tearDown()
+    }
+
+    func testVideoSettingsFollowInstalledMediaPluginsOnReturn() {
+        catalog.items = [plugin(id: "test.transcript", produces: [.article])]
+        let screen = SettingsViewController()
+        window = UITestSupport.host(UINavigationController(rootViewController: screen))
+        XCTAssertFalse(rowTitles(screen).contains("Video"))
+        XCTAssertTrue(rowTitles(screen).contains("Audio"))
+
+        catalog.items.append(plugin(id: "test.video", produces: [.media], status: .disabled))
+        screen.viewWillAppear(false)
+        XCTAssertTrue(rowTitles(screen).contains("Video"))
+
+        catalog.items = []
+        screen.viewWillAppear(false)
+        XCTAssertFalse(rowTitles(screen).contains("Video"))
+    }
+
+    func testSafariVideoPlayerIsHiddenWithoutAMediaPlugin() {
+        catalog.items = []
+        let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
+        window = UITestSupport.host(screen)
+        XCTAssertEqual(sectionTitles(screen), ["Luna Button", "Cookie Popups"])
+    }
+
+    func testEreaderControlsRequireTheirOwnInstalledPlugin() {
+        catalog.items = []
+        XCTAssertFalse(PluginFeatureAvailability.isDestinationAvailable(ArticleDestinationID.xteink))
+        XCTAssertFalse(PluginFeatureAvailability.hasKindlePlugin)
+        XCTAssertTrue(PluginFeatureAvailability.isDestinationAvailable("test.other"))
+        let shortcut = ShortcutSettingsScreen(showsShortcutSetup: true)
+        window = UITestSupport.host(shortcut)
+        let section = sectionTitles(shortcut).firstIndex(of: "Double Save Action")!
+        let cell = shortcut.tableView(shortcut.tableView, cellForRowAt: IndexPath(row: 0, section: section))
+        let picker = cell.accessoryView as! UIButton
+        XCTAssertFalse(picker.menu!.children.contains { $0.title == "Send to Kindle" })
+
+        let email = EmailAndKindleSettingsScreen()
+        window = UITestSupport.host(email)
+        XCTAssertFalse(rowTitles(email).contains(L10n.string("Settings_email_autoSendToKindleLabel")))
+        let countWithoutKindle = email.tableView.numberOfRows(inSection: 1)
+
+        catalog.items = [plugin(id: "app.luna.xteink", produces: [])]
+        XCTAssertTrue(PluginFeatureAvailability.isDestinationAvailable(ArticleDestinationID.xteink))
+        XCTAssertFalse(PluginFeatureAvailability.hasKindlePlugin)
+        catalog.items = [plugin(id: "app.luna.kindle", produces: [], status: .disabled)]
+        XCTAssertTrue(PluginFeatureAvailability.hasKindlePlugin)
+        XCTAssertFalse(PluginFeatureAvailability.isDestinationAvailable(ArticleDestinationID.xteink))
+        email.tableView.reloadData()
+        XCTAssertEqual(email.tableView.numberOfRows(inSection: 1), countWithoutKindle + 1)
+        XCTAssertTrue(rowTitles(email).contains(L10n.string("Settings_email_autoSendToKindleLabel")))
+    }
+
+    private func plugin(
+        id: String, produces: [PluginModelKind], status: PluginStatus = .enabled
+    ) -> PluginListing {
+        PluginListing(
+            summary: PluginSummary(
+                id: id, name: id, version: "1.0.0", priority: 0, matchesAnyHost: true,
+                hostPatterns: [], produces: produces, hooks: [], export: nil, isBundled: false),
+            description: nil, status: status, capabilities: [], runsInBackground: false, settings: [])
+    }
+
+    private func rowTitles(_ screen: UITableViewController) -> [String] {
+        (0..<screen.tableView.numberOfSections).flatMap { section in
+            (0..<screen.tableView.numberOfRows(inSection: section)).compactMap {
+                rowTitle(screen, row: $0, section: section)
+            }
+        }
     }
 
     func testReaderIncludesPreloadControlsWithoutSavesRowDisplayToggles() {
@@ -220,4 +302,13 @@ final class SettingsHierarchyTests: XCTestCase {
             screen.tableView, cellForRowAt: IndexPath(row: row, section: section))
         return (cell.contentConfiguration as? UIListContentConfiguration)?.text
     }
+}
+
+private final class SettingsPluginCatalog: PluginCatalogProviding {
+    var items: [PluginListing] = []
+    func listings() -> [PluginListing] { items }
+    func listing(pluginID: String) -> PluginListing? { items.first { $0.summary.id == pluginID } }
+    func sourceText(pluginID: String) -> String? { nil }
+    func setEnabled(_ enabled: Bool, pluginID: String) throws {}
+    func delete(pluginID: String) throws {}
 }

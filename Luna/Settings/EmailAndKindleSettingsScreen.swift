@@ -55,6 +55,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         return [.account, .inboxFilter, .signOut]
     }
 
+    private var importMailControlCount: Int {
+        PluginFeatureAvailability.hasKindlePlugin ? 2 : 1
+    }
+
     init(accountStore: EmailAccountStore = .shared) {
         self.accountStore = accountStore
         super.init(style: .insetGrouped)
@@ -130,7 +134,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             // Connected: account status/actions. Otherwise the inline sign-in
             // form: address field + Connect.
             return accountStore.isConfigured ? connectedAccountRows.count : 2
-        case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 2 /* add, pull recent */
+        case .importMail: return importMailControlCount + IncomingMailSettings.allowedSenders.count + 2 /* add, pull recent */
         case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
     }
@@ -225,17 +229,17 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             }
 
         case .importMail:
-            switch indexPath.row {
-            case 0:
+            let controlCount = importMailControlCount
+            if indexPath.row == 0 {
                 content.text = L10n.string("Settings_email_importFromEmailLabel")
                 cell.accessoryView = makeToggle(
                     isOn: IncomingMailSettings.isEnabled, action: #selector(importToggled(_:)))
-            case 1:
+            } else if controlCount == 2 && indexPath.row == 1 {
                 content.text = L10n.string("Settings_email_autoSendToKindleLabel")
                 cell.accessoryView = makeToggle(
                     isOn: IncomingMailSettings.autoSendToKindle, action: #selector(autoSendToggled(_:)))
-            default:
-                let senderIndex = indexPath.row - 2
+            } else {
+                let senderIndex = indexPath.row - controlCount
                 if senderIndex < IncomingMailSettings.allowedSenders.count {
                     content.text = IncomingMailSettings.allowedSenders[senderIndex]
                 } else if senderIndex == IncomingMailSettings.allowedSenders.count {
@@ -245,7 +249,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 }
             }
 
-            if indexPath.row == IncomingMailSettings.allowedSenders.count + 3 {
+            if indexPath.row == IncomingMailSettings.allowedSenders.count + importMailControlCount + 1 {
                 content.text = L10n.string(isPullingMail
                     ? "Settings_email_pullingRecent" : "Settings_email_pullRecent")
                 content.secondaryText = L10n.string("Settings_email_pullRecentDetail")
@@ -295,9 +299,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             } else if indexPath.row == 1 {
                 connectAccount()
             }
-        case .importMail where indexPath.row == IncomingMailSettings.allowedSenders.count + 3:
+        case .importMail where indexPath.row == IncomingMailSettings.allowedSenders.count + importMailControlCount + 1:
             pullRecentMail()
-        case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
+        case .importMail where indexPath.row - importMailControlCount == IncomingMailSettings.allowedSenders.count:
             promptForSender()
         case .subjectFilters where indexPath.row == IncomingMailSettings.subjectFilters.count:
             promptForSubjectFilter()
@@ -309,8 +313,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
         switch Section(rawValue: indexPath.section)! {
         case .importMail:
-            return indexPath.row >= 2
-                && indexPath.row - 2 < IncomingMailSettings.allowedSenders.count
+            return indexPath.row >= importMailControlCount
+                && indexPath.row - importMailControlCount < IncomingMailSettings.allowedSenders.count
         case .subjectFilters:
             return indexPath.row < IncomingMailSettings.subjectFilters.count
         default:
@@ -325,7 +329,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         guard editingStyle == .delete else { return }
         switch Section(rawValue: indexPath.section)! {
         case .importMail:
-            IncomingMailSettings.removeSender(at: indexPath.row - 2)
+            IncomingMailSettings.removeSender(at: indexPath.row - importMailControlCount)
         case .subjectFilters:
             IncomingMailSettings.removeSubjectFilter(at: indexPath.row)
         default:

@@ -105,6 +105,16 @@ cannot send to a contact and never applies to non-article items.
 
 ## Media apps
 
+Core Luna shows Video settings (including Begin Streaming) and Safari’s Video
+Player section only while at least one installed plugin declares `media` in
+`produces`. Transcript-only plugins do not qualify. Disabled plugins still count
+as installed. The top-level menu refreshes when returning from Plugins.
+
+Kindle controls (the double-save choice and email auto-send toggle) require an
+installed Kindle plugin in core Luna. Kindle and Xteink send buttons require
+their respective installed plugins as well as the existing configuration checks.
+Legacy surfaces retain their native integrations.
+
 Luna and Luna Downloader show the same Downloads page:
 
 - Download Automatically: Never, Always, or On Wi-Fi Only.

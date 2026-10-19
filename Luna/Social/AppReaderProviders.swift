@@ -96,7 +96,9 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         // Gives the rendezvous a chance to be live before the row below reads
         // `isRendezvousActive` for its dot.
         XteinkBLECentral.shared.beginRendezvousScan()
-        return ArticleSendCoordinator.shared.configuredDestinations().map { destination in
+        return ArticleSendCoordinator.shared.configuredDestinations()
+            .filter { PluginFeatureAvailability.isDestinationAvailable($0.id) }
+            .map { destination in
             let isXteink = destination.id == ArticleDestinationID.xteink
             return .action(
                 title: L10n.string(

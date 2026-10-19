@@ -60,6 +60,22 @@ final class CodeBuildCatalogTests: XCTestCase {
         XCTAssertFalse(CodeDeviceSupport.isApp(library))
         XCTAssertFalse(CodeDeviceSupport.isApp(["PRODUCT_TYPE": "com.apple.product-type.application", "SUPPORTED_PLATFORMS": "macosx"]))
     }
+    func testMultiAppCollectionWithRunnableDependencyIsExcluded() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let project = root.appendingPathComponent("App.xcodeproj")
+        let folder = project.appendingPathComponent("xcshareddata/xcschemes")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let xml = Data(#"<Scheme><BuildAction><BuildActionEntries><BuildActionEntry buildForRunning="YES"><BuildableReference BlueprintName="App" BuildableName="App.app"/></BuildActionEntry><BuildActionEntry buildForRunning="YES"><BuildableReference BlueprintName="Companion" BuildableName="Companion.app"/></BuildActionEntry></BuildActionEntries></BuildAction><LaunchAction><BuildableProductRunnable><BuildableReference BlueprintName="App"/></BuildableProductRunnable></LaunchAction></Scheme>"#.utf8)
+        try xml.write(to: folder.appendingPathComponent("AllApps.xcscheme"))
+        XCTAssertEqual(try CodeDeviceSupport.runnableTarget(path: project.path, scheme: "AllApps"), "")
+        // No pbxproj exists, proving collection schemes are excluded before Xcode.
+        let apps = try await CodeDeviceSupport.apps(path: project.path, scheme: "AllApps", root: root)
+        XCTAssertTrue(apps.isEmpty)
+        let alias = Data(#"<Scheme><BuildAction><BuildActionEntries><BuildActionEntry buildForRunning="YES"><BuildableReference BlueprintName="App" BuildableName="App.app"/></BuildActionEntry><BuildActionEntry buildForRunning="YES"><BuildableReference BlueprintName="Library" BuildableName="Library.framework"/></BuildActionEntry></BuildActionEntries></BuildAction><LaunchAction><BuildableProductRunnable><BuildableReference BlueprintName="App"/></BuildableProductRunnable></LaunchAction></Scheme>"#.utf8)
+        XCTAssertEqual(try CodeDeviceSupport.parseRunnableTarget(alias), "App")
+    }
+
     func testPackageSchemeWithoutBuildActionIsExcludedButOtherXcodeErrorsRemainVisible() throws {
         let output = Data("2026-10-16 Writing error result bundle\nxcodebuild: error: Scheme LunaContentRendering is not currently configured for the build action.\n".utf8)
         let result = try CodeDeviceSupport.queryResult(output, status: 66, nonBuildableScheme: "LunaContentRendering") as? [[String: Any]]

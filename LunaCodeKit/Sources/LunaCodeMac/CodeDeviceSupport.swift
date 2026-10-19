@@ -65,7 +65,9 @@ enum CodeDeviceSupport {
             // Xcode's primary (first) target and never search dependencies.
             let primary = try primarySettings(settings, project: project)
             if let app = primary, isApp(app), let bundle = app["PRODUCT_BUNDLE_IDENTIFIER"], !bundle.lowercased().contains("webdriveragent") {
-                apps.append(CodeBuildApp(project: project, name: app["PRODUCT_NAME"] ?? scheme, bundleID: bundle))
+                var row = CodeBuildApp(project: project, name: app["PRODUCT_NAME"] ?? scheme, bundleID: bundle)
+                row.iconPNG = CodeAppIcon.png(settings: app, project: project)
+                apps.append(row)
             }
         }
         return apps
@@ -93,7 +95,9 @@ enum CodeDeviceSupport {
         let delegate = SchemeRunnable()
         let parser = XMLParser(data: data); parser.delegate = delegate
         guard parser.parse() else { throw CodeFailure("Could not read this Xcode scheme. Open it on your Mac and check its Run action.") }
-        return delegate.target
+        // A scheme that runs one dependency but builds several apps is a
+        // collection (for example AllLunaApps), not an individual app row.
+        return delegate.appTargets.count > 1 ? nil : delegate.target
     }
     static func devices(root: URL) async throws -> [CodeDevice] {
         let log = root.appendingPathComponent(UUID().uuidString + ".json")
@@ -158,9 +162,16 @@ enum CodeDeviceSupport {
 
 private final class SchemeRunnable: NSObject, XMLParserDelegate {
     var target: String?
+    var appTargets: Set<String> = []
+    private var buildsForRunning = false
     private var elements: [String] = []
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
         elements.append(elementName)
+        if elementName == "BuildActionEntry" { buildsForRunning = attributes["buildForRunning"] == "YES" }
+        if elementName == "BuildableReference", elements.contains("BuildAction"), buildsForRunning,
+           attributes["BuildableName"]?.hasSuffix(".app") == true, let name = attributes["BlueprintName"] {
+            appTargets.insert(name)
+        }
         if elementName == "BuildableReference", elements.contains("LaunchAction"), elements.contains("BuildableProductRunnable") {
             target = attributes["BlueprintName"]
         }

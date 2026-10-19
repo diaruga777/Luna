@@ -51,7 +51,7 @@ import LunaCodeCore
         }
         tableView.accessibilityIdentifier = "CodeBuilds"
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 120
+        tableView.estimatedRowHeight = 180
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
             guard let self else { return }; self.navigationController?.pushViewController(self.environment.pairing(), animated: true)
         })
@@ -122,8 +122,8 @@ import LunaCodeCore
                             // Keep this scheme's cached row while still discovering later apps.
                             found += catalog.apps(peer: peer).filter { $0.project.path == project.path && $0.project.scheme == scheme }
                         }
-                        // Publish each result immediately; keep existing cached rows until scanning completes.
-                        var partial = catalog.apps(peer: peer).filter { $0.project.path == project.path }
+                        // Publish each result immediately; retain unchecked cached schemes.
+                        var partial = catalog.apps(peer: peer).filter { $0.project.path == project.path && $0.project.scheme != scheme }
                         for app in found where !partial.contains(where: { $0.key == app.key }) { partial.append(app) }
                         catalog.merge(partial, path: project.path, peer: peer); reload()
                     }
@@ -150,9 +150,11 @@ import LunaCodeCore
         var resizeRows = false
         for cell in tableView.visibleCells {
             if let index = tableView.indexPath(for: cell), let key = dataSource.itemIdentifier(for: index), let app = displayedApps[key] {
-                let previousDetail = cell.detailTextLabel?.text
+                let row = cell as? CodeBuildAppCell
+                let previousDetail = row?.detailLabel.text
+                let wasProgressHidden = row?.progress.isHidden
                 update(cell, app: app)
-                resizeRows = resizeRows || previousDetail != cell.detailTextLabel?.text
+                resizeRows = resizeRows || previousDetail != row?.detailLabel.text || wasProgressHidden != row?.progress.isHidden
             }
         }
         if let footer = tableView.footerView(forSection: 0), footer.textLabel?.text != footerText {
@@ -187,24 +189,16 @@ import LunaCodeCore
         CodeBuildCatalog.resolveDevice(devices, preferred: app.deviceID ?? catalog.defaultDevice(peer: environment.peerID()), currentName: UIDevice.current.name)
     }
     private func makeCell(_ app: CodeBuildApp) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-        cell.textLabel?.text = app.project.scheme
-        cell.textLabel?.font = .preferredFont(forTextStyle: .headline)
-        cell.textLabel?.numberOfLines = 2
-        cell.detailTextLabel?.numberOfLines = 0
-        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .subheadline)
-        cell.textLabel?.adjustsFontForContentSizeCategory = true
-        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
+        let cell = CodeBuildAppCell()
         cell.accessibilityIdentifier = "CodeBuildApp:" + app.project.scheme
-        let play = UIButton(type: .system)
+        let play = cell.play
         play.accessibilityLabel = "Build and Run " + app.name
         play.accessibilityIdentifier = "CodeRun:" + app.project.scheme
         play.addAction(UIAction { [weak self] _ in
             guard let self, let current = self.displayedApps[app.key] else { return }
             self.build(current)
         }, for: .touchUpInside)
-        let more = UIButton(type: .system)
+        let more = cell.more
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         more.accessibilityLabel = "Build Options for " + app.name
         more.accessibilityIdentifier = "CodeBuildOptions:" + app.project.scheme
@@ -213,13 +207,8 @@ import LunaCodeCore
             completion(self.menu(current).children)
         }])
         more.showsMenuAsPrimaryAction = true
-        more.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        let controls = UIStackView(arrangedSubviews: [play, more]); controls.spacing = 8
-        let progress = UIProgressView(progressViewStyle: .default)
-        progress.isAccessibilityElement = true
-        progress.accessibilityLabel = "Build progress"
-        progress.accessibilityIdentifier = "CodeRowProgress:" + app.project.scheme
-        let nightly = UISwitch()
+        cell.progress.accessibilityIdentifier = "CodeRowProgress:" + app.project.scheme
+        let nightly = cell.nightly
         nightly.accessibilityLabel = "Overnight builds for " + app.project.scheme
         nightly.accessibilityIdentifier = "CodeNightly:" + app.project.scheme
         nightly.addAction(UIAction { [weak self, weak nightly] _ in
@@ -227,33 +216,23 @@ import LunaCodeCore
             self.edit(current) { $0.nightlyEnabled = nightly.isOn }
             CodeNightlyScheduler.shared.schedule(peer: self.environment.peerID())
         }, for: .valueChanged)
-        let nightlyLabel = UILabel(); nightlyLabel.text = "Overnight"
-        nightlyLabel.font = .preferredFont(forTextStyle: .caption2)
-        nightlyLabel.adjustsFontForContentSizeCategory = true
-        let nightlyControls = UIStackView(arrangedSubviews: [nightlyLabel, nightly]); nightlyControls.spacing = 6; nightlyControls.alignment = .center
-        let accessory = UIStackView(arrangedSubviews: [controls, nightlyControls, progress]); accessory.axis = .vertical; accessory.spacing = 5
-        accessory.frame = CGRect(x: 0, y: 0, width: 118, height: 88)
-        cell.accessoryView = accessory
-        cell.accessibilityElements = [cell.textLabel!, cell.detailTextLabel!, play, more, nightly, progress]
         update(cell, app: app)
         return cell
     }
     private func update(_ cell: UITableViewCell, app: CodeBuildApp) {
+        guard let cell = cell as? CodeBuildAppCell else { return }
         let job = app.jobID.flatMap { jobs[$0] }
         let busy = starting == app.key || job?.state == .running
         let fraction = starting == app.key ? environment.builds.fraction : (job.map { environment.builds.fraction(for: $0) } ?? 0)
-        let detail = rowDetail(app)
-        if cell.detailTextLabel?.text != detail { cell.detailTextLabel?.text = detail }
-        guard let accessory = cell.accessoryView as? UIStackView,
-              let controls = accessory.arrangedSubviews.first as? UIStackView,
-              let play = controls.arrangedSubviews.first as? UIButton else { return }
-        if let nightly = (accessory.arrangedSubviews.dropFirst().first as? UIStackView)?.arrangedSubviews.last as? UISwitch {
-            nightly.isOn = app.nightlyEnabled == true
-        }
-        if let progress = accessory.arrangedSubviews.last as? UIProgressView {
-            progress.isHidden = !busy; progress.progress = Float(fraction)
-            progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
-        }
+        cell.nameLabel.text = app.name
+        cell.detailLabel.text = rowDetail(app)
+        cell.setIcon(app.iconPNG)
+        cell.icon.accessibilityIdentifier = "CodeAppIcon:" + app.project.scheme
+        cell.nightly.isOn = app.nightlyEnabled == true
+        cell.progress.isHidden = !busy
+        cell.progress.progress = Float(fraction)
+        cell.progress.accessibilityValue = "\(Int(fraction * 100)) percent estimated"
+        let play = cell.play
         if play.configuration == nil {
             var config = UIButton.Configuration.tinted(); config.image = UIImage(systemName: "play.fill"); config.cornerStyle = .capsule
             config.showsActivityIndicator = false
@@ -269,22 +248,7 @@ import LunaCodeCore
         }
         let history = app.lastBuiltAt.map { "Built " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not built yet"
         let revision = app.commitHash.map { String($0.prefix(8)) }
-        return [history, revision, status, app.nightlyFailure].compactMap { $0 }.joined(separator: "\n")
-    }
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        guard let key = dataSource.itemIdentifier(for: indexPath), let app = displayedApps[key] else { return 112 }
-        // Native subtitle cells size for their text and ignore tall accessory
-        // stacks. Reserve room for both controls, then expand for Dynamic Type
-        // or multi-line build progress without clipping either side.
-        let width = max(80, tableView.bounds.width - tableView.safeAreaInsets.left - tableView.safeAreaInsets.right - 198)
-        let headline = UIFont.preferredFont(forTextStyle: .headline)
-        let detail = UIFont.preferredFont(forTextStyle: .subheadline)
-        func height(_ text: String, font: UIFont) -> CGFloat {
-            (text as NSString).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font], context: nil).height
-        }
-        let title = min(headline.lineHeight * 2, height(app.project.scheme, font: headline))
-        return max(112, ceil(title + height(rowDetail(app), font: detail)) + 24)
+        return [app.name == app.project.scheme ? nil : app.project.scheme, history, revision, status, app.nightlyFailure].compactMap { $0 }.joined(separator: "\n")
     }
     private func menu(_ app: CodeBuildApp) -> UIMenu {
         let defaults = UIAction(title: "Default Phone", state: app.deviceID == nil ? .on : .off) { [weak self] _ in self?.edit(app) { $0.deviceID = nil } }

@@ -9,6 +9,8 @@ public struct CodeBuildApp: Codable, Equatable, Sendable {
     public var project: CodeProject
     public var name: String
     public var bundleID: String
+    /// Small PNG supplied by the Mac; optional for older peers and cached rows.
+    public var iconPNG: Data?
     public var branch: String
     public var deviceID: String?
     public var jobID: String?

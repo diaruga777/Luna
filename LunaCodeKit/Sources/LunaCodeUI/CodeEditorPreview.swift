@@ -32,6 +32,12 @@ import LunaCodeCore
     }
 }
 private actor PreviewFiles {
+    private static let iconPNG: Data? = {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let names = primary["CFBundleIconFiles"] as? [String], let name = names.last else { return nil }
+        return UIImage(named: name)?.pngData()
+    }()
     private var buildStartedAt: Date?
     private var handoffAcknowledgedAt: Date?
     private let stateURL: URL
@@ -100,7 +106,12 @@ private actor PreviewFiles {
                     if scheme == "SampleLibrary" { response.apps = []; return try JSONEncoder().encode(response) }
                 }
                 let schemes = request.project.map { [$0.scheme] } ?? ["Sample", "SampleAlias", "SampleCompanion"]
-                response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map { CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + ($0 == "SampleAlias" ? "Sample" : $0)) }
+                response.apps = schemes.filter { !$0.hasSuffix("Tests") }.map {
+                    var app = CodeBuildApp(project: CodeProject(path: request.path, scheme: $0), name: $0, bundleID: "preview." + ($0 == "SampleAlias" ? "Sample" : $0))
+                    // Real app artwork exercises the same wire/cache path as discovery.
+                    app.iconPNG = Self.iconPNG
+                    return app
+                }
                 return try JSONEncoder().encode(response)
             case .branches:
                 response.branches = ["main", "feature/preview"]

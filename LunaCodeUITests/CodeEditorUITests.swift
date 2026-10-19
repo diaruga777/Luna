@@ -153,6 +153,16 @@ final class CodeEditorUITests: XCTestCase {
         let row = app.cells["CodeBuildApp:Sample"]
         XCTAssertTrue(row.waitForExistence(timeout: 15))
         let toggle = app.switches["CodeNightly:Sample"]
+        let run = app.buttons["CodeRun:Sample"]
+        let options = app.buttons["CodeBuildOptions:Sample"]
+        let icon = row.images["CodeAppIcon:Sample"]
+        XCTAssertTrue(icon.exists)
+        XCTAssertLessThan(icon.frame.maxX, row.staticTexts["Sample"].frame.minX)
+        XCTAssertFalse(toggle.frame.intersects(run.frame))
+        XCTAssertFalse(toggle.frame.intersects(options.frame))
+        for control in [toggle, run, options] {
+            XCTAssertTrue(row.frame.contains(control.frame), "Build controls must fit inside their row")
+        }
         XCTAssertEqual(toggle.value as? String, "0")
         toggle.tap(); XCTAssertEqual(toggle.value as? String, "1")
         app.buttons["CodeRun:Sample"].tap()
@@ -168,6 +178,26 @@ final class CodeEditorUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertTrue(row.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "abc12345")).firstMatch.exists)
+    }
+
+    func testBuildRowFitsAtAccessibilityTextSize() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--editor-preview", "--workspace-preview", "--reset-preview",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        let project = app.cells["CodeFile:/Preview/Sample.xcodeproj"]
+        XCTAssertTrue(project.waitForExistence(timeout: 15)); project.tap()
+        app.tabBars.buttons["Builds"].tap()
+        let row = app.cells["CodeBuildApp:Sample"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        let toggle = app.switches["CodeNightly:Sample"]
+        let run = app.buttons["CodeRun:Sample"]
+        let options = app.buttons["CodeBuildOptions:Sample"]
+        XCTAssertLessThan(toggle.frame.maxY, run.frame.minY, "Large text should stack the control groups")
+        for control in [toggle, run, options] { XCTAssertTrue(row.frame.contains(control.frame)) }
+        toggle.tap(); XCTAssertEqual(toggle.value as? String, "1")
+        attach("Build row at accessibility text size", app)
     }
 
     func testBuildsCacheOneTapMainBuildAndLastTabRestoration() {

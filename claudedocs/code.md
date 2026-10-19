@@ -61,7 +61,11 @@ from previously opened projects, with one row per runnable iOS app scheme. Alias
 schemes sharing a bundle remain separate and keep independent branch, phone and job settings. The app restores the last selected tab.
 Project history, cached app rows, row options and job IDs are isolated by paired
 Mac and survive relaunch. Opening another project does not clear the build list.
-Rows show scheme, last successful compilation time and the short Git commit hash,
+Rows use a self-sizing layout with the app’s icon and name above build history,
+and a separate control row for Overnight, Run and options. Accessibility text sizes
+stack the control groups vertically. Icon thumbnails come from the target’s configured
+app icon asset set, travel with discovery and remain cached offline. Rows show scheme
+when it differs from the app name, last successful compilation time and the short Git commit hash,
 plus the current job state. Project, branch and phone details remain in row options.
 Compilation history is persisted on both Mac and phone, survives refresh/relaunch,
 and remains visible even if subsequent installation fails. Alias schemes retain
@@ -69,7 +73,9 @@ independent history. Older jobs without metadata display “Not built yet” unt
 new build records its revision.
 Rows remain visible offline; pull to refresh discovers new schemes and devices.
 Discovery publishes apps progressively and excludes test, extension and Mac targets.
-Package schemes without a Build action are skipped. An individual scheme failure
+Multi-app collection schemes (such as AllLunaApps), even with a Run target, and
+package schemes without a Build action are skipped. Successfully excluded cached
+rows disappear as each scheme is checked. An individual scheme failure
 keeps its cached row, reports the error and allows discovery of later schemes.
 Discovery and job polling update existing rows in place, preserving open build
 options menus. Menus read current branch, device and job settings when opened.
@@ -258,7 +264,7 @@ must already work for the selected project. No private API key is sent to iPhone
 ## Verification
 
 - `swift test --package-path LunaCodeKit`: daily overnight windows/DST, default-off switches, complete batch submission without polling, Mac queue draining, companion capability checks, persistent idempotency and compilation history, build-cache/option persistence, phone selection,
-  live-device filtering, Xcode destination eligibility, app Run-target selection, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
+  live-device filtering, Xcode destination eligibility, app Run-target selection, multi-app collection exclusion, configured icon thumbnails, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
   structured build-event parsing, fragmented/duplicate/oversized records, event-driven progress,
   acknowledged self-install gates, timeouts/cancellation, bundle matching,
   terminal progress, backward-compatible job payloads, interrupted-job recovery,
@@ -272,7 +278,8 @@ must already work for the selected project. No private API key is sent to iPhone
 - `xcodebuild test -scheme LunaCode -destination 'platform=iOS Simulator,id=…'`:
   isolated simulator preview, portrait/landscape typing, explicit Save,
   draft recovery, project/workspace selection and restoration, project switching,
-  scheme selection, cached app rows, one-tap main build requests, hidden console,
+  scheme selection, cached app rows/icons, nonoverlapping build controls at default
+  and accessibility text sizes, one-tap main build requests, hidden console,
   background/foreground job status, immediate backgrounding during delayed startup,
   progress accessibility, completed task/current operation display,
   self-update handoff and final-result restoration after process replacement, last-tab restoration,

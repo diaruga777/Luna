@@ -335,6 +335,12 @@ Music entitlements include them.
 It resumes the actual last-played episode, preserving position across launches and
 regardless of what media is currently active. Preparation alone does not overwrite
 last-played history: AVPlayer must start playing. An empty history does nothing.
+Starting playback through this intent preserves the explicit Up Next list and its
+order, including when the selected episode is already queued. It does not requeue
+an interrupted episode. Natural completion uses the ordinary queue advancement:
+remove the completed episode, play the first remaining item, and retain the rest.
+If completion already staged the next item while paused or during restoration,
+the intent resumes that item instead of returning to the completed last-played one.
 Only a natural end of the final queue item permits another episode. It refreshes
 followed feeds, then chooses the oldest unplayed episode after each show's saved
 listening cursor and takes the oldest of those candidates, with stable ID ties.
@@ -342,6 +348,11 @@ For the requested example, B/3 yields C versus 4; D/4 yields no playback. Manual
 marking an episode played never grants the fallback permission. Explicit queued
 work added after exhaustion takes priority. A never-played followed show contributes
 its oldest episode when fallback is permitted.
+
+Validation (2026-10-19): all 36 Foundation podcast tests and 34 focused simulator
+tests passed; three optional long-MP3 fixture tests were skipped. Coverage includes
+intent queue preservation, repeated resume, restored pending-next selection, and
+real AVPlayer natural completion into the next explicit queue item.
 
 `MediaPlaybackCoordinator` owns active media and transport routing. Back always
 applies immediately. Once that operation finishes successfully, a forward command

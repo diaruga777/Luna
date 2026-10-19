@@ -179,7 +179,8 @@ import LunaPodcastCore
         try library.edit { $0.queue = episodes.dropFirst().map(\.id); $0.continuation = [] }
         do { try await select(first) } catch { fail(error); throw error }
     }
-    private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false) async throws {
+    private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false,
+                        preservingQueue: Bool = false) async throws {
         // Capture the outgoing clock before replacing its item. A pending seek
         // already owns `position` and must not be overwritten by the old clock.
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
@@ -207,14 +208,15 @@ import LunaPodcastCore
         if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         let local = downloads.localURL(episode.id)
-        let changesSelection = interruptedID != nil || library.state.currentEpisodeID != episode.id || library.state.queue.contains(episode.id) ||
-            library.state.continuation.contains(episode.id) || saved?.suppressAutomaticDownload == true ||
+        let removesQueuedEpisode = !preservingQueue && (library.state.queue.contains(episode.id) || library.state.continuation.contains(episode.id))
+        let changesSelection = interruptedID != nil || library.state.currentEpisodeID != episode.id || removesQueuedEpisode || saved?.suppressAutomaticDownload == true ||
             (!restorePosition && saved?.listened == true)
         // Cold Resume usually changes none of these fields. Do not encode and
         // atomically rewrite the whole feed library before opening its audio.
         if changesSelection {
             try library.edit { state in
-                state.currentEpisodeID = episode.id; state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id }
+                state.currentEpisodeID = episode.id
+                if !preservingQueue { state.queue.removeAll { $0 == episode.id }; state.continuation.removeAll { $0 == episode.id } }
                 if let interruptedID {
                     state.queue.removeAll { $0 == interruptedID }
                     state.queue.insert(interruptedID, at: 0)
@@ -248,7 +250,7 @@ import LunaPodcastCore
                 }
             }
             if isAtEnd {
-                if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
+                if !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
                     try await advanceCompleted(autoplay: requestedPlayback, natural: false); return
                 }
                 position = 0; pendingSeek = 0
@@ -271,20 +273,23 @@ import LunaPodcastCore
         publish()
     }
     public func resume() async throws {
+        try await resume(preservingQueue: false)
+    }
+    private func resume(preservingQueue: Bool) async throws {
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         if isAtEnd {
-            if library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
+            if !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
                 try await advanceCompleted(autoplay: true, natural: false); return
             }
             position = 0
-            try await select(episode); return
+            try await select(episode, preservingQueue: preservingQueue); return
         }
         willPlay?()
         // A streaming item may have been downloaded while paused. Resume from
         // the complete local asset so reconnecting never requires publisher I/O.
         let local = downloads.localURL(episode.id)
         let switchToLocal = local != nil && (player.currentItem?.asset as? AVURLAsset)?.url != local
-        guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation, !switchToLocal else { try await select(episode, restorePosition: true); return }
+        guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation, !switchToLocal else { try await select(episode, restorePosition: true, preservingQueue: preservingQueue); return }
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
         requestedPlayback = true; errorMessage = nil; setBuffering(true)
@@ -292,7 +297,7 @@ import LunaPodcastCore
         if extrasTask == nil { loadExtras(episode, token: generation) }
         publish()
     }
-    /// No recommendation or unrelated "Now Playing" hand-off is involved.
+    /// Resume without editing Up Next. Natural completion still advances the queue.
     public func resumeLastPodcast() async throws {
         let store = try library.requireStore()
         if store.state.naturallyExhaustedQueue { await library.refresh(force: true) }
@@ -300,13 +305,13 @@ import LunaPodcastCore
         case .nothing: return
         case .resume(let id):
             guard let episode = store.state.episodes[id] else { return }
-            if currentEpisode?.id == id { try await resume() }
-            else { try await select(episode, restorePosition: true) }
+            if currentEpisode?.id == id { try await resume(preservingQueue: true) }
+            else { try await select(episode, restorePosition: true, preservingQueue: true) }
         case .start(let id):
             guard let episode = store.state.episodes[id] else { return }
-            // Only one eligible episode is selected, preserving the intent's
-            // deterministic contract rather than populating a recommendation queue.
-            try await play(episode)
+            // The intent selects one episode without the queue edits performed
+            // by an explicit episode tap. Completion consumes it from Up Next.
+            do { try await select(episode, preservingQueue: true) } catch { fail(error); throw error }
         }
     }
     public func pause() {

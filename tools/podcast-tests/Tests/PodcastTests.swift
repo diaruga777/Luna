@@ -27,6 +27,14 @@ final class PodcastTests: XCTestCase {
         for index in [3, 7] { var progress = PodcastEpisodeState(); progress.listened = true; state.progress[episodes[index].id] = progress }
         XCTAssertEqual(PodcastPolicies.resumeDecision(state), .nothing)
     }
+    func testResumeKeepsPendingCurrentAfterLastPlayedEpisodeCompleted() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[7].id
+        state.queue = [episodes[2].id]
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .resume(episodes[7].id))
+        state.progress[episodes[6].id]?.listened = false
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .resume(episodes[6].id), "Preparation alone must not replace unfinished listening history")
+    }
     func testOlderBacklogIsNotResurrectedAndNoHistoryIsNoOp() {
         var (state, episodes) = sample(); state.naturallyExhaustedQueue = true
         state.cursors["a"] = .init(episode: episodes[3]); state.cursors["b"] = .init(episode: episodes[7])
@@ -68,6 +76,23 @@ final class PodcastTests: XCTestCase {
         XCTAssertNil(try store.finishNaturally(episodes[2].id))
         XCTAssertTrue(store.state.naturallyExhaustedQueue)
         XCTAssertEqual(try PodcastStore(url: store.url).state, store.state)
+    }
+    @MainActor func testResumedEpisodeStaysQueuedUntilCompletionAndDoesNotPlayTwice() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try PodcastStore(url: directory.appendingPathComponent("library.json"))
+        let (state, episodes) = sample()
+        for queue in [[episodes[0].id, episodes[1].id, episodes[2].id],
+                      [episodes[1].id, episodes[0].id, episodes[2].id]] {
+            try store.update { $0 = state; $0.queue = queue }
+            try store.recordPlaybackStarted(episodes[0].id)
+            XCTAssertEqual(store.state.queue, queue)
+            XCTAssertEqual(try store.finishNaturally(episodes[0].id), episodes[1].id)
+            XCTAssertEqual(store.state.queue, [episodes[2].id])
+            try store.recordPlaybackStarted(episodes[1].id)
+            XCTAssertEqual(try store.finishNaturally(episodes[1].id), episodes[2].id)
+            XCTAssertTrue(store.state.queue.isEmpty)
+        }
     }
     func testRSSNamespacesAndDuplicateGUIDs() throws {
         let xml = """

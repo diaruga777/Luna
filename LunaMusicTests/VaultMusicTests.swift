@@ -1112,6 +1112,85 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.playEpisodes(episodes)
         try await waitFor { playback.isPlaying }
     }
+    func testResumeIntentPreservesColdQueueAndNaturallyAdvances() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 177)
+        let queue = [episodes[2].id, episodes[1].id]
+        try library.edit { $0.queue = queue }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resumeLastPodcast()
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
+        XCTAssertEqual(library.state.queue, queue)
+        XCTAssertEqual(try PodcastStore(url: library.requireStore().url).state.queue, queue)
+        try await waitFor { playback.currentEpisode?.id == episodes[2].id && playback.isPlaying }
+        XCTAssertTrue(library.state.progress[episodes[0].id]?.listened == true)
+        XCTAssertEqual(library.state.queue, [episodes[1].id])
+    }
+    func testRepeatedResumeIntentPreservesWarmQueueAndPosition() async throws {
+        try await startQueue()
+        playback.seek(to: 60)
+        try await waitFor { abs(playback.player.currentTime().seconds - 60) < 2 }
+        playback.pause()
+        let queue = library.state.queue
+        try await playback.resumeLastPodcast()
+        try await waitFor { playback.isPlaying }
+        let item = playback.player.currentItem
+        try await playback.resumeLastPodcast()
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertEqual(playback.position, 60, accuracy: 2)
+        XCTAssertEqual(library.state.queue, queue)
+    }
+    func testResumeIntentDoesNotRemoveLastPlayedEpisodeFromQueue() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 177)
+        let queue = [episodes[1].id, episodes[0].id, episodes[2].id]
+        try library.edit { $0.currentEpisodeID = episodes[2].id; $0.queue = queue }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resumeLastPodcast()
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
+        XCTAssertEqual(library.state.queue, queue)
+        XCTAssertEqual(try PodcastStore(url: library.requireStore().url).state.queue, queue)
+    }
+    func testResumeIntentFallbackDoesNotRequeueInterruptedEpisode() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        let queue = [episodes[1].id, episodes[2].id]
+        try library.edit { $0.queue = queue; $0.naturallyExhaustedQueue = true }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resumeLastPodcast()
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(library.state.queue, queue)
+        XCTAssertEqual(try PodcastStore(url: library.requireStore().url).state.queue, queue)
+    }
+    func testResumeIntentAtSavedEOFDoesNotConsumeQueueDuringPreparation() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        let queue = [episodes[1].id, episodes[2].id]
+        // Missing RSS duration is resolved only after the intent opens the asset.
+        try library.edit { $0.episodes[episodes[0].id]?.duration = 0; $0.queue = queue }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resumeLastPodcast()
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
+        XCTAssertLessThan(playback.position, 2)
+        XCTAssertEqual(library.state.queue, queue)
+    }
+    func testResumeIntentKeepsRestoredNextEpisodeAfterCompletedLastPlayed() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        try library.edit { $0.queue = [episodes[1].id, episodes[2].id] }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(library.state.lastPlayedEpisodeID, episodes[0].id)
+        let queue = library.state.queue
+        try await playback.resumeLastPodcast()
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertEqual(library.state.queue, queue)
+        playback.seek(to: 179)
+        try await waitFor { playback.currentEpisode?.id == episodes[2].id && playback.isPlaying }
+        XCTAssertTrue(library.state.queue.isEmpty)
+    }
     func testPlayingAnotherEpisodeQueuesInterruptedEpisodeAndResumesItsPosition() async throws {
         try await startQueue()
         var sought = false

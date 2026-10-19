@@ -12,7 +12,13 @@ public enum PodcastPolicies {
     }
     public static func resumeDecision(_ state: PodcastLibraryState) -> PodcastResumeDecision {
         guard let lastID = state.lastPlayedEpisodeID, state.episodes[lastID] != nil else { return .nothing }
-        guard state.naturallyExhaustedQueue else { return .resume(lastID) }
+        guard state.naturallyExhaustedQueue else {
+            // Completion can stage the next queued episode while paused or on
+            // cold restoration, before it has actually earned last-played history.
+            if state.progress[lastID]?.listened == true, let currentID = state.currentEpisodeID,
+               currentID != lastID, state.episodes[currentID] != nil { return .resume(currentID) }
+            return .resume(lastID)
+        }
         // Explicitly queued work takes precedence if it was added after exhaustion.
         if let queued = state.queue.first(where: { state.episodes[$0] != nil }) { return .start(queued) }
         let candidates = state.shows.values.filter(\.followed).compactMap { show -> PodcastEpisode? in

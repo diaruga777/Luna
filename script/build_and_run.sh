@@ -22,10 +22,19 @@ fi
 cd "$ROOT_DIR/LunaVaultTailscale"
 swift build --product "$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
+# Build the pinned Mac-only Apple adapter before touching the existing app.
+# No pairing records are queried by compilation or notice collection.
+APPLE_HELPER="$BUILD_DIR/luna-code-apple-adapter"
+go -C "$ROOT_DIR/tools/code-apple-adapter" build -trimpath -o "$APPLE_HELPER" ./cmd/luna-code-apple-adapter
+python3 "$ROOT_DIR/tools/code-apple-adapter/notices/collect.py" "$BUILD_DIR/apple-adapter-notices"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 # Stop only after the replacement binary has built successfully.
 if [[ "$MODE" != "--build-only" ]]; then pkill -x "$APP_NAME" >/dev/null 2>&1 || true; fi
 cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
+mkdir -p "$BUNDLE/Contents/Helpers" "$BUNDLE/Contents/Resources/AppleAdapterNotices"
+cp "$APPLE_HELPER" "$BUNDLE/Contents/Helpers/luna-code-apple-adapter"
+cp -R "$BUILD_DIR/apple-adapter-notices/." "$BUNDLE/Contents/Resources/AppleAdapterNotices/"
+codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$BUNDLE/Contents/Helpers/luna-code-apple-adapter"
 # The Code bridge checks application resources before the SwiftPM build path.
 for resource in "$BUILD_DIR"/*.bundle; do
   [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
@@ -51,7 +60,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$BUNDLE"
-codesign --verify --strict "$BUNDLE"
+codesign --verify --deep --strict "$BUNDLE"
 case "$MODE" in
   --build-only) exit 0 ;;
   run) open -n "$BUNDLE" ;;

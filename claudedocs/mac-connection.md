@@ -154,5 +154,8 @@ service. The companion supplies the authenticated TLS peer separately from the
 request body. Removing a phone authorization or forgetting the account invalidates
 pending exchanges; forgetting also clears durable bindings. Shared account keys
 and Apple host pairing secrets are not copied into this phone credential.
-Physical enrollment and the remote Apple-service installation adapter remain
-unverified/unintegrated respectively; see the Code status report.
+Dedicated Code installation streams are demultiplexed from BEP on fresh TLS
+connections. Their per-flow phone-key proof, readiness lease and job-token Unix
+broker keep Apple traffic separate from Vault sync. The transport-aware Mac helper
+is now wired into fallback after native reachability failure; physical acceptance
+and the combined relay integration check remain pending. See the Code status report.

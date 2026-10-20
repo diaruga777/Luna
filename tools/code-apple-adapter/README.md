@@ -1,10 +1,11 @@
 # Bounded Apple installation adapter (Mac)
 
 This is the transport-aware Apple-service component for Code's retained-artifact
-installer. **It is not wired into Luna Mac yet.** A production reverse-stream
-broker, endpoint readiness/session proof, phone-side dynamic endpoint grants and
-artifact packaging/composition are still required. Do not enable installation
-capabilities from this component's existence or its test results.
+installer. It is wired into the production reverse-stream broker, enrolled-key
+readiness/session proofs, phone-owned dynamic endpoints and retained-app IPA
+packaging. The staged helper's presence gates capability reporting. Physical
+acceptance and the combined real-relay fixture check remain pending; component
+checks alone are not evidence of an Apple device installation.
 
 The adapter uses the Mac's existing Apple pairing record, reads only that selected
 UDID from the local Apple daemon, and retains credentials only in the short-lived
@@ -30,7 +31,7 @@ remains unknown. An explicit Apple error is marked as a definitive failure.
 Replacing the forwarding app is rejected and requires a separate proven path.
 
 Limits: one eight-minute operation; 20-second TLS handshakes; ten-second local
-pair-record reads; five-second broker handshakes; 2 MiB plist messages; 64 KiB AFC
+pair-record reads; 45-second broker handshakes; 2 MiB plist messages; 64 KiB AFC
 replies with header/sequence checks **before** upstream allocation; 8 GiB input;
 1,024 install status messages. Context cancellation closes active sockets. The
 phone lease/flow authority imposes its own tighter lifetime/byte/flow limits.
@@ -64,12 +65,17 @@ The broker directory must be owner-only. Use an atomically created short private
 path (Darwin Unix socket paths are short; this adapter limits them to 100 bytes),
 not a public TCP listener. Never check a real manifest/token/pairing record into
 Git. The command emits one JSON result and exits zero only for confirmed readback.
-It is not installed or staged by the current companion build script.
+The companion build script compiles it, collects notices and signs it as nested
+code using the supplied Mac signing identity. This workflow has not replaced or
+launched the persistent Mac app during overnight implementation.
 
 Every local connection begins with `LCA1`, a four-byte big-endian JSON length,
-then `{version:1,token,service,port}` (JSON keys are strings). The broker returns a
+then `{version:1,token,service,port,fullCloseOnEOF:true}` (JSON keys are strings). The broker returns a
 single byte `1` only after authorizing the live job token, bound physical endpoint,
-generation and lease; otherwise close/reject. The rest is opaque Apple traffic.
+generation and lease; otherwise close/reject. The rest is opaque Apple traffic. The pinned helper uses only full connection
+closure and explicitly opts into closing its remote flow on Unix EOF; ordinary
+half-close clients omit that field. Darwin's Unix hangup flag cannot distinguish
+those lifetimes reliably.
 The broker must create **only** the two named dynamic service grants returned by
 this pinned helper; this IPC must never become an RPC accepting arbitrary ports.
 No host/address field exists. The iOS flow framing remains separate from LCA1.
@@ -95,5 +101,6 @@ to `ca2c56d2c294ff702cadf4821edd30b069d3a264` (2026-10-09), with its notice in
 `notices/go-ios-MIT.txt`. `go.mod`/`go.sum` pin the dependency graph; Go 1.26 is
 required. No copied executable or developer-machine pairing record ships. This
 module does not use upstream's generic SSL activation or device/service discovery.
-Distribution of a packaged helper must include the dependency notices alongside
-it; that packaging step remains part of the unfinished Mac composition work.
+`notices/collect.py` gathers licenses for modules actually compiled into the
+helper plus the Go runtime; the staging script places them in app Resources.
+It fails before touching the existing app if a required source/license is missing.

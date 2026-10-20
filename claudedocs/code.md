@@ -8,8 +8,9 @@ explicit remote **control** addresses are implemented. The full remote-install
 scope remains in the [handoff](plans/code-overnight-remote-install.md); see the
 [implementation/acceptance report](code-overnight-remote-install-status.md) for
 supported behavior and deferred device checks. Physical endpoint enrollment is
-wired, and the bounded Apple-service adapter component compiles and passes local
-protocol checks; production Syncthing installation is not yet connected.
+wired, including the bounded Apple-service adapter, dedicated reverse streams and
+native-to-proxy fallback. Local protocol checks pass; combined relay integration
+and all physical acceptance checks remain pending.
 
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.
@@ -131,6 +132,16 @@ compilation explicitly, restores retained artifacts, and marks interrupted insta
 as needing confirmation. One install lock covers both foreground Build & Run and
 overnight installs targeting the same phone.
 
+For an enrolled phone, native reachability failure can fall back to dedicated
+phone-initiated TLS streams over the selected explicit LAN, Tailscale or Syncthing
+address. Apple host pairing keys remain on Mac. The pinned helper verifies Apple's
+paired certificate and actual UDID before requesting AFC/Installation Proxy ports,
+uploading and reading back the exact revision. A private job-token Unix broker
+connects it to bounded LCDF flows; no public host/port proxy is exposed. Readiness
+expires using monotonic clocks and ends when iOS runtime/Wi-Fi ends. No scheduled
+path launches an app. Updating Luna Code itself is unsupported through its own
+forwarder and requires an independent Apple device connection.
+
 Generic iOS Debug builds use detached committed-ref checkouts and ordinary
 Xcode development signing. The signed `.app` is copied to `Code/Jobs/Artifacts`
 before checkout cleanup, with SHA-256 tree digest, bundle/version/build, source
@@ -153,8 +164,9 @@ Completion persists before replying and can be retried after a lost response.
 The same action removes this phone's authorization. Forgetting Luna Mac revokes
 all saved bindings. Mac builds derive the allowed Code bundle ID from the namespace
 configuration (`LUNA_CODE_BUNDLE_ID` overrides it for a differently named app).
-This path is implemented and automated checks pass; physical enrollment remains
-pending, and authorizing a phone does not enable an unfinished installation pipe.
+Physical enrollment remains pending. A staged, signed Mac helper enables the
+app-hosted installation pipe; the Mac advertises native-only installation if the
+helper is missing. Each readiness and fresh stream also proves the phone-only key.
 
 **Overnight Builds** shows the last actual invocation, build and confirmed
 installation separately, next requested date, synchronization age and recent

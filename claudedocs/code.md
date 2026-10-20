@@ -7,8 +7,8 @@ Overnight job persistence, retained signed artifacts, attempt diagnostics and
 explicit remote **control** addresses are implemented. The full remote-install
 scope remains in the [handoff](plans/code-overnight-remote-install.md); see the
 [implementation/acceptance report](code-overnight-remote-install-status.md) for
-supported behavior and deferred device checks. Apple-service bridge enrollment
-and production Syncthing installation are not yet connected.
+supported behavior and deferred device checks. Physical endpoint enrollment is
+wired; production Syncthing installation is not yet connected.
 
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.
@@ -142,6 +142,18 @@ pruning. Native installation uses `devicectl`, never launches, and confirms the
 exact installed bundle/version/build. Inconclusive readback is unknown completion,
 not a confirmed installation. CoreDevice's automatic route is labelled
 `nativeAutomatic`; it is not described as a proven LAN/Tailscale underlay.
+
+**Authorize This Phone** in Overnight Builds binds a device-only installation key
+to the chosen physical UDID. The Mac writes a random challenge into the configured
+Code app's private container over its Apple connection, then reads back that
+phone's signature. The shared Luna account alone cannot assert a physical UDID.
+Challenges expire after five minutes; Mac restart drops unfinished enrollment.
+Completion persists before replying and can be retried after a lost response.
+The same action removes this phone's authorization. Forgetting Luna Mac revokes
+all saved bindings. Mac builds derive the allowed Code bundle ID from the namespace
+configuration (`LUNA_CODE_BUNDLE_ID` overrides it for a differently named app).
+This path is implemented and automated checks pass; physical enrollment remains
+pending, and authorizing a phone does not enable an unfinished installation pipe.
 
 **Overnight Builds** shows the last actual invocation, build and confirmed
 installation separately, next requested date, synchronization age and recent

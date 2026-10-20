@@ -4,6 +4,7 @@ import LunaCodeCore
 public actor CodeService {
     private let files = CodeFiles()
     private let jobs: CodeJobs
+    private let endpoints: CodeEndpointEnrollmentService?
     private let overnight: CodeOvernightService
     private let root: URL
     private let checkAccess: @Sendable (String) async throws -> Void
@@ -11,12 +12,18 @@ public actor CodeService {
     private var projectKey: String?
     private var intelligenceTail: Task<Void, Never>?
     private var savedReplies: [String: (Data, Data)] = [:]
-    public init(root: URL, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
+    public init(root: URL, installBundleID: String? = nil, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
         self.root = root; self.checkAccess = checkAccess
         let builds = try CodeJobs(root: root.appendingPathComponent("Jobs")); jobs = builds
         overnight = try CodeOvernightService(root: root, builds: builds)
+        if let installBundleID {
+            let directory = root.appendingPathComponent("Endpoints", isDirectory: true)
+            endpoints = try CodeEndpointEnrollmentService(root: directory,
+                access: CodeAppleEndpointContainer(root: directory.appendingPathComponent("Scratch"), bundleID: installBundleID))
+        } else { endpoints = nil }
     }
-    public func handle(_ data: Data) async -> Data {
+    public func revokeEndpointAuthorizations() async throws { try await endpoints?.revokeAll() }
+    public func handle(_ data: Data, authenticatedPeerID: String? = nil) async -> Data {
         var response = CodeResponse()
         do {
             guard data.count <= CodeWire.maxPayloadBytes else { throw CodeFailure("Request too large.") }
@@ -28,12 +35,27 @@ public actor CodeService {
                 return previous.1
             }
             switch request.operation {
-            case .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel, .overnightDiagnostics: break
+            case .endpointBegin, .endpointFinish, .endpointStatus, .endpointRevoke, .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel, .overnightDiagnostics: break
             default:
                 let path = request.overnight?.target.project.path ?? request.project?.path ?? request.path
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
+            case .endpointBegin, .endpointFinish, .endpointStatus, .endpointRevoke:
+                guard let endpoints, let peer = authenticatedPeerID, !peer.isEmpty else { throw CodeFailure("Update Luna Mac and reconnect before authorizing this phone.") }
+                switch request.operation {
+                case .endpointBegin:
+                    guard let enrollment = request.endpoint else { throw CodeFailure("Choose a phone to authorize.") }
+                    response.endpointChallenge = try await endpoints.begin(enrollment, peer: peer)
+                case .endpointFinish:
+                    guard let enrollment = request.endpoint else { throw CodeFailure("Start phone authorization again.") }
+                    response.endpointBindings = [try await endpoints.finish(id: enrollment.id, peer: peer)]
+                case .endpointRevoke:
+                    guard let enrollment = request.endpoint else { throw CodeFailure("Choose a phone authorization to remove.") }
+                    try await endpoints.revoke(id: enrollment.id, peer: peer)
+                    response.endpointBindings = try await endpoints.status(peer: peer)
+                default: response.endpointBindings = try await endpoints.status(peer: peer)
+                }
             case .overnightDiagnostics: response.overnightDiagnostics = try await overnight.diagnostics()
             case .overnightCapabilities: response.overnightCapabilities = await overnight.capabilities()
             case .overnightSubmit: response.overnightJobs = [try await overnight.submit(request)]

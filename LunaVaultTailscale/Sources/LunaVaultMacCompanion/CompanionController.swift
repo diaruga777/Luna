@@ -18,6 +18,7 @@ final class CompanionController: @unchecked Sendable {
     private var codeRelay: LunaVaultGoListener?
     private var active = CompanionSessions()
     private var codeService: CodeService?
+    private var codeRevocation: Task<Void, Error>?
     private let account: CompanionAccountGate
     private var configuredClients: Set<LunaMacClient>
     private var selectedGeneration = 0
@@ -41,6 +42,12 @@ final class CompanionController: @unchecked Sendable {
     func forgetConnection() {
         let old = lock.withLock { () -> [(BEPConnection, CompanionBEPDelegate)] in
             account.reset(); configuredClients.removeAll(); selectedGeneration += 1
+            let previous = codeRevocation
+            // Load the store even if Code has not connected since Mac launch;
+            // forgetting an account must revoke its durable endpoint bindings.
+            if codeService == nil { codeService = try? makeCodeService() }
+            let service = codeService
+            codeRevocation = Task { try await previous?.value; try await service?.revokeEndpointAuthorizations() }
             pairingUntil = Date().addingTimeInterval(300)
             UserDefaults.standard.removeObject(forKey: "LunaVaultCompanion.trustedDevice")
             UserDefaults.standard.removeObject(forKey: "LunaMac.configuredClients")
@@ -58,15 +65,22 @@ final class CompanionController: @unchecked Sendable {
             UserDefaults.standard.set(configuredClients.map(\.rawValue).sorted(), forKey: "LunaMac.configuredClients")
         }
     }
-    private func handleCode(_ data: Data) async -> Data {
+    private func makeCodeService() throws -> CodeService {
+        try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true),
+                        installBundleID: Bundle.main.object(forInfoDictionaryKey: "LunaCodeBundleIdentifier") as? String,
+                        checkAccess: { path in try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true)) })
+    }
+    private func handleCode(_ data: Data, device: DeviceID, generation: Int) async -> Data {
         let service = lock.withLock { () -> CodeService? in
-            if codeService == nil { codeService = try? CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true), checkAccess: { path in
-                try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true))
-            }) }
+            guard account.trustedDevice == device, selectedGeneration == generation else { return nil }
+            if codeService == nil { codeService = try? makeCodeService() }
             return codeService
         }
         guard let service else { return Data() }
-        return await service.handle(data)
+        do { try await lock.withLock { codeRevocation }?.value }
+        catch { return Data() }
+        guard lock.withLock({ account.trustedDevice == device && selectedGeneration == generation }) else { return Data() }
+        return await service.handle(data, authenticatedPeerID: device.description)
     }
     func selectFolder(_ url: URL) {
         lock.withLock { folderURL = url; selectedGeneration += 1; status = "Folder selected: \(url.lastPathComponent). Reconnect the iPhone to refresh." }
@@ -136,7 +150,7 @@ final class CompanionController: @unchecked Sendable {
             // Reuse the durable snapshot for the handshake; refresh it after services are ready.
             let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
             let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", stateURL: stateURL, codeHandler: { [weak self] data in
-                guard let self else { return Data() }; return await self.handleCode(data)
+                guard let self else { return Data() }; return await self.handleCode(data, device: accepted.device, generation: generation)
             }, clientStarted: { [weak self] client in
                 self?.clientStarted(client, device: accepted.device, generation: generation)
             })

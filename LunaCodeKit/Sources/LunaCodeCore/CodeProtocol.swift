@@ -86,7 +86,7 @@ public struct CodeJob: Codable, Equatable, Sendable {
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel, overnightDiagnostics }
+    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel, overnightDiagnostics, endpointBegin, endpointFinish, endpointStatus, endpointRevoke }
     public var id: String = UUID().uuidString
     public var operation: Operation
     public var path: String = ""
@@ -94,6 +94,7 @@ public struct CodeRequest: Codable, Sendable {
     public var version: String = ""
     public var project: CodeProject?
     public var deviceBuild: CodeDeviceBuild?
+    public var endpoint: CodeEndpointEnrollmentRequest?
     public var overnight: CodeOvernightSubmission?
     public var position: CodePosition?
     public var jobID: String = ""
@@ -102,6 +103,8 @@ public struct CodeRequest: Codable, Sendable {
     public init(_ operation: Operation, path: String = "") { self.operation = operation; self.path = path }
 }
 public struct CodeResponse: Codable, Sendable {
+    public var endpointChallenge: CodeEndpointChallengeReceipt?
+    public var endpointBindings: [CodeEndpointBinding]?
     public var supportsOvernightBuilds: Bool?
     public var overnightCapabilities: CodeOvernightCapabilities?
     public var overnightJobs: [CodeOvernightJob]?

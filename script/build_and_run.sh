@@ -30,12 +30,19 @@ cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
 for resource in "$BUILD_DIR"/*.bundle; do
   [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
 done
+# The installation enrollment service may touch only this configured app container.
+# Derive the default from the same namespace as Xcode; never accept it from RPCs.
+CODE_NAMESPACE=$(awk -F ' = ' '/^LUNA_NAMESPACE = / {print $2; exit}' "$ROOT_DIR/Config/Luna.xcconfig")
+CODE_COMPANY=$(awk -F ' = ' '/^COMPANY_PREFIX = / {print $2; exit}' "$ROOT_DIR/Config/Luna.xcconfig")
+CODE_INSTALL_BUNDLE_ID=${LUNA_CODE_BUNDLE_ID:-$CODE_COMPANY.$CODE_NAMESPACE.code}
+[[ "$CODE_INSTALL_BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid Luna Code bundle identifier" >&2; exit 1; }
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>LunaVaultMacCompanion</string>
 <key>CFBundleIdentifier</key><string>${LUNA_MAC_BUNDLE_ID:-com.hsanabria.luna.vault.mac}</string>
+<key>LunaCodeBundleIdentifier</key><string>${CODE_INSTALL_BUNDLE_ID}</string>
 <key>CFBundleName</key><string>Luna Mac</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>

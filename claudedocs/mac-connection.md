@@ -145,3 +145,14 @@ socket registry exist for later bridge integration; production capabilities keep
 `deviceFlowProxy`, `datagrams` and `selfUpdateThroughProxy` false. The shared Luna
 identity is never treated as a physical iPhone identity. See
 [the implementation report](code-overnight-remote-install-status.md).
+
+Code endpoint authorization is separate from account pairing. **Authorize This
+Phone** uses an Apple app-container challenge/proof exchange to bind a
+`ThisDeviceOnly` installation key to the selected physical UDID. Only the
+configured Code bundle's private container is accessible to this enrollment
+service. The companion supplies the authenticated TLS peer separately from the
+request body. Removing a phone authorization or forgetting the account invalidates
+pending exchanges; forgetting also clears durable bindings. Shared account keys
+and Apple host pairing secrets are not copied into this phone credential.
+Physical enrollment and the remote Apple-service installation adapter remain
+unverified/unintegrated respectively; see the Code status report.

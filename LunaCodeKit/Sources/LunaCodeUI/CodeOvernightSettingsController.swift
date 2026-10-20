@@ -29,7 +29,7 @@ import LunaCodeCore
     public override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); timer?.invalidate(); timer = nil }
     public override func numberOfSections(in tableView: UITableView) -> Int { 5 }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch section { case 0: return 5; case 1: return 3; case 2: return 3; case 3: return max(1, invocations.count); default: return max(1, jobs.count) }
+        switch section { case 0: return 5; case 1: return 4; case 2: return 3; case 3: return max(1, invocations.count); default: return max(1, jobs.count) }
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         [nil, nil, "Mac Connection", "Recent Attempts", "Mac Jobs"][section]
@@ -54,7 +54,7 @@ import LunaCodeCore
             }
             cell.selectionStyle = .none
         case 1:
-            cell.textLabel?.text = ["Try Now", "Refresh Status", "Export Diagnostics"][indexPath.row]
+            cell.textLabel?.text = ["Try Now", "Refresh Status", "Export Diagnostics", "Authorize This Phone"][indexPath.row]
             cell.textLabel?.textColor = .tintColor
         case 2:
             let policy = CodeNightlyScheduler.shared.policy(peer: peerID())
@@ -86,6 +86,9 @@ import LunaCodeCore
         case (1, 0): CodeNightlyScheduler.shared.tryNow(); tableView.reloadData()
         case (1, 1): refresh()
         case (1, 2): export()
+        case (1, 3): CodePhoneAuthorization.choose(client: client, from: self) { [weak self] result in
+            self?.message = result; self?.tableView.reloadData()
+        }
         case (2, 1): configure(.tailscale)
         case (2, 2): configure(.syncthing)
         case (4, _) where !jobs.isEmpty: show(jobs[indexPath.row])

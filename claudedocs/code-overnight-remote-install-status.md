@@ -31,6 +31,13 @@ are checked in.
   cancellation, revocation and half-close; a TCP socket registry that rejects
   addresses not assigned to this device; non-synchronizing `ThisDeviceOnly`
   installation-key/proof primitives separate from the Luna account identity.
+- Foreground physical-endpoint enrollment using a non-synchronizing phone key,
+  a challenge copied into the configured Code app container through `devicectl`,
+  and a signed proof read back through the same physical UDID's Apple connection.
+  RPC authorization uses the authenticated TLS account, not a caller-supplied ID.
+  Five-minute monotonic challenges, fixed UUID paths, bounded pending requests,
+  durable owner-only bindings, idempotent completion and account/phone revocation
+  are implemented. Forgetting the connection revokes persisted bindings too.
 - A reproducible harmless fixture and explicit build/install/probe/collect harness
   under `tools/code-install-probe`. Install is separate from probe launch.
 
@@ -40,17 +47,17 @@ The production installer currently uses **native CoreDevice routing**. A working
 Tailscale system route or pre-existing Apple bridge may carry it, but the installer
 does not create that bridge or claim a verified underlay.
 
-The restricted forwarding primitives are **not yet connected** to production
-endpoint enrollment, an Apple RemotePairing/CoreDevice bridge or a transport-aware
-installer. Syncthing currently carries control RPCs, not installation traffic.
+The physical enrollment path is now wired in production, but has not been run
+against a phone. The restricted forwarding primitives are **not yet connected**
+to an Apple RemotePairing/CoreDevice bridge or a transport-aware installer. Syncthing currently carries control RPCs, not installation traffic.
 A relay byte-transfer pass is not an Apple installation pass. Production capability
 negotiation therefore advertises retained/native installation and keeps
 `deviceFlowProxy`, datagrams and proxy self-update false. No automatic public
 listeners, arbitrary-host proxy, copied Apple pairing keys, speculative port ranges
 or alternative installer were added to conceal this gap.
 
-Complete the authenticated physical-device enrollment and the Mac Apple-service
-adapter before enabling those capabilities. Required design evidence is which
+Complete the Mac Apple-service adapter and connect it to the enrolled identity
+before enabling those capabilities. Required design evidence is which
 phone-local Apple endpoints are reachable, how authenticated dynamic tunnel
 endpoints are selected, and how replacement of the forwarding app affects final
 readback. Physical checks can happen later as requested; none of these unknowns
@@ -71,11 +78,13 @@ Luna Code simulator and companion compilation use Xcode 27.1 beta. The fixture
 also compiles with Xcode 26.2. Builds were compilation-only: the persistent Luna
 Mac app was not replaced, signed, staged or launched.
 
-- `swift test --package-path LunaCodeKit`: 76 tests, two intentional skips,
+- `swift test --package-path LunaCodeKit`: 81 tests, two intentional skips,
   zero failures. New cases cover restart/disk errors, lost replies and stable IDs,
   artifact precedence, opt-out, stale terminal polls, readback identity, routing
   failure classes, escaping symlinks, frame limits/fragmentation, half-close,
-  revocation, monotonic expiry, endpoint proofs and redaction.
+  revocation, monotonic expiry, endpoint proofs and redaction. Enrollment cases additionally exercise container
+  proof roundtrips, another phone/account/key, ID reuse, lost completion replies,
+  persistence, expiry/restart, in-flight revocation and missing RPC authentication.
 - `xcodebuild build -scheme LunaCode -destination 'generic/platform=iOS Simulator'`:
   passed with normal simulator signing. Git LFS archives were hydrated locally in
   the worktree before linking; no vendor archives were changed.
@@ -111,6 +120,15 @@ the fixture's `doctor`, `build`, `install`, `probe` and `collect` commands from 
 [README](../tools/code-install-probe/README.md). Check exact version/build readback
 and the returned CoreDevice connection; do not infer routes from `100.*` addresses.
 No Apple password belongs in configuration, logs or Git.
+
+For phone authorization, build the Mac companion with the updated staging script
+(which derives `LunaCodeBundleIdentifier` from `Config/Luna.xcconfig`; an explicit
+`LUNA_CODE_BUNDLE_ID` override is available). Keep the required existing signing
+identity and app location. In **Overnight Builds → Authorize This Phone**, choose
+this physical phone while Apple's existing connection is available. The same
+screen removes its authorization. This establishes a binding; it does not install,
+launch, create a VPN or enable a remote installation capability. No enrollment
+operation has been performed on the sleeping user's phone.
 
 For remote **control**, pair locally first. In **Luna Mac → Overnight Builds**,
 enter only the selected provider's explicit address. Tailscale uses the separately

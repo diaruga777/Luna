@@ -79,6 +79,25 @@ final class CodeEndpointEnrollmentTests: XCTestCase {
         let binding = try await service.finish(id: receipt.id, peer: "shared-account")
         XCTAssertEqual(binding.publicKey, owner.publicKey.x963Representation)
     }
+    func testMacRejectsTamperedSignatureAndChallengeEvenWhenProofFileExists() async throws {
+        let root = try scratch(); let access = Containers(root: root.appendingPathComponent("phones"))
+        let service = try CodeEndpointEnrollmentService(root: root.appendingPathComponent("mac"), access: access)
+        let owner = P256.Signing.PrivateKey(); let impostor = P256.Signing.PrivateKey()
+        let request = CodeEndpointEnrollmentRequest(deviceID: "physical-A", publicKey: owner.publicKey.x963Representation)
+        let receipt = try await service.begin(request, peer: "account")
+        let container = root.appendingPathComponent("phones/physical-A")
+        let challenge = try Data(contentsOf: container.appendingPathComponent(try CodeEndpointEnrollment.path(id: receipt.id, proof: false)))
+        let proofFile = container.appendingPathComponent(try CodeEndpointEnrollment.path(id: receipt.id, proof: true))
+        let signature = try impostor.signature(for: Data("luna-install-endpoint-v1\u{0}".utf8) + challenge).derRepresentation
+        try JSONEncoder().encode(CodeEndpointProof(challenge: challenge, signature: signature)).write(to: proofFile)
+        do { _ = try await service.finish(id: receipt.id, peer: "account"); XCTFail("accepted another key's signature") } catch {}
+        let changed = challenge + Data([32])
+        let otherSignature = try owner.signature(for: Data("luna-install-endpoint-v1\u{0}".utf8) + changed).derRepresentation
+        try JSONEncoder().encode(CodeEndpointProof(challenge: changed, signature: otherSignature)).write(to: proofFile)
+        do { _ = try await service.finish(id: receipt.id, peer: "account"); XCTFail("accepted a changed signed challenge") } catch {}
+        try prove(receipt, root: container, key: owner)
+        _ = try await service.finish(id: receipt.id, peer: "account")
+    }
     func testMonotonicExpiryAndRestartDropPendingChallenges() async throws {
         let root = try scratch(); let access = Containers(root: root.appendingPathComponent("phones")); let clock = Clock()
         let service = try CodeEndpointEnrollmentService(root: root.appendingPathComponent("mac"), access: access, clock: { clock.now() })

@@ -25,6 +25,7 @@ public actor CodeEndpointEnrollmentService {
         self.file = root.appendingPathComponent("endpoint-bindings-v1.json"); self.access = access; self.clock = clock
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         if FileManager.default.fileExists(atPath: file.path) {
+            guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 512_000 else { throw CodeFailure("Invalid phone authorization store.") }
             let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: file))
             guard snapshot.version == 1, snapshot.bindings.count <= 32 else { throw CodeFailure("Unsupported phone authorization store.") }
             bindings = snapshot.bindings

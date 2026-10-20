@@ -6,6 +6,13 @@ https://github.com/tailscale/libtailscale at commit
 The C library they wrap is the committed `Vendor/LibTailscale.xcframework`,
 built from the same commit by `scripts/build_libtailscale.sh`.
 
+The archives also compile Luna's stdlib-only `GoSources/lunabep` transport.
+Rebuilt 2026-10-21 with Go 1.26.4 / Xcode 27.1 beta for the bounded private-relay
+session-join pacing used by the Apple-flow integration. The upstream Tailscale
+revision and Swift wrapper sources are unchanged. The receiving side waits a
+cancellable 10 ms before joining a relay session to avoid v1.29.7's unbuffered
+session mailbox race; no identity, TLS or stream authorization is relaxed.
+
 Why vendored instead of the upstream framework build:
 
 - Upstream ships an Xcode-project framework, not a Swift package. Its build

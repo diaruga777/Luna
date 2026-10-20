@@ -47,6 +47,8 @@ let package = Package(
         ]),
         .testTarget(name: "LunaMacReconnectTests", dependencies: [
             "LunaVaultMacCompanion",
+            "LunaVaultTailscale",
+            .product(name: "LunaCodeMac", package: "LunaCodeKit"),
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
         ]),

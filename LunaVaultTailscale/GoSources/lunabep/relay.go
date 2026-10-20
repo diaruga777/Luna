@@ -551,6 +551,17 @@ func (j *relayJoiner) session(ctx context.Context) (joined bool, err error) {
 
 func (j *relayJoiner) acceptInvitation(ctx context.Context, inv sessionInvitation, relayIP net.IP) {
 	defer j.listener.wg.Done()
+	// strelaysrv v1.29.7 consumes each key before a nonblocking send into
+	// its session's unbuffered connection mailbox (session.go AddConnection).
+	// Near-simultaneous joins can therefore refuse one valid side. Give the
+	// initiator a small head start; never hold cancellation or retry a used key.
+	timer := time.NewTimer(10 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+	}
 	raw, err := relayJoinSession(ctx, inv, relayIP)
 	if err != nil {
 		logf("relay %s: session join failed: %v", j.relayHost, err)

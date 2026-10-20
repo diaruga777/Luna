@@ -4,8 +4,9 @@ This is the transport-aware Apple-service component for Code's retained-artifact
 installer. It is wired into the production reverse-stream broker, enrolled-key
 readiness/session proofs, phone-owned dynamic endpoints and retained-app IPA
 packaging. The staged helper's presence gates capability reporting. Physical
-acceptance and the combined real-relay fixture check remain pending; component
-checks alone are not evidence of an Apple device installation.
+acceptance remains pending. The combined synthetic Apple-service check uses a
+real private relay and production Swift broker/proxy; it is not an Apple device
+installation.
 
 The adapter uses the Mac's existing Apple pairing record, reads only that selected
 UDID from the local Apple daemon, and retains credentials only in the short-lived
@@ -104,3 +105,36 @@ module does not use upstream's generic SSL activation or device/service discover
 `notices/collect.py` gathers licenses for modules actually compiled into the
 helper plus the Go runtime; the staging script places them in app Resources.
 It fails before touching the existing app if a required source/license is missing.
+
+## Combined private-relay check (no phone)
+
+Build an upstream `strelaysrv` executable as described in the
+[status report](../../claudedocs/code-overnight-remote-install-status.md), then:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-27.1.0-Beta.app/Contents/Developer \
+LUNA_TEST_RELAY_BINARY=/tmp/strelaysrv \
+  tools/code-apple-adapter/integration/run.sh
+```
+
+The runner creates an ephemeral loopback-only relay with public pools, status and
+NAT disabled, builds a race-instrumented **test binary**, and runs the Swift
+integration check. It removes relay keys, broker tokens, certificates and fixtures
+on completion. No production manifest, pairing daemon, real phone or signed app
+is used. Without the explicit test environment, the integration cases skip.
+
+Data passes through the checked-in production Go/TLS transport, real upstream
+relay, LCDF demultiplexer, fresh phone-key proof for each flow, phone proxy and
+Swift private Unix broker into `Adapter.Install`. The only substituted endpoint
+is a synthetic Apple server on test-only ephemeral loopback ports. Its payload
+is deliberately not a signed IPA. Control polling calls the real hub directly;
+this check does not exercise physical enrollment, iOS scheduling or network policy.
+
+Four scenarios require exact readback and unchanged uploaded bytes, lost Install
+reply followed by readback without another upload, wrong UDID rejection and wrong
+paired certificate rejection. Eight fresh proven streams are required for each
+successful install/reconciliation scenario; identity failures open one Lockdown
+stream and no AFC/install service. Transient private-relay dials retry only while
+the demand is pending, with one active dial per demand, as in the phone runtime.
+The normal 45-second demand deadline remains enabled. The check never launches
+an app or weakens the production command's certificate/pair-record rules.

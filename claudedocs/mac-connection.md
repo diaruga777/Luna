@@ -141,8 +141,8 @@ sizes are disclosed during Code setup; a private relay address is supported.
 Remote **control** is distinct from Apple device installation. The native installer
 reports CoreDevice's automatic routing without guessing its underlay. The bounded
 `CodeInstallStream` / `CodeDeviceFlowAuthority` contracts and numeric phone-local
-socket registry exist for later bridge integration; production capabilities keep
-`deviceFlowProxy`, `datagrams` and `selfUpdateThroughProxy` false. The shared Luna
+socket factory now back the Apple-service adapter. A staged signed helper enables
+`deviceFlowProxy`; `datagrams` and `selfUpdateThroughProxy` remain false. The shared Luna
 identity is never treated as a physical iPhone identity. See
 [the implementation report](code-overnight-remote-install-status.md).
 
@@ -157,5 +157,6 @@ and Apple host pairing secrets are not copied into this phone credential.
 Dedicated Code installation streams are demultiplexed from BEP on fresh TLS
 connections. Their per-flow phone-key proof, readiness lease and job-token Unix
 broker keep Apple traffic separate from Vault sync. The transport-aware Mac helper
-is now wired into fallback after native reachability failure; physical acceptance
-and the combined relay integration check remain pending. See the Code status report.
+is wired into fallback after native reachability failure. The synthetic Apple
+protocol has been checked through a real private relay and the production broker;
+physical acceptance remains pending. See the Code status report.

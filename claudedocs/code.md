@@ -9,8 +9,9 @@ scope remains in the [handoff](plans/code-overnight-remote-install.md); see the
 [implementation/acceptance report](code-overnight-remote-install-status.md) for
 supported behavior and deferred device checks. Physical endpoint enrollment is
 wired, including the bounded Apple-service adapter, dedicated reverse streams and
-native-to-proxy fallback. Local protocol checks pass; combined relay integration
-and all physical acceptance checks remain pending.
+native-to-proxy fallback. Protocol checks include the combined synthetic Apple
+fixture through the real private relay and production broker. All physical
+acceptance checks remain pending.
 
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.

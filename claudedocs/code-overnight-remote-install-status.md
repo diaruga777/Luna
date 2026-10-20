@@ -88,12 +88,24 @@ shell syntax checks passed. A staged executable enables proxy capability reporti
 missing helpers retain native-only capabilities. Datagrams and app-hosted self-update
 remain false. Luna Code must use an independent Apple path to update itself.
 
-Production composition is implemented, but the combined Apple-protocol fixture
-through a real private Syncthing relay has not yet been run. Separate Go Apple
-protocol, Swift phone/broker and TLS/private-relay suites have passed. This is a
-verification gap to close autonomously, not evidence of a physical install. All
-physical enrollment, reachable-Apple-service, lock/background, route and self-update
-acceptance checks remain pending as requested. No phone or network setup was changed.
+Production composition and the combined automated integration are implemented.
+The synthetic Apple-protocol fixture passed through the checked-in Go/TLS archive,
+a real upstream private Syncthing relay, LCDF demultiplexer, per-flow phone-key
+proof, phone proxy and Swift Unix broker. Exact readback/upload bytes, unknown
+handoff reconciliation, wrong UDID and wrong certificate were checked. Control
+polling calls the real hub directly; Apple services and the payload are synthetic.
+This is not a physical install or proof of background allocation. All physical
+enrollment, reachable-Apple-service, lock/background, route and self-update
+acceptance checks remain pending as requested. No phone or network setup changed.
+
+The combined test exposed strelaysrv v1.29.7's near-simultaneous session-join race:
+it consumes keys before a nonblocking send into an unbuffered session mailbox.
+The receiving Go adapter now gives the initiator a cancellable 10 ms head start.
+All Mac/device/simulator transport archives were rebuilt from the same pinned
+Tailscale revision with that source change. The final combined run passed all
+four scenarios in 4.953 seconds without join refusals. Failed dials still have
+the normal bounded pending-demand retry; used grants and Install handoffs are
+never blindly replayed. TLS, identity, frame and lease checks are unchanged.
 
 Iroh is deferred: the reviewed `iroh-ffi` HEAD was
 `3103bf5295be6d50c5272ff7a426e9b539f3f587`. An extra Rust/Swift binding toolchain
@@ -122,8 +134,11 @@ Mac app was not replaced, signed, staged or launched.
   the worktree before linking; no vendor archives were changed.
 - `swift build --package-path LunaVaultTailscale --product LunaVaultMacCompanion`:
   passed. This does not launch or modify the persistent client.
-- Transport/companion Swift suite: 16 checks passed, including unchanged BEP hello
-  replay, dedicated Apple-frame replay and cancellation of stalled classification.
+- Transport/companion Swift suite: 17 tests, one intentional opt-in integration
+  skip without its environment, zero failures. The integration test separately
+  passed with a real local private relay and race-instrumented Go fixture binary.
+  Existing checks include unchanged BEP hello replay, dedicated Apple-frame replay
+  and cancellation of stalled classification.
 - Reverse-flow cases exercise fresh physical-key proofs, wrong/shared-account key,
   replay, generation change, lease expiry, renewal replay, revocation, private Unix
   roundtrip/token rejection, half-close and full-helper-exit cleanup. Fallback cases
@@ -137,7 +152,7 @@ Mac app was not replaced, signed, staged or launched.
   queried the real Apple pairing daemon or a phone.
 - Fixture simulator build: passed; no app launch or physical acceptance claimed.
 - Go TLS/relay suite with race detection and a **real upstream private relay**:
-  passed. Explicit loopback relay, public pools/status/NAT disabled; independent
+  passed, including three repeated runs after the session-join fix. Explicit loopback relay, public pools/status/NAT disabled; independent
   ephemeral identities, authenticated bidirectional 1 MiB + 17 byte transfer and
   stream closure. Test relay keys and raw logs remained outside the repository.
 
@@ -191,17 +206,42 @@ Doctor outcomes still requiring device evidence: guest isolation/captive portals
 IPv6-only LAN and VPN underlay association, offline LAN installation, different
 Wi-Fi with/without Tailscale, genuine overnight background allocation, lock/idle,
 before/after first unlock, Mac sleep/restart, relay failure and Code self-update.
-The required installation paths are wired; combined automated integration and
-the deferred physical acceptance matrix are not yet verified. All deferred device matrix entries remain
-pending rather than inferred from simulator or localhost results.
+The required installation paths are wired and combined automated integration
+passes. Every deferred physical matrix entry remains pending; simulator and
+localhost results are not substituted for device evidence.
 
-## Next verification pass
+## Handoff and deferred acceptance
 
-Run the combined pinned Go Apple-protocol fixture through the actual Swift private
-Unix broker, phone LCDF proxy and a real local private Syncthing relay/TLS session.
-The separate suites already pass, but their combination can expose framing,
-connection lifetime or concurrency mismatches. Keep strict certificate/UDID checks,
-per-stream physical-key proof, no process launch and unknown handoff results.
+Implementation and autonomous checks are complete; physical acceptance is deferred
+by the user's explicit instruction. The overnight follow-up can be disabled after
+merging this pass. No physical evidence is inferred and no further unattended
+phone/network changes are planned. Final compilation of Luna Code for the generic
+iOS simulator and the Mac companion passed against the rebuilt archives.
+
+To reproduce the combined check, build the upstream private relay above and run:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-27.1.0-Beta.app/Contents/Developer \
+LUNA_TEST_RELAY_BINARY=/tmp/strelaysrv \
+  tools/code-apple-adapter/integration/run.sh
+```
+
+The runner uses only an ephemeral loopback relay with public pools/status/NAT
+disabled and cleans up its test keys and tokens. It compiles a test-only Go
+fixture, not a command that can bypass production pairing. Four scenarios cover
+the complete data path; physical enrollment, Wi-Fi policy, Apple service exposure,
+iOS background execution and actual signed-product acceptance still need devices.
+The [adapter guide](../tools/code-apple-adapter/README.md) details the test boundary.
+
+Before eventual deployment, stage Luna Mac with the exact existing development
+identity/location and verify the nested helper and full app signature. Authorize
+the phone through the foreground Apple container exchange. If the proxy capability
+is absent, inspect helper packaging/signing. If readiness is absent, inspect
+phone authorization, the actual Wi-Fi policy and iOS runtime. Pairing/identity
+failures need the Apple trust/authorization path, while unknown completion needs
+revision readback before retry. App-hosted Code self-update remains unsupported;
+use an independent native Apple path. Then record the deferred physical matrix
+above, including the actual route and background/lock conditions.
 
 The pinned Go component uses go-ios AFC (`ca2c56d2c294ff702cadf4821edd30b069d3a264`,
 MIT; notice included), but its own certificate pinning/UDID and bounded plist/IPC

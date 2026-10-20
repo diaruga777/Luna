@@ -10,7 +10,7 @@ import PackageDescription
 // apps and their extensions.
 let package = Package(
     name: "LunaVaultTailscale",
-    platforms: [.iOS(.v18), .macOS(.v15)],
+    platforms: [.iOS(.v26), .macOS(.v15)],
     products: [
         .library(name: "LunaVaultTailscale", targets: ["LunaVaultTailscale"]),
         .executable(name: "LunaVaultMacCompanion", targets: ["LunaVaultMacCompanion"]),
@@ -31,6 +31,7 @@ let package = Package(
                     .linkedLibrary("resolv"),
                 ]),
         .target(name: "LunaVaultTailscale", dependencies: [
+            .product(name: "LunaCodeCore", package: "LunaCodeKit"),
             "TailscaleKit",
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),

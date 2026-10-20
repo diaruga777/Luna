@@ -15,6 +15,7 @@ final class CompanionController: @unchecked Sendable {
     private var code: String?
     private var pairingUntil = Date.distantPast
     private var listener: LunaVaultGoListener?
+    private var codeRelay: LunaVaultGoListener?
     private var active = CompanionSessions()
     private var codeService: CodeService?
     private let account: CompanionAccountGate
@@ -46,6 +47,7 @@ final class CompanionController: @unchecked Sendable {
             let old = Array(active.values); active.removeAll(); status = "Ready to Connect"
             return old
         }
+        lock.withLock { codeRelay?.close(); codeRelay = nil }
         for connection in old { connection.1.revoke(); connection.0.stream.close() }
         Task { for connection in old { await connection.0.close(reason: "Connection forgotten on Mac") } }
     }
@@ -95,6 +97,12 @@ final class CompanionController: @unchecked Sendable {
                     status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
                     pairingUntil = Date().addingTimeInterval(300)
                 }
+                // One Mac-owned registration. Phones initiate relay sessions;
+                // no per-phone registration or silent public pool lookup.
+                if UserDefaults.standard.bool(forKey: "Code.relayEnabled"),
+                   let text = UserDefaults.standard.string(forKey: "Code.relayAddress"), let url = URL(string: text), url.scheme == "relay" {
+                    Task { await self.startCodeRelay(url, localID: localID) }
+                }
                 while !Task.isCancelled {
                     let accepted = try await listener.accept()
                     // Approval and BEP work must not block the next TLS accept.
@@ -102,6 +110,21 @@ final class CompanionController: @unchecked Sendable {
                 }
             } catch { lock.withLock { status = "Could not start Luna Mac: \(error)" } }
         }
+    }
+
+    private func startCodeRelay(_ url: URL, localID: DeviceID) async {
+        do {
+            let relay = try await transport.relayListener(url: url)
+            lock.withLock { codeRelay = relay }
+            defer { relay.close(); lock.withLock { codeRelay = nil } }
+            while !Task.isCancelled {
+                let accepted = try await relay.accept()
+                // Relay access cannot enroll a new account. Initial pairing is
+                // foreground/direct and retains the existing approval flow.
+                guard lock.withLock({ account.trustedDevice == accepted.device }) else { accepted.stream.close(); continue }
+                Task { await self.handle(accepted, localID: localID) }
+            }
+        } catch { lock.withLock { status = "Remote Code connection unavailable. Check the configured relay." } }
     }
 
     private func handle(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {

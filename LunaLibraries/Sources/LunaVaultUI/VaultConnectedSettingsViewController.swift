@@ -5,6 +5,9 @@ import LunaVaultBEP
 /// Connection setup and maintenance are distinct states, backed by the same verified runtime.
 public final class LunaMacConnectionViewController: UITableViewController, UITextFieldDelegate {
     public var onContinue: (() -> Void)?
+    /// App-owned settings injected without making shared connection UI depend on Code.
+    public var additionalSettings: [(String, () -> UIViewController)] = []
+    private var additionalSection: Int { hasVaultOptions ? 6 : 3 }
     private let client: LunaMacClient
     private var hasVaultOptions: Bool { client == .vault }
     private let runtime: any VaultPresentationProviding
@@ -207,19 +210,22 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         guard !isPaired, let cell = tableView.cellForRow(at: IndexPath(row: 1, section: 0)) else { return }
         configurePairCell(cell)
     }
-    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? (hasVaultOptions ? 6 : 3) : (needsNetworkSettings ? 2 : 1)) }
+    public override func numberOfSections(in tableView: UITableView) -> Int { loading ? 0 : (isPaired ? (additionalSection + (additionalSettings.isEmpty ? 0 : 1)) : (needsNetworkSettings ? 2 : 1)) }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !isPaired { return section == 0 ? 2 : 1 }
+        if section == additionalSection { return additionalSettings.count }
         let section = settingsSection(section)
         if section == 5 { return max(1, storage?.volumes.count ?? 0) + 1 }
         return section == 0 ? 3 : (section == 1 || section == 3 ? 2 : 1)
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? "Pairing Code" : nil }
+        if section == additionalSection { return nil }
         return ["Connection", "On This iPhone", "Search", "Photos Export", "", "Mac Disk Usage"][settingsSection(section)]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if !isPaired { return section == 0 ? (message ?? "Turn on iCloud Passwords & Keychain to use an existing connection.") : "Enable Local Network access for this app, then try again." }
+        if section == additionalSection { return nil }
         switch settingsSection(section) {
         case 0: return message ?? (connection == .offline ? "Open Luna Mac and check your network." : "Use iCloud Passwords & Keychain to connect your other devices.")
         case 5:
@@ -258,6 +264,11 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
                 return cell
             } else { configurePairCell(cell); return cell }
         } else {
+            if indexPath.section == additionalSection {
+                content.text = additionalSettings[indexPath.row].0
+                cell.contentConfiguration = content; cell.accessoryType = .disclosureIndicator
+                return cell
+            }
             if settingsSection(indexPath.section) == 5 { return storageCell(at: indexPath) }
             switch (settingsSection(indexPath.section), indexPath.row) {
             case (0, 0):
@@ -368,6 +379,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             if indexPath.section == 1, let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             else if indexPath.row == 1 { pair() }
             return
+        }
+        if indexPath.section == additionalSection {
+            navigationController?.pushViewController(additionalSettings[indexPath.row].1(), animated: true); return
         }
         switch (settingsSection(indexPath.section), indexPath.row) {
         case (5, _): loadStorage(force: true)

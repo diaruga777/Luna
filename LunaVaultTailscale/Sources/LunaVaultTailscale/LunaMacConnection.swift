@@ -2,6 +2,7 @@
 import Foundation
 import LunaCodeCore
 import Network
+import Security
 import Darwin
 import LunaAppConfig
 import LunaVaultBEP
@@ -47,12 +48,29 @@ public enum LunaMacConnection {
 /// A separate session keeps scheduled Code work from changing the foreground
 /// Vault connection. Only explicit Code provider addresses are considered;
 /// this path never uses public discovery, embedded tsnet or global Vault policy.
+public struct LunaCodeInstallationRoute: Sendable {
+    public var provider: CodeInstallProvider
+    public var dial: @Sendable () async throws -> any CodeInstallStream
+    public var available: @Sendable () async throws -> Void
+    public var openApple: @Sendable (CodeAppleStreamService, UInt16) async throws -> any CodeDeviceFlowSocket
+}
+public struct LunaCodeOvernightConnection: Sendable {
+    public var runtime: VaultConnectedRuntime
+    public var peerID: String
+    public var accountPeerID: String
+    public var installationRoute: @Sendable () async throws -> LunaCodeInstallationRoute
+}
 extension LunaMacConnection {
-    public static func makeOvernightCodeRuntime(policy: CodeOvernightPolicy = CodeOvernightPolicy(), record: @escaping @Sendable (CodeInstallProvider, String) -> Void = { _, _ in }) async throws -> (runtime: VaultConnectedRuntime, peerID: String) {
+    public static func makeOvernightCodeRuntime(policy: CodeOvernightPolicy = CodeOvernightPolicy(), record: @escaping @Sendable (CodeInstallProvider, String) -> Void = { _, _ in }) async throws -> LunaCodeOvernightConnection {
         guard let group = AppConfig.macConnectionKeychainAccessGroup else { throw LunaMacCredentialError.missingAccessGroup }
         let shared = try VaultFolderStore.production()
         let identity = LunaMacIdentityStore(root: shared.rootURL, credentials: LunaMacKeychain(accessGroup: group))
-        guard let (credentials, transport) = try identity.restore(), var peer = try credentials.pairing?.peer() else {
+        let restored: (LunaMacCredentials, LunaVaultGoTransport)?
+        do { restored = try identity.restore() }
+        catch LunaMacCredentialError.keychain(let status) where status == errSecInteractionNotAllowed || status == errSecNotAvailable {
+            throw CodeOvernightSkip(stage: "credentials", message: "Connection keys are unavailable. Unlock this phone before trying again.")
+        }
+        guard let (credentials, transport) = restored, var peer = try credentials.pairing?.peer() else {
             throw VaultTransportError.internalError("Connect Luna Code to your Mac first.")
         }
         let interfaces = try await LocalCodeWiFi.interfaces()
@@ -75,8 +93,11 @@ extension LunaMacConnection {
         peer.networkMode = .tailscale // Legacy explicit-address mode; no embedded tailnet is started.
         let store = try VaultFolderStore(rootURL: shared.rootURL.deletingLastPathComponent().appendingPathComponent("Code/OvernightConnection"))
         try store.savePeer(peer)
-        return (try VaultConnectedRuntime(store: store, dialer: CodeWiFiProviderDialer(transport: transport, providers: providers, record: record),
-            lookup: nil, localID: transport.identity(), client: .code), peer.deviceID.description)
+        let dialer = CodeWiFiProviderDialer(transport: transport, providers: providers, record: record)
+        let localID = try transport.identity(), expected = peer.deviceID
+        return LunaCodeOvernightConnection(runtime: try VaultConnectedRuntime(store: store, dialer: dialer,
+            lookup: nil, localID: localID, client: .code), peerID: expected.description, accountPeerID: localID.description,
+            installationRoute: { try await dialer.installationRoute(expecting: expected) })
     }
     public static func overnightCodeRequest(_ payload: Data, runtime: VaultConnectedRuntime) async throws -> Data {
         // Recheck on every RPC, including an already-open connection.
@@ -90,8 +111,25 @@ private actor CodeWiFiProviderDialer: VaultPeerDialing {
     let providers: [VaultPeerAddress: CodeInstallProvider]
     let record: @Sendable (CodeInstallProvider, String) -> Void
     private var authenticationFailed = false
+    private var selected: VaultPeerAddress?
     init(transport: LunaVaultGoTransport, providers: [VaultPeerAddress: CodeInstallProvider], record: @escaping @Sendable (CodeInstallProvider, String) -> Void) {
         self.transport = transport; self.providers = providers; self.record = record
+    }
+    func installationRoute(expecting expected: DeviceID) throws -> LunaCodeInstallationRoute {
+        guard !authenticationFailed, let address = selected, let provider = providers[address] else { throw CodeFailure("Connect to your Mac before opening an installation stream.") }
+        let transport = transport
+        return LunaCodeInstallationRoute(provider: provider, dial: {
+            _ = try await LocalCodeWiFi.interfaces()
+            // The C bridge has bounded Go connect/handshake timeouts. Keep its
+            // synchronous work off the cooperative executor and freeze this route
+            // for this readiness generation rather than switching pipes mid-flow.
+            let task = Task.detached { try await transport.dial(address, expecting: expected) }
+            let stream = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+            guard !Task.isCancelled else { stream.close(); throw CancellationError() }
+            return LunaCodeInstallStream(authenticatedStream: stream)
+        }, available: { _ = try await LocalCodeWiFi.interfaces() }, openApple: { service, port in
+            try await LunaCodeLocalAppleServices.openVerifiedService(service, port: port, interfaces: LocalCodeWiFi.interfaces())
+        })
     }
     func dial(_ address: VaultPeerAddress, expecting expected: DeviceID) async throws -> any BEPByteStream {
         _ = try await LocalCodeWiFi.interfaces()
@@ -100,7 +138,7 @@ private actor CodeWiFiProviderDialer: VaultPeerDialing {
         do {
             let stream = try await transport.dial(address, expecting: expected)
             if Task.isCancelled { stream.close(); throw CancellationError() }
-            record(provider, "authenticated"); return stream
+            selected = address; record(provider, "authenticated"); return stream
         } catch {
             if let error = error as? VaultTransportError {
                 switch error {
@@ -113,7 +151,7 @@ private actor CodeWiFiProviderDialer: VaultPeerDialing {
         }
     }
 }
-private enum LocalCodeWiFi {
+enum LocalCodeWiFi {
     static func interfaces() async throws -> Set<String> {
         try Task.checkCancellation()
         let completion = LocalCodeWiFiCompletion()

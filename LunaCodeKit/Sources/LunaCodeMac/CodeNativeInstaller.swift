@@ -11,6 +11,12 @@ public struct CodeArtifactInstallResult: Sendable {
 }
 public protocol CodeArtifactInstalling: Sendable {
     func install(_ artifact: CodeBuildArtifact, app: URL, process: CodeProcess) async -> CodeArtifactInstallResult
+    func install(_ artifact: CodeBuildArtifact, app: URL, process: CodeProcess, recordRoute: @escaping @Sendable (CodeInstallRoute) async throws -> Void) async -> CodeArtifactInstallResult
+}
+public extension CodeArtifactInstalling {
+    func install(_ artifact: CodeBuildArtifact, app: URL, process: CodeProcess, recordRoute: @escaping @Sendable (CodeInstallRoute) async throws -> Void) async -> CodeArtifactInstallResult {
+        await install(artifact, app: app, process: process)
+    }
 }
 /// CoreDevice chooses the native route. Report that fact; localNetwork does not
 /// prove a LAN underlay rather than a separately configured Tailscale bridge.

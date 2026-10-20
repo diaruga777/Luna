@@ -25,11 +25,39 @@ import LunaVaultTailscale
                     guard selectedPeer == connection.peerID else { throw CodeFailure("The paired Mac changed. Review Overnight Builds before trying again.") }
                     let client = CodeClient { try await LunaMacConnection.overnightCodeRequest($0, runtime: connection.runtime) }
                     let runner = CodeOvernightCoordinator(catalog: CodeBuildCatalog(defaults: .standard), client: client, journal: journal)
-                    let jobs = try await withTaskCancellationHandler {
-                        try await runner.run(peer: connection.peerID, invocationID: invocation.id, policy: policy, manually: manual)
-                    } onCancel: { Task { await connection.runtime.stop() } }
-                    await connection.runtime.stop()
-                    return jobs
+                    let forwarding: CodePhoneReverseRuntime?
+                    do {
+                        if try await client.call(CodeRequest(.overnightCapabilities)).overnightCapabilities?.deviceFlowProxy == true,
+                           let bundle = Bundle.main.bundleIdentifier {
+                            let route = try await connection.installationRoute()
+                            let candidate = CodePhoneReverseRuntime(client: client, identity: try CodeInstallEndpointIdentity(service: bundle + ".installation"),
+                                accountPeerID: connection.accountPeerID, macPeerID: connection.peerID, generation: policy.generation,
+                                provider: route.provider, dial: route.dial, available: route.available, open: route.openApple) { outcome in
+                                    try? journal.event(CodeOvernightDiagnosticEvent(stage: "proxy.phone", correlationID: invocation.id, outcome: outcome))
+                                }
+                            forwarding = try await candidate.start() ? candidate : nil
+                        } else { forwarding = nil }
+                    } catch {
+                        forwarding = nil
+                        try? journal.event(CodeOvernightDiagnosticEvent(stage: "proxy.readiness", correlationID: invocation.id, outcome: "unavailable"))
+                    }
+                    do {
+                        let jobs = try await withTaskCancellationHandler {
+                            var latest = try await runner.run(peer: connection.peerID, invocationID: invocation.id, policy: policy, manually: manual)
+                            // Keep only a bounded readiness window. A cold build
+                            // may outlast it; the retained artifact waits for the
+                            // next wake rather than holding iOS runtime forever.
+                            let deadline = ProcessInfo.processInfo.systemUptime + 840
+                            while forwarding != nil, ProcessInfo.processInfo.systemUptime < deadline,
+                                  latest.contains(where: { [.accepted, .building, .waitingForPhone, .installing].contains($0.state) }) {
+                                try Task.checkCancellation(); try await Task.sleep(for: .seconds(2))
+                                latest = try await runner.refresh()
+                            }
+                            return latest
+                        } onCancel: { Task { await forwarding?.stop(); await connection.runtime.stop() } }
+                        await forwarding?.stop(); await connection.runtime.stop()
+                        return jobs
+                    } catch { await forwarding?.stop(); throw error }
                 } catch {
                     await connection.runtime.stop()
                     throw error

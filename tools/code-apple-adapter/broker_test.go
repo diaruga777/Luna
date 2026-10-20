@@ -51,7 +51,7 @@ func TestPrivateBrokerHandshakeCarriesTypedEndpointThenOpaqueBytes(t *testing.T)
 		}
 		var value map[string]any
 		err = json.Unmarshal(body, &value)
-		if err != nil || value["service"] != "afc" || value["port"] != float64(32100) || value["token"] != strings.Repeat("t", 32) {
+		if err != nil || value["fullCloseOnEOF"] != true || value["service"] != "afc" || value["port"] != float64(32100) || value["token"] != strings.Repeat("t", 32) {
 			done <- io.ErrUnexpectedEOF
 			return
 		}

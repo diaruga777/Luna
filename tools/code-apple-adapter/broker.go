@@ -25,17 +25,18 @@ func BrokerDialer(path, token string) Dial {
 			return nil, err
 		}
 		conn := newBoundConn(ctx, socket)
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(45 * time.Second)
 		if existing, ok := ctx.Deadline(); ok && existing.Before(deadline) {
 			deadline = existing
 		}
 		conn.SetDeadline(deadline)
 		data, err := json.Marshal(struct {
-			Version int     `json:"version"`
-			Token   string  `json:"token"`
-			Service Service `json:"service"`
-			Port    uint16  `json:"port"`
-		}{1, token, service, port})
+			Version        int     `json:"version"`
+			Token          string  `json:"token"`
+			Service        Service `json:"service"`
+			Port           uint16  `json:"port"`
+			FullCloseOnEOF bool    `json:"fullCloseOnEOF"`
+		}{1, token, service, port, true})
 		if err != nil {
 			conn.Close()
 			return nil, err

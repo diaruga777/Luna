@@ -27,7 +27,7 @@ public struct CodeDeviceFlowOpen: Codable, Equatable, Sendable {
     }
 }
 public struct CodeInstallFrame: Equatable, Sendable {
-    public enum Kind: UInt8, Sendable { case open = 1, data, halfClose, close, accepted }
+    public enum Kind: UInt8, Sendable { case open = 1, data, halfClose, close, accepted, reverseProof, reverseGrant, renew }
     public static let maximumPayload = 64 * 1024
     public var kind: Kind
     public var payload: Data

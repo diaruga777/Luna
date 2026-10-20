@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import LunaCodeMac
+import LunaCodeCore
 import LunaVaultBEP
 import LunaVaultMacPeer
 import LunaVaultTailscale
@@ -68,6 +69,7 @@ final class CompanionController: @unchecked Sendable {
     private func makeCodeService() throws -> CodeService {
         try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true),
                         installBundleID: Bundle.main.object(forInfoDictionaryKey: "LunaCodeBundleIdentifier") as? String,
+                        installHelper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/luna-code-apple-adapter"),
                         checkAccess: { path in try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true)) })
     }
     private func handleCode(_ data: Data, device: DeviceID, generation: Int) async -> Data {
@@ -120,7 +122,7 @@ final class CompanionController: @unchecked Sendable {
                 while !Task.isCancelled {
                     let accepted = try await listener.accept()
                     // Approval and BEP work must not block the next TLS accept.
-                    Task { await self.handle(accepted, localID: localID) }
+                    Task { await self.route(accepted, localID: localID) }
                 }
             } catch { lock.withLock { status = "Could not start Luna Mac: \(error)" } }
         }
@@ -136,9 +138,36 @@ final class CompanionController: @unchecked Sendable {
                 // Relay access cannot enroll a new account. Initial pairing is
                 // foreground/direct and retains the existing approval flow.
                 guard lock.withLock({ account.trustedDevice == accepted.device }) else { accepted.stream.close(); continue }
-                Task { await self.handle(accepted, localID: localID) }
+                Task { await self.route(accepted, localID: localID) }
             }
         } catch { lock.withLock { status = "Remote Code connection unavailable. Check the configured relay." } }
+    }
+
+    private func route(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {
+        guard lock.withLock({ account.allows(accepted.device, pairingOpen: Date() < pairingUntil) }) else { accepted.stream.close(); return }
+        do {
+            let routed = try await LunaCodeStreamDemultiplexer.classify(accepted.stream)
+            if !routed.installation {
+                await handle(VaultAcceptedPeer(stream: routed.stream, device: accepted.device, remoteDescription: accepted.remoteDescription), localID: localID)
+                return
+            }
+            // An installation stream cannot open a pairing approval or enroll a
+            // shared account. Its endpoint proof is checked independently too.
+            let service = lock.withLock { () -> CodeService? in
+                guard account.trustedDevice == accepted.device else { return nil }
+                if codeService == nil { codeService = try? makeCodeService() }; return codeService
+            }
+            guard let hub = await service?.reverseFlows else { routed.stream.close(); return }
+            let stream = LunaCodeInstallStream(authenticatedStream: routed.stream)
+            let timeout = Task { try? await Task.sleep(for: .seconds(5)); if !Task.isCancelled { stream.close() } }
+            defer { timeout.cancel() }
+            let first = try await CodeInstallFrame.read(from: stream)
+            guard first.kind == .reverseProof, first.payload.count <= 4096 else { throw CodeFailure("Invalid Apple stream proof.") }
+            let proof = try JSONDecoder().decode(CodeReverseStreamProof.self, from: first.payload)
+            guard lock.withLock({ account.trustedDevice == accepted.device }) else { throw CodeFailure("Luna account was revoked.") }
+            try await hub.accept(proof, stream: stream, peer: accepted.device.description)
+            // Ownership transfers to the hub/socket after its bounded handshake.
+        } catch { accepted.stream.close() }
     }
 
     private func handle(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {

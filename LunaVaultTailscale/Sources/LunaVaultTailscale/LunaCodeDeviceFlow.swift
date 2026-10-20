@@ -43,6 +43,29 @@ public actor LunaCodeLocalAppleServices {
         guard let endpoint = endpoints[id], Self.owns(endpoint.numericHost) else { throw CodeFailure("The phone’s development service changed. Reconnect before installing.") }
         return try await LunaCodeDeviceSocket.connect(host: endpoint.numericHost, port: endpoint.port)
     }
+    /// Ports come only from the authenticated, enrolled Mac Apple-helper
+    /// demand. Resolve no host from the wire; connect back to this Wi-Fi device.
+    public static func openVerifiedService(_ service: CodeAppleStreamService, port: UInt16, interfaces: Set<String>) async throws -> any CodeDeviceFlowSocket {
+        guard service.permits(port: port) else { throw CodeFailure("Unexpected Apple service port.") }
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0 else { throw CodeFailure("The phone’s Wi-Fi address is unavailable.") }; defer { freeifaddrs(list) }
+        var current = list, hosts: [String] = []
+        while let entry = current {
+            defer { current = entry.pointee.ifa_next }
+            guard interfaces.contains(String(cString: entry.pointee.ifa_name)), entry.pointee.ifa_flags & UInt32(IFF_UP) != 0,
+                  let address = entry.pointee.ifa_addr, [AF_INET, AF_INET6].contains(Int32(address.pointee.sa_family)) else { continue }
+            var numeric = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(address, socklen_t(address.pointee.sa_len), &numeric, socklen_t(numeric.count), nil, 0, NI_NUMERICHOST) == 0 {
+                let host = String(cString: numeric)
+                if !hosts.contains(host) { if address.pointee.sa_family == UInt8(AF_INET) { hosts.insert(host, at: 0) } else { hosts.append(host) } }
+            }
+        }
+        for host in hosts.prefix(2) where owns(host) {
+            try Task.checkCancellation()
+            if let socket = try? await LunaCodeDeviceSocket.connect(host: host, port: port) { return socket }
+        }
+        throw CodeFailure("This phone’s Apple development service is unavailable.")
+    }
     private static func owns(_ host: String) -> Bool {
         // Only assigned numeric addresses; never resolve DNS or use a claimed
         // Tailscale prefix as proof of device identity or Wi-Fi association.

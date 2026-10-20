@@ -36,7 +36,7 @@ import LunaCodeCore
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if section == 1 { return message }
-        if section == 2 { return "iOS chooses when background work runs. Remote connections can submit builds; installation still requires an available Apple device connection on your Mac." }
+        if section == 2 { return "iOS chooses when background work runs. Remote installation needs an authorized phone while Luna Code can run. Updating Luna Code itself needs an independent Apple device connection." }
         return nil
     }
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

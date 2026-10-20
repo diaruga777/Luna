@@ -4,6 +4,7 @@ import LunaCodeCore
 public actor CodeService {
     private let files = CodeFiles()
     private let jobs: CodeJobs
+    public let reverseFlows: CodeReverseFlowHub?
     private let endpoints: CodeEndpointEnrollmentService?
     private let overnight: CodeOvernightService
     private let root: URL
@@ -12,17 +13,26 @@ public actor CodeService {
     private var projectKey: String?
     private var intelligenceTail: Task<Void, Never>?
     private var savedReplies: [String: (Data, Data)] = [:]
-    public init(root: URL, installBundleID: String? = nil, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
+    public init(root: URL, installBundleID: String? = nil, installHelper: URL? = nil, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
         self.root = root; self.checkAccess = checkAccess
         let builds = try CodeJobs(root: root.appendingPathComponent("Jobs")); jobs = builds
-        overnight = try CodeOvernightService(root: root, builds: builds)
+        let journal = try CodeOvernightStore(root: root.appendingPathComponent("Overnight"))
         if let installBundleID {
             let directory = root.appendingPathComponent("Endpoints", isDirectory: true)
-            endpoints = try CodeEndpointEnrollmentService(root: directory,
+            let enrollment = try CodeEndpointEnrollmentService(root: directory,
                 access: CodeAppleEndpointContainer(root: directory.appendingPathComponent("Scratch"), bundleID: installBundleID))
-        } else { endpoints = nil }
+            endpoints = enrollment
+            reverseFlows = CodeReverseFlowHub(lookup: { id, peer in
+                guard let binding = try await enrollment.status(peer: peer).first(where: { $0.id == id }) else { throw CodeFailure("This phone’s authorization was removed.") }
+                return binding
+            }, record: { try? journal.event($0) })
+        } else { endpoints = nil; reverseFlows = nil }
+        let remote: CodeReverseInstallerConfiguration?
+        if let reverseFlows, let installHelper, let installBundleID { remote = CodeReverseInstallerConfiguration(hub: reverseFlows, helper: installHelper, forwarderBundleID: installBundleID, diagnostics: root.appendingPathComponent("Overnight")) }
+        else { remote = nil }
+        overnight = try CodeOvernightService(root: root, builds: builds, remote: remote, journal: journal)
     }
-    public func revokeEndpointAuthorizations() async throws { try await endpoints?.revokeAll() }
+    public func revokeEndpointAuthorizations() async throws { try await endpoints?.revokeAll(); await reverseFlows?.revoke() }
     public func handle(_ data: Data, authenticatedPeerID: String? = nil) async -> Data {
         var response = CodeResponse()
         do {
@@ -35,12 +45,20 @@ public actor CodeService {
                 return previous.1
             }
             switch request.operation {
-            case .endpointBegin, .endpointFinish, .endpointStatus, .endpointRevoke, .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel, .overnightDiagnostics: break
+            case .endpointReadyBegin, .endpointReadyFinish, .endpointPoll, .endpointStop, .endpointBegin, .endpointFinish, .endpointStatus, .endpointRevoke, .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel, .overnightDiagnostics: break
             default:
                 let path = request.overnight?.target.project.path ?? request.project?.path ?? request.path
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
+            case .endpointReadyBegin, .endpointReadyFinish, .endpointPoll, .endpointStop:
+                guard let hub = reverseFlows, let peer = authenticatedPeerID, let control = request.reverse else { throw CodeFailure("Phone installation readiness is unavailable.") }
+                switch request.operation {
+                case .endpointReadyBegin: response.reverseChallenge = try await hub.begin(control, peer: peer)
+                case .endpointReadyFinish: response.reverseReadiness = try await hub.finish(control, peer: peer)
+                case .endpointPoll: response.reverseFlows = try await hub.poll(control, peer: peer)
+                default: await hub.stop(control, peer: peer)
+                }
             case .endpointBegin, .endpointFinish, .endpointStatus, .endpointRevoke:
                 guard let endpoints, let peer = authenticatedPeerID, !peer.isEmpty else { throw CodeFailure("Update Luna Mac and reconnect before authorizing this phone.") }
                 switch request.operation {
@@ -53,6 +71,7 @@ public actor CodeService {
                 case .endpointRevoke:
                     guard let enrollment = request.endpoint else { throw CodeFailure("Choose a phone authorization to remove.") }
                     try await endpoints.revoke(id: enrollment.id, peer: peer)
+                    await reverseFlows?.revoke(bindingID: enrollment.id)
                     response.endpointBindings = try await endpoints.status(peer: peer)
                 default: response.endpointBindings = try await endpoints.status(peer: peer)
                 }

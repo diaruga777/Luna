@@ -12,18 +12,27 @@ public actor CodeOvernightService {
     private var installProcesses: [String: CodeProcess] = [:]
     private var installBusy = false
     private var recovered = false
-    public init(root: URL, builds: CodeJobs, installer: (any CodeArtifactInstalling)? = nil) throws {
+    private let proxyAvailable: Bool
+    public init(root: URL, builds: CodeJobs, installer: (any CodeArtifactInstalling)? = nil, remote: CodeReverseInstallerConfiguration? = nil, journal: CodeOvernightStore? = nil) throws {
         self.builds = builds
-        let journal = try CodeOvernightStore(root: root.appendingPathComponent("Overnight")); store = journal
+        let journal = try journal ?? CodeOvernightStore(root: root.appendingPathComponent("Overnight")); store = journal
         artifacts = try CodeArtifactStore(root: root.appendingPathComponent("Jobs/Artifacts"))
-        self.installer = installer ?? CodeNativeInstaller(logs: root.appendingPathComponent("Overnight"), record: { try? journal.event($0) })
+        let native = CodeNativeInstaller(logs: root.appendingPathComponent("Overnight"), record: { try? journal.event($0) })
+        proxyAvailable = remote?.available == true
+        if let installer { self.installer = installer }
+        else if let remote, remote.available { self.installer = CodeFallbackInstaller(native: native, remote: CodeReverseInstaller(configuration: remote)) }
+        else { self.installer = native }
     }
     public func diagnostics() throws -> [String: Data] {
         let directory = try store.export(remote: nil, capabilities: capabilities(), endpoint: "mac")
         defer { try? FileManager.default.removeItem(at: directory) }
         return try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
     }
-    public func capabilities() -> CodeOvernightCapabilities { CodeOvernightCapabilities() }
+    public func capabilities() -> CodeOvernightCapabilities {
+        var value = CodeOvernightCapabilities(); value.deviceFlowProxy = proxyAvailable
+        if proxyAvailable { value.providers += [.local, .tailscale, .syncthing] }
+        return value
+    }
     public func submit(_ request: CodeRequest) async throws -> CodeOvernightJob {
         try await recover()
         guard let submission = request.overnight, !submission.target.deviceID.isEmpty,
@@ -141,8 +150,12 @@ public actor CodeOvernightService {
             var attempt = CodeInstallAttempt(artifactID: artifact.id, provider: .native)
             job.installs.append(attempt); job.state = .installing; job.revision += 1
             try store.save(job) // Persist intent before install or self-replacement.
-            let result = await installer.install(artifact, app: app, process: process)
+            let attemptID = attempt.id
+            let result = await installer.install(artifact, app: app, process: process) { [weak self] route in
+                try await self?.recordRoute(route, jobID: id, attemptID: attemptID)
+            }
             guard var current = store.jobs().first(where: { $0.id == id }) else { return }
+            if let saved = current.installs.first(where: { $0.id == attempt.id }) { attempt = saved }
             attempt.state = result.state; attempt.error = result.error; attempt.connectionDescription = result.connectionDescription; attempt.endedAt = Date()
             if let i = current.installs.firstIndex(where: { $0.id == attempt.id }) { current.installs[i] = attempt }
             current.error = result.error
@@ -157,6 +170,15 @@ public actor CodeOvernightService {
         } catch {
             try? store.event(CodeOvernightDiagnosticEvent(stage: "installPersistence", correlationID: id, outcome: "failed"))
         }
+    }
+    private func recordRoute(_ route: CodeInstallRoute, jobID: String, attemptID: String) throws {
+        try Task.checkCancellation()
+        guard var job = store.jobs().first(where: { $0.id == jobID }), job.state == .installing,
+              let i = job.installs.firstIndex(where: { $0.id == attemptID }) else { throw CancellationError() }
+        job.installs[i].provider = route.provider; job.installs[i].sessionID = route.sessionID
+        job.installs[i].providerGeneration = route.generation; job.installs[i].connectionDescription = route.description
+        job.revision += 1; try store.save(job)
+        try store.event(CodeOvernightDiagnosticEvent(stage: "installer.proxy", correlationID: attemptID, outcome: route.provider.rawValue + ".prepared"))
     }
     private static func sameDestination(_ a: CodeOvernightTarget, _ b: CodeOvernightTarget) -> Bool {
         a.peerID == b.peerID && a.deviceID == b.deviceID && a.project.path == b.project.path && a.project.scheme == b.project.scheme

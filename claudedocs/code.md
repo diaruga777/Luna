@@ -3,6 +3,11 @@
 Mac setup, restored connections, account credentials, and adaptive companion UI are
 shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
 
+Planned overnight installation across networks is described in the
+[implementation handoff](plans/code-overnight-remote-install.md). It covers local,
+Tailscale and Syncthing paths, conditional Dumbpipe support, background lifetime,
+and attempt diagnostics; it does not describe shipped functionality.
+
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.
 The existing Mac companion is now displayed as **Luna Mac**. Its executable,

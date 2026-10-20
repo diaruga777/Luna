@@ -22,7 +22,8 @@ public final class CodeProcess: @unchecked Sendable {
                     log: URL, timeout: TimeInterval = 3600, onTick: (@Sendable () async -> Void)? = nil) async throws -> Int32 {
         try await withTaskCancellationHandler {
             try await Task.detached { [self] in
-                if !FileManager.default.fileExists(atPath: log.path) { FileManager.default.createFile(atPath: log.path, contents: nil) }
+                if !FileManager.default.fileExists(atPath: log.path) { FileManager.default.createFile(atPath: log.path, contents: nil, attributes: [.posixPermissions: 0o600]) }
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: log.path)
                 let output = try FileHandle(forWritingTo: log)
                 defer { try? output.close() }
                 try output.seekToEnd()
@@ -37,10 +38,10 @@ public final class CodeProcess: @unchecked Sendable {
                     guard !cancelled else { throw CancellationError() }
                     try p.run(); process = p
                 }
-                let deadline = Date().addingTimeInterval(timeout)
+                let deadline = ProcessInfo.processInfo.systemUptime + timeout
                 while p.isRunning {
                     await onTick?()
-                    if Date() > deadline { stop(p); throw CodeFailure("The command timed out. See the build log.") }
+                    if ProcessInfo.processInfo.systemUptime > deadline { stop(p); throw CodeFailure("The command timed out. See the build log.") }
                     try await Task.sleep(for: .milliseconds(100))
                 }
                 await onTick?()

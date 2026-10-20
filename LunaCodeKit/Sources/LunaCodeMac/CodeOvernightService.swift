@@ -14,9 +14,14 @@ public actor CodeOvernightService {
     private var recovered = false
     public init(root: URL, builds: CodeJobs, installer: (any CodeArtifactInstalling)? = nil) throws {
         self.builds = builds
-        store = try CodeOvernightStore(root: root.appendingPathComponent("Overnight"))
+        let journal = try CodeOvernightStore(root: root.appendingPathComponent("Overnight")); store = journal
         artifacts = try CodeArtifactStore(root: root.appendingPathComponent("Jobs/Artifacts"))
-        self.installer = installer ?? CodeNativeInstaller(logs: root.appendingPathComponent("Overnight"))
+        self.installer = installer ?? CodeNativeInstaller(logs: root.appendingPathComponent("Overnight"), record: { try? journal.event($0) })
+    }
+    public func diagnostics() throws -> [String: Data] {
+        let directory = try store.export(remote: nil, capabilities: capabilities(), endpoint: "mac")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        return try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
     }
     public func capabilities() -> CodeOvernightCapabilities { CodeOvernightCapabilities() }
     public func submit(_ request: CodeRequest) async throws -> CodeOvernightJob {
@@ -51,7 +56,7 @@ public actor CodeOvernightService {
         guard var job = store.jobs().first(where: { $0.id == id }) else { throw CodeFailure("Unknown overnight job.") }
         if let compilation = job.compilationJobID, job.state == .building { _ = try await builds.cancel(compilation) }
         // An interrupted installer cannot safely be called a cancelled install.
-        let uncertain = job.state == .installing || job.state == .unknownCompletion
+        let uncertain = job.state == .installing || job.needsInstallReconciliation
         installProcesses[id]?.cancel(); workers[id]?.cancel()
         job.state = uncertain ? .unknownCompletion : .cancelled
         if let i = job.installs.indices.last, job.installs[i].state == .installing {
@@ -85,7 +90,7 @@ public actor CodeOvernightService {
         defer { workers[id] = nil }
         guard var job = store.jobs().first(where: { $0.id == id }) else { return }
         do {
-            let protected = Set(store.jobs().filter { $0.hasActionableArtifact }.compactMap { $0.artifact?.id })
+            let protected = Set(store.jobs().filter { $0.hasActionableArtifact || $0.needsInstallReconciliation }.compactMap { $0.artifact?.id })
             try artifacts.prune(protecting: protected)
             var request = CodeRequest(.runOnDevice); request.id = "overnight-compile-" + job.id; request.project = job.target.project
             var options = CodeDeviceBuild(branch: job.target.branch, deviceID: job.target.deviceID)
@@ -133,7 +138,7 @@ public actor CodeOvernightService {
             try Task.checkCancellation()
             guard let latest = store.jobs().first(where: { $0.id == id }), latest.state != .cancelled else { return }
             job = latest
-            var attempt = CodeInstallAttempt(artifactID: artifact.id, provider: .local)
+            var attempt = CodeInstallAttempt(artifactID: artifact.id, provider: .native)
             job.installs.append(attempt); job.state = .installing; job.revision += 1
             try store.save(job) // Persist intent before install or self-replacement.
             let result = await installer.install(artifact, app: app, process: process)

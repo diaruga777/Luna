@@ -86,7 +86,7 @@ public struct CodeJob: Codable, Equatable, Sendable {
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel }
+    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel, overnightDiagnostics }
     public var id: String = UUID().uuidString
     public var operation: Operation
     public var path: String = ""
@@ -105,6 +105,7 @@ public struct CodeResponse: Codable, Sendable {
     public var supportsOvernightBuilds: Bool?
     public var overnightCapabilities: CodeOvernightCapabilities?
     public var overnightJobs: [CodeOvernightJob]?
+    public var overnightDiagnostics: [String: Data]?
     public var apps: [CodeBuildApp]?
     public var devices: [CodeDevice]?
     public var branches: [String]?

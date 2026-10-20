@@ -13,7 +13,7 @@ public actor CodeJobs {
     public init(root: URL) throws {
         self.root = root
         workloads = (try? JSONDecoder().decode([String: Int].self, from: Data(contentsOf: root.appendingPathComponent("BuildWorkloads.json")))) ?? [:]
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "json" {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
                 if job.state == .running, job.artifact != nil { job.state = .succeeded }
@@ -160,7 +160,11 @@ public actor CodeJobs {
         jobs[id] = job; persist(job)
     }
     private func persistRequired(_ job: CodeJob) throws {
-        try JSONEncoder().encode(job).write(to: root.appendingPathComponent(job.id + ".json"), options: .atomic)
+        let file = root.appendingPathComponent(job.id + ".json")
+        try JSONEncoder().encode(job).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let handle = try FileHandle(forWritingTo: file); defer { try? handle.close() }
+        try handle.synchronize()
     }
     private func persist(_ job: CodeJob) { try? persistRequired(job) }
     private func execute(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess) async {

@@ -16,7 +16,8 @@ public protocol CodeArtifactInstalling: Sendable {
 /// prove a LAN underlay rather than a separately configured Tailscale bridge.
 public struct CodeNativeInstaller: CodeArtifactInstalling {
     public let logs: URL
-    public init(logs: URL) { self.logs = logs }
+    private let record: @Sendable (CodeOvernightDiagnosticEvent) -> Void
+    public init(logs: URL, record: @escaping @Sendable (CodeOvernightDiagnosticEvent) -> Void = { _ in }) { self.logs = logs; self.record = record }
     public func install(_ artifact: CodeBuildArtifact, app: URL, process: CodeProcess) async -> CodeArtifactInstallResult {
         let installLock = CodeDeviceInstallLock.shared
         let token: UUID
@@ -24,6 +25,7 @@ public struct CodeNativeInstaller: CodeArtifactInstalling {
         catch { return CodeArtifactInstallResult(state: .cancelled) }
         defer { Task { await installLock.release(artifact.target.deviceID, token: token) } }
         let prefix = logs.appendingPathComponent(UUID().uuidString)
+        defer { pruneDiagnostics(protecting: prefix.lastPathComponent) }
         var handedOff = false
         do {
             let details = try await query(["device", "info", "details", "--device", artifact.target.deviceID], prefix: prefix, stage: "identity", process: process)
@@ -75,6 +77,7 @@ public struct CodeNativeInstaller: CodeArtifactInstalling {
     private func query(_ arguments: [String], prefix: URL, stage: String, process: CodeProcess, timeout: Int = 30) async throws -> [String: Any] {
         let json = prefix.appendingPathExtension(stage + ".json")
         let log = prefix.appendingPathExtension(stage + ".log")
+        record(CodeOvernightDiagnosticEvent(stage: "installer." + stage, correlationID: prefix.lastPathComponent, outcome: "started"))
         let exit = try await process.run("/usr/bin/xcrun", ["devicectl"] + arguments + ["--timeout", String(timeout), "--json-output", json.path], directory: logs.path, log: log, timeout: TimeInterval(timeout + 10))
         // Bound retained diagnostics. No credentials or pairing data are queried.
         for file in [json, log] {
@@ -82,12 +85,23 @@ public struct CodeNativeInstaller: CodeArtifactInstalling {
                let handle = try? FileHandle(forUpdating: file) { try? handle.truncate(atOffset: 128_000); try? handle.close() }
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         }
+        record(CodeOvernightDiagnosticEvent(stage: "installer." + stage, correlationID: prefix.lastPathComponent, outcome: "exit-" + String(exit)))
         let document = (try? JSONSerialization.jsonObject(with: Data(contentsOf: json))) as? [String: Any] ?? [:]
         guard exit == 0, (document["info"] as? [String: Any])?["outcome"] as? String == "success" else {
             let error = document["error"] as? [String: Any] ?? [:]
             throw NativeCommandError(document: document, domain: error["domain"] as? String ?? "CoreDevice", code: error["code"] as? Int ?? Int(exit))
         }
         return document
+    }
+    private func pruneDiagnostics(protecting prefix: String) {
+        let files = ((try? FileManager.default.contentsOfDirectory(at: logs, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? [])
+            .filter { UUID(uuidString: String($0.lastPathComponent.prefix(36))) != nil && ["log", "json"].contains($0.pathExtension) }
+            .sorted { ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
+        var total = 0
+        for file in files {
+            total += (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if total > 18_000_000 && !file.lastPathComponent.hasPrefix(prefix) { try? FileManager.default.removeItem(at: file) }
+        }
     }
     static func classify(_ document: [String: Any]) -> CodeOvernightError.Kind {
         // Classification controls fallback, so unknown errors fail closed.

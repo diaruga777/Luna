@@ -28,12 +28,13 @@ public actor CodeService {
                 return previous.1
             }
             switch request.operation {
-            case .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel: break
+            case .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel, .overnightDiagnostics: break
             default:
                 let path = request.overnight?.target.project.path ?? request.project?.path ?? request.path
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
+            case .overnightDiagnostics: response.overnightDiagnostics = try await overnight.diagnostics()
             case .overnightCapabilities: response.overnightCapabilities = await overnight.capabilities()
             case .overnightSubmit: response.overnightJobs = [try await overnight.submit(request)]
             case .overnightStatus: response.overnightJobs = try await overnight.status()

@@ -2,13 +2,15 @@ import Foundation
 
 public enum CodeInstallProvider: String, Codable, CaseIterable, Sendable {
     case local, tailscale, syncthing
+    case native = "nativeAutomatic"
 }
 public struct CodeOvernightCapabilities: Codable, Equatable, Sendable {
     public var version = 1
     public var installOnly = true
     public var retainedArtifacts = true
     public var reconciliation = true
-    public var providers: [CodeInstallProvider] = [.local]
+    public var providers: [CodeInstallProvider] = [.native]
+    public var controlProviders: [CodeInstallProvider] = [.local, .tailscale, .syncthing]
     public var deviceFlowProxy = false
     public var datagrams = false
     public var selfUpdateThroughProxy = false
@@ -97,6 +99,9 @@ public struct CodeOvernightJob: Codable, Equatable, Sendable {
     public var error: CodeOvernightError?
     public init(requestID: String, invocationID: String, target: CodeOvernightTarget) {
         self.requestID = requestID; self.invocationID = invocationID; self.target = target
+    }
+    public var needsInstallReconciliation: Bool {
+        artifact != nil && installedAt == nil && (state == .unknownCompletion || installs.contains(where: { $0.state == .unknownCompletion }))
     }
     public var hasActionableArtifact: Bool {
         artifact != nil && [.waitingForPhone, .installing, .unknownCompletion, .failed].contains(state)

@@ -34,7 +34,8 @@ extension CodeJobs {
             }
             let signing = try CodeDeviceSigning.arguments(checkout: app, local: localApp)
             let derived = derivedData(project).appendingPathComponent("Device")
-            let artifactFlags = options.artifactTarget == nil ? [] : ["CURRENT_PROJECT_VERSION=" + String(Int(Date().timeIntervalSince1970))]
+            let artifactBuildNumber = String(Int(Date().timeIntervalSince1970))
+            let artifactFlags = options.artifactTarget == nil ? [] : ["CURRENT_PROJECT_VERSION=" + artifactBuildNumber]
             let products = derived.appendingPathComponent("Products")
             stage(job.id, "Compiling on your Mac…", from: 0.25, to: 0.80, seconds: 240)
             guard try await runBuildCommand(arguments: buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
@@ -49,6 +50,7 @@ extension CodeJobs {
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
             guard plist?["CFBundleIdentifier"] as? String == bundle else { throw CodeFailure("The built app does not match the selected scheme.") }
             if let target = options.artifactTarget {
+                guard plist?["CFBundleVersion"] as? String == artifactBuildNumber else { throw CodeFailure("The app’s Info.plist must use CURRENT_PROJECT_VERSION so overnight updates can be verified.") }
                 let store = try CodeArtifactStore(root: root.appendingPathComponent("Artifacts"))
                 let artifact = try await store.retain(app: appURL, jobID: job.id, target: target, commit: checkout.revision, process: process)
                 try recordArtifact(job.id, artifact: artifact)

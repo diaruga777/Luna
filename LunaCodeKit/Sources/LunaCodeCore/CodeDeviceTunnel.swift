@@ -15,6 +15,7 @@ public protocol CodeDeviceFlowSocket: AnyObject, Sendable {
 }
 public struct CodeDeviceFlowOpen: Codable, Equatable, Sendable {
     public var version = 1
+    public var flowID = UUID().uuidString
     public var sessionID: String
     public var generation: String
     public var leaseToken: String
@@ -63,6 +64,7 @@ public actor CodeDeviceFlowAuthority {
         var deadline: TimeInterval
         var hardDeadline: TimeInterval
         var renewal: UInt64 = 0
+        var usedFlowIDs: Set<String> = []
         var bytes: Int64 = 0
         var flows: [String: @Sendable () -> Void] = [:]
     }
@@ -70,6 +72,7 @@ public actor CodeDeviceFlowAuthority {
     private let uptime: @Sendable () -> TimeInterval
     public init(uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) { self.uptime = uptime }
     public func issue(peerID: String, verifiedDeviceID: String, verifiedEndpointIDs: Set<String>, generation: String, seconds: TimeInterval = 60) throws -> CodeDeviceFlowOpen {
+        expire()
         guard !peerID.isEmpty, !verifiedDeviceID.isEmpty, !verifiedEndpointIDs.isEmpty, verifiedEndpointIDs.count <= 16,
               seconds > 0, seconds <= 120, leases.count < 8 else { throw CodeFailure("Invalid device forwarding authorization.") }
         let id = UUID().uuidString, token = UUID().uuidString + UUID().uuidString
@@ -84,8 +87,14 @@ public actor CodeDeviceFlowAuthority {
     }
     public func acquire(_ open: CodeDeviceFlowOpen, peerID: String, close: @escaping @Sendable () -> Void) throws -> String {
         var lease = try valid(open, peerID: peerID)
-        guard lease.flows.count < 8 else { throw CodeFailure("Too many device service flows.") }
+        guard lease.flows.count < 8, lease.usedFlowIDs.count < 256, !lease.usedFlowIDs.contains(open.flowID) else { throw CodeFailure("Too many device service flows.") }
+        lease.usedFlowIDs.insert(open.flowID)
         let flow = UUID().uuidString; lease.flows[flow] = close; leases[open.sessionID] = lease; return flow
+    }
+    public func attach(_ flow: String, open: CodeDeviceFlowOpen, peerID: String, close: @escaping @Sendable () -> Void) throws {
+        var lease = try valid(open, peerID: peerID)
+        guard lease.flows[flow] != nil else { throw CodeFailure("Device flow is no longer active.") }
+        lease.flows[flow] = close; leases[open.sessionID] = lease
     }
     public func consume(_ bytes: Int, open: CodeDeviceFlowOpen, peerID: String) throws {
         var lease = try valid(open, peerID: peerID)
@@ -120,15 +129,21 @@ public enum CodeDeviceFlowProxy {
                              openEndpoint: @escaping @Sendable (String) async throws -> any CodeDeviceFlowSocket) async throws {
         try await withTaskCancellationHandler {
             defer { stream.close() }
+            let handshakeTimeout = Task {
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                stream.close()
+            }
+            defer { handshakeTimeout.cancel() }
             let first = try await CodeInstallFrame.read(from: stream)
             guard first.kind == .open else { throw CodeFailure("Device flow must begin with authorization.") }
             let open = try JSONDecoder().decode(CodeDeviceFlowOpen.self, from: first.payload)
             // Authorize before creating any device socket.
             let flow = try await authority.acquire(open, peerID: authenticatedPeerID, close: { stream.close() })
+            handshakeTimeout.cancel()
             do {
                 let socket = try await openEndpoint(open.endpointID)
                 defer { socket.close() }
-                let socketFlow = try await authority.acquire(open, peerID: authenticatedPeerID, close: { socket.close() })
+                try await authority.attach(flow, open: open, peerID: authenticatedPeerID, close: { stream.close(); socket.close() })
                 do {
                     try await stream.write(CodeInstallFrame(.accepted).encoded())
                     try await withThrowingTaskGroup(of: Void.self) { group in
@@ -167,8 +182,7 @@ public enum CodeDeviceFlowProxy {
                             stream.close(); socket.close(); group.cancelAll(); throw error
                         }
                     }
-                    await authority.release(socketFlow, sessionID: open.sessionID)
-                } catch { await authority.release(socketFlow, sessionID: open.sessionID); throw error }
+                } catch { throw error }
                 await authority.release(flow, sessionID: open.sessionID)
             } catch { await authority.release(flow, sessionID: open.sessionID); throw error }
         } onCancel: { stream.close() }

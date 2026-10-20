@@ -17,7 +17,6 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../LunaLibraries"),
-        .package(path: "../LunaCodeKit"),
     ],
     targets: [
         // The Go tsnet core, prebuilt as static archives. Go's darwin runtime
@@ -31,7 +30,6 @@ let package = Package(
                     .linkedLibrary("resolv"),
                 ]),
         .target(name: "LunaVaultTailscale", dependencies: [
-            .product(name: "LunaCodeCore", package: "LunaCodeKit"),
             "TailscaleKit",
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),
@@ -43,12 +41,10 @@ let package = Package(
             "LunaVaultTailscale",
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
-            .product(name: "LunaCodeMac", package: "LunaCodeKit"),
         ]),
         .testTarget(name: "LunaMacReconnectTests", dependencies: [
             "LunaVaultMacCompanion",
             "LunaVaultTailscale",
-            .product(name: "LunaCodeMac", package: "LunaCodeKit"),
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultMacPeer", package: "LunaLibraries"),
         ]),

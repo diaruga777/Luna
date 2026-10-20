@@ -1,7 +1,5 @@
 import AppKit
 import Foundation
-import LunaCodeMac
-import LunaCodeCore
 import LunaVaultBEP
 import LunaVaultMacPeer
 import LunaVaultTailscale
@@ -16,10 +14,7 @@ final class CompanionController: @unchecked Sendable {
     private var code: String?
     private var pairingUntil = Date.distantPast
     private var listener: LunaVaultGoListener?
-    private var codeRelay: LunaVaultGoListener?
     private var active = CompanionSessions()
-    private var codeService: CodeService?
-    private var codeRevocation: Task<Void, Error>?
     private let account: CompanionAccountGate
     private var configuredClients: Set<LunaMacClient>
     private var selectedGeneration = 0
@@ -43,19 +38,12 @@ final class CompanionController: @unchecked Sendable {
     func forgetConnection() {
         let old = lock.withLock { () -> [(BEPConnection, CompanionBEPDelegate)] in
             account.reset(); configuredClients.removeAll(); selectedGeneration += 1
-            let previous = codeRevocation
-            // Load the store even if Code has not connected since Mac launch;
-            // forgetting an account must revoke its durable endpoint bindings.
-            if codeService == nil { codeService = try? makeCodeService() }
-            let service = codeService
-            codeRevocation = Task { try await previous?.value; try await service?.revokeEndpointAuthorizations() }
             pairingUntil = Date().addingTimeInterval(300)
             UserDefaults.standard.removeObject(forKey: "LunaVaultCompanion.trustedDevice")
             UserDefaults.standard.removeObject(forKey: "LunaMac.configuredClients")
             let old = Array(active.values); active.removeAll(); status = "Ready to Connect"
             return old
         }
-        lock.withLock { codeRelay?.close(); codeRelay = nil }
         for connection in old { connection.1.revoke(); connection.0.stream.close() }
         Task { for connection in old { await connection.0.close(reason: "Connection forgotten on Mac") } }
     }
@@ -65,24 +53,6 @@ final class CompanionController: @unchecked Sendable {
             configuredClients.insert(client)
             UserDefaults.standard.set(configuredClients.map(\.rawValue).sorted(), forKey: "LunaMac.configuredClients")
         }
-    }
-    private func makeCodeService() throws -> CodeService {
-        try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true),
-                        installBundleID: Bundle.main.object(forInfoDictionaryKey: "LunaCodeBundleIdentifier") as? String,
-                        installHelper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/luna-code-apple-adapter"),
-                        checkAccess: { path in try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true)) })
-    }
-    private func handleCode(_ data: Data, device: DeviceID, generation: Int) async -> Data {
-        let service = lock.withLock { () -> CodeService? in
-            guard account.trustedDevice == device, selectedGeneration == generation else { return nil }
-            if codeService == nil { codeService = try? makeCodeService() }
-            return codeService
-        }
-        guard let service else { return Data() }
-        do { try await lock.withLock { codeRevocation }?.value }
-        catch { return Data() }
-        guard lock.withLock({ account.trustedDevice == device && selectedGeneration == generation }) else { return Data() }
-        return await service.handle(data, authenticatedPeerID: device.description)
     }
     func selectFolder(_ url: URL) {
         lock.withLock { folderURL = url; selectedGeneration += 1; status = "Folder selected: \(url.lastPathComponent). Reconnect the iPhone to refresh." }
@@ -113,61 +83,13 @@ final class CompanionController: @unchecked Sendable {
                     status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
                     pairingUntil = Date().addingTimeInterval(300)
                 }
-                // One Mac-owned registration. Phones initiate relay sessions;
-                // no per-phone registration or silent public pool lookup.
-                if UserDefaults.standard.bool(forKey: "Code.relayEnabled"),
-                   let text = UserDefaults.standard.string(forKey: "Code.relayAddress"), let url = URL(string: text), url.scheme == "relay" {
-                    Task { await self.startCodeRelay(url, localID: localID) }
-                }
                 while !Task.isCancelled {
                     let accepted = try await listener.accept()
                     // Approval and BEP work must not block the next TLS accept.
-                    Task { await self.route(accepted, localID: localID) }
+                    Task { await self.handle(accepted, localID: localID) }
                 }
             } catch { lock.withLock { status = "Could not start Luna Mac: \(error)" } }
         }
-    }
-
-    private func startCodeRelay(_ url: URL, localID: DeviceID) async {
-        do {
-            let relay = try await transport.relayListener(url: url)
-            lock.withLock { codeRelay = relay }
-            defer { relay.close(); lock.withLock { codeRelay = nil } }
-            while !Task.isCancelled {
-                let accepted = try await relay.accept()
-                // Relay access cannot enroll a new account. Initial pairing is
-                // foreground/direct and retains the existing approval flow.
-                guard lock.withLock({ account.trustedDevice == accepted.device }) else { accepted.stream.close(); continue }
-                Task { await self.route(accepted, localID: localID) }
-            }
-        } catch { lock.withLock { status = "Remote Code connection unavailable. Check the configured relay." } }
-    }
-
-    private func route(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {
-        guard lock.withLock({ account.allows(accepted.device, pairingOpen: Date() < pairingUntil) }) else { accepted.stream.close(); return }
-        do {
-            let routed = try await LunaCodeStreamDemultiplexer.classify(accepted.stream)
-            if !routed.installation {
-                await handle(VaultAcceptedPeer(stream: routed.stream, device: accepted.device, remoteDescription: accepted.remoteDescription), localID: localID)
-                return
-            }
-            // An installation stream cannot open a pairing approval or enroll a
-            // shared account. Its endpoint proof is checked independently too.
-            let service = lock.withLock { () -> CodeService? in
-                guard account.trustedDevice == accepted.device else { return nil }
-                if codeService == nil { codeService = try? makeCodeService() }; return codeService
-            }
-            guard let hub = await service?.reverseFlows else { routed.stream.close(); return }
-            let stream = LunaCodeInstallStream(authenticatedStream: routed.stream)
-            let timeout = Task { try? await Task.sleep(for: .seconds(5)); if !Task.isCancelled { stream.close() } }
-            defer { timeout.cancel() }
-            let first = try await CodeInstallFrame.read(from: stream)
-            guard first.kind == .reverseProof, first.payload.count <= 4096 else { throw CodeFailure("Invalid Apple stream proof.") }
-            let proof = try JSONDecoder().decode(CodeReverseStreamProof.self, from: first.payload)
-            guard lock.withLock({ account.trustedDevice == accepted.device }) else { throw CodeFailure("Luna account was revoked.") }
-            try await hub.accept(proof, stream: stream, peer: accepted.device.description)
-            // Ownership transfers to the hub/socket after its bounded handshake.
-        } catch { accepted.stream.close() }
     }
 
     private func handle(_ accepted: VaultAcceptedPeer, localID: DeviceID) async {
@@ -178,9 +100,7 @@ final class CompanionController: @unchecked Sendable {
             let (folder, generation) = lock.withLock { (folderURL, selectedGeneration) }
             // Reuse the durable snapshot for the handshake; refresh it after services are ready.
             let index = try CompanionIndex(databaseURL: stateURL.appendingPathComponent("companion.sqlite"))
-            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", stateURL: stateURL, codeHandler: { [weak self] data in
-                guard let self else { return Data() }; return await self.handleCode(data, device: accepted.device, generation: generation)
-            }, clientStarted: { [weak self] client in
+            let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", stateURL: stateURL, clientStarted: { [weak self] client in
                 self?.clientStarted(client, device: accepted.device, generation: generation)
             })
             let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
@@ -194,7 +114,7 @@ final class CompanionController: @unchecked Sendable {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
                     alert.messageText = "Connect your Luna apps to this Mac?"
-                    alert.informativeText = "Allow \(hello.deviceName) to browse files this Mac permits Luna to access. Vault will sync \(folder.path). Luna Code can edit text files, build apps, and upload to TestFlight with the account set up on this Mac.\n\nThis access is shared with devices using the same iCloud Passwords & Keychain. To connect a different account, forget this connection first.\n\nDevice ID: \(accepted.device.description)"
+                    alert.informativeText = "Allow \(hello.deviceName) to browse files this Mac permits Luna to access. Vault will sync \(folder.path).\n\nThis access is shared with devices using the same iCloud Passwords & Keychain. To connect a different account, forget this connection first.\n\nDevice ID: \(accepted.device.description)"
                     alert.addButton(withTitle: "Accept"); alert.addButton(withTitle: "Reject")
                     return alert.runModal() == .alertFirstButtonReturn
                 }
@@ -272,7 +192,7 @@ final class CompanionController: @unchecked Sendable {
                 } catch {
                     if await connection.isClosed { return }
                     // A Vault folder problem must not take down the shared
-                    // authenticated channel used by Code and Music.
+                    // authenticated channel used by Music.
                     lock.withLock { status = "Connected. Folder sync: \(error.localizedDescription)" }
                 }
                 try await Task.sleep(for: .seconds(5))

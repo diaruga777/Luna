@@ -257,7 +257,7 @@ final class VaultVisualFlowTests: XCTestCase {
             macStorage: { _ in LunaMacStorageSnapshot(volumes: volumes) },
             connectionStatus: { .connected },
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
-            client: .code, pairingHandler: { _ in })
+            client: .vault, pairingHandler: { _ in })
         try await host(controller)
         try await waitUntil { controller.tableView.numberOfSections == 3 && controller.tableView.numberOfRows(inSection: 1) == 3 }
         for row in 0..<2 {

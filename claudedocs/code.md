@@ -8,7 +8,8 @@ explicit remote **control** addresses are implemented. The full remote-install
 scope remains in the [handoff](plans/code-overnight-remote-install.md); see the
 [implementation/acceptance report](code-overnight-remote-install-status.md) for
 supported behavior and deferred device checks. Physical endpoint enrollment is
-wired; production Syncthing installation is not yet connected.
+wired, and the bounded Apple-service adapter component compiles and passes local
+protocol checks; production Syncthing installation is not yet connected.
 
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.

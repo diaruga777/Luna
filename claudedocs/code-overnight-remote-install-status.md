@@ -38,6 +38,12 @@ are checked in.
   Five-minute monotonic challenges, fixed UUID paths, bounded pending requests,
   durable owner-only bindings, idempotent completion and account/phone revocation
   are implemented. Forgetting the connection revokes persisted bindings too.
+- A bounded Mac Apple-service adapter component and command under
+  `tools/code-apple-adapter`: existing Mac-only host pairing record, pinned Apple
+  device certificate, authenticated actual-UDID checks, named StartService ports,
+  AFC upload, install-only request and exact revision readback/reconciliation.
+  It rejects forwarding-app self-update and preserves unknown handoff completion.
+  This component is **not yet composed into the Mac installer or phone streams**.
 - A reproducible harmless fixture and explicit build/install/probe/collect harness
   under `tools/code-install-probe`. Install is separate from probe launch.
 
@@ -49,14 +55,16 @@ does not create that bridge or claim a verified underlay.
 
 The physical enrollment path is now wired in production, but has not been run
 against a phone. The restricted forwarding primitives are **not yet connected**
-to an Apple RemotePairing/CoreDevice bridge or a transport-aware installer. Syncthing currently carries control RPCs, not installation traffic.
+to the transport-aware adapter component. Syncthing's dedicated reverse streams
+and the Mac's job-scoped private Unix broker are still unwired. The Go component
+implements Apple traffic rather than a speculative port-range/CoreDevice bridge. Syncthing currently carries control RPCs, not installation traffic.
 A relay byte-transfer pass is not an Apple installation pass. Production capability
 negotiation therefore advertises retained/native installation and keeps
 `deviceFlowProxy`, datagrams and proxy self-update false. No automatic public
 listeners, arbitrary-host proxy, copied Apple pairing keys, speculative port ranges
 or alternative installer were added to conceal this gap.
 
-Complete the Mac Apple-service adapter and connect it to the enrolled identity
+Connect the Mac Apple-service adapter to the enrolled identity
 before enabling those capabilities. Required design evidence is which
 phone-local Apple endpoints are reachable, how authenticated dynamic tunnel
 endpoints are selected, and how replacement of the forwarding app affects final
@@ -78,7 +86,7 @@ Luna Code simulator and companion compilation use Xcode 27.1 beta. The fixture
 also compiles with Xcode 26.2. Builds were compilation-only: the persistent Luna
 Mac app was not replaced, signed, staged or launched.
 
-- `swift test --package-path LunaCodeKit`: 81 tests, two intentional skips,
+- `swift test --package-path LunaCodeKit`: 82 tests, two intentional skips,
   zero failures. New cases cover restart/disk errors, lost replies and stable IDs,
   artifact precedence, opt-out, stale terminal polls, readback identity, routing
   failure classes, escaping symlinks, frame limits/fragmentation, half-close,
@@ -90,6 +98,13 @@ Mac app was not replaced, signed, staged or launched.
   the worktree before linking; no vendor archives were changed.
 - `swift build --package-path LunaVaultTailscale --product LunaVaultMacCompanion`:
   passed. This does not launch or modify the persistent client.
+- New adapter: ten top-level Go checks (plus two identity subcases) passed with
+  race detection. Real local TCP/TLS plus a synthetic Apple-protocol fixture cover
+  upload bytes, install/readback, lost reply, exact certificate/UDID rejection,
+  self-update refusal, cancellation, message bounds, private Unix IPC, manifest
+  permissions and local pair-record framing. These are **not real Apple installs**.
+  `go vet`, `go mod verify` and compilation of the Mac command passed. No command
+  queried the real Apple pairing daemon or a phone.
 - Fixture simulator build: passed; no app launch or physical acceptance claimed.
 - Go TLS/relay suite with race detection and a **real upstream private relay**:
   passed. Explicit loopback relay, public pools/status/NAT disabled; independent
@@ -149,3 +164,21 @@ before/after first unlock, Mac sleep/restart, relay failure and Code self-update
 The full plan is **not complete** until required installation paths work and these
 capabilities are integrated and verified. All deferred device matrix entries remain
 pending rather than inferred from simulator or localhost results.
+
+## Next integration pass
+
+The pinned Go component uses go-ios AFC (`ca2c56d2c294ff702cadf4821edd30b069d3a264`,
+MIT; notice included), but its own paired-certificate TLS/UDID checks and bounded
+plist/IPC handling. It builds to `/tmp/luna-code-apple-adapter` for verification
+only. No helper binary was staged in the persistent Mac app. See its
+[README](../tools/code-apple-adapter/README.md) for the LCA1 private broker contract.
+
+Remaining concrete work: phone-initiated dedicated TLS reverse-flow pool (separate
+from BEP); Mac demultiplexing and a private job-token Unix broker; fresh endpoint
+key proof bound to readiness generation/lease/account; phone endpoint grants only
+for the two authenticated StartService results; retained-app IPA packaging and
+`CodeArtifactInstalling` composition, transport-only fallback and truthful
+capabilities/diagnostics. The enrollment `CodeService.handle` now receives the
+real TLS account ID from the companion. Preserve that boundary. Do not add a
+public arbitrary-port proxy or import an upstream accept-any-certificate verifier.
+Native Tailscale/CoreDevice underlay and all physical acceptance remain pending.

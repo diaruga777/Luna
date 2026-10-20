@@ -20,6 +20,7 @@ public struct CodeBuildApp: Codable, Equatable, Sendable {
     public var nightlyEnabled: Bool?
     public var lastNightlyAttempt: Date?
     public var nightlyFailure: String?
+    public var lastInstalledAt: Date?
     public var key: String { project.path + "\u{0}" + project.scheme }
     public init(project: CodeProject, name: String, bundleID: String, branch: String = "main", deviceID: String? = nil) {
         self.project = project; self.name = name; self.bundleID = bundleID; self.branch = branch; self.deviceID = deviceID
@@ -30,6 +31,7 @@ public struct CodeDeviceBuild: Codable, Equatable, Sendable {
     public var deviceID: String
     public var monitorBundleID: String?
     public var installOnly: Bool?
+    public var artifactTarget: CodeOvernightTarget?
     public init(branch: String = "main", deviceID: String, monitorBundleID: String? = nil) {
         self.branch = branch; self.deviceID = deviceID; self.monitorBundleID = monitorBundleID
     }
@@ -57,6 +59,7 @@ public final class CodeBuildCatalog {
             result.nightlyEnabled = previous.nightlyEnabled
             result.lastNightlyAttempt = previous.lastNightlyAttempt
             result.nightlyFailure = previous.nightlyFailure
+            result.lastInstalledAt = previous.lastInstalledAt
             if let date = previous.lastBuiltAt, date > (result.lastBuiltAt ?? .distantPast) {
                 result.lastBuiltAt = date; result.commitHash = previous.commitHash
             }

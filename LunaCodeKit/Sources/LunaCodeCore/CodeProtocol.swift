@@ -79,12 +79,13 @@ public struct CodeJob: Codable, Equatable, Sendable {
     public var requestID: String?
     public var builtAt: Date?
     public var commitHash: String?
+    public var artifact: CodeBuildArtifact?
     public init(id: String, title: String, state: State = .running, log: String = "") {
         self.id = id; self.title = title; self.state = state; self.log = log; startedAt = Date()
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall }
+    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel }
     public var id: String = UUID().uuidString
     public var operation: Operation
     public var path: String = ""
@@ -92,6 +93,7 @@ public struct CodeRequest: Codable, Sendable {
     public var version: String = ""
     public var project: CodeProject?
     public var deviceBuild: CodeDeviceBuild?
+    public var overnight: CodeOvernightSubmission?
     public var position: CodePosition?
     public var jobID: String = ""
     public var handoffToken: String?
@@ -100,6 +102,8 @@ public struct CodeRequest: Codable, Sendable {
 }
 public struct CodeResponse: Codable, Sendable {
     public var supportsOvernightBuilds: Bool?
+    public var overnightCapabilities: CodeOvernightCapabilities?
+    public var overnightJobs: [CodeOvernightJob]?
     public var apps: [CodeBuildApp]?
     public var devices: [CodeDevice]?
     public var branches: [String]?

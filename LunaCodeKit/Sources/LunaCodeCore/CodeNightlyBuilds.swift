@@ -15,7 +15,7 @@ public enum CodeNightlySchedule {
     }
     public static func requestID(app: CodeBuildApp, peer: String, date: Date, calendar: Calendar = .current) -> String {
         "nightly-" + Data((peer + "\u{0}" + app.key).utf8).base64EncodedString()
-            + "-" + String(Int(calendar.startOfDay(for: date).timeIntervalSince1970))
+            + "-" + String(format: "%04d-%02d-%02d", calendar.component(.year, from: date), calendar.component(.month, from: date), calendar.component(.day, from: date))
     }
 }
 

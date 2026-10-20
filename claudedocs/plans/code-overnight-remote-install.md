@@ -1,6 +1,6 @@
 # Luna Code: overnight builds and installation across networks
 
-Status: implementation handoff; no functionality implemented by this document.
+Status: implementation in progress; see [actual behavior and acceptance status](../code-overnight-remote-install-status.md). Physical tests are deferred by explicit user instruction (2026-10-20); they are not a prerequisite for continuing code work and are not counted as passes.
 Prepared: 2026-10-20. Baseline: `main` at `1aa56e146`.
 
 ## 1. Intended outcome and scope

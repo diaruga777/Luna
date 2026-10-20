@@ -114,3 +114,34 @@ a timed-out save preflight cannot later resume a write. Failed directory scans
 also leave the previous Vault index intact instead of treating unreadable files
 as deletions. Tests inject stalled reads and denials; they do not automate or
 change the user's macOS privacy permissions.
+
+## Code overnight connections
+
+Code injects an **Overnight Builds** diagnostics/settings row through
+`LunaMacConnectionViewController.additionalSettings`. Vault and Music do not gain
+Code policy or a dependency on Code UI.
+
+`makeOvernightCodeRuntime(policy:record:)` creates a separate Code-only runtime.
+It requires a satisfied Wi-Fi-specific path and tries a bounded LAN candidate
+set followed by explicit Tailscale TCP / Syncthing relay addresses in policy order.
+It never invokes public discovery or the relay pool. A legacy `.tailscale` store
+mode means "explicit addresses" inside this isolated runtime; it does not start
+embedded tsnet or change the foreground shared peer. Failed authentication stops
+additional provider dials. Candidate outcomes enter the correlated Code journal.
+
+On Mac, `Code.relayEnabled` plus `Code.relayAddress` explicitly enable one relay
+registration owned by the companion. Restart the existing correctly signed app
+after changing those preferences. Phones initiate connections to it; they do not
+register the shared client identity at the relay. A relay connection cannot enroll
+a new account. Forgetting the connection closes the relay listener as well as
+active BEP sessions; provider preferences must be disabled before restarting if
+remote publication should remain off. Public relay identifiers/timing/traffic
+sizes are disclosed during Code setup; a private relay address is supported.
+
+Remote **control** is distinct from Apple device installation. The native installer
+reports CoreDevice's automatic routing without guessing its underlay. The bounded
+`CodeInstallStream` / `CodeDeviceFlowAuthority` contracts and numeric phone-local
+socket registry exist for later bridge integration; production capabilities keep
+`deviceFlowProxy`, `datagrams` and `selfUpdateThroughProxy` false. The shared Luna
+identity is never treated as a physical iPhone identity. See
+[the implementation report](code-overnight-remote-install-status.md).

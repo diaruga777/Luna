@@ -3,10 +3,12 @@
 Mac setup, restored connections, account credentials, and adaptive companion UI are
 shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
 
-Planned overnight installation across networks is described in the
-[implementation handoff](plans/code-overnight-remote-install.md). It covers local,
-Tailscale and Syncthing paths, conditional Dumbpipe support, background lifetime,
-and attempt diagnostics; it does not describe shipped functionality.
+Overnight job persistence, retained signed artifacts, attempt diagnostics and
+explicit remote **control** addresses are implemented. The full remote-install
+scope remains in the [handoff](plans/code-overnight-remote-install.md); see the
+[implementation/acceptance report](code-overnight-remote-install-status.md) for
+supported behavior and deferred device checks. Apple-service bridge enrollment
+and production Syncthing installation are not yet connected.
 
 Standalone UIKit iPhone/iPad source editor (`com.hsanabria.luna.code`, scheme
 `LunaCode`, iOS 26). Most implementation lives in the local `LunaCodeKit` package.
@@ -100,33 +102,61 @@ fails with connection, Developer Mode and Xcode setup guidance.
 The row's **•••** menu offers target device, branch, Open in Project,
 persisted build log and cancellation. Row settings are independent of the editor.
 Each row also has an **Overnight** switch, off by default. Enabled schemes request
-one Debug build/install per local calendar day, from 1–6 AM. Charging and an Internet
-connection are not required; the phone checks for local Wi-Fi before each RPC. A `BGProcessingTask` is registered at app launch so a scene is not needed.
-The task submits all due jobs promptly; Luna Mac queues and executes them serially
-without requiring the phone to keep running. Accepted job IDs and daily attempts
-persist on phone, and request IDs persist on Mac to prevent duplicate work after
-lost replies or restarts. Restarting Luna Mac marks interrupted/queued jobs failed;
-they are eligible again the following night. A missing target phone never silently
-selects another device. Update both Luna Code and Luna Mac to use this feature.
+one Debug build/install per local calendar day, from 1–6 AM. Charging and public
+internet are not global task requirements. A `BGProcessingTask` registers at app
+launch and records an invocation before connecting. Expiration immediately
+records that invocation's result, closes its control session, and completes the
+task once; already accepted Mac builds continue. Manual **Try Now** uses the same
+Wi-Fi/provider checks and bypasses only the time window. Turning off a scheme
+prevents new submissions; cancelling accepted work is a separate action.
 
-Scheduled work uses a separate authenticated connection, with only numeric IPv4
-addresses on the phone’s current Wi-Fi subnet. It checks Wi-Fi before each RPC
-and each dial, and has no discovery, relay, Tailscale or cellular fallback. It
-skips unsupported/routed/IPv6-only networks or stale pairing addresses; reconnect
-with a fresh Mac pairing code if its LAN address changed. Local Network permission
-must already have been granted while the app is open. This does not add a new LAN
-connection mode to the shared connection UI.
+A Code-only connection tries at most two numeric LAN candidates first (IPv4 or
+IPv6 on an associated Wi-Fi interface), then explicitly configured remote
+addresses in their configured order. **Luna Mac → Overnight Builds** configures a
+Tailscale `tcp://` address or a specific Syncthing `relay://` address. There is no
+implicit relay pool lookup, public discovery, embedded tsnet, login, or cellular
+fallback. Wi-Fi is checked before each RPC/dial, including under a VPN; unsupported
+association checks skip the attempt. Local Network consent must be acquired in
+foreground. Shared Vault/Music connection policy and synchronized credentials are
+unchanged. See the status report for enabling the Mac's relay listener.
 
-Background credentials and identity files are accessible after the first unlock
-following a reboot. Overnight compilation uses a generic iOS destination so a
-locked phone doesn’t block the build. Installation uses `devicectl` and never
-launches the app, requests an unlock or changes lock settings. Apple’s development
-services may refuse installation while locked/unavailable; the job reports that
-failure and retains the successful compilation record. The user must unlock and
-retry in that case. No guaranteed daily execution or guaranteed locked-device
-installation is possible: iOS decides background launch time, may skip nights,
-and may expire runtime. The Mac must remain awake. Turning off a switch cancels
-future submissions; accepted Mac jobs can still be cancelled through the row menu.
+The new coordinator negotiates versioned capabilities, reconciles prior jobs and
+requests installation of an existing artifact before submitting new compilation.
+Daily request IDs include Mac/device/scheme/schedule generation and a calendar
+date string, so DST or a time-zone change within that date cannot duplicate an
+accepted operation. The Mac durably persists acceptance before replying. A newer
+terminal revision cannot be replaced by an older poll. Restart interrupts unfinished
+compilation explicitly, restores retained artifacts, and marks interrupted installs
+as needing confirmation. One install lock covers both foreground Build & Run and
+overnight installs targeting the same phone.
+
+Generic iOS Debug builds use detached committed-ref checkouts and ordinary
+Xcode development signing. The signed `.app` is copied to `Code/Jobs/Artifacts`
+before checkout cleanup, with SHA-256 tree digest, bundle/version/build, source
+commit, selected phone and signing metadata. The main app's Info.plist must use
+`CURRENT_PROJECT_VERSION`; the overnight build supplies a distinct build number
+and rejects a product that ignores it. Signature, profile expiry, main/extension
+provisioning eligibility and digest are checked again before installation.
+Artifacts have an 8 GiB hard quota; ready/uncertain evidence is protected during
+pruning. Native installation uses `devicectl`, never launches, and confirms the
+exact installed bundle/version/build. Inconclusive readback is unknown completion,
+not a confirmed installation. CoreDevice's automatic route is labelled
+`nativeAutomatic`; it is not described as a proven LAN/Tailscale underlay.
+
+**Overnight Builds** shows the last actual invocation, build and confirmed
+installation separately, next requested date, synchronization age and recent
+records. It supports refresh, explicit installation retry/cancellation and a
+redacted export that includes the available Mac journal or a missing-Mac marker.
+After-first-unlock iOS files and owner-only Mac state retain up to 30 days/200
+completed summaries plus actionable/uncertain jobs and the most recent successes.
+JSONL journals rotate at 1 MB each (two files); bounded native-installer diagnostics
+retain at most 18 MB separately. Compiler/build logs retain their existing policy
+and are excluded from automatic exports because they can contain source text.
+
+Background keys retain their existing after-first-unlock protection. Apple’s
+services may refuse installation while locked or unavailable; the artifact remains
+available for retry. iOS chooses whether/when background execution runs. The Mac
+must stay awake. Neither daily execution nor locked-device installation is promised.
 
 Direct LAN access is already available with a pairing code containing the Mac’s
 LAN address. It cannot reliably cover guest/client-isolated Wi-Fi, VLAN boundaries,
@@ -250,7 +280,9 @@ References: [SourceKit-LSP](https://github.com/swiftlang/sourcekit-lsp),
 Code uses the existing authenticated BEP connection (`luna-code-v1` request
 namespace), behind the same approved-peer gate as Vault. Payloads are bounded.
 The companion accepts concurrent Vault/Code sessions from the paired identity.
-There is no additional listener, pairing database, key or credential exchange.
+The optional explicit relay listener shares the Mac account authorization.
+Device-flow keys and leases are separate reusable primitives; they are not yet
+used to authorize production Apple-service forwarding.
 
 Saves coordinate with macOS, compare SHA-256 versions, write/fsync a temporary
 sibling and atomically replace the file. Modified iPhone text survives conflicts,
@@ -260,7 +292,8 @@ can still race the final replacement; v1 does not offer collaborative editing.
 
 Build jobs have IDs, disk logs and persisted status under the companion's Code/Jobs
 state. Only one build/deployment executes at a time; accepted overnight jobs queue behind it; restarting the companion marks
-interrupted jobs failed. Commands use argument arrays, never shell interpolation.
+interrupted compilation jobs failed. The separate overnight store retains ready
+artifacts and uncertain installation evidence. Commands use argument arrays, never shell interpolation.
 `asc publish testflight` handles build-number allocation, archive, export, upload,
 processing and internal distribution. Credentials remain on Mac using existing
 `asc` configuration (`~/.blitz/bin/asc`, Homebrew, or `LUNA_ASC_PATH`). Xcode signing
@@ -268,7 +301,7 @@ must already work for the selected project. No private API key is sent to iPhone
 
 ## Verification
 
-- `swift test --package-path LunaCodeKit`: daily overnight windows/DST, default-off switches, complete batch submission without polling, Mac queue draining, companion capability checks, persistent idempotency and compilation history, build-cache/option persistence, phone selection,
+- `swift test --package-path LunaCodeKit`: revision-ordered journals, lost acceptance replies, artifact reuse, restart/uncertain-install recovery, exact readback, signature/digest identity, restricted stream bounds/revocation/half-close, redacted exports, daily overnight windows/DST, default-off switches, complete batch submission without polling, Mac queue draining, companion capability checks, persistent idempotency and compilation history, build-cache/option persistence, phone selection,
   live-device filtering, Xcode destination eligibility, app Run-target selection, multi-app collection exclusion, configured icon thumbnails, same-bundle scheme isolation, permission preflight, detached main checkout isolation/cleanup, local signing-team fallback and committed-team precedence, command-log retention,
   structured build-event parsing, fragmented/duplicate/oversized records, event-driven progress,
   acknowledged self-install gates, timeouts/cancellation, bundle matching,

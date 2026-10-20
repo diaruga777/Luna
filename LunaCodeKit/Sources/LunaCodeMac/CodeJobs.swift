@@ -16,7 +16,9 @@ public actor CodeJobs {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "json" {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
+                if job.state == .running, job.artifact != nil { job.state = .succeeded }
                 if job.state == .running { job.progress?.stoppedAt = Date(); job.state = .failed; job.failureMessage = "Mac companion restarted before this job completed."; job.log += "\n" + job.failureMessage! }
+                try JSONEncoder().encode(job).write(to: url, options: .atomic)
                 jobs[job.id] = job
                 if let request = job.requestID { requests[request] = job.id }
             }
@@ -27,7 +29,12 @@ public actor CodeJobs {
         return root.appendingPathComponent("DerivedData-" + key)
     }
     public func start(_ request: CodeRequest) throws -> CodeJob {
-        if let id = requests[request.id], let existing = jobs[id] { return existing }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let fingerprint = SHA256.hash(data: try encoder.encode(request)).map { String(format: "%02x", $0) }.joined()
+        if let id = requests[request.id], let existing = jobs[id] {
+            guard existing.requestFingerprint == nil || existing.requestFingerprint == fingerprint else { throw CodeFailure("A request ID was reused with different content.") }
+            return existing
+        }
         let overnight = request.operation == .runOnDevice && request.deviceBuild?.installOnly == true
         guard processes.isEmpty || overnight else { throw CodeFailure("A Mac build is already running. Wait for it or cancel it first.") }
         guard let project = request.project, FileManager.default.fileExists(atPath: project.path),
@@ -38,13 +45,19 @@ public actor CodeJobs {
         if request.operation == .runOnDevice {
             guard request.deviceBuild != nil, !project.scheme.lowercased().contains("webdriveragent") else { throw CodeFailure("Select an app scheme and phone first.") }
         }
+        if let target = request.deviceBuild?.artifactTarget {
+            guard target.project == request.project, target.deviceID == request.deviceBuild?.deviceID,
+                  target.branch == request.deviceBuild?.branch, overnight else { throw CodeFailure("The artifact target does not match this build request.") }
+        }
         let title = overnight ? "Overnight Build · " + project.scheme : request.operation == .runOnDevice ? "Build & Run · " + project.scheme : request.operation == .deploy ? "Build & Deploy" : (request.operation == .prepare ? "Prepare Code Intelligence" : "Build")
         var job = CodeJob(id: UUID().uuidString, title: title)
-        job.projectKey = project.path + "\u{0}" + project.scheme; job.requestID = request.id
+        job.projectKey = project.path + "\u{0}" + project.scheme; job.requestID = request.id; job.requestFingerprint = fingerprint
         job.progress = CodeJobProgress(stage: "Preparing on your Mac…", start: 0.05, end: 0.05, estimatedSeconds: 15, reportedFraction: 0.05)
         jobs[job.id] = job; requests[request.id] = job.id
         let process = CodeProcess(); processes[job.id] = process
-        persist(job)
+        do { try persistRequired(job) } catch {
+            jobs[job.id] = nil; requests[request.id] = nil; processes[job.id] = nil; throw error
+        }
         if processes.count == 1 {
             Task { await execute(request, project: project, job: job, process: process) }
         } else {
@@ -62,6 +75,11 @@ public actor CodeJobs {
             }
             return app
         }
+    }
+    func recordArtifact(_ id: String, artifact: CodeBuildArtifact) throws {
+        guard var job = jobs[id], job.state == .running else { throw CancellationError() }
+        job.artifact = artifact
+        try persistRequired(job); jobs[id] = job
     }
     func recordCompilation(_ id: String, revision: String?) {
         guard var job = jobs[id] else { return }
@@ -141,7 +159,10 @@ public actor CodeJobs {
         job.progress?.completedTasks = snapshot.completed; job.progress?.activeTasks = snapshot.active
         jobs[id] = job; persist(job)
     }
-    private func persist(_ job: CodeJob) { try? JSONEncoder().encode(job).write(to: root.appendingPathComponent(job.id + ".json"), options: .atomic) }
+    private func persistRequired(_ job: CodeJob) throws {
+        try JSONEncoder().encode(job).write(to: root.appendingPathComponent(job.id + ".json"), options: .atomic)
+    }
+    private func persist(_ job: CodeJob) { try? persistRequired(job) }
     private func execute(_ request: CodeRequest, project: CodeProject, job: CodeJob, process: CodeProcess) async {
         var completed = job
         let log = root.appendingPathComponent(job.id + ".log")
@@ -191,6 +212,7 @@ public actor CodeJobs {
         } catch is CancellationError { completed.state = .cancelled }
         catch { completed.state = .failed; completed.failureMessage = error.localizedDescription; completed.log = "\n" + error.localizedDescription }
         if jobs[job.id]?.state == .cancelled { completed.state = .cancelled }
+        completed.artifact = jobs[job.id]?.artifact
         completed.builtAt = jobs[job.id]?.builtAt
         completed.commitHash = jobs[job.id]?.commitHash
         completed.installHandoff = jobs[job.id]?.installHandoff

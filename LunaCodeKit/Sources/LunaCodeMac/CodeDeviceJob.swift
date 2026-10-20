@@ -34,11 +34,12 @@ extension CodeJobs {
             }
             let signing = try CodeDeviceSigning.arguments(checkout: app, local: localApp)
             let derived = derivedData(project).appendingPathComponent("Device")
+            let artifactFlags = options.artifactTarget == nil ? [] : ["CURRENT_PROJECT_VERSION=" + String(Int(Date().timeIntervalSince1970))]
             let products = derived.appendingPathComponent("Products")
             stage(job.id, "Compiling on your Mac…", from: 0.25, to: 0.80, seconds: 240)
             guard try await runBuildCommand(arguments: buildProject.xcodeArguments + ["-configuration", "Debug", "-destination", destination,
                 "-derivedDataPath", derived.path, "-resultBundlePath", root.appendingPathComponent(job.id + ".xcresult").path,
-                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + ["build"], directory: checkout.directory.path, process: process, log: log, id: job.id,
+                "-allowProvisioningUpdates", "CONFIGURATION_BUILD_DIR=" + products.path] + signing + artifactFlags + ["build"], directory: checkout.directory.path, process: process, log: log, id: job.id,
                 workloadKey: project.path + "|" + project.scheme + "|device", from: 0.25, to: 0.80) == 0 else {
                 throw CodeFailure("Build & Run stopped. See the Mac job log for details.")
             }
@@ -47,9 +48,17 @@ extension CodeJobs {
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
             guard plist?["CFBundleIdentifier"] as? String == bundle else { throw CodeFailure("The built app does not match the selected scheme.") }
+            if let target = options.artifactTarget {
+                let store = try CodeArtifactStore(root: root.appendingPathComponent("Artifacts"))
+                let artifact = try await store.retain(app: appURL, jobID: job.id, target: target, commit: checkout.revision, process: process)
+                try recordArtifact(job.id, artifact: artifact)
+            } else {
             if options.requiresInstallHandoff(for: bundle) {
                 try await waitForInstallHandoff(job.id)
             }
+            let installLock = CodeDeviceInstallLock.shared
+            let installToken = try await installLock.acquire(options.deviceID)
+            defer { Task { await installLock.release(options.deviceID, token: installToken) } }
             stage(job.id, "Installing on your phone…", from: 0.80, to: 0.93, seconds: 40)
             do {
                 try await command("/usr/bin/xcrun", ["devicectl", "device", "install", "app", "--timeout", "120", "--device", options.deviceID, appURL.path], directory: checkout.directory.path, process: process, log: log)
@@ -59,6 +68,7 @@ extension CodeJobs {
             if options.installOnly != true {
                 stage(job.id, "Launching on your phone…", from: 0.93, to: 0.97, seconds: 10)
                 try await command("/usr/bin/xcrun", ["devicectl", "device", "process", "launch", "--device", options.deviceID, "--terminate-existing", bundle], directory: checkout.directory.path, process: process, log: log)
+            }
             }
         } catch {
             await checkout.remove(root: root)

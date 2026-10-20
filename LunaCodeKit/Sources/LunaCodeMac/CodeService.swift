@@ -4,6 +4,7 @@ import LunaCodeCore
 public actor CodeService {
     private let files = CodeFiles()
     private let jobs: CodeJobs
+    private let overnight: CodeOvernightService
     private let root: URL
     private let checkAccess: @Sendable (String) async throws -> Void
     private var language: Task<CodeLanguageServer, Error>?
@@ -11,7 +12,9 @@ public actor CodeService {
     private var intelligenceTail: Task<Void, Never>?
     private var savedReplies: [String: (Data, Data)] = [:]
     public init(root: URL, checkAccess: @escaping @Sendable (String) async throws -> Void = { _ in }) throws {
-        self.root = root; self.checkAccess = checkAccess; jobs = try CodeJobs(root: root.appendingPathComponent("Jobs"))
+        self.root = root; self.checkAccess = checkAccess
+        let builds = try CodeJobs(root: root.appendingPathComponent("Jobs")); jobs = builds
+        overnight = try CodeOvernightService(root: root, builds: builds)
     }
     public func handle(_ data: Data) async -> Data {
         var response = CodeResponse()
@@ -25,12 +28,17 @@ public actor CodeService {
                 return previous.1
             }
             switch request.operation {
-            case .job, .cancel, .devices, .acknowledgeInstall: break
+            case .job, .cancel, .devices, .acknowledgeInstall, .overnightCapabilities, .overnightStatus, .overnightInstall, .overnightCancel: break
             default:
-                let path = request.project?.path ?? request.path
+                let path = request.overnight?.target.project.path ?? request.project?.path ?? request.path
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
+            case .overnightCapabilities: response.overnightCapabilities = await overnight.capabilities()
+            case .overnightSubmit: response.overnightJobs = [try await overnight.submit(request)]
+            case .overnightStatus: response.overnightJobs = try await overnight.status()
+            case .overnightInstall: response.overnightJobs = [try await overnight.retryInstall(request.jobID)]
+            case .overnightCancel: response.overnightJobs = [try await overnight.cancel(request.jobID)]
             case .open:
                 let document = try files.open(request.path)
                 if document.version != request.version { response.document = document }

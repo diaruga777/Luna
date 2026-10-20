@@ -77,6 +77,7 @@ public struct CodeJob: Codable, Equatable, Sendable {
     public var installHandoff: CodeInstallHandoff?
     public var projectKey: String?
     public var requestID: String?
+    public var requestFingerprint: String?
     public var builtAt: Date?
     public var commitHash: String?
     public var artifact: CodeBuildArtifact?

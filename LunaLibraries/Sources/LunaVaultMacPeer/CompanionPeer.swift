@@ -230,15 +230,18 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
     private let storage: CompanionStorageService
     private let music: CompanionMusicLibrary
     private let clientStarted: (@Sendable (LunaMacClient) -> Void)?
+    private let codeHandler: (@Sendable (Data) async -> Data)?
     private var pending: [BEPIndex] = []
     private var transferTask: Task<Void, Never>?
 
     public init(rootURL: URL, index: CompanionIndex, localDevice: DeviceID, folderID: String,
                 stateURL: URL? = nil,
+                codeHandler: (@Sendable (Data) async -> Data)? = nil,
                 clientStarted: (@Sendable (LunaMacClient) -> Void)? = nil) {
         self.storage = CompanionStorageService(rootURL: rootURL, stateURL: stateURL)
         self.clientStarted = clientStarted
         self.music = CompanionMusicLibrary(vaultRoot: rootURL, cacheURL: rootURL.appendingPathComponent(".luna-music-index.json"))
+        self.codeHandler = codeHandler
         self.rootURL = rootURL.standardizedFileURL
         self.index = index
         self.localDevice = localDevice
@@ -504,7 +507,14 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
             guard response.count <= MusicFileProtocol.maximumResponseSize else { return .failure(.generic) }
             return .success(response)
         }
-
+        if request.folder == "luna-code-v1" {
+            guard let codeHandler, request.offset == 0, request.size == 0, request.hash.isEmpty,
+                  !request.fromTemporary, request.name.utf8.count <= 16 * 1024 * 1024,
+                  let data = Data(base64Encoded: request.name), data.count <= 12 * 1024 * 1024 else { return .failure(.invalidFile) }
+            let response = await codeHandler(data)
+            guard response.count <= 12 * 1024 * 1024 else { return .failure(.generic) }
+            return .success(response)
+        }
         if request.folder == VaultMacBrowseProtocol.folder {
             return await CompanionMacBrowser().respondCheckingAccess(to: request)
         }

@@ -194,7 +194,12 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         return try await connection.musicRequest(payload)
     }
 
-
+    public func codeRequest(_ payload: Data) async throws -> Data {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection else { throw VaultSyncSessionError.noConnection }
+        return try await connection.codeRequest(payload)
+    }
 
     public func macStorage(refresh: Bool = false) async throws -> LunaMacStorageSnapshot {
         if !isConnected { try await start() }

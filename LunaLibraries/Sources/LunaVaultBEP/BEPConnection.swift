@@ -180,7 +180,14 @@ public actor BEPConnection {
     }
 
     /// Versioned Luna services share the paired, mutually authenticated stream.
-
+    public func codeRequest(_ payload: Data) async throws -> Data {
+        guard payload.count <= 12 * 1024 * 1024 else { throw VaultMacBrowseError("Code request too large.") }
+        let request = BEPRequest(id: allocateRequestID(), folder: "luna-code-v1",
+            name: payload.base64EncodedString(), offset: 0, size: 0, hash: Data())
+        let response = try await sendRequest(request, requestTimeout: 90)
+        guard response.data.count <= 12 * 1024 * 1024 else { throw VaultMacBrowseError("Code response too large.") }
+        return response.data
+    }
 
     private func sendRequest(_ request: BEPRequest, requestTimeout: TimeInterval? = nil) async throws -> BEPResponse {
         let response: BEPResponse = try await withTaskCancellationHandler {

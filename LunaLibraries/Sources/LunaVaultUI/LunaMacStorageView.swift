@@ -41,8 +41,8 @@ final class LunaMacStorageView: UIView {
         case .music: return .systemPink
         case .photos: return .systemOrange
         case .videos: return .systemPurple
-        case .code: return .systemIndigo // Legacy cache retained after Orbit extraction.
         case .files: return .systemBlue
+        case .code: return .systemIndigo
         case .appData: return .systemTeal
         }
     }

@@ -72,7 +72,7 @@ final class ReconnectTests: XCTestCase {
         XCTAssertTrue(closed, "A blocked keepalive must not pin the receive-timeout task forever")
     }
 
-    func testInitialExchangeSendsSavedIndexBeforeAnyFolderScan() async throws {
+    func testInitialExchangeEnablesCodeBeforeAnyFolderScan() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -86,7 +86,7 @@ final class ReconnectTests: XCTestCase {
         // The Vault directory is intentionally absent. No disk scan or access
         // probe can complete before this shared service handshake.
         let delegate = CompanionBEPDelegate(rootURL: directory.appendingPathComponent("unavailable"),
-            index: index, localDevice: localID, folderID: "vault")
+            index: index, localDevice: localID, folderID: "vault", codeHandler: { $0 })
         let (macStream, phoneStream) = PipeByteStream.pair()
         let phoneDelegate = IndexDelegate()
         let mac = BEPConnection(stream: macStream, peerDevice: localID, localHello: hello, delegate: delegate)
@@ -102,6 +102,9 @@ final class ReconnectTests: XCTestCase {
         }
         let names = await phoneDelegate.names
         XCTAssertEqual(names, ["saved.txt"])
+        let payload = Data("Code remains usable during a slow Vault rescan".utf8)
+        let reply = try await phone.codeRequest(payload)
+        XCTAssertEqual(reply, payload)
         await phone.close(reason: "Test finished")
         await mac.close(reason: "Test finished")
     }

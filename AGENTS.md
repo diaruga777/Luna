@@ -27,7 +27,10 @@ Luna is a family of native apps (UIKit, deployment target iOS 26).
   (with optional local eviction), or on a user-owned Mac. AWS/S3-compatible
   providers and hosted Luna infrastructure are deferred.
 
-Luna Code has moved to the standalone [Orbit](https://github.com/diaruga777/Orbit) product.
+- **Luna Code** (`com.hsanabria.luna.code`, target `LunaCode`) — native source
+  editor with local drafts/syntax checks, Mac SourceKit completion, explicit saves,
+  and Mac build/TestFlight jobs. Shares Vault pairing and the unified **Luna Mac**
+  companion. See `claudedocs/code.md`; implementation is in `LunaCodeKit`.
 
 Vault-to-Mac reachability may use the user's separately installed Tailscale
 client (MagicDNS/Tailscale IP) or same-LAN discovery. Tailscale is transport
@@ -49,7 +52,7 @@ child tables under `ON DELETE CASCADE`, trigger-queued file reaping and WAL.
 See `claudedocs/saves.md`. Keep feature docs in `claudedocs/` current.
 
 **Targets.** `Luna` links `LunaKit` and embeds its own Share, Action, Safari and
-Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music,
+Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music, Code,
 Keyboard and Writer remain independent. Dev uses Xcode 27 beta; archive/upload
 uses stable Xcode 26.2. Preserve the existing handmade Action extension icons.
 
@@ -87,7 +90,7 @@ in memory for the current app launch. See `claudedocs/premium.md`.
   decide, recover from an error, understand permissions/privacy, or discover an
   interaction. Describe the outcome or next step in familiar words.
 - Keep technical details in diagnostics and source comments unless they are
-  needed for the user's task (for example, an Xcode scheme in Orbit).
+  needed for the user's task (for example, an Xcode scheme in Luna Code).
 
 ## Agent workflow
 

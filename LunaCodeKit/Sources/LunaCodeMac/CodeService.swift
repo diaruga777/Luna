@@ -3,6 +3,7 @@ import LunaCodeCore
 
 public actor CodeService {
     private let files = CodeFiles()
+    private let refreshExport = CodeRefreshExport()
     private let jobs: CodeJobs
     public let reverseFlows: CodeReverseFlowHub?
     private let endpoints: CodeEndpointEnrollmentService?
@@ -32,6 +33,13 @@ public actor CodeService {
         else { remote = nil }
         overnight = try CodeOvernightService(root: root, builds: builds, remote: remote, journal: journal)
     }
+    public func refreshBuild(jobID: String, offset: Int) async throws -> CodeRefreshArchiveChunk {
+        guard let artifact = try await overnight.status().first(where: { $0.id == jobID || $0.compilationJobID == jobID })?.artifact else {
+            throw CodeFailure("Complete an app-catalog build before caching it for refresh.")
+        }
+        return try await refreshExport.chunk(artifact: artifact, artifacts: root.appendingPathComponent("Jobs/Artifacts"),
+            root: root.appendingPathComponent("RefreshExports"), offset: offset)
+    }
     public func revokeEndpointAuthorizations() async throws { try await endpoints?.revokeAll(); await reverseFlows?.revoke() }
     public func handle(_ data: Data, authenticatedPeerID: String? = nil) async -> Data {
         var response = CodeResponse()
@@ -51,6 +59,7 @@ public actor CodeService {
                 if path.hasPrefix("/") { try await checkAccess(URL(fileURLWithPath: path).deletingLastPathComponent().path) }
             }
             switch request.operation {
+            case .catalog: throw CodeFailure("Update Luna Mac to use the app catalog.")
             case .endpointReadyBegin, .endpointReadyFinish, .endpointPoll, .endpointStop:
                 guard let hub = reverseFlows, let peer = authenticatedPeerID, let control = request.reverse else { throw CodeFailure("Phone installation readiness is unavailable.") }
                 switch request.operation {

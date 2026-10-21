@@ -19,6 +19,8 @@ final class CompanionController: @unchecked Sendable {
     private var codeRelay: LunaVaultGoListener?
     private var active = CompanionSessions()
     private var codeService: CodeService?
+    private var codeCatalog: CodeMacHost?
+    private var codeControl: CodeMacControlServer?
     private var codeRevocation: Task<Void, Error>?
     private let account: CompanionAccountGate
     private var configuredClients: Set<LunaMacClient>
@@ -67,10 +69,15 @@ final class CompanionController: @unchecked Sendable {
         }
     }
     private func makeCodeService() throws -> CodeService {
-        try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true),
+        let service = try CodeService(root: stateURL.appendingPathComponent("Code", isDirectory: true),
                         installBundleID: Bundle.main.object(forInfoDictionaryKey: "LunaCodeBundleIdentifier") as? String,
                         installHelper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/luna-code-apple-adapter"),
                         checkAccess: { path in try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true)) })
+        let root = stateURL.appendingPathComponent("Code/Catalog", isDirectory: true)
+        let catalog = try CodeMacHost(root: root, service: service,
+            checkAccess: { path in try await CompanionFileAccess.shared.checkDirectory(URL(fileURLWithPath: path, isDirectory: true)) })
+        codeControl = try CodeMacControlServer(host: catalog, root: root); codeCatalog = catalog
+        return service
     }
     private func handleCode(_ data: Data, device: DeviceID, generation: Int) async -> Data {
         let service = lock.withLock { () -> CodeService? in
@@ -82,6 +89,12 @@ final class CompanionController: @unchecked Sendable {
         do { try await lock.withLock { codeRevocation }?.value }
         catch { return Data() }
         guard lock.withLock({ account.trustedDevice == device && selectedGeneration == generation }) else { return Data() }
+        if let request = try? JSONDecoder().decode(CodeRequest.self, from: data), request.operation == .catalog,
+           let payload = request.catalogPayload, let catalog = lock.withLock({ codeCatalog }) {
+            var response = CodeResponse()
+            response.catalogPayload = await catalog.handle(payload, peer: device.description)
+            return (try? JSONEncoder().encode(response)) ?? Data()
+        }
         return await service.handle(data, authenticatedPeerID: device.description)
     }
     func selectFolder(_ url: URL) {
@@ -96,6 +109,7 @@ final class CompanionController: @unchecked Sendable {
         Task {
             do {
                 try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+                try lock.withLock { if codeService == nil { codeService = try makeCodeService() } }
                 let localID = try transport.identity()
                 let listener: LunaVaultGoListener
                 do {

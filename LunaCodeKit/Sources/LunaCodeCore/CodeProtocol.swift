@@ -88,8 +88,9 @@ public struct CodeJob: Codable, Equatable, Sendable {
     }
 }
 public struct CodeRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel, overnightDiagnostics, endpointBegin, endpointFinish, endpointStatus, endpointRevoke, endpointReadyBegin, endpointReadyFinish, endpointPoll, endpointStop }
+    public enum Operation: String, Codable, Sendable { case catalog, open, save, schemes, apps, devices, branches, runOnDevice, analyze, complete, prepare, build, deploy, job, cancel, acknowledgeInstall, overnightCapabilities, overnightSubmit, overnightStatus, overnightInstall, overnightCancel, overnightDiagnostics, endpointBegin, endpointFinish, endpointStatus, endpointRevoke, endpointReadyBegin, endpointReadyFinish, endpointPoll, endpointStop }
     public var id: String = UUID().uuidString
+    public var catalogPayload: Data?
     public var operation: Operation
     public var path: String = ""
     public var text: String = ""
@@ -106,6 +107,7 @@ public struct CodeRequest: Codable, Sendable {
     public init(_ operation: Operation, path: String = "") { self.operation = operation; self.path = path }
 }
 public struct CodeResponse: Codable, Sendable {
+    public var catalogPayload: Data?
     public var reverseChallenge: Data?
     public var reverseReadiness: CodeReverseReadiness?
     public var reverseFlows: [CodeReverseFlowDemand]?

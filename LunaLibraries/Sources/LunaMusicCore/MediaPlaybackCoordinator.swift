@@ -96,12 +96,12 @@ import LunaPodcastCore
             else { try await music.resume() }
         }
     }
-    /// Pause only the playing surface, leaving paused or idle queues untouched.
+    /// Cancel playback even before audio starts, leaving paused or idle queues untouched.
     public func pause() {
         if active == .podcasts {
-            if podcasts.isPlaying { podcasts.pause() }
+            if podcasts.isPlaying || podcasts.isBuffering { podcasts.pause() }
         } else {
-            if music.isPlaying { music.pause() }
+            if music.isPlaying || music.isBuffering { music.pause() }
         }
     }
 }

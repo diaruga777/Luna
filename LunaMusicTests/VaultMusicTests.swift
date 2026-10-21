@@ -353,6 +353,28 @@ final class VaultMusicTests: XCTestCase {
             XCTAssertNil(podcasts.player.currentItem, "Pause must not prepare restored audio")
         }
     }
+    @MainActor func testPauseCancelsMusicWhileFirstBytesAreLoading() async throws {
+        let root = temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let vault = VaultMusicController(directory: root.appendingPathComponent("music"))
+        let server = FakeMusicServer(bytes: wave(seconds: 10), delay: 300_000_000)
+        try vault.configure(peer: { "Mac" }, request: { try await server.request($0) })
+        await vault.refresh()
+        let song = try XCTUnwrap(vault.songs.first)
+        let music = MusicPlaybackController(defaults: UserDefaults(suiteName: UUID().uuidString)!, vault: vault)
+        let podcasts = PodcastPlaybackController(library: PodcastLibraryController(url: root.appendingPathComponent("podcasts.json")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts,
+                                                   defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        coordinator.install()
+        defer { music.pause() }
+        let request = Task { try await music.play([song]) }
+        try await until { music.isBuffering }
+        XCTAssertFalse(music.isPlaying)
+        coordinator.pause()
+        XCTAssertFalse(music.isBuffering)
+        _ = try? await request.value
+        XCTAssertFalse(music.isPlaying); XCTAssertFalse(music.isBuffering)
+        XCTAssertEqual(music.nowPlaying?.persistentID, song.persistentID)
+    }
     @MainActor func testRemoteSkipsAndQueueChordPreserveBothPlaybackPositions() async throws {
         let root = temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let vault = VaultMusicController(directory: root.appendingPathComponent("music"))
@@ -1514,6 +1536,30 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.player.rate, 0)
         XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
         XCTAssertEqual(playback.position, 80, accuracy: 0.1)
+    }
+    func testCoordinatorPauseImmediatelyAfterResumeCancelsPodcastStartup() async throws {
+        // Keep audio unavailable so Resume deterministically returns while
+        // buffering, without relying on the simulator's audio startup speed.
+        playback.seek(to: 0)
+        downloads.stop()
+        downloads = PodcastDownloads(directory: root.appendingPathComponent("Uncached"), library: library, sessionConfiguration: .ephemeral)
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: playback, defaults: defaults)
+        coordinator.install()
+        try await playback.resumeLastPodcast()
+        XCTAssertEqual(coordinator.active, .podcasts)
+        XCTAssertTrue(playback.isBuffering)
+        XCTAssertFalse(playback.isPlaying)
+        coordinator.pause()
+        XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.currentEpisode?.id, episode.id)
+        XCTAssertNil(library.state.progress[episode.id]?.lastPlayedAt)
     }
     func testSeekBeforeColdResumeKeepsLatestTarget() async throws {
         playback.seek(to: 100); playback.seek(to: 50)

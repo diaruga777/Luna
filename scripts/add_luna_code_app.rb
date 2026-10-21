@@ -14,7 +14,10 @@ app.build_configurations.each do |config|
   config.base_configuration_reference = original.base_configuration_reference
   config.build_settings.merge!({
     'PRODUCT_BUNDLE_IDENTIFIER' => '$(PRODUCT_BUNDLE_PREFIX).code', 'PRODUCT_NAME' => '$(TARGET_NAME)',
-    'INFOPLIST_FILE' => 'LunaCode/Info.plist', 'CODE_SIGN_ENTITLEMENTS' => 'LunaCode/LunaCode.entitlements',
+    'INFOPLIST_FILE' => 'LunaCode/Info.plist', 'CODE_SIGN_ENTITLEMENTS' => '$(LUNA_CODE_ENTITLEMENTS_$(LUNA_CODE_PRIVATE_STORAGE))',
+    'LUNA_CODE_PRIVATE_STORAGE' => 'NO', 'LUNA_CODE_ENTITLEMENTS_NO' => 'LunaCode/LunaCode.entitlements',
+    'LUNA_CODE_ENTITLEMENTS_YES' => 'LunaCode/LunaCodePersonalTeam.entitlements',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64',
     'INFOPLIST_KEY_CFBundleDisplayName' => '$(DISPLAY_NAME_PREFIX) Code', 'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIconCode',
     'IPHONEOS_DEPLOYMENT_TARGET' => '26.0', 'CURRENT_PROJECT_VERSION' => '1', 'MARKETING_VERSION' => '1.0',
     'INFOPLIST_KEY_UIBackgroundModes' => '', 'TARGETED_DEVICE_FAMILY' => '1,2'
@@ -25,7 +28,9 @@ app.add_file_references([group.new_file('CodeAppDelegate.swift')])
 assets = project.main_group.new_file('LunaCode/Assets.xcassets'); app.resources_build_phase.add_file_reference(assets)
 code_package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference); code_package.relative_path = 'LunaCodeKit'
 project.root_object.package_references << code_package
-[['LunaCodeKit', 'LunaCodeUI'], ['LunaCodeKit', 'LunaCodeCore'], ['LunaLibraries', 'LunaVaultUI'], ['LunaVaultTailscale', 'LunaVaultTailscale']].each do |path, product|
+refresh_package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference); refresh_package.relative_path = 'LunaCodeRefreshKit'
+project.root_object.package_references << refresh_package
+[['LunaCodeRefreshKit', 'LunaCodeRefresh'], ['LunaCodeKit', 'LunaCodeUI'], ['LunaCodeKit', 'LunaCodeCore'], ['LunaLibraries', 'LunaVaultUI'], ['LunaVaultTailscale', 'LunaVaultTailscale']].each do |path, product|
   package = project.objects.find { |o| o.isa == 'XCLocalSwiftPackageReference' && o.relative_path == path }
   dep = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency); dep.package = package; dep.product_name = product
   app.package_product_dependencies << dep

@@ -95,6 +95,13 @@ private keys, or account passwords.
 
 ## Luna Code and Luna Mac
 
+Luna Code is part of this repository again. Its Apps catalog and agent controls
+run in Luna Mac. The Refresh tab can renew cached development builds directly on
+the phone using the user's Apple account and LocalDevVPN, including Luna Code
+itself. Run `python3 scripts/bootstrap_code_refresh.py` before building. See
+[Mac-free refresh setup and verification](claudedocs/code-local-refresh.md).
+
+
 Luna Code runs on iPhone or iPad. Luna Mac is a separate macOS companion that
 must be running on the Mac whose source projects you want to edit or build.
 

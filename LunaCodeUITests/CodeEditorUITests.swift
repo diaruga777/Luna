@@ -1,6 +1,22 @@
 import XCTest
 
 final class CodeEditorUITests: XCTestCase {
+    func testRefreshSetupIsAvailableWithoutMacAndAccountActionsCanCancel() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = []; app.launch()
+        let refresh = app.tabBars.buttons["Refresh"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 15)); refresh.tap()
+        XCTAssertTrue(app.cells.containing(.staticText, identifier: "Pairing File").firstMatch.waitForExistence(timeout: 5))
+        app.cells.containing(.staticText, identifier: "Apple Account").firstMatch.tap()
+        XCTAssertTrue(app.alerts["Apple Account"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["Password"].exists)
+        app.alerts.buttons["Cancel"].tap()
+        app.cells.containing(.staticText, identifier: "Create Signing Certificate").firstMatch.tap()
+        XCTAssertTrue(app.alerts["Create Signing Certificate?"].waitForExistence(timeout: 5))
+        app.alerts.buttons["Cancel"].tap()
+        XCTAssertTrue(refresh.exists)
+        attach("Refresh without Mac", app)
+    }
     func testRotationEditingExplicitSaveAndDraftRecovery() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

@@ -6,12 +6,15 @@
     <array>
         <string>$(PRODUCT_BUNDLE_IDENTIFIER).remote-build</string>
         <string>$(PRODUCT_BUNDLE_IDENTIFIER).overnight-builds</string>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh-builds</string>
     </array>
     <key>UIBackgroundModes</key>
     <array><string>processing</string></array>
 	<key>LunaMacKeychainAccessGroup</key>
 	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).mac.connection</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
+	<key>LunaCodePrivateStorage</key>
+    <string>$(LUNA_CODE_PRIVATE_STORAGE)</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>

@@ -61,10 +61,13 @@ public struct LunaCodeOvernightConnection: Sendable {
     public var installationRoute: @Sendable () async throws -> LunaCodeInstallationRoute
 }
 extension LunaMacConnection {
-    public static func makeOvernightCodeRuntime(policy: CodeOvernightPolicy = CodeOvernightPolicy(), record: @escaping @Sendable (CodeInstallProvider, String) -> Void = { _, _ in }) async throws -> LunaCodeOvernightConnection {
-        guard let group = AppConfig.macConnectionKeychainAccessGroup else { throw LunaMacCredentialError.missingAccessGroup }
-        let shared = try VaultFolderStore.production()
-        let identity = LunaMacIdentityStore(root: shared.rootURL, credentials: LunaMacKeychain(accessGroup: group))
+    public static func makeOvernightCodeRuntime(policy: CodeOvernightPolicy = CodeOvernightPolicy(), store suppliedStore: VaultFolderStore? = nil, credentials suppliedCredentials: (any LunaMacCredentialStoring)? = nil, record: @escaping @Sendable (CodeInstallProvider, String) -> Void = { _, _ in }) async throws -> LunaCodeOvernightConnection {
+        let credentials: any LunaMacCredentialStoring = try suppliedCredentials ?? {
+            guard let group = AppConfig.macConnectionKeychainAccessGroup else { throw LunaMacCredentialError.missingAccessGroup }
+            return LunaMacKeychain(accessGroup: group)
+        }()
+        let shared = try suppliedStore ?? VaultFolderStore.production()
+        let identity = LunaMacIdentityStore(root: shared.rootURL, credentials: credentials)
         let restored: (LunaMacCredentials, LunaVaultGoTransport)?
         do { restored = try identity.restore() }
         catch LunaMacCredentialError.keychain(let status) where status == errSecInteractionNotAllowed || status == errSecNotAvailable {

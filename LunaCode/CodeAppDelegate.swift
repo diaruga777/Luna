@@ -2,20 +2,22 @@ import LunaPremium
 import UIKit
 import LunaCodeCore
 import LunaCodeUI
+import LunaCodeRefresh
 import LunaVaultUI
 import LunaVaultStore
 import LunaVaultTailscale
 
 @main final class CodeAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        PremiumAccess.shared.start()
+        if !CodeConnectionStorage.isPrivate { PremiumAccess.shared.start() }
+        CodeRefreshBackground.register()
         do {
             let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Code/Overnight")
             let journal = try CodeOvernightStore(root: root)
             CodeNightlyScheduler.shared.register(journal: journal) { invocation, manual in
                 let selectedPeer = UserDefaults.standard.string(forKey: "Code.nightlyPeer") ?? "unpaired"
                 let policy = CodeNightlyScheduler.shared.policy(peer: selectedPeer)
-                let connection = try await LunaMacConnection.makeOvernightCodeRuntime(policy: policy) { provider, outcome in
+                let connection = try await LunaMacConnection.makeOvernightCodeRuntime(policy: policy, store: try CodeConnectionStorage.store(), credentials: CodeConnectionStorage.credentials) { provider, outcome in
                     try? journal.event(CodeOvernightDiagnosticEvent(stage: "control." + provider.rawValue, correlationID: invocation.id, outcome: outcome))
                     if outcome == "authenticated", var current = journal.invocations().first(where: { $0.id == invocation.id }) {
                         current.controlProvider = provider; try? journal.save(current)
@@ -85,8 +87,8 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
         do {
-            let store = try VaultFolderStore.production()
-            let runtime = try LunaMacConnection.makeRuntime(client: .code, store: store)
+            let store = try CodeConnectionStorage.store()
+            let runtime = try LunaMacConnection.makeRuntime(client: .code, store: store, credentials: CodeConnectionStorage.credentials)
             self.runtime = runtime
             let drafts = try CodeDraftStore(root: store.rootURL.deletingLastPathComponent().appendingPathComponent("Code/Drafts"))
             let environment = CodeEnvironment(client: CodeClient { try await runtime.codeRequest($0) }, drafts: drafts,
@@ -108,7 +110,13 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
                     await self.runtime?.stop()
                 }
             }
-            window.rootViewController = LunaMacLaunchViewController(runtime: runtime, client: .code, content: CodeTabsController(environment: environment))
+            let apps = UINavigationController(rootViewController: CodeTargetsController(connection: CodeCatalogConnection(client: environment.client), cacheBuild: { try await CodeRefreshEngine.shared.cacheFromMac(client: environment.client, jobID: $0) }))
+            apps.tabBarItem = UITabBarItem(title: "Apps", image: UIImage(systemName: "apps.iphone"), tag: 4)
+            let refresh = UINavigationController(rootViewController: CodeRefreshController())
+            refresh.tabBarItem = UITabBarItem(title: "Refresh", image: UIImage(systemName: "arrow.clockwise"), tag: 2)
+            let settings = UINavigationController(rootViewController: environment.pairing())
+            settings.tabBarItem = UITabBarItem(title: "Mac", image: UIImage(systemName: "desktopcomputer"), tag: 3)
+            window.rootViewController = CodeTabsController(environment: environment, additionalTabs: [apps, refresh, settings], showBuilds: false)
         } catch {
             let controller = UIViewController(); controller.view.backgroundColor = .systemBackground
             let label = UILabel(); label.numberOfLines = 0; label.textAlignment = .center
@@ -133,4 +141,18 @@ final class CodeSceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard UIApplication.shared.applicationState == .background, self?.builds?.needsConnection != true else { return }
         await runtime.stop()
     } } }
+}
+
+/// Personal Team builds use their sandbox and device-only connection keychain.
+/// Paid builds retain the existing shared Luna identity and App Group store.
+private enum CodeConnectionStorage {
+    static var isPrivate: Bool { Bundle.main.object(forInfoDictionaryKey: "LunaCodePrivateStorage") as? String == "YES" }
+    static var credentials: (any LunaMacCredentialStoring)? {
+        isPrivate ? LunaMacKeychain(accessGroup: nil, synchronizable: false) : nil
+    }
+    static func store() throws -> VaultFolderStore {
+        if !isPrivate { return try VaultFolderStore.production() }
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Code/Connection")
+        return try VaultFolderStore(rootURL: root)
+    }
 }

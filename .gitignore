@@ -29,3 +29,7 @@ Config/Local.xcconfig
 LunaVaultTailscale/.build/
 
 .build-vault-mac/
+
+# Pinned dependency prepared by scripts/bootstrap_code_refresh.py
+LunaCodeRefreshKit/Vendor/DeviceGateway/IDevice.xcframework/
+**/__pycache__/

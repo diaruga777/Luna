@@ -92,6 +92,16 @@ in memory for the current app launch. See `claudedocs/premium.md`.
 - Keep technical details in diagnostics and source comments unless they are
   needed for the user's task (for example, an Xcode scheme in Luna Code).
 
+**Luna Code refresh.** `LunaCodeRefreshKit` owns phone-side Apple signing and
+LocalDevVPN installation. Run `python3 scripts/bootstrap_code_refresh.py` before
+building a fresh checkout. Keep Apple sessions, optional remembered passwords,
+signing keys and pairing records in non-synchronizing ThisDeviceOnly Keychain
+items. Preserve team, bundle, keychain and container identities; never revoke an
+existing certificate automatically. A refresh succeeds only after installed
+revision/profile readback, including interrupted self updates. See
+`claudedocs/code-local-refresh.md`. The optional Personal Team config uses private
+Code connection storage; normal builds retain the existing shared Luna identity.
+
 ## Agent workflow
 
 - Keep publisher-specific ingestion fixes in the owning JavaScript plugin (and

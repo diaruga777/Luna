@@ -4,7 +4,11 @@ import LunaCodeCore
 
 @MainActor public final class CodeTabsController: UITabBarController, UITabBarControllerDelegate {
     private let environment: CodeEnvironment
-    public init(environment: CodeEnvironment) { self.environment = environment; super.init(nibName: nil, bundle: nil) }
+    private let showBuilds: Bool
+    private let additionalTabs: [UIViewController]
+    public init(environment: CodeEnvironment, additionalTabs: [UIViewController] = [], showBuilds: Bool = true) {
+        self.environment = environment; self.additionalTabs = additionalTabs; self.showBuilds = showBuilds; super.init(nibName: nil, bundle: nil)
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -12,8 +16,8 @@ import LunaCodeCore
         workspace.tabBarItem = UITabBarItem(title: "Project", image: UIImage(systemName: "curlybraces"), tag: 0)
         let builds = UINavigationController(rootViewController: CodeBuildsController(environment: environment))
         builds.tabBarItem = UITabBarItem(title: "Builds", image: UIImage(systemName: "play.rectangle"), tag: 1)
-        viewControllers = [workspace, builds]
-        selectedIndex = CodeBuildCatalog(defaults: environment.defaults).selectedTab
+        viewControllers = (showBuilds ? [workspace, builds] : [workspace]) + additionalTabs
+        selectedIndex = min((viewControllers?.count ?? 1) - 1, max(0, CodeBuildCatalog(defaults: environment.defaults).selectedTab))
         delegate = self
     }
     public func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {

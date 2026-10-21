@@ -73,6 +73,7 @@
 		5C570000000000000000AA0C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 29F14A58F74AD046A0000536 /* Assets.xcassets */; };
 		5C570000000000000000AA0D /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		5D7820E5AD2230B75F6E5D33 /* MusicLaunchRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 889D6F24F2D1C20E6A73A72D /* MusicLaunchRouteTests.swift */; };
+		65E29C8BFD820FE29EC95244 /* LunaCodeRefresh in Frameworks */ = {isa = PBXBuildFile; productRef = 8235A447B41AAEC57CE52CAE /* LunaCodeRefresh */; };
 		67BF46F78203B8DE1DBD801E /* MusicQueuePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E95760DD95DDF544645B7F9 /* MusicQueuePlannerTests.swift */; };
 		67D4C5B16C25808134D16A2E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22DB1BEDC1002F12193CB04F /* Foundation.framework */; };
 		6A478E3BCBFFB9DB678B80DA /* MusicQueueSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74CD6EE98F165406B6FB1A7D /* MusicQueueSnapshotTests.swift */; };
@@ -736,6 +737,7 @@
 				ABD75924B00D4F47AA0990FB /* LunaVaultUI in Frameworks */,
 				FD43981E947996DB42D0346A /* LunaVaultTailscale in Frameworks */,
 				91A02AB21D2989364EAD4BF7 /* LunaPremium in Frameworks */,
+				65E29C8BFD820FE29EC95244 /* LunaCodeRefresh in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1564,6 +1566,7 @@
 				48D0114C5DCF43793B709B47 /* LunaVaultUI */,
 				2D6FF7C05015E406EE886B60 /* LunaVaultTailscale */,
 				A55682C1C6B809F302CFEE20 /* LunaPremium */,
+				8235A447B41AAEC57CE52CAE /* LunaCodeRefresh */,
 			);
 			productName = LunaCode;
 			productReference = BDA686237B9CD3B5268B6263 /* LunaCode.app */;
@@ -1691,6 +1694,7 @@
 				C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */,
 				7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */,
 				1F78339F487231ACD093A33A /* XCLocalSwiftPackageReference "LunaCodeKit" */,
+				16ED01D1E82B56D8217D3F9B /* XCLocalSwiftPackageReference "LunaCodeRefreshKit" */,
 			);
 			productRefGroup = AA0900000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -3180,9 +3184,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconCode;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = LunaCode/LunaCode.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(LUNA_CODE_ENTITLEMENTS_$(LUNA_CODE_PRIVATE_STORAGE))";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaCode/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Code";
@@ -3192,6 +3197,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LUNA_CODE_ENTITLEMENTS_NO = LunaCode/LunaCode.entitlements;
+				LUNA_CODE_ENTITLEMENTS_YES = LunaCode/LunaCodePersonalTeam.entitlements;
+				LUNA_CODE_PRIVATE_STORAGE = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).code";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3582,9 +3590,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconCode;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = LunaCode/LunaCode.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(LUNA_CODE_ENTITLEMENTS_$(LUNA_CODE_PRIVATE_STORAGE))";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaCode/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Code";
@@ -3594,6 +3603,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LUNA_CODE_ENTITLEMENTS_NO = LunaCode/LunaCode.entitlements;
+				LUNA_CODE_ENTITLEMENTS_YES = LunaCode/LunaCodePersonalTeam.entitlements;
+				LUNA_CODE_PRIVATE_STORAGE = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).code";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3872,6 +3884,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		16ED01D1E82B56D8217D3F9B /* XCLocalSwiftPackageReference "LunaCodeRefreshKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LunaCodeRefreshKit;
+		};
 		1F78339F487231ACD093A33A /* XCLocalSwiftPackageReference "LunaCodeKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LunaCodeKit;
@@ -4052,6 +4068,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
 			productName = LunaVaultTailscale;
+		};
+		8235A447B41AAEC57CE52CAE /* LunaCodeRefresh */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16ED01D1E82B56D8217D3F9B /* XCLocalSwiftPackageReference "LunaCodeRefreshKit" */;
+			productName = LunaCodeRefresh;
 		};
 		8858C3FC73D1A554D0D2CC38 /* LunaPremium */ = {
 			isa = XCSwiftPackageProductDependency;

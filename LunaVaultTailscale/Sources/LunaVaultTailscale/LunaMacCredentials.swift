@@ -67,15 +67,19 @@ public protocol LunaMacCredentialStoring: Sendable {
 /// host apps. iCloud Passwords & Keychain transports the private key; it is
 /// never written to preferences, CloudKit public records, or a shared URL.
 public struct LunaMacKeychain: LunaMacCredentialStoring {
-    private let accessGroup: String
-    public init(accessGroup: String) { self.accessGroup = accessGroup }
-    private var query: [String: Any] { [
+    private let accessGroup: String?
+    private let synchronizable: Bool
+    public init(accessGroup: String?, synchronizable: Bool = true) { self.accessGroup = accessGroup; self.synchronizable = synchronizable }
+    private var query: [String: Any] {
+        var value: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "LunaMac.Connection.v1",
         kSecAttrAccount as String: "approved-account",
-        kSecAttrAccessGroup as String: accessGroup,
-        kSecAttrSynchronizable as String: true
-    ] }
+        kSecAttrSynchronizable as String: synchronizable
+        ]
+        if let accessGroup { value[kSecAttrAccessGroup as String] = accessGroup }
+        return value
+    }
     public func load() throws -> LunaMacCredentials? {
         var query = query
         query[kSecReturnData as String] = true
@@ -99,7 +103,7 @@ public struct LunaMacKeychain: LunaMacCredentialStoring {
             var item = query
             item[kSecValueData as String] = data
             // Synchronizable items cannot use a ThisDeviceOnly accessibility.
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            item[kSecAttrAccessible as String] = synchronizable ? kSecAttrAccessibleAfterFirstUnlock : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             status = SecItemAdd(item as CFDictionary, nil)
             if status == errSecDuplicateItem { status = SecItemUpdate(query as CFDictionary, update as CFDictionary) }
         }

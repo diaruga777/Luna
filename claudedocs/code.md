@@ -19,6 +19,21 @@ The existing Mac companion is now displayed as **Luna Mac**. Its executable,
 bundle identifier, identity directory, peer approval and preferences retain their
 Vault identities, so upgrading preserves existing pairing.
 
+## Phone-side refresh and app catalog
+
+The app now has Project, Apps, Refresh and Mac tabs. Apps uses the catalog owned
+by Luna Mac, including GitHub import and persistent schedules. The local
+`bin/luna-code` CLI and bundled `plugins/luna-code` MCP use that same catalog over
+an owner-only Unix socket. Remote catalog RPCs reuse Luna's authenticated Code
+channel; no separate Orbit server or identity is required.
+
+See [agent tool setup](code-agent-tools.md) and [Mac-free refresh](code-local-refresh.md) for cached builds, signing on the
+phone, LocalDevVPN, Personal Team setup and acceptance limitations. This is
+independent of the Mac's overnight build/install path. Run
+`python3 scripts/bootstrap_code_refresh.py` before building from a fresh checkout.
+Orbit's complete source history is retained in Git tag
+`archive/orbit-before-luna-return-20261021`.
+
 ## Setup and use
 
 1. Build/run the Mac companion with `script/build_and_run.sh`. It requires Xcode
@@ -49,7 +64,7 @@ Vault identities, so upgrading preserves existing pairing.
 6. Set the ASC app ID and **internal group ID** in Project Settings. **Build & Deploy
    to TestFlight** saves dirty open files, archives/signs/uploads on Mac, waits for
    processing and assigns the build to that group. Install it using TestFlight.
-   iOS cannot silently install or replace itself. The Mac must stay awake/connected;
+   TestFlight installation uses Apple’s TestFlight app. The Mac must stay awake/connected;
    the phone may disconnect after the job starts and reopen its persisted job log.
 
 The unsandboxed Mac companion can browse its accessible filesystem. macOS still

@@ -112,6 +112,7 @@ def mcp():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['mcp','status','devices','targets','add','build','schedule','remove','job','cancel','github-search','github-inspect','github-add','code'])
     parser.add_argument('value', nargs='?')
     parser.add_argument('--project'); parser.add_argument('--scheme'); parser.add_argument('--device',dest='deviceID')
     parser.add_argument('--account',choices=['free','paid']); parser.add_argument('--team',dest='teamID'); parser.add_argument('--branch'); parser.add_argument('--name')
@@ -120,12 +121,11 @@ def main():
     parser.add_argument('--disable',dest='enabled',action='store_false')
     parser.add_argument('--trust',action='store_true',default=None)
     parser.add_argument('--launch',action='store_true',default=None)
-    parser.add_argument('--provider',choices=['local','tailscale','syncthing','dumbpipe'])
-    parser.add_argument('--address'); parser.add_argument('--relay')
     args = vars(parser.parse_args()); command = args.pop('command'); value = args.pop('value')
     if command == 'mcp':
         mcp(); return
     params = {k:v for k,v in args.items() if v is not None}
+    method = {'add':'target_add','remove':'target_remove','github-search':'repo_search','github-inspect':'repo_inspect','github-add':'repo_add'}.get(command,command)
     if value is not None:
         params[{'repo_search':'query','repo_inspect':'repository','repo_add':'repository'}.get(method,'id')] = value
     if command == 'code':

@@ -3,6 +3,9 @@ import importlib.util
 import json
 from pathlib import Path
 import socket
+import subprocess
+import sys
+import os
 import struct
 import tempfile
 import threading
@@ -22,6 +25,40 @@ class MCPTests(unittest.TestCase):
         names = {t['name'] for t in tools}
         self.assertTrue({'luna_code_build','luna_code_add_github','luna_code_schedule','luna_code_add_target'} <= names)
         self.assertTrue(all('trust' in t['inputSchema']['required'] for t in tools if t['name'] in {'luna_code_add_target','luna_code_add_github'}))
+    def test_real_cli_and_plugin_launcher_initialize_stdio(self):
+        root = Path(__file__).resolve().parents[3]
+        message = json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{}}) + '\n'
+        commands = [[sys.executable, str(root/'bin/luna-code'), 'mcp'],
+                    [sys.executable, str(root/'plugins/luna-code/scripts/run_mcp.py')]]
+        for command in commands:
+            result = subprocess.run(command, input=message, text=True, capture_output=True, timeout=10,
+                                    env={**os.environ, 'LUNA_CODE_CHECKOUT':str(root)})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['result']['serverInfo']['name'], 'luna-code')
+    def test_real_cli_maps_github_search_and_uses_local_socket(self):
+        root = Path(__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory(prefix='luna-cli-') as folder:
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(folder+'/control.sock'); server.listen(1); server.settimeout(10)
+            def serve():
+                conn, _ = server.accept()
+                with conn:
+                    stream = conn.makefile('rb')
+                    stream.read(4)
+                    length, = struct.unpack('>I', stream.read(4))
+                    request = json.loads(stream.read(length))
+                    payload = json.dumps({'result':request}).encode()
+                    conn.sendall(struct.pack('>I', len(payload))+payload)
+            thread = threading.Thread(target=serve); thread.start()
+            try:
+                result = subprocess.run([sys.executable, str(root/'bin/luna-code'), 'github-search', 'Luna'],
+                    text=True, capture_output=True, timeout=10, env={**os.environ, 'LUNA_CODE_HOME':folder})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                reply = json.loads(result.stdout)
+                self.assertEqual(reply['method'], 'repo_search')
+                self.assertEqual(reply['params'], {'query':'Luna'})
+            finally:
+                thread.join(timeout=10); server.close()
     def test_notifications_get_no_response(self):
         self.assertIsNone(orbit.handle_mcp({'jsonrpc':'2.0','method':'notifications/initialized'}))
     def test_unknown_tool_and_missing_fields_do_not_dispatch(self):

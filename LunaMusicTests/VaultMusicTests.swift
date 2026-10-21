@@ -1,6 +1,7 @@
 import XCTest
 import AVFoundation
 import AudioToolbox
+import Combine
 @testable import LunaPodcastCore
 import MediaPlayer
 @testable import LunaMusicCore
@@ -315,6 +316,42 @@ final class VaultMusicTests: XCTestCase {
         player.cycleRepeat(); player.cycleRepeat()
         XCTAssertEqual(player.repeatMode, .one)
         player.togglePlayPause()
+    }
+    @MainActor func testPauseLeavesRestoredMusicAndPodcastQueuesUntouched() throws {
+        let root = temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let snapshot = MusicQueueSnapshot(songIDs: [1], currentIndex: 0, playbackTime: 42,
+                                         originalSongIDs: [1], shuffleEnabled: false, repeatMode: 0)
+        let savedMusic = try JSONEncoder().encode(snapshot)
+        defaults.set(savedMusic, forKey: "LunaMusic.playbackQueue.v1")
+        let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")))
+        let library = PodcastLibraryController(url: root.appendingPathComponent("podcasts.json"))
+        let episode = PodcastEpisode(showID: "test", guid: "pause", title: "Pause", publishedAt: Date(), mediaURL: URL(string: "https://example.com/podcast.mp3")!)
+        try library.edit {
+            $0.episodes[episode.id] = episode; $0.currentEpisodeID = episode.id
+            $0.queue = [episode.id]
+            var progress = PodcastEpisodeState(); progress.position = 75
+            $0.progress[episode.id] = progress
+        }
+        let podcasts = PodcastPlaybackController(library: library)
+        var changes = 0
+        let observations = [music.objectWillChange.sink { changes += 1 },
+                            podcasts.objectWillChange.sink { changes += 1 }]
+        defer { observations.forEach { $0.cancel() } }
+        for surface in [MediaPlaybackCoordinator.Surface.music, .podcasts] {
+            defaults.set(surface.rawValue, forKey: "LunaMusic.activeMedia")
+            let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults)
+            coordinator.install()
+            coordinator.pause(); coordinator.pause()
+            XCTAssertEqual(changes, 0, "An idle pause must not mutate either player")
+            XCTAssertEqual(coordinator.active, surface)
+            XCTAssertFalse(music.isPlaying); XCTAssertFalse(podcasts.isPlaying)
+            XCTAssertTrue(music.hasRestorableQueue)
+            XCTAssertEqual(defaults.data(forKey: "LunaMusic.playbackQueue.v1"), savedMusic)
+            XCTAssertEqual(podcasts.position, 75)
+            XCTAssertEqual(library.state.queue, [episode.id])
+            XCTAssertNil(podcasts.player.currentItem, "Pause must not prepare restored audio")
+        }
     }
     @MainActor func testRemoteSkipsAndQueueChordPreserveBothPlaybackPositions() async throws {
         let root = temporary(); defer { try? FileManager.default.removeItem(at: root) }

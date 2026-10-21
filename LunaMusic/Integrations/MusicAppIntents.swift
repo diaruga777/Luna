@@ -78,7 +78,9 @@ struct PlayLibraryMusicIntent: AudioPlaybackIntent {
 }
 
 struct PauseMusicIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Pause Music"
+    static var title: LocalizedStringResource = "Pause Music and Podcasts"
+    static var description = IntentDescription("Pause playback in Luna Music. If nothing is playing, do nothing.")
+    static var openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         MediaPlaybackCoordinator.shared.install()
         MediaPlaybackCoordinator.shared.pause()
@@ -130,7 +132,7 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
         AppShortcut(intent: SwitchMediaQueueIntent(), phrases: ["Switch queues in \(.applicationName)"], shortTitle: "Switch Music and Podcasts", systemImageName: "arrow.triangle.swap")
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
-        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Music", systemImageName: "pause.fill")
+        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Playback", systemImageName: "pause.fill")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
     }

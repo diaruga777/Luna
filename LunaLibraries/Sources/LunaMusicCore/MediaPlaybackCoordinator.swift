@@ -96,5 +96,12 @@ import LunaPodcastCore
             else { try await music.resume() }
         }
     }
-    public func pause() { if active == .podcasts { podcasts.pause() } else { music.pause() } }
+    /// Pause only the playing surface, leaving paused or idle queues untouched.
+    public func pause() {
+        if active == .podcasts {
+            if podcasts.isPlaying { podcasts.pause() }
+        } else {
+            if music.isPlaying { music.pause() }
+        }
+    }
 }

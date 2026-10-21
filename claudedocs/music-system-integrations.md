@@ -38,6 +38,12 @@ Verified: shared/widget sources and app integration sources typecheck against th
 
 ## Podcast integration (2026-10-08)
 
+**Pause Music and Podcasts** runs in the background and pauses the active music
+or podcast surface only when it is playing. Paused or idle queues are left
+untouched; it never resumes playback, restores a queue, or switches surfaces.
+The existing `PauseMusicIntent` identity and “Pause Luna Music” phrase are
+preserved for saved shortcuts; its App Shortcut is titled **Pause Playback**.
+
 `ResumeLastPodcastIntent`, displayed as **Resume Podcast Queue**, resumes the exact
 last-played podcast; it never redirects to generic Now Playing. Its
 `overrideOtherAudio` Boolean defaults to `true`. Explicitly setting it to `false`

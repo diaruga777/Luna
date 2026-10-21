@@ -39,10 +39,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         return try await session.musicRequest(payload)
     }
 
-    public func codeRequest(_ payload: Data) async throws -> Data {
-        try await prepareConnection(); try await session.announce(client: client)
-        return try await session.codeRequest(payload)
-    }
+
 
     /// Re-read synchronizable credentials on launch and foreground. A directory
     /// keyed by certificate avoids changing an identity cached by the Go bridge.

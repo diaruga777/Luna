@@ -27,10 +27,10 @@ Luna is a family of native apps (UIKit, deployment target iOS 26).
   (with optional local eviction), or on a user-owned Mac. AWS/S3-compatible
   providers and hosted Luna infrastructure are deferred.
 
-- **Luna Code** (`com.hsanabria.luna.code`, target `LunaCode`) — native source
-  editor with local drafts/syntax checks, Mac SourceKit completion, explicit saves,
-  and Mac build/TestFlight jobs. Shares Vault pairing and the unified **Luna Mac**
-  companion. See `claudedocs/code.md`; implementation is in `LunaCodeKit`.
+- **Orbit** is the standalone source editor, Mac build/install companion and
+  JavaScript widget host in `/Users/hsp/Desktop/Orbit` and the
+  [Orbit repository](https://github.com/diaruga777/Orbit). Luna Mac serves Vault
+  and Music; Orbit owns its own pairing, app identities, signing and refresh.
 
 Vault-to-Mac reachability may use the user's separately installed Tailscale
 client (MagicDNS/Tailscale IP) or same-LAN discovery. Tailscale is transport
@@ -52,7 +52,7 @@ child tables under `ON DELETE CASCADE`, trigger-queued file reaping and WAL.
 See `claudedocs/saves.md`. Keep feature docs in `claudedocs/` current.
 
 **Targets.** `Luna` links `LunaKit` and embeds its own Share, Action, Safari and
-Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music, Code,
+Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music,
 Keyboard and Writer remain independent. Dev uses Xcode 27 beta; archive/upload
 uses stable Xcode 26.2. Preserve the existing handmade Action extension icons.
 
@@ -90,17 +90,12 @@ in memory for the current app launch. See `claudedocs/premium.md`.
   decide, recover from an error, understand permissions/privacy, or discover an
   interaction. Describe the outcome or next step in familiar words.
 - Keep technical details in diagnostics and source comments unless they are
-  needed for the user's task (for example, an Xcode scheme in Luna Code).
+  needed for the user's task (for example, an Xcode scheme in Orbit).
 
-**Luna Code refresh.** `LunaCodeRefreshKit` owns phone-side Apple signing and
-LocalDevVPN installation. Run `python3 scripts/bootstrap_code_refresh.py` before
-building a fresh checkout. Keep Apple sessions, optional remembered passwords,
-signing keys and pairing records in non-synchronizing ThisDeviceOnly Keychain
-items. Preserve team, bundle, keychain and container identities; never revoke an
-existing certificate automatically. A refresh succeeds only after installed
-revision/profile readback, including interrupted self updates. See
-`claudedocs/code-local-refresh.md`. The optional Personal Team config uses private
-Code connection storage; normal builds retain the existing shared Luna identity.
+**Orbit extraction.** Phone-side cached-build signing, LocalDevVPN refresh,
+Code agent tools and the Mac setup wizard live in Orbit. Do not restore Code
+services or credentials into Luna Mac. Existing Luna Code data is left in place;
+Orbit does not silently adopt Luna’s App Group, Keychain or pairing records.
 
 ## Agent workflow
 

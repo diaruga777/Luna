@@ -1,4 +1,0 @@
-// Pass with xcodebuild -xcconfig Config/LunaCodePersonalTeam.xcconfig.
-// Only LunaCode consumes this flag; dependency resource bundles stay unchanged.
-// Same bundle identifier, private connection state, no paid capabilities.
-LUNA_CODE_PRIVATE_STORAGE = YES

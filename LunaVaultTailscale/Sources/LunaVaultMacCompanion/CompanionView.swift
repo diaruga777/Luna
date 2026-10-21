@@ -115,9 +115,9 @@ struct CompanionView: View {
     }
 
     private func name(_ client: LunaMacClient) -> String {
-        switch client { case .vault: "Luna Vault"; case .music: "Luna Music"; case .code: "Luna Code" }
+        switch client { case .vault: "Luna Vault"; case .music: "Luna Music" }
     }
     private func symbol(_ client: LunaMacClient) -> String {
-        switch client { case .vault: "externaldrive"; case .music: "music.note"; case .code: "curlybraces" }
+        switch client { case .vault: "externaldrive"; case .music: "music.note" }
     }
 }

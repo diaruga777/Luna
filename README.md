@@ -1,10 +1,9 @@
 # Luna
 
 Luna is a collection of native Apple apps and a Mac companion. The iOS/iPadOS
-apps share Swift packages and, where relevant, one App Group. Luna Code is a
-source editor for working with projects on a paired Mac; the Mac companion
-provides file access, SourceKit intelligence, builds, and optional TestFlight
-deployment.
+apps share Swift packages and, where relevant, one App Group. Luna Mac provides
+paired file and music access. Source editing and app build/deployment now live
+in the standalone [Orbit](https://github.com/diaruga777/Orbit) product.
 
 ## Apps
 
@@ -14,7 +13,6 @@ deployment.
 | Luna Keyboard | `LunaKeyboard` | A standalone keyboard with shortcuts, swipe typing, emoji, and Luna link/video suggestions. |
 | Luna Music | `LunaMusic` | A MusicKit and MediaPlayer library player with search, playlists, Siri, widgets, and a queue Live Activity. |
 | Luna Vault | `LunaVault` | An encrypted, search-first file library for on-device, iCloud, or a user-owned Mac storage. |
-| Luna Code | `LunaCode` | An iPhone/iPad source editor with local drafts and syntax checks, plus Mac-backed completion, diagnostics, builds, and TestFlight jobs. |
 | Luna Writer | `LunaWriter` | A native writing and document library app. |
 
 Luna and Keyboard share `saves.sqlite`. Vault and Writer have separate file
@@ -49,10 +47,10 @@ Choose an installed iOS Simulator device name from the last command, then
 build and launch an app (replace the scheme and device as needed):
 
 ```sh
-xcodebuild build -project Luna.xcodeproj -scheme LunaCode \
+xcodebuild build -project Luna.xcodeproj -scheme Luna \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   -derivedDataPath .build-dd
-open .build-dd/Build/Products/Debug-iphonesimulator/LunaCode.app
+open .build-dd/Build/Products/Debug-iphonesimulator/Luna.app
 ```
 
 Other runnable schemes are listed above. `Luna` is the Reader test host;
@@ -74,7 +72,7 @@ For an iOS simulator build, Xcode uses local simulator signing. For a physical
 device, pass your own Team ID for that build, for example:
 
 ```sh
-xcodebuild build -project Luna.xcodeproj -scheme LunaCode \
+xcodebuild build -project Luna.xcodeproj -scheme Luna \
   -destination 'platform=iOS,id=YOUR_DEVICE_UDID' \
   -allowProvisioningUpdates DEVELOPMENT_TEAM=YOUR_TEAM_ID
 ```
@@ -93,63 +91,16 @@ selection into the project file, so keep personal signing changes uncommitted.
 Never commit certificates, `.p12`/`.p8` files, provisioning profiles, API
 private keys, or account passwords.
 
-## Luna Code and Luna Mac
+## Orbit and Luna Mac
 
-Luna Code is part of this repository again. Its Apps catalog and agent controls
-run in Luna Mac. The Refresh tab can renew cached development builds directly on
-the phone using the user's Apple account and LocalDevVPN, including Luna Code
-itself. Run `python3 scripts/bootstrap_code_refresh.py` before building. See
-[Mac-free refresh setup and verification](claudedocs/code-local-refresh.md).
+Luna Code and its Mac build/install services moved to the standalone open source
+[Orbit](https://github.com/diaruga777/Orbit) product. See Orbit’s README for its
+source editor, free Apple account setup, scheduled phone installs and agent MCP.
 
-
-Luna Code runs on iPhone or iPad. Luna Mac is a separate macOS companion that
-must be running on the Mac whose source projects you want to edit or build.
-
-1. On the Mac, install Xcode and command-line tools, clone this repository, and
-   run:
-
-   ```sh
-   cd Luna
-   ./script/build_and_run.sh
-   ```
-
-   This builds and opens **Luna Mac**. To compile without opening it, use
-   `./script/build_and_run.sh --build-only`. For a persistent Luna Mac install,
-   set the same valid Apple Development certificate for every build and launch
-   so macOS keeps its Files and Folders permission grant:
-
-   ```sh
-   LUNA_MAC_SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' \
-     ./script/build_and_run.sh
-   ```
-
-   Use the exact certificate name or SHA-1 from
-   `security find-identity -v -p codesigning`. The helper defaults to ad-hoc
-   signing when this variable is unset; do not use that default for a client
-   whose folder permissions should persist. Switching an existing ad-hoc build
-   to a certificate can require approving folder access once for the new
-   signing identity.
-
-2. Build and install/run `LunaCode` on an iPhone/iPad simulator or device.
-   Pair from Luna Code's Mac connection setup (or from Luna Vault, which shares
-   the same Luna Mac connection). In the Luna Mac window choose **Copy
-   Connection Code**, then paste it into the iOS setup flow and follow the
-   fingerprint confirmation. Keep both devices on the same LAN, or sign in to
-   the embedded Tailscale flow on each side when connecting across networks.
-3. In Luna Code, browse Mac Files and open the containing `.xcodeproj` or
-   `.xcworkspace`. Choose a scheme, then use **Prepare Code Intelligence** to
-   build the Debug simulator scheme and initialize SourceKit support. The Mac
-   needs Xcode and the project's dependencies resolved.
-4. Edit and **Save to Mac** to persist changes to the selected project. **Build
-   & Deploy to TestFlight** is optional and requires the Mac user's own App
-   Store Connect authentication, registered app record, signing setup, and
-   internal testing group. A simulator build is the path for trying Luna Code
-   without configuring distribution signing.
-
-The companion only serves an explicitly paired Luna client. It does not
-provide hosted storage or a relay. More details: [`claudedocs/code.md`](claudedocs/code.md),
-[`claudedocs/mac-connection.md`](claudedocs/mac-connection.md), and
-[`claudedocs/vault-mac.md`](claudedocs/vault-mac.md).
+Luna Mac continues to serve Luna Vault and Luna Music. Build it with
+`LUNA_MAC_SIGNING_IDENTITY` set to the exact certificate used for your existing
+Luna Mac app; see [`AGENTS.md`](AGENTS.md) and
+[`claudedocs/mac-connection.md`](claudedocs/mac-connection.md).
 
 ## Credential and secret review
 
@@ -157,9 +108,7 @@ The shared project contains no Apple signing certificate or private key, App
 Store Connect API private key, password, or Tailscale auth key. The upstream
 bundle namespace, App Store URL, and Team ID were public account identifiers;
 the Team ID is no longer checked into the Xcode project. Mac signing identity
-is now supplied through `LUNA_MAC_SIGNING_IDENTITY` when needed. API credentials
-for Luna Code's optional TestFlight operation are read from the Mac's existing
-App Store Connect/`asc` setup and must be configured by that Mac's owner.
+is now supplied through `LUNA_MAC_SIGNING_IDENTITY` when needed. Apple credentials for app distribution must be configured by the Mac's owner.
 
 ## More contributor notes
 

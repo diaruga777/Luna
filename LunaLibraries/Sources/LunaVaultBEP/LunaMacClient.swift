@@ -3,13 +3,12 @@ import Foundation
 /// An app that has completed Luna Mac setup. This travels only inside the
 /// authenticated BEP stream; it is never inferred from discovery or a name.
 public enum LunaMacClient: String, Codable, CaseIterable, Sendable {
-    case vault, music, code
+    case vault, music
     public var title: String { "Luna " + rawValue.capitalized }
     public var introduction: String {
         switch self {
         case .vault: return "Browse your Mac and keep your files with you."
         case .music: return "Browse and play the music stored on your Mac."
-        case .code: return "Edit your Mac’s source files and run builds."
         }
     }
 }

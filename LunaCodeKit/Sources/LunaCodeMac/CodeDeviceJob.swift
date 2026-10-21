@@ -33,6 +33,8 @@ extension CodeJobs {
                 localApp = try CodeDeviceSupport.primarySettings(localSettings, project: project)
             }
             let signing = try CodeDeviceSigning.arguments(checkout: app, local: localApp)
+            let refresh = try await CodeProfileRefresh.prepare(project: project, settings: app, device: options.deviceID, root: root, process: process)
+            defer { refresh?.restore() }
             let derived = derivedData(project).appendingPathComponent("Device")
             let artifactBuildNumber = String(Int(Date().timeIntervalSince1970))
             let artifactFlags = options.artifactTarget == nil ? [] : ["CURRENT_PROJECT_VERSION=" + artifactBuildNumber]
@@ -49,6 +51,7 @@ extension CodeJobs {
             // Read the actual built product so scheme dependencies cannot change the install target.
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: appURL.appendingPathComponent("Info.plist")), format: nil) as? [String: Any]
             guard plist?["CFBundleIdentifier"] as? String == bundle else { throw CodeFailure("The built app does not match the selected scheme.") }
+            try await CodeProfileRefresh.verify(app: appURL, minimumHours: project.minimumProfileHours, root: root, process: process)
             if let target = options.artifactTarget {
                 guard plist?["CFBundleVersion"] as? String == artifactBuildNumber else { throw CodeFailure("The app’s Info.plist must use CURRENT_PROJECT_VERSION so overnight updates can be verified.") }
                 let store = try CodeArtifactStore(root: root.appendingPathComponent("Artifacts"))

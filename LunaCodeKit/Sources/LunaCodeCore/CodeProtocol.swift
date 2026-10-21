@@ -23,12 +23,14 @@ public struct CodeProject: Codable, Equatable, Sendable {
     public var path: String
     public var scheme: String
     public var appID: String
+    public var developmentTeam: String?
+    public var minimumProfileHours: Int?
     public var groupID: String
     public init(path: String, scheme: String = "", appID: String = "", groupID: String = "") {
         self.path = path; self.scheme = scheme; self.appID = appID; self.groupID = groupID
     }
     public var root: String { URL(fileURLWithPath: path).deletingLastPathComponent().path }
-    public var xcodeArguments: [String] { [path.hasSuffix(".xcworkspace") ? "-workspace" : "-project", path, "-scheme", scheme] }
+    public var xcodeArguments: [String] { [path.hasSuffix(".xcworkspace") ? "-workspace" : "-project", path, "-scheme", scheme] + (developmentTeam.map { ["DEVELOPMENT_TEAM=" + $0] } ?? []) }
 }
 public struct CodePosition: Codable, Equatable, Sendable {
     public var line: Int
@@ -125,7 +127,7 @@ public struct CodeResponse: Codable, Sendable {
     public var error: String?
     public init() {}
 }
-/// The host injects the existing Vault authenticated transport.
+/// The host injects the existing Luna Code authenticated transport.
 public struct CodeClient: Sendable {
     public var exchange: @Sendable (Data) async throws -> Data
     public init(exchange: @escaping @Sendable (Data) async throws -> Data) { self.exchange = exchange }

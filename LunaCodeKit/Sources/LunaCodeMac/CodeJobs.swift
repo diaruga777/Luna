@@ -14,6 +14,7 @@ public actor CodeJobs {
         self.root = root
         workloads = (try? JSONDecoder().decode([String: Int].self, from: Data(contentsOf: root.appendingPathComponent("BuildWorkloads.json")))) ?? [:]
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        CodeProfileRefresh.recover(root: root)
         for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "json" {
             if var job = try? JSONDecoder().decode(CodeJob.self, from: Data(contentsOf: url)) {
                 if job.state == .running, job.artifact != nil { job.state = .succeeded }
@@ -234,7 +235,7 @@ public actor CodeJobs {
     public static func ascExecutable() throws -> String {
         let paths = [ProcessInfo.processInfo.environment["LUNA_ASC_PATH"], NSHomeDirectory() + "/.blitz/bin/asc", "/opt/homebrew/bin/asc", "/usr/local/bin/asc"].compactMap { $0 }
         guard let path = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw CodeFailure("Install asc on the Mac and configure its existing App Store Connect API key. Luna also checks ~/.blitz/bin/asc and LUNA_ASC_PATH.")
+            throw CodeFailure("Install asc on the Mac and configure its existing App Store Connect API key. Luna Code also checks ~/.blitz/bin/asc and LUNA_ASC_PATH.")
         }
         return path
     }

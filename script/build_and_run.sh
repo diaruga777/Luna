@@ -26,15 +26,7 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 # Stop only after the replacement binary has built successfully.
 if [[ "$MODE" != "--build-only" ]]; then pkill -x "$APP_NAME" >/dev/null 2>&1 || true; fi
 cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
-# Code moved to Orbit. Rebuilding an existing bundle must also remove its
-# retired nested helper and resource bundles, which ditto/cp would otherwise keep.
-rm -f "$BUNDLE/Contents/Helpers/luna-code-apple-adapter"
-rm -rf "$BUNDLE/Contents/Resources/AppleAdapterNotices"
-for retired in "$BUNDLE/Contents/Resources"/LunaCodeKit_*.bundle; do
-  [[ ! -d "$retired" ]] || rm -rf "$retired"
-done
 for resource in "$BUILD_DIR"/*.bundle; do
-  [[ "$resource" != */LunaCodeKit_*.bundle ]] || continue
   [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
 done
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST

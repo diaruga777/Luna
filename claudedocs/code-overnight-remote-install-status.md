@@ -1,5 +1,3 @@
-> Archived: Luna Code was extracted into [Orbit](https://github.com/diaruga777/Orbit) on 2026-10-21. Active implementation and setup documentation now live there.
-
 # Overnight remote-install implementation status
 
 2026-10-21. The user explicitly deferred physical iPhone testing and authorized

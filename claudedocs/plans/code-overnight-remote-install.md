@@ -1,5 +1,3 @@
-> Archived: Luna Code was extracted into [Orbit](https://github.com/diaruga777/Orbit) on 2026-10-21. Active implementation and setup documentation now live there.
-
 # Luna Code: overnight builds and installation across networks
 
 Status: implementation in progress; see [actual behavior and acceptance status](../code-overnight-remote-install-status.md). Physical tests are deferred by explicit user instruction (2026-10-20); they are not a prerequisite for continuing code work and are not counted as passes.

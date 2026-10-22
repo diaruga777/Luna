@@ -35,6 +35,7 @@ import LunaPodcastCore
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
     private var timeToken: Any?
     private var generation = UUID()
+    private var playbackRevision = UUID()
     private var requestedPlayback = false
     private var actualStartRecorded = false
     private var pendingSeek: Double?
@@ -181,6 +182,7 @@ import LunaPodcastCore
     }
     private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false,
                         preservingQueue: Bool = false) async throws {
+        playbackRevision = UUID()
         // Capture the outgoing clock before replacing its item. A pending seek
         // already owns `position` and must not be overwritten by the old clock.
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
@@ -276,6 +278,7 @@ import LunaPodcastCore
         try await resume(preservingQueue: false)
     }
     private func resume(preservingQueue: Bool) async throws {
+        playbackRevision = UUID()
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
         if isAtEnd {
             if !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
@@ -297,24 +300,66 @@ import LunaPodcastCore
         if extrasTask == nil { loadExtras(episode, token: generation) }
         publish()
     }
-    /// Resume without editing Up Next. Natural completion still advances the queue.
-    public func resumeLastPodcast() async throws {
+    /// Resume without editing Up Next, returning only once system transport is ready.
+    /// Optionally leave that session paused so headphones can resume it later.
+    public func resumeLastPodcast(pauseImmediately: Bool = false) async throws {
+        try Task.checkCancellation()
+        let revision = UUID(); playbackRevision = revision
         let store = try library.requireStore()
         if store.state.naturallyExhaustedQueue { await library.refresh(force: true) }
+        try Task.checkCancellation()
+        guard playbackRevision == revision else { throw CancellationError() }
         switch PodcastPolicies.resumeDecision(store.state) {
         case .nothing: return
         case .resume(let id):
             guard let episode = store.state.episodes[id] else { return }
-            if currentEpisode?.id == id { try await resume(preservingQueue: true) }
-            else { try await select(episode, restorePosition: true, preservingQueue: true) }
+            do {
+                if currentEpisode?.id == id { try await resume(preservingQueue: true) }
+                else { try await select(episode, restorePosition: true, preservingQueue: true) }
+            } catch { fail(error); throw error }
         case .start(let id):
             guard let episode = store.state.episodes[id] else { return }
             // The intent selects one episode without the queue edits performed
             // by an explicit episode tap. Completion consumes it from Up Next.
             do { try await select(episode, preservingQueue: true) } catch { fail(error); throw error }
         }
+        try await waitForPlaybackSession(pauseImmediately: pauseImmediately)
+    }
+    private func waitForPlaybackSession(pauseImmediately: Bool) async throws {
+        let token = generation, revision = playbackRevision
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        do {
+            while true {
+                try Task.checkCancellation()
+                guard playbackRevision == revision else { throw CancellationError() }
+                if let errorMessage { throw PodcastError(errorMessage) }
+                guard generation == token else { throw CancellationError() }
+                guard requestedPlayback else { throw CancellationError() }
+                // playImmediately() only requests playback. Pausing before the
+                // clock advances and the session activates cancels ownership of
+                // Now Playing, leaving headphones with no resumable session.
+                if isPlaying, session.isActive {
+                    if pauseImmediately { pause() }
+                    return
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw PodcastError("Unable to prepare podcast playback. Try resuming again.")
+                }
+                activateSession()
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        } catch {
+            // A later transport action owns its own state. Never let an older
+            // shortcut pause a replacement episode or a newer Play request.
+            if generation == token, playbackRevision == revision {
+                if error is CancellationError { pause() }
+                else { fail(error) }
+            }
+            throw error
+        }
     }
     public func pause() {
+        playbackRevision = UUID()
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
@@ -328,6 +373,7 @@ import LunaPodcastCore
     private var isAtEnd: Bool { duration.isFinite && duration > 0 && position >= duration - 0.05 }
     public func seek(to seconds: Double, completion: ((Bool) -> Void)? = nil) {
         guard seconds.isFinite, let episode = currentEpisode else { completion?(false); return }
+        playbackRevision = UUID()
         finishSeek(false); seekCompletion = completion
         let target = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
         position = target; pendingSeek = target

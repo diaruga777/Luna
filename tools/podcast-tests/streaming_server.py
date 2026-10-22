@@ -5,6 +5,7 @@ TEST_RUNNER_LUNA_PODCAST_STREAM_FIXTURE_URL=http://127.0.0.1:19266/slow.mp4 xcod
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import json
+import base64
 import threading
 import time
 from urllib.parse import urlsplit, parse_qs
@@ -18,6 +19,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path)
         token = parse_qs(route.query).get('session', ['default'])[0]
+        if route.path == '/art.png':
+            # Local playback primes quickly; artwork deliberately arrives later.
+            time.sleep(0.5)
+            data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=')
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if route.path == '/slow-art.png':
             time.sleep(3)
             self.send_error(404)

@@ -337,6 +337,14 @@ parameter defaults to `true`, allowing resuming even when other audio is playing
 When explicitly set to `false`, it returns without installing the playback
 coordinator or resuming playback if
 `AVAudioSession.sharedInstance().isOtherAudioPlaying` is true.
+Its **Pause Immediately** Boolean defaults to `false`. When enabled, it starts
+playback, waits for the media clock to advance and the podcast's Now Playing
+session to become active, then pauses while retaining the item, metadata and
+remote Play command. Resume also waits for that readiness when this option is off,
+so a subsequent pause cannot cancel session ownership during startup. Startup is
+bounded and cancellation or a newer transport action cannot cause a late pause.
+The separate Pause Music and Podcasts intent has been removed; AirPods connection
+automations should use this one action with Pause Immediately enabled.
 It resumes the actual last-played episode, preserving position across launches and
 regardless of the selected media surface. Preparation alone does not overwrite
 last-played history: AVPlayer must start playing. An empty history does nothing.
@@ -358,6 +366,15 @@ Validation (2026-10-19): all 36 Foundation podcast tests and 34 focused simulato
 tests passed; three optional long-MP3 fixture tests were skipped. Coverage includes
 intent queue preservation, repeated resume, restored pending-next selection, and
 real AVPlayer natural completion into the next explicit queue item.
+
+Validation (2026-10-22): the full LunaMusic hosted suite passed on iOS 27.1
+(122 tests, 10 optional fixture skips, zero failures), including cold/warm offline
+priming, immediate sequential Resume/Pause, delayed streaming, late artwork,
+cancellation and superseding Play. All 36 Foundation podcast tests passed. Removing
+the readiness wait reproduced an inactive session with no clock advancement in
+the sequential Resume/Pause regression. Generated App Intents metadata confirms
+Pause Immediately defaults to false and the standalone Pause action is absent.
+AirPods stem/locked-device behavior still requires a physical-device check.
 
 `MediaPlaybackCoordinator` owns active media and transport routing. Back always
 applies immediately. Once that operation finishes successfully, a forward command

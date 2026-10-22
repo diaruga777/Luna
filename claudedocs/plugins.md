@@ -16,6 +16,27 @@ history — it records the design decisions and each wave's departures from
 plan; where the two disagree, this document and the code win. Read the plan
 once for the "why"; read this for the "what, exactly."
 
+## One-time media installation (TestFlight build 132)
+
+TestFlight 0.1 (132), source commit `b0b7cc41d`, temporarily packaged
+`Luna/Resources/Luna-Media.lunabundle` in the core app only. Its
+`MediaPluginBootstrap` installed fourteen media/transcript plugins into the
+App Group's ordinary plugin store before loading the runtime, without a consent
+screen. Existing imported sources, settings, permissions and disabled states won.
+Per-plugin completion markers under `Plugins/media-bootstrap-132` prevented
+relaunches from restoring a plugin the user removed; failed members retried.
+
+The following source revision (build 133) removes the bootstrap and packaged
+bundle. New installs get only the six non-media plugins. App updates retain the
+installed media sources, permissions, settings and completion markers in the
+App Group; the app and extensions load them through the normal imported-plugin
+path. No cleanup or migration deletes them. Build 133 is prepared in source,
+not uploaded as part of this release.
+
+A device must launch build 132 at least once to receive the automatic install.
+Skipping it, deleting the plugins, or erasing the shared app data cannot preserve
+these plugins. The portable bundle and all sources remain in the repository.
+
 ## Plugin bundles and optional media (2026-10-18)
 
 Only `web`, `nytimes`, `publisher-access`, `url-rewrites`, `kindle` and `xteink`
@@ -240,7 +261,7 @@ prompt and may carry more operational context.
 | `LunaPluginExport` | LunaPluginRuntime, LunaSend, LunaEpub, LunaMailAccount | `PluginExportStage`, `PluginExportInputProducer`, `PluginDestination`, `PluginDestinationLegacyIDs`, `PluginExportRowProvider`, mail/notifications/exports bridges |
 | `LunaPluginTransport` | LunaPluginRuntime, LunaSend (lock only) | `luna.bluetooth`/`luna.wifi` bridges, `PluginBluetoothCenter`/`Store`, `PluginBluetoothSession`, `PluginPairedDeviceStore`, `CoreBluetoothPluginTransport` |
 | `LunaPluginUI` | LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaDesignSystem, LunaSavesUI, LunaArchiveReader | Settings → Plugins, import/consent, the settings-schema renderer, `luna.ui`/`luna.settings`/`luna.browser` bridges, `PluginBrowserViewController`, `PluginUnlockFlow` |
-| `LunaBundledPlugins` | none (resources only) | the sixteen bundled `*.js` plugins under a `Plugins/` resource folder — **not** named `Resources`: a directory literally called `Resources` at a bundle's root makes `codesign` read the bundle as a framework layout and refuse it (`LunaLibraries/Package.swift` comment, `LunaLibraries/Sources/LunaBundledPlugins/LunaBundledPlugins.swift`) |
+| `LunaBundledPlugins` | none (resources only) | the six bundled non-media `*.js` plugins under a `Plugins/` resource folder — **not** named `Resources`: a directory literally called `Resources` at a bundle's root makes `codesign` read the bundle as a framework layout and refuse it (`LunaLibraries/Package.swift` comment, `LunaLibraries/Sources/LunaBundledPlugins/LunaBundledPlugins.swift`) |
 
 Model types and the adopter protocols live in `LunaModels/Plugin/` (bottom of
 the stack), so a kind module can install a witness without depending on any
@@ -841,14 +862,14 @@ asset later. A resolver failure still falls through to the Swift classifier
 (and then a generic media save), so this is a latency cost, not a
 correctness one.
 
-Nine bundled plugins ship in `LunaLibraries/Sources/LunaBundledPlugins/Plugins/`:
+The optional media bundle contains seven media plugins under `docs/plugins/media/`:
 `direct-media.js` (`any:true`, priority 90 — a URL that is itself an
 image/video/audio file; it runs last among matched plugins regardless of
 priority, which is exactly the fallback ordering an `any` plugin wants),
 `x.js` (fxtwitter; declines a long-form text post so `XPostIngestProcessor`
 keeps it), `instagram.js`, `tiktok.js`, `facebook.js`, `reddit.js` (video +
-separate DASH audio leg), `youtube.js`, plus the two export/transport
-plugins `kindle.js` and `xteink.js` (§8, §9). None sets `headers` on its
+separate DASH audio leg), `youtube.js`. The two export/transport plugins `kindle.js` and `xteink.js`
+(§8, §9) remain bundled with the app. None sets `headers` on its
 returned assets — `LiveMediaDownloadManager` already sends the
 per-platform User-Agent/Referer these CDNs need, keyed off the save's own
 URL; `headers` exists in the Model for a CDN the engine's defaults miss.
@@ -888,7 +909,7 @@ to `Outcome.transcription`, and the save parks `.pending` with a
 an article, delete the recording. `PluginPlatformComposition.install()`
 installs `PluginTranscriptionSeams.reresolver` (`PluginTranscriptionReresolver`)
 so a stale or refused recording URL is re-resolved through the owning plugin
-once. Seven bundled `<platform>-transcript.js` plugins claim at priority 90
+once. Seven optional `<platform>-transcript.js` plugins claim at priority 90
 (direct-media 80), below their media twins. Full detail:
 `claudedocs/transcription.md`.
 

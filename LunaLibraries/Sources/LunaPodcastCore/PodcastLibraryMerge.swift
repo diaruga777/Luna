@@ -4,7 +4,11 @@ public enum PodcastLibraryMerge {
     public static func merge(local: PodcastLibraryState, remote: PodcastLibraryState) -> PodcastLibraryState {
         guard remote.schemaVersion == local.schemaVersion else { return local }
         var result = local
-        for (id, show) in remote.shows where show.updatedAt > (local.shows[id]?.updatedAt ?? .distantPast) { result.shows[id] = show }
+        for (id, var show) in remote.shows where show.updatedAt > (local.shows[id]?.updatedAt ?? .distantPast) {
+            // Poll ordering belongs to this device, not the device syncing settings.
+            show.lastRefreshAttempt = local.shows[id]?.lastRefreshAttempt
+            result.shows[id] = show
+        }
         for (id, episode) in remote.episodes where result.episodes[id] == nil { result.episodes[id] = episode }
         for (id, progress) in remote.progress where progress.updatedAt > (local.progress[id]?.updatedAt ?? .distantPast) { result.progress[id] = progress }
         for (id, cursor) in remote.cursors where cursor.updatedAt > (local.cursors[id]?.updatedAt ?? .distantPast) { result.cursors[id] = cursor }

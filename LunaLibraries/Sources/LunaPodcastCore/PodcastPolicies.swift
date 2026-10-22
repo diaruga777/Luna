@@ -4,6 +4,16 @@ public enum PodcastResumeDecision: Equatable {
     case resume(String), start(String), nothing
 }
 public enum PodcastPolicies {
+    public static let refreshInterval: TimeInterval = 6 * 60 * 60
+
+    public static func refreshOrder(_ shows: [PodcastShow]) -> [String] {
+        shows.sorted {
+            let left = $0.lastRefreshAttempt ?? $0.lastRefresh ?? .distantPast
+            let right = $1.lastRefreshAttempt ?? $1.lastRefresh ?? .distantPast
+            return left == right ? $0.id < $1.id : left < right
+        }.map(\.id)
+    }
+
     public static func ordered(_ episodes: [PodcastEpisode], newestFirst: Bool = false) -> [PodcastEpisode] {
         episodes.sorted {
             if $0.publishedAt == $1.publishedAt { return newestFirst ? $0.id > $1.id : $0.id < $1.id }

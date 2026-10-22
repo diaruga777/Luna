@@ -29,6 +29,8 @@ public struct PodcastShow: Codable, Identifiable, Equatable, Sendable {
     public var etag: String?
     public var lastModified: String?
     public var lastRefresh: Date?
+    /// Device-local attempt time includes failures, so a broken feed cannot starve others.
+    public var lastRefreshAttempt: Date?
     public var refreshError: String?
     public var updatedAt = Date()
     public init(feedURL: URL, title: String, author: String = "", id: String? = nil) {
@@ -41,7 +43,7 @@ public struct PodcastShowSettings: Codable, Equatable, Sendable {
     public var hidePlayed = false
     /// 0 = off, -1 = all unplayed, positive = latest N unplayed.
     public var automaticDownloadLimit = 1
-    public var notifications = false
+    public var notifications = true
     public var playbackRate: Float = 1
     // Retained for decoding older libraries; queues now contain explicit selections only.
     public var continuousPlayback = true
@@ -136,6 +138,8 @@ public struct PodcastSettings: Codable, Equatable, Sendable {
     public init() {}
 }
 public struct PodcastLibraryState: Codable, Equatable, Sendable {
+    /// Durable outbox: a suspended refresh can deliver these on its next run.
+    public var pendingNotificationEpisodeIDs: [String]?
     public var schemaVersion = 1
     public var shows: [String: PodcastShow] = [:]
     public var episodes: [String: PodcastEpisode] = [:]

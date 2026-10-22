@@ -71,11 +71,21 @@ import Glibc
     }
     public func mergeInBackground(_ feed: PodcastFeed, existingID: String? = nil,
                                   follow: Bool? = nil, directoryID: String? = nil,
-                                  etag: String? = nil, lastModified: String? = nil) async throws -> [String] {
+                                  etag: String? = nil, lastModified: String? = nil,
+                                  recordNotifications: Bool = false) async throws -> [String] {
         try await updateInBackground { state in
             let id = existingID ?? feed.show.id
             let existed = state.shows[id] != nil
+            let old = state.shows[id]
             let newIDs = Self.merge(feed, existingID: existingID, into: &state)
+            // Initial import establishes the baseline, never alerts for the archive.
+            // Read current settings inside the transaction: unfollow/mute may happen
+            // while the network request is suspended.
+            if recordNotifications, old?.followed == true, old?.settings.notifications == true, old?.lastRefresh != nil {
+                var pending = state.pendingNotificationEpisodeIDs ?? []
+                pending.append(contentsOf: newIDs.filter { !pending.contains($0) })
+                state.pendingNotificationEpisodeIDs = pending
+            }
             if let follow, !existed || follow { state.shows[id]?.followed = follow }
             if let directoryID { state.shows[id]?.directoryID = directoryID }
             state.shows[id]?.etag = etag; state.shows[id]?.lastModified = lastModified
@@ -91,6 +101,7 @@ import Glibc
             show.followed = old.followed; show.settings = old.settings; show.updatedAt = old.updatedAt
             show.directoryID = old.directoryID ?? show.directoryID
             show.etag = old.etag; show.lastModified = old.lastModified
+            show.lastRefreshAttempt = old.lastRefreshAttempt
         } else { show.settings.newestFirst = !show.serial }
         show.lastRefresh = Date(); show.refreshError = nil
         state.shows[id] = show
@@ -104,7 +115,13 @@ import Glibc
         return newIDs
     }
     public func follow(_ id: String, _ value: Bool) throws {
-        try update { state in state.shows[id]?.followed = value; state.shows[id]?.updatedAt = Date() }
+        try update { state in
+            state.shows[id]?.followed = value; state.shows[id]?.updatedAt = Date()
+            if !value {
+                let episodes = state.episodes
+                state.pendingNotificationEpisodeIDs?.removeAll { episodes[$0]?.showID == id }
+            }
+        }
     }
     public func markListened(_ id: String, _ value: Bool) throws {
         try markListened([id], value)

@@ -47,11 +47,12 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
     private var timer: Timer?
     func start() {
         UNUserNotificationCenter.current().delegate = self
+        PodcastEpisodeNotifications.shared.register()
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
             Task { @MainActor in
                 self.schedule()
                 let work = Task { @MainActor in
-                    await PodcastLibraryController.shared.refresh()
+                    await PodcastLibraryController.shared.refresh(minimumInterval: PodcastPolicies.refreshInterval)
                     if !Task.isCancelled { await PodcastDownloads.shared.prepareExistingDownloads() }
                     if !Task.isCancelled { try? await PodcastCloudSync.shared.synchronize() }
                     task.setTaskCompleted(success: !Task.isCancelled)
@@ -64,24 +65,43 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
     }
     func foreground() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { _ in
-            Task { @MainActor in await PodcastLibraryController.shared.refresh(); try? await PodcastCloudSync.shared.synchronize() }
+        timer = Timer.scheduledTimer(withTimeInterval: PodcastPolicies.refreshInterval, repeats: true) { _ in
+            Task { @MainActor in await PodcastLibraryController.shared.refresh(minimumInterval: PodcastPolicies.refreshInterval); try? await PodcastCloudSync.shared.synchronize() }
         }
-        Task { await PodcastLibraryController.shared.refresh(); try? await PodcastCloudSync.shared.synchronize() }
+        Task {
+            let library = PodcastLibraryController.shared
+            if library.state.shows.values.contains(where: { $0.followed && $0.settings.notifications }) {
+                await PodcastEpisodeNotifications.shared.requestPermissionIfNeeded()
+            }
+            await library.refresh(minimumInterval: PodcastPolicies.refreshInterval)
+            try? await PodcastCloudSync.shared.synchronize()
+        }
     }
     func background() {
         timer?.invalidate(); timer = nil; PodcastPlaybackController.shared.persistPosition(); schedule()
         Task { await PodcastDownloads.shared.prepareExistingDownloads() }
     }
     private func schedule() {
-        let request = BGAppRefreshTaskRequest(identifier: identifier); request.earliestBeginDate = Date().addingTimeInterval(900)
+        let request = BGAppRefreshTaskRequest(identifier: identifier); request.earliestBeginDate = Date().addingTimeInterval(PodcastPolicies.refreshInterval)
         do { try BGTaskScheduler.shared.submit(request) } catch { /* Foreground polling remains available if background refresh is disabled. */ }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard let id = response.notification.request.content.userInfo["podcastEpisodeID"] as? String else { return }
         await MainActor.run {
-            MusicIntentRoute.pendingPodcastEpisodeID = id
-            NotificationCenter.default.post(name: .lunaPodcastOpenEpisode, object: nil, userInfo: ["id": id])
+            switch PodcastEpisodeNotifications.action(for: response.actionIdentifier) {
+            case .open:
+                MusicIntentRoute.pendingPodcastEpisodeID = id
+                NotificationCenter.default.post(name: .lunaPodcastOpenEpisode, object: nil, userInfo: ["id": id])
+            case .addToQueue, .playNext:
+                let library = PodcastLibraryController.shared
+                do {
+                    try PodcastEpisodeNotifications.shared.enqueue(id, next: response.actionIdentifier == PodcastEpisodeNotifications.playNextID, in: library)
+                } catch { library.report(error) }
+            case .ignore: break
+            }
         }
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }

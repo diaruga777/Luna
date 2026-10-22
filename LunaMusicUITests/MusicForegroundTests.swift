@@ -37,6 +37,44 @@ final class MusicForegroundTests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
+    func testPodcastFollowNotificationBellAndSavedPreference() throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
+        let url = base + "?notification-bell=" + UUID().uuidString
+        func openFeed() {
+            if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+            else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+            app.buttons["media.library.podcasts"].tap()
+            app.navigationBars.buttons["Podcast Options"].tap()
+            app.buttons["Follow a Show by URL"].tap()
+            let field = app.alerts.textFields.firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap(); field.typeText(url)
+            app.alerts.buttons["Follow"].tap()
+            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            if springboard.alerts.firstMatch.waitForExistence(timeout: 3), springboard.alerts.buttons["Allow"].exists {
+                springboard.alerts.buttons["Allow"].tap()
+            }
+            XCTAssertTrue(app.navigationBars.buttons["Following"].waitForExistence(timeout: 10))
+        }
+        openFeed()
+        let bell = app.buttons["podcast.notifications"]
+        XCTAssertTrue(bell.waitForExistence(timeout: 5))
+        XCTAssertEqual(bell.value as? String, "On")
+        bell.tap()
+        expectation(for: NSPredicate(format: "value == 'Off'"), evaluatedWith: bell)
+        waitForExpectations(timeout: 5)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Followed podcast notification bell muted"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.terminate(); app.launch()
+        openFeed()
+        XCTAssertEqual(bell.value as? String, "Off", "Mute must survive relaunch and refollow by URL")
+        bell.tap()
+        expectation(for: NSPredicate(format: "value == 'On'"), evaluatedWith: bell)
+        waitForExpectations(timeout: 5)
+        app.navigationBars.buttons["Following"].tap()
+        XCTAssertTrue(app.navigationBars.buttons["Follow"].waitForExistence(timeout: 5))
+        XCTAssertFalse(bell.exists, "Bell only belongs to followed shows")
+    }
+
     func testPodcastFeedShowsProgressWhileLoading() throws {
         guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }

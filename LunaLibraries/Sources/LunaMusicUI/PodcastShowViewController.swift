@@ -40,6 +40,17 @@ import LunaMusicCore
             ])),
             UIBarButtonItem(title: show.followed ? "Following" : "Follow", primaryAction: UIAction { [weak self] _ in guard let self else { return }; PodcastUI.run(self) { try self.podcasts.setFollowed(self.showID, !show.followed) } })
         ]
+        if show.followed {
+            let bell = UIBarButtonItem(image: UIImage(systemName: show.settings.notifications ? "bell.fill" : "bell.slash"), primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                PodcastUI.run(self) { try await self.podcasts.setNotifications(self.showID, !show.settings.notifications) }
+            })
+            bell.accessibilityIdentifier = "podcast.notifications"
+            bell.accessibilityLabel = "Episode Notifications"
+            bell.accessibilityValue = show.settings.notifications ? "On" : "Off"
+            bell.accessibilityHint = show.settings.notifications ? "Turn off new episode notifications" : "Turn on new episode notifications"
+            navigationItem.rightBarButtonItems?.insert(bell, at: 1)
+        }
         let query = search.searchBar.text ?? ""
         let episodes = podcasts.episodes(for: showID).filter { episode in
             let state = podcasts.state.progress[episode.id]

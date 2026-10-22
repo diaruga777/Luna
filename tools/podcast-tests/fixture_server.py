@@ -1,6 +1,6 @@
 """Local RSS + ranged audio fixture for simulator integration tests. No external I/O."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io, wave, struct, math, time, os
+import io, wave, struct, math, time, os, zlib
 from urllib.parse import urlsplit
 from email.utils import formatdate
 port = 19265
@@ -16,10 +16,18 @@ show_notes = 'A large archive with long publisher descriptions. ' * 12
 large_feed = (f'<rss version="2.0"><channel><title>Luna Large Archive</title><description>{show_notes}</description>' + ''.join(
     f'<item><guid>large-{index}</guid><title>Archive Episode {index:04d}</title><pubDate>{formatdate(1700000000 + index * 86400, usegmt=True)}</pubDate><description><![CDATA[{notes}]]></description><enclosure url="http://127.0.0.1:{port}/one.wav" type="audio/wav" length="{len(audio)}"/></item>'
     for index in range(2000)) + '</channel></rss>').encode()
+# A small real image exercises notification attachment download and conversion.
+def png_chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+artwork = (b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', 64, 64, 8, 2, 0, 0, 0))
+           + png_chunk(b'IDAT', zlib.compress((b'\x00' + bytes([140, 70, 220]) * 64) * 64)) + png_chunk(b'IEND', b''))
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path)
-        if route.path == '/feed.xml':
+        if route.path == '/artwork.png':
+            self.send_response(200); self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(artwork))); self.end_headers(); self.wfile.write(artwork)
+        elif route.path == '/feed.xml':
             if 'loading-test=' in route.query: time.sleep(4)
             if self.headers.get('If-None-Match') == '"fixture-v1"':
                 self.send_response(304); self.end_headers(); return

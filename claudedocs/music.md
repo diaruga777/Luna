@@ -258,9 +258,47 @@ State lives in `Application Support/LunaMusic/Podcasts/library.json`, independen
 of `saves.sqlite` and the music queue. Corrupt/unknown-version libraries report an
 error instead of replacing the user's file. Feed refresh preserves removed archive
 episodes, listening history and per-show settings. Conditional requests use ETag
-and Last-Modified. Followed feeds poll on foreground and every 15 foreground
-minutes, with opportunistic BGAppRefreshTask polling while backgrounded; iOS does
-not promise a polling interval. Notification opt-in is per show.
+and Last-Modified. Followed feeds check when due on foreground and roughly every
+six hours, using BGAppRefreshTask while backgrounded; iOS chooses the actual
+background opportunities and can delay them or disable them after force quit.
+Opening a show can refresh after 15 minutes; pull-to-refresh bypasses the throttle.
+Checks start with the least recently attempted feeds, with at most three requests
+in flight. Attempt times persist before networking, including failures, so an
+interrupted run gives untouched follows priority next time.
+
+New follows default to episode notifications. A bell beside Following toggles the
+same preference as New Episode Notifications in Show Settings; saved preferences,
+including existing off choices, survive upgrades and refollows. Following asks for
+system notification permission without failing the follow if permission is denied.
+Turning the bell back on after denial explains how to enable notifications in
+Settings. Unfollow hides the bell and clears undelivered/delivered alerts.
+
+Each newly discovered episode gets **New {Podcast name}** / **{Episode title}**,
+grouped by show, with the show's artwork as an image attachment thumbnail. The
+system app icon remains Luna Music's: communication notification avatars are for
+direct messages/calls, not feed updates. Missing or failed artwork falls back to
+the text alert. The initial feed archive never alerts. New episode IDs enter a
+device-local outbox in the same atomic transaction as the feed merge; interrupted
+runs drain that outbox before the next poll. Stable notification IDs and checking
+already delivered notifications avoid duplicates during interrupted delivery.
+Muted/unfollowed/permission-denied alerts are discarded without a later backlog.
+Tapping an alert uses the existing cold/warm episode-page route. Add to Queue and
+Play Next run the episode menu's persisted enqueue operation in the background,
+without opening a page or starting playback. Foreground alerts show banners too.
+Outbox and check-attempt times stay local when iCloud settings merge.
+
+Validation (2026-10-23): all 41 Foundation podcast tests passed. Eight focused
+hosted Music tests passed on iPhone 17 Pro / iOS 26.2, including actual local
+notification delivery with a downloaded image attachment, exact copy, category
+registration, both persisted queue operations and clearing interrupted alerts on
+mute. The bell UI test passed default-on, mute, relaunch/refollow persistence,
+re-enable and hiding on unfollow; its screenshot was visually inspected. The
+additional manual notification-tap check was blocked by the locked Mac; background
+scheduling remains system-controlled rather than a measured six-hour guarantee.
+Run the fixture server and set
+`TEST_RUNNER_LUNA_PODCAST_FIXTURE_URL=http://127.0.0.1:19265/feed.xml` for the
+notification delivery and bell checks; system delivery requires notifications
+allowed in the simulator.
 
 Streaming uses AVPlayer with a spoken-audio session, elapsed-time checkpoints,
 interruption/route handling, lock-screen metadata, remote commands and AirPlay.

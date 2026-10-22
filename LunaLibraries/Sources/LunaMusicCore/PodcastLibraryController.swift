@@ -43,7 +43,7 @@ import LunaPodcastCore
     @discardableResult public func addFeed(_ url: URL, follow: Bool = true, directoryID: String? = nil) async throws -> String {
         guard PodcastIdentity.webURL(url.absoluteString) != nil else { throw PodcastError("Enter an http or https podcast feed address.") }
         if let existing = state.shows.values.first(where: { $0.feedURL == url }) {
-            if follow { try requireStore().follow(existing.id, true) }
+            if follow { try setFollowed(existing.id, true) }
             reloadState()
             Task { await refresh(showIDs: [existing.id]) }
             return existing.id
@@ -54,6 +54,9 @@ import LunaPodcastCore
         let store = try requireStore()
         _ = try await store.mergeInBackground(feed, follow: follow, directoryID: directoryID, etag: response.etag, lastModified: response.lastModified)
         reloadState(); Task { await PodcastDownloads.shared.reconcile() }
+        if follow && state.shows[feed.show.id]?.settings.notifications == true {
+            await PodcastEpisodeNotifications.shared.requestPermissionIfNeeded()
+        }
         return feed.show.id
     }
     /// Warm only metadata. Browsing never follows shows or downloads their audio.
@@ -69,28 +72,35 @@ import LunaPodcastCore
             _ = try await feedClient.fetch(PodcastShow(feedURL: url, title: ""))
         } catch { /* Speculative failures are retried by an explicit open. */ }
     }
-    public func refresh(showIDs: [String]? = nil, force: Bool = false) async {
-        let ids = showIDs ?? state.shows.values.filter(\.followed).map(\.id)
+    public func refresh(showIDs: [String]? = nil, force: Bool = false, minimumInterval: TimeInterval = 900) async {
+        // Drain a previous interrupted run before spending this run's time on feeds.
+        if !Task.isCancelled { await PodcastEpisodeNotifications.shared.deliverPending(in: self) }
+        let shows = showIDs.map { ids in ids.compactMap { state.shows[$0] } } ?? state.shows.values.filter(\.followed)
+        let ids = PodcastPolicies.refreshOrder(shows)
         // Bound publisher traffic, but don't make every show wait for a slow feed.
         await withTaskGroup(of: Void.self) { group in
             var iterator = ids.makeIterator()
-            for _ in 0..<3 { if let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force) } } }
+            for _ in 0..<3 { if let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force, minimumInterval: minimumInterval) } } }
             while await group.next() != nil {
-                if !Task.isCancelled, let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force) } }
+                if !Task.isCancelled, let id = iterator.next() { group.addTask { await self.refreshShow(id, force: force, minimumInterval: minimumInterval) } }
             }
         }
-        await PodcastDownloads.shared.reconcile()
+        if !Task.isCancelled { await PodcastEpisodeNotifications.shared.deliverPending(in: self) }
+        if !Task.isCancelled { await PodcastDownloads.shared.reconcile() }
     }
-    private func refreshShow(_ id: String, force: Bool) async {
+    private func refreshShow(_ id: String, force: Bool, minimumInterval: TimeInterval) async {
         if let task = refreshTasks[id] { await task.value; return }
-        guard let show = state.shows[id], force || Date().timeIntervalSince(show.lastRefresh ?? .distantPast) >= 900 else { return }
+        guard !Task.isCancelled, let show = state.shows[id],
+              force || Date().timeIntervalSince(show.lastRefreshAttempt ?? show.lastRefresh ?? .distantPast) >= minimumInterval else { return }
         refreshingShowIDs.insert(id); isRefreshing = true
         let task = Task { [self] in
             do {
+                try Task.checkCancellation()
+                try await requireStore().updateInBackground { $0.shows[id]?.lastRefreshAttempt = Date() }
+                reloadState()
                 let response = try await feedClient.fetch(show, force: force)
-                var newIDs: [String] = []
                 if let feed = response.feed {
-                    newIDs = try await requireStore().mergeInBackground(feed, existingID: id, etag: response.etag, lastModified: response.lastModified)
+                    _ = try await requireStore().mergeInBackground(feed, existingID: id, etag: response.etag, lastModified: response.lastModified, recordNotifications: true)
                 } else {
                     try await requireStore().updateInBackground { state in
                         state.shows[id]?.etag = response.etag; state.shows[id]?.lastModified = response.lastModified
@@ -98,34 +108,39 @@ import LunaPodcastCore
                     }
                 }
                 reloadState()
-                if show.followed && show.settings.notifications && show.lastRefresh != nil && !newIDs.isEmpty { await notify(show: show, ids: newIDs) }
             } catch {
-                try? edit { $0.shows[id]?.refreshError = error.localizedDescription }
-                report(error)
+                if !Task.isCancelled {
+                    try? edit { $0.shows[id]?.refreshError = error.localizedDescription }
+                    report(error)
+                }
             }
         }
         refreshTasks[id] = task
-        await task.value
+        await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
         refreshTasks[id] = nil; refreshingShowIDs.remove(id); isRefreshing = !refreshTasks.isEmpty
     }
     public func setFollowed(_ id: String, _ value: Bool) throws {
         try requireStore().follow(id, value); reloadState()
-        Task { await PodcastDownloads.shared.reconcile() }
+        Task {
+            if value && state.shows[id]?.settings.notifications == true {
+                await PodcastEpisodeNotifications.shared.requestPermissionIfNeeded()
+            } else if !value { await PodcastEpisodeNotifications.shared.removeAlerts(for: id) }
+            await PodcastDownloads.shared.reconcile()
+        }
     }
     public func setNotifications(_ id: String, _ value: Bool) async throws {
         if value {
-            guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) else {
+            guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) else {
                 throw PodcastError("Enable notifications for Luna Music in Settings to receive new episode alerts.")
             }
         }
-        try edit { $0.shows[id]?.settings.notifications = value; $0.shows[id]?.updatedAt = Date() }
-    }
-    private func notify(show: PodcastShow, ids: [String]) async {
-        let episodes = ids.compactMap { state.episodes[$0] }
-        guard let latest = PodcastPolicies.ordered(episodes, newestFirst: true).first else { return }
-        let content = UNMutableNotificationContent(); content.title = show.title
-        content.body = ids.count == 1 ? latest.title : "\(ids.count) new episodes, including \(latest.title)"
-        content.sound = .default; content.userInfo = ["podcastEpisodeID": latest.id]
-        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "podcast.\(show.id).\(latest.id)", content: content, trigger: nil))
+        try edit { state in
+            state.shows[id]?.settings.notifications = value; state.shows[id]?.updatedAt = Date()
+            if !value {
+                let episodes = state.episodes
+                state.pendingNotificationEpisodeIDs?.removeAll { episodes[$0]?.showID == id }
+            }
+        }
+        if !value { await PodcastEpisodeNotifications.shared.removeAlerts(for: id) }
     }
 }

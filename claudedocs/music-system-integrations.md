@@ -44,19 +44,33 @@ Queue** action with **Pause Immediately** enabled (default: off). This is suitab
 for an AirPods connection automation: it leaves the podcast ready for system
 Play without opening Luna Music.
 
-Resume waits for actual playback-clock advancement and an active
-`MPNowPlayingSession` before returning. With Pause Immediately enabled it then
-pauses the prepared player, retaining the active session, metadata and remote
-commands. This avoids cancelling session activation while startup is buffering.
-It uses readiness checks rather than a fixed playback delay. Startup failure or
-cancellation cannot leave audio playing, and a newer transport action supersedes
-an older pending shortcut. Artwork continues loading independently of transport.
+Resume waits for actual playback-clock advancement and an active app-local
+`MPNowPlayingSession`. With Pause Immediately enabled it also allows at least one
+continuous second of playback, extending that window for the route's output
+latency plus I/O buffer duration. Buffering resets that handoff window. The first
+tick and `isActive` alone do not establish system Now Playing ownership.
+AVFoundation automatically publishes transport state; Luna supplies static
+metadata and artwork on the player item and retains artwork for the same episode.
+Remote Play holds background execution until preparation and audio startup finish.
+An immediate Pause cancels a queued remote Play, and newer transport actions
+supersede an older pending shortcut. Natural completion during priming follows
+the next queued episode and starts a fresh handoff window before pausing it.
+
+Podcast-only launches do not create Apple's application queue player, and queue
+switches pause another surface only when it is playing or buffering. In particular,
+an idle Apple Music client must not receive a Pause command during podcast priming.
 
 Verified on iOS 27.1 with real AVPlayer playback, including delayed streaming,
 late artwork and resuming the same item after priming. The full hosted suite
-completed 122 tests with 10 optional fixture skips and no failures. The generated
+completed 126 tests with 10 optional fixture skips and no failures. The generated
 intent metadata includes the default-off Boolean and omits the removed Pause
-action. AirPods hardware and locked-device invocation remain device checks.
+action. AirPods hardware and locked-device resumption are not verified by these
+simulator checks. Transport diagnostics use the `LunaMusic` subsystem
+and `PodcastPlayback` category without publishing episode titles or URLs.
+
+Automatic publishing follows Apple's [MPNowPlayingSession guidance](https://developer.apple.com/documentation/mediaplayer/mpnowplayingsession/automaticallypublishesnowplayinginfo):
+set item metadata and let the session observe transport changes; do not also write
+the session's Now Playing info center.
 
 `ResumeLastPodcastIntent`, displayed as **Resume Podcast Queue**, resumes the exact
 last-played podcast; it never redirects to generic Now Playing. Its

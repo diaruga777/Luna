@@ -38,8 +38,11 @@ import LunaPodcastCore
     private func activate(_ surface: Surface) {
         guard active != surface else { return }
         gesture.cancel(); skipRevision = UUID()
-        if surface == .music { podcasts.pause() }
-        else { music.pause() }
+        if surface == .music {
+            if podcasts.isPlaying || podcasts.isBuffering { podcasts.pause() }
+        } else {
+            if music.isPlaying || music.isBuffering { music.pause() }
+        }
         active = surface; defaults.set(surface.rawValue, forKey: "LunaMusic.activeMedia")
         NotificationCenter.default.post(name: .lunaMediaSurfaceChanged, object: self)
     }

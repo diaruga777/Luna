@@ -77,17 +77,6 @@ struct PlayLibraryMusicIntent: AudioPlaybackIntent {
     }
 }
 
-struct PauseMusicIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Pause Music and Podcasts"
-    static var description = IntentDescription("Pause playback in Luna Music. If nothing is playing, do nothing.")
-    static var openAppWhenRun = false
-    @MainActor func perform() async throws -> some IntentResult {
-        MediaPlaybackCoordinator.shared.install()
-        MediaPlaybackCoordinator.shared.pause()
-        return .result()
-    }
-}
-
 struct ResumeMusicIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Resume Music"
     @MainActor func perform() async throws -> some IntentResult {
@@ -132,7 +121,6 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
         AppShortcut(intent: SwitchMediaQueueIntent(), phrases: ["Switch queues in \(.applicationName)"], shortTitle: "Switch Music and Podcasts", systemImageName: "arrow.triangle.swap")
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
-        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Playback", systemImageName: "pause.fill")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
     }
@@ -144,12 +132,13 @@ struct ResumeLastPodcastIntent: AudioPlaybackIntent {
     static var description = IntentDescription("Pick up where you left off, then continue with unplayed episodes from the shows you follow.")
     static var openAppWhenRun = false
     @Parameter(title: "Override Other Audio", default: true) var overrideOtherAudio: Bool
+    @Parameter(title: "Pause Immediately", default: false) var pauseImmediately: Bool
     @MainActor func perform() async throws -> some IntentResult {
         guard overrideOtherAudio || !AVAudioSession.sharedInstance().isOtherAudioPlaying else {
             return .result()
         }
         MediaPlaybackCoordinator.shared.install()
-        try await PodcastPlaybackController.shared.resumeLastPodcast()
+        try await PodcastPlaybackController.shared.resumeLastPodcast(pauseImmediately: pauseImmediately)
         return .result()
     }
 }

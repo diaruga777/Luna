@@ -2,7 +2,7 @@
 
 ## Implemented
 
-- Siri and Shortcuts: Play Library Music resolves songs, albums, artists and playlists through an `EntityStringQuery`. Individual songs use the same playlist continuation rule as the app; playlists and artists shuffle, albums play in album order. Pause, Resume, Next Song, Search Library and Resume Podcast Queue have App Shortcuts phrases. The overlapping Open Playback Queue intent has been removed. Entity suggestions return only authorized device-library items; they never prompt from an extension.
+- Siri and Shortcuts: Play Library Music resolves songs, albums, artists and playlists through an `EntityStringQuery`. Individual songs use the same playlist continuation rule as the app; playlists and artists shuffle, albums play in album order. Resume, Next Song, Search Library and Resume Podcast Queue have App Shortcuts phrases. The overlapping Open Playback Queue intent and standalone Pause intent have been removed. Entity suggestions return only authorized device-library items; they never prompt from an extension.
 - Lock Screen, Control Center media transport, headphones and the system Dynamic Island Now Playing surface belong to `MPMusicPlayerController.applicationQueuePlayer`. Luna does not overwrite `MPNowPlayingInfoCenter` or add duplicate remote command handlers.
 - Luna does not create a separate playback Live Activity. At launch it dismisses queue activities left by older builds, leaving the system media controls as the playback surface.
 - Home Screen small/medium and Lock Screen circular/rectangular widgets open library search or the queue. Home Screen widgets include playback controls. Control Center has Play/Pause and Next Song controls.
@@ -38,14 +38,25 @@ Verified: shared/widget sources and app integration sources typecheck against th
 
 ## Podcast integration (2026-10-08)
 
-**Pause Music and Podcasts** runs in the background and pauses the active music
-or podcast surface when it is playing or buffering. This also cancels startup
-when Resume Podcast Queue and Pause run back to back: Resume can return before
-the playback clock starts, while the player still reports buffering.
-Paused or idle queues are left
-untouched; it never resumes playback, restores a queue, or switches surfaces.
-The existing `PauseMusicIntent` identity and “Pause Luna Music” phrase are
-preserved for saved shortcuts; its App Shortcut is titled **Pause Playback**.
+The standalone `PauseMusicIntent` and its App Shortcut have been removed. Replace
+the old Resume Podcast Queue → Pause sequence with a single **Resume Podcast
+Queue** action with **Pause Immediately** enabled (default: off). This is suitable
+for an AirPods connection automation: it leaves the podcast ready for system
+Play without opening Luna Music.
+
+Resume waits for actual playback-clock advancement and an active
+`MPNowPlayingSession` before returning. With Pause Immediately enabled it then
+pauses the prepared player, retaining the active session, metadata and remote
+commands. This avoids cancelling session activation while startup is buffering.
+It uses readiness checks rather than a fixed playback delay. Startup failure or
+cancellation cannot leave audio playing, and a newer transport action supersedes
+an older pending shortcut. Artwork continues loading independently of transport.
+
+Verified on iOS 27.1 with real AVPlayer playback, including delayed streaming,
+late artwork and resuming the same item after priming. The full hosted suite
+completed 122 tests with 10 optional fixture skips and no failures. The generated
+intent metadata includes the default-off Boolean and omits the removed Pause
+action. AirPods hardware and locked-device invocation remain device checks.
 
 `ResumeLastPodcastIntent`, displayed as **Resume Podcast Queue**, resumes the exact
 last-played podcast; it never redirects to generic Now Playing. Its

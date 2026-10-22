@@ -1501,8 +1501,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if readerTextContainer.hasPreservedLines, !updatingPreservedLines,
-           !preservingViewportTransition, viewportReflowTransition == nil {
+           !preservingViewportTransition, viewportReflowTransition == nil,
+           !ScrollPresentationState.isSuppressed(for: scrollView) {
             updatingPreservedLines = true
+            let sourceOffset = textView.contentOffset.y
             let anchor = TextViewportReflowTransition.anchorGeometry(
                 in: textView, layoutManager: textView.layoutManager)
             ScrollPresentationState.setSuppressed(true, for: textView)
@@ -1515,6 +1517,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                     layoutAnimatedImageViews()
                 }
             }
+            ScrollPresentationState.recordOffsetAdjustment(textView.contentOffset.y - sourceOffset, for: textView)
             ScrollPresentationState.setSuppressed(false, for: textView)
             updatingPreservedLines = false
         }

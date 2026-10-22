@@ -122,8 +122,9 @@ already in view. Lines entering from below or above use the destination's readab
 width immediately. `ScrollStableTextContainer` freezes the current visible band
 before releasing departed lines, including newly entered lines, so removing the
 last old-width line cannot rewrap text that is already onscreen. Reflow above the
-viewport restores a character anchor; those compensating offsets do not count as
-scroll travel for chrome. Short-lived line views keep existing text stationary
+viewport restores a character anchor. Chrome direction uses the offset minus the
+cumulative layout adjustment, so UIKit's delayed KVO delivery preserves the user's
+actual travel while excluding the reflow correction. Short-lived line views keep existing text stationary
 through the card's animation, then drawing returns to live TextKit. Selection,
 links, attachments, accessibility and WordMap continue to use that same layout.
 The live canvas can remain wider than a contracting card to avoid UITextView
@@ -253,9 +254,10 @@ Validation: Xcode 27.1 builds and launches Reader on the iPhone Duo simulator;
 The stable Xcode 26.2 build also passes. Simulator pose controls were unavailable
 while the host Mac was locked, so inner-display/fold geometry is verified by
 tests; the outer display was inspected in a simulator screenshot.
-The current iOS 26.2 chrome regression run also passes the centered-card immersion,
-cross-kind title reveal, staged title reveal, deletion cleanup, and title-inset
-checks that failed on the older `ecc968176` baseline.
+Current iOS 26.2 validation: 88 of 89 focused tests pass. The remaining
+`testCrossKindEclipseIntoReaderRevealsATitleCopy` failure also reproduces on unchanged
+`main` (`c0b9803b7`), before reaching its title assertions. Tap expansion/contraction
+and directional scrolling were also checked in the simulator.
 
 ## Scroll reader (+ split-web link handling)
 

@@ -16,6 +16,21 @@ history — it records the design decisions and each wave's departures from
 plan; where the two disagree, this document and the code win. Read the plan
 once for the "why"; read this for the "what, exactly."
 
+## One-time media installation (TestFlight build 132)
+
+Build 132 temporarily packages `Luna/Resources/Luna-Media.lunabundle` in the core
+app only. `MediaPluginBootstrap` runs before the app's plugin composition and
+installs its fourteen media/transcript plugins directly into the App Group's
+ordinary plugin store without a consent screen. Existing imported sources,
+settings, permissions and disabled states win. Per-plugin completion markers
+under `Plugins/media-bootstrap-132` prevent later launches from reinstalling a
+plugin the user removed; unsuccessful members retry on the next launch.
+
+The next source revision removes the bootstrap and app resource. Stored plugin
+sources and state remain available to the app, extensions and future builds.
+A device must launch build 132 at least once to receive this installation;
+skipping it or deleting the app's shared data cannot preserve these plugins.
+
 ## Plugin bundles and optional media (2026-10-18)
 
 Only `web`, `nytimes`, `publisher-access`, `url-rewrites`, `kindle` and `xteink`

@@ -8,6 +8,28 @@ import MediaPlayer
 @testable import LunaMusicUI
 
 @MainActor final class MediaRemoteCommandTests: XCTestCase {
+    func testPodcastActivationAndIdlePauseNeverCreateAppleMusicPlayer() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let saved = MusicQueueSnapshot(songIDs: [1], currentIndex: 0, playbackTime: 42,
+                                      originalSongIDs: [1], shuffleEnabled: false, repeatMode: 0)
+        defaults.set(try JSONEncoder().encode(saved), forKey: "LunaMusic.playbackQueue.v1")
+        var creations = 0
+        let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")),
+            makeSystemPlayer: { creations += 1; return .applicationQueuePlayer })
+        let podcasts = PodcastPlaybackController(library: PodcastLibraryController(url: root.appendingPathComponent("podcasts.json")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: podcasts, defaults: defaults)
+        coordinator.install()
+        podcasts.willPlay?()
+        music.pause()
+        // Include the periodic refresh, which used to poll an empty system client.
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(creations, 0)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        XCTAssertTrue(podcasts.session.automaticallyPublishesNowPlayingInfo)
+        XCTAssertEqual(podcasts.handleRemotePlay(), .noActionableNowPlayingItem)
+    }
     func testSessionActivatesWhenItBecomesEligibleAndNeverReclaimsPausedPlayback() async {
         var eligible = false, active = false, requested = true, attempts = 0
         let activation = MediaSessionActivation(canBecomeActive: { eligible }, isActive: { active },
@@ -1201,6 +1223,25 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.position, 60, accuracy: 2)
         XCTAssertEqual(library.state.queue, queue)
     }
+    func testImmediatePauseFollowsNaturalCompletionDuringHandoff() async throws {
+        try library.requireStore().recordPlaybackStarted(episodes[0].id)
+        try library.requireStore().recordPosition(episodes[0].id, position: 179)
+        try library.edit { $0.queue = [episodes[1].id, episodes[2].id] }
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertTrue(library.state.progress[episodes[0].id]?.listened == true)
+        XCTAssertEqual(library.state.queue, [episodes[2].id])
+        XCTAssertFalse(playback.isPlaying)
+        XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertGreaterThan(playback.position, 0.9)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+    }
     func testResumeIntentDoesNotRemoveLastPlayedEpisodeFromQueue() async throws {
         try library.requireStore().recordPlaybackStarted(episodes[0].id)
         try library.requireStore().recordPosition(episodes[0].id, position: 177)
@@ -1576,6 +1617,24 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await waitFor { playback.isPlaying }
         XCTAssertTrue(playback.player.currentItem === item)
     }
+    func testPauseCancelsRemotePlayBeforeItsTaskStarts() async throws {
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        playback.pause()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertNil(library.state.progress[episode.id]?.lastPlayedAt)
+    }
+    func testNewRemotePlaySupersedesStartupWithoutBeingPausedByOldTask() async throws {
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        await Task.yield()
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(playback.isPlaying)
+        XCTAssertGreaterThan(playback.player.rate, 0)
+        XCTAssertEqual(playback.currentEpisode?.id, episode.id)
+    }
     func testPauseImmediatelyPrimesColdAndWarmOfflinePodcastWithoutChangingQueue() async throws {
         var next = episode!; next.id = "next"; next.title = "Next episode"
         try library.edit { $0.episodes[next.id] = next; $0.queue = [next.id, episode.id] }
@@ -1588,18 +1647,17 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             XCTAssertTrue(playback.session.remoteCommandCenter.playCommand.isEnabled)
             XCTAssertEqual(playback.player.rate, 0)
             XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
-            XCTAssertGreaterThan(playback.position, position, "Pause must follow actual clock advancement")
+            XCTAssertGreaterThan(playback.position, position + 0.9, "A first clock tick alone must not finish system priming")
             XCTAssertLessThan(playback.position, position + 2)
-            let info = try XCTUnwrap(playback.session.nowPlayingInfoCenter.nowPlayingInfo)
+            let info = try XCTUnwrap(playback.player.currentItem?.nowPlayingInfo)
             XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, episode.title)
-            XCTAssertEqual((info[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber)?.doubleValue, 0)
+            XCTAssertNil(info[MPNowPlayingInfoPropertyPlaybackRate], "AVFoundation publishes transport state directly")
             XCTAssertNotNil(library.state.progress[episode.id]?.lastPlayedAt)
             let paused = playback.position
             try await Task.sleep(for: .milliseconds(200))
             XCTAssertEqual(playback.player.currentTime().seconds, paused, accuracy: 0.05)
             let item = playback.player.currentItem
-            // The session's remote Play handler calls this same resume path.
-            try await playback.resume()
+            XCTAssertEqual(playback.handleRemotePlay(), .success)
             try await waitFor { playback.isPlaying }
             XCTAssertTrue(playback.player.currentItem === item)
             XCTAssertGreaterThan(playback.position, paused)
@@ -1633,14 +1691,14 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         playback = PodcastPlaybackController(library: library, downloads: downloads)
         try await playback.resumeLastPodcast(pauseImmediately: true)
         XCTAssertEqual(playback.player.rate, 0)
-        try await waitFor { playback.session.nowPlayingInfoCenter.nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil }
+        try await waitFor { playback.player.currentItem?.nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil }
         XCTAssertTrue(playback.session.isActive)
         XCTAssertFalse(playback.isPlaying)
         let item = playback.player.currentItem
         try await playback.resume()
         try await waitFor { playback.isPlaying }
         XCTAssertTrue(playback.player.currentItem === item)
-        XCTAssertNotNil(playback.session.nowPlayingInfoCenter.nowPlayingInfo?[MPMediaItemPropertyArtwork])
+        XCTAssertNotNil(playback.player.currentItem?.nowPlayingInfo?[MPMediaItemPropertyArtwork])
     }
     func testImmediatePauseWaitsForDelayedStreamToActuallyStart() async throws {
         guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_STREAM_FIXTURE_URL"],

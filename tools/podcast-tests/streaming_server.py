@@ -22,7 +22,7 @@ class Handler(BaseHTTPRequestHandler):
         if route.path == '/art.png':
             # Local playback primes quickly; artwork deliberately arrives later.
             time.sleep(0.5)
-            data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=')
+            data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNwn/3wPwAFswLD1CcZCQAAAABJRU5ErkJggg==')
             self.send_response(200)
             self.send_header('Content-Type', 'image/png')
             self.send_header('Content-Length', str(len(data)))

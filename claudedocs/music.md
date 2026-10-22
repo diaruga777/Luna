@@ -339,10 +339,15 @@ coordinator or resuming playback if
 `AVAudioSession.sharedInstance().isOtherAudioPlaying` is true.
 Its **Pause Immediately** Boolean defaults to `false`. When enabled, it starts
 playback, waits for the media clock to advance and the podcast's Now Playing
-session to become active, then pauses while retaining the item, metadata and
-remote Play command. Resume also waits for that readiness when this option is off,
-so a subsequent pause cannot cancel session ownership during startup. Startup is
-bounded and cancellation or a newer transport action cannot cause a late pause.
+session to become active, then allows a continuous handoff window before pausing.
+That window is at least one second, or the audio route's output latency plus I/O
+buffer duration when longer; buffering resets the window. A single advancing tick
+and `MPNowPlayingSession.isActive` only establish player/app-local state, not that
+iOS has selected Luna as the system playback app. Normal Resume returns after
+playback starts. Startup is bounded and cancellation or a newer transport action
+cannot cause a late pause.
+Natural completion during the handoff follows the next queued episode and pauses
+after that item's playback window, retaining a resumable item.
 The separate Pause Music and Podcasts intent has been removed; AirPods connection
 automations should use this one action with Pause Immediately enabled.
 It resumes the actual last-played episode, preserving position across launches and
@@ -375,6 +380,24 @@ the readiness wait reproduced an inactive session with no clock advancement in
 the sequential Resume/Pause regression. Generated App Intents metadata confirms
 Pause Immediately defaults to false and the standalone Pause action is absent.
 AirPods stem/locked-device behavior still requires a physical-device check.
+
+Follow-up (2026-10-22): the initial first-tick change did not resolve the reported
+device behavior. Podcasts now use AVFoundation automatic Now Playing publishing;
+static title/artwork live on `AVPlayerItem.nowPlayingInfo`, while the framework
+owns elapsed time, duration and playback state. Artwork is retained when reopening
+the same episode. Apple Music's application queue player is created only for Apple
+Music playback, and switching to podcasts no longer sends Pause to an idle music
+player. Remote Play holds a UIKit background task through asynchronous preparation
+and actual audio startup; an immediate Pause cancels a queued remote Play. Cancelled
+buffering timers cannot fail a newer attempt. `LunaMusic/PodcastPlayback` OSLog
+events record intent/remote transport state without episode titles or URLs.
+
+The revised full hosted suite passes on iOS 27.1 (126 tests, 10 optional fixture
+skips, zero failures). Coverage now invokes the remote Play handler and checks
+that podcast activation never creates an Apple Music player, newer remote Play
+requests survive cancellation of older tasks, and natural completion during priming
+leaves the successor paused and resumable. These simulator checks do not establish
+locked-device AirPods resumption by themselves.
 
 `MediaPlaybackCoordinator` owns active media and transport routing. Back always
 applies immediately. Once that operation finishes successfully, a forward command

@@ -24,7 +24,21 @@ public final class MusicPlaybackController: ObservableObject {
     public var willPlay: (() -> Void)?
     public var remoteSkip: ((MediaSkipGesture.Direction, TimeInterval) -> Void)?
 
-    private let player = MPMusicPlayerController.applicationQueuePlayer
+    private var systemPlayer: MPMusicPlayerApplicationController?
+    private let makeSystemPlayer: () -> MPMusicPlayerApplicationController
+    private var player: MPMusicPlayerApplicationController {
+        if let systemPlayer { return systemPlayer }
+        let player = makeSystemPlayer()
+        systemPlayer = player
+        player.beginGeneratingPlaybackNotifications()
+        for name in [Notification.Name.MPMusicPlayerControllerNowPlayingItemDidChange,
+                     .MPMusicPlayerControllerPlaybackStateDidChange] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: player, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refresh() }
+            })
+        }
+        return player
+    }
     private let defaults: UserDefaults
     private let vault: VaultMusicController
     private let recencyKey = "LunaMusic.playlistLastPlayed.v1"
@@ -72,24 +86,18 @@ public final class MusicPlaybackController: ObservableObject {
         if applied { systemBack = nil; pending.completion(true) }
     }
 
-    init(defaults: UserDefaults = .standard, vault: VaultMusicController = .shared, filePlayer: AVPlayer = AVPlayer()) {
+    init(defaults: UserDefaults = .standard, vault: VaultMusicController = .shared, filePlayer: AVPlayer = AVPlayer(),
+         makeSystemPlayer: @escaping () -> MPMusicPlayerApplicationController = { .applicationQueuePlayer }) {
         self.defaults = defaults; self.vault = vault; self.filePlayer = filePlayer
+        self.makeSystemPlayer = makeSystemPlayer
         installFilePlayback()
-        player.beginGeneratingPlaybackNotifications()
         if let data = defaults.data(forKey: snapshotKey) {
             pendingSnapshot = try? JSONDecoder().decode(MusicQueueSnapshot.self, from: data)
-            needsPreparation = pendingSnapshot != nil && player.nowPlayingItem == nil
-            if !needsPreparation { pendingSnapshot = nil }
+            needsPreparation = pendingSnapshot != nil
         }
         observers.append(NotificationCenter.default.addObserver(forName: .lunaMusicLibraryChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.restoreIfNeeded() }
         })
-        for name in [Notification.Name.MPMusicPlayerControllerNowPlayingItemDidChange,
-                     .MPMusicPlayerControllerPlaybackStateDidChange] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: player, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            })
-        }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -222,7 +230,7 @@ public final class MusicPlaybackController: ObservableObject {
             let generation = UUID(); requestID = generation
             if let queueMutation { await queueMutation.value }
             guard requestID == generation else { throw CancellationError() }
-            player.stop(); filePlayer.pause(); loader?.cancel()
+            systemPlayer?.stop(); filePlayer.pause(); loader?.cancel()
             usesFileQueue = true; pendingSnapshot = nil; needsPreparation = false
             queue = items; unshuffledIDs = originalIDs; currentIndex = 0
             sourcePlaylistName = playlist?.name; sourcePlaylistID = playlist?.persistentID
@@ -278,7 +286,9 @@ public final class MusicPlaybackController: ObservableObject {
         requestID = UUID(); isPreparing = false; advancing = false
         sessionActivation.cancel()
         filePlaybackRequested = false; isBuffering = false
-        filePlayer.pause(); player.pause(); isPlaying = false
+        filePlayer.pause()
+        if systemPlayer?.playbackState == .playing { systemPlayer?.pause() }
+        isPlaying = false
         if preparing { needsPreparation = true }
         changed()
     }
@@ -287,7 +297,9 @@ public final class MusicPlaybackController: ObservableObject {
         if !isPlaying { willPlay?() }
         if usesFileQueue {
             if isPlaying || filePlaybackRequested {
-                filePlaybackRequested = false; isBuffering = false; filePlayer.pause(); player.pause(); isPlaying = false; changed()
+                filePlaybackRequested = false; isBuffering = false; filePlayer.pause()
+                if systemPlayer?.playbackState == .playing { systemPlayer?.pause() }
+                isPlaying = false; changed()
             } else { Task { do { try await resume() } catch { report(error) } } }
             return
         }
@@ -450,6 +462,9 @@ public final class MusicPlaybackController: ObservableObject {
     private func refresh() {
         guard !needsPreparation else { return }
         if usesFileQueue { refreshFileQueue(); return }
+        // A podcast-only background launch must not create an empty Apple Music
+        // playback client alongside the app-owned podcast session.
+        guard let player = systemPlayer else { return }
         let oldID = nowPlaying?.persistentID
         let oldPlaying = isPlaying
         let oldIndex = currentIndex
@@ -569,7 +584,7 @@ public final class MusicPlaybackController: ObservableObject {
         advancing = true
         defer { if requestID == generation { advancing = false } }
         fileStatus = nil; filePlayer.pause(); filePlayer.replaceCurrentItem(with: nil); loader?.cancel(); loader = nil
-        player.stop(); needsPreparation = false; errorMessage = nil; didPlayCurrent = false
+        systemPlayer?.stop(); needsPreparation = false; errorMessage = nil; didPlayCurrent = false
         fileStalled = false; filePlaybackRequested = true; isBuffering = true
         currentIndex = index; nowPlaying = queue[index]; playbackTime = time
         duration = queue[index].playbackDuration; isPlaying = false
@@ -623,7 +638,7 @@ public final class MusicPlaybackController: ObservableObject {
         if ended && repeatMode == .one { index = currentIndex }
         if index >= queue.count {
             if repeatMode == .all { index = 0 }
-            else { filePlaybackRequested = false; isBuffering = false; filePlayer.pause(); player.pause(); isPlaying = false; playbackTime = duration; changed(); return }
+            else { pause(); playbackTime = duration; changed(); return }
         }
         index = max(0, index)
         Task {

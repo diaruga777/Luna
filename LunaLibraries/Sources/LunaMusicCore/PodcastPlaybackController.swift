@@ -299,18 +299,24 @@ import LunaPodcastCore
             position = 0
             try await select(episode, preservingQueue: preservingQueue); return
         }
-        willPlay?()
+        if try resumePreparedEpisode(episode) { return }
+        try await select(episode, restorePosition: true, preservingQueue: preservingQueue)
+    }
+    private func resumePreparedEpisode(_ episode: PodcastEpisode) throws -> Bool {
         // A streaming item may have been downloaded while paused. Resume from
         // the complete local asset so reconnecting never requires publisher I/O.
         let local = downloads.localURL(episode.id)
         let switchToLocal = local != nil && (player.currentItem?.asset as? AVURLAsset)?.url != local
-        guard player.currentItem != nil, player.currentItem?.status != .failed, !isSelecting, !needsPreparation, !switchToLocal else { try await select(episode, restorePosition: true, preservingQueue: preservingQueue); return }
+        guard !isAtEnd, player.currentItem != nil, player.currentItem?.status != .failed,
+              !isSelecting, !needsPreparation, !switchToLocal else { return false }
+        willPlay?()
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try AVAudioSession.sharedInstance().setActive(true)
         requestedPlayback = true; errorMessage = nil; setBuffering(true)
         startPlayback(); activateSession()
         if extrasTask == nil { loadExtras(episode, token: generation) }
         publish()
+        return true
     }
     /// Resume without editing Up Next, returning only once audio starts.
     /// Optionally leave that session paused so headphones can resume it later.
@@ -365,7 +371,7 @@ import LunaPodcastCore
                     playingSince = since
                     let audio = AVAudioSession.sharedInstance()
                     let latency = audio.outputLatency + audio.ioBufferDuration
-                    let handoff = Duration.seconds(latency.isFinite ? max(1, latency) : 1)
+                    let handoff = Duration.seconds(latency.isFinite ? max(3, latency) : 3)
                     if !pauseImmediately || now - since >= handoff {
                         if pauseImmediately { pause() }
                         logState("intent.complete")
@@ -420,6 +426,15 @@ import LunaPodcastCore
                 self.remotePlaybackTask?.cancel()
             }
         }
+        // A prepared item can start synchronously. The system must observe the
+        // Play request before its remote-command callback acknowledges success.
+        let resumed: Bool
+        do { resumed = try currentEpisode.map { try resumePreparedEpisode($0) } ?? false }
+        catch {
+            if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+            fail(error)
+            return .commandFailed
+        }
         remotePlaybackTask = Task { [weak self] in
             defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
             guard let self else { return }
@@ -427,7 +442,7 @@ import LunaPodcastCore
             do {
                 try Task.checkCancellation()
                 guard playbackRevision == expectedPlaybackRevision else { throw CancellationError() }
-                try await resume(preservingQueue: false)
+                if !resumed { try await resume(preservingQueue: false) }
                 try await waitForPlaybackSession(pauseImmediately: false, revision: expectedPlaybackRevision)
                 logState("remote.play.complete")
             } catch is CancellationError { }
@@ -666,9 +681,7 @@ import LunaPodcastCore
         func addStatus(_ command: MPRemoteCommand, _ action: @escaping @MainActor (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
             command.isEnabled = true
             remoteTargets.append((command, command.addTarget { event in
-                if Thread.isMainThread { return MainActor.assumeIsolated { action(event) } }
-                Task { @MainActor in _ = action(event) }
-                return .success
+                MediaRemoteCommandDelivery.perform { action(event) }
             }))
         }
         func add(_ command: MPRemoteCommand, _ action: @escaping @MainActor (MPRemoteCommandEvent) -> Void) {

@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaReaderUI
 import UIKit
 
@@ -159,6 +160,14 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
     /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
         let key = ObjectIdentifier(scrollView)
+        if ScrollPresentationState.isSuppressed(for: scrollView) {
+            // Reflow above the viewport can compensate the offset while a pan
+            // is active. Advance the baseline without counting that as travel.
+            if let previous = scrollRuns[key] {
+                scrollRuns[key] = (scrollView.contentOffset.y + scrollView.adjustedContentInset.top, previous.run)
+            }
+            return
+        }
         guard ProcessInfo.processInfo.systemUptime >= ignoreScrollOffsetsUntil else {
             scrollRuns[key] = nil
             return

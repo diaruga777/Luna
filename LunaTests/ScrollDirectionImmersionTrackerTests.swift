@@ -10,6 +10,7 @@
 //  reach it isn't cheap.
 //
 
+import LunaDesignSystem
 import UIKit
 import XCTest
 @testable import Luna
@@ -71,6 +72,20 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         tracker.delegate = host
         tracker.observe(container)
         tracker.isActive = true
+    }
+
+    func testOffscreenReflowCompensationDoesNotCountAsScrollTravel() {
+        drag(to: 300)
+        drag(to: 340)
+        ScrollPresentationState.setSuppressed(true, for: scrollView)
+        drag(to: 1_000)
+        ScrollPresentationState.setSuppressed(false, for: scrollView)
+        XCTAssertTrue(events.isEmpty)
+        drag(to: 1_050)
+        XCTAssertTrue(events.isEmpty, "Only the user's 90pt of travel should count")
+        drag(to: 1_065)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertTrue(events[0].immersed)
     }
 
     private func drag(to y: CGFloat) {

@@ -66,7 +66,9 @@ Bundled `web.js` owns general article selection, JSON-LD/metadata interpretation
 remote document recognition, structured product prices, and basic retailer selectors.
 `url-rewrites.js` owns news/shortener/redirect URL interpretation. `x.js` now owns
 long-form post/thread conversion as well as media, and selects the exact requested
-status ID. Core Safari resolves a media claim before displaying controls; X's DOM
+status ID, including X's `/mediaViewer` share URLs. With both X plugins enabled,
+those URLs save as media; an explicit Transcribe action selects the transcript
+plugin. Core Safari resolves a media claim before displaying controls; X's DOM
 shape and videos in replies no longer decide whether its player opens. No native
 Safari article/product/media fallback runs when `supportsPlugins` is true.
 

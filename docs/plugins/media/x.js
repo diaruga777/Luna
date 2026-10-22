@@ -2,7 +2,7 @@
 {
   "id": "app.luna.x",
   "name": "X",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "api": 1,
   "description": "Save photos and videos from X.",
   "produces": ["media", "article"],
@@ -15,12 +15,9 @@
 // X serves an unauthenticated client a JavaScript login shell, so the post is
 // read from the keyless fxtwitter mirror instead of the page.
 //
-// The plugin DECLINES a long-form text post. Luna reads those with the reader
-// (`XPostIngestProcessor`, LunaArticleIngest), and a media claim here would run
-// before the Swift classifier and take the post away from it. The rule is the
-// one `XPostExtractor` applies: the post the URL named wins as media when it
-// carries a video or a GIF; otherwise an X Article, or an assembled body of at
-// least `MINIMUM_BODY_LENGTH` characters, makes it a reader item.
+// The post the URL named wins as media when it carries a video or a GIF;
+// otherwise an X Article, or an assembled body of at least
+// `MINIMUM_BODY_LENGTH` characters, makes it a reader article.
 
 const THREAD_ENDPOINT = "https://api.fxtwitter.com/2/thread/";
 const STATUS_ENDPOINT = "https://api.fxtwitter.com/status/";
@@ -44,7 +41,9 @@ async function getJSON(url) {
 
 /// The numeric status id `/<user>/status/<id>` names, or null.
 function statusID(parsed) {
-    const match = /^\/(?:[^/]+\/(?:status|statuses)|i\/web\/status)\/([0-9]+)(?:\/(?:video|photo)\/[0-9]+)?\/?$/.exec(String(parsed.pathname || ""));
+    // X also shares its full-screen player as /mediaViewer. Its query is UI
+    // state; the status in the path still owns the save.
+    const match = /^\/(?:[^/]+\/(?:status|statuses)|i\/web\/status)\/([0-9]+)(?:\/(?:(?:video|photo)\/[0-9]+|mediaViewer))?\/?$/.exec(String(parsed.pathname || ""));
     return match ? match[1] : null;
 }
 

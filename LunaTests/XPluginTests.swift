@@ -4,15 +4,16 @@
 //
 
 import LunaModels
+import LunaIngest
+import LunaMediaDownload
 import LunaPluginIngest
 import XCTest
 
 /// `x.js` against the recorded fxtwitter payloads.
 ///
-/// The plugin runs BEFORE the Swift classifier, so its decline is what keeps a
-/// long-form post with the reader (`XPostIngestProcessor`, LunaArticleIngest).
-/// The two suites read the same payloads: `XPostExtractorTests` asserts which
-/// ones become articles, and this asserts the plugin hands exactly those back.
+/// Video posts resolve as media and long-form text posts become articles.
+/// With the transcript twin installed, only an explicit transcribe intent
+/// should send a video post to transcription.
 final class XPluginTests: XCTestCase {
 
     private var harness: MediaPluginHarness!
@@ -140,9 +141,65 @@ final class XPluginTests: XCTestCase {
             "https://x.com/someone",
             "https://x.com/home",
             "https://x.com/someone/status/not-a-number",
+            "https://x.com/settings/someone/status/12345",
+            "https://x.com/someone/status/12345/mediaViewer/extra",
         ] {
             let verdict = await harness.classify(url)
             XCTAssertEqual(verdict, .declined, url)
         }
+    }
+
+    func testStatusURLVariantsClaimTheSamePost() async {
+        for path in [
+            "someone/status/12345", "someone/statuses/12345", "i/web/status/12345",
+            "someone/status/12345/video/1", "someone/status/12345/photo/2",
+            "someone/status/12345/mediaViewer", "someone/status/12345/mediaViewer/",
+        ] {
+            let verdict = await harness.classify("https://x.com/\(path)?currentTweet=999")
+            XCTAssertEqual(verdict, .claimed(kind: .media, itemID: "12345", confidence: nil), path)
+        }
+    }
+
+    /// Both installed plugins must keep a plain media-viewer save as video,
+    /// while the explicit Transcribe action still reaches the transcript twin.
+    func testMediaViewerSavePrefersVideoWithBothPluginsInstalled() async throws {
+        let url = try XCTUnwrap(URL(string: "https://x.com/RealLoriSpencer/status/2112788475686920536/mediaViewer?currentTweet=2112788475686920536&currentTweetUser=RealLoriSpencer"))
+        let id = "2112788475686920536"
+        let payload = try MediaPluginHarness.fixture("x/x-video-post.json")
+            .replacingOccurrences(of: "2082319924987351510", with: id)
+        let transcriptSource = try String(
+            contentsOf: MediaPluginHarness.pluginsDirectory.appendingPathComponent("x-transcript.js"),
+            encoding: .utf8)
+        let scope = PluginAdopterScope()
+        defer { scope.restore() }
+        PluginModelAdopters.media = MediaModelAdopter()
+        let article = FakeArticleModelAdopter()
+        let request = TranscriptionRequest(
+            mediaURL: URL(string: "https://video.twimg.com/fixture.mp4")!, mediaKind: .video,
+            title: "X video", pluginID: "app.luna.x.transcript")
+        article.outcome = .transcription(request)
+        PluginModelAdopters.article = article
+
+        try harness.runner.load(transcriptSource)
+        harness.fetcher.respond(to: "https://api.fxtwitter.com/2/thread/\(id)", body: payload)
+        let stage = PluginIngestStage(invoker: harness.runner.runtime, processKind: .app)
+        let saved = await stage.run(IngestInput(url: url, source: .manual), fetcher: MockArticleFetcher())
+        guard case let .outcome(.video(platform, itemID), owner) = saved else {
+            return XCTFail("Expected a video save, got \(saved)")
+        }
+        XCTAssertEqual(owner, "app.luna.x")
+        XCTAssertEqual(platform, .x)
+        XCTAssertEqual(itemID, id)
+        XCTAssertTrue(article.seen.isEmpty)
+
+        let transcribed = await stage.run(
+            IngestInput(url: url, source: .manual, intent: .transcribe), fetcher: MockArticleFetcher())
+        guard case let .outcome(.transcription(result), owner) = transcribed else {
+            return XCTFail("Expected a transcript, got \(transcribed)")
+        }
+        XCTAssertEqual(owner, "app.luna.x.transcript")
+        XCTAssertEqual(result, request)
+        XCTAssertEqual(article.seen.count, 1)
+        XCTAssertTrue(article.seen.first?.transcription?.url.absoluteString.hasPrefix("https://video.twimg.com/") == true)
     }
 }

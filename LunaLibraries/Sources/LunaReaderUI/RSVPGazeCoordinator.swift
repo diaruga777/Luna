@@ -33,7 +33,7 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
 
     private(set) var state: EyeTrackingState
     private var monitor = GazeAttentionMonitor()
-    private var calibration = GazeCalibration()
+    private var calibration = GazeCalibration(warmupSampleCount: 12, recentreRate: 0)
     /// Set only for the pause request emitted by this coordinator. It is
     /// consumed by the next *manual* play press (the override), by the gaze
     /// settling back on the word (the auto-resume), or by anything that tears
@@ -41,28 +41,33 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
     /// also the ONE reason the camera may run without playback — seeking the
     /// eyes' return, for as long as the reader stays here. There is
     /// deliberately no timeout: only a user action ends the hunt.
-    private var awaitingManualResumeAfterGazePause = false {
-        didSet {
-            guard oldValue != awaitingManualResumeAfterGazePause else { return }
-            syncTracker()
-        }
-    }
+    private var awaitingManualResumeAfterGazePause = false
+    private var automaticallyResuming = false
+    private var permissionRequestID: UUID?
+    private let requestPermission: (@escaping (GazeTrackingPermission.Status) -> Void) -> Void
+    private var watchdog: Timer?
+    private var sessionStartedAt: TimeInterval?
+    private var lastSampleAt: TimeInterval?
+    private var lastRecoveryAt: TimeInterval?
+    private var acquiredAttention = false
+    private var acquisitionStart: TimeInterval?
+    private var acquisitionPoint: CGPoint?
+    private var isActive = true
     /// When the gaze first settled back inside the focus radius after a
     /// gaze-caused pause. Once the return has lasted `resumeDwell`, playback
     /// resumes by itself — the pause this coordinator caused is also its to
     /// undo. The dwell keeps a saccade passing through the word from
     /// flapping playback.
     private var focusReturnStart: TimeInterval?
-    private static let resumeDwell: TimeInterval = 0.4
+    private static let resumeDwell: TimeInterval = 0.25
     private let tracker: GazeTracking
     /// The view the focal point is expressed in, used to convert gaze samples
     /// out of screen space.
     private weak var referenceView: UIView?
 
-    /// Whether the reader is on screen and in the foreground. The camera runs
-    /// only while it is.
+    /// Whether this reader is on screen. App activity is tracked separately.
     private var isVisible = false {
-        didSet { syncTracker() }
+        didSet { publish() }
     }
 
     /// Whether face tracking exists at all here. Fixed for the process, so the
@@ -77,18 +82,20 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
     private let now: () -> TimeInterval
 
     init(tracker: GazeTracking? = nil,
-         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         requestPermission: @escaping (@escaping (GazeTrackingPermission.Status) -> Void) -> Void = GazeTrackingPermission.request) {
         self.isAvailable = GazeTrackingAvailability.isSupported
         self.tracker = tracker ?? ARFaceGazeTracker()
         self.now = now
+        self.requestPermission = requestPermission
         self.state = EyeTrackingState(userEnabled: ReaderSettings.eyeTrackingEnabled)
         self.tracker.delegate = self
     }
 
-    deinit { tracker.stop() }
+    deinit { watchdog?.invalidate(); tracker.stop() }
 
     var displayState: EyeTrackingDisplayState { state.displayState }
-    var isToggleInteractive: Bool { state.isToggleInteractive }
+    var isToggleInteractive: Bool { state.isToggleInteractive && permissionRequestID == nil }
 
     /// The legacy controller seam asks whether a play press is an override.
     /// The latch is authoritative: a stale away sample alone must not make a
@@ -106,12 +113,8 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
         state.isPlaying = playing
         focusReturnStart = nil
         if playing {
+            if !automaticallyResuming { permissionRequestID = nil }
             awaitingManualResumeAfterGazePause = false
-            // The eyes just left the play button — the strongest ground truth
-            // this feature ever gets. Every playback start re-anchors the
-            // calibration there (the previous offset stays in force while the
-            // new anchor collects).
-            calibration.beginWarmup()
         }
         // Every excursion is judged against the playback it might interrupt;
         // starting fresh means a glance taken while paused never counts.
@@ -125,7 +128,15 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
         publish()
     }
 
-    func setVisible(_ visible: Bool) { isVisible = visible }
+    func setVisible(_ visible: Bool) {
+        if !visible { permissionRequestID = nil }
+        isVisible = visible
+    }
+
+    func setActive(_ active: Bool) {
+        isActive = active
+        publish()
+    }
 
     /// The focal word jumped (scrub, skip, sub-mode switch): the reader's eyes
     /// were legitimately elsewhere while they aimed at the control. Residuals
@@ -150,7 +161,9 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
     /// Playback stopped by any route other than gaze. Reverts a play-override
     /// to whatever the user's own setting was.
     func notePlaybackStoppedDeliberately() {
+        permissionRequestID = nil
         awaitingManualResumeAfterGazePause = false
+        syncTracker()
         guard state.playOverridden else { return }
         state.playbackStoppedDeliberately()
         publish()
@@ -158,21 +171,34 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
 
     // MARK: - The toggle
 
-    /// Handles a tap. Turning ON for the first time is the ONE moment the
-    /// camera permission prompt appears; a refusal leaves the toggle off and
-    /// explains where to change it.
+    /// The first opt-in pauses before the system permission prompt. A response
+    /// may enable the preference, but never starts playback by itself.
     func toggle(presenting presenter: UIViewController) {
-        guard state.isToggleInteractive else { return }
+        guard isAvailable, isToggleInteractive else { return }
         guard state.toggleIntent == .turnOn else {
             state.applyToggle()
             persist()
             publish()
             return
         }
-        GazeTrackingPermission.request { [weak self] status in
-            guard let self else { return }
+        let id = UUID()
+        permissionRequestID = id
+        // The system prompt hides the word. Pause before requesting access;
+        // permission is not a gaze pause and must never arm auto-resume.
+        if GazeTrackingPermission.status == .undetermined, state.isPlaying {
+            delegate?.gazeCoordinatorRequestsPause(self)
+        }
+        publish()
+        requestPermission { [weak self, weak presenter] status in
+            guard let self, self.permissionRequestID == id else { return }
+            self.permissionRequestID = nil
+            guard self.isVisible, self.state.isToggleInteractive,
+                  self.state.toggleIntent == .turnOn else { self.publish(); return }
             guard status == .granted else {
-                self.presentPermissionDenied(from: presenter)
+                self.publish()
+                if let presenter, presenter.viewIfLoaded?.window != nil {
+                    self.presentPermissionDenied(from: presenter)
+                }
                 return
             }
             self.state.applyToggle()
@@ -198,77 +224,141 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
 
     // MARK: - Gaze
 
-    func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample) {
-        guard state.isWatching, let view = referenceView, let delegate else { return }
-        let focus = delegate.gazeCoordinatorFocalPoint(self)
-        // A missing face is an explicit lack of signal, not evidence that the
-        // reader looked away. In dim light and during ARKit relocalisation we
-        // choose the harmless failure mode: do not interrupt reading.
-        if case .faceLost = sample {
-            if !state.gazeUnavailable {
-                state.gazeUnavailable = true
-                publish()
-            }
-            monitor.clear()
-            return
-        }
-        if state.gazeUnavailable {
-            state.gazeUnavailable = false
-            publish()
-        }
+    var prefersGazeFrames: Bool { true }
 
-        // Judge every point against the CALIBRATED estimate: ARKit's raw gaze
-        // carries a per-user bias easily larger than the focus radius, which
-        // is exactly the "pauses every time while I'm reading" failure.
-        // Off-screen (no plane intersection) needs no calibration and is fed
-        // through as-is.
-        let assessed: GazeSample
-        switch converted(sample, in: view) {
-        case .faceLost:
-            return
-        case .offScreen:
-            assessed = .offScreen
-        case .point(let point):
-            let residual = CGVector(dx: point.x - focus.x, dy: point.y - focus.y)
-            // Only playback vouches for where the eyes are; paused samples
-            // must never anchor the offset.
-            if state.isPlaying { calibration.ingest(residual) }
-            guard let offset = calibration.offset else {
-                // No baseline yet: the first moments of the first playback are
-                // spent learning the estimator's bias, not judging the reader.
+    func gazeTracker(_ tracker: GazeTracking, didProduce frame: GazeFrame) {
+        let usable = frame.isFaceTracked && frame.blinkLeft < 0.65 && frame.blinkRight < 0.65
+        gazeTracker(tracker, didProduce: usable ? frame.sample : .faceLost)
+    }
+
+    func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample) {
+        guard cameraWanted,
+              let view = referenceView, let delegate else { return }
+        let timestamp = now()
+        let gap = lastSampleAt.map { timestamp - $0 }
+        lastSampleAt = timestamp
+        if let gap, gap > 0.15 {
+            focusReturnStart = nil
+            if !acquiredAttention { resetAcquisition() }
+        }
+        let focus = delegate.gazeCoordinatorFocalPoint(self)
+        var assessed = converted(sample, in: view)
+        if case .point(let point) = assessed {
+            guard point.x.isFinite, point.y.isFinite else {
+                handleUnavailable(at: timestamp, focus: focus)
                 return
             }
-            let calibrated = CGPoint(x: point.x - offset.dx, y: point.y - offset.dy)
-            let distance = hypot(calibrated.x - focus.x, calibrated.y - focus.y)
-            if state.isPlaying, distance <= monitor.policy.focusRadius {
-                calibration.recentre(towards: residual)
-            }
-            assessed = isOnDisplay(calibrated, in: view) ? .point(calibrated) : .offScreen
-        }
-        let now = self.now()
-        let trippedThreshold = monitor.update(sample: assessed, focus: focus, at: now)
-
-        // A pause this coordinator caused undoes itself: once the eyes have
-        // settled back on the word for `resumeDwell`, play again. The dwell
-        // keeps a saccade passing across the word from flapping playback.
-        if awaitingManualResumeAfterGazePause, !state.isPlaying {
-            if monitor.isAway {
-                focusReturnStart = nil
-            } else if let start = focusReturnStart {
-                if now - start >= Self.resumeDwell {
-                    focusReturnStart = nil
-                    awaitingManualResumeAfterGazePause = false
-                    delegate.gazeCoordinatorRequestsResume(self)
+            // Establish a short, stable fixation, including while a startup
+            // pause waits for its first usable face. Never learn from movement
+            // or keep adapting the baseline to a slow glance away.
+            if !acquiredAttention {
+                if let previous = acquisitionPoint,
+                   hypot(point.x - previous.x, point.y - previous.y) > 100 {
+                    resetAcquisition()
                 }
-            } else {
-                focusReturnStart = now
+                if acquisitionStart == nil { acquisitionStart = timestamp }
+                if acquisitionPoint == nil { acquisitionPoint = point }
+                calibration.ingest(CGVector(dx: point.x - focus.x, dy: point.y - focus.y))
+                if calibration.offset != nil,
+                   timestamp - (acquisitionStart ?? timestamp) >= 0.2 {
+                    acquiredAttention = true
+                    monitor.clear()
+                } else {
+                    checkAcquisitionTimeout(at: timestamp, focus: focus)
+                    return
+                }
             }
+            let calibrated = calibration.calibrated(point)
+            assessed = isOnDisplay(calibrated, in: view) ? .point(calibrated) : .offScreen
+        } else {
+            if !acquiredAttention { resetAcquisition() }
+        }
+        if case .faceLost = assessed {
+            handleUnavailable(at: timestamp, focus: focus)
             return
         }
+        setUnavailable(false)
+        assess(assessed, focus: focus, at: timestamp)
+    }
 
-        guard trippedThreshold, state.isPlaying else { return }
+    private func resetAcquisition() {
+        acquisitionStart = nil
+        acquisitionPoint = nil
+        calibration.reset()
+        calibration.beginWarmup()
+    }
+
+    private func setUnavailable(_ unavailable: Bool) {
+        guard state.gazeUnavailable != unavailable else { return }
+        state.gazeUnavailable = unavailable
+        delegate?.gazeCoordinatorDidChangeDisplayState(self)
+    }
+
+    private func handleUnavailable(at timestamp: TimeInterval, focus: CGPoint) {
+        focusReturnStart = nil
+        setUnavailable(true)
+        if acquiredAttention {
+            assess(.faceLost, focus: focus, at: timestamp)
+        } else {
+            checkAcquisitionTimeout(at: timestamp, focus: focus)
+        }
+    }
+
+    private func checkAcquisitionTimeout(at timestamp: TimeInterval, focus: CGPoint) {
+        setUnavailable(true)
+        if timestamp - (sessionStartedAt ?? timestamp) >= 1.5 {
+            requestAttentionPause()
+        }
+    }
+
+    private func requestAttentionPause() {
+        guard state.isPlaying, !awaitingManualResumeAfterGazePause else { return }
         awaitingManualResumeAfterGazePause = true
-        delegate.gazeCoordinatorRequestsPause(self)
+        delegate?.gazeCoordinatorRequestsPause(self)
+    }
+
+    private func assess(_ sample: GazeSample, focus: CGPoint, at timestamp: TimeInterval) {
+        let threshold = monitor.update(sample: sample, focus: focus, at: timestamp)
+        if awaitingManualResumeAfterGazePause, !state.isPlaying {
+            if monitor.isAway || !acquiredAttention {
+                focusReturnStart = nil
+            } else if let start = focusReturnStart {
+                if timestamp - start >= Self.resumeDwell {
+                    // Keep the pause latch through the synchronous play callback.
+                    // setPlaying(true) consumes it without ever stopping ARKit.
+                    automaticallyResuming = true
+                    delegate?.gazeCoordinatorRequestsResume(self)
+                    automaticallyResuming = false
+                    focusReturnStart = nil
+                }
+            } else {
+                focusReturnStart = timestamp
+            }
+        } else if threshold {
+            requestAttentionPause()
+        }
+    }
+
+    /// Called by the timer even when ARKit stops delivering frames. Internal
+    /// so tests can advance the same clock without sleeping.
+    func checkTrackingHealth() {
+        guard cameraWanted, let start = sessionStartedAt else { return }
+        let timestamp = now()
+        if timestamp - (lastSampleAt ?? start) > 0.2 {
+            if !acquiredAttention { resetAcquisition() }
+            if let delegate {
+                handleUnavailable(at: timestamp, focus: delegate.gazeCoordinatorFocalPoint(self))
+            }
+        }
+        // Recover a failed or silent session at a bounded rate. This does not
+        // erase a known reading baseline or the automatic-pause latch.
+        if !tracker.isRunning || timestamp - (lastSampleAt ?? start) > 2 {
+            guard timestamp - (lastRecoveryAt ?? start) >= 2 else { return }
+            lastRecoveryAt = timestamp
+            lastSampleAt = timestamp
+            tracker.stop()
+            tracker.start()
+        }
     }
 
     /// Whether a calibrated point (in `view`'s coordinates) still lands on the
@@ -308,32 +398,39 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
         delegate?.gazeCoordinatorDidChangeDisplayState(self)
     }
 
-    /// The camera lifetime is AGGRESSIVE: it runs exactly while the feature is
-    /// watching a PLAYING reader on screen — or, the one exception, while a
-    /// gaze-caused pause is seeking the eyes' return, because that is the only
-    /// way "look back to resume" can work. Merely opening the reader, toggling
-    /// the feature on, or pausing deliberately never lights the camera, and
-    /// the stop branch below ends an abandoned hunt for good.
-    private func syncTracker() {
-        let shouldRun = isAvailable && isVisible && state.isWatching
-            && GazeTrackingPermission.status == .granted
+    private var cameraWanted: Bool {
+        isAvailable && isVisible && isActive && state.isWatching
+            && permissionRequestID == nil && GazeTrackingPermission.status == .granted
             && (state.isPlaying || awaitingManualResumeAfterGazePause)
-        guard shouldRun != tracker.isRunning else { return }
-        if shouldRun {
-            monitor.resetAllowance()
-            // A fresh session is a fresh posture: forget the old bias and
-            // collect a new anchor as soon as playback vouches for the gaze.
-            calibration.reset()
-            calibration.beginWarmup()
+    }
+
+    private func syncTracker() {
+        if cameraWanted {
+            guard watchdog == nil else { return }
+            monitor.clear()
+            acquiredAttention = false
+            resetAcquisition()
+            sessionStartedAt = now()
+            lastSampleAt = nil
+            lastRecoveryAt = nil
             tracker.start()
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.checkTrackingHealth()
+            }
+            watchdog = timer
+            RunLoop.main.add(timer, forMode: .common)
         } else {
+            watchdog?.invalidate()
+            watchdog = nil
             tracker.stop()
             monitor.clear()
             calibration.reset()
-            // Whatever darkened the camera also ends the resume hunt: coming
-            // back to the reader must not relight it — only a play press does.
+            acquiredAttention = false
+            sessionStartedAt = nil
+            lastSampleAt = nil
             awaitingManualResumeAfterGazePause = false
             focusReturnStart = nil
+            state.gazeUnavailable = false
         }
     }
 }

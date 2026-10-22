@@ -71,83 +71,56 @@ rules fall out for free rather than needing bookkeeping:
 `isWatching == userEnabled && !playOverridden && !audioPlaybackOn`, and
 `displayState` is `.disabled` unless watching, then `.active` while playing.
 
-## Calibration — the estimate is judged relative, never absolute
+## Acquisition and calibration
 
-ARKit's `lookAtPoint` carries a systematic per-user, per-posture bias —
-commonly several degrees, worst vertically — that easily exceeds the focus
-radius. Uncalibrated, that meant a fixated reader drained the near tolerance
-continuously and was paused ~1.8s into every playback. `GazeCalibration`
-(owned by the coordinator) removes it implicitly, with no calibration UI:
+RSVP uses coarse attention around the reading band, rather than trying to
+resolve individual letters. `ARFaceGazeTracker` supplies full frames to RSVP;
+closed eyes (either blink blend shape >= 0.65) and untracked faces are treated
+as unavailable. Writer retains the original sample callback and its own policy.
 
-- **Warm-up.** Every playback start opens a warm-up: the eyes just left the
-  play button, the strongest ground truth the feature ever gets. The first 45
-  playing samples' residuals (raw point − focal point) are collected and their
-  per-axis MEDIAN becomes the offset subtracted from every later sample.
-  Median, not mean — a glance away during warm-up is an outlier to survive.
-  Until the first offset exists, point samples are learned from but never
-  judged (`.offScreen` — no plane intersection — still is: it needs no
-  calibration). A re-anchor keeps the old offset in force while collecting.
-- **Re-centring.** Samples whose CALIBRATED point sits inside the focus radius
-  nudge the offset toward their residual (1%/frame) — slow drift correction
-  for settling posture that can never chase a genuine look-away.
-- **Lifetime.** The offset dies with the tracker session (`syncTracker` stop)
-  and is re-anchored at every playback start; a focal jump (scrub/skip) drops
-  a warm-up's partial residuals but leaves an established offset alone — bias
-  is a property of the estimator, not of the word's position.
-- **Stated trade-off:** warm-up trusts playback as ground truth. Starting
-  playback and immediately looking away for the whole warm-up anchors the
-  offset wrongly until the next play press; the alternative — trusting
-  ARKit's absolute accuracy — paused every reader every time.
+ARKit estimates have a posture-dependent bias. At each camera-session start,
+RSVP learns the median residual from 12 points clustered within 100pt of the
+first point, over at least 0.2s. Movement, missing samples, or a gap over 0.15s
+reset partial acquisition. The baseline stays fixed for that session: automatic
+resume neither recalibrates nor adapts the baseline toward a glance away.
+This remains implicit calibration: a steady fixation during initial acquisition
+is assumed to be the reading position. It is not precise eye tracking, and
+physical face acquisition still depends on the camera, lighting and ARKit.
 
-Because only the calibrated point says where the reader is actually looking,
-the tracker emits every plane intersection as `.point` even beyond the display
-edges (a bias big enough to push a fixated gaze off-screen is exactly what
-calibration rescues); the coordinator classifies on/off-display AFTER
-subtracting the offset.
+If no usable baseline arrives within 1.5s, RSVP pauses and keeps watching.
+Acquisition is allowed during this automatic pause, so the first usable gaze
+can establish a baseline and resume instead of being stuck waiting for play.
+Raw ray intersections beyond screen edges remain available for bias correction;
+a ray with no forward plane intersection is `.offScreen`, never calibration data.
 
 ## When it pauses
 
-`GazeAttentionPolicy` turns distance-from-the-focal-word into a dwell
-tolerance; `GazeAttentionMonitor` integrates elapsed time against it.
+`GazeAttentionPolicy` and `GazeAttentionMonitor` integrate time spent away:
 
-- Inside `focusRadius` (240pt) nothing is timed at all. Generous on purpose:
-  gaze from a front camera is good to a few centimetres at arm's length, not to
-  the letter, and RSVP's context lanes are legitimately part of the reading
-  surface.
-- Beyond it the tolerance falls linearly from `nearTolerance` (1.8s) to
-  `farTolerance` (0.7s) over `falloffDistance` (420pt) — so the delay really
-  does depend on how far the gaze travelled.
-- A confidently off-screen gaze skips the curve and takes `farTolerance`
-  directly. A lost face is uncertainty, never evidence that the reader looked
-  away: tracking enters `.unavailable`, clears its dwell timer, shows a red
-  slashed eye, and has no effect until ARKit supplies a usable gaze again.
+- Within 240pt of the calibrated reading point, attention resets the allowance.
+- Outside that radius, the grace falls from 0.35s to 0.18s over 420pt.
+- Off-screen gaze gets 0.18s. A missing face or closed eyes gets 0.3s, so an
+  ordinary blink or one bad frame does not pause reading, while turning away does.
 
-The monitor **integrates rather than timing one excursion**, so a gaze that
-drifts outward — 300pt away for a moment, then off the phone — spends its
-allowance at the rate each instant deserves instead of being judged by wherever
-it happened to be when a fixed timer expired. Any sample back on the word
-resets the allowance in full.
-
-A gap between samples longer than `maximumSampleGap` (0.5s) is a
-**discontinuity** — a suspended app, a pre-empted camera — and restarts the
-excursion. It is not clamped: any clamp at or above `farTolerance` would pause
-the reader the instant the session resumed.
-
-`resetAllowance()` forgets the time spent but **not** `isAway`. That
-distinction is load-bearing: a gaze pause resets the clock while the reader's
-eyes have not moved back, and `isAway` is exactly what a following play press
-consults to recognise itself as an override.
+A 100ms watchdog also handles sessions that stop producing frames. After a
+0.2s frame gap it reports unavailability through the same loss policy. Startup
+still gets its 1.5s acquisition allowance. A failed or silent camera session
+is restarted no more than once every 2s while camera use is still authorized.
+A restart retains an established attention baseline and automatic-pause latch.
 
 ## When it resumes
 
-A pause the gaze caused, the gaze can undo: the camera keeps watching, and
-once the eyes settle back inside the focus radius for `resumeDwell` (0.4s —
-so a saccade passing across the word doesn't flap playback), the coordinator
-clears its latch and asks the reader to play. An auto-resume is NOT an
-override — tracking stays enabled, and the resume's own `setPlaying(true)`
-re-anchors the calibration warm-up. Deliberate pauses are never resumed; a
-hunt abandoned by leaving the reader ends with the camera (see "Camera
-lifetime"), and the next play press is an ordinary one.
+An automatic gaze pause keeps the same camera session running. Looking back
+inside the reading radius for 0.25s resumes playback. Face loss, a blink, an
+away sample, or a sample gap over 0.15s breaks that return dwell. Closed-eye
+points cannot trigger a resume. The automatic-pause latch remains set through
+the synchronous play callback, so resume does not stop/start the camera or
+discard calibration.
+
+Explicit pauses, a play override, disabling tracking, read-aloud, leaving the
+reader, and app inactivity end the return hunt. Returning later cannot resume
+an abandoned gaze pause. Manual play after a gaze pause remains the explicit
+transient override described above.
 
 ## Where the gaze comes from
 
@@ -180,34 +153,25 @@ unit-tested on the simulator, where face tracking is never available:
 The coordinator then subtracts the window's screen position (iPad Split View)
 and lets UIKit walk the view hierarchy.
 
-## Camera lifetime — aggressive by design
+## Camera lifetime and permission
 
-`RSVPGazeCoordinator.syncTracker` runs the session exactly while the feature
-is watching a **PLAYING** reader on screen with camera access granted — plus
-ONE exception: after a gaze-caused pause the camera keeps seeking the eyes'
-return, because that is the only way "look back to resume" can work. The hunt
-has deliberately NO timeout; only a user action ends it — a play press (the
-override, which stands tracking down), or leaving (viewWillDisappear /
-`didEnterBackground`), which kills the session AND clears the latch, so
-coming back never relights the camera by itself: the next play press does.
-Everything else is dark: opening the reader, turning the toggle on, pausing
-deliberately, other cards, Settings, onboarding.
+The camera runs only with eye tracking enabled, permission granted, silent
+playback, the reader visible, and the app active. Playback must be running or
+paused automatically while waiting for attention to return. Opening a reader,
+enabling tracking while paused, or a deliberate pause leaves the camera off.
+App activity (`willResignActive` / `didBecomeActive`) is independent of view
+visibility, so foreground notifications cannot revive a hidden reader.
 
-Consequences: the permission prompt still belongs to the toggle tap, but the
-green camera dot belongs to playback (and to an in-progress resume hunt); a
-play press after an abandoned hunt is an ordinary play, tracking still on.
+The first enabling tap requests `NSCameraUsageDescription` access. If the system
+prompt is pending, RSVP pauses before requesting access. Granting access enables
+the preference but leaves playback paused for a deliberate play press. Denial
+leaves the setting off and offers Settings if the presenter remains visible.
+The pending request disables repeat taps. A delayed callback after leaving or
+manual playback changes is ignored; it cannot start playback or the camera.
 
-## Permission
-
-Eye tracking is front-camera capture, so the permission is
-`NSCameraUsageDescription`:
-
-> Luna tracks your eyes to pause playback automatically when you look away.
-
-It is requested at the ONE moment it is about — **the first tap that turns the
-toggle on** — not at launch and not when the reader opens. A refusal leaves the
-toggle off and offers Settings. `GazeTrackingPermission.statusOverride` and
-`GazeTrackingAvailability.supportOverride` are the test seams.
+`GazeTrackingPermission.statusOverride`,
+`GazeTrackingAvailability.supportOverride`, the injected permission requester,
+and the coordinator clock are the test seams.
 
 ## Tests
 
@@ -215,6 +179,9 @@ toggle off and offers Settings. `GazeTrackingPermission.statusOverride` and
 - `GazeAttentionTests` — the distance curve, the allowance, discontinuities.
 - `GazeCalibrationTests` — warm-up median, re-anchoring, slow re-centring.
 - `GazeScreenProjectionTests` — ray/plane intersection, the x mirror, rotation.
+- `RSVPAttentionLifecycleTests` — fast loss/return, blink and frame-gap continuity,
+  startup acquisition while paused, silent/failed session recovery, camera churn,
+  explicit lifecycle stops, and delayed permission outcomes.
 - `RSVPEyeTrackingTests` — the whole feature through the reader against a stub
   gaze source: toggle states, the pause, the play-override and its reversion,
   read-aloud suppression, camera lifetime, and the systematic-bias

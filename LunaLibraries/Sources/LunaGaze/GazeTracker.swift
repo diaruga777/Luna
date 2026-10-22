@@ -16,16 +16,19 @@ import UIKit
 
 /// The reader of a gaze source's samples.
 public protocol GazeTrackingDelegate: AnyObject {
+    /// Opt into full-frame delivery instead of the legacy sample callback.
+    /// Default false preserves existing sample-only consumers such as Writer.
+    var prefersGazeFrames: Bool { get }
     /// Called on the main queue for every usable camera frame. Points are in
     /// `UIScreen.fixedCoordinateSpace` (portrait-origin) coordinates.
     func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample)
-    /// Called alongside `gazeTracker(_:didProduce:)`, with the same frame's
-    /// blink state added. Optional: the Reader's RSVP tracking has no use for
-    /// blink and implements only the method above.
+    /// Carries the same frame's blink state. With `prefersGazeFrames`, this
+    /// replaces sample delivery so closed eyes cannot count as attention.
     func gazeTracker(_ tracker: GazeTracking, didProduce frame: GazeFrame)
 }
 
 extension GazeTrackingDelegate {
+    public var prefersGazeFrames: Bool { false }
     public func gazeTracker(_ tracker: GazeTracking, didProduce frame: GazeFrame) {}
 }
 
@@ -192,8 +195,8 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
     }
 
     public func session(_ session: ARSession, didFailWithError error: Error) {
-        emit(.faceLost, blinkLeft: 0, blinkRight: 0, isFaceTracked: false)
         isRunning = false
+        emit(.faceLost, blinkLeft: 0, blinkRight: 0, isFaceTracked: false)
     }
 
     public func sessionWasInterrupted(_ session: ARSession) {
@@ -250,12 +253,12 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
             sample: sample, blinkLeft: blinkLeft, blinkRight: blinkRight,
             isFaceTracked: isFaceTracked)
         if Thread.isMainThread {
-            delegate.gazeTracker(self, didProduce: sample)
+            if !delegate.prefersGazeFrames { delegate.gazeTracker(self, didProduce: sample) }
             delegate.gazeTracker(self, didProduce: frame)
         } else {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                delegate.gazeTracker(self, didProduce: sample)
+                if !delegate.prefersGazeFrames { delegate.gazeTracker(self, didProduce: sample) }
                 delegate.gazeTracker(self, didProduce: frame)
             }
         }

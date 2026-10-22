@@ -651,16 +651,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         view.addSubview(eyeTrackingButton)
         refreshEyeTrackingButton()
 
-        // The camera must not keep running behind a backgrounded app, and a
-        // reader resumed from the background should start watching again
-        // without waiting for an appearance callback that will never come.
+        // Permission alerts and other interruptions make the app inactive
+        // without changing view visibility. Keep those lifetimes separate.
         let center = NotificationCenter.default
         center.addObserver(
             self, selector: #selector(applicationDidEnterBackground),
-            name: UIApplication.didEnterBackgroundNotification, object: nil)
+            name: UIApplication.willResignActiveNotification, object: nil)
         center.addObserver(
             self, selector: #selector(applicationWillEnterForeground),
-            name: UIApplication.willEnterForegroundNotification, object: nil)
+            name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     /// The toggle's REAL seat inside a card is the host's chrome row — the
@@ -709,12 +708,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     @objc private func applicationDidEnterBackground() {
-        gazeCoordinator?.setVisible(false)
+        gazeCoordinator?.setActive(false)
     }
 
     @objc private func applicationWillEnterForeground() {
-        guard view.window != nil else { return }
-        gazeCoordinator?.setVisible(true)
+        gazeCoordinator?.setActive(true)
     }
 
     /// Spans several characters around the ORP column. The top/bottom lines sit

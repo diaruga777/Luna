@@ -9,12 +9,9 @@ import Foundation
 /// How long the reader may look somewhere before RSVP pauses, as a function of
 /// how far from the focal word they looked.
 ///
-/// The shape is deliberately gentle near the word and sharp far from it: a
-/// glance at the progress percentage a few lines down is the sort of thing a
-/// speed reader does mid-sentence and shouldn't be punished for, whereas eyes
-/// leaving the phone means the next words are simply not being read. Between
-/// the two the tolerance interpolates linearly, so the delay really does
-/// "depend on the distance the gaze travels".
+/// A short grace absorbs jitter and ordinary blinks. Definite glances away
+/// pause quickly, before more words pass unread; marginal excursions near
+/// the reading band get slightly more grace.
 public struct GazeAttentionPolicy: Equatable {
 
     /// Gaze inside this radius of the focal word counts as reading. Generous on
@@ -36,8 +33,8 @@ public struct GazeAttentionPolicy: Equatable {
     public init(
         focusRadius: CGFloat = 240,
         falloffDistance: CGFloat = 420,
-        nearTolerance: TimeInterval = 1.8,
-        farTolerance: TimeInterval = 0.7
+        nearTolerance: TimeInterval = 0.35,
+        farTolerance: TimeInterval = 0.18
     ) {
         self.focusRadius = focusRadius
         self.falloffDistance = falloffDistance
@@ -55,8 +52,8 @@ public struct GazeAttentionPolicy: Equatable {
     }
 
     /// The tolerance for a whole sample. Off-screen skips the distance curve
-    /// entirely and takes the shortest fuse. A lost face is not a gaze sample;
-    /// the coordinator marks tracking unavailable and never passes it here.
+    /// entirely and takes the shortest fuse. Face loss gets a little more
+    /// grace for blinks and momentary ARKit jitter, then pauses too.
     public func tolerance(for sample: GazeSample, focus: CGPoint) -> TimeInterval {
         switch sample {
         case .point(let point):
@@ -64,7 +61,7 @@ public struct GazeAttentionPolicy: Equatable {
         case .offScreen:
             return farTolerance
         case .faceLost:
-            return .infinity
+            return 0.3
         }
     }
 }

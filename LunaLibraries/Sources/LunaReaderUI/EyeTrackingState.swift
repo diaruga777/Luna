@@ -15,7 +15,7 @@ public enum EyeTrackingDisplayState: Equatable {
     /// Watching a live playback. Open eye, reading accent.
     case active
     /// The feature is enabled, but the camera has affirmatively lost the face
-    /// or its gaze estimate. It has no effect until tracking recovers.
+    /// or its gaze estimate. Sustained loss pauses RSVP until attention returns.
     case unavailable
 }
 

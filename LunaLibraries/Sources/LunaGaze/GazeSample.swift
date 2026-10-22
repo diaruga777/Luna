@@ -18,17 +18,16 @@ public enum GazeSample: Equatable {
     /// looking away from the device.
     case offScreen
     /// No usable face: the reader turned away, covered the camera, or the
-    /// session dropped tracking. This is an unavailable signal, never a
-    /// reason to pause playback.
+    /// session dropped tracking. Consumers decide their own loss grace; RSVP
+    /// pauses after sustained loss so words do not pass unread.
     case faceLost
 }
 
 /// One ARKit frame's full report: the same estimate as `GazeSample`, plus the
 /// blink state a `GazeGate` needs and `GazeSample` alone cannot carry.
 ///
-/// Delivered through a second, optional `GazeTrackingDelegate` method — the
-/// Reader's RSVP tracking has no use for blink and keeps seeing only
-/// `GazeSample` through `gazeTracker(_:didProduce:)`.
+/// Delivered through the optional full-frame `GazeTrackingDelegate` callback.
+/// RSVP opts into frames to reject closed eyes; legacy consumers keep samples.
 public struct GazeFrame: Equatable {
     public let sample: GazeSample
     /// Blend-shape value for the left eye's blink, 0 (open) to 1 (closed).

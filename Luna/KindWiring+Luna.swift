@@ -106,13 +106,6 @@ enum KindWiring {
     /// `luna.browser`, `luna.settings` and every export/transport bridge.
     @MainActor
     static func installFullPluginComposition() {
-        if let url = Bundle.main.url(forResource: "Luna-Media", withExtension: "lunabundle") {
-            do {
-                try MediaPluginBootstrap.install(bundleURL: url)
-            } catch {
-                NSLog("Media plugin bootstrap failed: %@", error.localizedDescription)
-            }
-        }
         PluginPlatformComposition.install(
             processKind: .app,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,

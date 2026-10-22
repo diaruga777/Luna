@@ -484,7 +484,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         reader.view.layoutIfNeeded()
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertGreaterThan(card.view.bounds.width, oldTitleWidth)
-        XCTAssertEqual(text.bounds.width, oldTitleWidth, accuracy: 0.5)
+        XCTAssertEqual(text.bounds.width, card.view.bounds.width, accuracy: 0.5)
         XCTAssertEqual(scrollingTitle.bounds.width, oldTitleWidth, accuracy: 0.5)
         XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
         XCTAssertEqual(text.alpha, 1)
@@ -538,6 +538,59 @@ final class ArticleCardsChromeTests: XCTestCase {
                 XCTAssertEqual(image.convert(.zero, to: controller.view).x, origins[index], accuracy: 0.5)
                 XCTAssertEqual(image.superview?.bounds.width ?? 0, card.view.bounds.width, accuracy: 0.5)
             }
+        }
+    }
+
+    func testTapReflowUsesSeparateTitleGlyphsAndAFixedBannerCanvas() throws {
+        let title = "A long headline whose individual characters should find their new lines smoothly"
+        let controller = makeArticleController(seed: "title-glyph-reflow", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        text.contentOffset.y = -text.adjustedContentInset.top
+        card.view.layoutIfNeeded()
+        let size = CGSize(width: controller.readerCardExpandedWidth(card), height: card.view.bounds.height)
+        card.prepareForCardViewportTransition(to: size)
+        defer { card.finishCardViewportTransition(completed: true) }
+        if UIAccessibility.isReduceMotionEnabled { return }
+        let surfaces = allSubviews(in: card.view).filter { $0.accessibilityIdentifier == "reader.header.reflow" }
+        XCTAssertFalse(surfaces.isEmpty)
+        let glyphs = surfaces.flatMap { allSubviews(in: $0) }.compactMap { $0 as? UIImageView }
+            .filter { $0.contentMode == .scaleAspectFit }
+        XCTAssertGreaterThan(glyphs.count, 20, "The title must not be a flattened, stretched screenshot")
+        let canvases = surfaces.flatMap { allSubviews(in: $0) }.compactMap { $0 as? UIImageView }
+            .filter { $0.contentMode == .scaleAspectFill }
+        let canvasSizes = canvases.map { $0.bounds.size }
+        let sourceFrames = glyphs.map(\.frame)
+        card.animatePreparedCardViewportTransition()
+        for (canvas, sourceSize) in zip(canvases, canvasSizes) {
+            XCTAssertEqual(canvas.bounds.size, sourceSize, "The image canvas must never resize")
+        }
+        XCTAssertTrue(zip(glyphs, sourceFrames).contains { $0.0.frame.origin != $0.1.origin })
+        XCTAssertTrue(glyphs.allSatisfy { $0.frame.width.isFinite && $0.frame.height.isFinite })
+    }
+
+    func testTapAfterScrollExpansionKeepsBannerCropAtTheFullCardWidth() throws {
+        let controller = makeArticleController(seed: "scroll-then-tap-banner", title: "A full width banner")
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let restingSize = card.view.bounds.size
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: true, extendsCard: true)
+        controller.view.layoutIfNeeded()
+        card.view.layoutIfNeeded()
+        card.rabbitHoleReader?.focusedScrollReader?.view.layoutIfNeeded()
+        card.prepareForCardViewportTransition(to: restingSize)
+        defer { card.finishCardViewportTransition(completed: true) }
+        if UIAccessibility.isReduceMotionEnabled { return }
+        let surfaces = allSubviews(in: card.view).filter { $0.accessibilityIdentifier == "reader.header.reflow" }
+        XCTAssertFalse(surfaces.isEmpty)
+        for surface in surfaces {
+            let crop = try XCTUnwrap(surface.subviews.first)
+            XCTAssertEqual(crop.bounds.width, card.view.bounds.width, accuracy: 0.5,
+                           "The banner crop follows the card, even when title text retains a narrower width")
         }
     }
 

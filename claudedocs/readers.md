@@ -117,32 +117,39 @@ does not gain text width expansion.
 Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
 inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
-the selected article to the rail or the compact deck. Scroll-driven changes retain
-one fixed live text viewport, centered inside the changing card. The whole article
-keeps its line breaks and column width, including lines entering from either edge
-and lines returning after a direction reversal. Scrolling never invalidates line
-layout or compensates the content offset as individual lines leave the viewport.
-The scrolling masthead keeps its text geometry for the same period. Selection,
-links, attachments, accessibility and WordMap continue to use the live TextKit
-layout. Its scroll pan recognizer stays on the full card viewport so the revealed
-margins still accept drags. A real window resize releases the retained width and
-anchors the passage.
+the selected article to the rail or the compact deck. Scroll-driven changes preserve the character ranges and column widths of lines
+already in view. Lines entering from below or above use the destination's readable
+width immediately. `ScrollStableTextContainer` freezes the current visible band
+before releasing departed lines, including newly entered lines, so removing the
+last old-width line cannot rewrap text that is already onscreen. Reflow above the
+viewport restores a character anchor; those compensating offsets do not count as
+scroll travel for chrome. Short-lived line views keep existing text stationary
+through the card's animation, then drawing returns to live TextKit. Selection,
+links, attachments, accessibility and WordMap continue to use that same layout.
+The live canvas can remain wider than a contracting card to avoid UITextView
+shifting its drawing origin; incoming lines are centered at the actual card's
+readable width. Its pan recognizer stays on the full card viewport. A real window
+resize releases this policy and anchors the passage. The scrolling masthead keeps
+its existing text geometry during scroll-driven changes.
 Both masthead copies render their banner at the chrome-less card width and a fixed
 height derived from the resting header; only the surrounding crop changes with
-chrome. The image is revealed without rescaling or moving horizontally. The scroll
-reader clips at the card boundary so this banner can extend past the retained text
-column. Taps release the retained column and use `TextViewportReflowTransition`, which
+chrome. The image is revealed without rescaling or moving horizontally. Tap reflow
+uses a separate fixed-size banner canvas and moves individual CoreText title glyphs
+between their fitted positions, including headline overflow and sender metadata.
+The pinned title uses the same presentation while changing visibility, so neither
+masthead is animated as a stretched screenshot.
+Taps release the preserved lines and use `TextViewportReflowTransition`, which
 builds a second TextKit layout for the destination width before the 0.32s transition,
 anchors the glyph around the upper quarter of the viewport, and temporarily replaces
-the live jumping layout with per-glyph images. Every glyph whose old→new path intersects
-the viewport translates to its real destination; a glyph entering or leaving uses its
-real hypothetical offscreen endpoint. The overlay clips continuously while the card's
-rounded content viewport expands/contracts, then the final live TextKit layout is
-revealed at the anchored offset. Reduce Motion skips the per-glyph overlay. Tests:
-`ReaderCardViewportPolicyTests`, `CardCarouselExpandedImmersionTests`, and
-`ArticleTextRendererProgressiveTests` (scroll-driven expansion/contraction, re-entry,
-non-space scripts, live resizing, tap-driven glyph reflow, and sampled presentation
-positions during animated card expansion).
+the live jumping layout with per-glyph images. A retained canvas also reflows when
+its width already matches the destination but its line policy differs. Every glyph
+whose old→new path intersects the viewport translates to its real destination;
+clipping follows the card's rounded viewport. Reduce Motion skips the glyph overlays.
+Tests: `ArticleCardsChromeTests`, `ReaderHeaderGlyphTransitionTests`,
+`ArticleTextRendererProgressiveTests`, `ScrollDirectionImmersionTrackerTests`, and
+`CardCarouselExpandedImmersionTests` cover title wrapping, fixed banner geometry,
+incoming widths from both edges, gradual boundary retirement, stationary animation
+frames, non-space scripts, tap reflow after scrolling, and live resizing.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout
@@ -216,8 +223,9 @@ between previews has no tap action. Narrow windows retain the single-card deck.
 
 Dismissed Scroll cards now use the full safe width on compact iPhone windows,
 with the text view's own 20pt margin. Wide windows retain 16pt outside the card
-and a maximum 680pt text column. Expansion and contraction use the existing
-TextKit glyph transition, informed by Lune's stable reading-anchor approach.
+and a maximum 680pt text column. Tap-driven expansion and contraction use the
+TextKit glyph transition; scroll-driven changes preserve the visible lines while
+incoming text adopts the new width.
 The same character stays at its reading height during a live window resize;
 Reduce Motion restores that anchor without creating animated glyph views.
 
@@ -245,9 +253,9 @@ Validation: Xcode 27.1 builds and launches Reader on the iPhone Duo simulator;
 The stable Xcode 26.2 build also passes. Simulator pose controls were unavailable
 while the host Mac was locked, so inner-display/fold geometry is verified by
 tests; the outer display was inspected in a simulator screenshot.
-The broader chrome tests have five failures reproduced on the starting commit
-(`ecc968176`): centered-card immersion, cross-kind title reveal, staged title
-reveal, deletion content cleanup, and the old fixed-title-inset expectation.
+The current iOS 26.2 chrome regression run also passes the centered-card immersion,
+cross-kind title reveal, staged title reveal, deletion cleanup, and title-inset
+checks that failed on the older `ecc968176` baseline.
 
 ## Scroll reader (+ split-web link handling)
 

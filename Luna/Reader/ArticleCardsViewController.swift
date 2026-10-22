@@ -1250,11 +1250,9 @@ final class ReaderCardContentViewController: CardContentViewController,
     /// prefix-to-full article swap) so the pinned/scrolling title copies never
     /// trade visibility for a single frame after a card transition.
     private var pendingProgrammaticTitleUpdate: DispatchWorkItem?
-    /// The title copy mounted inside UITextView is outside TextKit's attributed
-    /// string. A flattened copy keeps it visible above the per-glyph body
-    /// transition while the live text view is temporarily hidden for reflow.
-    private var viewportTitleSnapshot: UIView?
-    private var viewportTitleDestinationFrame: CGRect?
+    /// Independent glyphs for title reflow, plus a fixed-size image canvas.
+    private var viewportPinnedTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
+    private var viewportTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
     private weak var viewportTransitionScrollReader: ScrollReaderViewController?
     /// Which copy currently owns the title — see `updateTitleHandoffLatch()`.
     private var pinnedTitleHasTakenOver = false
@@ -1709,9 +1707,11 @@ final class ReaderCardContentViewController: CardContentViewController,
     }
 
     override func prepareForCardViewportTransition(to size: CGSize) {
-        viewportTitleSnapshot?.removeFromSuperview()
-        viewportTitleSnapshot = nil
-        viewportTitleDestinationFrame = nil
+        viewportPinnedTitlePresentation?.finish()
+        viewportPinnedTitlePresentation = nil
+        titleHeader.isHidden = false
+        viewportTitlePresentation?.finish()
+        viewportTitlePresentation = nil
         viewportTransitionScrollReader = nil
         if scrollDrivenViewportTransition {
             preservedScrollTitleSize = preservedScrollTitleSize ?? scrollTitleHeader.bounds.size
@@ -1727,6 +1727,9 @@ final class ReaderCardContentViewController: CardContentViewController,
             scrollReader.prepareForCardViewportTransition(
                 to: size, destinationTopChromeInset: destinationTitleHeight,
                 preservingVisibleLines: true)
+            viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
+                x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+            titleHeader.isHidden = viewportPinnedTitlePresentation != nil
             return
         }
         guard let scrollReader = rabbitHoleReader?.focusedScrollReader,
@@ -1736,35 +1739,32 @@ final class ReaderCardContentViewController: CardContentViewController,
         else { return }
         viewportTransitionScrollReader = scrollReader
 
-        let sourceFrame = scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view)
-        guard sourceFrame.intersects(view.bounds.insetBy(dx: 0, dy: -4)),
-              let snapshot = scrollTitleHeader.snapshotView(afterScreenUpdates: false)
-        else { return }
-        snapshot.frame = sourceFrame
-        snapshot.isUserInteractionEnabled = false
-        view.addSubview(snapshot)
-        viewportTitleSnapshot = snapshot
         let destinationOffset = scrollReader.preparedCardViewportDestinationOffsetY ?? 0
         let readerOrigin = scrollReader.view.convert(CGPoint.zero, to: view)
-        viewportTitleDestinationFrame = CGRect(
+        let destinationFrame = CGRect(
             x: readerOrigin.x,
             y: readerOrigin.y - destinationTitleHeight - destinationOffset,
             width: size.width, height: destinationTitleHeight)
+        viewportTitlePresentation = scrollTitleHeader.prepareReflow(to: destinationFrame, in: view)
+        viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
+            x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+        titleHeader.isHidden = viewportPinnedTitlePresentation != nil
     }
 
     override func animatePreparedCardViewportTransition() {
         viewportTransitionScrollReader?.animatePreparedCardViewportTransition()
-        if let destination = viewportTitleDestinationFrame {
-            viewportTitleSnapshot?.frame = destination
-        }
+        viewportTitlePresentation?.animate()
+        viewportPinnedTitlePresentation?.animate()
     }
 
     override func finishCardViewportTransition(completed: Bool) {
         viewportTransitionScrollReader?.finishCardViewportTransition(completed: completed)
         viewportTransitionScrollReader = nil
-        viewportTitleSnapshot?.removeFromSuperview()
-        viewportTitleSnapshot = nil
-        viewportTitleDestinationFrame = nil
+        viewportPinnedTitlePresentation?.finish()
+        viewportPinnedTitlePresentation = nil
+        titleHeader.isHidden = false
+        viewportTitlePresentation?.finish()
+        viewportTitlePresentation = nil
     }
 
     /// Moves the permanent title copy into whichever scroll surface is focused
@@ -1799,7 +1799,8 @@ final class ReaderCardContentViewController: CardContentViewController,
         // Size both title copies from the card so the scrolling copy cannot
         // paint wide and then visibly re-wrap on the reader's following pass.
         let scrollingWidth = preservedScrollTitleSize?.width ?? view.bounds.width
-        let scrollViewportWidth = preservedScrollTitleSize == nil ? view.bounds.width : focused.bounds.width
+        let scrollViewportWidth = preservedScrollTitleSize == nil ? view.bounds.width
+            : max(view.bounds.width, focused.bounds.width)
         scrollTitleHeader.frame = CGRect(
             x: (scrollViewportWidth - scrollingWidth) / 2, y: -titleHeaderHeight,
             width: scrollingWidth, height: titleHeaderHeight)
@@ -1852,8 +1853,10 @@ final class ReaderCardContentViewController: CardContentViewController,
         let showsPinnedTitle = titleScrollView == nil || isLibraryPreview
             || (cardChromeVisible && (pinnedTitleHasTakenOver || scrollingHeaderHasLeftViewport))
         scrollTitleHeader.alpha = isLibraryPreview ? 0 : 1
+        viewportTitlePresentation?.surface.alpha = scrollTitleHeader.alpha
         let changes = {
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
+            self.viewportPinnedTitlePresentation?.surface.alpha = self.titleHeader.alpha
         }
         titleHeader.accessibilityElementsHidden = !showsPinnedTitle
         scrollTitleHeader.accessibilityElementsHidden = showsPinnedTitle
@@ -2090,9 +2093,9 @@ private final class ReaderCardTitleHeaderView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let cropWidth = max(bounds.width, bannerViewportWidth)
+        let cropWidth = bannerViewportWidth > 0 ? bannerViewportWidth : bounds.width
         let canvasWidth = max(cropWidth, bannerCanvasSize.width)
-        let canvasHeight = max(bounds.height, bannerCanvasSize.height)
+        let canvasHeight = bannerCanvasSize.height > 0 ? bannerCanvasSize.height : bounds.height
         bannerCrop.frame = CGRect(x: (bounds.width - cropWidth) / 2, y: 0,
                                   width: cropWidth, height: bounds.height)
         bannerView.frame = CGRect(x: (cropWidth - canvasWidth) / 2, y: 0,
@@ -2140,6 +2143,103 @@ private final class ReaderCardTitleHeaderView: UIView {
         // metadata stack. Keep it beside the title even when a source/sender
         // line makes the overall header taller.
         iconView.frame.origin.y = (titleLabel.isHidden ? subtitleLabel.frame.midY : titleLabel.frame.midY) - iconSide / 2
+    }
+
+    /// The scrolling header is a UITextView subview and disappears with the live
+    /// body during tap reflow. Keep its banner, icon and characters independently
+    /// presented until the final layout is ready.
+    @MainActor
+    final class ReflowPresentation {
+        let surface: UIView
+        let crop: UIView
+        let canvas: UIImageView
+        let treatment: UIView
+        let icon: UIImageView
+        let glyphs: ReaderHeaderGlyphTransition
+        let destination: CGRect
+        let destinationIcon: CGRect
+        let canvasSize: CGSize
+
+        init(source: ReaderCardTitleHeaderView, destination: ReaderCardTitleHeaderView, in host: UIView) {
+            let sourceFrame = source.bannerCrop.convert(source.bannerCrop.bounds, to: host)
+            self.destination = destination.frame
+            canvasSize = source.bannerView.bounds.size
+            surface = UIView(frame: host.bounds)
+            surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            surface.clipsToBounds = true
+            surface.isUserInteractionEnabled = false
+            surface.alpha = source.alpha
+            surface.accessibilityIdentifier = "reader.header.reflow"
+            host.addSubview(surface)
+            crop = UIView(frame: sourceFrame)
+            crop.clipsToBounds = true
+            crop.backgroundColor = source.backgroundColor
+            surface.addSubview(crop)
+            canvas = UIImageView(image: source.bannerView.image)
+            canvas.contentMode = .scaleAspectFill
+            canvas.clipsToBounds = true
+            canvas.frame = CGRect(x: (crop.bounds.width - canvasSize.width) / 2, y: 0,
+                                  width: canvasSize.width, height: canvasSize.height)
+            crop.addSubview(canvas)
+            treatment = UIView(frame: crop.bounds)
+            treatment.backgroundColor = source.bannerTreatment.backgroundColor
+            treatment.isHidden = source.bannerTreatment.isHidden
+            crop.addSubview(treatment)
+            icon = UIImageView(image: source.iconView.image)
+            icon.tintColor = source.iconView.tintColor
+            icon.contentMode = .scaleAspectFit
+            icon.layer.cornerRadius = source.iconView.layer.cornerRadius
+            icon.clipsToBounds = true
+            icon.frame = source.iconView.convert(source.iconView.bounds, to: host)
+            destinationIcon = destination.iconView.convert(destination.iconView.bounds, to: host)
+            surface.addSubview(icon)
+            glyphs = ReaderHeaderGlyphTransition(source: source.transitionGlyphs(in: host),
+                destination: destination.transitionGlyphs(in: host), in: surface)
+        }
+
+        func animate() {
+            crop.frame = destination
+            canvas.frame.origin.x = (destination.width - canvasSize.width) / 2
+            treatment.frame = crop.bounds
+            icon.frame = destinationIcon
+            glyphs.animate()
+        }
+
+        func finish() { surface.removeFromSuperview() }
+    }
+
+    func prepareReflow(to destinationFrame: CGRect, in host: UIView) -> ReflowPresentation? {
+        let sourceFrame = convert(bounds, to: host)
+        guard sourceFrame.intersects(host.bounds) || destinationFrame.intersects(host.bounds),
+              !UIAccessibility.isReduceMotionEnabled else { return nil }
+        setNeedsLayout()
+        layoutIfNeeded()
+        let destination = ReaderCardTitleHeaderView(title: fullTitle, subtitle: subtitleLabel.text)
+        destination.setBanner(bannerView.image)
+        destination.setIcon(iconView.image ?? UIImage())
+        destination.setBannerGeometry(viewportWidth: destinationFrame.width, canvasSize: bannerCanvasSize)
+        _ = destination.heightThatFits(width: destinationFrame.width, topInset: topInset)
+        destination.frame = destinationFrame
+        destination.isHidden = true
+        host.addSubview(destination)
+        destination.layoutIfNeeded()
+        let presentation = ReflowPresentation(source: self, destination: destination, in: host)
+        destination.removeFromSuperview()
+        return presentation
+    }
+
+    private func transitionGlyphs(in host: UIView) -> [ReaderHeaderGlyphTransition.Glyph] {
+        var glyphs = ReaderHeaderGlyphTransition.glyphs(in: titleLabel, key: "title", relativeTo: host)
+        if !overflowLabel.isHidden, let continuation = overflowLabel.text {
+            let tail = String(continuation.dropFirst())
+            let range = (fullTitle as NSString).range(of: tail, options: .backwards)
+            if range.location != NSNotFound {
+                glyphs += ReaderHeaderGlyphTransition.glyphs(in: overflowLabel, key: "title",
+                    offset: range.location - 1, syntheticPrefixLength: 1, relativeTo: host)
+            }
+        }
+        glyphs += ReaderHeaderGlyphTransition.glyphs(in: subtitleLabel, key: "subtitle", relativeTo: host)
+        return glyphs
     }
 
     private static var readerTitleFont: UIFont {

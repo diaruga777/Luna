@@ -274,6 +274,7 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         view.addSubview(weeklyHost)
         view.addSubview(pasteRow)
+        pasteRow.pasteTarget = self
         if TranscribeSaveAction.isOffered {
             pasteRow.addInteraction(UIContextMenuInteraction(delegate: self))
         }
@@ -656,6 +657,7 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCardCentered = true
+        if pasteRow.state == .success { pasteRow.setState(.idle) }
         weeklyHost.cardDidBecomeCentered()
         updateSetupLabelClock()
         guard let headline, !didSettleHeadline else { return }
@@ -692,24 +694,47 @@ final class UtilCardContentViewController: CardContentViewController {
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
-        if let provider = itemProviders.first(where: {
-            $0.canLoadObject(ofClass: URL.self)
-        }) {
-            _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async { self?.handlePastedValue(url.absoluteString) }
-            }
-            return
-        }
-        guard let provider = itemProviders.first(where: {
-            $0.canLoadObject(ofClass: NSString.self)
-        }) else {
+        guard pasteRow.state != .loading else { return }
+        pasteRow.setState(.loading)
+        loadPastedValue(from: itemProviders[...])
+    }
+
+    private func loadPastedValue(from providers: ArraySlice<NSItemProvider>) {
+        guard let provider = providers.first else {
             pasteRow.setState(.failure(L10n.string("Onboarding_Util_invalidURL")))
             return
         }
+        if provider.canLoadObject(ofClass: URL.self) {
+            _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
+                DispatchQueue.main.async {
+                    if let url {
+                        self?.handlePastedValue(url.absoluteString)
+                    } else {
+                        // Some sources advertise a URL but only supply text.
+                        self?.loadPastedText(from: provider, remaining: providers.dropFirst())
+                    }
+                }
+            }
+        } else {
+            loadPastedText(from: provider, remaining: providers.dropFirst())
+        }
+    }
+
+    private func loadPastedText(
+        from provider: NSItemProvider, remaining: ArraySlice<NSItemProvider>
+    ) {
+        guard provider.canLoadObject(ofClass: NSString.self) else {
+            loadPastedValue(from: remaining)
+            return
+        }
         _ = provider.loadObject(ofClass: NSString.self) { [weak self] value, _ in
-            guard let value = value as? NSString else { return }
-            DispatchQueue.main.async { self?.handlePastedValue(value as String) }
+            DispatchQueue.main.async {
+                if let value = value as? String {
+                    self?.handlePastedValue(value)
+                } else {
+                    self?.loadPastedValue(from: remaining)
+                }
+            }
         }
     }
 

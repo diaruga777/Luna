@@ -36,10 +36,18 @@ util card or the save path.
 
 ## Content shared by both states
 
-The bottom paste row is always present. It is the real `UIPasteControl`-backed
-`OnboardingPasteRow`, so Luna receives clipboard data only after the system paste
-control authorizes it. A valid URL runs the surface host's normal ingest path;
-invalid input resolves in the row.
+The bottom paste row is always present. At rest, `OnboardingPasteRow` is one
+full-width, 44pt system `UIPasteControl` with its icon and label; there is no dead
+field beside a small icon-only button. Its owner sets `pasteTarget` directly
+before mounting, so paste delivery never depends on finding a controller in the
+responder chain. Luna receives clipboard data only after the system control
+authorizes it. During a save, the row shows the pasted URL and status beside the
+paste action. A valid URL runs normal ingest; invalid or unreadable clipboard
+input resolves as an inline error. A failed URL representation falls back to
+text. Only a pending save blocks another paste; success and failure both allow
+retry, and returning to the utility card clears a successful result. Foreground
+refresh preserves the target and refreshes clipboard eligibility after either
+success or failure as well as at rest.
 
 The Luna team row is CONDITIONAL: it exists whenever
 `WeeklySaveStore` holds a signed entry for one of this app's kinds, and the card
@@ -111,11 +119,11 @@ for a media transfer — until the real content crossfades in.
 the source hands over (`UtilCardSaveTransitionArtworkProviding`: a kind, a fill,
 a thumbnail, a title), and a source that has none does not get a grow at all.
 There is deliberately no flat-snapshot fallback — the one source that ever took
-that path, the 40pt paste row, was stretched some fifteen times its own height
+that path, the compact paste row, was stretched some fifteen times its own height
 and filled the card with a smeared copy of itself, placeholder text included
 (a snapshot taken `afterScreenUpdates: false` predates the pasted value
 landing). A paste says what it is doing where it stands: the pasted URL in the
-field, a spinner ahead of it, then the mark.
+status field, a spinner ahead of it, then the mark.
 
 ## The setup block
 
@@ -293,7 +301,7 @@ line's room is reserved before it has anything on it, so the line above never
 moves when the second beat brings it in. The setup actions are
 anchored UPWARD from the paste row (as they were on the standalone intro), not
 off the headline, and the “or” sits in the seam between the last action and the
-paste field.
+paste action.
 
 The “or” is shown only while BOTH of these hold: the setup legs are not both
 finished/skipped, and the deck holds no save of its own (the host passes

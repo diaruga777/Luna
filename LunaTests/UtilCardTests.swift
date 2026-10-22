@@ -9,6 +9,7 @@ import LunaModels
 import LunaStorage
 import LunaWeekly
 import UIKit
+import UniformTypeIdentifiers
 import XCTest
 @testable import Luna
 
@@ -114,6 +115,135 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(nextLaunch.view.descendants(of: OnboardingIntroHeadlineView.self).isEmpty)
         XCTAssertNotNil(nextLaunch.view.descendant(
             identifier: OnboardingStrings.Accessibility.introPaste.value()))
+    }
+
+    // MARK: - Paste action
+
+    func testPasteActionFillsTheIdleRowAndTargetsItsOwnerBeforeMounting() throws {
+        let card = makeCard(showsOnboarding: false)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+        row.layoutIfNeeded()
+        let control = try XCTUnwrap(row.descendants(of: UIPasteControl.self).first)
+
+        XCTAssertTrue(control.target === card)
+        XCTAssertEqual(control.configuration.displayMode, .iconAndLabel)
+        XCTAssertEqual(control.frame, row.bounds)
+        XCTAssertGreaterThanOrEqual(row.bounds.height, 44)
+        XCTAssertTrue(row.descendants(of: UITextField.self).allSatisfy(\.isHidden))
+    }
+
+    func testNativePasteControlRefreshesClipboardEligibilityAfterAFailure() async throws {
+        // Do not read a prior process's clipboard: that raises a permission
+        // sheet and blocks headless tests. This simulator fixture is cleared.
+        defer { UIPasteboard.general.items = [] }
+        UIPasteboard.general.string = "https://example.com/native-paste"
+        let card = makeCard(showsOnboarding: false)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = card
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+        let original = try XCTUnwrap(row.descendants(of: UIPasteControl.self).first)
+        XCTAssertTrue(original.target === card)
+        XCTAssertTrue(card.canPaste([NSItemProvider(object: "https://example.com" as NSString)]))
+        row.setState(.failure("Try another link"))
+
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        try? await Task.sleep(for: .milliseconds(50))
+        let refreshed = try XCTUnwrap(row.descendants(of: UIPasteControl.self).first)
+        XCTAssertFalse(refreshed === original)
+        XCTAssertTrue(refreshed.target === card)
+        XCTAssertTrue(refreshed.isEnabled)
+        XCTAssertEqual(row.state, .failure("Try another link"))
+    }
+
+    func testPasteSavesURLAndRemainsAvailableForAnotherSave() async throws {
+        let environment = FakeUtilCardEnvironment()
+        let card = makeCard(showsOnboarding: false, environment: environment)
+        card.loadViewIfNeeded()
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+
+        card.paste(itemProviders: [NSItemProvider(object: URL(string: "https://example.com/one")! as NSURL)])
+        XCTAssertEqual(row.state, .loading)
+        XCTAssertFalse(try XCTUnwrap(row.descendants(of: UIPasteControl.self).first).isEnabled)
+        // A second invocation while the first provider is loading is ignored.
+        card.paste(itemProviders: [NSItemProvider(object: "https://example.com/duplicate" as NSString)])
+        await waitForPaste(.success, in: row)
+        XCTAssertEqual(environment.savedURL, "https://example.com/one")
+        XCTAssertEqual(environment.savedSource, .paste)
+        XCTAssertTrue(try XCTUnwrap(row.descendants(of: UIPasteControl.self).first).isUserInteractionEnabled)
+
+        card.cardDidLeaveCenter()
+        card.cardDidBecomeCentered()
+        XCTAssertEqual(row.state, .idle)
+        card.paste(itemProviders: [NSItemProvider(object: "https://example.com/two" as NSString)])
+        await waitForPaste(.success, in: row)
+        XCTAssertEqual(environment.savedURL, "https://example.com/two")
+    }
+
+    func testInvalidPasteShowsErrorAndAllowsRetry() async throws {
+        let environment = FakeUtilCardEnvironment()
+        let card = makeCard(showsOnboarding: false, environment: environment)
+        card.loadViewIfNeeded()
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+
+        card.paste(itemProviders: [NSItemProvider(object: "not a link" as NSString)])
+        await waitForPaste(.failure(L10n.string("Onboarding_Util_invalidURL")), in: row)
+        XCTAssertNil(environment.savedURL)
+        XCTAssertEqual(row.status.symbol, .failure)
+
+        card.paste(itemProviders: [NSItemProvider(object: "https://example.com/retry" as NSString)])
+        await waitForPaste(.success, in: row)
+        XCTAssertEqual(environment.savedURL, "https://example.com/retry")
+    }
+
+    func testUnreadableURLRepresentationFallsBackToText() async throws {
+        let environment = FakeUtilCardEnvironment()
+        let card = makeCard(showsOnboarding: false, environment: environment)
+        card.loadViewIfNeeded()
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.url.identifier, visibility: .all) {
+            completion in
+            completion(nil, NSError(domain: "PasteTest", code: 1))
+            return nil
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) {
+            completion in
+            completion(Data("https://example.com/fallback".utf8), nil)
+            return nil
+        }
+
+        card.paste(itemProviders: [provider])
+        await waitForPaste(.success, in: row)
+        XCTAssertEqual(environment.savedURL, "https://example.com/fallback")
+    }
+
+    func testClipboardLoadFailureLeavesLoadingAndAllowsRetry() async throws {
+        let card = makeCard(showsOnboarding: false)
+        card.loadViewIfNeeded()
+        let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) {
+            completion in
+            completion(nil, NSError(domain: "PasteTest", code: 1))
+            return nil
+        }
+
+        card.paste(itemProviders: [provider])
+        await waitForPaste(.failure(L10n.string("Onboarding_Util_invalidURL")), in: row)
+        XCTAssertTrue(try XCTUnwrap(row.descendants(of: UIPasteControl.self).first).isUserInteractionEnabled)
+    }
+
+    private func waitForPaste(_ state: OnboardingPasteRow.State, in row: OnboardingPasteRow) async {
+        for _ in 0..<200 {
+            if row.state == state { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(row.state, state)
     }
 
     // MARK: - The weekly row is conditional

@@ -58,17 +58,9 @@ enum OnboardingIntroTiming {
 /// can position from the bottom of its surface.
 enum OnboardingIntroActionMetrics {
     static let buttonHeight: CGFloat = 56
-    /// The paste row is a field, not a third setup button, and reads as one:
-    /// well short of the two above it so the block resolves downward.
-    /// 40 is the floor, not a preference. `UIPasteControl` is drawn by the
-    /// system and silently abandons its capsule and its glyph — leaving a bare
-    /// tinted square — once it is squeezed below this at `controlWidth`. It
-    /// reports a zero intrinsic size, so nothing warns you; the only signal is
-    /// the blank button. Anything shorter means giving up the real paste
-    /// control, and with it paste without a permission alert.
-    static let pasteRowHeight: CGFloat = 40
-    /// How far the paste row reaches past the content inset the setup buttons
-    /// keep. Everything it buys goes to the field.
+    /// A full-width system paste action, with a standard touch target.
+    static let pasteRowHeight: CGFloat = 44
+    /// How far the paste row reaches past the intro's content inset.
     static let pasteRowOutset: CGFloat = 8
     static let spacing: CGFloat = 10
     /// The “or” sits closer to what it separates than the setup buttons sit to
@@ -191,12 +183,12 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         ])
         view.addSubview(buttonStack)
         view.addSubview(pasteRow)
-
         pasteConfiguration = UIPasteConfiguration(
             acceptableTypeIdentifiers: [
                 UTType.url.identifier,
                 UTType.plainText.identifier,
             ])
+        pasteRow.pasteTarget = self
     }
 
     override func viewDidLayoutSubviews() {
@@ -426,14 +418,9 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     }
 }
 
-/// The completion action: the system's own paste control, and beside it a
-/// field that always says what the row currently holds.
-///
-/// The control is the REAL `UIPasteControl`, drawn by the system — nothing is
-/// painted over it — so the clipboard is read without a paste-permission
-/// alert. Everything stateful lives in the field next to it: the pasted text
-/// arrives there the instant it is pasted, prefixed by a spinner while Luna
-/// works, and that spinner resolves in place into a checkmark or a cross.
+/// A full-width system paste action at rest. Once invoked, it makes room for
+/// the URL and status beside it. Nothing is painted over `UIPasteControl`, so
+/// clipboard access stays authorized by the user's system paste gesture.
 final class OnboardingPasteRow: UIView {
     enum State: Equatable {
         case idle
@@ -443,7 +430,7 @@ final class OnboardingPasteRow: UIView {
     }
 
     static var placeholder: String { OnboardingStrings.Intro.paste.value() }
-    private static let controlWidth: CGFloat = 50
+    private static let controlWidth: CGFloat = 100
     private static let gap: CGFloat = 7
 
     private var control: UIPasteControl
@@ -454,21 +441,16 @@ final class OnboardingPasteRow: UIView {
     let status = OnboardingPasteStatusView()
     private(set) var state = State.idle
     private var foregroundObserver: NSObjectProtocol?
+    /// The owner supplies the paste receiver directly, before the row is mounted.
+    weak var pasteTarget: (any UIPasteConfigurationSupporting)? {
+        didSet { control.target = pasteTarget }
+    }
 
-    /// Built fresh rather than kept, so that a return to the foreground gets a
-    /// control that has read the pasteboard as it stands now.
-    ///
-    /// `UIPasteControl` is documented to reflect whether the pasteboard holds
-    /// anything matching the target's `pasteConfiguration`, and it follows
-    /// `UIPasteboard.changedNotification` — which is **not** posted for changes
-    /// made while the app is in the background. So a link copied in Safari and
-    /// brought back here is a change the control never hears about. (Measured
-    /// on the simulator, its fill is byte-identical either way, so this buys
-    /// nothing there; it is the documented contract that is being honoured,
-    /// not an observed repair.)
+    /// Recreated on foregrounding because clipboard changes made in another
+    /// app do not post `UIPasteboard.changedNotification` to this process.
     private static func makeControl() -> UIPasteControl {
         let configuration = UIPasteControl.Configuration()
-        configuration.displayMode = .iconOnly
+        configuration.displayMode = .iconAndLabel
         configuration.cornerStyle = .capsule
         // The system fills the control with this colour opaquely — an alpha
         // component is dropped, so the setup buttons' 26% glass wash is mixed
@@ -479,7 +461,6 @@ final class OnboardingPasteRow: UIView {
             .black, toward: LunaSurfacePalette.baseColor, amount: 0.90)
         configuration.baseForegroundColor = LunaColors.primaryText
         let control = UIPasteControl(configuration: configuration)
-        control.target = nil
         control.accessibilityLabel = placeholder
         return control
     }
@@ -513,6 +494,7 @@ final class OnboardingPasteRow: UIView {
         field.layer.cornerCurve = .continuous
         field.leftView = status
         field.leftViewMode = .never
+        field.isHidden = true
         addSubview(field)
     }
 
@@ -525,44 +507,33 @@ final class OnboardingPasteRow: UIView {
         }
     }
 
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        bindControlToHostingController()
-    }
-
-    private func bindControlToHostingController() {
-        var responder: UIResponder? = self
-        while let next = responder?.next {
-            if let target = next as? UIViewController {
-                control.target = target
-                break
-            }
-            responder = next
-        }
-    }
-
-    /// Swaps in a control that has read the pasteboard as it stands now. Only
-    /// at rest: mid-flight the row owns the control's enablement, and a
-    /// resolved paste has already had its answer.
+    /// Refresh eligibility on return from another app, including after a failed
+    /// or completed paste. UIKit owns enablement based on clipboard contents.
     private func rebuildControlForCurrentPasteboard() {
-        guard state == .idle, window != nil else { return }
+        guard state != .loading, window != nil else { return }
+        replaceControl()
+    }
+
+    private func replaceControl() {
         let replacement = Self.makeControl()
+        replacement.target = pasteTarget
+        replacement.frame = control.frame
         control.removeFromSuperview()
         control = replacement
         addSubview(replacement)
-        bindControlToHostingController()
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        let showsValue = state != .idle
+        let controlWidth = showsValue ? min(Self.controlWidth, bounds.width) : bounds.width
         control.frame = CGRect(
-            x: 0, y: 0, width: Self.controlWidth, height: bounds.height)
-        let fieldX = control.frame.maxX + Self.gap
+            x: bounds.width - controlWidth, y: 0,
+            width: controlWidth, height: bounds.height)
         field.frame = CGRect(
-            x: fieldX,
-            y: 0,
-            width: max(bounds.width - fieldX, 0),
+            x: 0, y: 0,
+            width: max(control.frame.minX - Self.gap, 0),
             height: bounds.height)
         field.layer.cornerRadius = bounds.height / 2
     }
@@ -575,28 +546,33 @@ final class OnboardingPasteRow: UIView {
     }
 
     func setState(_ state: State) {
+        let wasLoading = self.state == .loading
         self.state = state
+        field.isHidden = state == .idle
+        if state == .loading {
+            control.isEnabled = false
+        } else if wasLoading {
+            // Let the system re-evaluate clipboard eligibility instead of
+            // forcing isEnabled true for an empty or unsupported clipboard.
+            replaceControl()
+        }
         switch state {
         case .idle:
             field.text = nil
             field.textColor = LunaColors.primaryText
             status.setSymbol(.none, animated: false)
             setStatusVisible(false)
-            control.isEnabled = true
         case .loading:
             setStatusVisible(true)
             status.setSymbol(.spinner, animated: false)
-            control.isEnabled = false
         case .success:
             setStatusVisible(true)
             status.setSymbol(.success, animated: true)
-            control.isEnabled = false
         case .failure(let message):
             field.text = message
             field.textColor = LunaColors.errorAccent
             setStatusVisible(true)
             status.setSymbol(.failure, animated: true)
-            control.isEnabled = true
             UIAccessibility.post(notification: .announcement, argument: message)
         }
         field.accessibilityValue = field.text

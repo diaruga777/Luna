@@ -836,10 +836,13 @@ nothing moves) and removes the hop afterwards.
 ## Paste as first-run success path
 
 Paste is no longer an onboarding completion action. It is a permanent utility
-action in both card variants. `OnboardingPasteRow` still provides the visible
-field and a real `UIPasteControl`; valid URLs run normal ingest and use the util
-row-to-card transition, while failure stays in the row. Saving content does not
-silently claim that Safari and shortcut setup were completed.
+action in both card variants. At rest, `OnboardingPasteRow` is a full-width
+system paste button. Once invoked, it shows the pasted URL and status beside
+the button. Valid URLs run normal ingest; paste progress and errors stay in
+the row, without a row-to-card grow transition. The action allows another paste
+after success or failure. Saving content does not silently claim that Safari
+and shortcut setup were completed. See `util-card.md` for clipboard delivery
+and retry behavior.
 
 ## Setup replay from Settings
 

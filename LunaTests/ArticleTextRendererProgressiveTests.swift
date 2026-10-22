@@ -259,7 +259,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
-    func testInteractiveWidthChangesKeepAllLinesStableThroughScrollingAndReversal() throws {
+    func testInteractiveWidthChangesPreserveVisibleLinesAndReflowIncomingLines() throws {
         var item = SavedItem(urlString: "https://example.com/stable-lines")
         item.state = .ready
         let article = ArticleContent(title: "Stable lines", blocks: [paragraph(String(
@@ -269,7 +269,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         reader.view.frame = CGRect(x: 0, y: 0, width: 350, height: 600)
         reader.view.layoutIfNeeded()
         let text = try XCTUnwrap(firstTextView(in: reader.view))
-        text.contentOffset.y = 650
+        text.contentOffset.y = 5_000
         reader.scrollViewDidScroll(text)
         let originalString = text.text
 
@@ -278,8 +278,8 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
             var result: [(NSRange, CGRect)] = []
             text.layoutManager.enumerateLineFragments(forGlyphRange: NSRange(
                 location: 0, length: text.layoutManager.numberOfGlyphs)) { rect, _, _, glyphs, _ in
-                let screen = rect.offsetBy(dx: text.textContainerInset.left,
-                    dy: text.textContainerInset.top - text.contentOffset.y)
+                let screen = text.convert(rect.offsetBy(dx: text.textContainerInset.left,
+                    dy: text.textContainerInset.top), to: reader.view)
                 if screen.intersects(CGRect(origin: .zero, size: text.bounds.size)) {
                     result.append((text.layoutManager.characterRange(
                         forGlyphRange: glyphs, actualGlyphRange: nil), screen))
@@ -312,7 +312,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         func displayedX(for range: NSRange) throws -> CGFloat {
             let start = try XCTUnwrap(text.position(from: text.beginningOfDocument, offset: range.location))
             let end = try XCTUnwrap(text.position(from: start, offset: 1))
-            return text.firstRect(for: try XCTUnwrap(text.textRange(from: start, to: end))).minX
+            return text.convert(text.firstRect(for: try XCTUnwrap(text.textRange(from: start, to: end))), to: reader.view).minX
         }
         let narrow = visibleLines()
         let normalTextX = try displayedX(for: XCTUnwrap(narrow.first).0)
@@ -320,42 +320,53 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         resize(to: 600)
         assertPreserved(narrow)
 
-        // Newly entering lines use the same fixed layout. Releasing a line at
-        // either viewport edge must never move another line or adjust the offset.
-        text.contentOffset.y += 900
-        reader.scrollViewDidScroll(text)
-        let wide = visibleLines()
-        XCTAssertEqual(try XCTUnwrap(wide.first).1.width, try XCTUnwrap(narrow.first).1.width, accuracy: 0.5)
-        for _ in 0..<100 {
+        // Cross the preservation boundary a few points at a time. Reflow
+        // above the viewport must not move any line that is still visible.
+        for step in 0..<100 {
             let before = visibleLines()
-            let offset = text.contentOffset.y + 7
-            text.contentOffset.y = offset
+            text.contentOffset.y += 7
             reader.scrollViewDidScroll(text)
-            XCTAssertEqual(text.contentOffset.y, offset, accuracy: 0.01)
             let after = visibleLines()
-            for (range, rect) in before {
-                if let match = after.first(where: { $0.0 == range }) {
-                    XCTAssertEqual(match.1.minY, rect.minY - 7, accuracy: 0.01)
-                    XCTAssertEqual(match.1.width, rect.width, accuracy: 0.01)
-                }
+            for (range, rect) in before where rect.maxY > 7 {
+                let match = try XCTUnwrap(after.first(where: { $0.0 == range }),
+                    "Visible line changed at step \(step): \(range), \(rect), after: \(after.map { $0.0 })")
+                XCTAssertEqual(match.1.minY, rect.minY - 7, accuracy: 0.5)
+                XCTAssertEqual(match.1.width, rect.width, accuracy: 0.5)
             }
         }
+        let wide = visibleLines()
+        XCTAssertTrue(wide.allSatisfy { $0.1.width > narrow[0].1.width + 100 },
+                      "Incoming lines must fill the expanded column")
         text.contentOffset.y -= 700
+        reader.scrollViewDidScroll(text)
+        let beforeContraction = visibleLines()
         resize(to: 350)
-        assertPreserved(wide)
+        assertPreserved(beforeContraction)
         XCTAssertLessThanOrEqual(text.contentSize.width, text.bounds.width + 0.5,
                                  "Clipped old lines must not make the article scroll horizontally")
 
-        text.contentOffset.y -= 900
-        reader.scrollViewDidScroll(text)
+        for step in 0..<100 {
+            let before = visibleLines()
+            text.contentOffset.y -= 7
+            reader.scrollViewDidScroll(text)
+            let after = visibleLines()
+            for (range, rect) in before where rect.minY + 7 < reader.view.bounds.height {
+                let match = try XCTUnwrap(after.first(where: { $0.0 == range }),
+                    "A visible line changed while scrolling up at step \(step): \(range), \(rect), after \(after.map { $0.0 })")
+                XCTAssertEqual(match.1.minY, rect.minY + 7, accuracy: 0.5)
+                XCTAssertEqual(match.1.width, rect.width, accuracy: 0.5)
+            }
+        }
         let returnedNarrow = visibleLines()
         XCTAssertEqual(try displayedX(for: XCTUnwrap(returnedNarrow.first).0), normalTextX, accuracy: 0.5,
                        "Retained wide lines must not shift the canvas for newly revealed narrow text")
-        XCTAssertTrue(returnedNarrow.allSatisfy { abs($0.1.width - narrow[0].1.width) < 0.5 },
-                      "Lines re-entering from above must use the current narrow width")
+        XCTAssertTrue(returnedNarrow.allSatisfy { $0.1.width <= narrow[0].1.width + 0.5 },
+                      "Returning text must fit the current narrow width, including the short seam line")
+        XCTAssertGreaterThan(returnedNarrow.filter { abs($0.1.width - narrow[0].1.width) < 0.5 }.count, 10)
 
         // Tap-driven transitions still reflow the live text to one uniform column.
-        reader.prepareForCardViewportTransition(to: CGSize(width: 600, height: 600))
+        XCTAssertTrue(reader.prepareForCardViewportTransition(to: CGSize(width: 600, height: 600)),
+                      "A tap must reflow a retained column even when its canvas already has the target width")
         reader.animatePreparedCardViewportTransition()
         reader.view.frame.size.width = 600
         reader.view.layoutIfNeeded()
@@ -392,9 +403,9 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
 
         reader.prepareForCardViewportTransition(
             to: CGSize(width: 402, height: 600), preservingVisibleLines: true)
-        XCTAssertTrue(text.subviews.compactMap { $0 as? UIImageView }.isEmpty)
-        let sourceX = text.convert(.zero, to: window).x
-        let sourceWidth = text.bounds.width
+        let retainedLine = try XCTUnwrap(text.subviews.compactMap { $0 as? UIImageView }.first)
+        let sourceX = retainedLine.convert(.zero, to: window).x
+        let sourceWidth = retainedLine.bounds.width
         let sourceOffset = text.contentOffset.y
         // Commit the source frames before starting the card's transaction.
         RunLoop.main.run(until: Date().addingTimeInterval(0.03))
@@ -408,14 +419,14 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         for _ in 0..<8 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.03))
             let windowLayer = try XCTUnwrap(window.layer.presentation())
-            let presentation = try XCTUnwrap(text.layer.presentation())
+            let presentation = try XCTUnwrap(retainedLine.layer.presentation())
             XCTAssertEqual(presentation.convert(.zero, to: windowLayer).x, sourceX, accuracy: 0.5,
                 "The live text canvas must stay at its screen X throughout the animation")
             XCTAssertEqual(presentation.bounds.width, sourceWidth, accuracy: 0.5)
             XCTAssertEqual(text.contentOffset.y, sourceOffset, accuracy: 0.01)
         }
         RunLoop.main.run(until: Date().addingTimeInterval(0.15))
-        XCTAssertEqual(text.convert(.zero, to: window).x, sourceX, accuracy: 0.5)
+        XCTAssertEqual(retainedLine.convert(.zero, to: window).x, sourceX, accuracy: 0.5)
         reader.finishCardViewportTransition(completed: true)
         XCTAssertEqual(text.alpha, 1, "Text stays live throughout the transition")
     }
@@ -450,6 +461,38 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
+    func testInteractiveReflowKeepsQuoteAndListIndents() throws {
+        for kind in [ArticleContent.Block.Kind.quote, .listItem] {
+            let content = ArticleContent(title: "Indented", blocks: [.init(
+                kind: kind, text: String(repeating: "Indented words keep their proper place in the paragraph. ", count: 150), links: [])])
+            let item = SavedItem(urlString: "https://example.com/indents")
+            let reader = ScrollReaderViewController(item: item, content: content, includesArticleTitle: false)
+            reader.view.frame = CGRect(x: 0, y: 0, width: 350, height: 600)
+            reader.view.layoutIfNeeded()
+            let text = try XCTUnwrap(firstTextView(in: reader.view))
+            text.contentOffset.y = 500
+            reader.scrollViewDidScroll(text)
+            reader.prepareForCardViewportTransition(to: CGSize(width: 600, height: 600), preservingVisibleLines: true)
+            reader.view.frame.size.width = 600
+            reader.view.layoutIfNeeded()
+            reader.finishCardViewportTransition(completed: true)
+            text.contentOffset.y += 900
+            reader.scrollViewDidScroll(text)
+            let manager = text.layoutManager
+            let glyph = manager.glyphIndex(for: CGPoint(x: 50, y: text.contentOffset.y + 100), in: text.textContainer)
+            let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let control = ScrollReaderViewController(item: item, content: content, includesArticleTitle: false)
+            control.view.frame = CGRect(x: 0, y: 0, width: 600, height: 600)
+            control.view.layoutIfNeeded()
+            let wide = try XCTUnwrap(firstTextView(in: control.view))
+            wide.layoutManager.ensureLayout(for: wide.textContainer)
+            let expected = wide.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            XCTAssertEqual(fragment.minX, expected.minX, accuracy: 0.5)
+            XCTAssertEqual(fragment.width, expected.width, accuracy: 0.5)
+        }
+    }
+
+    @MainActor
     func testLiveResizeKeepsTheSamePassageAtTheSameHeight() throws {
         var item = SavedItem(urlString: "https://example.com/resize")
         item.state = .ready
@@ -477,7 +520,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         reader.view.frame.size.width = 600
         reader.view.layoutIfNeeded()
         reader.finishCardViewportTransition(completed: true)
-        XCTAssertEqual(text.bounds.width, 350, accuracy: 0.5)
+        XCTAssertEqual(text.bounds.width, 600, accuracy: 0.5)
         reader.view.frame.size.width = 900
         reader.view.setNeedsLayout()
         reader.view.layoutIfNeeded()

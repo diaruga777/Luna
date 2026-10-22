@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaReaderUI
 import UIKit
 
@@ -159,6 +160,7 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
     /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
         let key = ObjectIdentifier(scrollView)
+        guard !ScrollPresentationState.isSuppressed(for: scrollView) else { return }
         guard ProcessInfo.processInfo.systemUptime >= ignoreScrollOffsetsUntil else {
             scrollRuns[key] = nil
             return
@@ -171,6 +173,7 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
         }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let travelPosition = position - ScrollPresentationState.offsetAdjustment(for: scrollView)
         let maximumPosition = max(
             0,
             scrollView.contentSize.height + scrollView.adjustedContentInset.top
@@ -196,18 +199,18 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
             return
         }
         guard let previous else {
-            scrollRuns[key] = (position, 0)
+            scrollRuns[key] = (travelPosition, 0)
             return
         }
-        let delta = position - previous.last
+        let delta = travelPosition - previous.last
         if delta >= 0, remainingToBottom <= dismissalDeadZoneStart {
             // Keep a fresh baseline so travel accumulated above the dead zone
             // cannot fire on a later layout/clamping offset near the bottom.
-            scrollRuns[key] = (position, 0)
+            scrollRuns[key] = (travelPosition, 0)
             return
         }
         let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
-        scrollRuns[key] = (position, run)
+        scrollRuns[key] = (travelPosition, run)
         // Re-seed the runs BEFORE firing: the fade's card-bottom extension
         // resizes the scroll view synchronously, and at the article's end
         // that clamps the offset — a synthetic ~90pt "scroll up" delivered

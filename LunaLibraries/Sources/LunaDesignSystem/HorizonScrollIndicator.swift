@@ -7,6 +7,7 @@ import ObjectiveC
 import UIKit
 
 private var suppressesScrollPresentationKey: UInt8 = 0
+private var scrollOffsetAdjustmentKey: UInt8 = 0
 
 public enum ScrollPresentationState {
     /// True while an owner is making a batch of internal geometry/offset
@@ -15,6 +16,20 @@ public enum ScrollPresentationState {
     /// still authoritative.
     public static func isSuppressed(for scrollView: UIScrollView) -> Bool {
         (objc_getAssociatedObject(scrollView, &suppressesScrollPresentationKey) as? Bool) == true
+    }
+
+    /// Cumulative layout compensation, separate from the user's scroll travel.
+    /// UIKit may deliver the outer KVO notification after a delegate has already
+    /// reflowed text and corrected its offset, so a suppression flag alone cannot
+    /// distinguish the two distances.
+    public static func offsetAdjustment(for scrollView: UIScrollView) -> CGFloat {
+        CGFloat((objc_getAssociatedObject(scrollView, &scrollOffsetAdjustmentKey) as? NSNumber)?.doubleValue ?? 0)
+    }
+
+    public static func recordOffsetAdjustment(_ delta: CGFloat, for scrollView: UIScrollView) {
+        let total = offsetAdjustment(for: scrollView) + delta
+        objc_setAssociatedObject(scrollView, &scrollOffsetAdjustmentKey,
+                                 NSNumber(value: Double(total)), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
     public static func setSuppressed(_ suppressed: Bool, for scrollView: UIScrollView) {

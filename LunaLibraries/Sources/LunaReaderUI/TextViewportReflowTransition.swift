@@ -51,12 +51,13 @@ final class TextViewportReflowTransition {
         in hostView: UIView,
         destinationSize: CGSize,
         destinationTextInsets: UIEdgeInsets,
-        destinationAdjustedTopInset: CGFloat
+        destinationAdjustedTopInset: CGFloat,
+        requiresReflow: Bool = false
     ) -> TextViewportReflowTransition? {
         guard textView.attributedText.length > 0,
               textView.bounds.width > 0,
               destinationSize.width > 0,
-              abs(destinationSize.width - textView.bounds.width) > 0.5,
+              requiresReflow || abs(destinationSize.width - textView.bounds.width) > 0.5,
               textView.alpha > 0
         else { return nil }
 
@@ -105,6 +106,7 @@ final class TextViewportReflowTransition {
         }
 
         let sourceOffset = textView.contentOffset.y
+        let sourceOrigin = textView.convert(textView.bounds.origin, to: hostView)
         let viewportHeight = max(textView.bounds.height, destinationSize.height)
         let visibleSweep = CGRect(
             x: -32, y: -64,
@@ -139,8 +141,8 @@ final class TextViewportReflowTransition {
             else { continue }
 
             let sourceFrame = sourceGlyphRect.offsetBy(
-                dx: textView.textContainerInset.left,
-                dy: textView.textContainerInset.top - sourceOffset)
+                dx: textView.textContainerInset.left + sourceOrigin.x,
+                dy: textView.textContainerInset.top + sourceOrigin.y - sourceOffset)
             let destinationFrame = destinationGlyphRect.offsetBy(
                 dx: destinationTextInsets.left,
                 dy: destinationTextInsets.top - destinationOffset)

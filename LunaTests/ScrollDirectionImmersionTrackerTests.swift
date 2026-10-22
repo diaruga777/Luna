@@ -10,6 +10,7 @@
 //  reach it isn't cheap.
 //
 
+import LunaDesignSystem
 import UIKit
 import XCTest
 @testable import Luna
@@ -71,6 +72,36 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         tracker.delegate = host
         tracker.observe(container)
         tracker.isActive = true
+    }
+
+    func testOffscreenReflowCompensationDoesNotCountAsScrollTravel() {
+        drag(to: 300)
+        drag(to: 340)
+        ScrollPresentationState.setSuppressed(true, for: scrollView)
+        drag(to: 1_000)
+        ScrollPresentationState.recordOffsetAdjustment(660, for: scrollView)
+        ScrollPresentationState.setSuppressed(false, for: scrollView)
+        XCTAssertTrue(events.isEmpty)
+        drag(to: 1_050)
+        XCTAssertTrue(events.isEmpty, "Only the user's 90pt of travel should count")
+        drag(to: 1_065)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertTrue(events[0].immersed)
+    }
+
+    func testDelayedUserNotificationStillCountsTravelAfterLayoutCompensation() {
+        drag(to: 600)
+        ScrollPresentationState.setSuppressed(true, for: scrollView)
+        // A 60pt upward drag plus a 300pt reflow correction is delivered by
+        // UIKit as one outer notification after the reader delegate returns.
+        drag(to: 240)
+        ScrollPresentationState.recordOffsetAdjustment(-300, for: scrollView)
+        ScrollPresentationState.setSuppressed(false, for: scrollView)
+        drag(to: 240)
+        XCTAssertTrue(events.isEmpty)
+        drag(to: 200)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertFalse(events[0].immersed)
     }
 
     private func drag(to y: CGFloat) {

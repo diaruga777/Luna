@@ -20,6 +20,7 @@ final class PluginImportCoordinatorTests: XCTestCase {
 
     private final class FakeImporter: PluginImporting {
         var previewResult: Result<PluginImportPreview, Error> = .failure(TestError.parseFailed)
+        var installError: Error?
         private(set) var previewCalls: [String] = []
         private(set) var installCalls: [(preview: PluginImportPreview, origin: PluginImportOrigin)] = []
 
@@ -30,6 +31,7 @@ final class PluginImportCoordinatorTests: XCTestCase {
 
         func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {
             installCalls.append((preview, origin))
+            if let installError { throw installError }
         }
     }
 
@@ -140,16 +142,100 @@ final class PluginImportCoordinatorTests: XCTestCase {
         importer.previewResult = .success(preview(requiresConsent: true))
         let coordinator = PluginImportCoordinator(importer: importer)
         coordinator.begin(fileURL: try bundleURL(), from: presenter)
-        pollUntil { self.presenter.presentedViewController is PluginConsentViewController }
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let first = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        XCTAssertEqual(first.title, "1 of 2")
         XCTAssertTrue(importer.installCalls.isEmpty)
-        let first = try XCTUnwrap(presenter.presentedViewController as? PluginConsentViewController)
         coordinator.pluginConsent(first, didDecide: true, for: preview(requiresConsent: true))
-        pollUntil { importer.installCalls.count == 1 && self.presenter.presentedViewController is PluginConsentViewController }
-        let second = try XCTUnwrap(presenter.presentedViewController as? PluginConsentViewController)
+        // Repeated taps must not install twice or skip a member.
+        coordinator.pluginConsent(first, didDecide: true, for: preview(requiresConsent: true))
+        pollUntil { navigation.topViewController !== first }
+        XCTAssertTrue(presenter.presentedViewController === navigation)
+        XCTAssertEqual(importer.installCalls.count, 1)
+        let second = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        XCTAssertEqual(second.title, "2 of 2")
+        pollUntil { navigation.viewControllers.count == 1 }
         coordinator.pluginConsent(second, didDecide: false, for: preview(requiresConsent: true))
         pump()
         XCTAssertEqual(importer.installCalls.count, 1)
         XCTAssertNil(presenter.presentedViewController)
+    }
+
+    func testAcceptingEveryBundleMemberClosesTheSharedNavigationController() throws {
+        let importer = FakeImporter()
+        let preview = preview(requiresConsent: true)
+        importer.previewResult = .success(preview)
+        let observer = FakeObserver()
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.observer = observer
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let first = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(first, didDecide: true, for: preview)
+        pollUntil { navigation.topViewController !== first }
+        let second = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(second, didDecide: true, for: preview)
+        pollUntil { self.presenter.presentedViewController == nil }
+        XCTAssertEqual(observer.finishedCount, 2)
+        XCTAssertEqual(importer.installCalls.count, 2)
+        XCTAssertTrue(importer.installCalls.allSatisfy { $0.origin == .files })
+    }
+
+    func testBundleUpdatesWithoutNewPermissionsUseTheSharedNavigationController() throws {
+        let importer = FakeImporter()
+        let preview = sameCapabilityUpdatePreview()
+        importer.previewResult = .success(preview)
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let first = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        XCTAssertEqual(first.title, "1 of 2")
+        XCTAssertTrue(importer.installCalls.isEmpty)
+        coordinator.pluginConsent(first, didDecide: true, for: preview)
+        pollUntil { navigation.topViewController !== first }
+        XCTAssertTrue(presenter.presentedViewController === navigation)
+        XCTAssertEqual(navigation.topViewController?.title, "2 of 2")
+        let second = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(second, didDecide: false, for: preview)
+        pollUntil { self.presenter.presentedViewController == nil }
+        XCTAssertEqual(importer.installCalls.count, 1)
+    }
+
+    func testBundleInstallFailureClosesReviewAndReportsTheError() throws {
+        let importer = FakeImporter()
+        let preview = preview(requiresConsent: true)
+        importer.previewResult = .success(preview)
+        importer.installError = TestError.parseFailed
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let first = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(first, didDecide: true, for: preview)
+        pollUntil { self.presenter.presentedViewController is UIAlertController }
+        XCTAssertEqual(importer.installCalls.count, 1)
+        XCTAssertFalse(coordinator.isInstalling)
+    }
+
+    func testDismissingBundleReviewStopsTheQueue() throws {
+        let importer = FakeImporter()
+        let preview = preview(requiresConsent: true)
+        importer.previewResult = .success(preview)
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        let navigation = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        let first = try XCTUnwrap(navigation.topViewController as? PluginConsentViewController)
+        coordinator.pluginConsent(first, didDecide: true, for: preview)
+        pollUntil { navigation.topViewController !== first }
+        let presentation = try XCTUnwrap(navigation.presentationController)
+        navigation.dismiss(animated: false)
+        presentation.delegate?.presentationControllerDidDismiss?(presentation)
+        pump()
+        XCTAssertEqual(importer.installCalls.count, 1)
+        XCTAssertNil(presenter.presentedViewController)
+        // The coordinator can start a fresh import after interactive dismissal.
+        coordinator.begin(fileURL: try bundleURL(), from: presenter)
+        let restarted = try XCTUnwrap(presenter.presentedViewController as? UINavigationController)
+        XCTAssertEqual(restarted.topViewController?.title, "1 of 2")
     }
 
     func testBundleWithoutRequiredConsentsInstallsAllMembersAndNotifies() throws {

@@ -1191,6 +1191,7 @@
 "Plugins_aboutSectionHeader_Luna" = "About";
 "Plugins_actionFailedTitle_Luna" = "Couldn't Complete That";
 "Plugins_autoSendRow_Luna" = "Auto-Send";
+"Plugins_bundleProgress_Luna" = "%lld of %lld";
 "Plugins_consentAddedCapability_Luna" = "%@ (new)";
 "Plugins_consentAllowButton_Luna" = "Allow";
 "Plugins_consentBackgroundLine_Luna" = "Can run in the background.";

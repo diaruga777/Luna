@@ -34,8 +34,11 @@ per script, 32 MiB archived or expanded, and 512 ZIP file entries. ZIP64,
 encrypted and multi-disk archives are unsupported.
 
 The import coordinator runs the existing consent/update and transactional runtime
-activation for each member. Cancelling stops the remaining queue. Earlier accepted
-members stay installed if a later activation fails or the user cancels. Import and
+activation for each member. Bundle permission and update reviews share one navigation
+controller, with “1 of n” progress in the title bar; the sheet stays open between
+members and closes when the bundle finishes. Updates with unchanged permissions
+still require confirmation. Cancelling or swiping down stops the remaining queue.
+Earlier accepted members stay installed if a later activation fails or the user cancels. Import and
 export are free. Export in the Plugins header lets users select several installed
 plugins (including bundled ones), then share one `.lunabundle`. Only source travels:
 settings, passwords, pairing keys and granted permissions stay on the device.

@@ -122,15 +122,20 @@ public final class PluginConsentViewController: UIViewController {
                 color: LunaColors.secondaryText))
 
         stack.addArrangedSubview(
-            button(L10n.string("Plugins_consentAllowButton"), action: #selector(accept), prominent: true))
+            button(
+                L10n.string(preview.requiresConsent ? "Plugins_consentAllowButton" : "Plugins_updateConfirmButton"),
+                action: #selector(accept), prominent: true))
         stack.addArrangedSubview(
             button(L10n.string("Plugins_consentDontAllowButton"), action: #selector(decline), prominent: false))
     }
 
     private var headline: String {
-        preview.replacesVersion != nil
-            ? L10n.string("Plugins_consentUpdateHeadline")
-            : L10n.string("Plugins_consentHeadline")
+        if preview.replacesVersion != nil {
+            return preview.requiresConsent
+                ? L10n.string("Plugins_consentUpdateHeadline")
+                : L10n.string("Plugins_updateConfirmTitle", preview.summary.name)
+        }
+        return L10n.string("Plugins_consentHeadline")
     }
 
     private func label(

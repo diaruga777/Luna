@@ -26,6 +26,8 @@ public final class PluginImportCoordinator: NSObject {
     private weak var presenter: UIViewController?
     private var pendingOrigin: PluginImportOrigin?
     private var pendingSources: [String] = []
+    private var bundleNavigationController: UINavigationController?
+    private var bundleSourceCount = 0
     /// Exposed for the import UI to disable duplicate submissions while the
     /// candidate is being preflighted off the main actor.
     public private(set) var isInstalling = false
@@ -86,7 +88,11 @@ public final class PluginImportCoordinator: NSObject {
     private func handle(sourceText: String, origin: PluginImportOrigin) {
         do {
             let preview = try importer.preview(sourceText: sourceText)
-            if preview.requiresConsent {
+            if bundleNavigationController != nil,
+                preview.requiresConsent || preview.replacesVersion != nil
+            {
+                presentBundleConsent(preview, origin: origin)
+            } else if preview.requiresConsent {
                 pendingOrigin = origin
                 let screen = PluginConsentViewController(preview: preview)
                 screen.delegate = self
@@ -124,12 +130,14 @@ public final class PluginImportCoordinator: NSObject {
     private func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) {
         guard !isInstalling else { return }
         isInstalling = true
+        bundleNavigationController?.isModalInPresentation = true
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await self.importer.installAsync(preview, origin: origin)
                 self.observer?.pluginImportDidFinish(self)
                 self.isInstalling = false
+                self.bundleNavigationController?.isModalInPresentation = false
                 self.importNextSource()
             } catch {
                 self.isInstalling = false
@@ -157,6 +165,8 @@ public final class PluginImportCoordinator: NSObject {
                 let sources = try PluginBundleArchive.sources(in: data)
                 for source in sources { _ = try importer.preview(sourceText: source) }
                 pendingSources = sources
+                bundleSourceCount = sources.count
+                bundleNavigationController = UINavigationController()
                 importNextSource()
             } else {
                 pendingSources = []
@@ -166,17 +176,67 @@ public final class PluginImportCoordinator: NSObject {
     }
 
     private func importNextSource() {
-        guard !pendingSources.isEmpty else { return }
+        guard !pendingSources.isEmpty else {
+            finishBundle()
+            return
+        }
         handle(sourceText: pendingSources.removeFirst(), origin: .files)
     }
 
-    private func report(_ error: Error) {
+    private func presentBundleConsent(_ preview: PluginImportPreview, origin: PluginImportOrigin) {
+        guard let navigation = bundleNavigationController else { return }
+        pendingOrigin = origin
+        navigation.navigationBar.isUserInteractionEnabled = true
+        let screen = PluginConsentViewController(preview: preview)
+        screen.delegate = self
+        screen.title = L10n.string(
+            "Plugins_bundleProgress", bundleSourceCount - pendingSources.count, bundleSourceCount)
+        screen.navigationItem.largeTitleDisplayMode = .never
+        screen.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .cancel, target: self, action: #selector(cancelBundle))
+        // Completed members are already installed; they must not be revisited
+        // and installed again through a Back button or an interactive pop.
+        navigation.setViewControllers(
+            [screen], animated: UIView.areAnimationsEnabled && navigation.presentingViewController != nil)
+        if navigation.presentingViewController == nil {
+            presenter?.present(navigation, animated: true)
+            navigation.presentationController?.delegate = self
+        }
+    }
+
+    @objc private func cancelBundle() {
+        guard !isInstalling else { return }
+        finishBundle()
+    }
+
+    private func finishBundle(completion: (() -> Void)? = nil) {
         pendingSources = []
+        pendingOrigin = nil
+        bundleSourceCount = 0
+        let navigation = bundleNavigationController
+        bundleNavigationController = nil
+        if let navigation, navigation.presentingViewController != nil {
+            navigation.dismiss(animated: true, completion: completion)
+        } else {
+            completion?()
+        }
+    }
+
+    private func report(_ error: Error) {
         let alert = UIAlertController(
             title: L10n.string("Plugins_importFailedTitle"),
             message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
-        presenter?.present(alert, animated: true)
+        finishBundle { [weak self] in
+            self?.presenter?.present(alert, animated: true)
+        }
+    }
+}
+
+extension PluginImportCoordinator: UIAdaptivePresentationControllerDelegate {
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard presentationController.presentedViewController === bundleNavigationController else { return }
+        finishBundle()
     }
 }
 
@@ -207,6 +267,16 @@ extension PluginImportCoordinator: PluginConsentDelegate {
         _ controller: PluginConsentViewController, didDecide accepted: Bool,
         for preview: PluginImportPreview
     ) {
+        guard !isInstalling else { return }
+        if let navigation = bundleNavigationController {
+            guard controller === navigation.topViewController, let origin = pendingOrigin else { return }
+            pendingOrigin = nil
+            guard accepted else { finishBundle(); return }
+            controller.view.isUserInteractionEnabled = false
+            navigation.navigationBar.isUserInteractionEnabled = false
+            install(preview, origin: origin)
+            return
+        }
         let origin = pendingOrigin ?? .paste
         pendingOrigin = nil
         controller.dismiss(animated: true) { [weak self] in

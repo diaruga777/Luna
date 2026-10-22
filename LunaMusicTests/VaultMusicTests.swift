@@ -8,6 +8,17 @@ import MediaPlayer
 @testable import LunaMusicUI
 
 @MainActor final class MediaRemoteCommandTests: XCTestCase {
+    func testOffMainRemoteCommandFinishesBeforeReturningItsActualStatus() async {
+        var calls = 0
+        let status = await Task.detached {
+            MediaRemoteCommandDelivery.perform {
+                calls += 1
+                return .noActionableNowPlayingItem
+            }
+        }.value
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(status, .noActionableNowPlayingItem)
+    }
     func testPodcastActivationAndIdlePauseNeverCreateAppleMusicPlayer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1647,8 +1658,8 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             XCTAssertTrue(playback.session.remoteCommandCenter.playCommand.isEnabled)
             XCTAssertEqual(playback.player.rate, 0)
             XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
-            XCTAssertGreaterThan(playback.position, position + 0.9, "A first clock tick alone must not finish system priming")
-            XCTAssertLessThan(playback.position, position + 2)
+            XCTAssertGreaterThan(playback.position, position + 2.9, "Priming must allow three seconds of actual playback")
+            XCTAssertLessThan(playback.position, position + 4)
             let info = try XCTUnwrap(playback.player.currentItem?.nowPlayingInfo)
             XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, episode.title)
             XCTAssertNil(info[MPNowPlayingInfoPropertyPlaybackRate], "AVFoundation publishes transport state directly")
@@ -1673,6 +1684,58 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
         XCTAssertEqual(playback.player.rate, 0)
+    }
+    private func shortcutCoordinator() -> MediaPlaybackCoordinator {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("podcasts", forKey: "LunaMusic.activeMedia")
+        let music = MusicPlaybackController(defaults: defaults, vault: VaultMusicController(directory: root.appendingPathComponent("music")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: playback, defaults: defaults)
+        coordinator.install()
+        return coordinator
+    }
+    func testSeparateResumeWaitPauseAndSeekCanResumeOnFirstBackgroundCommand() async throws {
+        let coordinator = shortcutCoordinator()
+        try await playback.resumeLastPodcast(pauseImmediately: false)
+        try await Task.sleep(for: .seconds(1))
+        coordinator.pause()
+        let paused = playback.position
+        let item = playback.player.currentItem
+        try await coordinator.seek(by: 1, backward: true)
+        XCTAssertEqual(playback.position, paused - 1, accuracy: 0.05)
+        XCTAssertEqual(playback.player.currentTime().seconds, paused - 1, accuracy: 0.05)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertFalse(playback.isPlaying)
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        let playback = try XCTUnwrap(playback)
+        let status = await Task.detached {
+            MediaRemoteCommandDelivery.perform {
+                let result = playback.handleRemotePlay()
+                // Check before replying to the simulated off-main callback.
+                return result == .success && playback.player.rate > 0 ? .success : .commandFailed
+            }
+        }.value
+        XCTAssertEqual(status, .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertTrue(playback.player.currentItem === item)
+    }
+    func testRelativeSeekWhileColdPausedClampsAndRejectsInvalidDurations() async throws {
+        let coordinator = shortcutCoordinator()
+        try await coordinator.seek(by: 1, backward: true)
+        XCTAssertEqual(playback.position, 79)
+        try await coordinator.seek(by: 2, backward: false)
+        XCTAssertEqual(playback.position, 81)
+        try await coordinator.seek(by: 500, backward: true)
+        XCTAssertEqual(playback.position, 0)
+        for seconds in [-1, Double.nan, Double.infinity] {
+            do { try await coordinator.seek(by: seconds, backward: false); XCTFail("Invalid duration must fail") }
+            catch { }
+        }
+        coordinator.pause()
+        XCTAssertEqual(playback.position, 0)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        XCTAssertNil(playback.player.currentItem)
+        XCTAssertFalse(playback.isPlaying)
     }
     func testNewPlaySupersedesPendingImmediatePause() async throws {
         let request = Task { try await playback.resumeLastPodcast(pauseImmediately: true) }

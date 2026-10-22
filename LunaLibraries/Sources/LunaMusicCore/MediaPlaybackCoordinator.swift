@@ -107,4 +107,40 @@ import LunaPodcastCore
             if music.isPlaying || music.isBuffering { music.pause() }
         }
     }
+    /// Relative seeking preserves paused playback and never switches queues.
+    public func seek(by seconds: TimeInterval, backward: Bool) async throws {
+        guard seconds.isFinite, seconds >= 0 else {
+            throw MediaSeekError.invalidDuration
+        }
+        guard seconds > 0 else { return }
+        let surface = active
+        if surface == .music { await music.restoreIfNeeded() }
+        guard active == surface else { throw CancellationError() }
+        var finished: Bool?
+        let completion: (Bool) -> Void = { finished = $0 }
+        let delta = backward ? -seconds : seconds
+        if active == .podcasts {
+            guard podcasts.hasRestorableQueue else { throw MediaSeekError.failed }
+            podcasts.seek(to: podcasts.position + delta, completion: completion)
+        } else {
+            guard music.hasRestorableQueue else { throw MediaSeekError.failed }
+            music.seek(to: music.playbackTime + delta, completion: completion)
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while finished == nil, ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard finished == true else { throw MediaSeekError.failed }
+    }
+}
+
+private enum MediaSeekError: LocalizedError {
+    case invalidDuration, failed
+    var errorDescription: String? {
+        switch self {
+        case .invalidDuration: return "Enter a positive number of seconds."
+        case .failed: return "Unable to seek. Try again."
+        }
+    }
 }

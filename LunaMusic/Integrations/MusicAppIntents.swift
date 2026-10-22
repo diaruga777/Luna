@@ -86,6 +86,41 @@ struct ResumeMusicIntent: AudioPlaybackIntent {
     }
 }
 
+struct PauseMusicIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Pause If Playing"
+    static var description = IntentDescription("Pause music or podcasts playing in Luna Music.")
+    static var openAppWhenRun = false
+    @MainActor func perform() async throws -> some IntentResult {
+        MediaPlaybackCoordinator.shared.install()
+        MediaPlaybackCoordinator.shared.pause()
+        return .result()
+    }
+}
+
+enum MusicSeekDirection: String, AppEnum {
+    case forward, backward
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Direction"
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .forward: "Forward", .backward: "Backward"
+    ]
+}
+
+struct SeekMusicIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Seek"
+    static var description = IntentDescription("Move forward or backward in the current music or podcast.")
+    static var openAppWhenRun = false
+    @Parameter(title: "Direction", default: .backward) var direction: MusicSeekDirection
+    @Parameter(title: "Seconds", default: 1) var seconds: Double
+    static var parameterSummary: some ParameterSummary {
+        Summary("Seek \(\.$direction) by \(\.$seconds) seconds")
+    }
+    @MainActor func perform() async throws -> some IntentResult {
+        MediaPlaybackCoordinator.shared.install()
+        try await MediaPlaybackCoordinator.shared.seek(by: seconds, backward: direction == .backward)
+        return .result()
+    }
+}
+
 extension Notification.Name {
     static let lunaPodcastOpenEpisode = Notification.Name("lunaPodcastOpenEpisode")
     static let lunaMusicOpenQueue = Notification.Name("lunaMusicOpenQueue")
@@ -122,6 +157,8 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
+        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause If Playing", systemImageName: "pause.fill")
+        AppShortcut(intent: SeekMusicIntent(), phrases: ["Seek in \(.applicationName)"], shortTitle: "Seek", systemImageName: "gobackward")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
     }
 }

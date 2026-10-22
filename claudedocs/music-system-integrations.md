@@ -45,13 +45,16 @@ for an AirPods connection automation: it leaves the podcast ready for system
 Play without opening Luna Music.
 
 Resume waits for actual playback-clock advancement and an active app-local
-`MPNowPlayingSession`. With Pause Immediately enabled it also allows at least one
-continuous second of playback, extending that window for the route's output
+`MPNowPlayingSession`. With Pause Immediately enabled it also allows at least three
+continuous seconds of playback, extending that window for the route's output
 latency plus I/O buffer duration. Buffering resets that handoff window. The first
 tick and `isActive` alone do not establish system Now Playing ownership.
 AVFoundation automatically publishes transport state; Luna supplies static
 metadata and artwork on the player item and retains artwork for the same episode.
 Remote Play holds background execution until preparation and audio startup finish.
+Remote callbacks finish dispatching to the main actor before acknowledging the
+command. A prepared podcast requests AVPlayer playback synchronously in that
+callback, rather than waiting for a later Task to run.
 An immediate Pause cancels a queued remote Play, and newer transport actions
 supersede an older pending shortcut. Natural completion during priming follows
 the next queued episode and starts a fresh handoff window before pausing it.
@@ -62,11 +65,32 @@ an idle Apple Music client must not receive a Pause command during podcast primi
 
 Verified on iOS 27.1 with real AVPlayer playback, including delayed streaming,
 late artwork and resuming the same item after priming. The full hosted suite
-completed 126 tests with 10 optional fixture skips and no failures. The generated
-intent metadata includes the default-off Boolean and omits the removed Pause
-action. AirPods hardware and locked-device resumption are not verified by these
+completed 126 tests with 10 optional fixture skips and no failures before the
+longer handoff window and fallback actions were added. AirPods hardware and
+locked-device resumption are not verified by these
 simulator checks. Transport diagnostics use the `LunaMusic` subsystem
 and `PodcastPlayback` category without publishing episode titles or URLs.
+
+Both shortcut paths are available in the same build. The single-action path uses
+**Resume Podcast Queue → Pause Immediately: On** and waits for three seconds of
+actual playback before pausing. To test separate invocations, use:
+
+1. **Resume Podcast Queue → Pause Immediately: Off**
+2. Shortcuts' **Wait → 1 second**
+3. **Pause If Playing**
+4. **Seek → Backward → 1 second**
+
+Pause If Playing retains the original `PauseMusicIntent` identifier. It pauses
+Luna's active music/podcast source only if playing or buffering. Seek uses the
+same active source, accepts a nonnegative finite number of seconds, clamps to
+the media bounds, and awaits seek completion without starting paused playback.
+Its defaults are Backward and 1 second. All three actions run without opening
+Luna Music. The extra actions also support use outside this automation.
+
+For this revision the simulator build, generated intent metadata and 26 routing,
+queue and seek checks pass. AudioQueue/HAL startup timeouts block real-audio
+validation on both booted simulators (iOS 27.1 and 26.2), including the fallback
+regression. Hardware resumption is not claimed as verified.
 
 Automatic publishing follows Apple's [MPNowPlayingSession guidance](https://developer.apple.com/documentation/mediaplayer/mpnowplayingsession/automaticallypublishesnowplayinginfo):
 set item metadata and let the session observe transport changes; do not also write

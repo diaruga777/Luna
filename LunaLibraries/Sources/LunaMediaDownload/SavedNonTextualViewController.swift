@@ -354,7 +354,10 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         // shrinks the box instead of pushing the exits off the bottom.
         let square = previewContainer.heightAnchor.constraint(
             equalTo: previewContainer.widthAnchor)
-        square.priority = .defaultHigh
+        // Yield before the column's preferred width and the controls' intrinsic
+        // sizes. At the same priority, a short sheet can narrow the whole column
+        // to preserve the square, then widen it when the Photos title changes.
+        square.priority = UILayoutPriority(749)
         NSLayoutConstraint.activate([
             square,
             previewContainer.heightAnchor.constraint(
@@ -1190,7 +1193,6 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         }
         switch mediaState {
         case .ready(let media):
-            saveButton.isEnabled = false
             showSavingStatus()
             Task { [weak self] in
                 guard let self else { return }
@@ -1234,7 +1236,6 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         case .alreadyDownloaded(let item) where item.fileURL != nil:
             let fileURL = item.fileURL!
             let kind = item.kind ?? .image
-            saveButton.isEnabled = false
             showSavingStatus()
             Task { [weak self] in
                 guard let self else { return }
@@ -1256,14 +1257,18 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         }
     }
 
-    private func showSavingStatus() {
-        downloadStatus.text = L10n.string("Downloader_media_preview_savingStatus")
-        downloadStatus.textColor = LunaColors.secondaryText
-        downloadStatus.isHidden = false
+    func showSavingStatus() {
+        saveButton.isEnabled = false
+        // Keep progress in the fixed-height action slot. Adding a status row
+        // briefly shrinks the preview on short extension sheets, then expands
+        // it again as soon as the save finishes.
+        saveButton.configuration?.showsActivityIndicator = true
+        saveButton.accessibilityLabel = L10n.string("Downloader_media_preview_savingStatus")
+        downloadStatus.isHidden = true
     }
 
     @MainActor
-    private func finishSave(message: String = "", success: Bool) {
+    func finishSave(message: String = "", success: Bool) {
         if success {
             didSaveToPhotos = true
             setSaveButton(savedToPhotos: true)

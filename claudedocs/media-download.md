@@ -236,7 +236,10 @@ Photos references remain governed by the user's Photos library.
   the media either isn't on disk yet or is, never both — so nothing moves when the
   download completes, and the status line under it stays put. Save to Photos is inset one
   further standard margin on each side than the full-width controls, so it reads as the
-  media's own action.
+  media's own action. While saving, an activity indicator stays inside that slot;
+  no temporary status row squeezes the preview. On short sheets the preview gives
+  up its square aspect before the column narrows or the exit controls compress,
+  so changing the Photos button title cannot move the player or surrounding controls.
   Its chrome is the extensions' shared chrome: a
   `GlassConfirmationBadge` header ("Saved to Luna" — the screen used to carry a navigation
   title hard-coded to "Luna Video" in all apps) and Liquid Glass action pills in

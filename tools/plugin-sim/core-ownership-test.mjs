@@ -105,3 +105,44 @@ const archiveAnswer=await Promise.race([
 ]);
 clearTimeout(archiveTimer);
 assert.equal(archiveAnswer?.kind,'article','a stalled oldest lookup must not hold a readable latest snapshot');
+
+// WSJ and Mint use different headlines/slugs for the Hassabis profile. Only
+// the index's structured summary shares his name with the original URL.
+const wsjURL='https://www.wsj.com/tech/ai/demis-hassabis-ai-deepmind-google-isomorphic-2b4e3153';
+const mintURL='https://www.livemint.com/global/why-ai-s-deepest-mind-believes-the-world-is-about-to-change-radically-11792584394493.html';
+const mintIndex='<a href="/global/unrelated-story-123.html">Other reporting</a><a href="'+mintURL+'">A different headline</a>'+
+    '<script type="application/ld+json">'+JSON.stringify({'@type':'ItemList',itemListElement:[null,
+        {url:mintURL,name:'A different headline',description:'A profile of Demis Hassabis.'}]})+'</script>';
+const mintCopy=canonical=>'<html><head><title>Syndicated profile</title><link rel="canonical" href="'+canonical+'">'+
+    '<script type="application/ld+json">{"@type":"NewsArticle","articleBody":"Opening only."}</script></head><body><div id="mainArea">'+
+    '<div class="storyParagraph"><p>Opening profile paragraph.</p></div><div class="paywall-slot"><div class="storyParagraph">'+
+    '<p>'+('Complete profile reporting. '.repeat(150))+'</p><p>Final profile paragraph.</p></div></div></div></body></html>';
+for(const context of ['app','share','safari']) {
+    const requests=[];
+    const syndicated=plugin('publisher-access',async req=>{
+        requests.push(req.url);
+        return {ok:true,url:req.url,text:req.url==='https://www.livemint.com/wsj'?mintIndex:req.url===mintURL?mintCopy(wsjURL):gated};
+    });
+    syndicated.luna.browser={open:async()=>{throw Error('verified syndicated copy must not need a browser');}};
+    const answer=await syndicated.hooks.ingest({url:wsjURL,context,reason:'save',saveId:'wsj',page:{url:wsjURL,html:gated}});
+    assert.equal(answer?.kind,'article');
+    assert.equal(answer.baseURL,mintURL);
+    assert(answer.html.includes('Opening profile paragraph.'));
+    assert(answer.html.includes('Final profile paragraph.'));
+    assert.equal(requests.filter(u=>new URL(u).hostname==='www.livemint.com').length,2,'request only the index and relevant copy');
+}
+for(const canonical of ['https://www.wsj.com/tech/ai/another-story-12345678','https://wsj.com.unrelated.example'+new URL(wsjURL).pathname]) {
+    const syndicated=plugin('publisher-access',async req=>({ok:true,url:req.url,
+        text:req.url==='https://www.livemint.com/wsj'?mintIndex:req.url===mintURL?mintCopy(canonical):gated}));
+    assert.equal(await syndicated.hooks.ingest({url:wsjURL,context:'app',reason:'save'}),null,'index text cannot override canonical identity');
+}
+const candidateRequests=[];
+const bounded=plugin('publisher-access',async req=>{
+    if(req.url==='https://www.livemint.com/wsj')return {ok:true,text:Array.from({length:10},(_,i)=>
+        '<a href="/global/demis-hassabis-profile-'+i+'.html">Demis Hassabis</a>').join('')};
+    if(new URL(req.url).hostname==='www.livemint.com')candidateRequests.push(req.url);
+    return {ok:true,text:gated,url:req.url};
+});
+assert.equal(await bounded.hooks.ingest({url:wsjURL,context:'app',reason:'save'}),null);
+assert.equal(candidateRequests.length,3,'syndication discovery must stay bounded');
+console.log('WSJ syndication fixtures passed: renamed headlines, canonical identity, complete continuation and bounded discovery.');

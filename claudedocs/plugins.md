@@ -108,6 +108,12 @@ browser sequence). These are ordinary removable/disableable plugin resources.
 Crawler probes and the parallel newest/oldest archive lookups accept the first
 readable article immediately; a slow sibling request cannot hold that result.
 Only when every probe declines or fails does the plugin proceed to the next strategy.
+WSJ syndication discovery ranks Mint index links using the original URL's terms
+against link text and JSON-LD ItemList headlines/summaries, so a renamed syndicated
+headline can still be found. At most three copies are probed; each must declare
+the exact original WSJ host/path in its canonical link before its body is accepted.
+Relative media resolves against the syndicated copy while the save retains its
+original WSJ URL.
 Daily Beast's Astro article pages use `tdb-paywall` on continuation paragraphs and
 images. Publisher access selects editorial `data-block-type` children of
 `article#article-content` before generic gate detection, preserving their order,

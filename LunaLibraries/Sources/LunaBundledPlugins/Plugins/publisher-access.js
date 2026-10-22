@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.7","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.8","api":1,
  "description":"Save articles from subscription sites and archives.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -536,8 +536,30 @@ const LunaAccess = (() => {
             const index=await luna.fetch({url:'https://www.livemint.com/wsj',timeout:5,cookies:'none'});
             if(!index.ok)return null;
             const doc=luna.html.parse(index.text,'https://www.livemint.com/wsj');
-            const candidates=[...new Set(doc.querySelectorAll('a[href]').map(a=>a.absoluteURL('href')))]
-                .filter(u=>u&&host(u)==='www.livemint.com'&&((luna.parseURL(u)||{}).pathname||'').split('/').pop().startsWith(slug+'-')).slice(0,3);
+            // Syndicated headlines (and therefore slugs) can differ completely.
+            // Mint's ItemList summaries retain names from the original URL even
+            // when neither headline does. Use these only to rank a bounded probe;
+            // the fetched copy must still identify this exact WSJ story below.
+            const summaries=new Map();
+            for(const list of LunaWeb.jsonLD(doc)) {
+                if(!list||list['@type']!=='ItemList'||!Array.isArray(list.itemListElement))continue;
+                for(const item of list.itemListElement) {
+                    if(!item||typeof item.url!=='string')continue;
+                    summaries.set(LunaWeb.absoluteURL(item.url,index.url||'https://www.livemint.com/wsj'),
+                        [item.name,item.description].filter(v=>typeof v==='string').join(' '));
+                }
+            }
+            const terms=[...new Set(slug.toLowerCase().split('-').filter(t=>t.length>2))];
+            const scores=new Map();
+            for(const anchor of doc.querySelectorAll('a[href]')) {
+                const candidate=anchor.absoluteURL('href');
+                const name=((luna.parseURL(candidate||'')||{}).pathname||'').split('/').pop();
+                if(!candidate||host(candidate)!=='www.livemint.com'||!/-\d+\.html$/.test(name))continue;
+                const words=new Set((name+' '+anchor.textContent+' '+(summaries.get(candidate)||'')).toLowerCase().split(/[^a-z0-9]+/));
+                const score=name.startsWith(slug+'-')?1000:terms.filter(t=>words.has(t)).length;
+                if(score>=2)scores.set(candidate,Math.max(score,scores.get(candidate)||0));
+            }
+            const candidates=[...scores.keys()].sort((a,b)=>scores.get(b)-scores.get(a)).slice(0,3);
             return await firstReadable(candidates.map(async candidate=>{
                 const response=await luna.fetch({url:candidate,timeout:5,cookies:'none'});
                 if(!response.ok)return null;

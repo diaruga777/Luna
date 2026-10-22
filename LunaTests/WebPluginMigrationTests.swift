@@ -207,16 +207,35 @@ final class WebPluginMigrationTests: XCTestCase {
         try await assertWSJSyndication(canonicalMatches: false)
     }
 
-    private func assertWSJSyndication(canonicalMatches: Bool) async throws {
+    func testWSJDiscoversRenamedSyndicationFromIndexSummary() async throws {
+        try await assertWSJSyndication(canonicalMatches: true, renamed: true)
+    }
+
+    func testWSJRejectsRenamedSyndicationForADifferentCanonicalStory() async throws {
+        try await assertWSJSyndication(canonicalMatches: false, renamed: true)
+    }
+
+    private func assertWSJSyndication(canonicalMatches: Bool, renamed: Bool = false) async throws {
         try load("publisher-access")
-        let url = "https://www.wsj.com/tech/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-160eec6b"
-        let copy = "https://www.livemint.com/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-11792030183031.html"
+        let url = renamed
+            ? "https://www.wsj.com/tech/ai/demis-hassabis-ai-deepmind-google-isomorphic-2b4e3153"
+            : "https://www.wsj.com/tech/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-160eec6b"
+        let copy = renamed
+            ? "https://www.livemint.com/global/why-ai-s-deepest-mind-believes-the-world-is-about-to-change-radically-11792584394493.html"
+            : "https://www.livemint.com/ai/ai-companies-play-cat-and-mouse-with-secret-stealing-spies-11792030183031.html"
         let snapshot = "https://archive.md/20261015021530/" + url
         runner.fetcher.respond(to: url, body: "<article><p>Subscribe to read</p></article>")
         runner.fetcher.respond(to: "https://archive.is/timemap/" + url,
                                body: "<\(snapshot)>; rel=\"last memento\"")
         runner.fetcher.respond(to: snapshot, body: "<div id=\"CONTENT\">Please enable JS and disable any ad blocker</div>")
-        runner.fetcher.respond(to: "https://www.livemint.com/wsj", body: "<a href=\"\(copy)\">Syndicated story</a>")
+        let unrelated = (1...5).map { "<a href=\"/global/unrelated-story-\($0).html\">Other reporting</a>" }.joined()
+        let summary = renamed ? """
+            <script type="application/ld+json">{"@type":"ItemList","itemListElement":[
+            {"@type":"ListItem","url":"\(copy)","name":"A different headline","description":"A profile of Demis Hassabis."}
+            ]}</script>
+            """ : ""
+        runner.fetcher.respond(to: "https://www.livemint.com/wsj",
+                               body: unrelated + "<a href=\"\(copy)\">Syndicated story</a>" + summary)
         let canonical = canonicalMatches ? url : "https://www.wsj.com/tech/ai/different-story-12345678"
         runner.fetcher.respond(to: copy, body: """
             <html><head><title>Syndicated reporting</title><link rel="canonical" href="\(canonical)">
@@ -227,6 +246,8 @@ final class WebPluginMigrationTests: XCTestCase {
         let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
             argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
                 page: nil, reason: .save, context: .app), as: PluginIngestAnswer.self)
+        XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == copy })
+        XCTAssertFalse(runner.fetcher.requests.contains { $0.url.absoluteString.contains("unrelated-story") })
         if canonicalMatches {
             guard case let .model(.article(article)) = answer else { return XCTFail("No syndicated article") }
             XCTAssertTrue(article.html.contains("Complete syndicated reporting"))
@@ -252,6 +273,26 @@ final class WebPluginMigrationTests: XCTestCase {
         guard case let .model(.article(article)) = answer else { return XCTFail("Live pages failed to recover article") }
         XCTAssertTrue(article.html.contains("San Francisco playground"))
         XCTAssertTrue(article.html.contains("foundation models"), "the end of the article must be present")
+        XCTAssertEqual(article.baseURL?.absoluteString, copy)
+    }
+
+    func testWSJDemisHassabisCapturedLivePublisherPages() async throws {
+        guard ProcessInfo.processInfo.environment["LUNA_WSJ_DEMIS_LIVE_FIXTURES"] == "1" else {
+            throw XCTSkip("Opt-in verification against freshly fetched publisher pages")
+        }
+        try load("publisher-access")
+        let url = "https://www.wsj.com/tech/ai/demis-hassabis-ai-deepmind-google-isomorphic-2b4e3153"
+        let copy = "https://www.livemint.com/global/why-ai-s-deepest-mind-believes-the-world-is-about-to-change-radically-11792584394493.html"
+        for (address, file) in [(url, "live"), ("https://www.livemint.com/wsj", "mint-index"), (copy, "mint")] {
+            runner.fetcher.respond(to: address, body: try String(contentsOfFile: "/tmp/luna-wsj-" + file + ".html", encoding: .utf8))
+        }
+        let answer: PluginIngestAnswer? = await runner.invoke(.ingest, pluginID: "app.luna.publisher-access",
+            argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                page: nil, reason: .save, context: .share), as: PluginIngestAnswer.self)
+        guard case let .model(.article(article)) = answer else { return XCTFail("Live pages failed to recover article") }
+        XCTAssertTrue(article.html.contains("YOU CAN LEARN"))
+        XCTAssertTrue(article.html.contains("Yorkshire tea"), "The ending must also survive")
+        XCTAssertGreaterThan(article.html.count, 15_000)
         XCTAssertEqual(article.baseURL?.absoluteString, copy)
     }
 

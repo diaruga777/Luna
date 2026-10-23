@@ -421,9 +421,9 @@ display-only article projection: the exact matching inline image and its
 following caption move out of the reader body, while unrelated images and the
 canonical saved article remain intact for export and indexing. A missing or
 invalid banner keeps inline images. Both the pinned and scrolling header
-copies receive the same artwork. If the scrolling masthead has completely left
-the viewport inside the handoff hysteresis band, the pinned copy stays visible
-so the title/banner cannot vanish at that boundary. The debug stage `deck.article.library`
+copies receive the same artwork. Scroll and Original keep the masthead in their
+scroll content; passing its end never restores a fixed title over the article.
+RSVP and library previews retain the fixed header. The debug stage `deck.article.library`
 provides deterministic banner/no-banner rows and a partially read article.
 
 Validation (15 October 2026): search, presentation, storage, thumbnail, and

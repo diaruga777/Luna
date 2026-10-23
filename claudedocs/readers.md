@@ -40,24 +40,17 @@ narrower than both.
 
 The Reader carousel gives every card a stable title region using the normal 30pt
 reader-title font and the saved page's asynchronously cached favicon (a globe while
-loading). Scroll and Original/web-archive modes own two pixel-identical copies: a
-permanent copy in the scroll view's top content-inset region and a pinned card copy.
-Ownership of the title passes between them on a LATCH with a threshold at each end of
-its travel, never one shared edge (`ReaderScrollPosition.pinnedTitleOwnsTitle`, in
-LunaModels): the pinned copy takes over only once the scrolling copy has left the card
-entirely — nothing is onscreen there, so its fade with surfaced card chrome is clean —
-and hands back exactly where the scrolling copy is home again, the one offset at which
-the two coincide, so the swap renders NO changed pixels and is applied unanimated. In
-between, the pinned copy stays parked over the scrolling copy's approach. Sharing one
-edge is what made scrolling back to the top look wrong: the pinned copy left while the
-scrolling copy was still fully above the card, so the title blinked out and then slid
-back in behind it. An
+loading). Scroll and Original/web-archive modes keep their title in the scroll
+view's top content-inset region. Scrolling past it never reveals a pinned copy,
+including before immersion dismisses chrome or after chrome returns. RSVP and
+library previews use the fixed card header. An
 offset within that title region is normalized to zero when Scroll or Original persists,
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore
 (`-adjustedContentInset.top`); applying it as raw zero would hide the title again.
 Hiding Scroll chrome widens the card. Scroll-driven changes keep the text and title
-column fixed; tap-driven changes may wrap the wider title to a different height.
+column fixed for the displayed passage, then widen incoming lines gradually;
+tap-driven changes may wrap the wider title to a different height.
 The tap's TextKit transition resolves that destination inset up front and anchors
 the same reading glyph, so the title-height change cannot jump the passage. Both copies'
 backgrounds begin at the card's top edge,
@@ -118,18 +111,20 @@ Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
 inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
 the selected article to the rail or the compact deck. Scroll-driven changes preserve the character ranges and column widths of lines
-already in view. Lines entering from below or above use the destination's readable
-width immediately. `ScrollStableTextContainer` freezes the current visible band
-before releasing departed lines, including newly entered lines, so removing the
-last old-width line cannot rewrap text that is already onscreen. Reflow above the
-viewport restores a character anchor. Chrome direction uses the offset minus the
-cumulative layout adjustment, so UIKit's delayed KVO delivery preserves the user's
-actual travel while excluding the reflow correction. Short-lived line views keep existing text stationary
-through the card's animation, then drawing returns to live TextKit. Selection,
-links, attachments, accessibility and WordMap continue to use that same layout.
+already in view, together with the prefix above them. The following eight lines
+widen gradually toward the destination's readable width. These fragment widths
+are fixed until the next viewport transition: scrolling never retires and
+re-typesets visible lines. New lines enter at their final horizontal position.
+`ScrollStableTextContainer` uses a binary lookup over the captured prefix, so deep
+reading positions do not require a linear scan for each new line. Short-lived
+line views preserve existing text through the card's animation, then drawing
+returns to live TextKit. Selection, links, attachments, accessibility and WordMap
+continue to use the same layout.
 The live canvas can remain wider than a contracting card to avoid UITextView
 shifting its drawing origin; incoming lines are centered at the actual card's
-readable width. Its pan recognizer stays on the full card viewport. A real window
+readable width. The final centered canvas is established before the card's
+animation, so live incoming lines cannot inherit the card edge's horizontal
+motion. Its pan recognizer stays on the full card viewport. A real window
 resize releases this policy and anchors the passage. The scrolling masthead keeps
 its existing text geometry during scroll-driven changes.
 Both masthead copies render their banner at the chrome-less card width and a fixed
@@ -137,8 +132,8 @@ height derived from the resting header; only the surrounding crop changes with
 chrome. The image is revealed without rescaling or moving horizontally. Tap reflow
 uses a separate fixed-size banner canvas and moves individual CoreText title glyphs
 between their fitted positions, including headline overflow and sender metadata.
-The pinned title uses the same presentation while changing visibility, so neither
-masthead is animated as a stretched screenshot.
+Header glyph presentations inherit their source visibility, so an invisible
+fixed header cannot reappear during viewport preparation.
 Taps release the preserved lines and use `TextViewportReflowTransition`, which
 builds a second TextKit layout for the destination width before the 0.32s transition,
 anchors the glyph around the upper quarter of the viewport, and temporarily replaces
@@ -1107,7 +1102,10 @@ Reader AND all overlay slices force TextKit 1 at creation (`_ = textView.layoutM
 The scroll reader's first-open cost was laying out an ENORMOUS attributed string in the `UITextView` (TextKit glyph generation is O(text length)) — a long article stalled behind the entry animation. `ScrollReaderViewController` now loads in two phases:
 
 - **Phase 1 (instant)**: `init` renders only a leading PREFIX via `ArticleTextRenderer.render(_:characterBudget:)` (budget `ScrollReaderViewController.prefixCharacterBudget` = 700 chars — one+ screen of serif body text; the budget-crossing block is included whole, and `isComplete` reports whether truncation happened). Laying out a few hundred characters is near-instant, so the reader paints immediately.
-- **Phase 2 (after entry animation)**: `prepareFullContent()` builds the FULL attributed string off the main actor, then on main swaps it in inside `UIView.performWithoutAnimation`, restoring the captured `contentOffset`. Because the prefix is a STRICT prefix, the leading layout is identical, so the swap is seamless (a `WordMap`-anchored fallback re-positions in the rare case the user was at the bottom of the short prefix). `WordMap` is rebuilt on the full text; the share footer, inline-image fetch, and resume highlight are all deferred until then (they need the full word map). `updateReadPullPrompt` is gated on full-content load so a short prefix isn't mistaken for the whole article.
+- **Phase 2 (after entry animation)**: `prepareFullContent()` builds the FULL attributed string off the main actor, then on main swaps it in inside `UIView.performWithoutAnimation`, restoring the captured `contentOffset`. Because the prefix is a STRICT prefix, the leading layout is identical, so the swap is seamless (a `WordMap`-anchored fallback re-positions in the rare case the user was at the bottom of the short prefix). Attribute construction, image decoding and `WordMap` construction run on the
+worker using a captured trait collection and image-width budget. Reuse cancels
+the pending request, and a canceled worker result cannot overwrite the next
+article. Only the final live TextKit update runs on main. The share footer, inline-image fetch, and resume highlight are all deferred until then (they need the full word map). `updateReadPullPrompt` is gated on full-content load so a short prefix isn't mistaken for the whole article.
 
 **Entry-animation hooks** (each calls `prepareFullContent()`, which is idempotent): the standard `ReaderViewController` push (via `ScrollReaderViewController.viewDidAppear`'s transition coordinator — the reader self-triggers regardless of host as a backstop); the split inline reader (`SplitWebOverlayViewController.animateOpen` completion → `InlineReaderPageViewController.entryAnimationDidFinish()`); and the RabbitHole stacked reader (`RabbitHoleReaderViewController` root via `viewDidAppear`, dives via the `runTransition` completion → `RabbitHoleLayerViewController.entryAnimationDidFinish()`). **Phase 2 is SKIPPED** when the prefix already covers a short article, and the FULL render is done up front (no prefix) for read-aloud (audio reads the whole article from the top) and for opens that restore a saved/carried position beyond the prefix (`openPositionLikelyBeyondPrefix`). Tests: `ArticleTextRendererProgressiveTests`.
 
@@ -1132,3 +1130,8 @@ after installing the root, but only when the root actually WAS reparented — th
 freshly-built root of the external-save path gets its appearance from UIKit
 normally. Tests: `OnboardingHandoffFullContentTests` (cold-launch baseline, the
 fresh-root handoff, and the preloaded-root handoff that regressed).
+
+Validation (23 October 2026): 109 focused simulator tests pass, including
+animated retained-line screen positions, gradual incoming widths, fixed fragment
+geometry during scrolling, title visibility after chrome restoration, real window
+resize anchoring, and cancellation when a reader is reused during full rendering.

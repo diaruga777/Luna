@@ -10,7 +10,7 @@
 //  words that the prefix's map didn't have.
 //
 
-import LunaReaderUI
+@testable import LunaReaderUI
 import LunaModels
 import LunaStorage
 import Foundation
@@ -222,6 +222,23 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         // Scroll position is preserved across the swap (the prefix is a strict prefix,
         // so the small in-prefix offset maps to the identical line in the full text).
         XCTAssertEqual(textView?.contentOffset.y ?? -1, capturedOffset, accuracy: 1.0)
+    }
+
+    @MainActor
+    func testReusingReaderCancelsPendingFullContentWithoutReplacingNewArticle() async throws {
+        var item = SavedItem(urlString: "https://example.com/old-render")
+        item.state = .ready
+        let reader = ScrollReaderViewController(item: item, content: longArticle())
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.view.layoutIfNeeded()
+        reader.prepareFullContent()
+        let pending = try XCTUnwrap(reader.fullContentTaskForTesting)
+        let replacement = ArticleContent(title: "The next article", blocks: [paragraph("This is the replacement.")])
+        reader.configureForReuse(item: SavedItem(urlString: "https://example.com/new-render"), content: replacement)
+        await pending.value
+        XCTAssertTrue(pending.isCancelled)
+        XCTAssertTrue(reader.didLoadFullContentForTesting)
+        XCTAssertEqual(firstTextView(in: reader.view)?.text, ArticleTextRenderer.render(replacement).text.string)
     }
 
     func testCardWidthTransitionBuildsIndividualGlyphMovesAndRestoresLiveText() throws {

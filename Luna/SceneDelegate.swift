@@ -84,7 +84,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             AppLaunchTransition.holdForHandoff()
         }
         AppLaunchTransition.install(in: window)
-        AppFirstFrame.perform { AppLaunchServices.shared.ensureReady() }
+        AppFirstFrame.perform { AppLaunchServices.shared.start() }
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
@@ -384,22 +384,24 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // A staged run is a frozen world; foregrounding must not re-fetch,
         // re-import or re-purge anything into it.
         guard !LunaStage.isActive else { return }
-        AppLaunchServices.shared.ensureReady()
-        // An intent may have added items while the app was backgrounded.
-        NotificationCenter.default.post(name: .savesChanged, object: nil)
-        SavesIngestor.shared.ingestAllPending()
-        if LunaApp.current.sharesByEmail {
-            Task { await IncomingMailImporter.shared.importNewMail() }
+        AppLaunchServices.shared.whenReady {
+            // An intent may have added items while the app was backgrounded.
+            NotificationCenter.default.post(name: .savesChanged, object: nil)
+            SavesIngestor.shared.ingestAllPending()
+            if LunaApp.current.sharesByEmail {
+                Task { await IncomingMailImporter.shared.importNewMail() }
+            }
+            // Kind-specific foreground work: saved-media purge + deferred Wi-Fi
+            // download resume (media apps), pending-send retry + link-preload
+            // resume (article apps).
+            KindWiring.sceneDidForeground()
+            // The weekly pick may have changed while the app was backgrounded
+            // (debounced to at most one pull a minute inside the refresher).
+            Task { @MainActor in
+                await WeeklySaveRefresher.shared.refreshWeeklySaves()
+                await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+            }
         }
-        // Kind-specific foreground work: saved-media purge + deferred Wi-Fi
-        // download resume (media apps), pending-send retry + link-preload
-        // resume (article apps).
-        KindWiring.sceneDidForeground()
-        // The weekly pick may have changed while the app was backgrounded
-        // (debounced to at most one pull a minute inside the refresher).
-        Task { @MainActor in
-            await WeeklySaveRefresher.shared.refreshWeeklySaves()
-            await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
-        }
+        AppLaunchServices.shared.start()
     }
 }

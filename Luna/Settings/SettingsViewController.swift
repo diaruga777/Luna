@@ -134,6 +134,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         diagnosticsGesture.cancelsTouchesInView = false
         diagnosticsGesture.delegate = self
         tableView.addGestureRecognizer(diagnosticsGesture)
+        AppLaunchServices.shared.whenReady { [weak self] in
+            guard let self else { return }
+            self.categories = self.makeCategories()
+            self.tableView.reloadData()
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(emailAccountStatusChanged),
             name: EmailAccountStore.accountChanged, object: nil)

@@ -111,24 +111,32 @@ background-task registrations that iOS requires before launch returns. Finished
 articles are archived before selecting the first card. Cached saves render directly
 in the actual root hierarchy.
 
-`AppLaunchServices` defers plugin runtime creation/evaluation, ingest handlers,
-rescue setup, script-cache maintenance, mini-player construction, recent-URL
-refresh and share-notification cleanup until the root has had a displayed frame.
-`AppFirstFrame` waits for two display-link callbacks; dispatching to the main queue
-alone is insufficient because it can run before Core Animation commits the window.
-Early touches/keyboard presses, App Intents, and background URLSession/mail/price
-callbacks demand installation before using services. Cold deep links queue until
-installation completes, including Safari hand-offs. Installation happens once,
-even if these entry points race the first-frame callback.
+`AppLaunchServices` starts asynchronous foreground installation after the first
+root frame. Bridge registration and UI witnesses stay on main; plugin manifest
+reads, legacy secret migration, JavaScript VM construction and plugin evaluation
+run on a worker. The complete platform is published together on main. The window
+never installs services from `sendEvent`: cached cards, scrolling, the scrubber
+and Settings remain available while plugins load. Settings refreshes its category
+list when installation finishes.
+
+Deep links, background URLSession callbacks, maintenance and mini-player setup
+queue with `whenReady`; asynchronous intents and mail/price tasks use
+`waitUntilReady()`. Repeated triggers share one installation. Bluetooth restoration
+and deterministic stages retain the synchronous path before foreground loading
+starts, so restored central managers exist before `didFinishLaunching` returns.
 
 Save retries, mail import, indexing, retention sweeps, weekly refresh and price
-refresh start once after `AppLaunchTransition.didFinish`. Bluetooth restoration launches synchronously install services and restore their
-central managers before `didFinishLaunching` returns, without waiting for a
-scene or starting unrelated lifecycle sweeps. Other background-only wakes
-retain the one-second scene-connection fallback; lifecycle callbacks and intents
-can demand service readiness immediately. The first scene foreground callback
-does not duplicate launch refresh. Staged launches install services eagerly and
-continue to suppress maintenance.
+refresh start once after reveal AND service readiness. The first scene foreground
+callback does not duplicate launch refresh. Background-only wakes retain the
+one-second scene-connection fallback. Staged launches suppress maintenance.
+
+Regression coverage holds the real plugin execution queue during an asynchronous
+install and proves main-actor work can continue, then checks the loaded platform.
+A separate gated-install test checks readiness waiters, ordering and idempotence.
+The previous synchronous post-frame setup took about 80 ms on an iPhone 17 Pro /
+iOS 26.2 simulator with a small article fixture; this does not reproduce the
+reported populated-phone delay, and first-frame timing alone cannot verify touch
+responsiveness.
 
 Normal launches draw the root directly, with no app-owned splash overlay, hold,
 or crossfade. The empty util card shows its headline and controls immediately;

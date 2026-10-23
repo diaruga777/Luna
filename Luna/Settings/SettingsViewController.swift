@@ -61,6 +61,7 @@ struct SettingsCategory {
     var detail: (() -> String?)? = nil
     var isVisible: () -> Bool = { true }
     var requiresEmail = false
+    var requiresLaunchServices = false
     var makePrerequisite: (() -> UIViewController)? = nil
     let make: () -> UIViewController
 }
@@ -134,6 +135,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         diagnosticsGesture.cancelsTouchesInView = false
         diagnosticsGesture.delegate = self
         tableView.addGestureRecognizer(diagnosticsGesture)
+        AppLaunchServices.shared.whenReady { [weak self] in
+            guard let self else { return }
+            self.categories = self.makeCategories()
+            self.tableView.reloadData()
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(emailAccountStatusChanged),
             name: EmailAccountStore.accountChanged, object: nil)
@@ -176,7 +182,17 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             presentEmailRequiredAlert(for: category)
             return
         }
-        navigationController?.pushViewController(category.make(), animated: true)
+        if category.requiresLaunchServices, !AppLaunchServices.shared.isReady {
+            // Only the plugin-dependent destination waits; the Settings list
+            // and the rest of the window remain interactive.
+            Task { @MainActor [weak self] in
+                await AppLaunchServices.shared.waitUntilReady()
+                guard let self, self.navigationController?.topViewController === self else { return }
+                self.navigationController?.pushViewController(category.make(), animated: true)
+            }
+        } else {
+            navigationController?.pushViewController(category.make(), animated: true)
+        }
     }
 
     func gestureRecognizer(

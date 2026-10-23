@@ -54,6 +54,42 @@ public enum PluginPlatformComposition {
         store: PluginStore = .shared,
         keyValueStore: PluginKVStore = .shared
     ) -> [PluginLoadReport] {
+        let prepared = prepare(processKind: processKind, bundledPluginsBundle: bundledPluginsBundle,
+                               additionalBridges: additionalBridges, store: store, keyValueStore: keyValueStore)
+        let reports = prepared.load()
+        prepared.publish()
+        return reports
+    }
+
+    /// Register UI bridges on main, but read/migrate the catalog and wait for
+    /// JavaScriptCore on a worker. Do not publish a partly loaded platform.
+    @discardableResult
+    @MainActor
+    public static func installAsync(
+        processKind: PluginProcessKind,
+        bundledPluginsBundle: Bundle?,
+        additionalBridges: (PluginCallbackScheduling) -> [any PluginCapabilityInstalling] = { _ in [] },
+        store: PluginStore = .shared,
+        keyValueStore: PluginKVStore = .shared
+    ) async -> [PluginLoadReport] {
+        let prepared = prepare(processKind: processKind, bundledPluginsBundle: bundledPluginsBundle,
+                               additionalBridges: additionalBridges, store: store, keyValueStore: keyValueStore)
+        let reports = await Task.detached(priority: .userInitiated) { prepared.load() }.value
+        prepared.publish()
+        return reports
+    }
+
+    private struct Installation {
+        let load: () -> [PluginLoadReport]
+        let publish: @MainActor () -> Void
+    }
+
+    @MainActor
+    private static func prepare(
+        processKind: PluginProcessKind, bundledPluginsBundle: Bundle?,
+        additionalBridges: (PluginCallbackScheduling) -> [any PluginCapabilityInstalling],
+        store: PluginStore, keyValueStore: PluginKVStore
+    ) -> Installation {
         let bundled = BundledPluginCatalog(bundle: bundledPluginsBundle, store: store)
         let capabilities = PluginCapabilityRegistry()
         // One scratch store serves every plugin, keyed by (plugin, generation):
@@ -64,8 +100,6 @@ public enum PluginPlatformComposition {
         let runtime = PluginRuntime(
             store: store, bundled: bundled, capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind), scratch: scratch)
-        Self.runtime = runtime
-        Self.store = store
 
         let fetcher = PluginFetchService()
         fetcher.idle = runtime
@@ -81,37 +115,42 @@ public enum PluginPlatformComposition {
         capabilities.register(PluginDownloadsBridge(scheduler: runtime))
         for bridge in additionalBridges(runtime) { capabilities.register(bridge) }
 
-        PluginPlatformServices.invoker = runtime
-        PluginPlatformServices.catalog = PluginCatalog(
-            store: store, bundled: bundled, runtime: runtime, kv: keyValueStore)
-        PluginPlatformServices.importer = PluginImporter(
-            store: store, bundled: bundled, runtime: runtime)
         let settings = PluginSettingsStore(values: keyValueStore) { id in
             store.plugin(id: id)?.manifest.settings
                 ?? bundled.plugin(id: id)?.manifest.settings ?? []
         }
-        // Migrate legacy secret fields before any plugin can read ordinary storage.
-        let imported = store.installedPlugins()
-        for plugin in imported + bundled.plugins(shadowedBy: imported) {
-            _ = settings.allValuesJSON(pluginID: plugin.id)
-        }
-        PluginPlatformServices.settings = settings
-        PluginPlatformServices.scratch = scratch
+        // Capture the token BEFORE loading. An extension's concurrent edit must
+        // remain detectable on the next foreground reload.
+        let changeToken = store.changeToken
+        return Installation(load: {
+            let imported = store.installedPlugins()
+            for plugin in imported + bundled.plugins(shadowedBy: imported) {
+                _ = settings.allValuesJSON(pluginID: plugin.id)
+            }
+            return runtime.loadAll()
+        }, publish: {
+            PluginPlatformServices.invoker = runtime
+            PluginPlatformServices.catalog = PluginCatalog(
+                store: store, bundled: bundled, runtime: runtime, kv: keyValueStore)
+            PluginPlatformServices.importer = PluginImporter(
+                store: store, bundled: bundled, runtime: runtime)
+            PluginPlatformServices.settings = settings
+            PluginPlatformServices.scratch = scratch
+            Self.runtime = runtime
+            Self.store = store
+            Self.loadedChangeToken = changeToken
 
-        let reports = runtime.loadAll()
-        Self.loadedChangeToken = store.changeToken
-
-        IngestPipeline.pluginStage = PluginIngestStage(
-            invoker: runtime, processKind: processKind)
-        let resolver = PluginMediaResolver(invoker: runtime, processKind: processKind)
-        PluginMediaSeams.resolver = resolver
-        PluginMediaSeams.reresolver = resolver
-        PluginTranscriptionSeams.reresolver = PluginTranscriptionReresolver(
-            invoker: runtime, processKind: processKind)
-        PluginPriceSeams.fetcher = PluginPriceFetcher(
-            invoker: runtime, processKind: processKind)
-        PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()
-        return reports
+            IngestPipeline.pluginStage = PluginIngestStage(
+                invoker: runtime, processKind: processKind)
+            let resolver = PluginMediaResolver(invoker: runtime, processKind: processKind)
+            PluginMediaSeams.resolver = resolver
+            PluginMediaSeams.reresolver = resolver
+            PluginTranscriptionSeams.reresolver = PluginTranscriptionReresolver(
+                invoker: runtime, processKind: processKind)
+            PluginPriceSeams.fetcher = PluginPriceFetcher(
+                invoker: runtime, processKind: processKind)
+            PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()
+        })
     }
 
     /// Reloads this process's runtime when the App-Group store has changed

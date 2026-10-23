@@ -1,20 +1,24 @@
 import UIKit
-import CoreText
 
-/// A card's scroll-driven resize must not change lines the reader can already see.
-/// Keep their column widths in TextKit itself so selection, links, attachments and
-/// reading-position geometry all continue to use the displayed layout.
+/// Freeze the passage already on screen, then widen the following eight lines
+/// toward the new column. This geometry is fixed for the life of the transition:
+/// scrolling reveals lines at their final x, without recentering/reflowing them.
+/// TextKit still owns selection, links, attachments and reading positions.
 final class ScrollStableTextContainer: NSTextContainer {
     private struct Line {
         let characters: NSRange
         let width: CGFloat
+        let columnWidth: CGFloat
         let centerOffsetX: CGFloat
         var imageView: UIImageView?
         let imageOrigin: CGPoint
     }
     private var lines: [Line] = []
-    private var resolvedColumns: [Int: (width: CGFloat, centerOffsetX: CGFloat)] = [:]
-    private var boundaryTypesetter: CTTypesetter?
+    private var resolvedColumnWidths: [Int: CGFloat] = [:]
+    private var rampSourceWidth: CGFloat = 0
+    private var rampStartY: CGFloat = 0
+    private var rampHeight: CGFloat = 1
+    private static let rampLineCount: CGFloat = 8
 
     /// The destination's readable width, inside a canvas wide enough to hold
     /// old lines without making UITextView shift its drawing origin.
@@ -33,20 +37,17 @@ final class ScrollStableTextContainer: NSTextContainer {
             dx: -textView.textContainerInset.left, dy: -textView.textContainerInset.top)
         var captured: [Line] = []
         manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) {
-            rect, _, _, glyphs, _ in
-            guard rect.intersects(visible) else { return }
+            rect, _, _, glyphs, stop in
+            guard rect.minY <= visible.maxY else { stop.pointee = true; return }
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            let column = self.resolvedColumns[characters.location]
-            let width = column?.width ?? rect.width
-            let centerOffsetX = column?.centerOffsetX ?? (rect.minX - (self.size.width - width) / 2)
-            if let existing = self.lines.first(where: {
-                $0.characters == characters && (!presentingLines || $0.imageView != nil)
-            }) {
-                captured.append(existing)
-                return
-            }
-            if !presentingLines {
-                captured.append(Line(characters: characters, width: width, centerOffsetX: centerOffsetX, imageView: nil, imageOrigin: .zero))
+            let width = rect.width
+            let sourceColumn = self.resolvedColumnWidths[characters.location] ?? self.size.width
+            self.rampSourceWidth = sourceColumn
+            let centerOffsetX = rect.minX - (self.size.width - width) / 2
+            self.rampStartY = rect.maxY
+            self.rampHeight = max(1, rect.height * Self.rampLineCount)
+            if !presentingLines || !rect.intersects(visible) {
+                captured.append(Line(characters: characters, width: width, columnWidth: sourceColumn, centerOffsetX: centerOffsetX, imageView: nil, imageOrigin: .zero))
                 return
             }
             guard let manager = manager as? ScrollStableLayoutManager else { return }
@@ -71,28 +72,16 @@ final class ScrollStableTextContainer: NSTextContainer {
             imageView.frame = imageRect.offsetBy(
                 dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
             textView.addSubview(imageView)
-            captured.append(Line(characters: characters, width: width, centerOffsetX: centerOffsetX, imageView: imageView,
+            captured.append(Line(characters: characters, width: width, columnWidth: sourceColumn, centerOffsetX: centerOffsetX, imageView: imageView,
                 imageOrigin: CGPoint(x: imageRect.minX - rect.minX, y: imageRect.minY - rect.minY)))
         }
-        for line in lines where !captured.contains(where: { $0.imageView === line.imageView }) {
-            line.imageView?.removeFromSuperview()
-        }
+        lines.forEach { $0.imageView?.removeFromSuperview() }
         let changed = lines.map(\.characters) != captured.map(\.characters)
         lines = captured
         if changed || presentingLines {
-            boundaryTypesetter = nil
             invalidatePreservedLayout(in: textView)
         }
         return changed
-    }
-
-    /// Retire departed lines and freeze the newly visible ones BEFORE reflowing
-    /// behind the viewport. Even a new full-width line must keep its characters
-    /// when the last old narrow line leaves the top of the screen.
-    @discardableResult
-    func releaseOffscreenLines(in textView: UITextView) -> Bool {
-        guard hasPreservedLines else { return false }
-        return preserveVisibleLines(in: textView, presentingLines: false)
     }
 
     func reset(in textView: UITextView) {
@@ -100,7 +89,9 @@ final class ScrollStableTextContainer: NSTextContainer {
         lines.forEach { $0.imageView?.removeFromSuperview() }
         lines = []
         columnWidth = nil
-        resolvedColumns = [:]
+        rampSourceWidth = 0
+        rampStartY = 0
+        resolvedColumnWidths = [:]
         invalidatePreservedLayout(in: textView)
     }
 
@@ -133,11 +124,6 @@ final class ScrollStableTextContainer: NSTextContainer {
 
     func invalidatePreservedLayout(in textView: UITextView) {
         (textView.layoutManager as? ScrollStableLayoutManager)?.preservedCharacters = lines.filter { $0.imageView != nil }.map(\.characters)
-        if lines.isEmpty {
-            boundaryTypesetter = nil
-        } else if boundaryTypesetter == nil {
-            boundaryTypesetter = CTTypesetterCreateWithAttributedString(textView.textStorage)
-        }
         textView.layoutManager.invalidateLayout(
             forCharacterRange: NSRange(location: 0, length: textView.textStorage.length),
             actualCharacterRange: nil)
@@ -148,42 +134,37 @@ final class ScrollStableTextContainer: NSTextContainer {
         writingDirection baseWritingDirection: NSWritingDirection,
         remaining remainingRect: UnsafeMutablePointer<CGRect>?
     ) -> CGRect {
-        guard let line = lines.first(where: { NSLocationInRange(characterIndex, $0.characters) }) else {
-            var rect = super.lineFragmentRect(
-                forProposedRect: proposedRect, at: characterIndex,
-                writingDirection: baseWritingDirection, remaining: remainingRect)
-            if let columnWidth {
-                let leading = rect.minX
-                let trailing = max(0, size.width - rect.maxX)
-                rect.origin.x = (size.width - columnWidth) / 2 + leading
-                rect.size.width = max(1, columnWidth - leading - trailing)
-            }
-            // Prevent a newly wrapped line above the preserved passage from
-            // consuming its first characters, including scripts without spaces.
-            if let next = lines.first(where: { $0.characters.location > characterIndex }),
-               let typesetter = boundaryTypesetter {
-                let length = next.characters.location - characterIndex
-                // Only measure the seam's short final line, not an ever-longer
-                // substring from every preceding line of a deep reading position.
-                let available = Double(max(1, rect.width - lineFragmentPadding * 2))
-                let naturalBreak = CTTypesetterSuggestLineBreak(typesetter, characterIndex, available)
-                let capacity = CTTypesetterSuggestClusterBreak(typesetter, characterIndex, available)
-                // Leave an ordinary full-width row alone when its natural word
-                // break already ends at the seam. Otherwise scrolling upward
-                // would accumulate unnecessarily shortened fragment rectangles.
-                if naturalBreak > length, length <= capacity {
-                    let prefix = CTTypesetterCreateLine(typesetter, CFRange(location: characterIndex, length: length))
-                    let measured = CGFloat(CTLineGetTypographicBounds(prefix, nil, nil, nil))
-                    rect.size.width = min(rect.width, measured + lineFragmentPadding * 2 + 0.01)
-                }
-            }
-            resolvedColumns[characterIndex] = (rect.width, rect.minX - (size.width - rect.width) / 2)
+        // Captured fragments form a prefix, so binary lookup stays cheap even
+        // when a deep reading position retains thousands of earlier lines.
+        var low = 0
+        var high = lines.count
+        while low < high {
+            let middle = (low + high) / 2
+            if NSMaxRange(lines[middle].characters) <= characterIndex { low = middle + 1 }
+            else { high = middle }
+        }
+        if low < lines.count, NSLocationInRange(characterIndex, lines[low].characters) {
+            let line = lines[low]
+            remainingRect?.pointee = .zero
+            let rect = CGRect(x: (size.width - line.width) / 2 + line.centerOffsetX, y: proposedRect.minY,
+                              width: line.width, height: proposedRect.height)
+            if low == lines.count - 1 { rampStartY = rect.maxY }
+            resolvedColumnWidths[characterIndex] = line.columnWidth
             return rect
         }
-        remainingRect?.pointee = .zero
-        let rect = CGRect(x: (size.width - line.width) / 2 + line.centerOffsetX, y: proposedRect.minY,
-                          width: line.width, height: proposedRect.height)
-        resolvedColumns[characterIndex] = (line.width, line.centerOffsetX)
+        var rect = super.lineFragmentRect(
+            forProposedRect: proposedRect, at: characterIndex,
+            writingDirection: baseWritingDirection, remaining: remainingRect)
+        resolvedColumnWidths[characterIndex] = size.width
+        if let columnWidth {
+            let leading = rect.minX
+            let trailing = max(0, size.width - rect.maxX)
+            let progress = min(1, max(0, (proposedRect.minY - rampStartY + proposedRect.height) / rampHeight))
+            let width = rampSourceWidth + (columnWidth - rampSourceWidth) * progress
+            resolvedColumnWidths[characterIndex] = width
+            rect.origin.x = (size.width - width) / 2 + leading
+            rect.size.width = max(1, width - leading - trailing)
+        }
         return rect
     }
 

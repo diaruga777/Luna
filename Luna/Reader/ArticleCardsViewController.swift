@@ -1254,8 +1254,6 @@ final class ReaderCardContentViewController: CardContentViewController,
     private var viewportPinnedTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
     private var viewportTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
     private weak var viewportTransitionScrollReader: ScrollReaderViewController?
-    /// Which copy currently owns the title — see `updateTitleHandoffLatch()`.
-    private var pinnedTitleHasTakenOver = false
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
         reader as? LunaReaderUI.RabbitHoleReaderViewController
@@ -1727,8 +1725,10 @@ final class ReaderCardContentViewController: CardContentViewController,
             scrollReader.prepareForCardViewportTransition(
                 to: size, destinationTopChromeInset: destinationTitleHeight,
                 preservingVisibleLines: true)
-            viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
-                x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+            if titleHeader.alpha > 0 {
+                viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
+                    x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+            }
             titleHeader.isHidden = viewportPinnedTitlePresentation != nil
             return
         }
@@ -1746,14 +1746,17 @@ final class ReaderCardContentViewController: CardContentViewController,
             y: readerOrigin.y - destinationTitleHeight - destinationOffset,
             width: size.width, height: destinationTitleHeight)
         viewportTitlePresentation = scrollTitleHeader.prepareReflow(to: destinationFrame, in: view)
-        viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
-            x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+        if titleHeader.alpha > 0 {
+            viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
+                x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+        }
         titleHeader.isHidden = viewportPinnedTitlePresentation != nil
     }
 
     override func animatePreparedCardViewportTransition() {
         viewportTransitionScrollReader?.animatePreparedCardViewportTransition()
         viewportTitlePresentation?.animate()
+        viewportPinnedTitlePresentation?.surface.alpha = titleHeader.alpha
         viewportPinnedTitlePresentation?.animate()
     }
 
@@ -1838,20 +1841,16 @@ final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private func updatePinnedTitleVisibility(animated: Bool) {
-        updateTitleHandoffLatch()
         // With no scroll surface the active reader is RSVP (or a non-ready
         // placeholder), whose title is fixed and never follows card chrome.
         // A library preview keeps its identity visible even when the article
         // remembers a reading position below its title.
         let isLibraryPreview = cardChromeVisible
             && (parent as? CardCarouselViewController)?.usesReaderGrid == true
-        // UIKit can settle exactly at the end of the scrolling masthead,
-        // inside the handoff's hysteresis band. Keep the pinned copy visible
-        // once that entire title/banner has left the viewport.
-        let scrollingHeaderHasLeftViewport = titleScrollView != nil
-            && scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view).maxY <= 0.5
+        // A scroll reader has one scrolling masthead. Reaching its end must
+        // never summon a second title over the body, even before immersion's
+        // directional threshold has been reached or after chrome is restored.
         let showsPinnedTitle = titleScrollView == nil || isLibraryPreview
-            || (cardChromeVisible && (pinnedTitleHasTakenOver || scrollingHeaderHasLeftViewport))
         scrollTitleHeader.alpha = isLibraryPreview ? 0 : 1
         viewportTitlePresentation?.surface.alpha = scrollTitleHeader.alpha
         let changes = {
@@ -1867,22 +1866,6 @@ final class ReaderCardContentViewController: CardContentViewController,
         } else {
             changes()
         }
-    }
-
-    /// Advances the latched handoff between the two copies (the rule itself is
-    /// `ReaderScrollPosition.pinnedTitleOwnsTitle`). While the pinned copy owns
-    /// the title it stays parked over the scrolling copy's approach, and the
-    /// swap lands at the one offset where the two are pixel-identical — so a
-    /// scroll-driven change of owner is applied without animation.
-    private func updateTitleHandoffLatch() {
-        guard let scroll = titleScrollView else {
-            pinnedTitleHasTakenOver = false
-            return
-        }
-        pinnedTitleHasTakenOver = ReaderScrollPosition.pinnedTitleOwnsTitle(
-            wasPinned: pinnedTitleHasTakenOver,
-            distanceFromTop: Double(scroll.contentOffset.y + scroll.adjustedContentInset.top),
-            titleHeaderHeight: Double(titleHeaderHeight))
     }
 
     private func applyReaderTopInset() {

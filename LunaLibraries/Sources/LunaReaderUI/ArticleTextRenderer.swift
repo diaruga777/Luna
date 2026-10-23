@@ -77,12 +77,44 @@ public enum ArticleTextRenderer {
         characterBudget: Int?,
         includesTitle: Bool = true
     ) -> RenderedArticle {
+        render(content, characterBudget: characterBudget, includesTitle: includesTitle,
+               maximumImageWidth: min(UIScreen.main.bounds.width - 100, 660))
+    }
+
+    struct PreparedContent {
+        let rendered: RenderedArticle
+        let wordMap: WordMap
+    }
+
+    /// Only immutable article/style inputs cross to the worker. A text view and
+    /// its live TextKit stack are never accessed there.
+    @MainActor
+    static func prepareFullContent(
+        _ content: ArticleContent, includesTitle: Bool,
+        traits: UITraitCollection, maximumImageWidth: CGFloat
+    ) async -> PreparedContent {
+        await Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                var rendered: RenderedArticle!
+                traits.performAsCurrent {
+                    rendered = render(content, characterBudget: nil, includesTitle: includesTitle,
+                                      maximumImageWidth: maximumImageWidth)
+                }
+                return PreparedContent(rendered: rendered, wordMap: WordMap(content: content, rendered: rendered))
+            }
+        }.value
+    }
+
+    private static func render(
+        _ content: ArticleContent, characterBudget: Int?, includesTitle: Bool,
+        maximumImageWidth: CGFloat
+    ) -> RenderedArticle {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []
         let imagesDirectory = SavesStore.shared.articlesDirectory
         // Cap to the readable text column so images don't overflow on iPad.
-        let maxImageWidth = min(UIScreen.main.bounds.width - 100, 660)
+        let maxImageWidth = maximumImageWidth
 
         if includesTitle {
             let titleParagraph = NSMutableParagraphStyle()

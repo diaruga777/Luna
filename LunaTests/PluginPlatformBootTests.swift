@@ -113,6 +113,35 @@ final class PluginPlatformBootTests: XCTestCase {
         XCTAssertNotNil(PluginMediaSeams.reresolver)
     }
 
+    func testAsyncInstallKeepsMainActorAvailableDuringJavaScriptEvaluation() async throws {
+        // Hold the actual runtime queue, rather than testing an unrelated timer.
+        // A bridge installer runs before load begins and schedules the hold.
+        let entered = expectation(description: "runtime worker entered")
+        let release = DispatchSemaphore(value: 0)
+        let completed = expectation(description: "installation completed")
+        let bundle = try fixtureBundle()
+        var reports: [PluginLoadReport] = []
+        let installation = Task { @MainActor in
+            reports = await PluginPlatformComposition.installAsync(
+                processKind: .app, bundledPluginsBundle: bundle,
+                additionalBridges: { scheduler in
+                    scheduler.schedulePluginCallback {
+                        entered.fulfill()
+                        _ = release.wait(timeout: .now() + 2)
+                    }
+                    return []
+                }, store: store, keyValueStore: keyValueStore)
+            completed.fulfill()
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        // This main-actor continuation must run while the plugin queue is held.
+        release.signal()
+        await fulfillment(of: [completed], timeout: 3)
+        await installation.value
+        XCTAssertTrue(try XCTUnwrap(reports.first).isLoaded)
+        XCTAssertEqual(PluginPlatformServices.invoker?.loadedPlugins.map(\.id), [Self.toyPluginID])
+    }
+
     /// The stage the install leaves behind runs the runtime the install built:
     /// the fixture plugin claims its host and answers a media Model.
     func testTheInstalledStageRunsTheLoadedPlugin() async throws {

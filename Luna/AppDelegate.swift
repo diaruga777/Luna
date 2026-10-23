@@ -85,7 +85,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Install only what the saved-card hierarchy reads while it is built.
         // Plugins, ingest handlers and maintenance wait for a displayed frame.
         KindWiring.installPresentation()
-        AppLaunchServices.shared.configure { [weak self] in self?.installServices() }
+        AppLaunchServices.shared.configure({ [weak self] in self?.installServices() }, asynchronously: { [weak self] in
+            await KindWiring.installAsync()
+            self?.installServiceWitnesses()
+        })
         // Onboarding's own launch bookkeeping, before any root reads its state:
         // stamp the start of a first run (or of the run a reset just began), then
         // latch completion if a save has arrived since — a save from ANY surface
@@ -188,8 +191,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     private func installServices() {
-        DiagnosticLog.shared.record("app launch", category: "lifecycle")
         KindWiring.install()
+        installServiceWitnesses()
+    }
+
+    private func installServiceWitnesses() {
+        DiagnosticLog.shared.record("app launch", category: "lifecycle")
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
@@ -230,7 +237,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// background-only wake. Service installation precedes every consumer.
     func startLaunchMaintenance() {
         guard !LunaStage.isActive, !hasStartedLaunchMaintenance else { return }
-        AppLaunchServices.shared.ensureReady()
+        guard AppLaunchServices.shared.isReady else {
+            AppLaunchServices.shared.whenReady { [weak self] in self?.startLaunchMaintenance() }
+            AppLaunchServices.shared.start()
+            return
+        }
         hasStartedLaunchMaintenance = true
         if let launchRevealObserver {
             NotificationCenter.default.removeObserver(launchRevealObserver)
@@ -291,17 +302,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        AppLaunchServices.shared.ensureReady()
-        // Background URLSessions belong to the media download manager; apps
-        // without the media kind complete the callback immediately.
-        KindWiring.attachBackgroundURLSessionHandler(
-            identifier: identifier, completionHandler)
-        // The one wake this process is guaranteed to get without the user
-        // touching anything: the transfer a Safari hand-off started just
-        // finished. If that hand-off's metadata pass was cut short by an
-        // expiring background window, this is where it resumes — on its own
-        // lease, so it never delays the session handler above.
-        BackgroundIngestCompletion.runFromLifecycle()
+        AppLaunchServices.shared.whenReady {
+            // Background URLSessions belong to the media download manager; apps
+            // without the media kind complete the callback immediately.
+            KindWiring.attachBackgroundURLSessionHandler(
+                identifier: identifier, completionHandler)
+            // The one wake this process is guaranteed to get without the user
+            // touching anything: the transfer a Safari hand-off started just
+            // finished. If that hand-off's metadata pass was cut short by an
+            // expiring background window, this is where it resumes — on its own
+            // lease, so it never delays the session handler above.
+            BackgroundIngestCompletion.runFromLifecycle()
+        }
+        AppLaunchServices.shared.start()
     }
 
     private func scheduleMailFetch() {
@@ -332,7 +345,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             work?.cancel()
         }
         work = Task {
-            await MainActor.run { AppLaunchServices.shared.ensureReady() }
+            await AppLaunchServices.shared.waitUntilReady()
             await IncomingMailImporter.shared.importNewMail()
             KindWiring.retryPendingArticleSends()
             task.setTaskCompleted(success: !Task.isCancelled)
@@ -426,7 +439,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self.schedulePriceRefresh(reason: "background expiration")
         }
         work = Task { [weak self] in
-            await MainActor.run { AppLaunchServices.shared.ensureReady() }
+            await AppLaunchServices.shared.waitUntilReady()
             // The handler is only registered when a runner exists (see
             // schedulesPriceRefresh), so the fallback 0 is unreachable.
             let processed = await KindWiring.priceRefreshRunner?.runPriceRefresh() ?? 0

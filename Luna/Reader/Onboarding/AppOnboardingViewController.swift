@@ -1573,6 +1573,7 @@ final class AppOnboardingViewController: UIViewController {
         intro.setPasteLoading()
 
         Task { [weak self] in
+            await AppLaunchServices.shared.waitUntilReady()
             let result = await IngestPipeline.processResolved(
                 IngestInput(url: url, source: .paste))
             guard let self else { return }

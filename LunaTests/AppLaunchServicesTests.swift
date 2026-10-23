@@ -70,6 +70,35 @@ final class AppLaunchServicesTests: XCTestCase {
         XCTAssertEqual(events, ["install begins", "install ends", "queued action", "nested action"])
     }
 
+    func testForegroundInstallationYieldsAndQueuesConsumersExactlyOnce() async {
+        let services = AppLaunchServices()
+        var release: CheckedContinuation<Void, Never>?
+        var events: [String] = []
+        services.configure({ XCTFail("foreground must not use blocking installation") }, asynchronously: {
+            events.append("load begins")
+            await withCheckedContinuation { release = $0 }
+            events.append("load ends")
+        })
+        services.whenReady { events.append("deep link") }
+        services.start()
+        // Simulate another first-frame/lifecycle trigger during loading.
+        services.start()
+        let consumer = Task { @MainActor in
+            await services.waitUntilReady()
+            events.append("intent")
+        }
+        while release == nil { await Task.yield() }
+        XCTAssertFalse(services.isReady)
+        events.append("UI responds")
+        XCTAssertEqual(events, ["load begins", "UI responds"])
+        release?.resume()
+        await consumer.value
+        XCTAssertEqual(events, ["load begins", "UI responds", "load ends", "deep link", "intent"])
+        XCTAssertTrue(services.isReady)
+        services.start()
+        XCTAssertEqual(events.count, 5)
+    }
+
     func testUnconfiguredViewFixturesDoNotWaitForAnAppLaunch() {
         let services = AppLaunchServices()
         var called = false

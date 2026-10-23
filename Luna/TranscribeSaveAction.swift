@@ -29,6 +29,7 @@ enum TranscribeSaveAction {
     /// accepted; nil when this app dropped it as another app's kind.
     @MainActor
     static func start(urlString: String, source: CaptureSource) async -> SavedItem? {
+        await AppLaunchServices.shared.waitUntilReady()
         let item = SavesStore.shared.addSeparate(urlString: urlString, source: source)
         switch await SavesIngestor.shared.ingest(item, intent: .transcribe) {
         case .supported: return item

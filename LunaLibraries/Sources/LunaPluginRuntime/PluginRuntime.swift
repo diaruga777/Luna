@@ -104,7 +104,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     private let bundled: BundledPluginCatalog
     private let capabilities: PluginCapabilityRegistry
     private let processContext: PluginProcessContext
-    private let virtualMachine: JSVirtualMachine
+    // First accessed only from the serial execution queue while loading a
+    // context. Constructing the VM must not become foreground setup work.
+    private lazy var virtualMachine: JSVirtualMachine = isolated ? JSVirtualMachine()! : Self.sharedVirtualMachine
+    private let isolated: Bool
     private let executionQueue: PluginExecutionQueue
     private let diagnostics: PluginDiagnosticsRecording
     /// Opens a plugin's scratch generation for the length of a call. Nil where
@@ -153,7 +156,7 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         self.processContext = processContext
         self.diagnostics = diagnostics
         self.scratch = scratch
-        virtualMachine = isolated ? JSVirtualMachine()! : PluginRuntime.sharedVirtualMachine
+        self.isolated = isolated
         executionQueue = isolated
             ? PluginExecutionQueue(label: "com.hsanabria.luna.pluginDraft.\(UUID().uuidString)")
             : PluginRuntime.sharedExecutionQueue

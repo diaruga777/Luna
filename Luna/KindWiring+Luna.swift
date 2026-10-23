@@ -63,7 +63,7 @@ enum KindWiring {
     }
 
     @MainActor
-    static func install() {
+    static func install(installPlugins: (@MainActor () -> Void)? = nil) {
         // The Luna file intake seam. Every root installs a witness, so a
         // `.luna` file reaching a surface is always accounted for; the
         // recovery and plugin surfaces each install their own half.
@@ -71,7 +71,7 @@ enum KindWiring {
         LunaFileIntake.pluginHandler = PluginDraftFileIntake(
             presenter: AppPluginDraftReviewRoute(), launcher: LLMLauncher.shared)
 
-        installFullPluginComposition()
+        if let installPlugins { installPlugins() } else { installFullPluginComposition() }
         installPluginRecoveryRoute()
         PluginModelDrain.returnOpener = SystemPluginModelReturnOpener()
         // A destination plugin's "Auto-send" row opens the app shell's
@@ -97,6 +97,20 @@ enum KindWiring {
         EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
     }
 
+    @MainActor
+    static func installAsync() async {
+        await PluginPlatformComposition.installAsync(
+            processKind: .app,
+            bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
+            additionalBridges: {
+                PluginUIComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
+            })
+        installPluginAppWitnesses()
+        install(installPlugins: {})
+    }
+
     /// The plugin platform's full composition for this app: the runtime plus
     /// every bridge tier `Luna` links (UI, transport, export) and the two
     /// app-only witnesses that ride on top of it. `install()` calls this once
@@ -114,6 +128,11 @@ enum KindWiring {
                     + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
                     + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
             })
+        installPluginAppWitnesses()
+    }
+
+    @MainActor
+    private static func installPluginAppWitnesses() {
         PluginUIComposition.installAppWitnesses()
         // The export tier reads the runtime the call above built, so it comes
         // after it. It also retires the Swift destinations its plugins take

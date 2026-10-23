@@ -143,6 +143,9 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     }
 
     public func saveLink(urlString: String) {
-        Task { await SavesIngestor.shared.handleSavePress(urlString: urlString) }
+        Task {
+            await AppLaunchServices.shared.waitUntilReady()
+            await SavesIngestor.shared.handleSavePress(urlString: urlString)
+        }
     }
 }

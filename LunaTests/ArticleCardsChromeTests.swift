@@ -500,6 +500,53 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(scrollingTitle.bounds.width, card.view.bounds.width, accuracy: 0.5)
     }
 
+    @MainActor
+    func testScrollExpansionWidensSeveralIncomingLinesWithoutMovingThemOnScroll() throws {
+        let container = ScrollStableTextContainer(size: .zero)
+        let manager = ScrollStableLayoutManager()
+        manager.addTextContainer(container)
+        let storage = NSTextStorage(attributedString: NSAttributedString(
+            string: String(repeating: "The basic deal is that if you found a company, you will probably give up some ownership. ", count: 100),
+            attributes: [.font: UIFont.systemFont(ofSize: 24)]))
+        storage.addLayoutManager(manager)
+        container.widthTracksTextView = true
+        let text = UITextView(frame: CGRect(x: 0, y: 0, width: 300, height: 300), textContainer: container)
+        text.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        let host = UIView(frame: text.frame)
+        host.addSubview(text)
+        text.layoutIfNeeded()
+        manager.ensureLayout(for: container)
+        let oldFirst = manager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        let oldX = text.frame.minX + text.textContainerInset.left + oldFirst.minX
+        container.preserveVisibleLines(in: text)
+        // Establish the final canvas while the enclosing card is still narrow.
+        text.frame = CGRect(x: -30, y: 0, width: 360, height: 300)
+        container.columnWidth = 320
+        container.invalidatePreservedLayout(in: text)
+        text.layoutIfNeeded()
+        manager.ensureLayout(for: container)
+        let first = manager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        XCTAssertEqual(text.frame.minX + text.textContainerInset.left + first.minX, oldX, accuracy: 0.5)
+        var fragments: [(NSRange, CGRect)] = []
+        manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) {
+            rect, _, _, range, _ in fragments.append((range, rect))
+        }
+        let ramp = fragments.filter { $0.1.width > oldFirst.width + 0.5 && $0.1.width < 319.5 }
+        XCTAssertGreaterThanOrEqual(ramp.count, 5, "Incoming lines must widen gradually across the seam")
+        XCTAssertEqual(fragments.last?.1.width ?? 0, 320, accuracy: 0.5)
+        for pair in zip(ramp, ramp.dropFirst()) {
+            XCTAssertGreaterThan(pair.1.1.width, pair.0.1.width)
+            XCTAssertLessThan(pair.1.1.minX, pair.0.1.minX)
+        }
+        container.finishLinePresentation(in: text)
+        text.contentOffset.y = 800
+        manager.ensureLayout(for: container)
+        for (range, rect) in fragments {
+            XCTAssertEqual(manager.lineFragmentRect(forGlyphAt: range.location, effectiveRange: nil), rect,
+                           "Scrolling must not recenter or rewrap newly revealed lines")
+        }
+    }
+
     func testBannerKeepsFullCanvasWhileBothHeaderCopiesAreCropped() throws {
         let title = "A long headline that makes the resting header taller than the expanded header"
         let controller = makeArticleController(seed: "stable-banner-crop", title: title)
@@ -630,7 +677,8 @@ final class ArticleCardsChromeTests: XCTestCase {
                 x: 0,
                 y: -textView.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
-        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001,
+                       "The title must stay in scroll content after leaving the viewport")
         let card = try XCTUnwrap(controller.carousel.contentController(
             at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
         card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: true, extendsCard: true)
@@ -638,6 +686,11 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
         XCTAssertEqual(textView.contentInset.top, stableInset, accuracy: 0.5)
+        card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: false, extendsCard: true)
+        controller.view.layoutIfNeeded()
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001,
+                       "Restoring chrome must not restore the article title over the body")
     }
 
     func testScrollableTitleUsesCardWidthWhileReaderBoundsAreStillProvisional() throws {
@@ -816,7 +869,7 @@ final class ArticleCardsChromeTests: XCTestCase {
                 x: 0,
                 y: -scroll.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
-        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
 
         controller.carousel(
             controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)

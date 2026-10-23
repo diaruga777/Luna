@@ -73,6 +73,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var wordMap: WordMap
     private let includesArticleTitle: Bool
     private var imageDownloadTask: Task<Void, Never>?
+    private var fullContentTask: Task<Void, Never>?
     /// Live animation views laid over TextKit's first-frame attachments. TextKit 1
     /// draws attachments as static bitmaps, so a real image view is required for GIF
     /// playback. Views are enabled only while visible to bound decode/CPU cost.
@@ -87,10 +88,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let textView = QuotingTextView(frame: .zero, textContainer: readerTextContainer)
         return textView
     }()
-    private var updatingPreservedLines = false
     private var preservingViewportTransition = false
     private var textViewportWidthConstraint: NSLayoutConstraint!
     private var preservedTextWidthConstraint: NSLayoutConstraint!
+    private var updatingViewportLayout = false
     private var preservedTextViewportWidth: CGFloat?
     private var preparedCardWidth: CGFloat?
     /// Temporary per-glyph presentation used only while a large card changes
@@ -137,6 +138,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Test hooks for the progressive load: whether the full content has been
     /// swapped in, and the rendered text length / word count currently shown.
     public var didLoadFullContentForTesting: Bool { fullContentLoad == .done }
+    var fullContentTaskForTesting: Task<Void, Never>? { fullContentTask }
     public var renderedTextLengthForTesting: Int { rendered.text.length }
     public var wordCountForTesting: Int { wordMap.wordCount }
     public var animatedImageViewCountForTesting: Int { animatedImageViews.count }
@@ -291,6 +293,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// swaps in new content — the part of `configureForReuse` that's about
     /// tearing down the OLD state, independent of what the new content is.
     private func resetTransientState() {
+        fullContentTask?.cancel()
+        fullContentTask = nil
+        if isViewLoaded {
+            readerTextContainer.reset(in: textView)
+            preservedTextViewportWidth = nil
+            preparedCardWidth = nil
+            preservedTextWidthConstraint.isActive = false
+            textViewportWidthConstraint.isActive = true
+        }
         imageDownloadTask?.cancel()
         removeAnimatedImageViews()
         speech?.stop()
@@ -459,6 +470,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
+        fullContentTask?.cancel()
         imageDownloadTask?.cancel()
         removeAnimatedImageViews()
         speech?.stop()
@@ -469,8 +481,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     // MARK: - Card viewport reflow
 
     /// Captures this scroll reader's current TextKit layout and a hypothetical
-    /// layout at `size`. Scroll-driven changes retain only visible line breaks;
-    /// incoming lines use the destination width. Kept public for the card host; standalone readers never
+    /// layout at `size`. Scroll-driven changes retain the displayed passage;
+    /// incoming lines gradually reach the destination width. Kept public for the card host; standalone readers never
     /// call it and retain their ordinary UIKit resizing behavior.
     @discardableResult
     public func prepareForCardViewportTransition(
@@ -492,11 +504,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             preservedTextViewportWidth = width
             preparedCardWidth = size.width
             textViewportWidthConstraint.isActive = false
-            // Do not commit a wider canvas before the card's animation starts.
-            preservedTextWidthConstraint.constant = textView.bounds.width
+            // The centered canvas already occupies its final screen position.
+            // Only the enclosing card animates: newly exposed lines must never
+            // inherit its changing left edge and slide sideways.
+            preservedTextWidthConstraint.constant = width
             preservedTextWidthConstraint.isActive = true
             readerTextContainer.columnWidth = size.width - 2 * Self.horizontalTextInset(forViewportWidth: size.width)
             readerTextContainer.invalidatePreservedLayout(in: textView)
+            UIView.performWithoutAnimation { view.layoutIfNeeded() }
             return false
         }
         let horizontal = Self.horizontalTextInset(forViewportWidth: size.width)
@@ -746,6 +761,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        guard !updatingViewportLayout else { return }
+        updatingViewportLayout = true
+        defer {
+            updatingViewportLayout = false
+            captureResizeAnchor()
+        }
         if let preparedCardWidth, !preservingViewportTransition,
            abs(view.bounds.width - preparedCardWidth) > 0.5 {
             // A real window/orientation resize ends the retained column policy.
@@ -805,32 +826,33 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// it itself once it appears, so it works regardless of host. Idempotent and a
     /// no-op when the prefix already covered the whole article.
     ///
-    /// Phase 2 runs AFTER the entry animation, so the article's heavy whole-text glyph
-    /// generation runs off the entry animation's critical path. The attributed-string
-    /// build + the forced layout both run on the main actor (the renderer touches
-    /// `UIScreen`/`UIFont`, and TextKit layout must be on main anyway) — it's the TIMING,
-    /// not threading, that keeps the open from stalling. Because the prefix is a
-    /// STRICT prefix of the full text, the top/visible layout is identical, so restoring
-    /// the captured `contentOffset` across the swap is invisible.
+    /// Attribute construction, image decoding and word mapping run on a worker;
+    /// deferring a synchronous render by one main-queue turn still froze input
+    /// immediately after launch. Only the final TextKit update returns to main.
     public func prepareFullContent() {
         guard fullContentLoad == .pending else { return }
         fullContentLoad = .inFlight
-        // Defer one runloop so a host that calls this from inside its open-animation
-        // completion doesn't pay the build cost in the same commit as that completion.
-        DispatchQueue.main.async { [weak self] in
-            // `[weak self]` drops this if the VC deallocated. Require the view loaded
-            // (it always is by the time Phase 2 is triggered) before touching it.
-            guard let self, self.isViewLoaded, self.fullContentLoad != .done else { return }
-            let full = ArticleTextRenderer.render(
-                self.content, includesTitle: self.includesArticleTitle)
-            self.applyFullContent(full)
+        let content = self.content
+        let includesTitle = includesArticleTitle
+        let traits = traitCollection
+        let imageWidth = min((view.window?.screen.bounds.width ?? UIScreen.main.bounds.width) - 100, 660)
+        fullContentTask = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else { return }
+            let prepared = await ArticleTextRenderer.prepareFullContent(
+                content, includesTitle: includesTitle, traits: traits, maximumImageWidth: imageWidth)
+            // Reusing a pre-mounted reader cancels its old request. A late
+            // worker result must never replace the new article's prefix.
+            guard !Task.isCancelled, let self, self.isViewLoaded,
+                  self.fullContentLoad != .done else { return }
+            self.applyFullContent(prepared.rendered, wordMap: prepared.wordMap)
+            self.fullContentTask = nil
         }
     }
 
     /// Swaps the freshly-built full render into the text view, preserving the reader's
     /// scroll position. Runs on the main actor.
     @MainActor
-    private func applyFullContent(_ full: RenderedArticle) {
+    private func applyFullContent(_ full: RenderedArticle, wordMap: WordMap) {
         guard fullContentLoad != .done else { return }
         // The user might have scrolled within the prefix while it was the only thing
         // laid out. Capture where they are so the swap is seamless.
@@ -840,7 +862,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let anchorWord = firstFullyVisibleWordIndex()
 
         rendered = full
-        wordMap = WordMap(content: content, rendered: full)
+        self.wordMap = wordMap
 
         // Replacing attributed text can publish a transient clamped offset
         // before the captured position is restored below. Keep external scroll
@@ -1492,7 +1514,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     // MARK: - Read tracking
 
     private func captureResizeAnchor() {
-        guard viewportReflowTransition == nil, !preservingViewportTransition,
+        guard viewportReflowTransition == nil, !preservingViewportTransition, !updatingViewportLayout,
               abs(lastTextViewportWidth - textView.bounds.width) < 0.5 else { return }
         resizeWasAtTop = textView.contentOffset.y + textView.adjustedContentInset.top <= 1
         resizeAnchor = TextViewportReflowTransition.anchorGeometry(
@@ -1500,27 +1522,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        if readerTextContainer.hasPreservedLines, !updatingPreservedLines,
-           !preservingViewportTransition, viewportReflowTransition == nil,
-           !ScrollPresentationState.isSuppressed(for: scrollView) {
-            updatingPreservedLines = true
-            let sourceOffset = textView.contentOffset.y
-            let anchor = TextViewportReflowTransition.anchorGeometry(
-                in: textView, layoutManager: textView.layoutManager)
-            ScrollPresentationState.setSuppressed(true, for: textView)
-            if readerTextContainer.releaseOffscreenLines(in: textView), let anchor {
-                UIView.performWithoutAnimation {
-                    textView.layoutManager.ensureLayout(for: readerTextContainer)
-                    textView.contentOffset.y = clampedContentOffsetY(
-                        TextViewportReflowTransition.restoredOffset(for: anchor, in: textView))
-                    layoutCompletionArea()
-                    layoutAnimatedImageViews()
-                }
-            }
-            ScrollPresentationState.recordOffsetAdjustment(textView.contentOffset.y - sourceOffset, for: textView)
-            ScrollPresentationState.setSuppressed(false, for: textView)
-            updatingPreservedLines = false
-        }
         captureResizeAnchor()
         updateReadPullPrompt()
         updateAnimatedImagePlayback()

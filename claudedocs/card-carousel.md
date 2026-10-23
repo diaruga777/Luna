@@ -168,16 +168,19 @@ The date moves in exactly three ways, and no others:
   download progress is drawn inside the downloading item's own card (see
   "Store plumbing" below).
 
-## Reader horizontal rail
+## Adaptive reader previews
 
-`ArticleCardsViewController` enables `usesAdaptiveReaderRail`. At 700pt and
-above, `CardCarouselMetrics.readerRail` caps preview widths at 360pt and places
-them 24pt apart inside a native `UIScrollView`. The rail supports touch scrolling,
-deceleration and snapping; it mounts a bounded range around the visible cards.
-A selected card temporarily leaves the scroll view during immersion, then
-returns to the same index. Reader taps and vertical reading gestures can select
-any visible card. Window resizing recomputes the rail without replacing the
-selected content controller. Other carousel hosts retain their existing geometry.
+`ArticleCardsViewController` enables `usesAdaptiveReaderGrid`. Portrait tablet
+windows show two rows of previews inside a native horizontal `UIScrollView`.
+Landscape tablets and regular-width phone displays (including the unfolded Duo)
+use the centered carousel with one row of equal-size cards. These cards fill the
+card area's height. Their width is `(viewportWidth - 48) × 3/7`, leaving 24pt
+gaps and exactly one third of each neighboring card outside the viewport.
+Compact phone windows retain their original portrait-card geometry.
+
+The selection survives window resizing, rotation, and folding. The single row
+uses the carousel's paging and scrub strip; portrait grids retain their native
+continuous scroll offset while an article opens and closes.
 
 ## Wide containers (other decks)
 

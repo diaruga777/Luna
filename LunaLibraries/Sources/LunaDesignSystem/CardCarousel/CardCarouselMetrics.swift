@@ -13,7 +13,8 @@ import Foundation
 /// Resolved geometry for one carousel container size: the card size, how much of
 /// each neighbor peeks in from the side, and where each slot's center sits.
 public struct CardCarouselMetrics: Equatable {
-    /// Width : height of a card. Cards are portrait ("16:9 taller than wide").
+    /// Width : height of compact carousel cards. Adaptive reader previews
+    /// instead use the available height and the width their layout requires.
     public static let cardAspectRatio: CGFloat = 9.0 / 16.0
 
     /// Points of a neighboring card visible inside the container edge.
@@ -26,8 +27,11 @@ public struct CardCarouselMetrics: Equatable {
     /// Room kept above and below the card inside the card area.
     public static let verticalPadding: CGFloat = 12
 
-    /// Reader previews use a continuous collection with two rows.
+    /// Portrait tablet previews use a continuous collection with two rows.
     public var isPreviewGrid = false
+    /// Wide readers page through one full-height row with equal-size neighbors.
+    public var isWideSingleRow = false
+    private var singleRowCenterX: CGFloat?
     public var columnStride: CGFloat { cardSize.width + 24 }
 
     public var containerSize: CGSize
@@ -90,11 +94,32 @@ public struct CardCarouselMetrics: Equatable {
             sideScale: sideScale)
     }
 
-    /// Two equal rows of article previews. Width follows available space instead
-    /// of the portrait deck aspect ratio; all columns have equal visual weight.
-    public static func readerGrid(containerSize: CGSize, prefersExpandedLayout: Bool = false) -> CardCarouselMetrics {
+    /// Expanded phone displays and landscape tablets use a centered row. Each
+    /// side card has one third of its width outside the viewport, with 24pt gaps.
+    /// Portrait tablets retain two equal rows of previews.
+    public static func readerGrid(
+        containerSize: CGSize,
+        prefersExpandedLayout: Bool = false,
+        prefersSingleRow: Bool = false,
+        singleRowViewport: CGRect? = nil
+    ) -> CardCarouselMetrics {
         var result = resolve(containerSize: containerSize)
         guard containerSize.width >= 700 || (prefersExpandedLayout && containerSize.width >= 560) else { return result }
+        if prefersSingleRow || containerSize.width > containerSize.height {
+            // Cards can peek beneath asymmetric system chrome, while reading
+            // and controls continue to use the safe card-area container.
+            let viewport = singleRowViewport ?? CGRect(origin: .zero, size: containerSize)
+            // viewport = center + 2 × (2/3 neighbor) + 2 × gap
+            let width = max(40, (viewport.width - 48) * 3 / 7)
+            result.cardSize = CGSize(
+                width: width,
+                height: max(40, containerSize.height - verticalPadding * 2))
+            result.peek = width * 2 / 3
+            result.sideScale = 1
+            result.isWideSingleRow = true
+            result.singleRowCenterX = viewport.midX
+            return result
+        }
         let height = max(40, (containerSize.height - 48) / 2)
         let width = min(340, max(260, (containerSize.width - 64) / 3))
         result.cardSize = CGSize(width: width, height: height)
@@ -130,7 +155,9 @@ public struct CardCarouselMetrics: Equatable {
     /// container edge; slots further out continue at one scaled-card-width steps,
     /// fully off screen.
     public func centerX(forSlotOffset offset: Int) -> CGFloat {
-        if isPreviewGrid { return containerSize.width / 2 + CGFloat(offset) * columnStride }
+        if isPreviewGrid || isWideSingleRow {
+            return (singleRowCenterX ?? containerSize.width / 2) + CGFloat(offset) * columnStride
+        }
         guard offset != 0 else { return containerSize.width / 2 }
         let scaledWidth = cardSize.width * sideScale
         let step = CGFloat(abs(offset) - 1) * scaledWidth
@@ -149,7 +176,7 @@ public struct CardCarouselMetrics: Equatable {
     /// The centered card's frame at rest (scale 1).
     public func centeredCardFrame() -> CGRect {
         CGRect(
-            x: containerSize.width / 2 - cardSize.width / 2,
+            x: centerX(forSlotOffset: 0) - cardSize.width / 2,
             y: centerY() - cardSize.height / 2,
             width: cardSize.width,
             height: cardSize.height)

@@ -233,9 +233,12 @@ enum AppLaunchTransition {
         container.backgroundColor = .clear
 
         let artwork = UIImageView(image: launchCoronaCardArtwork)
+        // The recorded body is 9:16. Scale each axis's overhang with that
+        // axis so the white limb still hugs a wider, single-row utility card.
         artwork.frame = container.bounds.insetBy(
             dx: -AppLaunchGeometry.coronaReach(forCardWidth: cardFrame.width),
-            dy: -AppLaunchGeometry.coronaReach(forCardWidth: cardFrame.width))
+            dy: -AppLaunchGeometry.coronaReach(
+                forCardWidth: cardFrame.height * CardCarouselMetrics.cardAspectRatio))
         // Fixed (negative) margins with a flexible core: the overhang stays put
         // when the card resizes.
         artwork.autoresizingMask = [.flexibleWidth, .flexibleHeight]

@@ -390,7 +390,8 @@ public final class CardCarouselViewController: UIViewController {
         let content: CardContentViewController
     }
 
-    /// Reader opts into a native horizontal preview grid when its window has room.
+    /// Reader opts into a grid in portrait tablet windows and a single row
+    /// on expanded phones and landscape tablets.
     public var usesAdaptiveReaderGrid = false {
         didSet { resolvedMetrics = nil; if isViewLoaded { view.setNeedsLayout() } }
     }
@@ -401,18 +402,24 @@ public final class CardCarouselViewController: UIViewController {
 
     private var slots: [Int: Slot] = [:]
     private var count = 0
-    /// One geometry per container, shared by all its cards. Reader can opt into
-    /// a two-row grid; other decks use the aspect-fit launch-card geometry.
+    /// One geometry per container, shared by all its cards. Reader adapts
+    /// between the portrait grid and full-height row as its window changes.
     private var resolvedMetrics: CardCarouselMetrics?
     private var prefersExpandedReaderLayout = false
+    private var prefersSingleRowReaderLayout = false
     private var metricsContainerSize: CGSize = .zero
+    private var metricsRowViewport: CGRect = .zero
 
     /// The card geometry at the current container size, computed on first sight.
     private var metrics: CardCarouselMetrics? {
         guard metricsContainerSize.width > 0, metricsContainerSize.height > 0 else { return nil }
         if let resolvedMetrics { return resolvedMetrics }
         let resolved = usesAdaptiveReaderGrid
-            ? CardCarouselMetrics.readerGrid(containerSize: metricsContainerSize, prefersExpandedLayout: prefersExpandedReaderLayout)
+            ? CardCarouselMetrics.readerGrid(
+                containerSize: metricsContainerSize,
+                prefersExpandedLayout: prefersExpandedReaderLayout,
+                prefersSingleRow: prefersSingleRowReaderLayout,
+                singleRowViewport: metricsRowViewport)
             : CardCarouselMetrics.resolve(containerSize: metricsContainerSize)
         resolvedMetrics = resolved
         return resolved
@@ -576,14 +583,19 @@ public final class CardCarouselViewController: UIViewController {
         // Keep the footer controls' clearance but remove the duplicate thumbnail
         // navigation in the library; every visible preview is already a target.
         let expanded = traitCollection.horizontalSizeClass == .regular
-        if expanded != prefersExpandedReaderLayout {
+        let singleRow = view.bounds.width > view.bounds.height
+            || (traitCollection.userInterfaceIdiom == .phone && expanded)
+        if expanded != prefersExpandedReaderLayout || singleRow != prefersSingleRowReaderLayout {
             prefersExpandedReaderLayout = expanded
+            prefersSingleRowReaderLayout = singleRow
             resolvedMetrics = nil
         }
         let size = cardArea.bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        if metricsContainerSize != size {
+        let rowViewport = view.convert(view.bounds, to: cardArea)
+        if metricsContainerSize != size || metricsRowViewport != rowViewport {
             metricsContainerSize = size
+            metricsRowViewport = rowViewport
             resolvedMetrics = nil
         }
         scrubber.isHidden = usesReaderGrid

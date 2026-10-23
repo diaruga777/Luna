@@ -944,9 +944,48 @@ final class CarouselScrubberUtilityChipTests: XCTestCase {
 
 @MainActor
 final class ReaderGridTests: XCTestCase {
+    func testLandscapeRowRestoresCardsAfterReadingAndPortraitRotation() throws {
+        let source = LargeScrubDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.usesAdaptiveReaderGrid = true
+        carousel.traitOverrides.userInterfaceIdiom = .pad
+        carousel.traitOverrides.horizontalSizeClass = .regular
+        carousel.dataSource = source
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 1366, height: 1024)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 10)
+        let selected = try XCTUnwrap(carousel.cardView(at: 10))
+        let resting = selected.frame
+        XCTAssertFalse(carousel.usesReaderGrid)
+        for index in [9, 11] {
+            let neighbor = try XCTUnwrap(carousel.cardView(at: index))
+            XCTAssertEqual(neighbor.frame.minY, resting.minY, accuracy: 0.5)
+            XCTAssertEqual(neighbor.bounds.size, selected.bounds.size)
+        }
+
+        carousel.setImmersed(true, extendsCard: true, horizontalInset: 16)
+        XCTAssertEqual(selected.bounds.width, 1334, accuracy: 0.5)
+        carousel.setImmersed(false)
+        XCTAssertEqual(selected.frame, resting)
+
+        carousel.view.frame.size = CGSize(width: 1024, height: 1366)
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+        XCTAssertTrue(carousel.usesReaderGrid)
+        XCTAssertTrue(selected.superview is UIScrollView)
+        XCTAssertEqual(carousel.currentIndex, 10)
+
+        carousel.view.frame.size = CGSize(width: 1366, height: 1024)
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+        XCTAssertFalse(carousel.usesReaderGrid)
+        XCTAssertFalse(selected.superview is UIScrollView)
+        XCTAssertEqual(selected.frame, resting)
+        XCTAssertEqual(carousel.currentIndex, 10)
+    }
+
     func testGridFitsTwoRowsAndUsesEqualPreviewSizes() {
-        for size in [CGSize(width: 744, height: 900), CGSize(width: 1024, height: 1200),
-                     CGSize(width: 1366, height: 800), CGSize(width: 900, height: 500)] {
+        for size in [CGSize(width: 744, height: 900), CGSize(width: 1024, height: 1200)] {
             let grid = CardCarouselMetrics.readerGrid(containerSize: size)
             XCTAssertTrue(grid.isPreviewGrid)
             let first = grid.previewFrame(at: 0)
@@ -970,7 +1009,7 @@ final class ReaderGridTests: XCTestCase {
         let carousel = CardCarouselViewController()
         carousel.usesAdaptiveReaderGrid = true
         carousel.dataSource = source
-        carousel.view.frame = CGRect(x: 0, y: 0, width: 1366, height: 1024)
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 1024, height: 1366)
         carousel.view.layoutIfNeeded()
         carousel.reloadData(centeringAt: 10)
         carousel.view.layoutIfNeeded()
@@ -988,7 +1027,7 @@ final class ReaderGridTests: XCTestCase {
         XCTAssertEqual(carousel.currentIndex, 10)
         carousel.setImmersed(true, extendsCard: true, horizontalInset: 16)
         XCTAssertFalse(selected.superview === grid)
-        XCTAssertEqual(selected.bounds.width, 1334, accuracy: 0.5)
+        XCTAssertEqual(selected.bounds.width, 992, accuracy: 0.5)
         XCTAssertFalse(grid.isScrollEnabled)
         carousel.setImmersed(false)
         XCTAssertTrue(selected.superview === grid)
@@ -1034,11 +1073,34 @@ final class ReaderGridTests: XCTestCase {
 
 @MainActor
 final class ReaderDuoLayoutTests: XCTestCase {
-    func testRegularWidthInnerDisplayShowsPreviewsBelowIPadBreakpoint() {
+    func testWideRowFillsHeightWithOneThirdOfEachSideCardOffscreen() {
+        for size in [CGSize(width: 660, height: 850), CGSize(width: 900, height: 500),
+                     CGSize(width: 1366, height: 800)] {
+            let row = CardCarouselMetrics.readerGrid(
+                containerSize: size, prefersExpandedLayout: true, prefersSingleRow: true)
+            XCTAssertTrue(row.isWideSingleRow)
+            XCTAssertFalse(row.isPreviewGrid)
+            let center = row.centeredCardFrame()
+            let width = row.cardSize.width
+            let left = CGRect(x: row.centerX(forSlotOffset: -1) - width / 2,
+                              y: center.minY, width: width, height: center.height)
+            let right = CGRect(x: row.centerX(forSlotOffset: 1) - width / 2,
+                               y: center.minY, width: width, height: center.height)
+            XCTAssertEqual(center.height, size.height - 24, accuracy: 0.01)
+            XCTAssertEqual(-left.minX, width / 3, accuracy: 0.01)
+            XCTAssertEqual(right.maxX - size.width, width / 3, accuracy: 0.01)
+            XCTAssertEqual(center.minX - left.maxX, 24, accuracy: 0.01)
+            XCTAssertEqual(right.minX - center.maxX, 24, accuracy: 0.01)
+            XCTAssertEqual(row.scale(forSlotOffset: -1), 1)
+            XCTAssertEqual(row.scale(forSlotOffset: 1), 1)
+        }
         let size = CGSize(width: 660, height: 850)
-        XCTAssertTrue(CardCarouselMetrics.readerGrid(containerSize: size, prefersExpandedLayout: true).isPreviewGrid)
+        XCTAssertTrue(CardCarouselMetrics.readerGrid(
+            containerSize: size, prefersExpandedLayout: true, prefersSingleRow: true).isWideSingleRow)
         XCTAssertFalse(CardCarouselMetrics.readerGrid(containerSize: size).isPreviewGrid)
-        XCTAssertFalse(CardCarouselMetrics.readerGrid(containerSize: CGSize(width: 402, height: 850), prefersExpandedLayout: true).isPreviewGrid)
+        XCTAssertFalse(CardCarouselMetrics.readerGrid(
+            containerSize: CGSize(width: 402, height: 850),
+            prefersExpandedLayout: true, prefersSingleRow: true).isWideSingleRow)
     }
 
     func testInnerDisplayUsesItsAsymmetricSafeAreaAndCollapsesToOneCard() throws {
@@ -1055,10 +1117,14 @@ final class ReaderDuoLayoutTests: XCTestCase {
         window.layoutIfNeeded()
         carousel.view.layoutIfNeeded()
         carousel.reloadData()
-        XCTAssertTrue(carousel.usesReaderGrid)
+        XCTAssertFalse(carousel.usesReaderGrid)
         let card = try XCTUnwrap(carousel.cardView(at: 0))
-        let grid = try XCTUnwrap(card.superview as? UIScrollView)
-        XCTAssertEqual(grid.convert(grid.bounds, to: carousel.view).minX, 58, accuracy: 0.5)
+        let area = try XCTUnwrap(card.superview)
+        XCTAssertFalse(area is UIScrollView)
+        XCTAssertEqual(area.convert(area.bounds, to: carousel.view).minX, 58, accuracy: 0.5)
+        let resting = card.convert(card.bounds, to: carousel.view)
+        XCTAssertEqual(resting.midX, window.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(resting.width, (window.bounds.width - 48) * 3 / 7, accuracy: 0.5)
         carousel.setImmersed(true, horizontalInset: 16)
         let expanded = card.convert(card.bounds, to: carousel.view)
         XCTAssertEqual(expanded.minX, 74, accuracy: 0.5)

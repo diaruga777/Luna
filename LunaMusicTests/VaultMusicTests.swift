@@ -1248,7 +1248,8 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertFalse(playback.isPlaying)
         XCTAssertFalse(playback.isBuffering)
         XCTAssertEqual(playback.player.rate, 0)
-        XCTAssertGreaterThan(playback.position, 0.9)
+        XCTAssertEqual(playback.position, 0, accuracy: 0.05)
+        XCTAssertEqual(playback.player.currentTime().seconds, 0, accuracy: 0.05)
         XCTAssertEqual(playback.handleRemotePlay(), .success)
         try await waitFor { playback.isPlaying }
         XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
@@ -1646,20 +1647,25 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertGreaterThan(playback.player.rate, 0)
         XCTAssertEqual(playback.currentEpisode?.id, episode.id)
     }
-    func testPauseImmediatelyPrimesColdAndWarmOfflinePodcastWithoutChangingQueue() async throws {
+    func testPauseImmediatelyPrimesColdAndInterruptedPodcastAndRestoresPosition() async throws {
         var next = episode!; next.id = "next"; next.title = "Next episode"
         try library.edit { $0.episodes[next.id] = next; $0.queue = [next.id, episode.id] }
-        for _ in 0..<2 {
+        var starts = 0
+        playback.willPlay = { starts += 1 }
+        for attempt in 1...2 {
             let position = playback.position
             try await playback.resumeLastPodcast(pauseImmediately: true)
+            XCTAssertEqual(starts, attempt)
             XCTAssertEqual(playback.currentEpisode?.id, episode.id)
             XCTAssertEqual(library.state.queue, [next.id, episode.id])
             XCTAssertTrue(playback.session.isActive)
             XCTAssertTrue(playback.session.remoteCommandCenter.playCommand.isEnabled)
             XCTAssertEqual(playback.player.rate, 0)
             XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
-            XCTAssertGreaterThan(playback.position, position + 2.9, "Priming must allow three seconds of actual playback")
-            XCTAssertLessThan(playback.position, position + 4)
+            XCTAssertEqual(playback.position, position, accuracy: 0.05)
+            XCTAssertEqual(playback.player.currentTime().seconds, position, accuracy: 0.05)
+            XCTAssertEqual(try PodcastStore(url: library.requireStore().url).state.progress[episode.id]?.position ?? -1,
+                           position, accuracy: 0.05)
             let info = try XCTUnwrap(playback.player.currentItem?.nowPlayingInfo)
             XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, episode.title)
             XCTAssertNil(info[MPNowPlayingInfoPropertyPlaybackRate], "AVFoundation publishes transport state directly")
@@ -1673,7 +1679,70 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             XCTAssertTrue(playback.player.currentItem === item)
             XCTAssertGreaterThan(playback.position, paused)
             playback.pause()
+            // Another audio app can take ownership while our app-local session
+            // remains active. The next invocation must reclaim it, then rewind.
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil,
+                userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+            try await Task.sleep(for: .milliseconds(100))
         }
+    }
+    func testPauseImmediatelyLeavesActivePausedPodcastUntouched() async throws {
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+        var finished = false
+        playback.seek(to: 81.375) { finished = $0 }
+        try await waitFor { finished }
+        let item = playback.player.currentItem
+        let history = library.state.progress[episode.id]
+        var starts = 0
+        playback.willPlay = { starts += 1 }
+
+        for _ in 0..<2 { try await playback.resumeLastPodcast(pauseImmediately: true) }
+
+        XCTAssertEqual(starts, 0, "An active paused podcast must never be restarted")
+        XCTAssertTrue(playback.player.currentItem === item)
+        XCTAssertEqual(playback.position, 81.375, accuracy: 0.01)
+        XCTAssertEqual(library.state.progress[episode.id]?.lastPlayedAt, history?.lastPlayedAt)
+        XCTAssertEqual(library.state.progress[episode.id]?.position, history?.position)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(playback.player.currentTime().seconds, 81.375, accuracy: 0.01)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+    }
+    func testPauseImmediatelyPausesActivePlayingPodcastWithoutRestartingIt() async throws {
+        try await playback.resumeLastPodcast()
+        let position = playback.player.currentTime().seconds
+        var starts = 0
+        playback.willPlay = { starts += 1 }
+
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+
+        XCTAssertEqual(starts, 0)
+        XCTAssertEqual(playback.player.currentTime().seconds, position, accuracy: 0.05)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertFalse(playback.isPlaying)
+    }
+    func testPauseImmediatelyReclaimsPodcastAfterSwitchingToMusic() async throws {
+        let music = MusicPlaybackController(defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            vault: VaultMusicController(directory: root.appendingPathComponent("other-music")))
+        let coordinator = MediaPlaybackCoordinator(music: music, podcasts: playback,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        coordinator.install()
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        music.willPlay?()
+        XCTAssertEqual(coordinator.active, .music)
+        let position = playback.position
+        var starts = 0
+        let activate = playback.willPlay
+        playback.willPlay = { starts += 1; activate?() }
+
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(coordinator.active, .podcasts)
+        XCTAssertEqual(playback.position, position, accuracy: 0.05)
+        XCTAssertEqual(playback.player.rate, 0)
+        withExtendedLifetime(coordinator) {}
     }
     func testCancelledImmediatePauseCannotLeaveAudioPlaying() async throws {
         let request = Task { try await playback.resumeLastPodcast(pauseImmediately: true) }
@@ -1779,7 +1848,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertTrue(playback.isBuffering, "An elapsed delay alone is not playback readiness")
         try await request.value
-        XCTAssertGreaterThan(playback.player.currentTime().seconds, 0)
+        XCTAssertEqual(playback.player.currentTime().seconds, 0, accuracy: 0.05)
         XCTAssertTrue(playback.session.isActive)
         XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
         XCTAssertEqual(playback.player.rate, 0)

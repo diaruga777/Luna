@@ -375,17 +375,27 @@ parameter defaults to `true`, allowing resuming even when other audio is playing
 When explicitly set to `false`, it returns without installing the playback
 coordinator or resuming playback if
 `AVAudioSession.sharedInstance().isOtherAudioPlaying` is true.
-Its **Pause Immediately** Boolean defaults to `false`. When enabled, it starts
-playback, waits for the media clock to advance and the podcast's Now Playing
-session to become active, then allows a continuous handoff window before pausing.
+Its **Pause Immediately** Boolean defaults to `false`. When enabled and podcasts
+retain playback ownership, it pauses without starting or replacing the item. An
+already paused item stays paused at its exact position. Ownership is tracked from
+actual playback with an active podcast session and cleared by audio interruptions
+or switching to music; the shortcut also checks for other playing audio. This is
+conservative process-local evidence, since `MPNowPlayingSession.isActive` does not
+identify the system-wide playback app.
+Otherwise it starts playback, waits for the media clock to advance and the
+podcast's Now Playing session to become active, then allows a continuous handoff
+window before pausing.
 That window is at least three seconds, or the audio route's output latency plus I/O
 buffer duration when longer; buffering resets the window. A single advancing tick
 and `MPNowPlayingSession.isActive` only establish player/app-local state, not that
 iOS has selected Luna as the system playback app. Normal Resume returns after
 playback starts. Startup is bounded and cancellation or a newer transport action
-cannot cause a late pause.
+cannot cause a late pause. After priming, it pauses and completes an exact seek to
+the item's pre-playback offset, persisting that restored position before returning.
 Natural completion during the handoff follows the next queued episode and pauses
-after that item's playback window, retaining a resumable item.
+after that item's playback window, restoring that next item's starting offset and
+retaining a resumable item.
+
 AirPods connection automations can use this one action with Pause Immediately
 enabled. **Pause If Playing** (`PauseMusicIntent`, restored) and **Seek**
 (`SeekMusicIntent`) provide the separate-invocation alternative: Resume with Pause
@@ -457,6 +467,13 @@ and iOS 26.2 but is blocked by simulator AudioQueue/HAL startup timeouts
 (`AQMEIO` / `AddRunningClient`, including existing playback tests). The longer
 play/pause path and the real-audio fallback regression remain unverified in that
 environment; these results do not establish that the hardware report is fixed.
+
+Validation (2026-10-23): the Music simulator build-for-testing and all 42 Foundation
+podcast tests passed. The eight hosted remote-command tests also passed. Playback
+regressions cover already-paused/playing sessions, interrupted and music-switched
+ownership, exact clock/persisted-position restoration and natural advancement.
+Their runtime verification remains pending: audio output stalled on both iOS 27.1
+and a fresh iOS 26.2 simulator, including the existing ordinary local-resume test.
 
 `MediaPlaybackCoordinator` owns active media and transport routing. Back always
 applies immediately. Once that operation finishes successfully, a forward command

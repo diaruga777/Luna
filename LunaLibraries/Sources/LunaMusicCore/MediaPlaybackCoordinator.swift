@@ -39,6 +39,7 @@ import LunaPodcastCore
         guard active != surface else { return }
         gesture.cancel(); skipRevision = UUID()
         if surface == .music {
+            podcasts.relinquishPlaybackSession()
             if podcasts.isPlaying || podcasts.isBuffering { podcasts.pause() }
         } else {
             if music.isPlaying || music.isBuffering { music.pause() }

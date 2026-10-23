@@ -68,6 +68,10 @@ import LunaPodcastCore
         self?.requestedPlayback == true
     }
     private var playbackStartTime: Double?
+    private var playbackResumePosition: Double = 0
+    // isActive identifies the app's session, not the system's playback app.
+    // Retain ownership only after audible playback, until another source takes it.
+    private var retainsPlaybackSession = false
     private var startupTimeToken: Any?
     private var remotePlaybackTask: Task<Void, Never>?
     private var remotePlaybackRevision = UUID()
@@ -114,7 +118,10 @@ import LunaPodcastCore
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor in
                 guard let self, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
-                if raw == AVAudioSession.InterruptionType.began.rawValue { self.interruptedPlayback = self.requestedPlayback; self.pause() }
+                if raw == AVAudioSession.InterruptionType.began.rawValue {
+                    self.relinquishPlaybackSession()
+                    self.interruptedPlayback = self.requestedPlayback; self.pause()
+                }
                 else {
                     defer { self.interruptedPlayback = false }
                     if self.interruptedPlayback, let raw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
@@ -166,6 +173,7 @@ import LunaPodcastCore
         clearPlaybackStart()
         let time = player.currentTime().seconds
         playbackStartTime = time.isFinite ? time : position
+        playbackResumePosition = playbackStartTime ?? position
         // Observe startup closely, then remove this observer once the clock
         // advances. Normal playback keeps its existing half-second cadence.
         startupTimeToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 600), queue: .main) { [weak self] _ in
@@ -323,6 +331,13 @@ import LunaPodcastCore
     public func resumeLastPodcast(pauseImmediately: Bool = false) async throws {
         logState(pauseImmediately ? "intent.prime" : "intent.resume")
         try Task.checkCancellation()
+        if pauseImmediately, retainsPlaybackSession, session.isActive,
+           player.currentItem != nil, player.currentItem?.status != .failed,
+           !isSelecting, !needsPreparation,
+           !AVAudioSession.sharedInstance().isOtherAudioPlaying {
+            pause()
+            return
+        }
         let revision = UUID(); playbackRevision = revision
         let store = try library.requireStore()
         if store.state.naturallyExhaustedQueue { await library.refresh(force: true) }
@@ -373,7 +388,12 @@ import LunaPodcastCore
                     let latency = audio.outputLatency + audio.ioBufferDuration
                     let handoff = Duration.seconds(latency.isFinite ? max(3, latency) : 3)
                     if !pauseImmediately || now - since >= handoff {
-                        if pauseImmediately { pause() }
+                        retainsPlaybackSession = true
+                        if pauseImmediately {
+                            let resumePosition = playbackResumePosition
+                            pause()
+                            try await restorePositionAfterPriming(resumePosition)
+                        }
                         logState("intent.complete")
                         return
                     }
@@ -394,6 +414,21 @@ import LunaPodcastCore
             throw error
         }
     }
+    private func restorePositionAfterPriming(_ seconds: Double) async throws {
+        var finished: Bool?
+        seek(to: seconds) { finished = $0 }
+        let revision = playbackRevision
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while finished == nil, ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            guard playbackRevision == revision else { throw CancellationError() }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try Task.checkCancellation()
+        guard playbackRevision == revision else { throw CancellationError() }
+        guard finished == true else { throw PodcastError("Unable to restore the podcast position. Try seeking back.") }
+    }
+    func relinquishPlaybackSession() { retainsPlaybackSession = false }
     public func pause() {
         remotePlaybackTask?.cancel()
         playbackRevision = UUID()
@@ -560,6 +595,7 @@ import LunaPodcastCore
             do { try library.requireStore().recordPlaybackStarted(episode.id); actualStartRecorded = true; library.reloadState() }
             catch { fail(error); return }
         }
+        if isPlaying, session.isActive { retainsPlaybackSession = true }
         publish()
     }
     private func setBuffering(_ value: Bool) {

@@ -14,6 +14,10 @@ transition, the ingest, and the reload that centers what the save became. A deck
 kind provider (`CardDeckProviding`) contributes cards; it never touches the
 util card or the save path.
 
+Setup buttons center their icon and title as a single block within the button,
+including after a cycling title changes. Overflowing titles still use the
+clipped ticker beside the icon.
+
 ## Large cards
 
 The utility card scales its typography, icons, row heights, element padding and

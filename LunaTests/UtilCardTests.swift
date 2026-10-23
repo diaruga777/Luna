@@ -676,17 +676,17 @@ final class UtilCardTests: XCTestCase {
     }
 
     /// A cycling label slides sideways, and UIKit lays a configuration button's
-    /// title out by assigning its frame — so a layout pass landing mid-slide
-    /// could bake the offset into the label's centre and walk the title toward
-    /// the trailing edge one turn at a time. It must stay where the icon left it.
-    func testCyclingSetupLabelKeepsItsLeadingPositionAcrossTurns() throws {
+    /// title out by assigning its frame. Reflows during the slide must preserve
+    /// the centered icon-and-title block, including when the wording changes.
+    func testCyclingSetupLabelKeepsItsIconAndTextCenteredAcrossTurns() throws {
         let card = makeCard(showsOnboarding: true, app: .luna)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
         card.view.layoutIfNeeded()
         let button = try XCTUnwrap(actionButtons(in: card).first)
         let label = try XCTUnwrap(button.titleLabel)
-        let restingX = label.frame.minX
+        let image = try XCTUnwrap(button.imageView)
+        XCTAssertEqual(image.frame.union(label.frame).midX, button.bounds.midX, accuracy: 0.5)
         let cycler = UtilCardSetupTextCycler(
             safariButton: button,
             shortcutButton: try XCTUnwrap(actionButtons(in: card).last))
@@ -703,7 +703,7 @@ final class UtilCardTests: XCTestCase {
                     == OnboardingStrings.Intro.safariAction.value(for: app)
                     && label.transform.isIdentity && label.alpha == 1,
                 message: "\(app)'s label never settled")
-            XCTAssertEqual(label.frame.minX, restingX, accuracy: 0.5)
+            XCTAssertEqual(image.frame.union(label.frame).midX, button.bounds.midX, accuracy: 0.5)
         }
     }
 

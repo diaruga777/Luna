@@ -897,7 +897,7 @@ final class UtilCardContentViewController: CardContentViewController {
         var attributes = AttributeContainer()
         attributes.font = .systemFont(ofSize: 13, weight: .semibold)
         button.configuration?.attributedTitle = AttributedString(title, attributes: attributes)
-        button.contentHorizontalAlignment = .leading
+        button.contentHorizontalAlignment = .center
         button.titleLabel?.numberOfLines = 1
         button.accessibilityLabel = title
         button.addTarget(self, action: action, for: .touchUpInside)

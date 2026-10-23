@@ -862,10 +862,11 @@ queue links. No audio playback is required by these view-state checks.
 
 ### Episode list titles and bookmark removal (2026-10-23)
 
-Episode rows now wrap the complete title and grow to fit it in library, show and
-station lists. Directory episode results also allow unlimited title lines.
-Descriptions remain two-line previews. At accessibility text sizes, artwork and
-actions move above the text so titles can use the full row width.
+Episode rows use the existing single-line ticker in library, show and station
+lists. Overflowing titles scroll behind a trailing fade, pause at each end and
+respect Reduce Motion. Title length does not increase row height, including at
+accessibility text sizes. VoiceOver retains the full title, and tapping it opens
+episode details. Descriptions remain two-line previews.
 
 The Saved library and CarPlay collections, show filter, Save/Unsave Episode
 commands, Download Saved Episodes preference and bookmark-based download rules
@@ -875,11 +876,16 @@ settings still decode normally. Downloads remain available from episode menus,
 the Downloaded collection and per-show automatic download settings.
 
 Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 42 Foundation podcast tests
-and 10 focused hosted tests passed. The hosted checks include complete-title
-height at 320/402 points with default and maximum accessibility text, download
+and 10 focused hosted tests passed. The hosted checks include title layout
+at 320/402 points with default and maximum accessibility text, download
 menu availability, library navigation and deferred screen updates. Row screenshots
 were inspected at both text sizes.
 
 Two focused UI checks also passed for podcast settings and switching between
 Music and a Downloaded detail page, including clearing podcast search and
 confirming the Saved row is absent.
+
+Follow-up: replaced expanding episode titles with compact tickers after user
+review. All 11 focused hosted tests passed, comparing short/long title row
+heights, verifying overflow animation and retaining full accessible titles at
+both widths and text sizes. Compact row screenshots were inspected.

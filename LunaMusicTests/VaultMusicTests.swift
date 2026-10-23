@@ -1975,7 +1975,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
 }
 
 @MainActor final class PodcastEpisodeListLayoutTests: XCTestCase {
-    func testFullEpisodeTitlesFitSelfSizingRowsAtNarrowWidthsAndLargeText() throws {
+    func testEpisodeTitlesScrollWithoutIncreasingRowHeight() throws {
         let title = "What will computer chips look like in 2040? A tour of Intel’s most advanced factories and the future of computing"
         var episode = PodcastEpisode(showID: "layout", guid: "long-title", title: title, publishedAt: Date(), mediaURL: URL(string: "https://example.com/episode.mp3")!)
         episode.summary = "A short summary beneath the complete episode title."
@@ -1989,7 +1989,8 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
                 controller.traitOverrides.preferredContentSizeCategory = category
                 window.makeKeyAndVisible()
                 defer { window.isHidden = true }
-                controller.sections = [.init(title: "Latest Episodes", rows: [.episode(episode)])]
+                var shortEpisode = episode; shortEpisode.id += "-short"; shortEpisode.title = "Short"
+                controller.sections = [.init(title: "Latest Episodes", rows: [.episode(episode), .episode(shortEpisode)])]
                 controller.reload()
                 controller.view.layoutIfNeeded()
                 controller.table.layoutIfNeeded()
@@ -1997,14 +1998,21 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
                 cell.layoutIfNeeded()
                 XCTAssertEqual(cell.heading.text, title)
                 XCTAssertGreaterThan(cell.heading.bounds.width, 0)
-                if category.isAccessibilityCategory { XCTAssertGreaterThan(cell.heading.bounds.width, width - 60) }
-                let fullHeight = cell.heading.sizeThatFits(CGSize(width: cell.heading.bounds.width, height: .greatestFiniteMagnitude)).height
-                XCTAssertGreaterThan(fullHeight, cell.heading.font.lineHeight * 2)
-                XCTAssertGreaterThanOrEqual(cell.heading.bounds.height + 1, fullHeight, "Full title must fit at width \(width), \(category)")
+                XCTAssertEqual(cell.heading.bounds.height, ceil(cell.heading.font.lineHeight), accuracy: 1)
+                let label = try XCTUnwrap(cell.heading.subviews.first as? UILabel)
+                XCTAssertEqual(cell.heading.accessibilityLabel, title)
+                XCTAssertTrue(cell.heading.accessibilityTraits.contains(.button))
+                if !UIAccessibility.isReduceMotionEnabled {
+                    XCTAssertGreaterThan(label.bounds.width, cell.heading.bounds.width)
+                    XCTAssertNotNil(label.layer.animation(forKey: "titleScroll"))
+                }
+                let shortCell = try XCTUnwrap(controller.table.cellForRow(at: IndexPath(row: 1, section: 0)) as? PodcastEpisodeCell)
+                shortCell.layoutIfNeeded()
+                XCTAssertEqual(cell.bounds.height, shortCell.bounds.height, accuracy: 1, "Title length must not increase row height")
                 XCTAssertGreaterThanOrEqual(cell.summary.frame.minY, cell.heading.frame.maxY)
                 XCTAssertLessThanOrEqual(cell.more.convert(cell.more.bounds, to: cell.contentView).maxX, cell.contentView.bounds.width)
                 let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: cell.bounds).image { _ in cell.drawHierarchy(in: cell.bounds, afterScreenUpdates: true) })
-                attachment.name = "Full episode title \(Int(width)) \(category.rawValue)"
+                attachment.name = "Compact episode ticker \(Int(width)) \(category.rawValue)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }

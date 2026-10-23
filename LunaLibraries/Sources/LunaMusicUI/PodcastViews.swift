@@ -106,53 +106,35 @@ import LunaDesignSystem
 
 @MainActor final class PodcastEpisodeCell: UITableViewCell {
     let artwork = UIImageView()
-    let heading = UILabel(), detail = UILabel(), summary = UILabel()
+    let heading = PodcastPlayerTitleView()
+    let detail = UILabel(), summary = UILabel()
     let more = UIButton(type: .system)
-    private let stack = UIStackView(), labels = UIStackView(), artworkRow = UIStackView()
     private var episode: PodcastEpisode?
     private var date = ""
     private weak var owner: UIViewController?
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         artwork.layer.cornerRadius = 8; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
-        heading.font = .preferredFont(forTextStyle: .headline); heading.numberOfLines = 0
-        heading.lineBreakMode = .byWordWrapping
-        heading.setContentCompressionResistancePriority(.required, for: .vertical)
+        heading.font = .preferredFont(forTextStyle: .headline); heading.textColor = .label
+        heading.adjustsFontForContentSizeCategory = true
+        heading.onOpen = { [weak self] in self?.openDetails() }
         heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.font = .preferredFont(forTextStyle: .caption1); detail.textColor = .secondaryLabel; detail.numberOfLines = 2
         summary.font = .preferredFont(forTextStyle: .subheadline); summary.textColor = .secondaryLabel; summary.numberOfLines = 2
-        [heading, detail, summary].forEach { $0.adjustsFontForContentSizeCategory = true }
-        [detail, heading, summary].forEach { labels.addArrangedSubview($0) }; labels.axis = .vertical; labels.spacing = 4
-        labels.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openDetails)))
+        [detail, summary].forEach { $0.adjustsFontForContentSizeCategory = true }
+        let labels = UIStackView(arrangedSubviews: [detail, heading, summary]); labels.axis = .vertical; labels.spacing = 4
+        summary.isUserInteractionEnabled = true
+        summary.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openDetails)))
         labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         artwork.setContentCompressionResistancePriority(.required, for: .horizontal)
         more.setContentCompressionResistancePriority(.required, for: .horizontal)
         more.setImage(UIImage(systemName: "ellipsis"), for: .normal); more.accessibilityLabel = "Episode Actions"; more.showsMenuAsPrimaryAction = true
-        artworkRow.spacing = 12; artworkRow.alignment = .center
-        stack.spacing = 12
-        updateLayout()
+        let stack = UIStackView(arrangedSubviews: [artwork, labels, more]); stack.spacing = 12; stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor), stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor), stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14), stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14), artwork.widthAnchor.constraint(equalToConstant: 64), artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor), more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory { updateLayout() }
-    }
-    private func updateLayout() {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        artworkRow.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let accessibility = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
-        stack.axis = accessibility ? .vertical : .horizontal
-        stack.alignment = accessibility ? .fill : .center
-        if accessibility {
-            [artwork, UIView(), more].forEach { artworkRow.addArrangedSubview($0) }
-            [artworkRow, labels].forEach { stack.addArrangedSubview($0) }
-        } else {
-            [artwork, labels, more].forEach { stack.addArrangedSubview($0) }
-        }
-    }
     @objc private func openDetails() {
         guard let episode, let owner else { return }
         owner.navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
@@ -324,9 +306,7 @@ import LunaDesignSystem
         var url: URL?
         switch row {
         case .show(let show): content.text = show.title; content.secondaryText = show.author; content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); url = show.artworkURL
-        case .directory(let result):
-            if result.episodeTitle != nil { content.textProperties.numberOfLines = 0 }
-            content.text = result.episodeTitle ?? result.title; content.secondaryText = result.episodeTitle == nil ? result.author : result.title; content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); url = result.artworkURL
+        case .directory(let result): content.text = result.episodeTitle ?? result.title; content.secondaryText = result.episodeTitle == nil ? result.author : result.title; content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); url = result.artworkURL
         case .action(let title, let symbol, _): content.text = title; content.image = UIImage(systemName: symbol)
         case .episode: break
         }

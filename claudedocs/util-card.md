@@ -14,6 +14,17 @@ transition, the ingest, and the reload that centers what the save became. A deck
 kind provider (`CardDeckProviding`) contributes cards; it never touches the
 util card or the save path.
 
+## Large cards
+
+The utility card scales its typography, icons, row heights, element padding and
+vertical gaps with its own available size (`UtilCardLayout.contentScale`). A
+full-size iPad card grows up to 1.5×: setup labels become 19.5pt, recent titles
+22.5pt and the intro headline 37.5pt, with 30pt outer padding. Short cards cap
+that growth against their height so the bottom setup block still fits. Grid
+tiles and narrow windows retain compact sizing, and resizing recalculates the
+metrics. Cycling setup titles keep the same larger text size. The paste action
+remains the native, authorized `UIPasteControl`, scaled with its row.
+
 ## Deck position and launch selection
 
 - The util card is always the first/leftmost card and always appears in the mini

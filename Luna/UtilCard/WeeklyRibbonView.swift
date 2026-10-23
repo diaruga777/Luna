@@ -13,6 +13,13 @@ import UIKit
 /// corners, so the flag's outer corner is rounded by the row itself and this
 /// shape only has to draw the sweep of its trailing edge.
 final class WeeklyRibbonView: UIView {
+    var contentScale: CGFloat = 1 {
+        didSet {
+            guard contentScale != oldValue else { return }
+            label.font = Self.font.withSize(Self.font.pointSize * contentScale)
+            setNeedsLayout()
+        }
+    }
     /// Short enough to clear the top of a centred thumbnail — the flag sits
     /// ABOVE the artwork, never across it — and no taller than the 10pt caps
     /// plus their margins need.
@@ -79,8 +86,8 @@ final class WeeklyRibbonView: UIView {
         let text = label.text ?? ""
         guard !text.isEmpty else { return 0 }
         let textWidth = (text as NSString).size(
-            withAttributes: [.font: Self.font]).width.rounded(.up)
-        return Self.leadingInset + textWidth + Self.trailingInset + Self.arcClearance
+            withAttributes: [.font: label.font as Any]).width.rounded(.up)
+        return (Self.leadingInset + Self.trailingInset + Self.arcClearance) * contentScale + textWidth
     }
 
     /// How much of the arc's run the text must stay clear of. The sweep only
@@ -93,11 +100,11 @@ final class WeeklyRibbonView: UIView {
         shape.frame = bounds
         shape.path = Self.pennantPath(in: bounds).cgPath
         label.frame = CGRect(
-            x: Self.leadingInset,
+            x: Self.leadingInset * contentScale,
             y: 0,
             width: max(
                 0,
-                bounds.width - Self.leadingInset - Self.trailingInset - Self.arcClearance),
+                bounds.width - (Self.leadingInset + Self.trailingInset + Self.arcClearance) * contentScale),
             height: bounds.height)
     }
 

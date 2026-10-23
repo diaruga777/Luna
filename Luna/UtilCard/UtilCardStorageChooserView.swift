@@ -37,6 +37,20 @@ final class UtilCardStorageChooserView: UIView {
 
     static let height: CGFloat = 46
 
+    var contentScale: CGFloat = 1 {
+        didSet {
+            guard contentScale != oldValue else { return }
+            titleLabel.font = Self.labelFont.withSize(Self.labelFont.pointSize * contentScale)
+            selectorLabel.font = Self.optionFont.withSize(Self.optionFont.pointSize * contentScale)
+            for row in optionRows.values {
+                for label in row.subviews.compactMap({ $0 as? UILabel }) {
+                    label.font = selectorLabel.font
+                }
+            }
+            setNeedsLayout()
+        }
+    }
+
     private static let labelFont = UIFont.systemFont(ofSize: 16, weight: .regular)
     private static let optionFont = UIFont.systemFont(ofSize: 18, weight: .semibold)
     /// The icons are height-matched to the text they precede, not to the row.
@@ -181,14 +195,14 @@ final class UtilCardStorageChooserView: UIView {
         // The complete line never changes width: both the control and its
         // leading label stay put when switching between "in Luna" and the
         // longer "in Photos" option.
-        let selectorWidth = Self.collapsedSelectorWidth
-        let selectorHeight = Self.collapsedSelectorHeight
-        let wholeWidth = titleWidth + Self.labelToSelector + selectorWidth
+        let selectorWidth = Self.collapsedSelectorWidth * contentScale
+        let selectorHeight = Self.collapsedSelectorHeight * contentScale
+        let wholeWidth = titleWidth + Self.labelToSelector * contentScale + selectorWidth
         let leading = max((bounds.width - wholeWidth) / 2, 0).rounded()
         titleLabel.frame = CGRect(
             x: leading, y: 0, width: titleWidth, height: bounds.height)
         selector.frame = CGRect(
-            x: titleLabel.frame.maxX + Self.labelToSelector,
+            x: titleLabel.frame.maxX + Self.labelToSelector * contentScale,
             y: ((bounds.height - selectorHeight) / 2).rounded(),
             width: selectorWidth,
             height: selectorHeight)
@@ -196,16 +210,16 @@ final class UtilCardStorageChooserView: UIView {
             in: selector,
             icon: selectorIcon,
             label: selectorLabel,
-            indicatorWidth: Self.selectorToChevron + Self.chevronWidth,
+            indicatorWidth: Self.selectorToChevron * contentScale + Self.chevronWidth * contentScale,
             drawsAppIconBorder: selection == .luna)
         chevron.frame = CGRect(
-            x: (selectorLabel.frame.maxX + Self.selectorToChevron).rounded(),
-            y: ((selectorHeight - Self.chevronWidth) / 2).rounded(),
-            width: Self.chevronWidth,
-            height: Self.chevronWidth)
+            x: (selectorLabel.frame.maxX + Self.selectorToChevron * contentScale).rounded(),
+            y: ((selectorHeight - Self.chevronWidth * contentScale) / 2).rounded(),
+            width: Self.chevronWidth * contentScale,
+            height: Self.chevronWidth * contentScale)
         // Overlaps the selector's top-trailing corner, like a notification
         // badge, so its presence never shifts the row's fixed width.
-        let badgeSide = Self.permissionErrorBadgeSide
+        let badgeSide = Self.permissionErrorBadgeSide * contentScale
         permissionErrorBadge.frame = CGRect(
             x: selector.frame.maxX - badgeSide * 0.6,
             y: selector.frame.minY - badgeSide * 0.4,
@@ -227,13 +241,13 @@ final class UtilCardStorageChooserView: UIView {
         indicatorWidth: CGFloat = 0,
         drawsAppIconBorder: Bool = false
     ) {
-        let side = Self.iconSide
+        let side = Self.iconSide * contentScale
         let naturalWidth = label.sizeThatFits(
             CGSize(width: container.bounds.width, height: container.bounds.height)
         ).width.rounded(.up)
-        let contentWidth = side + Self.iconToTitle + naturalWidth + indicatorWidth
+        let contentWidth = side + Self.iconToTitle * contentScale + naturalWidth + indicatorWidth
         let leading = max(
-            Self.selectorHorizontalInset,
+            Self.selectorHorizontalInset * contentScale,
             ((container.bounds.width - contentWidth) / 2).rounded())
         icon.frame = CGRect(
             x: leading,
@@ -245,14 +259,14 @@ final class UtilCardStorageChooserView: UIView {
         icon.layer.borderColor = drawsAppIconBorder
             ? UIColor.white.withAlphaComponent(0.32).cgColor
             : nil
-        let labelX = icon.frame.maxX + Self.iconToTitle
+        let labelX = icon.frame.maxX + Self.iconToTitle * contentScale
         label.frame = CGRect(
             x: labelX,
             y: 0,
             width: min(
                 naturalWidth,
                 max(0, container.bounds.width - labelX - trailingReserve
-                    - Self.selectorHorizontalInset)),
+                    - Self.selectorHorizontalInset * contentScale)),
             height: container.bounds.height)
     }
 
@@ -306,7 +320,7 @@ final class UtilCardStorageChooserView: UIView {
             icon.layer.cornerCurve = .continuous
             let label = UILabel()
             label.text = Self.title(for: option)
-            label.font = Self.optionFont
+            label.font = Self.optionFont.withSize(Self.optionFont.pointSize * contentScale)
             label.textColor = LunaColors.primaryText
             icon.isUserInteractionEnabled = false
             label.isUserInteractionEnabled = false
@@ -343,28 +357,28 @@ final class UtilCardStorageChooserView: UIView {
         guard let host = superview, let panel else { return }
         dismissCatcher?.frame = host.bounds
 
-        let rowHeight = Self.optionRowHeight
-        let rowPitch = rowHeight + Self.optionRowGap
-        let widest = Self.collapsedSelectorWidth
-            - Self.selectorToChevron - Self.chevronWidth
+        let rowHeight = Self.optionRowHeight * contentScale
+        let rowPitch = rowHeight + Self.optionRowGap * contentScale
+        let widest = Self.collapsedSelectorWidth * contentScale
+            - Self.selectorToChevron * contentScale - Self.chevronWidth * contentScale
         let selectedIndex = CGFloat(Option.allCases.firstIndex(of: selection) ?? 0)
         let anchor = convert(selector.frame, to: host)
         panel.bounds = CGRect(
             x: 0, y: 0,
-            width: widest + Self.panelPadding.width * 2,
+            width: widest + Self.panelPadding.width * contentScale * 2,
             height: rowHeight * CGFloat(Option.allCases.count)
-                + Self.optionRowGap * CGFloat(max(Option.allCases.count - 1, 0))
-                + Self.panelPadding.height * 2)
+                + Self.optionRowGap * contentScale * CGFloat(max(Option.allCases.count - 1, 0))
+                + Self.panelPadding.height * contentScale * 2)
         panel.center = CGPoint(
-            x: anchor.minX - Self.panelPadding.width + panel.bounds.width / 2,
-            y: anchor.minY - Self.panelPadding.height - rowPitch * selectedIndex
+            x: anchor.minX - Self.panelPadding.width * contentScale + panel.bounds.width / 2,
+            y: anchor.minY - Self.panelPadding.height * contentScale - rowPitch * selectedIndex
                 + panel.bounds.height / 2)
 
         for (index, option) in Option.allCases.enumerated() {
             guard let row = optionRows[option] else { continue }
             row.frame = CGRect(
-                x: Self.panelPadding.width,
-                y: Self.panelPadding.height + rowPitch * CGFloat(index),
+                x: Self.panelPadding.width * contentScale,
+                y: Self.panelPadding.height * contentScale + rowPitch * CGFloat(index),
                 width: widest,
                 height: rowHeight)
             guard let icon = row.subviews.compactMap({ $0 as? UIImageView }).first,

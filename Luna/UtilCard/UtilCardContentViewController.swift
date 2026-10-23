@@ -17,6 +17,13 @@ import UniformTypeIdentifiers
 /// anchored to the paste row at the bottom, so the block resolves downward the
 /// way the standalone onboarding root's did.
 enum UtilCardLayout {
+    /// Size the contents for the card itself: full-size tablet cards grow,
+    /// while grid tiles, narrow windows and phone cards keep compact metrics.
+    static func contentScale(for size: CGSize) -> CGFloat {
+        let widthScale = 1 + min(1, max(0, (size.width - 440) / 200)) * 0.5
+        return max(1, min(widthScale, size.height / 700))
+    }
+
     static let inset: CGFloat = 20
     /// The headline's top. The standalone onboarding root put its copy at
     /// exactly a third of the surface; the util card lifts it a little to leave
@@ -207,6 +214,7 @@ final class UtilCardContentViewController: CardContentViewController {
     private var isCardCentered = false
     private var weeklyRevealWorkItem: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
+    private var contentScale: CGFloat = 1
 
     init(
         showsOnboarding: Bool,
@@ -539,12 +547,14 @@ final class UtilCardContentViewController: CardContentViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let inset = UtilCardLayout.inset
+        let scale = UtilCardLayout.contentScale(for: view.bounds.size)
+        updateContentScale(scale)
+        let inset = UtilCardLayout.inset * scale
         let width = max(0, view.bounds.width - inset * 2)
-        let pasteHeight = OnboardingIntroActionMetrics.pasteRowHeight
+        let pasteHeight = OnboardingIntroActionMetrics.pasteRowHeight * scale
         pasteRow.frame = CGRect(
             x: inset,
-            y: view.bounds.height - pasteHeight - UtilCardLayout.bottomPadding,
+            y: view.bounds.height - pasteHeight - UtilCardLayout.bottomPadding * scale,
             width: width,
             height: pasteHeight)
 
@@ -555,10 +565,10 @@ final class UtilCardContentViewController: CardContentViewController {
         // The setup actions keep the seat they had on the standalone intro:
         // stacked upward from the paste field, with the “or” — when the card is
         // the whole app — in the seam between them.
-        var actionsBottom = pasteRow.frame.minY - UtilCardLayout.setupToPasteGap
+        var actionsBottom = pasteRow.frame.minY - UtilCardLayout.setupToPasteGap * scale
         if showsOnboarding, !orLabel.isHidden {
-            let orHeight = OnboardingIntroActionMetrics.orHeight
-            let gap = OnboardingIntroActionMetrics.orSpacing
+            let orHeight = OnboardingIntroActionMetrics.orHeight * scale
+            let gap = OnboardingIntroActionMetrics.orSpacing * scale
             orLabel.frame = CGRect(
                 x: inset,
                 y: pasteRow.frame.minY - gap - orHeight,
@@ -568,7 +578,7 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         // Bottom-up in reverse offer order, so the block's TOP is the highest
         // priority and losing one moves the rest down into its slot.
-        let buttonHeight = UtilCardLayout.setupButtonHeight
+        let buttonHeight = UtilCardLayout.setupButtonHeight * scale
         var nextBottom = actionsBottom
         for offer in setupOffers.reversed() {
             let button = button(for: offer)
@@ -579,23 +589,23 @@ final class UtilCardContentViewController: CardContentViewController {
                 y: nextBottom - buttonHeight,
                 width: buttonWidth,
                 height: buttonHeight)
-            nextBottom = button.frame.minY - UtilCardLayout.setupButtonGap
+            nextBottom = button.frame.minY - UtilCardLayout.setupButtonGap * scale
         }
         // The storage line always tops the block, whatever is (or isn't) under
         // it — it is the one control here that is about the app rather than
         // about setting the app up.
         var setupBlockTop: CGFloat? = setupOffers.isEmpty
             ? nil
-            : nextBottom + UtilCardLayout.setupButtonGap
+            : nextBottom + UtilCardLayout.setupButtonGap * scale
         if let storageChooser {
             let top = (setupBlockTop ?? actionsBottom)
-                - (setupOffers.isEmpty ? 0 : UtilCardLayout.storageChooserGap)
-                - UtilCardStorageChooserView.height
+                - (setupOffers.isEmpty ? 0 : UtilCardLayout.storageChooserGap * scale)
+                - UtilCardStorageChooserView.height * scale
             storageChooser.frame = CGRect(
                 x: inset,
                 y: top,
                 width: width,
-                height: UtilCardStorageChooserView.height)
+                height: UtilCardStorageChooserView.height * scale)
             setupBlockTop = top
         }
 
@@ -605,14 +615,14 @@ final class UtilCardContentViewController: CardContentViewController {
                 y: (view.bounds.height * UtilCardLayout.headlineTopRatio).rounded(),
                 width: width,
                 height: headline.height)
-            let weeklyHeight = UtilCardLayout.weeklyRowHeight
+            let weeklyHeight = UtilCardLayout.weeklyRowHeight * scale
             weeklyHost.frame = CGRect(
                 x: inset,
                 y: min(
-                    headline.frame.maxY + UtilCardLayout.headlineToWeekly,
+                    headline.frame.maxY + UtilCardLayout.headlineToWeekly * scale,
                     max(
                         headline.frame.maxY,
-                        (setupBlockTop ?? actionsBottom) - 18 - weeklyHeight)),
+                        (setupBlockTop ?? actionsBottom) - 18 * scale - weeklyHeight)),
                 width: width,
                 height: weeklyHeight)
             return
@@ -627,30 +637,56 @@ final class UtilCardContentViewController: CardContentViewController {
             x: inset,
             y: weeklyVisible
                 ? (view.bounds.height * UtilCardLayout.weeklyTopRatio).rounded()
-                : UtilCardLayout.recentsTop,
+                : UtilCardLayout.recentsTop * scale,
             width: width,
-            height: UtilCardLayout.weeklyRowHeight)
+            height: UtilCardLayout.weeklyRowHeight * scale)
         var nextY = weeklyVisible
-            ? weeklyHost.frame.maxY + UtilCardLayout.weeklyToRecentsGap
-            : UtilCardLayout.recentsTop
+            ? weeklyHost.frame.maxY + UtilCardLayout.weeklyToRecentsGap * scale
+            : UtilCardLayout.recentsTop * scale
         // The completed card can still carry a setup button — the email nudge
         // becomes due only once there are saves — so the recents stop above
         // whichever comes first, the block or the paste row.
         let availableBottom = (setupBlockTop ?? pasteRow.frame.minY)
-            - UtilCardLayout.recentsToPasteGap
+            - UtilCardLayout.recentsToPasteGap * scale
         for row in recentRows {
+            row.contentScale = scale
             // The storage line's options open over whatever is above it, so the
             // card gives it that room outright rather than letting a stack of
             // history rows sit under a panel.
             let fits = storageChooser == nil
-                && nextY + UtilCardLayout.recentRowHeight <= availableBottom
+                && nextY + UtilCardLayout.recentRowHeight * scale <= availableBottom
             row.isHidden = !fits
             if fits {
                 row.frame = CGRect(
                     x: inset, y: nextY,
-                    width: width, height: UtilCardLayout.recentRowHeight)
-                nextY = row.frame.maxY + UtilCardLayout.recentRowGap
+                    width: width, height: UtilCardLayout.recentRowHeight * scale)
+                nextY = row.frame.maxY + UtilCardLayout.recentRowGap * scale
             }
+        }
+    }
+
+    private func updateContentScale(_ scale: CGFloat) {
+        weeklyHost.contentScale = scale
+        guard contentScale != scale else { return }
+        contentScale = scale
+        headline?.contentScale = scale
+        pasteRow.contentScale = scale
+        storageChooser?.contentScale = scale
+        orLabel.font = .systemFont(ofSize: 13 * scale, weight: .semibold)
+        for button in [safariButton, saveSetupButton, emailButton] {
+            var configuration = button.configuration
+            configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
+                var attributes = $0
+                attributes.font = .systemFont(ofSize: 13 * scale, weight: .semibold)
+                return attributes
+            }
+            configuration?.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+                pointSize: 17 * scale)
+            configuration?.imagePadding = 10 * scale
+            configuration?.contentInsets = NSDirectionalEdgeInsets(
+                top: 13 * scale, leading: 20 * scale,
+                bottom: 13 * scale, trailing: 20 * scale)
+            button.configuration = configuration
         }
     }
 
@@ -831,7 +867,7 @@ final class UtilCardContentViewController: CardContentViewController {
             .path(forResource: "ShortcutsAppIcon", ofType: "png")
             .flatMap(UIImage.init(contentsOfFile:))
         else { return nil }
-        let size = CGSize(width: 22, height: 22)
+        let size = CGSize(width: 22 * contentScale, height: 22 * contentScale)
         return UIGraphicsImageRenderer(size: size).image { _ in
             artwork.draw(in: CGRect(origin: .zero, size: size))
         }.withRenderingMode(.alwaysOriginal)
@@ -1168,6 +1204,17 @@ protocol UtilURLRowDelegate: AnyObject {
 final class UtilURLRow: UIControl {
     enum Style: Equatable { case lunasPick, recent }
 
+    var contentScale: CGFloat = 1 {
+        didSet {
+            guard contentScale != oldValue else { return }
+            titleLabel.font = .systemFont(ofSize: 15 * contentScale, weight: .semibold)
+            subtitleLabel.font = .systemFont(
+                ofSize: 12 * contentScale, weight: style == .lunasPick ? .semibold : .regular)
+            weeklyRibbon?.contentScale = contentScale
+            setNeedsLayout()
+        }
+    }
+
     /// Shared by the row, its glass rim, and the slot that clips a replacement
     /// slide, so all three round by the same amount.
     static let cornerRadius: CGFloat = 16
@@ -1387,14 +1434,15 @@ final class UtilURLRow: UIControl {
             weeklyRibbon?.transform = parallax
         }
         wash.frame = bounds
-        let imageSide = min(52, max(42, bounds.height - 22))
+        let scale = contentScale
+        let imageSide = min(52 * scale, max(42 * scale, bounds.height - 22 * scale))
         // The flag is a band across the row's top, and the artwork stays clear of
         // it: centred as ever, unless the row is short enough that centring would
         // put it under the flag, in which case it sits just below instead. At the
         // weekly row's own 96pt the two agree to the point, so nothing moves.
-        let flagFloor: CGFloat = weeklyRibbon == nil ? 0 : WeeklyRibbonView.height + 2
+        let flagFloor: CGFloat = weeklyRibbon == nil ? 0 : (WeeklyRibbonView.height + 2) * scale
         thumbnail.frame = CGRect(
-            x: 11,
+            x: 11 * scale,
             y: max(flagFloor, (bounds.height - imageSide) / 2),
             width: imageSide,
             height: imageSide)
@@ -1405,23 +1453,23 @@ final class UtilURLRow: UIControl {
             y: ((imageSide - checkSide) / 2).rounded(),
             width: checkSide,
             height: checkSide)
-        let labelX = thumbnail.frame.maxX + 11
-        let labelWidth = max(0, bounds.width - labelX - 12)
+        let labelX = thumbnail.frame.maxX + 11 * scale
+        let labelWidth = max(0, bounds.width - labelX - 12 * scale)
         // The flag occupies the row's top-left corner, so the title starts BELOW
         // it; a history row has no flag and keeps its old 13pt top exactly.
-        let titleTop: CGFloat = weeklyRibbon == nil ? 13 : WeeklyRibbonView.height + 6
+        let titleTop: CGFloat = (weeklyRibbon == nil ? 13 : WeeklyRibbonView.height + 6) * scale
         titleLabel.frame = CGRect(
             x: labelX,
             y: titleTop,
             width: labelWidth,
             height: weeklyRibbon == nil
-                ? max(22, bounds.height - 40)
-                : max(22, bounds.height - titleTop - 28))
+                ? max(22 * scale, bounds.height - 40 * scale)
+                : max(22 * scale, bounds.height - titleTop - 28 * scale))
         subtitleLabel.frame = CGRect(
             x: labelX,
-            y: bounds.height - 27,
+            y: bounds.height - 27 * scale,
             width: labelWidth,
-            height: 16)
+            height: 16 * scale)
         if let weeklyRibbon {
             weeklyRibbon.frame = CGRect(
                 x: 0,
@@ -1429,7 +1477,7 @@ final class UtilURLRow: UIControl {
                 // Never more than the row's leading half: a long localisation
                 // must not sail across the title.
                 width: min(weeklyRibbon.fittingWidth, (bounds.width * 0.55).rounded()),
-                height: WeeklyRibbonView.height)
+                height: WeeklyRibbonView.height * scale)
         }
         border.frame = bounds
     }

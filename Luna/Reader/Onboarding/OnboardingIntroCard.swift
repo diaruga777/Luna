@@ -422,6 +422,15 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 /// the URL and status beside it. Nothing is painted over `UIPasteControl`, so
 /// clipboard access stays authorized by the user's system paste gesture.
 final class OnboardingPasteRow: UIView {
+    /// UIPasteControl owns its typography. Scale its native contents together
+    /// with the enlarged row instead of replacing the authorized paste action.
+    var contentScale: CGFloat = 1 {
+        didSet {
+            guard contentScale != oldValue else { return }
+            field.font = .systemFont(ofSize: 15 * contentScale, weight: .regular)
+            setNeedsLayout()
+        }
+    }
     enum State: Equatable {
         case idle
         case loading
@@ -527,13 +536,15 @@ final class OnboardingPasteRow: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let showsValue = state != .idle
-        let controlWidth = showsValue ? min(Self.controlWidth, bounds.width) : bounds.width
-        control.frame = CGRect(
-            x: bounds.width - controlWidth, y: 0,
-            width: controlWidth, height: bounds.height)
+        let controlWidth = showsValue ? min(Self.controlWidth * contentScale, bounds.width) : bounds.width
+        control.transform = .identity
+        control.bounds = CGRect(
+            x: 0, y: 0, width: controlWidth / contentScale, height: bounds.height / contentScale)
+        control.center = CGPoint(x: bounds.width - controlWidth / 2, y: bounds.height / 2)
+        control.transform = CGAffineTransform(scaleX: contentScale, y: contentScale)
         field.frame = CGRect(
             x: 0, y: 0,
-            width: max(control.frame.minX - Self.gap, 0),
+            width: max(control.frame.minX - Self.gap * contentScale, 0),
             height: bounds.height)
         field.layer.cornerRadius = bounds.height / 2
     }

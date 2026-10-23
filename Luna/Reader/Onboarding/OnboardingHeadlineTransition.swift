@@ -158,9 +158,12 @@ struct OnboardingHeadlineTransition: Equatable {
 /// the initial copy does not contain at all, arrives under its own front while
 /// the first stands still.
 final class OnboardingIntroHeadlineView: UIView {
+    var contentScale: CGFloat = 1 {
+        didSet { if contentScale != oldValue { setNeedsLayout() } }
+    }
     static let lineHeight: CGFloat = 44
-    /// The size the copy is set at when it fits. Narrow cards shrink from here;
-    /// nothing ever grows past it.
+    /// The compact size the copy is set at when it fits. Large utility cards
+    /// raise it with `contentScale`; narrow headlines shrink to fit.
     static let baseFontSize: CGFloat = 25
     /// The floor a shrink stops at. Copy that still overflows here overhangs
     /// the headline rather than becoming unreadable — this view never clips.
@@ -222,7 +225,7 @@ final class OnboardingIntroHeadlineView: UIView {
     var initialText: String { joined(lines.map { $0.transition.initialText }) }
     var finalText: String { joined(lines.map { $0.transition.finalText }) }
     /// Room for every line from the start, so one arriving later moves nothing.
-    var height: CGFloat { Self.lineHeight * CGFloat(lines.count) }
+    var height: CGFloat { Self.lineHeight * contentScale * CGFloat(lines.count) }
 
     /// Every fragment on the view, whichever line it belongs to.
     var allFragments: [MoonRevealLineView] { lines.flatMap { $0.fragments.all } }
@@ -440,7 +443,7 @@ final class OnboardingIntroHeadlineView: UIView {
             // Each line keeps its own band, reserved whether or not it has
             // anything on it yet, so a line arriving in the second beat lands
             // where it always was rather than displacing the one above it.
-            let top = CGFloat(index) * Self.lineHeight
+            let top = CGFloat(index) * Self.lineHeight * contentScale
             // Left-aligned from one shared origin per sentence: every fragment
             // then lands where its own sentence puts it, whatever the trailing
             // glyphs of its composition are. The two points of slack keep a
@@ -450,12 +453,12 @@ final class OnboardingIntroHeadlineView: UIView {
                 x: origins.initial,
                 y: top,
                 width: metrics.initialWidth.rounded(.up) + 2,
-                height: Self.lineHeight)
+                height: Self.lineHeight * contentScale)
             let finalBlock = CGRect(
                 x: origins.final,
                 y: top,
                 width: metrics.finalWidth.rounded(.up) + 2,
-                height: Self.lineHeight)
+                height: Self.lineHeight * contentScale)
             for fragment in line.fragments.departing { fragment.frame = initialBlock }
             for fragment in ([line.fragments.shared] + line.fragments.arriving)
                 .compactMap({ $0 })
@@ -473,7 +476,8 @@ final class OnboardingIntroHeadlineView: UIView {
     }
 
     private func fittedFont(in width: CGFloat) -> UIFont {
-        let base = Self.font(ofSize: Self.baseFontSize)
+        let baseSize = Self.baseFontSize * contentScale
+        let base = Self.font(ofSize: baseSize)
         let needed = unionWidth(at: base)
         guard needed > width, width > 0 else { return base }
         // Advances are very nearly linear in point size, so one division lands
@@ -481,7 +485,7 @@ final class OnboardingIntroHeadlineView: UIView {
         // “very nearly”.
         var size = max(
             Self.minimumFontSize,
-            (Self.baseFontSize * width / needed).rounded(.down))
+            (baseSize * width / needed).rounded(.down))
         var font = Self.font(ofSize: size)
         while size > Self.minimumFontSize, unionWidth(at: font) > width {
             size -= 0.5

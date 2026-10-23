@@ -42,6 +42,12 @@ protocol WeeklySaveRowHostDelegate: AnyObject {
 /// draws comes from `WeeklySaveStore`; it never fetches.
 final class WeeklySaveRowHost: UIView {
 
+    var contentScale: CGFloat = 1 {
+        didSet {
+            for row in rows { row.contentScale = contentScale }
+        }
+    }
+
     /// The util card, which owns this slot — hence weak.
     weak var delegate: (any WeeklySaveRowHostDelegate)? {
         didSet { updateSavedStates() }
@@ -225,6 +231,7 @@ final class WeeklySaveRowHost: UIView {
 
     private func makeRow(_ display: WeeklySaveDisplay?) -> UtilURLRow {
         let row = UtilURLRow(style: .lunasPick)
+        row.contentScale = contentScale
         if let display {
             configure(row, with: display)
         } else {

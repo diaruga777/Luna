@@ -20,7 +20,8 @@ enum PluginsSettingsCategory {
             detail: {
                 let count = (PluginPlatformServices.catalog ?? NullPluginCatalog()).listings().count
                 return count == 0 ? nil : L10n.string("Plugins_countDetail", count)
-            }
+            },
+            requiresLaunchServices: true
         ) {
             PluginsSettingsScreen(
                 catalog: PluginPlatformServices.catalog ?? NullPluginCatalog(),

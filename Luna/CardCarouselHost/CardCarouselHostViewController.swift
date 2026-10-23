@@ -885,6 +885,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     ) {
         beginUtilCardSaveTransition(for: urlString, from: sourceView)
         Task { @MainActor [weak self] in
+            await AppLaunchServices.shared.waitUntilReady()
             let result = await SavesIngestor.shared.handleSavePress(
                 urlString: urlString, source: source)
             guard let self else { return }

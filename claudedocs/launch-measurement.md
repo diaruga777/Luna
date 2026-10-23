@@ -121,7 +121,9 @@ list when installation finishes.
 
 Deep links, background URLSession callbacks, maintenance and mini-player setup
 queue with `whenReady`; asynchronous intents and mail/price tasks use
-`waitUntilReady()`. Repeated triggers share one installation. Bluetooth restoration
+`waitUntilReady()`. In-app save, reader save-link, transcription and onboarding
+paste actions also await readiness inside their existing async operations.
+Settings opens immediately; only its plugin destination waits for the platform. Repeated triggers share one installation. Bluetooth restoration
 and deterministic stages retain the synchronous path before foreground loading
 starts, so restored central managers exist before `didFinishLaunching` returns.
 
@@ -170,3 +172,13 @@ These measurements cover the catalog, speech and reveal changes; the subsequent
 correction to background-launch detection was compile/regression checked. They
 are simulator measurements, not an iPhone launch-time guarantee. Sampling also
 showed substantial Simulator dynamic-loader time before application code runs.
+
+### Interaction regression checks, 23 October 2026
+
+109 focused simulator tests pass across startup, plugin boot, reader chrome,
+progressive rendering/reuse, title glyphs, immersion, onboarding handoff, Settings
+hierarchy and reader sharing. A broader selection found four assertion failures
+in `PluginsSettingsScreenTests` and `SavesIngestorTranscriptionTests`; the same
+four failures were reproduced on untouched `main`. Interactive desktop input
+could not be verified with the Mac locked; no physical-phone latency measurement
+was taken.

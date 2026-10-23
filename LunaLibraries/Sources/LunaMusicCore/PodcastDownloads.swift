@@ -135,7 +135,7 @@ public struct PodcastDownload: Codable, Equatable {
                 try await prepareAudio(original, "", original.pathExtension.lowercased())
             }
             preparationTasks[id] = job
-            let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Saved Podcast") { job.cancel() }
+            let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Downloaded Podcast") { job.cancel() }
             defer {
                 preparationTasks[id] = nil
                 if background != .invalid { UIApplication.shared.endBackgroundTask(background) }

@@ -51,14 +51,10 @@ public enum PodcastPolicies {
             let limit = show.settings.automaticDownloadLimit
             result.formUnion((limit < 0 ? candidates : Array(candidates.prefix(limit))).map(\.id))
         }
-        if state.settings.downloadSavedEpisodes {
-            result.formUnion(state.progress.filter { $0.value.saved && !$0.value.listened && !$0.value.suppressAutomaticDownload }.map(\.key))
-        }
         return result
     }
     public static func shouldRemoveDownload(episodeID: String, manual: Bool, wanted: Set<String>, state: PodcastLibraryState, now: Date = Date()) -> Bool {
         let progress = state.progress[episodeID]
-        guard progress?.saved != true else { return false }
         if progress?.listened == true {
             guard state.settings.removePlayedDownloads, let completed = progress?.completedAt else { return false }
             return now.timeIntervalSince(completed) >= state.settings.playedRetentionHours * 3600

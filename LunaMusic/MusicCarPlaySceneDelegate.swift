@@ -171,7 +171,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
             catch { self?.showPodcastError(error) }
         } }; rows.append(resume)
         let latest = PodcastPolicies.ordered(state.episodes.values.filter { state.shows[$0.showID]?.followed == true && state.progress[$0.id]?.listened != true }, newestFirst: true)
-        let groups: [(String, [PodcastEpisode])] = [("Latest Episodes", latest), ("Downloaded", Array(state.episodes.values.filter { PodcastDownloads.shared.localURL($0.id) != nil })), ("Saved", Array(state.episodes.values.filter { state.progress[$0.id]?.saved == true }))]
+        let groups: [(String, [PodcastEpisode])] = [("Latest Episodes", latest), ("Downloaded", Array(state.episodes.values.filter { PodcastDownloads.shared.localURL($0.id) != nil }))]
         for (title, episodes) in groups { rows.append(podcastCollectionRow(title: title, episodes: episodes)) }
         for show in state.shows.values.filter(\.followed).sorted(by: { $0.title < $1.title }) {
             rows.append(podcastCollectionRow(title: show.title, episodes: PodcastLibraryController.shared.episodes(for: show.id)))

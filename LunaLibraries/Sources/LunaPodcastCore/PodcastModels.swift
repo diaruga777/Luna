@@ -93,7 +93,6 @@ public struct PodcastEpisode: Codable, Identifiable, Equatable, Sendable {
 public struct PodcastEpisodeState: Codable, Equatable, Sendable {
     public var position: Double = 0
     public var listened = false
-    public var saved = false
     public var lastPlayedAt: Date?
     public var completedAt: Date?
     public var suppressAutomaticDownload = false
@@ -128,7 +127,6 @@ public struct PodcastSettings: Codable, Equatable, Sendable {
     /// Nil preserves compatibility with libraries written before the byte cap.
     public var downloadByteLimit: Int64?
     public var maximumDownloadBytes: Int64 { max(0, downloadByteLimit ?? 2_000_000_000) }
-    public var downloadSavedEpisodes = true
     public var hidePlayed = false
     // Retained for decoding older libraries; queues now contain explicit selections only.
     public var continuousPlayback = true

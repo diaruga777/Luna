@@ -132,7 +132,6 @@ import LunaMusicCore
             sections = [.init(title: "", rows: browsing + [
                 .action("Shows", "dot.radiowaves.left.and.right") { [weak self] in self?.openEpisodes(title: "Shows", shows: followed) },
                 .action("Latest Episodes", "clock") { [weak self] in self?.openEpisodes(title: "Latest Episodes", episodes: latest) },
-                .action("Saved", "bookmark") { [weak self] in self?.openEpisodes(title: "Saved", episodes: PodcastPolicies.ordered(state.episodes.values.filter { state.progress[$0.id]?.saved == true }, newestFirst: true)) },
                 .action("Downloaded", "arrow.down.circle") { [weak self] in self?.openEpisodes(title: "Downloaded", episodes: PodcastPolicies.ordered(state.episodes.values.filter { PodcastDownloads.shared.localURL($0.id) != nil }, newestFirst: true)) },
                 .action("Played", "checkmark.circle") { [weak self] in self?.openEpisodes(title: "Played", episodes: PodcastPolicies.ordered(state.episodes.values.filter { state.progress[$0.id]?.listened == true }, newestFirst: true)) }
             ]), .init(title: "Stations", rows: state.stations.map { station in .action(station.name, "rectangle.stack") { [weak self] in self?.navigationController?.pushViewController(PodcastStationViewController(id: station.id), animated: true) } }),

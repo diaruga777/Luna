@@ -7,7 +7,7 @@ queues and a strictly deterministic Resume Last Podcast audio intent.
 ## Implementation sequence
 
 1. Foundation-only podcast models, RSS parsing (iTunes/Podcasting 2.0), directory
-   search/discovery, durable library, per-show settings, saved/listened/progress,
+   search/discovery, durable library, per-show settings, listened/progress,
    stations, OPML and tested continuation policy.
 2. Conditional feed polling, background refresh and download sessions, automatic
    download limits/removal, download recovery, notifications, stream/offline
@@ -37,7 +37,7 @@ queues and a strictly deterministic Resume Last Podcast audio intent.
 
 - Search shows/episodes, discover charts/categories, direct RSS URL subscriptions.
 - Follow/unfollow, pull to refresh, foreground/background polling, new episodes.
-- Library shows/latest/saved/downloaded/played, episode search/order/hide played.
+- Library shows/latest/downloaded/played, episode search/order/hide played.
 - Stream/download/cancel/remove/retry, background recovery, cellular preferences,
   per-show auto-download limits, played-download retention, storage management.
 - Play next/later, reorder/remove/clear, show continuation, independent media queues.

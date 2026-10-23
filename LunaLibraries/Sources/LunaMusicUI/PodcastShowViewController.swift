@@ -5,7 +5,7 @@ import LunaMusicCore
 @MainActor final class PodcastShowViewController: PodcastListViewController, UISearchResultsUpdating {
     let showID: String
     private let search = UISearchController(searchResultsController: nil)
-    private let filter = UISegmentedControl(items: ["All", "Unplayed", "Downloaded", "Saved"])
+    private let filter = UISegmentedControl(items: ["All", "Unplayed", "Downloaded"])
     private var header: UIView?
     private var headerShow: PodcastShow?
     init(showID: String) { self.showID = showID; super.init(nibName: nil, bundle: nil) }
@@ -55,7 +55,7 @@ import LunaMusicCore
         let episodes = podcasts.episodes(for: showID).filter { episode in
             let state = podcasts.state.progress[episode.id]
             guard query.isEmpty || episode.title.localizedStandardContains(query) || PodcastUI.text(episode.summary).localizedStandardContains(query) else { return false }
-            switch filter.selectedSegmentIndex { case 1: return state?.listened != true; case 2: return PodcastDownloads.shared.localURL(episode.id) != nil; case 3: return state?.saved == true; default: return true }
+            switch filter.selectedSegmentIndex { case 1: return state?.listened != true; case 2: return PodcastDownloads.shared.localURL(episode.id) != nil; default: return true }
         }
         sections = [.init(title: "Episodes", rows: episodes.map(Row.episode))]
         if headerShow?.title != show.title || headerShow?.author != show.author || headerShow?.summary != show.summary || headerShow?.artworkURL != show.artworkURL {

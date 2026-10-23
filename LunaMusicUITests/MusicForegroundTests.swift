@@ -24,7 +24,8 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         let sections = app.segmentedControls["podcasts.sections"]
         XCTAssertFalse(sections.exists)
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         XCTAssertTrue(app.staticTexts["Downloaded"].exists)
         XCTAssertTrue(app.searchFields["podcasts.search"].waitForExistence(timeout: 5))
         let more = app.navigationBars.buttons["Podcast Options"]
@@ -285,10 +286,12 @@ final class MusicForegroundTests: XCTestCase {
         app.buttons["media.library.podcasts"].tap()
         let sections = app.segmentedControls["podcasts.sections"]
         XCTAssertFalse(sections.exists)
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         XCTAssertFalse(app.keyboards.firstMatch.exists)
         app.open(URL(string: "lunamusic://search")!)
         XCTAssertTrue(app.searchFields["music.library.search"].waitForExistence(timeout: 5))
@@ -340,17 +343,18 @@ final class MusicForegroundTests: XCTestCase {
         let open = app.buttons["Open Now Playing"]
         XCTAssertLessThan(open.frame.maxX, podcastPill.frame.minX)
         podcastPill.tap()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         XCTAssertFalse(app.segmentedControls["podcasts.sections"].exists)
         let musicPill = app.buttons["media.library.music"]
         XCTAssertLessThan(musicPill.frame.maxX, open.frame.minX)
-        app.staticTexts["Saved"].tap()
-        XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 5))
+        app.staticTexts["Downloaded"].tap()
+        XCTAssertTrue(app.navigationBars["Downloaded"].waitForExistence(timeout: 5))
         musicPill.tap()
         XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.tables.cells.containing(.staticText, identifier: "Podcasts").firstMatch.exists)
         podcastPill.tap()
-        XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Downloaded"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let search = app.searchFields["podcasts.search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
@@ -365,7 +369,8 @@ final class MusicForegroundTests: XCTestCase {
         search.tap()
         let clear = app.buttons["Clear text"]
         XCTAssertTrue(clear.exists); clear.tap()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Podcast root search and two-sided player bar"
         screenshot.lifetime = .keepAlways; add(screenshot)
@@ -373,7 +378,8 @@ final class MusicForegroundTests: XCTestCase {
         musicPill.tap()
         XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
         podcastPill.tap()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Latest Episodes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Saved"].exists)
         app.buttons["Open Now Playing"].tap()
         XCTAssertTrue(app.buttons["Playback Speed"].waitForExistence(timeout: 5))
         app.buttons["Close Now Playing"].tap()

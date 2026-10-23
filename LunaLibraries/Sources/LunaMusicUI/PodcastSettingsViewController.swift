@@ -34,7 +34,6 @@ import LunaMusicCore
                     (ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file), { [self] in try library.edit { $0.settings.downloadByteLimit = bytes }; await PodcastDownloads.shared.reconcile() })
                 }),
                 .toggle("Download over Cellular", state.settings.cellularDownloads) { [self] value in try library.edit { $0.settings.cellularDownloads = value } },
-                .toggle("Download Saved Episodes", state.settings.downloadSavedEpisodes) { [self] value in try library.edit { $0.settings.downloadSavedEpisodes = value }; await PodcastDownloads.shared.reconcile() },
                 .toggle("Remove Played Downloads", state.settings.removePlayedDownloads) { [self] value in try library.edit { $0.settings.removePlayedDownloads = value }; await PodcastDownloads.shared.reconcile() },
                 .choice("Remove Played After", "\(Int(state.settings.playedRetentionHours)) hours", [0, 24, 48, 168].map { value in (value == 0 ? "Immediately" : "\(value) hours", { [self] in try library.edit { $0.settings.playedRetentionHours = Double(value) }; await PodcastDownloads.shared.reconcile() }) }),
                 .action("Manage Downloads · \(ByteCountFormatter.string(fromByteCount: PodcastDownloads.shared.totalBytes, countStyle: .file))") { [self] in navigationController?.pushViewController(PodcastDownloadSettingsViewController(), animated: true) }

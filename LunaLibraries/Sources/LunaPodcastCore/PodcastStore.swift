@@ -111,7 +111,7 @@ import Glibc
             state.episodes[episode.id] = episode
         }
         // Keep historical episodes when a feed trims its archive: queues,
-        // bookmarks and the resume cursor must survive publisher pruning.
+        // downloads and the resume cursor must survive publisher pruning.
         return newIDs
     }
     public func follow(_ id: String, _ value: Bool) throws {
@@ -141,12 +141,6 @@ import Glibc
             if value, let episode = state.episodes[id] { state.cursors[episode.showID] = PodcastCursor(episode: episode) }
         }
         // Manual marking never makes the resume intent choose a new episode.
-    }
-    public func saveEpisode(_ id: String, _ value: Bool) throws {
-        try update { state in
-            var progress = state.progress[id] ?? PodcastEpisodeState()
-            progress.saved = value; progress.updatedAt = Date(); state.progress[id] = progress
-        }
     }
     public func enqueue(_ id: String, next: Bool) throws {
         guard state.episodes[id] != nil, state.currentEpisodeID != id else { return }

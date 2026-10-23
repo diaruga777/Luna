@@ -242,7 +242,7 @@ The settings screenshot was inspected for layout and readable controls.
 Podcasts opens from the right-hand player pill. Music and Podcasts retain
 independent queues. Its root mirrors Music's selection table: Home
 (continue/latest/recent), New (public directory charts and categories), Shows,
-Latest Episodes, Saved, Downloaded and Played, followed by custom stations and
+Latest Episodes, Downloaded and Played, followed by custom stations and
 favorite categories. Both roots share the native stacked navigation search UI.
 Podcast search is always available at the root, with Shows, Episodes and Your
 Library scopes; clearing the query restores the selection rows. The former top
@@ -306,7 +306,7 @@ Native playback exposes configurable back/forward intervals (15/30 seconds by
 default), speed 0.5–3×, time seeking, sleep timers including end-of-episode, volume,
 video/Picture in Picture, publisher chapters (RSS, JSON or embedded metadata), and
 publisher VTT/SRT/TTML/JSON/plain-text transcripts with search and timed seeking.
-Saved episodes, manual played/unplayed changes, share, Play Next, Add to Queue,
+Manual played/unplayed changes, share, Play Next, Add to Queue,
 queue reordering/removal/clear are available. The podcast player uses a dark,
 artwork-colored background and grabber dismissal. Its upper stage animates vertically
 between full artwork/date/title/show and a compact current-episode header plus queue;
@@ -336,11 +336,11 @@ The persisted manifest reconnects tasks across launches and reports interrupted 
 failed downloads for retry. Completed ordinary files are installed atomically and
 checked against the manifest size before playback. HLS locations remain where
 AVFoundation installs them. The cache is excluded from backup. Settings cover
-cellular streaming/downloads, per-show automatic limits, saved-episode downloads,
+cellular streaming/downloads, per-show automatic limits,
 a download byte cap (2 GB by default; 500 MB, 1/2/5/10 GB choices), played-file
 retention for manually marked episodes and storage removal. The current/paused
 episode and explicitly queued episodes download first, in playback order, ahead
-of manual, saved and per-show automatic requests. Queue edits and launch reconcile
+of manual and per-show automatic requests. Queue edits and launch reconcile
 immediately, independently of feed refresh. Downloads run one at a time; unknown
 sizes reserve the remaining budget until measured, and the first episode that
 cannot fit stops the queue prefix. Queue reordering evicts lower-priority files
@@ -348,9 +348,9 @@ and preempts lower-priority transfers. Actual response/file sizes enforce the ca
 including underreported RSS enclosures; HLS packages are measured before retention.
 Lowering the cap preserves an asset still open in AVPlayer until it is released.
 A paused streaming item switches to its completed local copy on resume. Natural
-completion always releases and deletes that episode's download, even for saved
-or manual downloads and sleep-at-episode-end, then refills the queue within the
-cap. Completed saved episodes do not automatically download again. Explicit
+completion always releases and deletes that episode's download, including
+manual downloads and sleep-at-episode-end, then refills the queue within the
+cap. Completed episodes do not automatically download again. Explicit
 deletion suppresses automatic re-download until a download, play or requeue is
 requested. Failed automatic downloads retry on a later poll after 15 minutes. HTTP is permitted because arbitrary
 publisher RSS feeds and enclosures may still use it; Luna's own services retain
@@ -358,7 +358,7 @@ their separate authenticated protocols.
 
 Optional iCloud sync uses a private `LunaPodcastLibrary` record with a CKAsset,
 optimistic conflict retries, timestamp merges and station-deletion tombstones.
-Follows, show settings, episodes, listened/saved/progress state and stations merge;
+Follows, show settings, episodes, listened/progress state and stations merge;
 local media files, global device settings and active queues remain device-specific.
 A fresh device imports the last-listened identity; an existing device retains its
 own resume identity. OPML export/import provides portable followed-show lists.
@@ -476,7 +476,7 @@ switch; the podcast player offers Switch to Music in its episode menu in both
 artwork and queue modes. A successful switch replaces the displayed player,
 preserving whether the queue was open; an empty destination is disabled.
 A queued podcast can be started even before there is listening history. CarPlay can browse podcasts with music access
-denied, and exposes followed shows, recent/downloaded/saved episodes, stations and
+denied, and exposes followed shows, recent/downloaded episodes, stations and
 Now Playing/queue controls.
 
 ### Verification and platform boundaries
@@ -859,3 +859,27 @@ Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All four focused UI tests
 passed: music and podcast queue/artwork restoration after close/reopen and actual
 terminate/relaunch, existing queue controls/drag behavior, and warm/cold explicit
 queue links. No audio playback is required by these view-state checks.
+
+### Episode list titles and bookmark removal (2026-10-23)
+
+Episode rows now wrap the complete title and grow to fit it in library, show and
+station lists. Directory episode results also allow unlimited title lines.
+Descriptions remain two-line previews. At accessibility text sizes, artwork and
+actions move above the text so titles can use the full row width.
+
+The Saved library and CarPlay collections, show filter, Save/Unsave Episode
+commands, Download Saved Episodes preference and bookmark-based download rules
+are removed. Old bookmark keys are ignored when loading and syncing libraries
+and disappear on the next write; listening progress, follows, queues and download
+settings still decode normally. Downloads remain available from episode menus,
+the Downloaded collection and per-show automatic download settings.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 42 Foundation podcast tests
+and 10 focused hosted tests passed. The hosted checks include complete-title
+height at 320/402 points with default and maximum accessibility text, download
+menu availability, library navigation and deferred screen updates. Row screenshots
+were inspected at both text sizes.
+
+Two focused UI checks also passed for podcast settings and switching between
+Music and a Downloaded detail page, including clearing podcast search and
+confirming the Saved row is absent.

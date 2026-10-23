@@ -198,15 +198,42 @@ extension PodcastTests {
 }
 
 extension PodcastTests {
-    func testPlayedDownloadRetentionAndSavedPins() {
+    @MainActor func testLegacyBookmarksAreIgnoredWithoutLosingLibraryState() throws {
+        var (state, episodes) = sample()
+        let id = episodes[0].id
+        state.progress[id] = PodcastEpisodeState()
+        state.progress[id]?.position = 123
+        state.queue = [id]
+        state.lastPlayedEpisodeID = id
+        state.settings.downloadByteLimit = 500_000_000
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        var progress = try XCTUnwrap(json["progress"] as? [String: [String: Any]])
+        progress[id]?["saved"] = true
+        json["progress"] = progress
+        var settings = try XCTUnwrap(json["settings"] as? [String: Any])
+        settings["downloadSavedEpisodes"] = true
+        json["settings"] = settings
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("library.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        let store = try PodcastStore(url: url)
+        XCTAssertEqual(store.state, state)
+        try store.recordPosition(id, position: 124)
+        let rewritten = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(rewritten.contains("\"saved\""))
+        XCTAssertFalse(rewritten.contains("downloadSavedEpisodes"))
+        XCTAssertEqual(try PodcastStore(url: url).state.progress[id]?.position, 124)
+        XCTAssertEqual(store.state.queue, [id])
+        XCTAssertEqual(store.state.settings.maximumDownloadBytes, 500_000_000)
+    }
+    func testPlayedDownloadRetention() {
         var (state, episodes) = sample(); let id = episodes[0].id
         let now = Date(); var progress = PodcastEpisodeState(); progress.listened = true; progress.completedAt = now
         state.progress[id] = progress
         XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now))
         XCTAssertTrue(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
-        state.progress[id]?.saved = true
-        XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
-        state.progress[id]?.saved = false; state.settings.removePlayedDownloads = false
+        state.settings.removePlayedDownloads = false
         XCTAssertFalse(PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: false, wanted: [], state: state, now: now.addingTimeInterval(86401)))
     }
 }
@@ -257,12 +284,10 @@ final class PodcastRequestCacheTests: XCTestCase {
 }
 
 extension PodcastTests {
-    func testDownloadPlanPrioritizesCurrentThenQueueBeforeShowAndSavedDownloads() {
+    func testDownloadPlanPrioritizesCurrentThenQueueBeforeManualAndShowDownloads() {
         var (state, episodes) = sample()
         state.currentEpisodeID = episodes[0].id
         state.queue = [episodes[2].id, episodes[4].id]
-        state.progress[episodes[5].id] = PodcastEpisodeState()
-        state.progress[episodes[5].id]?.saved = true
         state.settings.downloadByteLimit = 300
         let sizes = Dictionary(uniqueKeysWithValues: episodes.map { ($0.id, Int64(100)) })
         let plan = PodcastDownloadPlan(state: state, sizes: sizes, manualIDs: [episodes[7].id])
@@ -339,9 +364,8 @@ extension PodcastTests {
         XCTAssertEqual(store.state.progress[episodes[0].id]?.suppressAutomaticDownload, false)
         XCTAssertEqual(store.state.queue.first, episodes[0].id)
     }
-    func testCompletedSavedEpisodeDoesNotRedownloadAfterFinishing() {
-        var (state, episodes) = sample()
-        state.progress[episodes[6].id]?.saved = true
+    func testCompletedEpisodeDoesNotRedownloadAfterFinishing() {
+        let (state, episodes) = sample()
         XCTAssertFalse(PodcastPolicies.automaticDownloads(state).contains(episodes[6].id))
     }
 }

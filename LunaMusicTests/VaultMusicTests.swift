@@ -1974,6 +1974,54 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
     }
 }
 
+@MainActor final class PodcastEpisodeListLayoutTests: XCTestCase {
+    func testFullEpisodeTitlesFitSelfSizingRowsAtNarrowWidthsAndLargeText() throws {
+        let title = "What will computer chips look like in 2040? A tour of Intel’s most advanced factories and the future of computing"
+        var episode = PodcastEpisode(showID: "layout", guid: "long-title", title: title, publishedAt: Date(), mediaURL: URL(string: "https://example.com/episode.mp3")!)
+        episode.summary = "A short summary beneath the complete episode title."
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for width: CGFloat in [320, 402] {
+            for category: UIContentSizeCategory in [.large, .accessibilityExtraExtraExtraLarge] {
+                let controller = PodcastListViewController()
+                let window = UIWindow(windowScene: scene)
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 1800)
+                window.rootViewController = controller
+                controller.traitOverrides.preferredContentSizeCategory = category
+                window.makeKeyAndVisible()
+                defer { window.isHidden = true }
+                controller.sections = [.init(title: "Latest Episodes", rows: [.episode(episode)])]
+                controller.reload()
+                controller.view.layoutIfNeeded()
+                controller.table.layoutIfNeeded()
+                let cell = try XCTUnwrap(controller.table.cellForRow(at: IndexPath(row: 0, section: 0)) as? PodcastEpisodeCell)
+                cell.layoutIfNeeded()
+                XCTAssertEqual(cell.heading.text, title)
+                XCTAssertGreaterThan(cell.heading.bounds.width, 0)
+                if category.isAccessibilityCategory { XCTAssertGreaterThan(cell.heading.bounds.width, width - 60) }
+                let fullHeight = cell.heading.sizeThatFits(CGSize(width: cell.heading.bounds.width, height: .greatestFiniteMagnitude)).height
+                XCTAssertGreaterThan(fullHeight, cell.heading.font.lineHeight * 2)
+                XCTAssertGreaterThanOrEqual(cell.heading.bounds.height + 1, fullHeight, "Full title must fit at width \(width), \(category)")
+                XCTAssertGreaterThanOrEqual(cell.summary.frame.minY, cell.heading.frame.maxY)
+                XCTAssertLessThanOrEqual(cell.more.convert(cell.more.bounds, to: cell.contentView).maxX, cell.contentView.bounds.width)
+                let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: cell.bounds).image { _ in cell.drawHierarchy(in: cell.bounds, afterScreenUpdates: true) })
+                attachment.name = "Full episode title \(Int(width)) \(category.rawValue)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testEpisodeMenuKeepsDownloadsWithoutBookmarks() {
+        let episode = PodcastEpisode(showID: "layout", guid: "menu", title: "Episode", publishedAt: Date(), mediaURL: URL(string: "https://example.com/episode.mp3")!)
+        let menu = PodcastUI.episodeMenu(episode, from: UIViewController())
+        let titles = menu.children.compactMap { ($0 as? UIAction)?.title }
+        XCTAssertTrue(titles.contains("Download Episode"))
+        XCTAssertTrue(titles.contains("Play Next"))
+        XCTAssertFalse(titles.contains("Save Episode"))
+        XCTAssertFalse(titles.contains("Unsave Episode"))
+    }
+}
+
 @MainActor private final class CountingPodcastList: PodcastListViewController {
     var reloads = 0
     override func reload() { reloads += 1; super.reload() }
@@ -2009,7 +2057,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         func titles() -> [String] {
             browser.sections.flatMap(\.rows).compactMap { if case .action(let title, _, _) = $0 { return title }; return nil }
         }
-        XCTAssertEqual(Array(titles().prefix(7)), ["Home", "New", "Shows", "Latest Episodes", "Saved", "Downloaded", "Played"])
+        XCTAssertEqual(Array(titles().prefix(6)), ["Home", "New", "Shows", "Latest Episodes", "Downloaded", "Played"])
         search.searchBar.text = "A podcast"
         browser.updateSearchResults(for: search)
         XCTAssertTrue(browser.isSearching)
@@ -2017,7 +2065,8 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         search.searchBar.text = ""
         browser.updateSearchResults(for: search)
         XCTAssertFalse(browser.isSearching)
-        XCTAssertTrue(titles().contains("Saved"))
+        XCTAssertFalse(titles().contains("Saved"))
+        XCTAssertTrue(titles().contains("Downloaded"))
         XCTAssertEqual(root.navigationItem.preferredSearchBarPlacement, .stacked)
     }
 

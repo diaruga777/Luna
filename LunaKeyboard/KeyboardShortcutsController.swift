@@ -158,6 +158,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
     })
     menu.addAction(UIAlertAction(title: "Cancel", style: .cancel))
     menu.popoverPresentationController?.sourceView = anchor ?? view
+    menu.popoverPresentationController?.sourceRect = (anchor ?? view).bounds
     present(menu, animated: true)
   }
   private func saveOptions(_ entry: KeyboardShortcut) {
@@ -171,6 +172,7 @@ final class KeyboardShortcutsController: KeyboardTableController, UIDocumentPick
       exportedFile = url
       let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
       sheet.popoverPresentationController?.sourceView = anchor ?? view
+      sheet.popoverPresentationController?.sourceRect = (anchor ?? view).bounds
       sheet.completionWithItemsHandler = { [weak self] _, _, _, _ in
         try? FileManager.default.removeItem(at: url); self?.exportedFile = nil
       }

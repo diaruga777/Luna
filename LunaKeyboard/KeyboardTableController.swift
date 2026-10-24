@@ -13,6 +13,7 @@ class KeyboardTableController: UITableViewController {
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   override func viewDidLoad() {
     super.viewDidLoad()
+    tableView.cellLayoutMarginsFollowReadableWidth = true
     tableView.backgroundColor = .black
     tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
   }

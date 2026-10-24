@@ -56,7 +56,9 @@ final class KeyboardPreferencesController: KeyboardTableController {
       })
     }
     menu.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-    menu.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath)
+    menu.popoverPresentationController?.sourceView = tableView
+    menu.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+    tableView.deselectRow(at: indexPath, animated: true)
     present(menu, animated: true)
   }
 }

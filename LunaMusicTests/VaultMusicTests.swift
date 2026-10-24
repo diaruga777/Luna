@@ -1686,6 +1686,62 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             try await Task.sleep(for: .milliseconds(100))
         }
     }
+    func testRepeatedImmediatePauseDuringPrimingRestoresOriginalPosition() async throws {
+        let position = playback.position
+        let first = Task { try await playback.resumeLastPodcast(pauseImmediately: true) }
+        defer { first.cancel() }
+        try await waitFor { playback.isPlaying && playback.session.isActive }
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertGreaterThan(playback.player.currentTime().seconds, position)
+
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+        do { try await first.value }
+        catch is CancellationError { }
+
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.position, position, accuracy: 0.05)
+        XCTAssertEqual(playback.player.currentTime().seconds, position, accuracy: 0.05)
+        XCTAssertEqual(library.state.progress[episode.id]?.position ?? -1, position, accuracy: 0.05)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.position, position, accuracy: 0.2)
+    }
+    func testNativePauseDuringPrimingRestoresOriginalPosition() async throws {
+        let position = playback.position
+        let request = Task { try await playback.resumeLastPodcast(pauseImmediately: true) }
+        defer { request.cancel() }
+        try await waitFor { playback.isPlaying && playback.session.isActive }
+        try await Task.sleep(for: .milliseconds(250))
+        playback.player.pause()
+        do { try await request.value }
+        catch is CancellationError { }
+
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.position, position, accuracy: 0.05)
+        XCTAssertEqual(playback.player.currentTime().seconds, position, accuracy: 0.05)
+        XCTAssertEqual(library.state.progress[episode.id]?.position ?? -1, position, accuracy: 0.05)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.position, position, accuracy: 0.2)
+    }
+    func testCancelledPrimingAfterAudioStartsRestoresOriginalPosition() async throws {
+        let position = playback.position
+        let request = Task { try await playback.resumeLastPodcast(pauseImmediately: true) }
+        defer { request.cancel() }
+        try await waitFor { playback.isPlaying && playback.session.isActive }
+        try await Task.sleep(for: .milliseconds(250))
+        request.cancel()
+        do { try await request.value; XCTFail("Cancelled priming must not report success") }
+        catch is CancellationError { }
+
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.position, position, accuracy: 0.05)
+        XCTAssertEqual(playback.player.currentTime().seconds, position, accuracy: 0.05)
+        XCTAssertEqual(library.state.progress[episode.id]?.position ?? -1, position, accuracy: 0.05)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.position, position, accuracy: 0.2)
+    }
     func testPauseImmediatelyLeavesActivePausedPodcastUntouched() async throws {
         try await playback.resumeLastPodcast(pauseImmediately: true)
         var finished = false

@@ -392,6 +392,12 @@ iOS has selected Luna as the system playback app. Normal Resume returns after
 playback starts. Startup is bounded and cancellation or a newer transport action
 cannot cause a late pause. After priming, it pauses and completes an exact seek to
 the item's pre-playback offset, persisting that restored position before returning.
+The rewind holds a background execution task through seek completion so pausing
+background audio cannot suspend it halfway through. A repeated Pause Immediately
+invocation during priming, a native player pause that cuts its handoff short, or
+cancellation of the priming intent also restores that item's starting offset.
+A newer explicit transport action always wins; normal already-playing podcasts
+still pause at their current position.
 Natural completion during the handoff follows the next queued episode and pauses
 after that item's playback window, restoring that next item's starting offset and
 retaining a resumable item.

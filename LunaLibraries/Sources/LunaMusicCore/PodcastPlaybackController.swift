@@ -69,6 +69,7 @@ import LunaPodcastCore
     }
     private var playbackStartTime: Double?
     private var playbackResumePosition: Double = 0
+    private var primingPlaybackRevision: UUID?
     // isActive identifies the app's session, not the system's playback app.
     // Retain ownership only after audible playback, until another source takes it.
     private var retainsPlaybackSession = false
@@ -335,10 +336,16 @@ import LunaPodcastCore
            player.currentItem != nil, player.currentItem?.status != .failed,
            !isSelecting, !needsPreparation,
            !AVAudioSession.sharedInstance().isOtherAudioPlaying {
-            pause()
+            // A repeated automation can arrive while the first invocation is
+            // still priming. Its temporary audio must be rewound too.
+            if primingPlaybackRevision == playbackRevision {
+                try await pauseAfterPriming()
+            } else { pause() }
             return
         }
         let revision = UUID(); playbackRevision = revision
+        if pauseImmediately { primingPlaybackRevision = revision }
+        defer { if primingPlaybackRevision == revision { primingPlaybackRevision = nil } }
         let store = try library.requireStore()
         if store.state.naturallyExhaustedQueue { await library.refresh(force: true) }
         try Task.checkCancellation()
@@ -375,7 +382,17 @@ import LunaPodcastCore
                     itemGeneration = generation
                     playingSince = nil
                 }
-                guard requestedPlayback else { throw CancellationError() }
+                guard requestedPlayback else {
+                    // Native/system controls can pause AVPlayer without a new
+                    // Luna transport revision. Finish the prime's rewind before
+                    // returning, even when its handoff window was cut short.
+                    if pauseImmediately {
+                        try await pauseAfterPriming()
+                        logState("intent.complete")
+                        return
+                    }
+                    throw CancellationError()
+                }
                 // isActive only selects a session *within this app*. A first
                 // clock tick can precede audio output and system registration.
                 // Priming needs a continuous playback window, including the
@@ -390,9 +407,7 @@ import LunaPodcastCore
                     if !pauseImmediately || now - since >= handoff {
                         retainsPlaybackSession = true
                         if pauseImmediately {
-                            let resumePosition = playbackResumePosition
-                            pause()
-                            try await restorePositionAfterPriming(resumePosition)
+                            try await pauseAfterPriming()
                         }
                         logState("intent.complete")
                         return
@@ -408,11 +423,29 @@ import LunaPodcastCore
             // A later transport action owns its own state. Never let an older
             // shortcut pause a replacement episode or a newer Play request.
             if playbackRevision == revision {
-                if error is CancellationError { pause() }
-                else { fail(error) }
+                if error is CancellationError {
+                    if pauseImmediately {
+                        try await pauseAfterPriming()
+                    } else { pause() }
+                } else { fail(error) }
             }
             throw error
         }
+    }
+    private func pauseAfterPriming() async throws {
+        // Pausing removes background audio execution. Keep the app alive until
+        // AVPlayer has completed the rewind and the restored offset is saved.
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Restore podcast position", expirationHandler: nil)
+        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+        let resumePosition = playbackResumePosition
+        pause()
+        let revision = playbackRevision
+        // Finish cleanup even if the intent is cancelled after pausing. A new
+        // user transport still supersedes this restore through its revision.
+        try await Task { @MainActor in
+            guard self.playbackRevision == revision else { throw CancellationError() }
+            try await self.restorePositionAfterPriming(resumePosition)
+        }.value
     }
     private func restorePositionAfterPriming(_ seconds: Double) async throws {
         var finished: Bool?

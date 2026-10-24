@@ -33,7 +33,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
     NSLayoutConstraint.activate([
       surface.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       surface.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      surface.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+      surface.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
     ])
     surface.boardHeight = 220
     let height = surface.heightAnchor.constraint(equalToConstant: surface.requiredHeight)

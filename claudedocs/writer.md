@@ -622,3 +622,5 @@ which app currently owns the keyboard. Writer's database remains separate from
 
 Verification: Writer build-for-testing succeeds; 57 command-palette controller and
 overlay tests pass with zero failures on the iOS 26.2 simulator.
+
+iPad window cleanup (2026-10-24): the standalone note editor uses the shared readable-width policy, including safe-area clearance, and recomputes text insets as its window resizes. The LunaWriter Simulator build and wide-to-compact note-editor regression pass.

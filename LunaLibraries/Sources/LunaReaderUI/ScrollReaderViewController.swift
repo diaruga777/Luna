@@ -835,7 +835,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let content = self.content
         let includesTitle = includesArticleTitle
         let traits = traitCollection
-        let imageWidth = min((view.window?.screen.bounds.width ?? UIScreen.main.bounds.width) - 100, 660)
+        let imageWidth = view.bounds.width > 100 ? min(view.bounds.width - 100, 660) : 660
         fullContentTask = Task { @MainActor [weak self] in
             guard !Task.isCancelled else { return }
             let prepared = await ArticleTextRenderer.prepareFullContent(

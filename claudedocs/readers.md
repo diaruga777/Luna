@@ -1135,3 +1135,5 @@ Validation (23 October 2026): 109 focused simulator tests pass, including
 animated retained-line screen positions, gradual incoming widths, fixed fragment
 geometry during scrolling, title visibility after chrome restoration, real window
 resize anchoring, and cancellation when a reader is reused during full rendering.
+
+iPad window cleanup (2026-10-24): RSVP word and phrase fonts follow the reader column after layout and window resizing. Deferred full-content images use the reader width when available; persistent chrome hit testing uses the current window. An empty library keeps its utility/welcome card centered at full card size, then restores adaptive previews when saves arrive. Twelve focused iPad layout/geometry regressions passed on iPadOS 27 Simulator.

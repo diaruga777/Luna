@@ -340,11 +340,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         view.layoutIfNeeded()
     }
 
-    /// Sized at init from the device width so `targetCharactersAcross`
+    /// Sized from the reader column so `targetCharactersAcross`
     /// characters fit beside the focal column without running off-screen.
-    private let wordFont: UIFont
+    private var wordFont: UIFont
     /// Smaller, proportional font for the two-line phrase display.
-    private let phraseFont: UIFont
+    private var phraseFont: UIFont
+    private var fontSizingWidth: CGFloat = 0
 
     public init(item: SavedItem, content: ArticleContent, audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil,
@@ -578,6 +579,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let sizingWidth = min(view.safeAreaLayoutGuide.layoutFrame.width, 600)
+        if sizingWidth > 0, abs(sizingWidth - fontSizingWidth) > 0.5 {
+            fontSizingWidth = sizingWidth
+            wordFont = Self.makeWordFont(forWidth: sizingWidth)
+            phraseFont = Self.makePhraseFont(from: wordFont)
+            wordLabel.font = wordFont
+            phraseLabel.font = phraseFont
+        }
         // Before anything measures the reading band: the lift moves its floor.
         updateControlsBottomInset()
         layoutEyeTrackingButton()
@@ -862,7 +871,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Half-height of the focal display measured from `focalCenterY`: in Words
     /// mode the greater of the word label's own line box and the reticule's reach
-    /// (both scale with `wordFont`, which is sized from the screen width — a
+    /// (both scale with `wordFont`, which is sized from the reader width — a
     /// fixed clearance would crowd the glyph on a wide screen); in Phrases mode
     /// the glass panel's half-height.
     private var focalHalfHeight: CGFloat {

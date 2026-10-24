@@ -57,6 +57,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         title = "Browse"
         navigationItem.largeTitleDisplayMode = .always
         navigationItem.backButtonDisplayMode = .minimal

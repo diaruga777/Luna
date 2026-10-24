@@ -153,3 +153,5 @@ Search explicitly says “Search Vault files and contents.”
 Permissions, a missing disk/folder, and an outdated companion produce explicit
 errors with retry. First-run setup and the Mac’s pairing explanation describe
 the read-only Mac scope and the writable Vault folder.
+
+iPad window cleanup (2026-10-24): Browse, Mac Files and Transfers use UIKit’s readable row margins as windows resize. Pairing reply sharing anchors to its output controls. The LunaVault Simulator build passes; the legacy device/iCloud setup UI is unchanged.

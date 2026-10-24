@@ -26,6 +26,7 @@ public final class VaultMacBrowseViewController: UITableViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         title = path.map { $0 == "/" ? "Macintosh HD" : ($0 as NSString).lastPathComponent } ?? "Mac Files"
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal

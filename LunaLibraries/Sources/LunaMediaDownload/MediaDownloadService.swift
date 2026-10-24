@@ -24,7 +24,7 @@ public struct MediaDownloadService {
     }
 
     /// Resolves the post's media, downloads the FIRST item, and moves it into
-    /// Luna Downloader's app-owned saved-media library.
+    /// Luna Reader's app-owned saved-media library.
     public func downloadFirstMediaToAppStorage(
         from url: URL, title: String?, onProgress: @escaping (Double) -> Void
     ) async throws -> SavedMediaItem {

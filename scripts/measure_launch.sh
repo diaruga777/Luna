@@ -4,7 +4,7 @@
 # numbers the size/refactor work is judged against.
 #
 # Usage:
-#   scripts/measure_launch.sh <Luna|LunaReader> [--device <udid>] [--label <name>]
+#   scripts/measure_launch.sh <LunaReader> [--device <udid>] [--label <name>]
 #
 # What it does:
 #   1. Terminates any running copy of the app on the device.
@@ -53,9 +53,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$APP" in
-  Luna)       TEST_TARGET="LunaLaunchTests";       BUNDLE_ID="com.hsanabria.luna" ;;
-  LunaReader) TEST_TARGET="LunaReaderLaunchTests"; BUNDLE_ID="com.hsanabria.luna.reader" ;;
-  *) echo "usage: $(basename "$0") <Luna|LunaReader> [--device <udid>] [--label <name>]" >&2; exit 2 ;;
+  LunaReader) TEST_TARGET="LunaLaunchTests"; BUNDLE_ID="com.hsanabria.luna" ;;
+  *) echo "usage: $(basename "$0") <LunaReader> [--device <udid>] [--label <name>]" >&2; exit 2 ;;
 esac
 
 mkdir -p "$OUT_DIR"

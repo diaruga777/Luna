@@ -3,14 +3,14 @@
 # three universal extensions (share / action / safari), reusing the existing source
 # folders, Info.plists, and entitlements via shared synchronized groups. Per-app inputs:
 #   APP=<suffix>     e.g. downloader            (bundle id = $(PRODUCT_BUNDLE_PREFIX).<suffix>)
-#   NAME=<TargetName> e.g. LunaDownloader      (Xcode target / product name, no spaces)
+#   NAME=<TargetName> e.g. LunaWriter      (Xcode target / product name, no spaces)
 #   DISPLAY=<words>  e.g. "Downloader"           (visible name -> "$(DISPLAY_NAME_PREFIX) <words>")
 #
 # Idempotent: skips creation if the app target already exists.
 #
 # PACKAGE LINKING IS A SECOND STEP. Each content app links ONE dynamic kit
 # product holding all of its package code, shared with its extensions
-# (`LunaKit`, `LunaReaderKit`, …). This script copies the source app's package
+# (`LunaKit`, `LunaWriterLibraryUI`, …). This script copies the source app's package
 # links as a starting point, which is the WRONG kit for a new app. After
 # running it: declare the new app's kit in `LunaLibraries/Package.swift`, add
 # the app and its extensions to `GROUPS` in `scripts/link_app_kits.rb`, and run

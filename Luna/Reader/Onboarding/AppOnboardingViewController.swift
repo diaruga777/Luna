@@ -1475,7 +1475,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func openLunaAppStore() {
-        guard let url = LunaCoreAppStoreLink.url else { return }
+        guard let url = LunaReaderAppStoreLink.url else { return }
         UIApplication.shared.open(url)
     }
 

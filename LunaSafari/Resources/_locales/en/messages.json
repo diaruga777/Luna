@@ -1,6 +1,6 @@
 {
     "extensionName": {
-        "message": "Luna",
+        "message": "Luna Reader",
         "description": "Name of the Safari extension."
     },
     "extensionDescription": {
@@ -25,7 +25,7 @@
     },
     "trackInLuna": {
         "message": "Track in Luna",
-        "description": "Button that adds a product to Luna Price Tracker."
+        "description": "Button that adds a product to Luna Reader."
     },
     "closeVideo": {
         "message": "Close",

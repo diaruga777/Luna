@@ -134,7 +134,7 @@ build_file.settings = { "ATTRIBUTES" => ["RemoveHeadersOnCopy"] }
 embed.files << build_file
 app.build_phases << embed
 
-central = project.targets.find { |target| target.name == "Luna" }
+central = project.targets.find { |target| target.name == "LunaReader" }
 abort "Missing central Luna target" unless central
 clone_shell_phase(project, central, app, "Re-sign embedded extensions (debug)")
 clone_shell_phase(project, central, app, "Verify bundled strings table")

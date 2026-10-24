@@ -110,9 +110,6 @@ final class StageRegistryTests: XCTestCase {
     /// into a different binary.
     private static let expectedCatalogs: [String: Set<String>] = [
         "Luna/KindWiring+Luna.swift": ["Shared", "Article", "Email", "Media", "Product", "Plugin"],
-        "Luna/KindWiring+Reader.swift": ["Shared", "Article", "Email"],
-        "Luna/KindWiring+Downloader.swift": ["Shared", "Media"],
-        "Luna/KindWiring+PriceTracker.swift": ["Shared", "Product"],
     ]
 
     private var repositoryRoot: URL {
@@ -143,12 +140,12 @@ final class StageRegistryTests: XCTestCase {
     /// (`claudedocs/surface-support.md`). A dropped exception compiles as a
     /// missing-symbol error, but only on a CLEAN build of that target, so pin
     /// the project file itself.
-    func testRetiredTargetsAreRemovedAndCoreKeepsAllCatalogs() throws {
+    func testRetiredTargetsAreRemovedAndReaderKeepsAllCatalogs() throws {
         let exclusions = try membershipExceptionsByTarget()
-        for target in ["LunaReader", "LunaDownloader", "LunaPriceTracker"] {
+        for target in ["Luna", "LunaDownloader", "LunaPriceTracker"] {
             XCTAssertNil(exclusions[target])
         }
-        let core = try XCTUnwrap(exclusions["Luna"])
+        let core = try XCTUnwrap(exclusions["LunaReader"])
         for catalog in ["Article", "Email", "Media", "Product", "Plugins"] {
             XCTAssertFalse(core.contains("Stage/StageCatalog+\(catalog).swift"))
         }

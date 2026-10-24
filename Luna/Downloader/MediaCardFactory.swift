@@ -10,7 +10,7 @@
 //  It exists because two decks render the same media card: the Downloader's own
 //  root screen and the central Luna app's all-kinds deck, both of which must
 //  show a downloaded save with the real player rather than a title and a link.
-//  Compiled only into media-handling targets (Luna and LunaDownloader).
+//  Compiled only into Luna Reader.
 //
 
 import AVFoundation

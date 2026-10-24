@@ -5,7 +5,7 @@ Staged mode (`claudedocs/staging.md`) lets an app boot straight into a named
 screen in a named state, so a screenshot pass is one `simctl launch` per
 screen with no navigation script at all. This drives that:
 
-    build (once, all four apps)
+    build (once, Luna Reader)
       -> boot a simulator
       -> install
       -> per app: ask it for its stage manifest (`-LunaStageList`)
@@ -39,12 +39,7 @@ REPO = Path(__file__).resolve().parent.parent
 # intentionally excluded until its standalone shell has real stage catalogs
 # and fixtures; adding it here earlier would claim screens it cannot launch.
 APPS = [
-    ("luna", "Luna", "com.hsanabria.luna", "Luna.app", "Luna (central)"),
-    ("reader", "LunaReader", "com.hsanabria.luna.reader", "LunaReader.app", "Luna Reader"),
-    ("downloader", "LunaDownloader", "com.hsanabria.luna.downloader",
-     "LunaDownloader.app", "Luna Video"),
-    ("pricetracker", "LunaPriceTracker", "com.hsanabria.luna.pricetracker",
-     "LunaPriceTracker.app", "Luna Price Tracker"),
+    ("reader", "LunaReader", "com.hsanabria.luna", "LunaReader.app", "Luna Reader"),
 ]
 
 SIMULATOR_NAME = "LunaStageShots"

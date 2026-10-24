@@ -5,7 +5,7 @@
 //  The media kind's half of the app shell. It installs every seam a
 //  media-handling app needs at launch, and does the lifecycle work downloads
 //  owe at each of `KindWiring`'s fixed points. Only the targets that link the
-//  media kind compile this file — Luna and LunaDownloader. The other two
+//  media kind compile this file — Luna Reader. The other two
 //  exclude it by membership exception, the same way they exclude
 //  `Downloader/MediaCardPresenter.swift` and the rest of the media shell.
 //

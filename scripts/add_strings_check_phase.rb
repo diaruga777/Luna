@@ -32,7 +32,7 @@ PHASE_NAME = 'Verify bundled strings table'
 # safari extensions, both Live Activity widgets — is embedded inside one of
 # them, so walking the .app covers it. The unit-test bundle is
 # skipped by the checker itself (see SKIPPED_SUFFIXES there).
-APPS = %w[Luna LunaReader LunaDownloader LunaPriceTracker LunaVault LunaWriter].freeze
+APPS = %w[LunaReader LunaVault LunaWriter LunaMusic LunaKeyboard].freeze
 
 SCRIPT = <<~SH
   # Rewrites any bundled copy of the one strings table that has drifted from

@@ -89,21 +89,9 @@ private let repoRoot = URL(fileURLWithPath: #filePath)
 
 private let surfaces = [
     Surface(
-        name: "Luna",
+        name: "Luna Reader",
         iconPath: "SharedIconAssets.xcassets/AppIconLuna.appiconset/AppIconLuna1024.png",
         resourceStem: "ActionButtonGuideLuna"),
-    Surface(
-        name: "Luna Reader",
-        iconPath: "SharedIconAssets.xcassets/AppIconReader.appiconset/AppIconReader-1024.png",
-        resourceStem: "ActionButtonGuideReader"),
-    Surface(
-        name: "Luna Video",
-        iconPath: "SharedIconAssets.xcassets/AppIconVideo.appiconset/AppIconVideo-1024.png",
-        resourceStem: "ActionButtonGuideDownloader"),
-    Surface(
-        name: "Luna Price Tracker",
-        iconPath: "SharedIconAssets.xcassets/AppIconPriceTracker.appiconset/AppIconPriceTracker-1024.png",
-        resourceStem: "ActionButtonGuidePriceTracker"),
 ]
 
 private final class Canvas {

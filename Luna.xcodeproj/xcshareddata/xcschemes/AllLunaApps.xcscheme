@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "F73C67777995F8F752A0056A"
-               BuildableName = "Luna.app"
-               BlueprintName = "Luna"
+               BuildableName = "LunaReader.app"
+               BlueprintName = "LunaReader"
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -51,6 +51,12 @@
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry buildForTesting="NO" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="6B11C1477EF772A5FCC71A54" BuildableName="LunaMusic.app" BlueprintName="LunaMusic" ReferencedContainer="container:Luna.xcodeproj" />
+         </BuildActionEntry>
+         <BuildActionEntry buildForTesting="NO" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="D7CA72A0B5CDB82D3301E03F" BuildableName="LunaKeyboard.app" BlueprintName="LunaKeyboard" ReferencedContainer="container:Luna.xcodeproj" />
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -77,8 +83,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F73C67777995F8F752A0056A"
-            BuildableName = "Luna.app"
-            BlueprintName = "Luna"
+            BuildableName = "LunaReader.app"
+            BlueprintName = "LunaReader"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -94,8 +100,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F73C67777995F8F752A0056A"
-            BuildableName = "Luna.app"
-            BlueprintName = "Luna"
+            BuildableName = "LunaReader.app"
+            BlueprintName = "LunaReader"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

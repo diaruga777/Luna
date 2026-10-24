@@ -97,11 +97,11 @@
  * the running app and (UnsupportedSaveCopy) to name a SIBLING app, so every
  * app needs an explicit entry rather than one shared default.
  * ===================== */
-"LunaApp_displayName_Luna" = "Luna";
-"LunaApp_displayName_Core" = "Luna";
+"LunaApp_displayName_Luna" = "Luna Reader";
+"LunaApp_displayName_Core" = "Luna Reader";
 "LunaApp_displayName_Reader" = "Luna Reader";
-"LunaApp_displayName_Downloader" = "Luna Video";
-"LunaApp_displayName_PriceTracker" = "Luna Price Tracker";
+"LunaApp_displayName_Downloader" = "Luna Reader";
+"LunaApp_displayName_PriceTracker" = "Luna Reader";
 "LunaApp_displayName_Vault" = "Luna Vault";
 "LunaApp_displayName_Writer" = "Luna Writer";
 
@@ -1129,7 +1129,7 @@
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
 
-/* ===== LiveActivity_downloader — non-intent-literal strings in LunaDownloaderLiveActivityWidget.swift ===== */
+/* ===== LiveActivity_downloader — non-intent-literal strings in LunaLiveActivityWidget.swift ===== */
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";
 "LiveActivity_downloader_cancelButtonAccessibilityLabel_Luna" = "Cancel save";
 "LiveActivity_downloader_resumeButtonAccessibilityLabel_Luna" = "Resume save";
@@ -1141,7 +1141,7 @@
 "LiveActivity_downloader_shareButtonAccessibilityLabel_Luna" = "Share video";
 
 /* ===== Intents_cancelLiveDownload / Intents_resumeLiveDownload — App Intents metadata baked
-   as concrete already-suffixed literals directly in LunaDownloaderLiveActivityWidget.swift
+   as concrete already-suffixed literals directly in LunaLiveActivityWidget.swift
    (the metadata processor requires Swift literals, so these keys ARE the source literals) ===== */
 "Intents_cancelLiveDownload_title_Luna" = "Cancel Save";
 "Intents_cancelLiveDownload_description_Luna" = "Cancels this video save.";

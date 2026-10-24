@@ -27,10 +27,7 @@ public enum LunaAppIconImage {
 
     private static func assetName(for app: LunaApp) -> String {
         switch app {
-        case .luna: return "LunaAppIconLuna"
-        case .reader: return "LunaAppIconReader"
-        case .downloader: return "LunaAppIconDownloader"
-        case .priceTracker: return "LunaAppIconPriceTracker"
+        case .luna, .reader, .downloader, .priceTracker: return "LunaAppIconLuna"
         case .vault: return "LunaAppIconVault"
         case .writer: return "LunaAppIconWriter"
         }

@@ -9,7 +9,7 @@ import Photos
 import UIKit
 import LunaModels
 
-/// Shared video-saving and retention controls for Luna and Luna Video.
+/// Shared video-saving and retention controls for Luna Reader.
 final class DownloadsSettingsScreen: NavHeaderTableController {
 
     init() { super.init(style: .insetGrouped) }

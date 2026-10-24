@@ -25,9 +25,6 @@ final class KindShellWiringTests: XCTestCase {
     /// deliberate and must not collapse: a single-kind app calls exactly one leg.
     private static let expectedLegs: [String: Set<String>] = [
         "Luna/KindWiring+Luna.swift": ["Article", "Media", "Product"],
-        "Luna/KindWiring+Reader.swift": ["Article"],
-        "Luna/KindWiring+Downloader.swift": ["Media"],
-        "Luna/KindWiring+PriceTracker.swift": ["Product"],
     ]
 
     private var repositoryRoot: URL {
@@ -70,32 +67,11 @@ final class KindShellWiringTests: XCTestCase {
         XCTAssertTrue(mediaShell.contains("SavedMediaStore.shared.purgeExpired()"))
     }
 
-    /// A kind's shell file stays excluded from the targets that do not link the
-    /// kind — a membership exception, not a runtime check
-    /// (`claudedocs/surface-support.md`). A dropped exception fails as a
-    /// missing-symbol error, but only on a CLEAN build of that target, so pin
-    /// the project file itself.
-    func testKindShellWiringIsExcludedFromForeignTargets() throws {
+    func testReaderIncludesEveryKindShell() throws {
         let exclusions = try membershipExceptionsByTarget()
-        let expected: [(file: String, foreignTargets: [String])] = [
-            ("ArticleShellWiring.swift", ["LunaDownloader", "LunaPriceTracker"]),
-            ("MediaShellWiring.swift", ["LunaReader", "LunaPriceTracker"]),
-            ("ProductShellWiring.swift", ["LunaReader", "LunaDownloader"]),
-            // Spotlight indexing is one of the article leg's launch jobs: an app
-            // that shows no article can neither index one nor open a hit.
-            ("ArticleSpotlightIndexWiring.swift", ["LunaDownloader", "LunaPriceTracker"]),
-        ]
-        for (file, foreignTargets) in expected {
-            for target in foreignTargets {
-                let excluded = try XCTUnwrap(
-                    exclusions[target], "no exception set at all for \(target)")
-                XCTAssertTrue(
-                    excluded.contains(file),
-                    """
-                    \(target) must exclude \(file) — it does not handle that kind, \
-                    so the file has nothing to do there.
-                    """)
-            }
+        let reader = try XCTUnwrap(exclusions["LunaReader"])
+        for file in ["ArticleShellWiring.swift", "MediaShellWiring.swift", "ProductShellWiring.swift", "ArticleSpotlightIndexWiring.swift"] {
+            XCTAssertFalse(reader.contains(file))
         }
     }
 

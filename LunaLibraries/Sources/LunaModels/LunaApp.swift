@@ -2,7 +2,7 @@ import Foundation
 import LunaAppConfig
 
 /// A Luna surface identity, including retired facets retained for stored data
-/// and old file compatibility. New link-app installs use core Luna. Derived
+/// and old file compatibility. New link-app installs use Luna Reader (`.luna`). Derived
 /// from the bundle identifier, using contains-matching so it also resolves
 /// from inside an app's extensions (`…reader.share`, `…downloader.safari`, …).
 ///
@@ -10,7 +10,8 @@ import LunaAppConfig
 /// (`com.hsanabria.luna`) with no content suffix, so "no suffix" resolves to
 /// `.luna` — which is also the right default for the unit-test host.
 public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
-    /// The central Luna app — accepts and processes every content kind.
+    /// Luna Reader (formerly Core) — accepts and processes every content kind.
+    /// Keep `.luna` and its stored identifiers stable for existing installs.
     case luna
     case reader
     case downloader

@@ -19,8 +19,8 @@ STRINGS = 'LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strin
 
 # Every target that hosts App Intents and so needs the table in its own bundle.
 HOSTS = %w[
-  Luna LunaReader LunaDownloader LunaPriceTracker LunaVault LunaWriter
-  LunaLiveActivity LunaDownloaderLiveActivity
+  LunaReader LunaVault LunaWriter LunaMusic LunaKeyboard
+  LunaLiveActivity
 ].freeze
 
 project = Xcodeproj::Project.open(PROJECT)

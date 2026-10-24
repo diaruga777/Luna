@@ -1,6 +1,6 @@
 //
-//  LunaDownloaderLiveActivityWidget.swift
-//  LunaDownloaderLiveActivity
+//  LunaLiveActivityWidget.swift
+//  LunaLiveActivity
 //
 
 import ActivityKit
@@ -67,7 +67,7 @@ private func shareURL(for state: LiveMediaDownloadAttributes.ContentState) -> UR
     state.shareURLString.flatMap(URL.init(string:))
 }
 
-struct LunaDownloaderLiveActivityWidget: Widget {
+struct LunaLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LiveMediaDownloadAttributes.self) { context in
             DownloadActivityView(context: context)

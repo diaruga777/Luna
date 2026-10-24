@@ -7,7 +7,7 @@ import Foundation
 
 /// What `<scheme>://media?url=…` (the download Live Activity's tap-to-view
 /// link) should do, decided by `KindWiring.mediaDeepLinkAction(forURLString:)`
-/// — one variant per app, since only media-linking apps (Luna, LunaDownloader)
+/// — one variant per app, since only Luna Reader
 /// have an answer. Kind-neutral shape (no media-module types), so it lives in
 /// the universal app shell; `SceneDelegate` switches on it without ever naming
 /// a media-kind symbol.

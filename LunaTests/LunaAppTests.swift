@@ -58,10 +58,10 @@ final class LunaAppTests: XCTestCase {
     // MARK: - displayName
 
     func testDisplayNames() {
-        XCTAssertEqual(LunaApp.luna.displayName, "Luna")
+        XCTAssertEqual(LunaApp.luna.displayName, "Luna Reader")
         XCTAssertEqual(LunaApp.reader.displayName, "Luna Reader")
-        XCTAssertEqual(LunaApp.downloader.displayName, "Luna Video")
-        XCTAssertEqual(LunaApp.priceTracker.displayName, "Luna Price Tracker")
+        XCTAssertEqual(LunaApp.downloader.displayName, "Luna Reader")
+        XCTAssertEqual(LunaApp.priceTracker.displayName, "Luna Reader")
         XCTAssertEqual(LunaApp.vault.displayName, "Luna Vault")
         XCTAssertEqual(LunaApp.writer.displayName, "Luna Writer")
     }

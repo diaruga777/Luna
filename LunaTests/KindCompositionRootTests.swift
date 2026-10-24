@@ -40,17 +40,8 @@ final class KindCompositionRootTests: XCTestCase {
     /// only its own kind and drops the rest (`SurfaceSupport`).
     private static let expected: [String: Set<String>] = [
         "Luna/KindWiring+Luna.swift":            ["article", "media", "product"],
-        "Luna/KindWiring+Reader.swift":          ["article"],
-        "Luna/KindWiring+Downloader.swift":      ["media"],
-        "Luna/KindWiring+PriceTracker.swift":    ["product"],
         "LunaShare/ShareEntry+Luna.swift":       ["article", "media", "product"],
-        "LunaShare/ShareEntry+Reader.swift":     ["article"],
-        "LunaShare/ShareEntry+Downloader.swift": ["media"],
-        "LunaShare/ShareEntry+PriceTracker.swift": ["product"],
         "LunaAction/ActionEntry+Luna.swift":     ["article", "media", "product"],
-        "LunaAction/ActionEntry+Reader.swift":   ["article"],
-        "LunaAction/ActionEntry+Downloader.swift": ["media"],
-        "LunaAction/ActionEntry+PriceTracker.swift": ["product"],
     ]
 
     /// Directories that hold composition roots. `LunaTests` is excluded: a test
@@ -294,9 +285,6 @@ final class KindCompositionRootTests: XCTestCase {
     /// (an extension has no deck).
     private static let presenterRoots: [String: Set<String>] = [
         "Luna/KindWiring+Luna.swift": ["article", "media", "product"],
-        "Luna/KindWiring+Reader.swift": ["article"],
-        "Luna/KindWiring+Downloader.swift": ["media"],
-        "Luna/KindWiring+PriceTracker.swift": ["product"],
     ]
 
     func testEachAppRootInstallsExactlyItsAppsCardPresenters() throws {

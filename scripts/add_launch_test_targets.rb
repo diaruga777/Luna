@@ -1,8 +1,7 @@
 #!/usr/bin/env ruby
 # Add the two cold-launch UI-test targets, cloned from LunaWriterUITests.
 #
-#   LunaLaunchTests        TEST_TARGET_NAME = Luna
-#   LunaReaderLaunchTests  TEST_TARGET_NAME = LunaReader
+#   LunaLaunchTests        TEST_TARGET_NAME = LunaReader
 #
 # Both compile the single file in LunaLaunchTests/. Each target needs its OWN
 # PBXBuildFile for that file reference: a target with an empty Sources phase
@@ -25,7 +24,7 @@ file_ref = group.files.find { |f| f.path == source_name }
 file_ref ||= group.new_reference(source_name)
 
 NEW_TARGETS = {
-  "LunaLaunchTests" => { host: "Luna", bundle_id: "$(PRODUCT_BUNDLE_PREFIX).launchtests" },
+  "LunaLaunchTests" => { host: "LunaReader", bundle_id: "$(PRODUCT_BUNDLE_PREFIX).launchtests" },
 }
 
 NEW_TARGETS.each do |name, spec|

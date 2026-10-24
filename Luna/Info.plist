@@ -8,8 +8,8 @@
 	<string>$(APP_GROUP_ID)</string>
 	<key>LunaCloudKitContainerID</key>
 	<string>iCloud.$(PRODUCT_BUNDLE_PREFIX)</string>
-	<key>LunaCoreAppStoreURL</key>
-	<string>$(LUNA_CORE_APP_STORE_URL)</string>
+	<key>LunaReaderAppStoreURL</key>
+	<string>$(LUNA_READER_APP_STORE_URL)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
@@ -36,7 +36,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
 			<key>UTTypeDescription</key>
-			<string>Luna file</string>
+			<string>Luna Reader file</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -71,7 +71,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_PREFIX).downloader.file</string>
 			<key>UTTypeDescription</key>
-			<string>Luna Video file</string>
+			<string>Luna Reader media file</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
@@ -88,7 +88,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_PREFIX).pricetracker.file</string>
 			<key>UTTypeDescription</key>
-			<string>Luna Price Tracker file</string>
+			<string>Luna Reader product file</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>$(PRODUCT_BUNDLE_PREFIX).file</string>
@@ -123,7 +123,7 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Luna file</string>
+			<string>Luna Reader file</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>$(LUNA_DOC_UTI)</string>

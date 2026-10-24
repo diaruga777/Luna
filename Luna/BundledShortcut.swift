@@ -12,28 +12,13 @@ import LunaStorage
 /// setup copy) and for the share-sheet install flow Settings' Shortcut & Safari
 /// screen invokes.
 ///
-/// Each app ships its OWN signed shortcut, named after the app — the four live
-/// side by side in `Luna/Resources/` and every app target excludes the other
-/// three through a synchronized-group membership exception, so exactly one is
-/// in any bundle. They have to be separate files: a shortcut's Save/Provide
-/// Context actions name a specific app, and a device with two Luna apps
-/// installed would otherwise have two identically named entries in the Action
-/// Button picker.
+/// Luna Reader ships one signed shortcut targeting the unchanged app identity.
 enum BundledShortcut {
 
     /// The shortcut's name as it appears in the Shortcuts app and the Action
     /// Button picker after import. Must match the bundled `.shortcut` file's
     /// name — iOS names an imported signed shortcut after the file it came from.
-    private static var resourceName: String {
-        switch LunaApp.current {
-        case .luna: return "Luna"
-        case .reader: return "Luna Reader"
-        case .downloader: return "Luna Video"
-        case .priceTracker: return "Luna Price Tracker"
-        case .vault: return "Luna Vault"
-        case .writer: return "Luna Writer"
-        }
-    }
+    private static let resourceName = "Luna Reader"
 
     /// Deliberately NOT an `L10n` lookup, and the one piece of user-visible text
     /// that isn't (`LunaApp.displayName` reads the same words out of the strings
@@ -78,13 +63,13 @@ enum BundledShortcut {
     }
 }
 
-/// The central Luna product page used by faceted apps' returning-user setup
+/// The Luna Reader product page used by returning-user setup
 /// conversation. Keep the URL build-configured: the placeholder namespace can
 /// be renamed, and App Store numeric IDs cannot be derived from a bundle ID.
-enum LunaCoreAppStoreLink {
+enum LunaReaderAppStoreLink {
     static var url: URL? {
         guard let value = Bundle.main.object(
-            forInfoDictionaryKey: "LunaCoreAppStoreURL") as? String,
+            forInfoDictionaryKey: "LunaReaderAppStoreURL") as? String,
               !value.isEmpty
         else { return nil }
         return URL(string: value)

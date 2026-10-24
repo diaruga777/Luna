@@ -5,28 +5,9 @@ resources="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
 manifest="${resources}/manifest.json"
 [ -f "$manifest" ] || exit 0
 
-case "${PRODUCT_BUNDLE_IDENTIFIER}" in
-  *.reader.safari)
-    app_name="${DISPLAY_NAME_PREFIX:-Luna} Reader"
-    app_icon="AppIconReader"
-    action_icon="ReaderActionExtIcon/ActionIconReaderDark.png"
-    ;;
-  *.downloader.safari)
-    app_name="${DISPLAY_NAME_PREFIX:-Luna} Video"
-    app_icon="AppIconVideo"
-    action_icon="VideoActionExtIcon/ActionIconVideoLight.png"
-    ;;
-  *.pricetracker.safari)
-    app_name="${DISPLAY_NAME_PREFIX:-Luna} Price Tracker"
-    app_icon="AppIconPriceTracker"
-    action_icon="PriceTrackerActionExtIcon/ActionIconPriceTrackerDark.png"
-    ;;
-  *)
-    app_name="${DISPLAY_NAME_PREFIX:-Luna}"
-    app_icon="AppIconLuna"
-    action_icon="LunaCoreActionExtIcon/ActionIconLunaDark(1).png"
-    ;;
-esac
+app_name="${DISPLAY_NAME_PREFIX:-Luna} Reader"
+app_icon="AppIconLuna"
+action_icon="ReaderActionExtIcon/ActionIconLunaDark(1).png"
 
 # `browser.i18n` reads ONLY `_locales/<locale>/messages.json`, and Xcode's
 # synchronized-group resource copy FLATTENS nested resource folders — the source

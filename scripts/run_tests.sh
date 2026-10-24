@@ -135,7 +135,7 @@ echo "log: $LOG"
 
 # ---------------------------------------------------------------------- run
 xcodebuild test \
-  -scheme Luna \
+  -scheme LunaReader \
   -destination "platform=iOS Simulator,id=$DEVICE" \
   -configuration Debug \
   -derivedDataPath "${LUNA_TEST_DD:-$REPO/.build-dd-tests}" \

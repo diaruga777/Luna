@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "F73C67777995F8F752A0056A"
-               BuildableName = "Luna.app"
-               BlueprintName = "Luna"
+               BuildableName = "LunaReader.app"
+               BlueprintName = "LunaReader"
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -54,8 +54,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F73C67777995F8F752A0056A"
-            BuildableName = "Luna.app"
-            BlueprintName = "Luna"
+            BuildableName = "LunaReader.app"
+            BlueprintName = "LunaReader"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -71,8 +71,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F73C67777995F8F752A0056A"
-            BuildableName = "Luna.app"
-            BlueprintName = "Luna"
+            BuildableName = "LunaReader.app"
+            BlueprintName = "LunaReader"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

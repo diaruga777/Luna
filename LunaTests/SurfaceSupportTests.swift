@@ -80,13 +80,13 @@ final class SurfaceSupportTests: XCTestCase {
     func testUnsupportedMessageNamesBothApps() {
         let message = SurfaceSupport.unsupportedMessage(owner: .downloader, current: .reader)
         XCTAssertTrue(message.contains("Luna Reader"), "must name the current app: \(message)")
-        XCTAssertTrue(message.contains("Luna Video"), "must name the owning app: \(message)")
+        XCTAssertTrue(message.contains("Luna Reader"), "must name the owning app: \(message)")
     }
 
     func testUnsupportedMessageDefaultsCurrentToRunningProcess() {
         // The unit-test host is `.luna`, so the default `current` param names it.
         let message = SurfaceSupport.unsupportedMessage(owner: .priceTracker)
         XCTAssertTrue(message.contains("Luna"))
-        XCTAssertTrue(message.contains("Luna Price Tracker"))
+        XCTAssertTrue(message.contains("Luna Reader"))
     }
 }

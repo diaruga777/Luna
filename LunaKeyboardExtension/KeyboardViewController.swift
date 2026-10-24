@@ -64,9 +64,8 @@ final class KeyboardViewController: UIInputViewController {
   }
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    let landscape = view.bounds.width > 600
-    surface.boardHeight =
-      traitCollection.userInterfaceIdiom == .pad ? (landscape ? 340 : 255) : (landscape ? 156 : 220)
+    surface.boardHeight = KeyboardSurface.recommendedBoardHeight(
+      forWidth: view.bounds.width, idiom: traitCollection.userInterfaceIdiom)
     height?.constant = surface.requiredHeight
   }
   override func viewWillDisappear(_ animated: Bool) {

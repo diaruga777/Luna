@@ -1,4 +1,5 @@
 import UIKit
+import LunaDesignSystem
 import LunaModels
 import LunaWriterModels
 import LunaWriterStorage
@@ -49,6 +50,15 @@ final class NoteEditorViewController: UIViewController, UITextViewDelegate {
         ]
         navigationItem.rightBarButtonItems?.last?.accessibilityLabel = L10n.string("WriterLibrary_polish_linkedDocuments")
         textViewDidChange(textView)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let inset = max(16, LunaLayout.contentHorizontalInset(forContainerWidth: textView.bounds.width))
+        let safe = view.safeAreaInsets
+        let horizontal = max(inset, max(safe.left, safe.right) + 16)
+        let padding = UIEdgeInsets(top: 20, left: horizontal, bottom: 20, right: horizontal)
+        if textView.textContainerInset != padding { textView.textContainerInset = padding }
     }
 
     override func viewDidAppear(_ animated: Bool) {

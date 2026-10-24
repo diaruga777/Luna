@@ -15,6 +15,7 @@ public final class VaultTransfersViewController: UITableViewController {
     deinit { task?.cancel() }
     public override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         title = "Transfers"
         tableView.accessibilityIdentifier = "vault.transfers.list"
         tableView.register(VaultPendingUploadCell.self, forCellReuseIdentifier: "upload")

@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 /// The same surface drives the extension and the containing app's tryout.
 /// Only the host adapter owns the text document proxy.
 public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
+  public static func recommendedBoardHeight(forWidth width: CGFloat, idiom: UIUserInterfaceIdiom) -> CGFloat {
+    if idiom == .pad { return width > 600 ? 340 : 255 }
+    return width > 600 ? 156 : 220
+  }
+
   public var before: () -> String = { "" }
   public var after: () -> String = { "" }
   public var hasSelection: () -> Bool = { false }
@@ -71,7 +76,13 @@ public final class KeyboardSurface: UIView, UIInputViewAudioFeedback {
   private var panel: KeyboardToolsPanel?
   private var searchClipboard = KeyboardSearchClipboard()
   private var status: UILabel?
-  public var boardHeight: CGFloat = 220 { didSet { setNeedsLayout() } }
+  public var boardHeight: CGFloat = 220 {
+    didSet {
+      guard oldValue != boardHeight else { return }
+      setNeedsLayout()
+      heightChanged?(requiredHeight)
+    }
+  }
   public var requiredHeight: CGFloat {
     boardHeight + (panel?.requiredHeight ?? 56)
   }

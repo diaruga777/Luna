@@ -24,6 +24,21 @@ final class KeyboardTests: XCTestCase {
     saves = nil
     try FileManager.default.removeItem(at: directory)
   }
+  @MainActor
+  func testResizingKeyboardUpdatesTheHostHeightOnce() {
+    let surface = KeyboardSurface()
+    var heights: [CGFloat] = []
+    surface.heightChanged = { heights.append($0) }
+    surface.boardHeight = KeyboardSurface.recommendedBoardHeight(forWidth: 1024, idiom: .pad)
+    XCTAssertEqual(heights.last, surface.requiredHeight)
+    let count = heights.count
+    surface.boardHeight = KeyboardSurface.recommendedBoardHeight(forWidth: 1024, idiom: .pad)
+    XCTAssertEqual(heights.count, count, "A layout pass at the same size must not request another host resize")
+    surface.boardHeight = KeyboardSurface.recommendedBoardHeight(forWidth: 400, idiom: .pad)
+    XCTAssertLessThan(heights.last!, heights.first!)
+    XCTAssertEqual(heights.last, surface.requiredHeight)
+  }
+
   func testAdjacentSubstitutionsRankFirst() {
     XCTAssertLessThan(
       KeyboardRanking.distance("gell", "hell"), KeyboardRanking.distance("gell", "sell"))

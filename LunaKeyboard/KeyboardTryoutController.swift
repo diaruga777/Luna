@@ -33,7 +33,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
     NSLayoutConstraint.activate([
       surface.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       surface.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      surface.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -75),
+      surface.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
     ])
     surface.boardHeight = 220
     let height = surface.heightAnchor.constraint(equalToConstant: surface.requiredHeight)
@@ -88,6 +88,11 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     editor.becomeFirstResponder()
+  }
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    surface.boardHeight = KeyboardSurface.recommendedBoardHeight(
+      forWidth: surface.bounds.width, idiom: traitCollection.userInterfaceIdiom)
   }
   func textViewDidChange(_ textView: UITextView) { surface.refresh() }
   func textViewDidChangeSelection(_ textView: UITextView) { surface.refresh() }

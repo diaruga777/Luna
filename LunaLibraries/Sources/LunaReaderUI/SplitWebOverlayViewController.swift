@@ -858,7 +858,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     fileprivate func forwardPersistentChromeTap(at windowPoint: CGPoint) {
-        let width = UIScreen.main.bounds.width
+        let width = view.window?.bounds.width ?? view.bounds.width
         if windowPoint.x < 78 {
             chromeBack()
             return

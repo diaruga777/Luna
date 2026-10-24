@@ -661,6 +661,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         if let inlineColumn { closeInlineColumn(inlineColumn) }
     }
 
+    override func deckDidApplyReload() {
+        // The utility card is onboarding, not a collection preview. Give its
+        // controls a centered, readable card until there are saves to browse.
+        carousel.usesAdaptiveReaderGrid = !slots.isEmpty
+    }
+
     override func deckWillReload() {
         reconcileFooterContentFade()
     }

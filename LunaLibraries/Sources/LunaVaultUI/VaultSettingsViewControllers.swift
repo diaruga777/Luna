@@ -749,7 +749,7 @@ public final class VaultMacPairingViewController: UIViewController, SFSafariView
     @objc private func shareEnrollment() {
         guard let enrollmentData else { return }
         let controller = UIActivityViewController(activityItems: [enrollmentData], applicationActivities: nil)
-        if let popover = controller.popoverPresentationController { popover.sourceView = outputButtons }
+        if let popover = controller.popoverPresentationController { popover.sourceView = outputButtons; popover.sourceRect = outputButtons.bounds }
         present(controller, animated: true)
     }
 

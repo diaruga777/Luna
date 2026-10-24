@@ -12,6 +12,23 @@ import LunaWriterStorage
 final class DocumentNotesPanelTests: XCTestCase {
 
     @MainActor
+    func testNoteEditorKeepsReadableLinesWhenWindowResizes() throws {
+        let stack = try makeWriterStack()
+        let note = WriterNote(text: "A note that should stay readable on iPad.")
+        let editor = NoteEditorViewController(note: note, store: stack.library, library: stack.library, onOpen: { _ in })
+        editor.loadViewIfNeeded()
+        editor.view.frame = CGRect(x: 0, y: 0, width: 1366, height: 1024)
+        editor.view.layoutIfNeeded()
+        let text = try XCTUnwrap(editor.view.subviews.compactMap { $0 as? UITextView }.first)
+        XCTAssertLessThanOrEqual(text.bounds.width - text.textContainerInset.left - text.textContainerInset.right, 680)
+        editor.view.frame.size.width = 400
+        editor.view.setNeedsLayout()
+        editor.view.layoutIfNeeded()
+        XCTAssertEqual(text.textContainerInset.left, 16)
+        XCTAssertGreaterThan(text.bounds.width - text.textContainerInset.left - text.textContainerInset.right, 300)
+    }
+
+    @MainActor
     func testNotesOrderByRecencyWithNoRelevanceScores() throws {
         let stack = try makeWriterStack()
         let group = try stack.library.createGroup(name: "G", icon: "folder", parent: nil)

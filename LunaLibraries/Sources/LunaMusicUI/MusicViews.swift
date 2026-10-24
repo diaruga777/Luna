@@ -1,4 +1,5 @@
 import UIKit
+import LunaDesignSystem
 import MediaPlayer
 import AVKit
 import LunaMusicCore
@@ -167,9 +168,16 @@ public class MusicScreenViewController: UIViewController {
         NSLayoutConstraint.activate([
             tableTop, table.leadingAnchor.constraint(equalTo: view.leadingAnchor), table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            playerBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16), playerBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            playerBar.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            playerBar.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            playerBar.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            playerBar.widthAnchor.constraint(lessThanOrEqualToConstant: LunaLayout.readableWidth),
             playerBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8), playerBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
         ])
+        let preferredPlayerWidth = playerBar.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, constant: -32)
+        preferredPlayerWidth.priority = .defaultHigh
+        preferredPlayerWidth.isActive = true
+        table.cellLayoutMarginsFollowReadableWidth = true
         table.contentInset.bottom = 72
         table.verticalScrollIndicatorInsets.bottom = 72
         mini.onOpen = { [weak self] in self?.presentPlayer() }

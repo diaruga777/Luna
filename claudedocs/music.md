@@ -906,3 +906,5 @@ Follow-up: replaced expanding episode titles with compact tickers after user
 review. All 11 focused hosted tests passed, comparing short/long title row
 heights, verifying overflow animation and retaining full accessible titles at
 both widths and text sizes. Compact row screenshots were inspected.
+
+iPad window cleanup (2026-10-24): library row content follows UIKit’s readable width and the floating player bar is centered with the shared 680-point cap. The landscape Music player keeps AirPlay centered in the playback-controls column. The LunaMusic Simulator build passes.

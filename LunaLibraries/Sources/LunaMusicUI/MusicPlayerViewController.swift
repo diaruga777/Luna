@@ -217,7 +217,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         volume.frame = CGRect(x: left + 24, y: bottom - 100, width: width - 56, height: 32)
         volumeLow.frame = CGRect(x: left, y: bottom - 96, width: 12, height: 18)
         volumeHigh.frame = CGRect(x: left + width - 22, y: bottom - 96, width: 22, height: 18)
-        route.frame = CGRect(x: view.bounds.midX - 24, y: bottom - 66, width: 48, height: 44)
+        route.frame = CGRect(x: left + width / 2 - 24, y: bottom - 66, width: 48, height: 44)
         queueButton.frame = CGRect(x: left + width * 0.84 - 22, y: bottom - 66, width: 44, height: 44)
         queueSwitch.button.frame = CGRect(x: left - 8, y: bottom - 66, width: width * 0.38, height: 44)
         outputLabel.frame = CGRect(x: left, y: bottom - 22, width: width, height: 24)

@@ -1,4 +1,4 @@
-# Luna — Save Anything and companion apps
+# Luna Reader and companion apps
 
 ## Device automation rule
 
@@ -8,11 +8,13 @@
 
 Luna is a family of native apps (UIKit, deployment target iOS 26).
 
-- **Luna: Save Anything** (`com.hsanabria.luna`, Xcode target `Luna`) — the
+- **Luna Reader** (`com.hsanabria.luna`, Xcode target `LunaReader`) — the
   single link app, combining articles/documents, scrolling and RSVP readers,
   Send to Kindle, social/video/audio saves, friend sharing, and product price
-  tracking. The former Reader, Downloader and Price Tracker app targets and
-  their extensions are retired. The shared App Group and `saves.sqlite` stay
+  tracking. This is the former Luna Core app, now called Luna Reader in code,
+  on the phone, and in chats. Its App Store listing remains **Luna: Save Anything**.
+  The former standalone Reader, Shopping/Price Tracker, and Downloader apps
+  and their extensions are retired. The shared App Group and `saves.sqlite` stay
   unchanged. Legacy surface identifiers and file types remain for compatibility.
 - **Luna Keyboard** (`com.hsanabria.luna.keyboard`, target `LunaKeyboard`) —
   standalone keyboard, shortcuts, swipe typing, emoji and recent Luna link/video
@@ -47,12 +49,12 @@ identifiers. Entitlements reference `$(APP_GROUP_ID)` / `$(ICLOUD_CONTAINER_ID)`
 
 **Shared store.** Saves from Luna, its share/action/Safari extensions and App
 Intents use the shared ingest pipeline and `saves.sqlite` in the App Group.
-Core Luna accepts every content kind. The store uses SQLite, typed columns,
+Luna Reader accepts every content kind. The store uses SQLite, typed columns,
 child tables under `ON DELETE CASCADE`, trigger-queued file reaping and WAL.
 See `claudedocs/saves.md`. Keep feature docs in `claudedocs/` current.
 
-**Targets.** `Luna` links `LunaKit` and embeds its own Share, Action, Safari and
-Live Activity extensions. `LunaTests` hosts on core Luna. Vault, Music,
+**Targets.** `LunaReader` links `LunaKit` and embeds its own Share, Action, Safari and
+Live Activity extensions. `LunaTests` hosts on Luna Reader. Vault, Music,
 Keyboard and Writer remain independent. Dev uses Xcode 27 beta; archive/upload
 uses stable Xcode 26.2. Preserve the existing handmade Action extension icons.
 
@@ -122,7 +124,7 @@ truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared a
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
 (the card deck), composition wiring (AppReaderProviders/
 OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Intents/*` — business
-logic is in the `LunaIntents` library) — and is used by the core Luna app. The Share/Action extensions
+logic is in the `LunaIntents` library) — and is used by the Luna Reader app. The Share/Action extensions
 link only `LunaShareSurface` (+ transitive), `LunaSafari` links nothing (it reads the App
 Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate (e.g.
@@ -133,12 +135,12 @@ closures/protocols installed at launch in AppDelegate (e.g.
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 
 The full `LunaTests` suite runs from the command line on an **iOS 26.x simulator**
-(deployment target is iOS 26) via the **`Luna`** scheme (core Luna is the test host). Recipe:
+(deployment target is iOS 26) via the **`LunaReader`** scheme (Luna Reader is the test host). Recipe:
 
 ```sh
 DD=<a derivedDataPath>
 SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
-xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
+xcodebuild test -scheme LunaReader -destination "platform=iOS Simulator,id=$SIM" \
   -configuration Debug -derivedDataPath "$DD"
 ```
 
@@ -166,7 +168,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   form does NOT reach the runner's environment); and the two extraction tests were
   aligned to the 1200 threshold. If snapshots fail again on a *different* device,
   re-record there rather than treating it as a regression.
-- For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
+- For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme LunaReader
   -destination 'generic/platform=iOS Simulator'`.
 
 # Swift Project — Blitz AI Agent Guide

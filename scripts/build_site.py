@@ -52,32 +52,16 @@ FALLBACK_SUFFIX = "Luna"
 
 # slug, L10n suffix, 1024px icon master. The slug is the URL: /setup/<slug>.
 APPS = [
-    ("luna", "Core", "AppIconLuna.appiconset/AppIconLuna1024.png"),
-    ("reader", "Reader", "AppIconReader.appiconset/AppIconReader-1024.png"),
-    (
-        "video",
-        "Downloader",
-        "AppIconVideo.appiconset/AppIconVideo-1024.png",
-    ),
-    (
-        "price-tracker",
-        "PriceTracker",
-        "AppIconPriceTracker.appiconset/AppIconPriceTracker-1024.png",
-    ),
+    ("reader", "Core", "AppIconLuna.appiconset/AppIconLuna1024.png"),
 ]
 
 # Alternative spellings that should land on the canonical slug rather than a 404.
 ALIASES = {
-    "luna-reader": "reader",
-    "lunareader": "reader",
-    "downloader": "video",
-    "luna-downloader": "video",
-    "lunadownloader": "video",
-    "luna-video": "video",
-    "lunavideo": "video",
-    "luna-price-tracker": "price-tracker",
-    "pricetracker": "price-tracker",
-    "price": "price-tracker",
+    slug: "reader" for slug in [
+        "luna", "luna-reader", "lunareader", "video", "downloader",
+        "luna-downloader", "lunadownloader", "luna-video", "lunavideo",
+        "price-tracker", "luna-price-tracker", "pricetracker", "price",
+    ]
 }
 
 # What the icon is downscaled to. One file serves both the 60pt header icon and
@@ -670,7 +654,7 @@ def build(out: Path) -> None:
         page_dir = out / "setup" / slug
         page_dir.mkdir(parents=True)
         (page_dir / "index.html").write_text(
-            render_page(slug, copy, icon_href, css_href), encoding="utf-8"
+            "\n".join(line.rstrip() for line in render_page(slug, copy, icon_href, css_href).split("\n")), encoding="utf-8"
         )
         entries.append((slug, copy.string("LunaApp_displayName"), icon_href))
 

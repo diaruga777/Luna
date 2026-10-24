@@ -9,7 +9,7 @@ in the standalone [Orbit](https://github.com/diaruga777/Orbit) product.
 
 | App | Xcode scheme | What it does |
 | --- | --- | --- |
-| Luna: Save Anything | `Luna` | Saves articles, documents, social/video/audio links and products; includes readers, Kindle export, friend sharing and price tracking. Media and transcript plugins are installed separately. |
+| Luna Reader | `LunaReader` | Saves articles, documents, social/video/audio links and products; includes readers, Kindle export, friend sharing and price tracking. Media and transcript plugins are installed separately. |
 | Luna Keyboard | `LunaKeyboard` | A standalone keyboard with shortcuts, swipe typing, emoji, and Luna link/video suggestions. |
 | Luna Music | `LunaMusic` | A MusicKit and MediaPlayer library player with search, playlists, Siri, widgets, and a queue Live Activity. |
 | Luna Vault | `LunaVault` | An encrypted, search-first file library for on-device, iCloud, or a user-owned Mac storage. |
@@ -47,15 +47,17 @@ Choose an installed iOS Simulator device name from the last command, then
 build and launch an app (replace the scheme and device as needed):
 
 ```sh
-xcodebuild build -project Luna.xcodeproj -scheme Luna \
+xcodebuild build -project Luna.xcodeproj -scheme LunaReader \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   -derivedDataPath .build-dd
-open .build-dd/Build/Products/Debug-iphonesimulator/Luna.app
+open .build-dd/Build/Products/Debug-iphonesimulator/LunaReader.app
 ```
 
-Other runnable schemes are listed above. `Luna` is the Reader test host;
-`LunaDownloader`, `LunaPriceTracker`, and the other app schemes are build/run
-schemes. To install all six apps handled by the helper on a booted simulator,
+The App Store listing remains **Luna: Save Anything**, and the bundle ID remains
+`com.hsanabria.luna`. The former standalone Reader, Shopping/Price Tracker and
+Downloader apps are retired. `LunaReader` is the unit-test host.
+
+To install all five apps handled by the helper on a booted simulator,
 run `scripts/install_all_luna_apps.sh`; pass a simulator name or UDID to select
 one. A physical device needs Developer Mode, a trusted connection, and a team
 with matching registered identifiers and capabilities.
@@ -72,7 +74,7 @@ For an iOS simulator build, Xcode uses local simulator signing. For a physical
 device, pass your own Team ID for that build, for example:
 
 ```sh
-xcodebuild build -project Luna.xcodeproj -scheme Luna \
+xcodebuild build -project Luna.xcodeproj -scheme LunaReader \
   -destination 'platform=iOS,id=YOUR_DEVICE_UDID' \
   -allowProvisioningUpdates DEVELOPMENT_TEAM=YOUR_TEAM_ID
 ```

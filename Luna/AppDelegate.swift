@@ -14,6 +14,7 @@ import LunaStorage
 import LunaWeekly
 import BackgroundTasks
 import LunaPremium
+import LunaURLClassification
 import UIKit
 import UserNotifications
 import os
@@ -475,6 +476,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        if PremiumHappyHourReminders.identifiers.contains(response.notification.request.identifier) {
+            guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+            let url = URL(string: "\(LunaDeepLink.ownScheme)://premium")!
+            await UIApplication.shared.open(url)
+            return
+        }
         let info = response.notification.request.content.userInfo
         guard let link = info[Self.pluginDeepLinkUserInfoKey] as? String,
               let url = URL(string: link)

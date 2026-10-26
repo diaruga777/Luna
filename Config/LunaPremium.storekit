@@ -16,6 +16,21 @@
       "productID": "com.hsanabria.luna.premium",
       "referenceName": "Luna Premium",
       "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.49",
+      "familyShareable": false,
+      "internalID": "6827067768",
+      "localizations": [
+        {
+          "description": "Premium features across Luna apps.",
+          "displayName": "Luna Premium",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.hsanabria.luna.premium.happyhour",
+      "referenceName": "Luna Premium Happy Hour",
+      "type": "NonConsumable"
     }
   ],
   "settings": {

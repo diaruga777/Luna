@@ -73,11 +73,13 @@ final class VaultVideoMetadataTests: XCTestCase {
 final class VaultVideoPlayerTests: XCTestCase {
     private var window: UIWindow?
     private var temporaryRoot: URL?
+    private weak var temporaryStore: VaultFolderStore?
     override func tearDown() async throws {
         window?.rootViewController = nil; window?.isHidden = true; window = nil
-        // Let cancelled AVFoundation/KVO tasks release their metadata stores.
-        for _ in 0..<10 { await Task.yield() }
-        if let temporaryRoot { try? FileManager.default.removeItem(at: temporaryRoot) }
+        // UIKit/AVFoundation can retain dismissed players beyond teardown.
+        // Never unlink a live SQLite database; remaining tmp data is OS-owned.
+        for _ in 0..<10 where temporaryStore != nil { try await Task.sleep(for: .milliseconds(50)) }
+        if temporaryStore == nil, let temporaryRoot { try? FileManager.default.removeItem(at: temporaryRoot) }
         temporaryRoot = nil
         try await super.tearDown()
     }
@@ -92,6 +94,7 @@ final class VaultVideoPlayerTests: XCTestCase {
         }
     }
     private func host(_ controller: UIViewController) throws {
+        window?.rootViewController = nil; window?.isHidden = true
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene); self.window = window
         window.rootViewController = controller; window.makeKeyAndVisible(); controller.loadViewIfNeeded()
@@ -124,6 +127,7 @@ final class VaultVideoPlayerTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         temporaryRoot = root
         let store = try VaultFolderStore(rootURL: root), history = VaultVideoHistory(store: store)
+        temporaryStore = store
         let url = try fixture(), bytes = try Data(contentsOf: url)
         let firstName = "TV/Show S01E01.mp4", secondName = "TV/Show S01E02.mp4"
         try history.save(VaultVideoProgress(seconds: 450, duration: 600), for: firstName)

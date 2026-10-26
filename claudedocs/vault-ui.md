@@ -155,3 +155,42 @@ errors with retry. First-run setup and the Mac’s pairing explanation describe
 the read-only Mac scope and the writable Vault folder.
 
 iPad window cleanup (2026-10-24): Browse, Mac Files and Transfers use UIKit’s readable row margins as windows resize. Pairing reply sharing anchors to its output controls. The LunaVault Simulator build passes; the legacy device/iCloud setup UI is unchanged.
+
+## Video playback
+
+The connected app routes video files from Vault Folder, Downloads, search, and
+Mac Files into `VaultVideoPlayerViewController`. Other files retain Quick Look.
+`VaultConnectedRuntime.videoSource` reuses an existing current download or opens
+a seekable remote source. `VaultVideoResourceLoader` serves AVFoundation ranges
+in one-MiB pieces with at most two active requests. The Vault-folder source
+verifies complete BEP blocks, with a 32-MiB memory LRU per source; Mac Files uses
+version-checked read RPCs. Neither streaming path writes video bytes to disk or
+installs a full download. MP4 tail metadata and long-file offsets are supported.
+
+`VaultVideoHistory` stores seconds, duration, and completion in the iPhone's
+`vault.sqlite` settings, keyed by a hash of peer/folder/path. Streamed and locally
+cached playback share an identity. Save every five seconds, on pause, on close,
+on background, and before switching episodes. Resume waits for ready-to-play and
+seeks before starting. Completed videos replay from the beginning. No source
+file is modified and watch history is not announced to the Mac.
+
+Up Next matches video filenames in the same folder: season/episode notation,
+`1x02`, episode markers, or plain prefix/suffix numbers with a shared show title.
+It chooses the closest later episode, then the first episode of the next season.
+Year/resolution/codec numbers do not count as episodes. Mac folder enumeration
+includes every page. The bottom-right thumbnail card appears only while paused
+in the final 180 seconds, or regardless of pause in the final 60 seconds. Tapping
+opens that episode in the same player; it never automatically starts another
+video. Thumbnails are generated on demand through another bounded stream.
+
+The native AVKit player supplies scrubbing, embedded subtitle/audio selection,
+and speed controls. Video Options adds Play from Start and 15-second skips;
+finished playback offers Play Again. Playback pauses and saves on background.
+Remote AirPlay handoff and PiP are not enabled: the custom authenticated source
+is owned by the foreground app. Formats/codecs must be supported by AVFoundation;
+there is no transcoding or third-party decoder fallback.
+
+`VaultVideoStreamingTests` exercises verified ranged reads and cancellation,
+64-bit seeks, durable history, episode ordering and timing, real AVFoundation
+loading/seeking of a ten-minute MP4 with tail metadata, local resume, streamed
+next-episode selection, and the absence of disk-cache installs.

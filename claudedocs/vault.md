@@ -19,7 +19,10 @@ unauthenticated stream.
   rest of the Mac on demand, read only, subject to the companion’s macOS permissions.
 - Browse opens with Mac Files, Vault Folder, Downloads, a separate Transfers
   screen, and the Vault root’s files/folders. Search covers only Vault contents.
-- External Mac files download to temporary previews. Quick Look’s Share action
+- Videos stream from Vault Folder and Mac Files without installing a full phone
+  copy; existing Downloads play locally. Playback history stays on iPhone. See
+  [Video playback](vault-ui.md#video-playback) for Up Next and player behavior.
+- Other external Mac files download to temporary previews. Quick Look’s Share action
   can save a copy; closing the preview removes the temporary download. They never
   enter the mirror, offline cache, content search, or sync announcements.
 - The active iOS UI imports files and folders, previews files, and confirms deletion

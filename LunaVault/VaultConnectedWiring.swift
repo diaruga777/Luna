@@ -214,6 +214,18 @@ import LunaVaultUI
         work = Task {
             var prepared: URL?
             do {
+                if VaultVideoEpisodes.isVideo(name) {
+                    let source = try await runtime.videoSource(named: name, macFile: macFile)
+                    try Task.checkCancellation()
+                    await hideProgress()
+                    try Task.checkCancellation()
+                    let player = VaultVideoPlayerViewController(source: source, history: VaultVideoHistory(store: runtime.store),
+                        sourceProvider: { [runtime] in try await runtime.videoSource(named: $0, macFile: macFile) },
+                        siblingsProvider: { [runtime] in try await runtime.videoSiblings(named: name, macFile: macFile) })
+                    visiblePresenter?.present(player, animated: true)
+                    work = nil
+                    return
+                }
                 if macFile {
                     let target = try await runtime.macFileURL(path: name)
                     prepared = target

@@ -128,7 +128,10 @@ Notes belong to sheets through `note_documents`; one note may sit on several.
 `SQLiteNoteIndex` ranks with Pen's fusion (0.75 cosine over `NLEmbedding`
 sentence vectors + 0.25 bm25 through a logistic), and prefix-matches the last
 token for the palette. `RelatedNotesRanker` watches the 400 characters before
-the caret and feeds the related-note strip.
+the caret and feeds the related-note strip. Suggestions now require raw cosine
+≥ 0.40; unrelated nearest neighbours no longer fill the strip. Suggestions rank
+by raw cosine so strong matches do not all tie at the old rescaling ceiling.
+Only embeddings with the current model version and dimensions are compared.
 
 The palette (`CommandPaletteController` + `CommandPaletteOverlayView`, in
 `LunaWriterEditor/CommandPalette/`) is one inline surface for notes and
@@ -209,10 +212,29 @@ updates those numbers with native list animations (respecting Reduce Motion).
 Leaving a project restores the ordinary list's previous sort. The existing
 search, sort, drag, swipe, move, and multi-select actions remain available.
 
-`AddWriterNoteIntent` files a note the way Pen's server does: an explicit
-"new document:" prefix creates a sheet; otherwise every sheet scoring ≥ 0.45
-gets the note; otherwise a new sheet titled from the first six words. Long
-captures split into ≤ 10 sub-notes first (`NoteCaptureSplitter`).
+`AddWriterNoteIntent` honors an explicit "new document:" prefix; otherwise
+`NoteRouter` uses a separate, conservative semantic admission policy:
+
+- Compare the capture against every compatible document embedding, independent
+  of FTS word overlap, so synonyms and paraphrases remain candidates.
+- Require raw cosine ≥ 0.42 for the best match. Hybrid search scores are only
+  for ordering explicit search results and never authorize attachments.
+- Attach to at most two sheets. A second requires cosine ≥ 0.50 and must be
+  within 0.04 of the best match; weak alternatives are omitted.
+- With no qualifying match, no available embedding, or fewer than three tokens,
+  create a sheet titled from the first six words. Long captures still split
+  into ≤ 10 sub-notes first (`NoteCaptureSplitter`).
+
+The cutoffs were checked against revision-1 English sentence vectors: unrelated
+examples from the reported happy-hour/addiction/welcome/emergence topics were
+around 0.16–0.33, while sale and offline-podcast paraphrases were 0.48 and 0.58.
+They are conservative heuristics, not probabilities.
+
+After startup, `refreshAutomaticNoteLinks()` rechecks existing `.routed` links
+on a utility queue and removes those below 0.42. It uses only current-model,
+compatible, nonzero cached vectors; missing or incompatible embeddings leave
+links alone. `.manual`, `.created`, `.mention`, `.voice`, anchored links, notes,
+and documents are preserved. Changes notify the notes list after the transaction.
 
 ## Authorship
 

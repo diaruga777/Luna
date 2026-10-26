@@ -41,4 +41,12 @@ final class PremiumAccessTests: XCTestCase {
         XCTAssertTrue(state.hasAccess)
         XCTAssertFalse(state.isPaid)
     }
+    func testDiscountKeepsCanonicalEntitlementForOlderCompanionApps() {
+        let state = PremiumAccessState(defaults: defaults)
+        state.recordVerifiedPurchase(transactionID: 789, productID: PremiumAccess.happyHourProductID)
+        let record = defaults.dictionary(forKey: "luna.premium.verifiedPurchase")
+        XCTAssertEqual(record?["productID"] as? String, PremiumAccess.productID)
+        XCTAssertEqual(record?["purchasedProductID"] as? String, PremiumAccess.happyHourProductID)
+        XCTAssertTrue(PremiumAccessState(defaults: defaults).isPaid)
+    }
 }

@@ -41,6 +41,9 @@ import LunaWriterVoice
         stack.reconciler.openDocuments = openSessions
         stack.watcher.start()
         storage = stack
+        DispatchQueue.global(qos: .utility).async {
+            try? stack.refreshAutomaticNoteLinks()
+        }
         return stack
     }
 

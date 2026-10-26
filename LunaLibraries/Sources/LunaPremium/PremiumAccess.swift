@@ -12,14 +12,20 @@ public final class PremiumAccessState {
     public private(set) var freeForThisLaunch = false
 
     public init(defaults: UserDefaults) { self.defaults = defaults }
-    public var isPaid: Bool { defaults.dictionary(forKey: paidKey)?["productID"] as? String == PremiumAccess.productID }
+    public var isPaid: Bool {
+        guard let id = defaults.dictionary(forKey: paidKey)?["productID"] as? String else { return false }
+        return PremiumAccess.productIDs.contains(id)
+    }
     public var hasAccess: Bool { isPaid || freeForThisLaunch }
     public func continueForFree() { freeForThisLaunch = true }
 
     // Only StoreKit's verified transaction path writes durable access.
-    func recordVerifiedPurchase(transactionID: UInt64?) {
+    func recordVerifiedPurchase(transactionID: UInt64?, productID: String = PremiumAccess.productID) {
         if let transactionID {
-            defaults.set(["productID": PremiumAccess.productID, "transactionID": String(transactionID)], forKey: paidKey)
+            guard PremiumAccess.productIDs.contains(productID) else { return }
+            // Preserve the canonical entitlement ID read by older companion apps.
+            defaults.set(["productID": PremiumAccess.productID, "purchasedProductID": productID,
+                          "transactionID": String(transactionID)], forKey: paidKey)
         } else { defaults.removeObject(forKey: paidKey) }
     }
 }
@@ -29,9 +35,25 @@ public final class PremiumAccessState {
 @MainActor
 public final class PremiumAccess {
     public static let productID = AppConfig.productBundlePrefix + ".premium"
+    public static let happyHourProductID = productID + ".happyhour"
+    public static let productIDs: Set<String> = [productID, happyHourProductID]
     public static let shared = PremiumAccess()
     public let state: PremiumAccessState
     public private(set) var product: Product?
+    public private(set) var happyHourProduct: Product?
+    private let now: () -> Date
+
+    public var isHappyHour: Bool { PremiumHappyHour.isActive(at: now()) }
+    public var hasHappyHourPrice: Bool {
+        guard let product, let happyHourProduct else { return false }
+        return PremiumHappyHour.isEligiblePrice(
+            regular: product.price, discounted: happyHourProduct.price,
+            regularCurrency: product.priceFormatStyle.currencyCode,
+            discountedCurrency: happyHourProduct.priceFormatStyle.currencyCode)
+    }
+    public var purchaseProduct: Product? {
+        isHappyHour ? (hasHappyHourPrice ? happyHourProduct : nil) : product
+    }
     private var listener: Task<Void, Never>?
     private var initialRefresh: Task<Void, Never>?
     private var foregroundObserver: NSObjectProtocol?
@@ -41,7 +63,10 @@ public final class PremiumAccess {
         self.init(state: PremiumAccessState(defaults: UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard))
     }
 
-    init(state: PremiumAccessState) { self.state = state }
+    init(state: PremiumAccessState, now: @escaping () -> Date = Date.init) {
+        self.state = state
+        self.now = now
+    }
 
     deinit {
         listener?.cancel()
@@ -53,13 +78,10 @@ public final class PremiumAccess {
         guard listener == nil, ownsPurchase else { return }
         listener = Task { [weak self] in
             for await result in Transaction.updates {
-                guard case .verified(let transaction) = result,
-                      transaction.productID == Self.productID else { continue }
-                if transaction.revocationDate != nil {
-                    self?.state.recordVerifiedPurchase(transactionID: nil)
-                } else {
-                    self?.state.recordVerifiedPurchase(transactionID: transaction.id)
-                }
+                guard let self, case .verified(let transaction) = result,
+                      Self.productIDs.contains(transaction.productID) else { continue }
+                // Reconcile both SKUs: refunding one must not revoke the other.
+                await self.refreshEntitlement()
                 await transaction.finish()
             }
         }
@@ -75,41 +97,57 @@ public final class PremiumAccess {
     public func prepare() async {
         start()
         await initialRefresh?.value
-        if product == nil { product = try? await Product.products(for: [Self.productID]).first }
+        if product == nil || happyHourProduct == nil { await reloadProducts() }
+    }
+
+    public func reloadProducts() async {
+        guard ownsPurchase else { return }
+        let products = (try? await Product.products(for: Array(Self.productIDs))) ?? []
+        product = products.first { $0.id == Self.productID }
+        happyHourProduct = products.first { $0.id == Self.happyHourProductID }
     }
 
     func refreshEntitlement() async {
         guard ownsPurchase else { return }
-        var transactionID: UInt64?
+        var entitlement: Transaction?
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
-                  transaction.productID == Self.productID,
+                  Self.productIDs.contains(transaction.productID),
                   transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
-            transactionID = transaction.id
+            entitlement = transaction
         }
-        state.recordVerifiedPurchase(transactionID: transactionID)
+        state.recordVerifiedPurchase(transactionID: entitlement?.id, productID: entitlement?.productID ?? Self.productID)
+        if state.isPaid { PremiumHappyHourReminders.shared.cancel() }
     }
 
     public enum PurchaseError: LocalizedError {
-        case unavailable, unverified, pending
+        case unavailable, unverified, pending, offerChanged, alreadyOwned
         public var errorDescription: String? {
             switch self {
             case .unavailable: return L10n.string("Premium_purchaseUnavailable")
             case .unverified: return L10n.string("Premium_unverified")
             case .pending: return L10n.string("Premium_pending")
+            case .offerChanged: return L10n.string("Premium_offerChanged")
+            case .alreadyOwned: return L10n.string("Premium_alreadyOwned")
             }
         }
     }
 
     /// False means the user cancelled Apple's sheet; it never grants access.
-    public func purchase() async throws -> Bool {
+    public func purchase(expectedProductID: String? = nil) async throws -> Bool {
         await prepare()
-        guard ownsPurchase, let product else { throw PurchaseError.unavailable }
+        guard ownsPurchase else { throw PurchaseError.unavailable }
+        await refreshEntitlement()
+        guard !state.isPaid else { throw PurchaseError.alreadyOwned }
+        // Recheck after every suspension, immediately before opening Apple's sheet.
+        guard let product = purchaseProduct else { throw PurchaseError.unavailable }
+        guard expectedProductID == nil || expectedProductID == product.id else { throw PurchaseError.offerChanged }
         switch try await product.purchase() {
         case .success(let result):
             guard case .verified(let transaction) = result, transaction.revocationDate == nil,
-                  transaction.productID == Self.productID else { throw PurchaseError.unverified }
-            state.recordVerifiedPurchase(transactionID: transaction.id)
+                  transaction.productID == product.id else { throw PurchaseError.unverified }
+            state.recordVerifiedPurchase(transactionID: transaction.id, productID: transaction.productID)
+            PremiumHappyHourReminders.shared.cancel()
             await transaction.finish()
             return true
         case .pending: throw PurchaseError.pending

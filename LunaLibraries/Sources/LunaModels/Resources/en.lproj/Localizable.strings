@@ -1645,3 +1645,20 @@
 "PluginBundles_exportDescription_Luna" = "Select plugins to share as a .lunabundle file. Settings, passwords and permissions are not included.";
 "PluginBundles_exportFailed_Luna" = "Export failed";
 "Premium_unlockPrice_Luna" = "Unlock Premium · %@";
+
+"Premium_happyHourTag_Luna" = "Happy hour · 25% off or more";
+"Premium_happyHourActive_Luna" = "Happy hour · on now";
+"Premium_happyHourSchedule_Luna" = "Save at least 25% on Saturdays and Sundays, 2–3 pm your time.";
+"Premium_happyHourPrices_Luna" = "%@ instead of %@ · until 3 pm";
+"Premium_remindMe_Luna" = "Remind me at 2 pm";
+"Premium_stopReminders_Luna" = "Turn off happy hour reminders";
+"Premium_remindersEnabled_Luna" = "You’ll get a reminder at 2 pm every Saturday and Sunday.";
+"Premium_happyHourNotificationTitle_Luna" = "It’s happy hour";
+"Premium_happyHourNotificationBody_Luna" = "Open Luna for the happy hour price on Premium until 3 pm.";
+"Premium_notificationsOff_Luna" = "Notifications are off";
+"Premium_notificationsSettings_Luna" = "Allow notifications in Settings to get happy hour reminders.";
+"Premium_openSettings_Luna" = "Open Settings";
+"Premium_reminderFailed_Luna" = "Couldn’t set your reminders. Please try again.";
+"Premium_offerChanged_Luna" = "The price has changed. Check the updated price and try again.";
+"Premium_alreadyOwned_Luna" = "Premium is already unlocked.";
+"Premium_unlockTitle_Luna" = "Unlock Premium";

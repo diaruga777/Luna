@@ -83,6 +83,14 @@ public final class WriterStorageStack {
             libraryRoot: documents, embedding: embedding)
     }
 
+    /// Runs off the main thread after startup. Old automatic links are derived
+    /// data; explicit attachments and original note destinations stay intact.
+    public func refreshAutomaticNoteLinks() throws {
+        if try documentIndex.pruneUnrelatedRoutedAttachments() > 0 {
+            library.changes.post(.notes(nil))
+        }
+    }
+
     /// Creates the Welcome sheet on a first run.
     @discardableResult
     public func bootstrap() throws -> WriterDocument? {

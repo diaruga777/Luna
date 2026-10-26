@@ -55,6 +55,9 @@ public final class SQLiteNoteIndex: NoteIndexing {
     /// How much of the trailing window is embedded a second time, so a note
     /// about the sentence being typed is not lost inside a long paragraph.
     static let relatedTailLength = 120
+    /// Suggestions may be slightly looser than automatic filing, but a nearest
+    /// neighbour is not necessarily related. Keep raw cosine for ordering.
+    static let relatedMinimumCosine = 0.40
     /// Candidates pulled per requested hit, so re-scoring has room to reorder.
     static let candidateMultiplier = 4
 
@@ -223,15 +226,20 @@ public final class SQLiteNoteIndex: NoteIndexing {
                 FROM note_embeddings e
                 JOIN notes n ON n.id = e.note_id
                 JOIN note_documents nd ON nd.note_id = n.id
-                WHERE nd.document_id = ?
+                WHERE nd.document_id = ? AND e.model_version = ? AND e.dims = ?
                 """,
-                { statement in try statement.bind(1, document.rawValue.uuidString) },
+                { statement in
+                    try statement.bind(1, document.rawValue.uuidString)
+                    try statement.bind(2, embedding.modelVersion)
+                    try statement.bind(3, vectors[0].count)
+                },
                 row: { row in
                     guard let uuid = row.uuid(0),
                           let vector = VectorBlob.decode(row.blob(2), count: row.int(3)) else { return }
                     let best = vectors
-                        .map { HybridScorer.rescale(cosine: VectorBlob.cosine($0, vector)) }
+                        .map { VectorBlob.cosine($0, vector) }
                         .max() ?? 0
+                    guard best >= Self.relatedMinimumCosine else { return }
                     hits.append((NoteHit(
                         noteID: NoteID(uuid), score: best,
                         snippet: String((row.string(1) ?? "").prefix(160)),

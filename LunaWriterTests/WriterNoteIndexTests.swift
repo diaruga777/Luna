@@ -179,6 +179,38 @@ final class WriterNoteIndexTests: XCTestCase {
         XCTAssertEqual(try stack.noteIndex.related(to: "some text", in: document.id, limit: 5), [])
     }
 
+    func testRelatedDoesNotFillItsLimitWithUnrelatedNearestNeighbours() throws {
+        let embedding = ScriptedEmbedding()
+        let stack = try makeWriterStack(embedding: embedding)
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let query = "offer a surprise discount for premium subscriptions"
+        embedding.exact[query] = [1, 0]
+        embedding.exact["Why is drug addiction bad"] = [0.33, 0.94398]
+        embedding.exact["Run a sale on app upgrades"] = [0.48, 0.87727]
+        try insert("Why is drug addiction bad", in: stack, on: document.id)
+        let related = try insert("Run a sale on app upgrades", in: stack, on: document.id)
+
+        XCTAssertEqual(try stack.noteIndex.related(to: query, in: document.id, limit: 5).map(\.noteID),
+                       [related])
+    }
+
+    func testRelatedKeepsDifferencesBetweenStrongSemanticMatches() throws {
+        let embedding = ScriptedEmbedding()
+        let stack = try makeWriterStack(embedding: embedding)
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let query = "offer a surprise discount for premium subscriptions"
+        embedding.exact[query] = [1, 0]
+        embedding.exact["Run a sale on app upgrades"] = [0.60, 0.80]
+        embedding.exact["Discount premium subscriptions for an hour"] = [0.80, 0.60]
+        let weaker = try insert("Run a sale on app upgrades", in: stack, on: document.id)
+        let stronger = try insert("Discount premium subscriptions for an hour", in: stack, on: document.id)
+
+        let hits = try stack.noteIndex.related(to: query, in: document.id, limit: 5)
+
+        XCTAssertEqual(hits.map(\.noteID), [stronger, weaker])
+        XCTAssertGreaterThan(hits[0].score, hits[1].score)
+    }
+
     // MARK: - Maintenance
 
     func testRemovingANoteFromTheIndexTakesItOutOfSearch() throws {

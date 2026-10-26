@@ -8,17 +8,22 @@ public protocol NoteRouting: AnyObject {
     func route(_ text: String) throws -> [NotePlacement]
 }
 
-/// Pen's deterministic router, made local.
+/// Conservative semantic filing for captured notes.
 ///
 /// Three steps, in order. An explicit phrase wins outright. Otherwise the
-/// capture is searched against the sheet index and lands on EVERY sheet it
-/// scores at least `attachThreshold` on — a thought can belong in two places,
-/// and `note_documents` says so. With no sheet close enough it gets one of its
-/// own in the Inbox, named from its first words.
+/// capture is compared with sheet meanings. Only a close match is automatic;
+/// a second sheet needs stronger evidence and must be near the best match.
+/// With no sheet close enough it gets its own in the Inbox, named from its
+/// first words.
 public final class NoteRouter: NoteRouting {
 
-    /// The fused score at which a sheet is close enough to file a note on.
-    public static let attachThreshold = 0.45
+    /// Raw cosine, not a hybrid search score. Revision-1 English examples put
+    /// unrelated captures around 0.16–0.33 and clear topic matches around 0.46–0.58.
+    public static let attachThreshold = 0.42
+    /// Multiple automatic links are exceptional, even when many sheets rank.
+    public static let additionalAttachThreshold = 0.50
+    public static let maximumScoreDrop = 0.04
+    public static let maximumAttachments = 2
     /// Sheets considered per capture.
     public static let candidateLimit = 5
     /// Words taken for the title of a sheet the router creates.
@@ -44,10 +49,14 @@ public final class NoteRouter: NoteRouting {
         }
 
         let candidates = try documentIndex
-            .search(trimmed, limit: Self.candidateLimit)
+            .routingCandidates(trimmed, limit: Self.candidateLimit)
             .filter { $0.score >= Self.attachThreshold }
-        if !candidates.isEmpty {
-            return try candidates.compactMap { hit in
+        if let best = candidates.first {
+            let selected = candidates.enumerated().filter { index, hit in
+                index == 0 || (hit.score >= Self.additionalAttachThreshold
+                    && best.score - hit.score <= Self.maximumScoreDrop)
+            }.prefix(Self.maximumAttachments)
+            return try selected.compactMap { _, hit in
                 guard let document = try library.document(hit.documentID) else { return nil }
                 return NotePlacement(document: document, created: false)
             }

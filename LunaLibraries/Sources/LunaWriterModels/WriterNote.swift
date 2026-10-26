@@ -1,7 +1,7 @@
 import Foundation
 
 /// A note. One note may belong to several sheets, because the router attaches
-/// a captured note to every sheet that matches it.
+/// a captured note to a small number of strongly related sheets.
 public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
     public enum Source: String, Codable, Sendable, CaseIterable {
         case typed, mention, intent, voice

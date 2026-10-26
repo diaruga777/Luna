@@ -11,6 +11,9 @@ public protocol DocumentIndexing: AnyObject {
     func index(_ document: WriterDocument, body: String) throws
     func remove(_ id: DocumentID) throws
     func search(_ text: String, limit: Int) throws -> [DocumentHit]
+    /// Automatic filing uses raw semantic similarity, independently of search
+    /// ranking. Candidates need not share words with the capture.
+    func routingCandidates(_ text: String, limit: Int) throws -> [DocumentHit]
     /// Repairs a drifted index by re-deriving every row from `documents` and
     /// the body `readingBodies` returns for it. A contentless index has no
     /// body of its own to rebuild from.
@@ -136,6 +139,91 @@ public final class SQLiteDocumentIndex: DocumentIndexing {
             .sorted { $0.hit.score == $1.hit.score ? $0.rank < $1.rank : $0.hit.score > $1.hit.score }
             .map(\.hit)
             .prefix(max(0, limit)))
+    }
+
+    /// Search is deliberately generous; automatic attachments need their own
+    /// admission score. In particular, bm25 and a clipped, rescaled cosine
+    /// must never turn a shared "the" or "why" into permission to file a note.
+    /// Scan every compatible vector so paraphrases do not require FTS overlap.
+    public func routingCandidates(_ text: String, limit: Int) throws -> [DocumentHit] {
+        guard limit > 0, FTSQuery.tokens(text).count >= 3,
+              let embedding, let query = embedding.vector(for: text) else { return [] }
+        let version = embedding.modelVersion
+        var hits: [DocumentHit] = []
+        try database.perform { db in
+            try db.query(
+                """
+                SELECT d.id, e.vector, e.dims
+                FROM document_embeddings e
+                JOIN documents d ON d.id = e.document_id
+                WHERE d.trashed_at IS NULL AND e.model_version = ? AND e.dims = ?
+                ORDER BY d.id
+                """,
+                { statement in
+                    try statement.bind(1, version)
+                    try statement.bind(2, query.count)
+                }, row: { row in
+                    guard let uuid = row.uuid(0),
+                          let vector = VectorBlob.decode(row.blob(1), count: row.int(2)) else { return }
+                    hits.append(DocumentHit(
+                        documentID: DocumentID(uuid), score: VectorBlob.cosine(query, vector)))
+                })
+        }
+        return Array(hits.sorted {
+            $0.score == $1.score
+                ? $0.documentID.rawValue.uuidString < $1.documentID.rawValue.uuidString
+                : $0.score > $1.score
+        }.prefix(limit))
+    }
+
+    /// Recheck only automatic links made by the old permissive router. Missing,
+    /// stale or incompatible vectors are not evidence that a link is wrong.
+    /// Preserve explicit links, the note's original sheet and anchored links.
+    func pruneUnrelatedRoutedAttachments() throws -> Int {
+        guard let embedding, embedding.dimensions > 0 else { return 0 }
+        let version = embedding.modelVersion
+        let dimensions = embedding.dimensions
+        return try database.transaction { db in
+            var removals: [(String, String)] = []
+            try db.query(
+                """
+                SELECT nd.note_id, nd.document_id, n.text, ne.vector, de.vector
+                FROM note_documents nd
+                JOIN notes n ON n.id = nd.note_id
+                JOIN documents d ON d.id = nd.document_id
+                JOIN note_embeddings ne ON ne.note_id = nd.note_id
+                JOIN document_embeddings de ON de.document_id = nd.document_id
+                WHERE nd.attachment = 'routed' AND d.trashed_at IS NULL
+                    AND (n.anchor_document_id IS NULL OR n.anchor_document_id != nd.document_id)
+                    AND ne.model_version = ? AND de.model_version = ?
+                    AND ne.dims = ? AND de.dims = ?
+                """,
+                { statement in
+                    try statement.bind(1, version)
+                    try statement.bind(2, version)
+                    try statement.bind(3, dimensions)
+                    try statement.bind(4, dimensions)
+                }, row: { row in
+                    guard let note = row.string(0), let document = row.string(1),
+                          FTSQuery.tokens(row.string(2) ?? "").count >= 3,
+                          let noteVector = VectorBlob.decode(row.blob(3), count: dimensions),
+                          let documentVector = VectorBlob.decode(row.blob(4), count: dimensions),
+                          VectorBlob.cosine(noteVector, noteVector) > 0,
+                          VectorBlob.cosine(documentVector, documentVector) > 0 else { return }
+                    if VectorBlob.cosine(noteVector, documentVector) < NoteRouter.attachThreshold {
+                        removals.append((note, document))
+                    }
+                })
+            for (note, document) in removals {
+                try db.run(
+                    "DELETE FROM note_documents WHERE note_id = ? AND document_id = ? AND attachment = 'routed'"
+                ) { statement in
+                    try statement.bind(1, note)
+                    try statement.bind(2, document)
+                }
+            }
+            return removals.count
+        }
     }
 
     /// A sheet's title carries most of the signal, so it is repeated: FTS5

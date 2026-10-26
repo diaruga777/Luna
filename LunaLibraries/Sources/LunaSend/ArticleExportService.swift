@@ -42,12 +42,21 @@ public struct ArticleExportService {
         logImageResolution(for: content, format: format)
         let fileName = ArticleSendCoordinator.fileName(
             forTitle: item.title ?? item.urlString, extension: format.fileExtension)
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        try? FileManager.default.removeItem(at: fileURL)
         let data = try self.data(
             format, content: content, sourceURLString: item.urlString)
-        try data.write(to: fileURL, options: .atomic)
-        return fileURL
+        // Keep simultaneous exports (including the two EPUB profiles) separate
+        // while preserving the readable filename handed to the share sheet.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("article-export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent(fileName)
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            return fileURL
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
     }
 
     /// Records what the export could actually see, so "my PDF has no pictures"

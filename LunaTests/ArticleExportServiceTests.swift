@@ -174,6 +174,21 @@ final class ArticleExportServiceTests: XCTestCase {
 
     // MARK: - Every format
 
+    func testExportsWithTheSameTitleKeepTheirOwnFiles() throws {
+        let first = readyItem(title: "Same title", url: "https://example.com/first")
+        let second = readyItem(title: "Same title", url: "https://example.com/second")
+        let service = ArticleExportService(store: store)
+        let firstURL = try service.write(.markdown, for: first)
+        defer { try? FileManager.default.removeItem(at: firstURL.deletingLastPathComponent()) }
+        let firstBytes = try Data(contentsOf: firstURL)
+        let secondURL = try service.write(.markdown, for: second)
+        defer { try? FileManager.default.removeItem(at: secondURL.deletingLastPathComponent()) }
+        XCTAssertNotEqual(firstURL, secondURL)
+        XCTAssertEqual(firstURL.lastPathComponent, secondURL.lastPathComponent)
+        XCTAssertEqual(try Data(contentsOf: firstURL), firstBytes)
+        XCTAssertTrue(try String(contentsOf: secondURL, encoding: .utf8).contains("https://example.com/second"))
+    }
+
     func testImportedEmailExportsInEveryMenuFormat() async throws {
         let item = readyItem(title: "Imported newsletter", url: "lunamail://123")
         XCTAssertFalse(item.isShareable)

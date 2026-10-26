@@ -8,6 +8,7 @@
 //  sent to a Kindle.
 //
 
+import LunaPremium
 import LunaPluginUI
 import LunaPluginKit
 import LunaModels
@@ -88,6 +89,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
+        } else if let response = connectionOptions.notificationResponse,
+                  PremiumHappyHourReminders.identifiers.contains(response.notification.request.identifier),
+                  let url = URL(string: "\(LunaDeepLink.ownScheme)://premium") {
+            route(url)
         }
     }
 
@@ -111,6 +116,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func routeWhenReady(_ url: URL) {
+        if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme), url.host == "premium" {
+            guard !PremiumAccess.shared.state.isPaid else { return }
+            var presenter = window?.rootViewController
+            while let presented = presenter?.presentedViewController { presenter = presented }
+            if presenter is PremiumUnlockViewController ||
+               (presenter as? UINavigationController)?.topViewController is PremiumUnlockViewController { return }
+            let sheet = PremiumUnlockViewController { _ in }
+            let navigation = UINavigationController(rootViewController: sheet)
+            navigation.sheetPresentationController?.detents = [.medium(), .large()]
+            presenter?.present(navigation, animated: true)
+            return
+        }
         if url.isFileURL {
             openLunaFile(at: url)
             return

@@ -210,6 +210,37 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         return try await connection.browseMac(request)
     }
 
+    /// Capture the accepted file version and authenticated connection for a player.
+    public func mediaSource(named name: String) async throws -> VaultMediaSource {
+        if !isConnected { try await start() }
+        try await waitForInitialIndex()
+        guard let connection, let peer = try store.peer(), peer.isFolderAccepted,
+              let file = try store.file(named: name), file.type == .file,
+              !file.deleted, !file.invalid else { throw VaultBlockFetchError.unavailable }
+        let reader = try VaultMediaBlockReader(blocks: file.blocks, size: file.size) { index, block in
+            try await connection.request(folder: peer.folderID, name: name, block: block, blockNo: Int32(index))
+        }
+        return VaultMediaSource(identity: "\(peer.deviceID)/\(peer.folderID)/\(name)", name: name, size: file.size) {
+            try await reader.read(offset: $0, length: $1)
+        }
+    }
+
+    public func macMediaSource(path: String) async throws -> VaultMediaSource {
+        let response = try await browseMac(VaultMacBrowseRequest(.stat, path: path))
+        guard let file = response.entries.first, !file.isDirectory, file.size > 0,
+              !file.version.isEmpty, file.path == URL(fileURLWithPath: path).standardizedFileURL.path,
+              let peer = try store.peer() else { throw VaultBlockFetchError.invalidFile }
+        return VaultMediaSource(identity: "\(peer.deviceID)/mac/\(path)", name: path, size: file.size) { [self] offset, length in
+            guard offset >= 0, length > 0, length <= VaultMacBrowseProtocol.chunkSize,
+                  offset < file.size, Int64(length) <= file.size - offset else { throw VaultBlockFetchError.invalidFile }
+            guard try store.peer()?.deviceID == peer.deviceID else { throw VaultBlockFetchError.unavailable }
+            let response = try await browseMac(VaultMacBrowseRequest(.read, path: path, offset: offset,
+                length: length, version: file.version))
+            guard let data = response.data, data.count == length else { throw VaultBlockFetchError.unavailable }
+            return data
+        }
+    }
+
     /// Temporary, unindexed download. Ownership of the returned directory passes
     /// to the preview presenter, which removes it when Quick Look closes.
     public func downloadMacFile(path: String) async throws -> URL {

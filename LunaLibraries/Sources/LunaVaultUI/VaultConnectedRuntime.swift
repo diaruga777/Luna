@@ -217,6 +217,30 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             path: path ?? "", offset: offset, showHidden: showHidden))
     }
 
+    public func videoSource(named name: String, macFile: Bool) async throws -> VaultMediaSource {
+        try await prepareConnection()
+        if macFile { return try await session.macMediaSource(path: name) }
+        if let url = try cache.cachedURL(for: name), let file = try store.file(named: name), let peer = try store.peer() {
+            return VaultMediaSource(identity: "\(peer.deviceID)/\(peer.folderID)/\(name)", name: name,
+                size: file.size, localURL: url) { _, _ in throw VaultBlockFetchError.unavailable }
+        }
+        return try await session.mediaSource(named: name)
+    }
+
+    public func videoSiblings(named name: String, macFile: Bool) async throws -> [String] {
+        let parent = (name as NSString).deletingLastPathComponent
+        if !macFile { return try store.children(of: parent).filter { $0.type == .file }.map(\.name) }
+        var paths: [String] = []
+        var offset: Int64 = 0
+        repeat {
+            try Task.checkCancellation()
+            let page = try await macDirectory(path: parent, offset: offset, showHidden: false)
+            paths += page.entries.filter { !$0.isDirectory }.map(\.path)
+            guard let next = page.nextOffset, next > offset else { return paths }
+            offset = next
+        } while true
+    }
+
     public func macFileURL(path: String) async throws -> URL {
         try await prepareConnection(); try await session.announce(client: client)
         return try await session.downloadMacFile(path: path)

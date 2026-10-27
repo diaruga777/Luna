@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesizes the two audio-playback chime assets from scratch (stdlib only —
+"""Synthesizes the reader and podcast chime assets from scratch (stdlib only —
 math/wave/struct, no numpy) and converts them to .caf via afconvert (macOS-only).
 
 Generates, into LunaLibraries/Sources/LunaAudioPlayback/Resources/:
@@ -8,7 +8,10 @@ Generates, into LunaLibraries/Sources/LunaAudioPlayback/Resources/:
   - ChimeFinal.caf       ~1.5s, three notes resolving down to the tonic — an
     audibly "done" sound for the end of the autoplay queue.
 
-Both are warm (sine fundamental + a quiet second harmonic) and quiet (peak
+The podcast download-wait asset uses the transition cue followed by silence,
+looping once every two seconds in LunaMusicCore/Resources.
+
+All are warm (sine fundamental + a quiet second harmonic) and quiet (peak
 around -12 dBFS), gentle attack/release so they don't feel like alerts.
 
 Re-run after editing any parameters below; the .caf outputs are checked in.
@@ -123,6 +126,14 @@ def main():
         ("ChimeTransition", make_chime_transition),
         ("ChimeFinal", make_chime_final),
     ]
+    podcast_resources = os.path.normpath(os.path.join(RESOURCES_DIR, "..", "..", "LunaMusicCore", "Resources"))
+    os.makedirs(podcast_resources, exist_ok=True)
+    samples = make_chime_transition()
+    samples += [0.0] * (SAMPLE_RATE * 2 - len(samples))
+    podcast_wav = os.path.join(podcast_resources, "PodcastDownloadWait.wav")
+    normalize_and_write_wav(podcast_wav, samples)
+    convert_to_caf(podcast_wav, os.path.join(podcast_resources, "PodcastDownloadWait.caf"))
+
     for name, builder in jobs:
         samples = builder()
         wav_path = os.path.join(RESOURCES_DIR, f"{name}.wav")

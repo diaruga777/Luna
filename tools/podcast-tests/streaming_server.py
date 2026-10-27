@@ -13,6 +13,7 @@ from urllib.parse import urlsplit, parse_qs
 AUDIO = (Path(__file__).resolve().parents[2] / 'LunaMusicTests/Fixtures/streaming.mp4').read_bytes()
 lock = threading.Lock()
 sent = {}
+handoff_ready_at = {}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -48,11 +49,15 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        if route.path not in ('/slow.mp4', '/delayed.mp4'):
+        if route.path not in ('/slow.mp4', '/delayed.mp4', '/handoff.mp4'):
             self.send_error(404)
             return
         if route.path == '/delayed.mp4':
             time.sleep(2)
+        if route.path == '/handoff.mp4':
+            with lock:
+                ready_at = handoff_ready_at.setdefault(token, time.monotonic() + 6)
+            time.sleep(max(0, ready_at - time.monotonic()))
         start, end = 0, len(AUDIO) - 1
         if self.headers.get('Range', '').startswith('bytes='):
             bounds = self.headers['Range'][6:].split('-')
@@ -76,7 +81,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.flush()
                 with lock:
                     sent[token] = sent.get(token, 0) + len(chunk)
-                time.sleep(0.25)
+                if route.path != '/handoff.mp4':
+                    time.sleep(0.25)
         except (BrokenPipeError, ConnectionResetError):
             pass
 

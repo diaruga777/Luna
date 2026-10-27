@@ -940,3 +940,24 @@ and durable suppression after download-manifest restoration. The existing
 `testPauseImmediatelyPrimesColdAndInterruptedPodcastAndRestoresPosition` fails its
 start-count assertion (3 versus 2) on both this change and unchanged `main`; it was
 excluded from the passing focused run.
+
+### Podcast queue download chime (2026-10-27)
+
+When an episode finishes naturally and the next queued episode has no complete
+local download, a soft two-note chime repeats every two seconds while its audio
+loads. The cue uses the existing reader transition tone with a silent tail,
+looped by AVAudioPlayer so background playback does not depend on a repeating
+timer. It stops as soon as the next episode's playback clock advances, or on
+Pause, an audio interruption, a removed audio route, a playback error or selection
+of another episode. Explicit Play, seek-to-end advancement, complete local files
+and sleep-at-episode-end do not start it. The existing streaming path and
+thirty-second loading timeout remain in effect. Regenerate the bundled cue with
+`scripts/make_tones.py`.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2: all 38 selected hosted
+transport and loading tests passed with the local streaming fixture enabled.
+The six-second handoff verifies a complete two-second chime cycle followed by
+actual clock advancement and chime cleanup. Pause (including late network data),
+interruption, failure, replacement playback, explicit Play and sleep-at-end are
+covered. The previously documented prime start-count failure remains excluded.
+Physical-device/background audio output and AirPlay have not been measured.

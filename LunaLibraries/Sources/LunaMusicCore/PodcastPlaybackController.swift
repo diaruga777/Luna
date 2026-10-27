@@ -60,6 +60,7 @@ import LunaPodcastCore
     private var extrasTask: Task<Void, Never>?
     private var extrasTimeoutTask: Task<Void, Never>?
     private var bufferingTask: Task<Void, Never>?
+    private(set) var queueDownloadChime: AVAudioPlayer?
     private var sleepTask: Task<Void, Never>?
     private var itemObserver: NSKeyValueObservation?
     private var isSelecting = false
@@ -145,6 +146,7 @@ import LunaPodcastCore
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
         extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
+        queueDownloadChime?.stop()
     }
     private func installItem(_ episode: PodcastEpisode, url: URL, token: UUID) -> AVURLAsset {
         let asset = AVURLAsset(url: url, options: [
@@ -202,7 +204,8 @@ import LunaPodcastCore
         do { try await select(first) } catch { fail(error); throw error }
     }
     private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false,
-                        preservingQueue: Bool = false) async throws {
+                        preservingQueue: Bool = false, chimeWhileLoading: Bool = false) async throws {
+        stopQueueDownloadChime()
         // Capture the outgoing clock before replacing its item. A pending seek
         // already owns `position` and must not be overwritten by the old clock.
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
@@ -257,6 +260,7 @@ import LunaPodcastCore
         // valid for .playAndRecord and throws paramErr (-50) here.
         try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
+        if chimeWhileLoading, local == nil, !episode.mediaURL.isFileURL { startQueueDownloadChime() }
         let cachedDuration = local == nil ? nil : downloads.cachedDuration(episode.id)
         let asset = installItem(episode, url: local ?? episode.mediaURL, token: token)
         publish()
@@ -632,9 +636,23 @@ import LunaPodcastCore
         if isPlaying, session.isActive { retainsPlaybackSession = true }
         publish()
     }
+    private func startQueueDownloadChime() {
+        guard let url = Bundle.module.url(forResource: "PodcastDownloadWait", withExtension: "caf") else { return }
+        do {
+            let chime = try AVAudioPlayer(contentsOf: url)
+            // The asset includes silence after the soft cue, for a two-second
+            // cadence. Native looping keeps the wait audible in the background
+            // without depending on timers firing between short sounds.
+            chime.numberOfLoops = -1
+            if chime.play() { queueDownloadChime = chime }
+        } catch { log.error("Unable to play podcast download chime: \(error.localizedDescription, privacy: .public)") }
+    }
+    private func stopQueueDownloadChime() {
+        queueDownloadChime?.stop(); queueDownloadChime = nil
+    }
     private func setBuffering(_ value: Bool) {
         if isBuffering != value { isBuffering = value }
-        if !value { bufferingTask?.cancel(); bufferingTask = nil; return }
+        if !value { stopQueueDownloadChime(); bufferingTask?.cancel(); bufferingTask = nil; return }
         guard bufferingTask == nil else { return }
         bufferingTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -674,7 +692,7 @@ import LunaPodcastCore
         Task { await self.downloads.reconcile() }
         guard generation == token else { return }
         if let next, let episode = library.state.episodes[next] {
-            if shouldPlay { try await select(episode) }
+            if shouldPlay { try await select(episode, chimeWhileLoading: natural) }
             else {
                 currentEpisode = episode; duration = downloads.cachedDuration(episode.id) ?? episode.duration
                 position = library.state.progress[episode.id]?.listened == true ? 0 : library.state.progress[episode.id]?.position ?? 0

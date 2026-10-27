@@ -1198,12 +1198,94 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(100))
         }
-        XCTFail("Playback did not settle: \(playback.errorMessage ?? "no error")", file: file, line: line)
+        XCTFail("Playback did not settle: \(playback.errorMessage ?? "no error"), status=\(playback.player.timeControlStatus.rawValue) item=\(playback.player.currentItem?.status.rawValue ?? -1) rate=\(playback.player.rate) time=\(playback.player.currentTime().seconds) ranges=\(playback.player.currentItem?.loadedTimeRanges ?? [])", file: file, line: line)
         throw PodcastError("Transport test timed out")
     }
     private func startQueue() async throws {
         try await playback.playEpisodes(episodes)
         try await waitFor { playback.isPlaying }
+    }
+    private func configureDelayedNextEpisode() throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_STREAM_FIXTURE_URL"], let url = URL(string: base) else {
+            throw XCTSkip("Run with the throttled local podcast fixture.")
+        }
+        var components = URLComponents(url: url.deletingLastPathComponent().appendingPathComponent("handoff.mp4"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "session", value: UUID().uuidString)]
+        episodes[1].mediaURL = components.url!
+        try library.edit { $0.episodes[episodes[1].id] = episodes[1] }
+    }
+    private func beginChimingHandoff() async throws -> AVAudioPlayer {
+        try configureDelayedNextEpisode()
+        try await startQueue()
+        XCTAssertNil(playback.queueDownloadChime)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: playback.player.currentItem)
+        try await waitFor { playback.currentEpisode?.id == episodes[1].id && playback.queueDownloadChime != nil }
+        XCTAssertTrue(playback.isBuffering)
+        return try XCTUnwrap(playback.queueDownloadChime)
+    }
+    func testNaturalHandoffRepeatsChimeUntilNextAudioStarts() async throws {
+        let chime = try await beginChimingHandoff()
+        XCTAssertTrue(chime.isPlaying)
+        XCTAssertEqual(chime.duration, 2, accuracy: 0.001)
+        XCTAssertEqual(chime.numberOfLoops, -1)
+        let started = chime.deviceCurrentTime
+        try await Task.sleep(for: .seconds(2.2))
+        XCTAssertTrue(chime.isPlaying, "Waiting should outlast the first chime")
+        XCTAssertGreaterThan(chime.deviceCurrentTime - started, chime.duration)
+        XCTAssertTrue(playback.isBuffering)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
+        XCTAssertNil(playback.queueDownloadChime)
+        XCTAssertFalse(chime.isPlaying)
+        XCTAssertNil(playback.errorMessage)
+        // Seeking must not restart a cue over an episode that has begun.
+        playback.seek(to: 30)
+        XCTAssertNil(playback.queueDownloadChime)
+    }
+    func testPauseStopsHandoffChimeAndPreventsLatePlayback() async throws {
+        let chime = try await beginChimingHandoff()
+        playback.pause()
+        XCTAssertNil(playback.queueDownloadChime); XCTAssertFalse(chime.isPlaying)
+        try await Task.sleep(for: .seconds(7))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertNil(playback.queueDownloadChime)
+    }
+    func testErrorStopsHandoffChime() async throws {
+        let chime = try await beginChimingHandoff()
+        playback.fail(PodcastError("Fixture download failure"))
+        XCTAssertNil(playback.queueDownloadChime); XCTAssertFalse(chime.isPlaying)
+        XCTAssertFalse(playback.isBuffering); XCTAssertFalse(playback.isPlaying)
+        XCTAssertEqual(playback.errorMessage, "Fixture download failure")
+    }
+    func testAudioInterruptionStopsHandoffChime() async throws {
+        let chime = try await beginChimingHandoff()
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(),
+                                        userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        try await waitFor { playback.queueDownloadChime == nil }
+        XCTAssertFalse(chime.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertFalse(playback.isPlaying)
+    }
+    func testSelectingAnotherEpisodeStopsHandoffChime() async throws {
+        let chime = try await beginChimingHandoff()
+        try await playback.play(episodes[2])
+        XCTAssertNil(playback.queueDownloadChime); XCTAssertFalse(chime.isPlaying)
+        try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[2].id)
+    }
+    func testExplicitPlayDoesNotChime() async throws {
+        try configureDelayedNextEpisode()
+        try await playback.play(episodes[1])
+        XCTAssertTrue(playback.isBuffering); XCTAssertNil(playback.queueDownloadChime)
+        playback.pause()
+    }
+    func testSleepAtEndDoesNotChime() async throws {
+        try configureDelayedNextEpisode()
+        try await startQueue()
+        playback.setSleepTimer(minutes: nil, endOfEpisode: true)
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: playback.player.currentItem)
+        try await waitFor { library.state.progress[episodes[0].id]?.listened == true }
+        XCTAssertNil(playback.queueDownloadChime); XCTAssertFalse(playback.isPlaying)
+        XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
     }
     func testResumeIntentDoesNotReplayCompletedHistoryWithEmptyQueue() async throws {
         let store = try library.requireStore()
@@ -1236,6 +1318,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await waitFor { playback.currentEpisode?.id == episodes[2].id && playback.isPlaying }
         XCTAssertTrue(library.state.progress[episodes[0].id]?.listened == true)
         XCTAssertEqual(library.state.queue, [episodes[1].id])
+        XCTAssertNil(playback.queueDownloadChime)
     }
     func testRepeatedResumeIntentPreservesWarmQueueAndPosition() async throws {
         try await startQueue()

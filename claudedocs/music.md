@@ -352,8 +352,15 @@ completion always releases and deletes that episode's download, including
 manual downloads and sleep-at-episode-end, then refills the queue within the
 cap. Completed episodes do not automatically download again. Explicit
 deletion suppresses automatic re-download until a download, play or requeue is
-requested. Failed automatic downloads retry on a later poll after 15 minutes. HTTP is permitted because arbitrary
-publisher RSS feeds and enclosures may still use it; Luna's own services retain
+requested. Unplayed automatic downloads that have never started expire seven days
+after the download request was created, during download reconciliation (launch,
+library changes and refresh/background maintenance). Playback history or a nonzero
+saved position protects an episode from this expiry, including a started episode
+rewound to zero. Manual downloads, explicit queue items and the active player asset
+are also protected. Expiry deletes the local file and suppresses automatic
+re-download until an explicit download, play or requeue request; feed/library
+metadata is retained. Failed automatic downloads retry on a later poll after 15
+minutes. HTTP is permitted because arbitrary publisher RSS feeds and enclosures may still use it; Luna's own services retain
 their separate authenticated protocols.
 
 Optional iCloud sync uses a private `LunaPodcastLibrary` record with a CKAsset,
@@ -418,13 +425,16 @@ an interrupted episode. Natural completion uses the ordinary queue advancement:
 remove the completed episode, play the first remaining item, and retain the rest.
 If completion already staged the next item while paused or during restoration,
 the intent resumes that item instead of returning to the completed last-played one.
-Only a natural end of the final queue item permits another episode. It refreshes
-followed feeds, then chooses the oldest unplayed episode after each show's saved
-listening cursor and takes the oldest of those candidates, with stable ID ties.
-For the requested example, B/3 yields C versus 4; D/4 yields no playback. Manually
-marking an episode played never grants the fallback permission. Explicit queued
-work added after exhaustion takes priority. A never-played followed show contributes
-its oldest episode when fallback is permitted.
+When the last-played episode is completed and there is no pending selection or
+explicit queue, the intent chooses the oldest downloaded, unplayed episode after
+each followed show's saved listening cursor, then takes the oldest of those
+candidates, with stable ID ties. It validates the local file, so incomplete or
+missing downloads cannot qualify. It does not refresh feeds or stream a new
+fallback episode. A completed episode is never implicitly replayed, regardless of
+how the queue became empty or whether its natural-exhaustion flag is set. If
+nothing qualifies, playback and played history stay unchanged. Explicit queued
+work still takes priority. A never-played followed show contributes its oldest
+eligible download when there is playback history elsewhere in the library.
 
 Validation (2026-10-19): all 36 Foundation podcast tests and 34 focused simulator
 tests passed; three optional long-MP3 fixture tests were skipped. Coverage includes
@@ -590,7 +600,7 @@ Podcast playback and interaction fixes (2026-10-08):
 - Automatic show continuation and its settings have been removed. The old model
   fields remain readable for persistence compatibility; only explicit queued
   episodes advance at natural completion. The Resume Podcast Queue intent retains
-  its separately specified deterministic fallback after natural exhaustion.
+  its separately specified deterministic fallback to eligible local downloads.
 
 Tapping Play on another podcast episode moves the unfinished current episode to
 the front of the existing queue, preserving its latest playback position. This
@@ -688,9 +698,9 @@ Natural completion advances the explicit queue before asynchronous download
 reconciliation. Completion notifications are checked against the current item and
 play intent, and duplicate/late events cannot advance twice or autoplay after
 Pause. Seeking/skipping to EOF advances an existing explicit queue while preserving
-paused state; manual completion never grants the Resume Podcast Queue intent's
-natural-exhaustion fallback. The final episode can replay with Play. Restoration
-prefers the persisted current item, recovers stale terminal positions into queued
+paused state; the Resume Podcast Queue intent never replays completed history and
+can choose an eligible local download when no queued work remains. The final
+episode can replay with Play. Restoration prefers the persisted current item, recovers stale terminal positions into queued
 work while paused, and resolves the actual asset duration on resumed seeks when
 RSS duration is missing or inaccurate. Native video transport changes are reflected
 in Luna's play intent, preventing a later seek from undoing a native Pause.
@@ -914,3 +924,19 @@ heights, verifying overflow animation and retaining full accessible titles at
 both widths and text sizes. Compact row screenshots were inspected.
 
 iPad window cleanup (2026-10-24): library row content follows UIKit’s readable width and the floating player bar is centered with the shared 680-point cap. The landscape Music player keeps AirPlay centered in the playback-controls column. The LunaMusic Simulator build passes.
+
+### Podcast resume and automatic-download expiry (2026-10-27)
+
+Resume no longer relies on the natural-exhaustion flag to avoid replaying completed
+history. Empty-queue fallback uses only complete local downloads newer than the
+corresponding show's listening cursor. Seven-day expiry removes unstarted automatic
+downloads and persists suppression so maintenance cannot immediately fetch them again.
+
+Validation: all 45 Foundation podcast tests passed. On Xcode 26.2 / iPhone 17 Pro /
+iOS 26.2, 49 focused hosted tests passed and five optional fixture checks skipped.
+Coverage includes empty-queue completed-history no-op, offline fallback past older
+backlog and a missing local file, queue preservation, transport, expiry protection
+and durable suppression after download-manifest restoration. The existing
+`testPauseImmediatelyPrimesColdAndInterruptedPodcastAndRestoresPosition` fails its
+start-count assertion (3 versus 2) on both this change and unchanged `main`; it was
+excluded from the passing focused run.

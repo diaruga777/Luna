@@ -1205,6 +1205,23 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.playEpisodes(episodes)
         try await waitFor { playback.isPlaying }
     }
+    func testResumeIntentDoesNotReplayCompletedHistoryWithEmptyQueue() async throws {
+        let store = try library.requireStore()
+        try store.recordPlaybackStarted(episodes[0].id)
+        try store.recordPosition(episodes[0].id, position: 180)
+        try store.markListened(episodes[0].id, true)
+        library.reloadState()
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        let history = library.state
+        var starts = 0
+        playback.willPlay = { starts += 1 }
+        try await playback.resumeLastPodcast()
+        try await playback.resumeLastPodcast(pauseImmediately: true)
+        XCTAssertEqual(starts, 0)
+        XCTAssertNil(playback.player.currentItem)
+        XCTAssertEqual(library.state, history)
+        XCTAssertTrue(library.state.progress[episodes[0].id]?.listened == true)
+    }
     func testResumeIntentPreservesColdQueueAndNaturallyAdvances() async throws {
         try library.requireStore().recordPlaybackStarted(episodes[0].id)
         try library.requireStore().recordPosition(episodes[0].id, position: 177)
@@ -1542,6 +1559,47 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         downloads?.stop(); downloads = nil
         try? FileManager.default.removeItem(at: root)
         super.tearDown()
+    }
+    func testCompletedHistoryStartsDownloadedNewerEpisodeWithoutReplayingOrStreaming() async throws {
+        var next = episode!
+        next.guid = "newer"; next.id = PodcastIdentity.episode(showID: episode.showID, guid: next.guid)
+        next.title = "Next downloaded episode"; next.publishedAt = episode.publishedAt.addingTimeInterval(86400)
+        var remote = next
+        remote.guid = "remote"; remote.id = PodcastIdentity.episode(showID: episode.showID, guid: remote.guid)
+        remote.publishedAt = episode.publishedAt.addingTimeInterval(1)
+        var older = next
+        older.guid = "older"; older.id = PodcastIdentity.episode(showID: episode.showID, guid: older.guid)
+        older.publishedAt = episode.publishedAt.addingTimeInterval(-86400)
+        let directory = root.appendingPathComponent("Downloads")
+        let original = try XCTUnwrap(downloads.downloads[episode.id])
+        var records = downloads.downloads
+        for item in [next, older] {
+            let filename = item.id + ".mp4"
+            try FileManager.default.copyItem(at: directory.appendingPathComponent(original.filename!), to: directory.appendingPathComponent(filename))
+            records[item.id] = PodcastDownload(episodeID: item.id, sourceURL: item.mediaURL, filename: filename, bytes: original.bytes, manual: true, status: "downloaded", preparedDuration: 180)
+        }
+        records[remote.id] = PodcastDownload(episodeID: remote.id, sourceURL: remote.mediaURL, filename: "missing.mp4", bytes: original.bytes, manual: true, status: "downloaded")
+        playback.pause(); playback.player.replaceCurrentItem(with: nil); downloads.stop()
+        try JSONEncoder().encode(records).write(to: directory.appendingPathComponent("downloads.json"))
+        var show = PodcastShow(feedURL: URL(string: "http://127.0.0.1:1/feed")!, title: "Offline", id: episode.showID)
+        show.followed = true
+        try library.edit {
+            $0.shows[show.id] = show
+            for item in [next, remote, older] { $0.episodes[item.id] = item }
+            $0.settings.downloadByteLimit = original.bytes * 4
+        }
+        let store = try library.requireStore()
+        try store.recordPlaybackStarted(episode.id)
+        try store.markListened(episode.id, true)
+        library.reloadState()
+        let played = library.state.progress[episode.id]
+        downloads = PodcastDownloads(directory: directory, library: library, sessionConfiguration: .ephemeral)
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        try await playback.resumeLastPodcast()
+        XCTAssertEqual(playback.currentEpisode?.id, next.id)
+        XCTAssertTrue((playback.player.currentItem?.asset as? AVURLAsset)?.url.isFileURL == true)
+        XCTAssertEqual(library.state.progress[episode.id], played)
+        XCTAssertTrue(library.state.queue.isEmpty)
     }
     private func waitFor(_ condition: () -> Bool) async throws {
         for _ in 0..<1500 {
@@ -2218,5 +2276,54 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
             XCTAssertTrue((presented as? UINavigationController)?.topViewController is PodcastPlayerViewController)
         } else { XCTAssertTrue(presented is MusicPlayerViewController) }
         XCTAssertEqual(MediaPlaybackCoordinator.shared.active, active)
+    }
+}
+
+@MainActor final class PodcastAutomaticDownloadExpiryTests: XCTestCase {
+    func testReconciliationExpiresOnlyUnstartedAutomaticFilesAndDoesNotRefetchThem() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = PodcastLibraryController(url: root.appendingPathComponent("library.json"))
+        let directory = root.appendingPathComponent("Downloads")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var show = PodcastShow(feedURL: URL(string: "https://example.com/feed")!, title: "Expiry", id: "expiry")
+        show.followed = true; show.settings.automaticDownloadLimit = -1
+        let names = ["expired", "recent", "manual", "started", "rewound", "queued", "active"]
+        var episodes: [String: PodcastEpisode] = [:]
+        var records: [String: PodcastDownload] = [:]
+        for name in names {
+            let episode = PodcastEpisode(showID: show.id, guid: name, title: name, publishedAt: Date(), mediaURL: URL(string: "http://127.0.0.1:1/\(name).mp3")!)
+            episodes[name] = episode
+            let filename = name + ".mp3"
+            try Data(repeating: 0, count: 8).write(to: directory.appendingPathComponent(filename))
+            var record = PodcastDownload(episodeID: episode.id, sourceURL: episode.mediaURL, filename: filename, bytes: 8, manual: name == "manual", status: "downloaded")
+            record.createdAt = Date().addingTimeInterval(-Double(name == "recent" ? 6 : 8) * 86400)
+            records[episode.id] = record
+        }
+        let expiredID = episodes["expired"]!.id
+        try library.edit {
+            $0.shows[show.id] = show
+            $0.episodes = Dictionary(uniqueKeysWithValues: episodes.values.map { ($0.id, $0) })
+            $0.currentEpisodeID = expiredID // A stale selection alone cannot keep an unstarted file forever.
+            $0.queue = [episodes["queued"]!.id]
+            var started = PodcastEpisodeState(); started.position = 12
+            $0.progress[episodes["started"]!.id] = started
+            started.position = 0; started.lastPlayedAt = Date().addingTimeInterval(-86400)
+            $0.progress[episodes["rewound"]!.id] = started
+        }
+        try JSONEncoder().encode(records).write(to: directory.appendingPathComponent("downloads.json"))
+        let activeID = episodes["active"]!.id
+        let downloads = PodcastDownloads(directory: directory, library: library, sessionConfiguration: .ephemeral, activeEpisodeID: { activeID })
+        defer { downloads.stop() }
+        await downloads.reconcile()
+        XCTAssertNil(downloads.downloads[expiredID])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("expired.mp3").path))
+        XCTAssertTrue(library.state.progress[expiredID]?.suppressAutomaticDownload == true)
+        for name in names where name != "expired" { XCTAssertNotNil(downloads.localURL(episodes[name]!.id), name) }
+        let restored = PodcastDownloads(directory: directory, library: library, sessionConfiguration: .ephemeral, activeEpisodeID: { activeID })
+        defer { restored.stop() }
+        await restored.reconcile()
+        XCTAssertNil(restored.downloads[expiredID], "Expired episodes must not immediately download again after manifest restoration")
+        XCTAssertTrue(try PodcastStore(url: library.requireStore().url).state.progress[expiredID]?.suppressAutomaticDownload == true)
     }
 }

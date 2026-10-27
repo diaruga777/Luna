@@ -20,21 +20,24 @@ public enum PodcastPolicies {
             return newestFirst ? $0.publishedAt > $1.publishedAt : $0.publishedAt < $1.publishedAt
         }
     }
-    public static func resumeDecision(_ state: PodcastLibraryState) -> PodcastResumeDecision {
+    public static func resumeDecision(_ state: PodcastLibraryState, downloadedIDs: Set<String>) -> PodcastResumeDecision {
         guard let lastID = state.lastPlayedEpisodeID, state.episodes[lastID] != nil else { return .nothing }
-        guard state.naturallyExhaustedQueue else {
+        if !state.naturallyExhaustedQueue {
             // Completion can stage the next queued episode while paused or on
             // cold restoration, before it has actually earned last-played history.
-            if state.progress[lastID]?.listened == true, let currentID = state.currentEpisodeID,
-               currentID != lastID, state.episodes[currentID] != nil { return .resume(currentID) }
-            return .resume(lastID)
+            if state.progress[lastID]?.listened != true { return .resume(lastID) }
+            if let currentID = state.currentEpisodeID, currentID != lastID,
+               state.episodes[currentID] != nil, state.progress[currentID]?.listened != true { return .resume(currentID) }
         }
-        // Explicitly queued work takes precedence if it was added after exhaustion.
+        // Completed history must never be replayed by Resume, even when the
+        // queue was emptied manually or its natural-exhaustion flag is stale.
+        // Explicit selections still take precedence over subscription fallback.
         if let queued = state.queue.first(where: { state.episodes[$0] != nil }) { return .start(queued) }
         let candidates = state.shows.values.filter(\.followed).compactMap { show -> PodcastEpisode? in
             let cursor = state.cursors[show.id]
             return ordered(state.episodes.values.filter { episode in
-                guard episode.showID == show.id, state.progress[episode.id]?.listened != true else { return false }
+                guard episode.showID == show.id, downloadedIDs.contains(episode.id),
+                      state.progress[episode.id]?.listened != true else { return false }
                 guard let cursor else { return true }
                 return episode.publishedAt > cursor.publishedAt ||
                     (episode.publishedAt == cursor.publishedAt && episode.id > cursor.episodeID)
@@ -52,6 +55,13 @@ public enum PodcastPolicies {
             result.formUnion((limit < 0 ? candidates : Array(candidates.prefix(limit))).map(\.id))
         }
         return result
+    }
+    public static let unstartedDownloadRetention: TimeInterval = 7 * 24 * 60 * 60
+
+    public static func isExpiredAutomaticDownload(episodeID: String, manual: Bool, createdAt: Date, state: PodcastLibraryState, now: Date = Date()) -> Bool {
+        let progress = state.progress[episodeID]
+        return !manual && progress?.listened != true && progress?.lastPlayedAt == nil &&
+            (progress?.position ?? 0) == 0 && now.timeIntervalSince(createdAt) >= unstartedDownloadRetention
     }
     public static func shouldRemoveDownload(episodeID: String, manual: Bool, wanted: Set<String>, state: PodcastLibraryState, now: Date = Date()) -> Bool {
         let progress = state.progress[episodeID]

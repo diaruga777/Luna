@@ -140,7 +140,7 @@ import Glibc
             progress.updatedAt = Date(); state.progress[id] = progress
             if value, let episode = state.episodes[id] { state.cursors[episode.showID] = PodcastCursor(episode: episode) }
         }
-        // Manual marking never makes the resume intent choose a new episode.
+        // Manual marking does not advance playback or the explicit queue.
     }
     public func enqueue(_ id: String, next: Bool) throws {
         guard state.episodes[id] != nil, state.currentEpisodeID != id else { return }

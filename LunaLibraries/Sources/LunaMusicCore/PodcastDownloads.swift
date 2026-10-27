@@ -226,8 +226,11 @@ public struct PodcastDownload: Codable, Equatable {
         let state = library.state
         let automatic = PodcastPolicies.automaticDownloads(state)
         for (id, record) in downloads where activeEpisodeID() != id && !state.queue.contains(id) {
-            if PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: record.manual, wanted: automatic.union(state.queue).union(state.currentEpisodeID.map { [$0] } ?? []), state: state) {
-                remove(id, suppress: false)
+            let expired = PodcastPolicies.isExpiredAutomaticDownload(episodeID: id, manual: record.manual, createdAt: record.createdAt, state: state)
+            if expired || PodcastPolicies.shouldRemoveDownload(episodeID: id, manual: record.manual, wanted: automatic.union(state.queue).union(state.currentEpisodeID.map { [$0] } ?? []), state: state) {
+                // Expiry is durable: an unchanged subscription must not fetch
+                // the same unstarted episode again on the next reconciliation.
+                remove(id, suppress: expired)
             }
         }
         let plan = downloadPlan()

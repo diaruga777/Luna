@@ -20,27 +20,68 @@ final class PodcastTests: XCTestCase {
     }
     func testExactResumeAndUserExample() {
         var (state, episodes) = sample()
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .resume(episodes[6].id))
+        state.progress[episodes[6].id]?.listened = false
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: []), .resume(episodes[6].id))
+        state.progress[episodes[6].id]?.listened = true
         state.naturallyExhaustedQueue = true
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[2].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .start(episodes[2].id))
         state.cursors["a"] = .init(episode: episodes[3]); state.cursors["b"] = .init(episode: episodes[7])
         for index in [3, 7] { var progress = PodcastEpisodeState(); progress.listened = true; state.progress[episodes[index].id] = progress }
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .nothing)
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .nothing)
     }
     func testResumeKeepsPendingCurrentAfterLastPlayedEpisodeCompleted() {
         var (state, episodes) = sample()
         state.currentEpisodeID = episodes[7].id
         state.queue = [episodes[2].id]
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .resume(episodes[7].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .resume(episodes[7].id))
         state.progress[episodes[6].id]?.listened = false
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .resume(episodes[6].id), "Preparation alone must not replace unfinished listening history")
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .resume(episodes[6].id), "Preparation alone must not replace unfinished listening history")
     }
     func testOlderBacklogIsNotResurrectedAndNoHistoryIsNoOp() {
         var (state, episodes) = sample(); state.naturallyExhaustedQueue = true
         state.cursors["a"] = .init(episode: episodes[3]); state.cursors["b"] = .init(episode: episodes[7])
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .nothing)
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .nothing)
         state.lastPlayedEpisodeID = nil
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .nothing)
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .nothing)
+    }
+    func testCompletedHistoryUsesOnlyDownloadedNewerEpisodesEvenWithoutNaturalExhaustion() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = state.lastPlayedEpisodeID
+        let original = state
+        // A/0 and B/0 are downloaded old backlog; A/2 is eligible but remote.
+        let downloaded = Set([episodes[0].id, episodes[4].id, episodes[3].id, episodes[7].id])
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: downloaded), .start(episodes[3].id))
+        XCTAssertEqual(state, original, "Choosing a replacement must preserve played history")
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: [episodes[0].id, episodes[4].id]), .nothing)
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: []), .nothing)
+        state.naturallyExhaustedQueue = true
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: downloaded), .start(episodes[3].id))
+    }
+    func testCompletedStagedCurrentIsNotReplayedAndExplicitQueueStillWins() {
+        var (state, episodes) = sample()
+        state.currentEpisodeID = episodes[1].id // Also completed.
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: []), .nothing)
+        state.queue = [episodes[0].id]
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: []), .start(episodes[0].id))
+    }
+    func testUnstartedAutomaticDownloadsExpireAfterOneWeek() {
+        var (state, episodes) = sample()
+        let id = episodes[0].id
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let expiry = created.addingTimeInterval(7 * 86400)
+        func expired(manual: Bool = false, now: Date = expiry) -> Bool {
+            PodcastPolicies.isExpiredAutomaticDownload(episodeID: id, manual: manual, createdAt: created, state: state, now: now)
+        }
+        XCTAssertFalse(expired(now: expiry.addingTimeInterval(-1)))
+        XCTAssertTrue(expired())
+        XCTAssertFalse(expired(manual: true))
+        var progress = PodcastEpisodeState()
+        progress.position = 1; state.progress[id] = progress
+        XCTAssertFalse(expired())
+        progress.position = 0; progress.lastPlayedAt = created; state.progress[id] = progress
+        XCTAssertFalse(expired(), "Started episodes remain protected even after rewinding to zero")
+        progress.lastPlayedAt = nil; progress.listened = true; state.progress[id] = progress
+        XCTAssertFalse(expired(), "Played episodes use their separate retention policy")
     }
     func testGestureBoundariesAndNoDestination() {
         var gesture = MediaSkipGesture()
@@ -68,7 +109,7 @@ final class PodcastTests: XCTestCase {
         try store.recordPlaybackStarted(episodes[1].id)
         try store.recordPosition(episodes[1].id, position: 123.5)
         try store.markListened(episodes[1].id, true)
-        XCTAssertEqual(PodcastPolicies.resumeDecision(store.state), .resume(episodes[1].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(store.state, downloadedIDs: Set(episodes.map(\.id))), .start(episodes[2].id))
         try store.enqueue(episodes[2].id, next: false)
         XCTAssertEqual(try store.finishNaturally(episodes[1].id), episodes[2].id)
         XCTAssertFalse(store.state.naturallyExhaustedQueue)
@@ -128,13 +169,13 @@ extension PodcastTests {
     func testNeverPlayedFollowedShowAndUnfollowedExclusion() {
         var (state, episodes) = sample(); state.naturallyExhaustedQueue = true
         state.cursors["a"] = nil
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[0].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .start(episodes[0].id))
         state.shows["a"]?.followed = false
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[7].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .start(episodes[7].id))
     }
     func testQueueAddedAfterExhaustionWinsOverSubscriptions() {
         var (state, episodes) = sample(); state.naturallyExhaustedQueue = true; state.queue = [episodes[3].id]
-        XCTAssertEqual(PodcastPolicies.resumeDecision(state), .start(episodes[3].id))
+        XCTAssertEqual(PodcastPolicies.resumeDecision(state, downloadedIDs: Set(episodes.map(\.id))), .start(episodes[3].id))
     }
     func testGestureRepeatedBackAndReversedOrder() {
         var gesture = MediaSkipGesture()

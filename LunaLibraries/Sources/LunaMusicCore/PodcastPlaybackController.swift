@@ -332,7 +332,8 @@ import LunaPodcastCore
     public func resumeLastPodcast(pauseImmediately: Bool = false) async throws {
         logState(pauseImmediately ? "intent.prime" : "intent.resume")
         try Task.checkCancellation()
-        if pauseImmediately, retainsPlaybackSession, session.isActive,
+        if pauseImmediately, retainsPlaybackSession, session.isActive, !isAtEnd,
+           currentEpisode.map({ library.state.progress[$0.id]?.listened != true }) == true,
            player.currentItem != nil, player.currentItem?.status != .failed,
            !isSelecting, !needsPreparation,
            !AVAudioSession.sharedInstance().isOtherAudioPlaying {
@@ -347,10 +348,10 @@ import LunaPodcastCore
         if pauseImmediately { primingPlaybackRevision = revision }
         defer { if primingPlaybackRevision == revision { primingPlaybackRevision = nil } }
         let store = try library.requireStore()
-        if store.state.naturallyExhaustedQueue { await library.refresh(force: true) }
         try Task.checkCancellation()
         guard playbackRevision == revision else { throw CancellationError() }
-        switch PodcastPolicies.resumeDecision(store.state) {
+        let downloadedIDs = Set(downloads.downloads.keys.filter { downloads.localURL($0) != nil })
+        switch PodcastPolicies.resumeDecision(store.state, downloadedIDs: downloadedIDs) {
         case .nothing: return
         case .resume(let id):
             guard let episode = store.state.episodes[id] else { return }
@@ -665,7 +666,7 @@ import LunaPodcastCore
             next = nil; sleepAtEpisodeEnd = false
         } else {
             // A manual seek may complete an explicit queue item, but cannot
-            // authorize the resume intent's natural-exhaustion recommendations.
+            // record natural exhaustion for download/restoration bookkeeping.
             next = try store.finishNaturally(episode.id, natural: natural)
             library.reloadState()
         }

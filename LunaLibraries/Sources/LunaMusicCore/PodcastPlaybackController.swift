@@ -78,8 +78,11 @@ import LunaPodcastCore
     private var remotePlaybackTask: Task<Void, Never>?
     private var remotePlaybackRevision = UUID()
 
-    public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared) {
-        self.library = library; self.downloads = downloads
+    private let readerCompletion: @MainActor (PodcastEpisode) -> Void
+
+    public init(library: PodcastLibraryController = .shared, downloads: PodcastDownloads = .shared,
+                readerCompletion: (@MainActor (PodcastEpisode) -> Void)? = nil) {
+        self.library = library; self.downloads = downloads; self.readerCompletion = readerCompletion ?? { ReaderPodcastController.shared.didFinishListening(to: $0) }
         if let id = library.state.currentEpisodeID ?? library.state.lastPlayedEpisodeID, let episode = library.state.episodes[id] {
             currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = downloads.cachedDuration(episode.id) ?? episode.duration
             rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
@@ -688,6 +691,7 @@ import LunaPodcastCore
             next = try store.finishNaturally(episode.id, natural: natural)
             library.reloadState()
         }
+        if natural, episode.showID == ReaderPodcastSource.showID { readerCompletion(episode) }
         downloads.remove(episode.id)
         Task { await self.downloads.reconcile() }
         guard generation == token else { return }

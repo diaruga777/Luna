@@ -23,7 +23,8 @@ Luna is a family of native apps (UIKit, deployment target iOS 26).
 - **Luna Music** (`com.hsanabria.luna.music`, target `LunaMusic`) — a standalone
   MusicKit/MediaPlayer library player with search on foreground, playlist-aware
   shuffle continuation, Siri, widgets and a queue Live Activity. See
-  `claudedocs/music.md`. Links `LunaMusicKit`; reads `saves.sqlite` only to browse and render Reader text saves for the podcast queue.
+  `claudedocs/music.md`. Links `LunaMusicKit`; reads `saves.sqlite` to browse and render Reader text saves for the podcast queue,
+  and marks the source save finished after natural readout completion.
 - **Luna Vault** (`com.hsanabria.luna.vault`, target `LunaVault`) — an encrypted,
   search-first arbitrary-file surface. Vault v1 stores on device, in iCloud
   (with optional local eviction), or on a user-owned Mac. AWS/S3-compatible

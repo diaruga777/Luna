@@ -4,6 +4,7 @@ import LunaDesignSystem
 import LunaModels
 import LunaMusicCore
 import LunaPodcastCore
+import LunaStorage
 
 /// Tap a text save to append its readout; Play Next is available in the long-press menu.
 @MainActor public final class ReaderPodcastsViewController: MusicScreenViewController, UITableViewDataSource, UITableViewDelegate, UISearchResultsUpdating {
@@ -36,6 +37,7 @@ import LunaPodcastCore
         })
         navigationItem.rightBarButtonItem?.accessibilityLabel = "Podcast Queue"
         reader.objectWillChange.merge(with: library.objectWillChange).receive(on: DispatchQueue.main).sink { [weak self] in self?.reload() }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: .savesChanged).receive(on: DispatchQueue.main).sink { [weak self] _ in self?.loadItems() }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification).sink { [weak self] _ in self?.loadItems() }.store(in: &subscriptions)
         let refresh = UIRefreshControl()
         refresh.addAction(UIAction { [weak self] _ in self?.loadItems() }, for: .valueChanged)

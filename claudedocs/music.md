@@ -970,16 +970,22 @@ Physical-device/background audio output and AirPlay have not been measured.
 ### Luna Reader readouts
 
 When Luna Reader is installed, the podcast root includes **Luna Reader**, with
-Reader’s monochrome app artwork. It opens a searchable list of ready text saves,
-including archived articles and extracted documents. Tapping a save creates its
+Reader’s monochrome app artwork. It opens a searchable list of ready, unread text
+saves and extracted documents. Read, archived, pending-archive and deleted saves
+are omitted. Reader readouts use that same bundled icon in the queue, episode
+rows, mini-player and expanded player, including after reusing podcast cells. Tapping a save creates its
 readout and appends it to the podcast queue; long press also offers **Play Next**.
 Generation shows per-save progress and failures can be retried. Reader’s active
 and archived text-save menus offer **Add to Luna Music** when Music is installed.
 The `lunamusic://reader?save=<UUID>` handoff opens this page and adds that save;
 a bare `lunamusic://reader` opens the browser. Invalid save IDs are rejected.
 
-Music reads the shared saves store but does not update Reader reading positions,
-read state or archives. Normal adds follow Reader's voice preference. If a Gemini
+Adding a save does not change its read state. After natural readout completion,
+Music calls the shared store's `markFinishedReading`, setting Reader's read state,
+terminal progress and pending-archive marker together. Pausing, skipping to another
+episode or seeking directly to the end does not finish the source save. A deleted
+source is never recreated; Music's exported audio remains playable. The browser
+reloads for saves changes and on foreground. Normal adds follow Reader's voice preference. If a Gemini
 API key is saved in Reader, the plus menu and long-press menu also offer **Add with
 Gemini** and **Play Next with Gemini**, even when the device voice is preferred.
 No second key setup is needed: the credential is read from the shared Keychain.
@@ -1017,3 +1023,8 @@ and warm/cold Reader routes. The UI saved-item route rendered an existing text
 save and verified its title in the podcast queue. Root, browser and queued-state
 screenshots were visually inspected. Physical-device/background playback was not
 measured.
+
+Streaming/readout replacement validation (2026-10-28): focused Reader/audio and
+Music integration simulator suites pass, including actual device-voice rendering
+and podcast-to-Reader playback followed by the original save's read transition.
+Live Google synthesis has not been exercised with a user credential.

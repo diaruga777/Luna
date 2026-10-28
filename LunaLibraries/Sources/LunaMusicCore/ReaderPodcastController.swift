@@ -6,7 +6,8 @@ import LunaModels
 import LunaStorage
 import LunaPodcastCore
 
-/// Music reads text saves from the App Group; only Music writes its podcast library.
+/// Music reads text saves from the App Group and marks originals finished after listening.
+/// Its rendered podcast library remains local to Music.
 /// Rendered copies belong to Music and remain playable if the original save is deleted.
 @MainActor public final class ReaderPodcastController: ObservableObject {
     public enum Voice: Sendable { case device, gemini }
@@ -46,11 +47,18 @@ import LunaPodcastCore
     public func items() async -> [SavedItem] {
         let saves = saves
         return await Task.detached(priority: .userInitiated) {
-            saves.items().filter { Self.isTextSave($0) && saves.content(for: $0)?.blocks.contains(where: {
+            saves.items().filter { Self.isTextSave($0) && $0.readState != .read && !$0.isArchived && $0.pendingArchiveAt == nil && saves.content(for: $0)?.blocks.contains(where: {
                 !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) == true }
         }.value
     }
+    /// Completing a local copy updates its source, but never recreates a deleted save.
+    func didFinishListening(to episode: PodcastEpisode) {
+        guard episode.showID == ReaderPodcastSource.showID,
+              let id = UUID(uuidString: episode.guid) else { return }
+        saves.markFinishedReading(id)
+    }
+
     @discardableResult public func enqueue(_ saveID: UUID, next: Bool = false, voice: Voice? = nil) async throws -> PodcastEpisode {
         let voice = voice ?? preferredVoice()
         if let job = jobs[saveID] {

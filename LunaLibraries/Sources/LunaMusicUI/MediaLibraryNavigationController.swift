@@ -2,7 +2,7 @@ import UIKit
 import LunaMusicCore
 
 /// Browsing is independent of the active audio queue. Each surface keeps its
-/// navigation stack, including its search query and scroll position.
+/// navigation stack and scroll position; the root search text is shared.
 @MainActor public final class MediaLibraryNavigationController: UINavigationController {
     public let music = MusicLibraryViewController()
     public let podcasts = PodcastLibraryViewController()
@@ -18,12 +18,17 @@ import LunaMusicCore
         music.cancelPendingSearchFocus()
         let search = topViewController?.navigationItem.searchController
         let keepsSearchFocus = search?.searchBar.searchTextField.isFirstResponder == true
+        let sharedQuery = search?.searchBar.text ?? ""
         let finish = { [weak self] in
             guard let self else { return }
             // Avoid a crossfade gap between the outgoing and incoming keyboard
             // owners. UIKit installs the new navigation search on the next turn.
             self.replaceStack(destination, animated: animated && !keepsSearchFocus) {
                 self.topViewController?.loadViewIfNeeded()
+                if let incomingSearch = self.topViewController?.navigationItem.searchController as? LibrarySearchController {
+                    incomingSearch.searchBar.text = sharedQuery
+                    incomingSearch.searchResultsUpdater?.updateSearchResults(for: incomingSearch)
+                }
                 guard keepsSearchFocus,
                       let owner = self.topViewController,
                       let incomingSearch = owner.navigationItem.searchController as? LibrarySearchController else {

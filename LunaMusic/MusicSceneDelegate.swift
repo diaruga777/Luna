@@ -86,7 +86,10 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func resumeLibrary() {
         guard isShowingLibrary else { return }
         if let id = MusicIntentRoute.pendingPodcastEpisodeID { openPodcastEpisode(id); return }
-        if UserDefaults.standard.bool(forKey: "LunaMusic.browsingPodcasts") { library?.showPodcasts(animated: false) }
+        if UserDefaults.standard.bool(forKey: "LunaMusic.browsingPodcasts") {
+            library?.showPodcasts(animated: false)
+            library?.podcasts.foregroundSearch()
+        }
         let route = pendingRoute; pendingRoute = nil
         if let route { apply(route) }
         else if !browsingPodcasts { library?.foregroundSearch() }

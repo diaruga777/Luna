@@ -70,7 +70,8 @@ player bar switches libraries: Music stays on the left and Podcasts on the right
 The selected surface expands to show its own artwork, title and playback controls;
 the other remains a 56-point circular icon button, centered beside the player even
 when larger text makes the bar taller. Switching preserves each library's navigation
-stack, search query and scroll position, and does not start or interrupt audio.
+stack and scroll position, and does not start or interrupt audio. Search text carries
+between surfaces so a query applies to both libraries; each surface shows its own matches.
 If search is focused, focus transfers to the destination's visible search field;
 switching with the keyboard dismissed leaves it dismissed.
 Play explicitly resumes that surface's queue. There is no tab bar or separate
@@ -103,10 +104,10 @@ backgrounded without active audio; retry/foreground refresh resumes the policy.
 
 ## Foreground behavior
 
-`MusicSceneDelegate` focuses a cleared library search at cold launch and every
-return from background while browsing music. Podcast browsing stays open on return
-and is restored on cold launch; the former Podcasts tab preference migrates to this
-navigation state. Explicit search links return to the Library, and podcast episode/queue
+`MusicSceneDelegate` restores the last-used Music or Podcasts root at cold launch
+and focuses its search field with the keyboard visible. Returning from background
+does the same on the selected surface. The former Podcasts tab preference migrates
+to this navigation state. Explicit search links return to the Library, and podcast episode/queue
 routes select Podcasts and open the requested episode or queue. Permission alerts and transient inactive states do not
 reset navigation. An incoming `lunamusic://queue` URL takes precedence and opens
 the queue without the keyboard; `lunamusic://search?q=…` supplies a query. App
@@ -114,8 +115,12 @@ Intent routes are retained until a cold-start scene has installed observers.
 
 ## System surfaces
 
-See [music-system-integrations.md](music-system-integrations.md) for Siri,
-Shortcuts, widgets, Control Center and CarPlay. The app and
+Siri's **Play Library Music** intent resolves indexed songs, albums, artists and
+playlists through the library entity query. A playlist starts in shuffle; a song
+starts first and continues with a shuffled containing playlist selected by the same
+recency and playlist eligibility rules as in-app playback. See
+[music-system-integrations.md](music-system-integrations.md) for Siri, Shortcuts,
+widgets, Control Center and CarPlay. The app and
 widget use the family App Group for a small, separate music state snapshot.
 
 The UI uses native UIKit navigation search, sheets, controls and iOS 26 Liquid

@@ -23,6 +23,9 @@ import OSLog
                 Task { @MainActor in self?.scheduleRefresh() }
             })
         }
+        observers.append(NotificationCenter.default.addObserver(forName: .lunaMusicLibraryChanged, object: nil, queue: .main) { _ in
+            Task { @MainActor in await MusicEntityIndexing.refresh() }
+        })
         LunaMusicShortcuts.updateAppShortcutParameters()
         Task {
             for existing in Activity<MusicActivityAttributes>.activities {

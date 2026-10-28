@@ -1,6 +1,10 @@
 import UIKit
 import LunaMusicCore
 
+extension Notification.Name {
+    static let lunaMusicSearchQueryChanged = Notification.Name("LunaMusic.searchQueryChanged")
+}
+
 /// Browsing is independent of the active audio queue. Each surface keeps its
 /// navigation stack and scroll position; the root search text is shared.
 @MainActor public final class MediaLibraryNavigationController: UINavigationController {
@@ -9,9 +13,22 @@ import LunaMusicCore
     public private(set) var surface: MediaPlaybackCoordinator.Surface = .music
     private var musicStack: [UIViewController] = []
     private var podcastStack: [UIViewController] = []
+    private var searchObserver: NSObjectProtocol?
 
-    public init() { super.init(rootViewController: music) }
+    public init() {
+        super.init(rootViewController: music)
+        searchObserver = NotificationCenter.default.addObserver(forName: .lunaMusicSearchQueryChanged, object: nil, queue: .main) { [weak self] notification in
+            guard let query = notification.userInfo?["query"] as? String,
+                  let source = notification.userInfo?["source"] as? String else { return }
+            Task { @MainActor [weak self] in self?.synchronizeSearch(query, from: source) }
+        }
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func synchronizeSearch(_ query: String, from source: String) {
+        if source == "music" { podcasts.applySharedSearchQuery(query) }
+        else { music.applySharedSearchQuery(query) }
+    }
 
     public func select(_ destination: MediaPlaybackCoordinator.Surface, animated: Bool = true, completion: (() -> Void)? = nil) {
         guard surface != destination else { completion?(); return }
@@ -121,6 +138,10 @@ import LunaMusicCore
         }
         if presentedViewController != nil { dismiss(animated: false, completion: apply) }
         else { apply() }
+    }
+
+    deinit {
+        if let searchObserver { NotificationCenter.default.removeObserver(searchObserver) }
     }
 
 }

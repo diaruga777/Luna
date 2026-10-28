@@ -55,6 +55,8 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         searchController.isActive = false
         search.text = query
         update()
+        NotificationCenter.default.post(name: .lunaMusicSearchQueryChanged, object: nil,
+                                        userInfo: ["query": query, "source": "music"])
         DispatchQueue.main.async { [weak self] in
             guard let self, self.focusToken == token, self.view.window != nil else { return }
             self.searchController.isActive = true
@@ -83,7 +85,16 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         navigationController?.popToRootViewController(animated: false)
         presentPlayer(queue: true)
     }
-    public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) { update() }
+    public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        update()
+        NotificationCenter.default.post(name: .lunaMusicSearchQueryChanged, object: nil,
+                                        userInfo: ["query": searchText, "source": "music"])
+    }
+    func applySharedSearchQuery(_ query: String) {
+        guard search.text != query else { return }
+        search.text = query
+        update()
+    }
     public func updateSearchResults(for searchController: UISearchController) { update() }
     public func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
     private func update() {

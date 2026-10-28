@@ -35,6 +35,10 @@ import LunaDesignSystem
         loadViewIfNeeded()
         content.foregroundSearch(query: query)
     }
+    func applySharedSearchQuery(_ query: String) {
+        loadViewIfNeeded()
+        content.applySharedSearchQuery(query)
+    }
     public func openEpisode(_ id: String) {
         guard let episode = PodcastLibraryController.shared.state.episodes[id] else { return }
         navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
@@ -96,10 +100,17 @@ import LunaDesignSystem
         configureSearch()
         search.searchBar.text = query
         updateSearchResults(for: search)
+        NotificationCenter.default.post(name: .lunaMusicSearchQueryChanged, object: nil,
+                                        userInfo: ["query": query, "source": "podcasts"])
         DispatchQueue.main.async { [weak self] in
             guard let self, self.view.window != nil else { return }
             self.search.focusSearch()
         }
+    }
+    func applySharedSearchQuery(_ query: String) {
+        guard search.searchBar.text != query else { return }
+        search.searchBar.text = query
+        updateSearchResults(for: search)
     }
     private var showingSearch: Bool {
         mode == 3 || (mode == 4 && !(search.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -211,6 +222,10 @@ import LunaDesignSystem
     }
 }
 extension PodcastBrowserViewController: UISearchBarDelegate {
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        NotificationCenter.default.post(name: .lunaMusicSearchQueryChanged, object: nil,
+                                        userInfo: ["query": searchText, "source": "podcasts"])
+    }
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
     func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) { updateSearchResults(for: search) }
 }

@@ -18,12 +18,17 @@ public enum GeminiSpeechCredential {
 }
 
 enum GeminiSpeechError: LocalizedError {
-    case missingKey, quota, unauthorized, unavailable, invalidAudio, incomplete, timedOut
+    case missingKey, quota, unauthorized, permissionDenied, paymentRequired, projectSetupRequired
+    case requestRejected, unavailable, invalidAudio, incomplete, timedOut
     var errorDescription: String? {
         switch self {
         case .missingKey: return L10n.string("Gemini_missingKey")
         case .quota: return L10n.string("Gemini_quota")
         case .unauthorized: return L10n.string("Gemini_unauthorized")
+        case .permissionDenied: return L10n.string("Gemini_permissionDenied")
+        case .paymentRequired: return L10n.string("Gemini_paymentRequired")
+        case .projectSetupRequired: return L10n.string("Gemini_projectSetupRequired")
+        case .requestRejected: return L10n.string("Gemini_requestRejected")
         case .unavailable: return L10n.string("Gemini_unavailable")
         case .invalidAudio: return L10n.string("Gemini_invalidAudio")
         case .incomplete: return L10n.string("Gemini_incomplete")
@@ -192,11 +197,12 @@ public actor GeminiArticleSpeech {
                 DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) status=\((response as? HTTPURLResponse)?.statusCode ?? 0) bytes=\(data.count) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
                 try Task.checkCancellation()
                 guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
-                switch http.statusCode {
-                case 200..<300: break
-                case 401, 403: throw GeminiSpeechError.unauthorized
-                case 429: throw GeminiSpeechError.quota
-                default: throw GeminiSpeechError.unavailable
+                guard (200..<300).contains(http.statusCode) else {
+                    let apiCode = Self.apiErrorCode(from: data)
+                    DiagnosticLog.shared.record(
+                        "api error item=\(itemID) chunk=\(index + 1) status=\(http.statusCode) code=\(apiCode ?? "unknown")",
+                        category: "gemini-tts")
+                    throw Self.speechError(statusCode: http.statusCode, apiCode: apiCode)
                 }
                 let audio = try Self.audio(from: data)
                 try Self.cacheAudio(audio, at: file)
@@ -354,8 +360,35 @@ public actor GeminiArticleSpeech {
         return request
     }
 
+    /// Google returns structured error bodies for non-2xx Interactions API
+    /// responses. Keep the machine code for diagnostics, but never log or show
+    /// the server message because it may contain request details.
+    private static func apiErrorCode(from data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = root["error"] as? [String: Any] else { return nil }
+        if let code = error["code"] as? String { return code }
+        if let status = error["status"] as? String { return status.lowercased() }
+        guard let value = error["code"] else { return nil }
+        if let code = value as? NSNumber { return code.stringValue }
+        return nil
+    }
+
+    private static func speechError(statusCode: Int, apiCode: String?) -> GeminiSpeechError {
+        switch statusCode {
+        case 400: return apiCode == "failed_precondition" ? .projectSetupRequired : .requestRejected
+        case 401: return .unauthorized
+        case 402: return .paymentRequired
+        case 403: return .permissionDenied
+        case 404: return .requestRejected
+        case 408: return .timedOut
+        case 429: return .quota
+        default: return .unavailable
+        }
+    }
+
     static func audio(from data: Data) throws -> Data {
         struct Response: Decodable {
+            struct APIError: Decodable { let code: String? }
             struct Step: Decodable {
                 struct Content: Decodable { let type: String; let data: String?; let mime_type: String? }
                 let type: String
@@ -363,8 +396,14 @@ public actor GeminiArticleSpeech {
             }
             let status: String
             let steps: [Step]?
+            let errors: [APIError]?
         }
-        guard let response = try? JSONDecoder().decode(Response.self, from: data), response.status == "completed" else {
+        guard let response = try? JSONDecoder().decode(Response.self, from: data) else {
+            throw GeminiSpeechError.incomplete
+        }
+        guard response.status == "completed" else {
+            let code = response.errors?.compactMap(\.code).joined(separator: ",") ?? "none"
+            DiagnosticLog.shared.record("interaction ended status=\(response.status) code=\(code)", category: "gemini-tts")
             throw GeminiSpeechError.incomplete
         }
         let parts = (response.steps ?? []).filter { $0.type == "model_output" }.flatMap { $0.content ?? [] }.filter { $0.type == "audio" }

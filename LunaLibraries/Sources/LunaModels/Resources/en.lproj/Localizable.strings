@@ -1692,6 +1692,10 @@
 "Gemini_quota_Luna" = "Google’s speech limit has been reached. Try again later or choose the device voice in Settings → Audio.";
 "Gemini_unauthorized_Luna" = "Google couldn’t accept this API key. Check it in Settings → Audio.";
 "Gemini_unavailable_Luna" = "Gemini speech is unavailable. Try again later or choose the device voice in Settings → Audio.";
+"Gemini_permissionDenied_Luna" = "This API key doesn’t have access to Gemini speech. Check its project permissions and try again.";
+"Gemini_paymentRequired_Luna" = "Google requires an active billing balance for this request. Check your Gemini project billing.";
+"Gemini_projectSetupRequired_Luna" = "Your Google AI project isn’t ready for speech. Check its billing and API access.";
+"Gemini_requestRejected_Luna" = "Google rejected the speech request. Check your Gemini API setup and try again.";
 "Gemini_invalidAudio_Luna" = "Google didn’t return playable audio. Try again.";
 "Gemini_incomplete_Luna" = "Google couldn’t finish this readout. Try again or choose the device voice in Settings → Audio.";
 "Gemini_deviceVoice_Luna" = "Use Device Voice";

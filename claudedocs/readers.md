@@ -54,6 +54,8 @@ canonical zero is converted back to UIKit's inset-relative top offset on restore
 (`-adjustedContentInset.top`); applying it as raw zero would hide the title again.
 Hiding Scroll chrome widens the card and extends its viewport to the screen's top,
 so neither text nor the scrolling masthead is clipped by a reserved header band.
+Embedded RabbitHole layers fill that host viewport without adding another window
+safe-area frame inset; standalone readers retain their own safe-area layout.
 Scroll-driven changes keep the text and title column fixed for the displayed passage, then widen incoming lines gradually;
 tap-driven changes may wrap the wider title to a different height.
 The tap's TextKit transition resolves that destination inset up front and anchors

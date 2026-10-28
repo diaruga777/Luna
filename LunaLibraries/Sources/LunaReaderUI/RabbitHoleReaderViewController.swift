@@ -297,7 +297,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func applyFocus() {
         guard !layers.isEmpty else { return }
         let bounds = view.bounds
-        let safe = view.safeAreaInsets
+        // A card host owns the viewport and its chrome insets. Applying the
+        // window safe area again clips its immersive content below the status
+        // bar even though the outer card already reaches the screen's top.
+        let safe: UIEdgeInsets = providesOwnChrome ? view.safeAreaInsets : .zero
         for (i, layer) in layers.enumerated() {
             let p = layout.placement(layerIndex: i, focusedIndex: focus, bounds: bounds, safeArea: safe)
             layer.view.frame = p.cardFrame

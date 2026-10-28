@@ -698,6 +698,8 @@ final class ArticleCardsChromeTests: XCTestCase {
     func testHeaderTravelsBetweenPinnedAndScrollPositionsAtEveryOffset() throws {
         let title = "A header that joins the top of the article"
         let controller = makeArticleController(seed: "header-handoff-offsets", title: title)
+        let window = UITestSupport.host(controller)
+        defer { window.isHidden = true }
         let card = try XCTUnwrap(controller.carousel.contentController(
             at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
         let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))

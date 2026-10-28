@@ -8,6 +8,7 @@ import LunaModels
 import LunaStorage
 @testable import LunaMusicUI
 import LunaPodcastCore
+import LunaDesignSystem
 @testable import LunaMusicApp
 
 final class MusicLaunchRouteTests: XCTestCase {
@@ -155,6 +156,56 @@ final class ReaderMusicRouteTests: XCTestCase {
     private func controller(_ render: @escaping (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double) -> ReaderPodcastController {
         ReaderPodcastController(saves: saves, library: library, directory: root.appendingPathComponent("podcasts/ReaderAudio"), render: render)
     }
+    func testReaderBrowserOmitsReadArchivedPendingArchiveAndDeletedItems() async throws {
+        let unread = save("Unread"), opened = save("Opened"), read = save("Read")
+        let archived = save("Archived"), pending = save("Finished"), deleted = save("Deleted")
+        saves.markReadState(.opened, for: opened.id)
+        saves.markReadState(.read, for: read.id)
+        saves.setArchived(true, for: archived.id)
+        saves.markFinishedReading(pending.id)
+        saves.delete(deleted)
+        let reader = controller { _, _, _ in XCTFail("Browsing cannot generate audio"); return 0 }
+        let items = await reader.items()
+        XCTAssertEqual(Set(items.map(\.id)), Set([unread.id, opened.id]))
+    }
+
+    func testListeningCompletionMarksSourceFinishedAndDoesNotRecreateDeletedSaves() async throws {
+        let item = save(), deleted = save("Deleted")
+        let reader = controller { _, url, _ in try Data("audio".utf8).write(to: url); return 12 }
+        let episode = try await reader.enqueue(item.id)
+        let deletedEpisode = try await reader.enqueue(deleted.id)
+        XCTAssertEqual(saves.item(withID: item.id)?.readState, .unopened, "Queueing must not mark it read")
+        var external = episode; external.showID = "external-podcast"
+        reader.didFinishListening(to: external)
+        XCTAssertEqual(saves.item(withID: item.id)?.readState, .unopened)
+        reader.didFinishListening(to: episode)
+        reader.didFinishListening(to: episode) // Replayed completions are idempotent.
+        XCTAssertEqual(saves.item(withID: item.id)?.readState, .read)
+        XCTAssertEqual(saves.item(withID: item.id)?.readingProgress, 1)
+        XCTAssertNotNil(saves.item(withID: item.id)?.pendingArchiveAt)
+        let remaining = await reader.items()
+        XCTAssertFalse(remaining.contains { $0.id == item.id })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: episode.mediaURL.path))
+        saves.delete(deleted)
+        reader.didFinishListening(to: deletedEpisode)
+        XCTAssertNil(saves.item(withID: deleted.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: deletedEpisode.mediaURL.path))
+    }
+
+    func testQueueUsesReadersBundledIconAndClearsItWhenReusedForPodcast() throws {
+        let icon = try XCTUnwrap(LunaAppIconImage.image(for: .reader))
+        let episode = PodcastEpisode(showID: ReaderPodcastSource.showID, guid: UUID().uuidString,
+            title: "Article", publishedAt: Date(), mediaURL: URL(fileURLWithPath: "/tmp/article.m4a"))
+        let cell = PodcastPlayerQueueCell(style: .default, reuseIdentifier: nil)
+        cell.configure(episode, progress: nil, artworkURL: nil)
+        XCTAssertEqual(cell.artwork.image?.pngData(), icon.pngData())
+        XCTAssertEqual(cell.artwork.accessibilityIdentifier, ReaderPodcastSource.showID)
+        var podcast = episode; podcast.showID = "podcast"
+        cell.configure(podcast, progress: nil, artworkURL: nil)
+        XCTAssertNil(cell.artwork.accessibilityIdentifier)
+        XCTAssertEqual(cell.artwork.image?.pngData(), UIImage(systemName: "dot.radiowaves.left.and.right")?.pngData())
+    }
+
     func testExplicitGeminiUpgradeUsesRequestedVoiceAndReusesAudioWithoutDuplicatingQueue() async throws {
         let item = save()
         var deviceRenders = 0, geminiRenders = 0
@@ -325,7 +376,7 @@ final class ReaderMusicRouteTests: XCTestCase {
         podcast.duration = readout.duration
         try library.edit { $0.shows[show.id] = show; $0.episodes[podcast.id] = podcast }
         let downloads = PodcastDownloads(directory: root.appendingPathComponent("downloads"), library: library, sessionConfiguration: .ephemeral)
-        let playback = PodcastPlaybackController(library: library, downloads: downloads)
+        let playback = PodcastPlaybackController(library: library, downloads: downloads, readerCompletion: { reader.didFinishListening(to: $0) })
         defer { playback.pause(); downloads.stop() }
         try await playback.play(podcast)
         try await waitFor { playback.isPlaying && playback.position > 0.1 }
@@ -334,6 +385,9 @@ final class ReaderMusicRouteTests: XCTestCase {
         XCTAssertTrue(library.state.queue.isEmpty)
         XCTAssertTrue(library.state.progress[podcast.id]?.listened == true)
         XCTAssertNil(playback.errorMessage)
+        playback.seek(to: max(0, readout.duration - 0.3))
+        try await waitFor { self.saves.item(withID: item.id)?.readState == .read }
+        XCTAssertEqual(saves.item(withID: item.id)?.readingProgress, 1)
     }
     private func waitFor(_ condition: () -> Bool) async throws {
         for _ in 0..<400 {

@@ -87,6 +87,42 @@ final class AudioPlaybackCenterTests: XCTestCase {
         }
     }
 
+    func testProgressivePlaybackSchedulesEarlyButWaitsForProviderCompletionToMarkRead() {
+        AudioSettings.isAutoplayEnabled = false
+        let gate = ProgressiveTestGate()
+        center.articleRendererProvider = { _, _, _ in ProgressiveTestRenderer(gate: gate) }
+        let (item, _) = startPlayback(blockCount: 1)
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        center.reportArticlePreparationProgress(itemID: item.id, fraction: 0.4)
+        XCTAssertEqual(center.articlePreparationProgress, 0.4)
+        XCTAssertTrue(center.isGeneratingArticleAudio)
+        engine.completeSegment(at: 0); engine.completeSegment(at: 1)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        XCTAssertTrue(store.finishedIDs.isEmpty, "Audio EOF alone cannot mark an incomplete stream read")
+        Task { await gate.finish() }
+        waitUntil(self.store.finishedIDs == [item.id])
+        XCTAssertEqual(engine.scheduledSegments.count, 2)
+        center.reportArticlePreparationProgress(itemID: item.id, fraction: 1)
+        XCTAssertFalse(center.isGeneratingArticleAudio)
+    }
+
+    func testProgressiveFailureAfterAudibleBuffersPausesWithoutMarkingRead() {
+        let gate = ProgressiveTestGate()
+        center.articleRendererProvider = { _, _, _ in ProgressiveTestRenderer(gate: gate) }
+        let (item, _) = startPlayback(blockCount: 3)
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        engine.currentTime = 1.5 // Four words at the initial 0.35 s/word estimate.
+        engine.completeSegment(at: 0); engine.completeSegment(at: 1)
+        Task { await gate.finish(error: GeminiSpeechError.incomplete) }
+        waitUntil(self.center.state == .paused(itemID: item.id))
+        XCTAssertTrue(store.finishedIDs.isEmpty)
+        XCTAssertNotNil(center.articlePreparationError)
+        XCTAssertTrue(renderer.renderedBlocks.isEmpty, "Cloud failure must not silently switch voice")
+        center.useDeviceVoiceForCurrentArticle()
+        waitUntil(!self.renderer.renderedBlocks.isEmpty)
+        XCTAssertEqual(renderer.renderedBlocks.first?.blockIndex, 1, "Explicit recovery resumes near the audible position")
+    }
+
     func testArticlePreparationFailurePausesWithoutSkippingOrMarkingFinishedAndResumeRetries() {
         var attempts = 0
         let cloud = FakeRenderer()
@@ -561,5 +597,32 @@ final class AudioPlaybackCenterTests: XCTestCase {
         center.removeObserver(observer)
         startPlayback()
         XCTAssertTrue(observer.states.isEmpty)
+    }
+}
+
+private actor ProgressiveTestGate {
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var result: Result<Void, Error>?
+    func wait() async throws {
+        if let result { return try result.get() }
+        try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+    func finish(error: Error? = nil) {
+        let result: Result<Void, Error> = error.map { .failure($0) } ?? .success(())
+        self.result = result; continuation?.resume(with: result); continuation = nil
+    }
+}
+private final class ProgressiveTestRenderer: ProgressiveSpeechRendering {
+    let canonicalFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)
+    private let gate: ProgressiveTestGate
+    private var count = 0
+    init(gate: ProgressiveTestGate) { self.gate = gate }
+    func render(_ block: AudioScript.SpokenBlock) async throws -> RenderedSegment { throw GeminiSpeechError.unavailable }
+    func nextSegment(startingAt block: AudioScript.SpokenBlock, sessionID: UUID) async throws -> RenderedSegment? {
+        guard count < 2 else { try await gate.wait(); return nil }
+        count += 1
+        let buffer = AVAudioPCMBuffer(pcmFormat: canonicalFormat!, frameCapacity: 24_000)!
+        buffer.frameLength = 24_000; memset(buffer.floatChannelData![0], 0, 24_000 * 4)
+        return RenderedSegment(blockIndex: block.blockIndex, buffers: [buffer], wordMarkers: [], duration: 1, format: canonicalFormat!)
     }
 }

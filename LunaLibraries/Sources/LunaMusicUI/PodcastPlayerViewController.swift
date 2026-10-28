@@ -312,14 +312,15 @@ extension MusicScreenViewController {
         showLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? library.state.shows[episode?.showID ?? ""]?.title
         showLabel.textColor = player.errorMessage == nil ? UIColor.white.withAlphaComponent(0.5) : .systemRed
         let url = episode?.artworkURL ?? library.state.shows[episode?.showID ?? ""]?.artworkURL
-        let expectedArtworkID = episode?.showID == ReaderPodcastSource.showID ? "luna-reader-icon" : url?.absoluteString
-        if artworkID != url || artwork.accessibilityIdentifier != expectedArtworkID || artwork.image == nil {
+        let isReader = episode?.showID == ReaderPodcastSource.showID
+        let identity = isReader ? ReaderPodcastSource.showID : url?.absoluteString
+        if artwork.accessibilityIdentifier != identity || artwork.image == nil {
             artworkID = url; artworkTask?.cancel()
             PodcastUI.artwork(episode, show: library.state.shows[episode?.showID ?? ""], into: artwork)
-            let cached = url.flatMap { PodcastUI.images.object(forKey: $0 as NSURL) }
+            let cached = isReader ? artwork.image : url.flatMap { PodcastUI.images.object(forKey: $0 as NSURL) }
             backdrop.image = cached
             view.backgroundColor = MusicStyle.artworkColor(cached) ?? UIColor(white: 0.16, alpha: 1)
-            if let url, cached == nil {
+            if !isReader, let url, cached == nil {
                 artworkTask = Task { [weak self] in
                     let image = await PodcastUI.image(url)
                     guard let self, !Task.isCancelled, self.artworkID == url else { return }

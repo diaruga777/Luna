@@ -70,8 +70,8 @@ player bar switches libraries: Music stays on the left and Podcasts on the right
 The selected surface expands to show its own artwork, title and playback controls;
 the other remains a 56-point circular icon button, centered beside the player even
 when larger text makes the bar taller. Switching preserves each library's navigation
-stack and scroll position, and does not start or interrupt audio. Search text carries
-between surfaces so a query applies to both libraries; each surface shows its own matches.
+stack and scroll position, and does not start or interrupt audio. The search text stays
+synchronized across both libraries as it changes, and each surface shows its own matches.
 If search is focused, focus transfers to the destination's visible search field;
 switching with the keyboard dismissed leaves it dismissed.
 Play explicitly resumes that surface's queue. There is no tab bar or separate

@@ -180,8 +180,10 @@ public actor GeminiArticleSpeech {
             for (index, text) in plan.chunks.enumerated() {
                 try Task.checkCancellation()
                 let file = folder.appendingPathComponent("\(index).m4a")
-                progress(Double(index) / Double(plan.chunks.count))
-                if Self.isPlayable(file) { continue }
+                if Self.isPlayable(file) {
+                    progress(Double(index + 1) / Double(plan.chunks.count))
+                    continue
+                }
                 var request = try Self.request(text: text, apiKey: apiKey)
                 request.timeoutInterval = timeout
                 DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count)", category: "gemini-tts")
@@ -202,6 +204,8 @@ public actor GeminiArticleSpeech {
                     try? FileManager.default.removeItem(at: file)
                     throw GeminiSpeechError.invalidAudio
                 }
+                // Report completed work, not the chunk we're about to request.
+                progress(Double(index + 1) / Double(plan.chunks.count))
             }
             progress(1)
             DiagnosticLog.shared.record("ready item=\(itemID)", category: "gemini-tts")
@@ -343,7 +347,8 @@ public actor GeminiArticleSpeech {
             "model": model,
             "store": false,
             "input": [["type": "user_input", "content": [["type": "text", "text": text]]]],
-            "response_format": ["type": "audio", "mime_type": "audio/wav"],
+            // Unary Gemini TTS interactions return a complete WAV by default.
+            "response_format": ["type": "audio"],
             "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": "Kore"]]],
         ])
         return request

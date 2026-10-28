@@ -57,8 +57,8 @@ App-Group keychain access group.
 
 ## UI (`LunaSocialUI/`, shared by all three apps)
 
-- **`FriendsViewController`** — presented to users as **Contacts** from the
-  top-level Settings page. It shows separate Contacts and Blocked sections,
+- **`FriendsViewController`** — the legacy contact-management screen, no longer
+  linked from Settings. It shows separate Contacts and Blocked sections,
   a badged legacy Pending Requests entry, and "Add by Email" / "Add from Phone
   Contacts" (`CNContactPickerViewController` — no Contacts permission needed).
   Tapping a contact pushes `FriendDetailViewController` (rename,

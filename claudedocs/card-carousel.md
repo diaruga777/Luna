@@ -159,7 +159,7 @@ The date moves in exactly three ways, and no others:
   Share link over the original saved URL, plus Share video / GIF / image /
   audio once the file exists. The link is always shareable, so the circle shows
   for undownloaded cards too; only the util and failed-save cards hide it. Downloader has no Friends or Add
-  button on the root; Friends remains reachable through Settings. Its 9:16
+  button on the root. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
   Price Tracker uses the same miniature-card strip: each chip is the product
@@ -834,7 +834,7 @@ The article kind's own answers:
   the paste row reports in place instead. The deck no longer creates a synthetic
   pasteboard card.
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
-  consuming header space. Friends is reached from Settings. The card begins
+  consuming header space. The card begins
   directly below the safe area, so the reader's own header pills own the top row.
 - SceneDelegate's two root casts (then `as? ReadingListViewController`, now the `ExternalItemOpening` protocol) handle both
   roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents

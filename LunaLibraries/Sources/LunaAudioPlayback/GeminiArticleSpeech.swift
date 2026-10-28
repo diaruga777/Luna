@@ -171,7 +171,7 @@ public actor GeminiArticleSpeech {
             // excludes another Reader/Music process until its complete result
             // can be reused, and the OS releases it if the generating app dies.
             DiagnosticLog.shared.record("prepare item=\(itemID) chunks=\(plan.chunks.count)", category: "gemini-tts")
-            let lock = try await Self.acquireCacheLock(directory)
+            let lock = try await Self.acquireCacheLock(directory, timeout: timeout)
             defer { Self.releaseCacheLock(lock) }
             if Self.isComplete(folder, count: plan.chunks.count) { return folder }
             guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
@@ -231,6 +231,7 @@ public actor GeminiArticleSpeech {
             } onCancel: { task.cancel() }
             return try GeminiCachedSpeechRenderer(folder: completed, plan: plan)
         } catch {
+            finishOperation(key: key, id: operationID)
             // Only error type/code; neither the credential nor server messages
             // (which can echo request data) enter diagnostics.
             DiagnosticLog.shared.record("failed item=\(itemID) error=\(String(describing: type(of: error))) code=\((error as NSError).code)", category: "gemini-tts")
@@ -308,15 +309,17 @@ public actor GeminiArticleSpeech {
         if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
     }
 
-    private static func acquireCacheLock(_ directory: URL) async throws -> Int32 {
+    private static func acquireCacheLock(_ directory: URL, timeout: TimeInterval = 120) async throws -> Int32 {
         let parent = directory.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         // Outside the cache itself so clearing it never unlinks a held lock.
         let path = parent.appendingPathComponent(".\(directory.lastPathComponent).lock").path
         let descriptor = open(path, O_CREAT | O_RDWR, 0o600)
         guard descriptor >= 0 else { throw GeminiSpeechError.unavailable }
+        let started = ProcessInfo.processInfo.systemUptime
         do {
             while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+                if ProcessInfo.processInfo.systemUptime - started >= timeout { throw GeminiSpeechError.timedOut }
                 guard errno == EWOULDBLOCK || errno == EAGAIN else { throw GeminiSpeechError.unavailable }
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
@@ -412,7 +415,8 @@ public actor GeminiArticleSpeech {
         (0..<count).allSatisfy { isPlayable(folder.appendingPathComponent("\($0).m4a")) }
     }
     private static func isPlayable(_ url: URL) -> Bool {
-        guard let file = try? AVAudioFile(forReading: url) else { return false }
+        guard FileManager.default.fileExists(atPath: url.path),
+              let file = try? AVAudioFile(forReading: url) else { return false }
         return file.length > 0 && file.processingFormat.sampleRate > 0
     }
 }

@@ -110,6 +110,28 @@ final class AudioPlaybackCenterTests: XCTestCase {
         XCTAssertEqual(cloud.renderedBlocks.count, 2)
     }
 
+    func testPauseCancelsPendingCloudPreparationAndResumeCanRetry() {
+        var attempts = 0
+        center.articleRendererProvider = { _, _, _ in
+            attempts += 1
+            if attempts == 1 { try await Task.sleep(nanoseconds: 5_000_000_000) }
+            return FakeRenderer()
+        }
+        let item = AudioPlaybackFixtures.item(seed: "cancel-preparation")
+        let content = AudioPlaybackFixtures.content(blockCount: 3)
+        store.seed(item, content: content)
+        center.play(item: item, content: content)
+        waitUntil(attempts == 1)
+        XCTAssertTrue(center.isPreparingArticleAudio)
+        center.pause()
+        XCTAssertFalse(center.isPreparingArticleAudio)
+        XCTAssertEqual(center.state, .paused(itemID: item.id))
+        center.resume()
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        XCTAssertEqual(attempts, 2)
+        XCTAssertNil(center.articlePreparationError)
+    }
+
     func testCloudErrorCanUseDeviceVoiceWithoutRetryingCloud() {
         var attempts = 0
         center.articleRendererProvider = { _, _, _ in attempts += 1; throw GeminiSpeechError.quota }

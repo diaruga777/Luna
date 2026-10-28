@@ -133,6 +133,103 @@ final class GeminiArticleSpeechTests: XCTestCase {
         let cleared = try await provider.renderer(itemID: id, script: script, allowGeneration: false)
         XCTAssertNil(cleared)
     }
+    func testIndependentAppProvidersShareGenerationAndExportWithoutAnotherRequest() async throws {
+        let data = try response(wav())
+        let calls = Counter()
+        let shared = directory.appendingPathComponent("shared")
+        let send: (URLRequest) async throws -> (Data, URLResponse) = { request in
+            await calls.increment()
+            try await Task.sleep(nanoseconds: 30_000_000)
+            return (data, self.http(request))
+        }
+        let reader = GeminiArticleSpeech(directory: shared, send: send)
+        let music = GeminiArticleSpeech(directory: shared, send: send)
+        let id = UUID(), script = script(["First paragraph.", "Second paragraph."])
+        async let a = reader.renderer(itemID: id, script: script, allowGeneration: true)
+        async let b = music.renderer(itemID: id, script: script, allowGeneration: true)
+        let (_, prepared) = try await (a, b)
+        let renderer = try XCTUnwrap(prepared)
+        let output = directory.appendingPathComponent("music-readout.m4a")
+        let duration = try await AudioScriptFileRenderer.write(script, to: output, using: renderer)
+        XCTAssertGreaterThan(duration, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+        let count = await calls.value
+        XCTAssertEqual(count, 1, "Independent app providers arbitrate through the shared lock and cache")
+    }
+    func testReaderLocalCacheMigratesWithoutKeyOrNetwork() async throws {
+        let data = try response(wav())
+        let legacy = directory.appendingPathComponent("legacy")
+        let old = GeminiArticleSpeech(directory: legacy, send: { request in (data, self.http(request)) })
+        let id = UUID(), script = script(["Existing Reader audio"])
+        _ = try await old.renderer(itemID: id, script: script, allowGeneration: true)
+        let updated = GeminiArticleSpeech(directory: directory.appendingPathComponent("shared"), legacyDirectory: legacy,
+            apiKey: { nil }, send: { _ in XCTFail("Migration should reuse generated audio"); throw GeminiSpeechError.unavailable })
+        let migrated = try await updated.renderer(itemID: id, script: script, allowGeneration: false)
+        XCTAssertNotNil(migrated)
+        let oldCache = try await old.renderer(itemID: id, script: script, allowGeneration: false)
+        XCTAssertNil(oldCache)
+        try await updated.clearCache()
+        let cleared = try await updated.renderer(itemID: id, script: script, allowGeneration: false)
+        XCTAssertNil(cleared)
+    }
+
+    func testGenerationDeadlineCancelsSlowRequestAndAllowsRetry() async throws {
+        let data = try response(wav())
+        let calls = Counter()
+        let provider = GeminiArticleSpeech(directory: directory.appendingPathComponent("cache"), requestTimeout: 0.03, send: { request in
+            if await calls.increment() == 1 { try await Task.sleep(nanoseconds: 5_000_000_000) }
+            return (data, self.http(request))
+        })
+        let id = UUID(), script = script(["Article"])
+        let started = Date()
+        do {
+            _ = try await provider.renderer(itemID: id, script: script, allowGeneration: true)
+            XCTFail("Slow request should time out")
+        } catch {
+            XCTAssertEqual((error as? GeminiSpeechError)?.errorDescription, GeminiSpeechError.timedOut.errorDescription)
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+        let retried = try await provider.renderer(itemID: id, script: script, allowGeneration: true)
+        XCTAssertNotNil(retried)
+    }
+    func testProgressiveReaderCanPlayFirstSectionBeforeFullArticleIsReady() async throws {
+        let data = try response(wav())
+        let calls = Counter(), completed = Counter()
+        let provider = GeminiArticleSpeech(directory: directory.appendingPathComponent("cache"), send: { request in
+            let count = await calls.increment()
+            if count == 2 { try await Task.sleep(nanoseconds: 400_000_000) }
+            await completed.increment()
+            return (data, self.http(request))
+        })
+        let text = Array(repeating: "word", count: 1_200).joined(separator: " ")
+        let script = script([text, "Second section."])
+        let result = try await provider.renderer(itemID: UUID(), script: script, allowGeneration: true, startBeforeCompletion: true)
+        let renderer = try XCTUnwrap(result)
+        let first = try await renderer.render(script.spokenBlocks[0])
+        XCTAssertGreaterThan(first.duration, 0)
+        let completedBeforePlayback = await completed.value
+        XCTAssertEqual(completedBeforePlayback, 1, "Reader should not wait for the whole article")
+        let second = try await renderer.render(script.spokenBlocks[1])
+        XCTAssertGreaterThan(second.duration, 0)
+        let completedAfterPlayback = await completed.value
+        XCTAssertEqual(completedAfterPlayback, 2)
+    }
+    func testCancellingInitialGenerationStopsRequestAndDoesNotPoisonRetry() async throws {
+        let data = try response(wav())
+        let calls = Counter()
+        let provider = GeminiArticleSpeech(directory: directory.appendingPathComponent("cache"), send: { request in
+            if await calls.increment() == 1 { try await Task.sleep(nanoseconds: 5_000_000_000) }
+            return (data, self.http(request))
+        })
+        let id = UUID(), script = script(["Article"])
+        let operation = Task { try await provider.renderer(itemID: id, script: script, allowGeneration: true, startBeforeCompletion: true) }
+        while await calls.value == 0 { await Task.yield() }
+        operation.cancel()
+        do { _ = try await operation.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
+        let retried = try await provider.renderer(itemID: id, script: script, allowGeneration: true)
+        XCTAssertNotNil(retried)
+    }
+
     func testRemovingArticleRemovesItsAudio() async throws {
         let data = try response(wav())
         let provider = GeminiArticleSpeech(directory: directory.appendingPathComponent("cache"), send: { request in (data, self.http(request)) })

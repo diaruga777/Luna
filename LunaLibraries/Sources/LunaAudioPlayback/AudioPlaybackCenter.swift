@@ -210,6 +210,16 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             }
         }
     }
+    private var articlePreparationTask: Task<Void, Never>?
+    public private(set) var articlePreparationProgress: Double = 0
+    public private(set) var articlePreparationError: String?
+
+    public func reportArticlePreparationProgress(itemID: UUID, fraction: Double) {
+        guard isPreparingArticleAudio, currentItem?.id == itemID else { return }
+        articlePreparationProgress = min(max(fraction, 0), 1)
+        notifyObservers { $0.audioPlaybackCenterDidUpdatePreparation(self) }
+    }
+
     private var articleRenderer: SpeechRendering?
     private var articleRendererPrepared = false
     private var allowsArticleGeneration = false
@@ -390,6 +400,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// Explicit recovery after a cloud error; affects this article session only.
     public func useDeviceVoiceForCurrentArticle() {
         guard case .paused = state, !isPreparingArticleAudio else { return }
+        articlePreparationError = nil
         articleRenderer = nil
         articleRendererPrepared = true
         isPreparingArticleAudio = false
@@ -467,6 +478,13 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             stateBeforePause = .announcing
         case .idle, .paused: return
         }
+        if isPreparingArticleAudio {
+            articlePreparationTask?.cancel()
+            articlePreparationTask = nil
+            sessionToken = UUID()
+            isPumping = false
+            isPreparingArticleAudio = false
+        }
         engine?.pause()
         stopProgressTimer()
         stopPositionPersistTimer()
@@ -543,6 +561,10 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// `restartPlayback` (skip/seek/paragraph-jump within the current item)
     /// both need before they touch the engine.
     private func resetRenderSession(atWordIndex wordIndex: Int) {
+        articlePreparationTask?.cancel()
+        articlePreparationTask = nil
+        articlePreparationProgress = 0
+        articlePreparationError = nil
         sessionToken = UUID()
         isPumping = false
         scheduledNotYetPlayedCount = 0
@@ -662,14 +684,17 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
         if !articleRendererPrepared, let provider = articleRendererProvider, let itemID = currentItem?.id {
             isPumping = true
+            articlePreparationError = nil
+            articlePreparationProgress = 0
             isPreparingArticleAudio = true
             let token = sessionToken
             let allowGeneration = allowsArticleGeneration
-            Task { [weak self] in
+            articlePreparationTask = Task { [weak self] in
                 do {
                     let prepared = try await provider(itemID, script, allowGeneration)
                     await MainActor.run {
                         guard let self, token == self.sessionToken else { return }
+                        self.articlePreparationTask = nil
                         self.articleRenderer = prepared
                         self.articleRendererPrepared = true
                         self.isPumping = false
@@ -679,7 +704,9 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
                 } catch {
                     await MainActor.run {
                         guard let self, token == self.sessionToken else { return }
+                        self.articlePreparationTask = nil
                         self.isPumping = false
+                        self.articlePreparationError = error.localizedDescription
                         self.isPreparingArticleAudio = false
                         self.pause()
                         self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
@@ -705,6 +732,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
                         self.isPumping = false
                         self.articleRenderer = nil
                         self.articleRendererPrepared = false
+                        self.articlePreparationError = error.localizedDescription
                         self.pause()
                         self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
                     }

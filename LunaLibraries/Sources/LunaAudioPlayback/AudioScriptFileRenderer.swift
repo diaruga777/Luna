@@ -4,8 +4,14 @@ import AVFoundation
 public enum AudioScriptFileRenderer {
     public static func write(_ script: AudioScript, to url: URL,
                              progress: @escaping (Double) -> Void = { _ in }) async throws -> Double {
-        let renderer = SpeechRenderer()
-        return try await write(script, to: url, render: { try await renderer.render($0) }, progress: progress)
+        try await write(script, to: url, using: SpeechRenderer(), progress: progress)
+    }
+
+    /// Export a prepared voice (including cached Gemini audio) through the same
+    /// bounded-memory AAC writer used by device speech.
+    public static func write(_ script: AudioScript, to url: URL, using renderer: SpeechRendering,
+                             progress: @escaping (Double) -> Void = { _ in }) async throws -> Double {
+        try await write(script, to: url, render: { try await renderer.render($0) }, progress: progress)
     }
 
     static func write(_ script: AudioScript, to url: URL,

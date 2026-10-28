@@ -1697,3 +1697,12 @@
 "Gemini_deviceVoice_Luna" = "Use Device Voice";
 "Gemini_deviceVoiceHeader_Luna" = "Device Voice";
 "Gemini_deviceVoiceFooter_Luna" = "Used when Gemini is off, and for autoplay without saved Gemini audio.";
+
+// Gemini readouts in Music
+"Music_reader_addGemini_Luna" = "Add with Gemini";
+"Music_reader_nextGemini_Luna" = "Play Next with Gemini";
+"Music_reader_generationBusy_Luna" = "Audio is already being created for this save. Try again when it’s ready.";
+"Music_reader_changeVoiceWhilePlaying_Luna" = "Choose another episode before changing this readout’s voice.";
+
+"Gemini_timedOut_Luna" = "Google took too long to create the audio. Try again or use the device voice.";
+"Gemini_preparingProgress_Luna" = "Creating readout… %d%%";

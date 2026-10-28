@@ -43,9 +43,14 @@ enum AudioPlaybackWiring {
         }
         removeDeletedArticleAudio()
         AudioPlaybackCenter.shared.articleRendererProvider = { itemID, script, allowGeneration in
+            DiagnosticLog.shared.record("play item=\(itemID) gemini=\(AudioSettings.usesGeminiVoice) generationAllowed=\(allowGeneration)", category: "gemini-tts")
             guard AudioSettings.usesGeminiVoice else { return nil }
             return try await GeminiArticleSpeech.shared.renderer(
-                itemID: itemID, script: script, allowGeneration: allowGeneration)
+                itemID: itemID, script: script, allowGeneration: allowGeneration, progress: { fraction in
+                    Task { @MainActor in
+                        AudioPlaybackCenter.shared.reportArticlePreparationProgress(itemID: itemID, fraction: fraction)
+                    }
+                }, startBeforeCompletion: true)
         }
     }
     private static func removeDeletedArticleAudio() {

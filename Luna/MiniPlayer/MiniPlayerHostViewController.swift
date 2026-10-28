@@ -220,7 +220,9 @@ final class MiniPlayerHostViewController: UIViewController {
 
         guard let info = snapshot.itemInfo else { return }
         miniPlayer.apply(.init(
-            title: center.isPreparingArticleAudio ? L10n.string("Gemini_preparing") : info.title,
+            title: center.isPreparingArticleAudio
+                ? L10n.string("Gemini_preparingProgress", Int(center.articlePreparationProgress * 100))
+                : center.articlePreparationError != nil ? L10n.string("Gemini_failedTitle") : info.title,
             isUpNext: false,
             thumbnailPath: thumbnailPath(fileName: info.thumbnailFileName),
             isPlaying: snapshot.isAudiblyPlaying,

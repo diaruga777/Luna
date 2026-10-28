@@ -7,10 +7,16 @@ Cloud Text-to-Speech API, which has different billing and quotas.
 
 ## Behavior and storage
 
-- Starting an article's read-aloud explicitly may generate its audio. Article
-  ingestion, background script refinement, autoplay cache misses, Music's
-  readout exports and extensions never start Gemini requests.
-- The full spoken article is prepared before playback. Typical English articles
+- Starting an article's read-aloud explicitly may generate its audio. Music's
+  Reader-article browser can also generate a readout using Reader's saved key:
+  normal adds follow Reader's voice preference; **Add with Gemini** and
+  **Play Next with Gemini** explicitly select Gemini whenever a key is available.
+  Ingestion, background script refinement, autoplay misses and extensions never
+  start Gemini requests.
+- Reader begins playback after the first generated section and prepares the rest
+  in the background. Missing later sections wait for their atomic cache files;
+  failures pause playback instead of skipping text. Music finishes its standalone
+  readout export before enqueueing it. Typical English articles
   up to 1,200 words use one request; longer text is split into sequential requests
   of at most 1,200 words and 7,500 UTF-8 bytes, preserving the text. The byte limit
   also bounds text in languages without whitespace. Splits prefer nearby word
@@ -23,10 +29,12 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   existing iCloud Keychain behavior), and can be replaced or removed in Audio
   settings. Removing the key disables Gemini; existing audio stays available
   if Gemini is enabled again with a key. The cache itself requires no key.
-- AAC files live in Reader's Application Support/GeminiArticleSpeech directory,
-  excluded from backups. Identity includes the saved article UUID, text, block
+- AAC sections live in the App Group's GeminiArticleSpeech directory, excluded
+  from backups and shared between Reader and Music. Existing Reader-local cache
+  entries migrate on first access without another request. A process-wide actor
+  and a cross-process advisory file lock prevent duplicate API work. Identity includes the saved article UUID, text, block
   boundaries, model, voice and cache format. An unchanged article reuses its
-  audio across pauses, seeks, replays and app restarts. Edited/refined spoken
+  audio across pauses, seeks, replays, both apps and app restarts. Edited/refined spoken
   text creates a new cache identity. Audio remains until explicitly deleted,
   its article is removed, or the app is uninstalled.
 - Each successful WAV response is compressed to 64 kbps AAC, finalized,
@@ -34,6 +42,12 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   Concurrent requests for an article share generation. A quota/network failure
   pauses playback, reports an actionable error, and never silently skips text
   or marks the article finished. An explicit retry reuses completed chunks.
+- Every request has a 120-second wall-clock deadline and a matching URLSession
+  resource timeout. Pausing during initial preparation cancels that request;
+  resuming retries explicitly, retaining completed sections. The mini-player
+  shows preparation progress and a persistent failure title. Diagnostics record
+  cache hits, request section, HTTP status, byte count, elapsed time and error
+  type/code under `gemini-tts`, never the key, article text or raw server errors.
 - Autoplay and cold playback restoration only use existing Gemini audio; on a
   miss they use the device voice. There are no speculative cloud requests and
   no automatic network retries after quota errors.
@@ -49,6 +63,9 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   small container overhead. No automatic eviction is used, so later playback
   remains free of synthesis requests until the user deletes its cache. Cloud failures also offer
   **Use Device Voice** for this article without changing the global preference.
+  Removing a Music readout deletes only Music's export; Reader's shared generated
+  sections remain reusable. Clearing the shared cache from Reader does not remove
+  already exported Music episodes.
 
 ## Free allowance: evaluated 2026-10-28
 
@@ -121,3 +138,19 @@ Official Google sources checked on 2026-10-28:
 - [Gemini 3.8 Flash TTS model limits](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash-tts)
 - [Speech generation REST request and WAV response](https://ai.google.dev/gemini-api/docs/speech-generation)
 - [Interactions API response status](https://ai.google.dev/api/interactions-api)
+
+## Follow-up validation (2026-10-28)
+
+60 focused Reader tests passed, including independent-app cache arbitration,
+Reader-local cache migration, first-section playback, deadline cancellation,
+retry after timeout, pause/resume cancellation, export to Music's AAC format and
+localization. Music's focused integration checks cover key-dependent menu
+availability, Reader voice preference, explicit Gemini upgrades, reuse, failed
+requests, queue order, current-episode protection, removal and sandbox rebasing.
+Google synthesis with the user's key has not been exercised from this workspace.
+The supplied diagnostic export had no Gemini request records; it did not establish
+whether the reported stall was a provider failure, full-article preparation or
+playback. New diagnostics separate those states without recording secrets or text.
+An existing real-speaker Music playback test failed in this environment when
+Core Audio could not start the simulator output device (AQME timeout/-66681);
+export, decoding and the focused integration checks run independently of it.

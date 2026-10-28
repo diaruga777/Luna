@@ -1,5 +1,6 @@
 import AVFoundation
 import CryptoKit
+import Darwin
 import Foundation
 import LunaModels
 import LunaAppConfig
@@ -17,7 +18,7 @@ public enum GeminiSpeechCredential {
 }
 
 enum GeminiSpeechError: LocalizedError {
-    case missingKey, quota, unauthorized, unavailable, invalidAudio, incomplete
+    case missingKey, quota, unauthorized, unavailable, invalidAudio, incomplete, timedOut
     var errorDescription: String? {
         switch self {
         case .missingKey: return L10n.string("Gemini_missingKey")
@@ -26,6 +27,7 @@ enum GeminiSpeechError: LocalizedError {
         case .unavailable: return L10n.string("Gemini_unavailable")
         case .invalidAudio: return L10n.string("Gemini_invalidAudio")
         case .incomplete: return L10n.string("Gemini_incomplete")
+        case .timedOut: return L10n.string("Gemini_timedOut")
         }
     }
 }
@@ -83,9 +85,9 @@ struct GeminiSpeechPlan {
         }
         if !chunk.isEmpty { chunks.append(chunk) }
         var offset = 0
-        self.chunkRanges = chunks.map {
-            defer { offset += $0.utf16.count }
-            return NSRange(location: offset, length: $0.utf16.count)
+        self.chunkRanges = chunks.map { chunk in
+            defer { offset += chunk.utf16.count }
+            return NSRange(location: offset, length: chunk.utf16.count)
         }
         self.chunks = chunks
         self.blockRanges = ranges
@@ -95,53 +97,97 @@ struct GeminiSpeechPlan {
     }
 }
 
-/// Only Reader's playback composition installs this provider. No ingest sweep,
-/// extension, autoplay miss or Music export can spend the user's speech quota.
+/// Reader and explicit Music readout actions share this cache. No ingest sweep,
+/// extension or autoplay miss can spend the user's speech quota.
 public actor GeminiArticleSpeech {
     public static let shared = GeminiArticleSpeech()
     static let model = "gemini-3.8-flash-tts"
     private let directory: URL
+    private let legacyDirectory: URL?
     private let send: (URLRequest) async throws -> (Data, URLResponse)
     private var pending: [String: (id: UUID, task: Task<URL, Error>)] = [:]
     private let apiKey: () -> String?
+    private let requestTimeout: TimeInterval
 
     public init(directory: URL? = nil) {
-        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let local = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("GeminiArticleSpeech", isDirectory: true)
-        let session = URLSession(configuration: .ephemeral)
+        let shared = AppConfig.sharedContainerURL()?.appendingPathComponent("GeminiArticleSpeech", isDirectory: true) ?? local
+        self.directory = directory ?? shared
+        self.legacyDirectory = directory == nil && local != shared ? local : nil
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 120
+        let session = URLSession(configuration: configuration)
+        self.requestTimeout = 120
         self.send = { try await session.data(for: $0) }
         self.apiKey = { GeminiSpeechCredential.apiKey }
     }
 
-    init(directory: URL, apiKey: @escaping () -> String? = { "test-key" }, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, apiKey: @escaping () -> String? = { "test-key" }, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
         self.directory = directory
+        self.legacyDirectory = legacyDirectory
+        self.requestTimeout = requestTimeout
         self.send = send
         self.apiKey = apiKey
     }
 
-    public func renderer(itemID: UUID, script: AudioScript, allowGeneration: Bool) async throws -> SpeechRendering? {
+    public func renderer(itemID: UUID, script: AudioScript, allowGeneration: Bool,
+                         progress: @escaping (Double) -> Void = { _ in },
+                         startBeforeCompletion: Bool = false) async throws -> SpeechRendering? {
         let plan = GeminiSpeechPlan(script: script)
         guard !plan.chunks.isEmpty else { throw GeminiSpeechError.incomplete }
         let key = itemID.uuidString + "/" + plan.fingerprint
         let folder = directory.appendingPathComponent(key, isDirectory: true)
         if Self.isComplete(folder, count: plan.chunks.count) {
+            DiagnosticLog.shared.record("cache hit item=\(itemID)", category: "gemini-tts")
+            progress(1)
+            return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
+        }
+        // Previously generated Reader-local audio is adopted before requiring a
+        // key or network permission, including cache-only autoplay/restoration.
+        if let legacy = legacyDirectory?.appendingPathComponent(key), Self.isComplete(legacy, count: plan.chunks.count) {
+            let lock = try await Self.acquireCacheLock(directory)
+            defer { Self.releaseCacheLock(lock) }
+            try Self.migrateCache(from: legacy, to: folder, count: plan.chunks.count)
+            DiagnosticLog.shared.record("migrated cache item=\(itemID)", category: "gemini-tts")
+            progress(1)
             return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
         }
         guard allowGeneration else { return nil }
-        if let operation = pending[key] {
-            return try GeminiCachedSpeechRenderer(folder: await operation.task.value, plan: plan)
+        if let operation = pending[key], !operation.task.isCancelled {
+            let folder = try await withTaskCancellationHandler {
+                try await operation.task.value
+            } onCancel: { operation.task.cancel() }
+            progress(1)
+            return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
         }
-        guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
         let send = self.send
+        let apiKey = self.apiKey
+        let directory = self.directory
+        let timeout = self.requestTimeout
         let task = Task<URL, Error> {
+            // Actors only serialize within one app. This advisory lock also
+            // excludes another Reader/Music process until its complete result
+            // can be reused, and the OS releases it if the generating app dies.
+            DiagnosticLog.shared.record("prepare item=\(itemID) chunks=\(plan.chunks.count)", category: "gemini-tts")
+            let lock = try await Self.acquireCacheLock(directory)
+            defer { Self.releaseCacheLock(lock) }
+            if Self.isComplete(folder, count: plan.chunks.count) { return folder }
+            guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             BackupPolicy.excludeFromBackups(folder)
             for (index, text) in plan.chunks.enumerated() {
                 try Task.checkCancellation()
                 let file = folder.appendingPathComponent("\(index).m4a")
+                progress(Double(index) / Double(plan.chunks.count))
                 if Self.isPlayable(file) { continue }
-                let request = try Self.request(text: text, apiKey: apiKey)
-                let (data, response) = try await send(request)
+                var request = try Self.request(text: text, apiKey: apiKey)
+                request.timeoutInterval = timeout
+                DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count)", category: "gemini-tts")
+                let started = Date()
+                let (data, response) = try await Self.sendWithinDeadline(request, timeout: timeout, send: send)
+                DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) status=\((response as? HTTPURLResponse)?.statusCode ?? 0) bytes=\(data.count) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
                 try Task.checkCancellation()
                 guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
                 switch http.statusCode {
@@ -157,31 +203,131 @@ public actor GeminiArticleSpeech {
                     throw GeminiSpeechError.invalidAudio
                 }
             }
+            progress(1)
+            DiagnosticLog.shared.record("ready item=\(itemID)", category: "gemini-tts")
             return folder
         }
         let operationID = UUID()
         pending[key] = (operationID, task)
-        defer { if pending[key]?.id == operationID { pending[key] = nil } }
-        return try GeminiCachedSpeechRenderer(folder: await task.value, plan: plan)
+        let completion = GeminiGenerationCompletion()
+        Task { [weak self] in
+            if case .failure(let error) = await task.result {
+                DiagnosticLog.shared.record("generation failed item=\(itemID) error=\(String(describing: type(of: error))) code=\((error as NSError).code)", category: "gemini-tts")
+            }
+            await completion.finish()
+            await self?.finishOperation(key: key, id: operationID)
+        }
+        do {
+            if startBeforeCompletion {
+                try await withTaskCancellationHandler {
+                    try await Self.waitForChunk(0, folder: folder, task: task, completion: completion)
+                } onCancel: { task.cancel() }
+                return try GeminiCachedSpeechRenderer(folder: folder, plan: plan, waitForChunk: { index in
+                    try await Self.waitForChunk(index, folder: folder, task: task, completion: completion)
+                })
+            }
+            let completed = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
+            return try GeminiCachedSpeechRenderer(folder: completed, plan: plan)
+        } catch {
+            // Only error type/code; neither the credential nor server messages
+            // (which can echo request data) enter diagnostics.
+            DiagnosticLog.shared.record("failed item=\(itemID) error=\(String(describing: type(of: error))) code=\((error as NSError).code)", category: "gemini-tts")
+            if (error as? URLError)?.code == .timedOut { throw GeminiSpeechError.timedOut }
+            throw error
+        }
     }
 
-    public func clearCache() throws {
+    private func finishOperation(key: String, id: UUID) {
+        if pending[key]?.id == id { pending[key] = nil }
+    }
+
+    private static func waitForChunk(_ index: Int, folder: URL, task: Task<URL, Error>,
+                                     completion: GeminiGenerationCompletion) async throws {
+        let file = folder.appendingPathComponent("\(index).m4a")
+        while !isPlayable(file) {
+            try Task.checkCancellation()
+            if await completion.isFinished {
+                _ = try await task.value
+                guard isPlayable(file) else { throw GeminiSpeechError.invalidAudio }
+                return
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private static func sendWithinDeadline(_ request: URLRequest, timeout: TimeInterval,
+        send: @escaping (URLRequest) async throws -> (Data, URLResponse)) async throws -> (Data, URLResponse) {
+        try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            group.addTask { try await send(request) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(max(0.001, timeout) * 1_000_000_000))
+                throw GeminiSpeechError.timedOut
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+    }
+
+    public func clearCache() async throws {
         for operation in pending.values { operation.task.cancel() }
         pending.removeAll()
-        if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+        let lock = try await Self.acquireCacheLock(directory)
+        defer { Self.releaseCacheLock(lock) }
+        for folder in [directory, legacyDirectory].compactMap({ $0 }) where FileManager.default.fileExists(atPath: folder.path) {
+            try FileManager.default.removeItem(at: folder)
+        }
     }
 
     /// Called on saves changes so deleting an article also removes its generated audio.
-    public func removeAudio(except itemIDs: Set<UUID>) throws {
+    public func removeAudio(except itemIDs: Set<UUID>) async throws {
         let names = Set(itemIDs.map { $0.uuidString })
         for key in Array(pending.keys) where !names.contains(String(key.prefix(36))) {
             pending.removeValue(forKey: key)?.task.cancel()
         }
-        guard FileManager.default.fileExists(atPath: directory.path) else { return }
-        for folder in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            where !names.contains(folder.lastPathComponent) {
-            try FileManager.default.removeItem(at: folder)
+        let lock = try await Self.acquireCacheLock(directory)
+        defer { Self.releaseCacheLock(lock) }
+        for root in [directory, legacyDirectory].compactMap({ $0 }) where FileManager.default.fileExists(atPath: root.path) {
+            for folder in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                where !names.contains(folder.lastPathComponent) {
+                try FileManager.default.removeItem(at: folder)
+            }
         }
+    }
+
+    private static func migrateCache(from legacy: URL, to folder: URL, count: Int) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(folder)
+        for index in 0..<count {
+            let destination = folder.appendingPathComponent("\(index).m4a")
+            if isPlayable(destination) { continue }
+            if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+            try FileManager.default.copyItem(at: legacy.appendingPathComponent("\(index).m4a"), to: destination)
+        }
+        if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
+    }
+
+    private static func acquireCacheLock(_ directory: URL) async throws -> Int32 {
+        let parent = directory.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        // Outside the cache itself so clearing it never unlinks a held lock.
+        let path = parent.appendingPathComponent(".\(directory.lastPathComponent).lock").path
+        let descriptor = open(path, O_CREAT | O_RDWR, 0o600)
+        guard descriptor >= 0 else { throw GeminiSpeechError.unavailable }
+        do {
+            while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+                guard errno == EWOULDBLOCK || errno == EAGAIN else { throw GeminiSpeechError.unavailable }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            try Task.checkCancellation()
+            return descriptor
+        } catch { close(descriptor); throw error }
+    }
+
+    private static func releaseCacheLock(_ descriptor: Int32) {
+        _ = flock(descriptor, LOCK_UN)
+        _ = close(descriptor)
     }
 
     static func request(text: String, apiKey: String) throws -> URLRequest {
@@ -274,13 +420,20 @@ public actor GeminiArticleSpeech {
 /// Google supplies no alignment timestamps. Paragraph seeking uses proportional
 /// text offsets; forward playback includes every frame exactly once. Never invent
 /// word events that would imply accurate RSVP synchronization.
+private actor GeminiGenerationCompletion {
+    private(set) var isFinished = false
+    func finish() { isFinished = true }
+}
+
 final class GeminiCachedSpeechRenderer: SpeechRendering {
     let canonicalFormat: AVAudioFormat? = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)
     private let folder: URL
     private let plan: GeminiSpeechPlan
-    init(folder: URL, plan: GeminiSpeechPlan) throws {
+    private let waitForChunk: ((Int) async throws -> Void)?
+    init(folder: URL, plan: GeminiSpeechPlan, waitForChunk: ((Int) async throws -> Void)? = nil) throws {
         self.folder = folder
         self.plan = plan
+        self.waitForChunk = waitForChunk
     }
     func render(_ block: AudioScript.SpokenBlock) async throws -> RenderedSegment {
         guard let range = plan.blockRanges[block.blockIndex], let target = canonicalFormat else { throw GeminiSpeechError.invalidAudio }
@@ -288,6 +441,7 @@ final class GeminiCachedSpeechRenderer: SpeechRendering {
         for (index, chunkRange) in plan.chunkRanges.enumerated() {
             let intersection = NSIntersectionRange(range, chunkRange)
             guard intersection.length > 0 else { continue }
+            try await waitForChunk?(index)
             let file = try AVAudioFile(forReading: folder.appendingPathComponent("\(index).m4a"))
             let start = AVAudioFramePosition(Double(intersection.location - chunkRange.location) / Double(chunkRange.length) * Double(file.length))
             let end = AVAudioFramePosition(Double(NSMaxRange(intersection) - chunkRange.location) / Double(chunkRange.length) * Double(file.length))

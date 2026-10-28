@@ -30,7 +30,7 @@ import LunaPodcastCore
             }
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("podcast-sync-\(UUID().uuidString).json")
             defer { try? FileManager.default.removeItem(at: file) }
-            try JSONEncoder().encode(merged).write(to: file, options: [.atomic])
+            try JSONEncoder().encode(ReaderPodcastSource.cloudState(merged)).write(to: file, options: [.atomic])
             record["library"] = CKAsset(fileURL: file)
             do {
                 let result = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .ifServerRecordUnchanged, atomically: true)

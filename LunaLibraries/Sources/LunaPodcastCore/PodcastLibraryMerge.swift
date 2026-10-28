@@ -3,6 +3,7 @@ import Foundation
 public enum PodcastLibraryMerge {
     public static func merge(local: PodcastLibraryState, remote: PodcastLibraryState) -> PodcastLibraryState {
         guard remote.schemaVersion == local.schemaVersion else { return local }
+        let remote = ReaderPodcastSource.cloudState(remote)
         var result = local
         for (id, var show) in remote.shows where show.updatedAt > (local.shows[id]?.updatedAt ?? .distantPast) {
             // Poll ordering belongs to this device, not the device syncing settings.

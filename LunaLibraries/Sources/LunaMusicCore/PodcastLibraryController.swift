@@ -19,7 +19,18 @@ import LunaPodcastCore
     }
     public init(url: URL = PodcastLibraryController.directory.appendingPathComponent("library.json"), session: URLSession = PodcastNetwork.session) {
         feedClient = PodcastFeedClient(session: session)
-        do { store = try PodcastStore(url: url); state = store!.state }
+        do {
+            store = try PodcastStore(url: url)
+            let directory = url.deletingLastPathComponent().appendingPathComponent("ReaderAudio", isDirectory: true)
+            if store!.state.episodes.values.contains(where: { $0.showID == ReaderPodcastSource.showID && $0.mediaURL.deletingLastPathComponent() != directory }) {
+                try store!.update { state in
+                    for (id, episode) in state.episodes where episode.showID == ReaderPodcastSource.showID {
+                        state.episodes[id]?.mediaURL = directory.appendingPathComponent("\(id).m4a")
+                    }
+                }
+            }
+            state = store!.state
+        }
         catch { errorMessage = "Your podcast library could not be opened: \(error.localizedDescription)" }
         observer = NotificationCenter.default.addObserver(forName: .lunaPodcastsChanged, object: store, queue: .main) { [weak self] _ in
             Task { @MainActor in if let self, let store = self.store { self.state = store.state } }
@@ -91,6 +102,7 @@ import LunaPodcastCore
     private func refreshShow(_ id: String, force: Bool, minimumInterval: TimeInterval) async {
         if let task = refreshTasks[id] { await task.value; return }
         guard !Task.isCancelled, let show = state.shows[id],
+              show.id != ReaderPodcastSource.showID,
               force || Date().timeIntervalSince(show.lastRefreshAttempt ?? show.lastRefresh ?? .distantPast) >= minimumInterval else { return }
         refreshingShowIDs.insert(id); isRefreshing = true
         let task = Task { [self] in

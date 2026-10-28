@@ -167,6 +167,7 @@ public struct PodcastDownload: Codable, Equatable {
     }
     public var totalBytes: Int64 { downloads.values.filter { $0.status == "downloaded" }.reduce(0) { $0 + $1.bytes } }
     public func download(_ episode: PodcastEpisode, manual: Bool = true) async {
+        guard !episode.mediaURL.isFileURL else { return }
         await start()
         if manual {
             do { try library.edit { state in

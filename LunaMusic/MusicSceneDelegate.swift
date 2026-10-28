@@ -121,6 +121,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func apply(_ route: MusicLaunchRoute) {
         switch route {
         case .search: library?.foregroundSearch(query: searchQuery); searchQuery = ""
+        case .reader(let id): library?.openReader(saveID: id)
         case .queue:
             if MediaPlaybackCoordinator.shared.active == .podcasts { library?.showPodcastQueue() }
             else { library?.showMusicQueue() }

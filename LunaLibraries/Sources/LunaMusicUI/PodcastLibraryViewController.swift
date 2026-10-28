@@ -1,12 +1,21 @@
 import UIKit
 import LunaPodcastCore
 import LunaMusicCore
+import LunaDesignSystem
 
 @MainActor public final class PodcastLibraryViewController: UIViewController {
     private let content = PodcastBrowserViewController()
+    private var foregroundObserver: NSObjectProtocol?
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated); content.reload()
+    }
+    deinit { if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) } }
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Podcasts"; view.tintColor = .systemPurple
+        foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.content.reload() }
+        }
         navigationController?.navigationBar.prefersLargeTitles = true
         content.mode = 4
         addChild(content); view.addSubview(content.view); content.view.translatesAutoresizingMaskIntoConstraints = false
@@ -129,7 +138,9 @@ import LunaMusicCore
                 .action("Home", "house") { [weak self] in self?.openPage(0, title: "Home") },
                 .action("New", "sparkles") { [weak self] in self?.openPage(1, title: "New") }
             ] : []
-            sections = [.init(title: "", rows: browsing + [
+            sections = [.init(title: "", rows: browsing + (ReaderPodcastsViewController.isReaderInstalled ? [
+                .action("Luna Reader", "book") { [weak self] in self?.navigationController?.pushViewController(ReaderPodcastsViewController(), animated: true) }
+            ] : []) + [
                 .action("Shows", "dot.radiowaves.left.and.right") { [weak self] in self?.openEpisodes(title: "Shows", shows: followed) },
                 .action("Latest Episodes", "clock") { [weak self] in self?.openEpisodes(title: "Latest Episodes", episodes: latest) },
                 .action("Downloaded", "arrow.down.circle") { [weak self] in self?.openEpisodes(title: "Downloaded", episodes: PodcastPolicies.ordered(state.episodes.values.filter { PodcastDownloads.shared.localURL($0.id) != nil }, newestFirst: true)) },
@@ -151,6 +162,11 @@ import LunaMusicCore
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = super.tableView(tableView, cellForRowAt: indexPath)
         if mode == 4 && !showingSearch, var config = cell.contentConfiguration as? UIListContentConfiguration {
+            if case .action(let title, _, _) = sections[indexPath.section].rows[indexPath.row], title == "Luna Reader" {
+                config.image = LunaAppIconImage.image(for: .reader)?.withRenderingMode(.alwaysOriginal)
+                config.imageProperties.maximumSize = CGSize(width: 30, height: 30)
+                config.imageProperties.cornerRadius = 7
+            }
             config.textProperties.font = .preferredFont(forTextStyle: .title2)
             config.imageProperties.tintColor = .label
             config.imageProperties.reservedLayoutSize = CGSize(width: 34, height: 34)

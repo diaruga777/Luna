@@ -11,7 +11,7 @@ public struct PodcastDownloadPlan: Equatable {
         let currentIDs = current.flatMap { state.progress[$0]?.listened == true ? nil : [$0] } ?? []
         let automatic = PodcastPolicies.ordered(PodcastPolicies.automaticDownloads(state).compactMap { state.episodes[$0] }, newestFirst: true).map(\.id)
         for id in currentIDs + state.queue + manualIDs + automatic {
-            guard state.episodes[id] != nil, seen.insert(id).inserted,
+            guard let episode = state.episodes[id], !episode.mediaURL.isFileURL, seen.insert(id).inserted,
                   state.progress[id]?.suppressAutomaticDownload != true else { continue }
             ordered.append(id)
         }

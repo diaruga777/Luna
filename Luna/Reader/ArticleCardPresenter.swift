@@ -161,6 +161,21 @@ final class ArticleCardPresenter: CardKindPresenting {
         return true
     }
 
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
+        guard item.state == .ready, let content = store.content(for: item),
+              content.blocks.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              UIApplication.shared.canOpenURL(URL(string: "lunamusic://reader")!) else { return [] }
+        let url = URL(string: "lunamusic://reader?save=\(item.id.uuidString)")!
+        return [UIAction(title: "Add to Luna Music", image: UIImage(systemName: "text.badge.plus")) { [weak host] _ in
+            UIApplication.shared.open(url, options: [:]) { opened in
+                guard !opened, let presenter = host?.presentingController else { return }
+                let alert = UIAlertController(title: "Luna Music", message: "Luna Music could not be opened. Try again after opening the app.", preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                presenter.present(alert, animated: true)
+            }
+        }]
+    }
+
     // MARK: - External open
 
     /// Deep-link / Safari hand-off: CENTER the card. A card in this deck already
@@ -224,7 +239,11 @@ final class ArticleCardPresenter: CardKindPresenting {
             unarchive: { [weak host] sourceView in
                 host?.unarchive(item, from: sourceView)
             },
-            delete: { [weak host] in host?.deleteSave(item) })
+            delete: { [weak host] in host?.deleteSave(item) },
+            additionalMenuActions: { [weak host] in
+                guard let host else { return [] }
+                return self.menuActions(for: item, host: host)
+            })
     }
 
     private static let trayDateFormatter: DateFormatter = {

@@ -83,7 +83,11 @@ import LunaDesignSystem
             UIAction(title: "Add to Queue", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { _ in run(controller) { try library.requireStore().enqueue(episode.id, next: false); library.reloadState() } },
             UIAction(title: state.listened ? "Mark as Unplayed" : "Mark as Played", image: UIImage(systemName: state.listened ? "circle" : "checkmark.circle")) { _ in run(controller) { try library.requireStore().markListened(episode.id, !state.listened); library.reloadState(); await downloads.reconcile() } }
         ]
-        if downloads.localURL(episode.id) != nil {
+        if episode.showID == ReaderPodcastSource.showID {
+            actions.append(UIAction(title: "Remove Readout", image: UIImage(systemName: "trash"), attributes: library.state.currentEpisodeID == episode.id ? [.destructive, .disabled] : .destructive) { _ in
+                run(controller) { try ReaderPodcastController.shared.removeReadout(episode) }
+            })
+        } else if downloads.localURL(episode.id) != nil {
             actions.append(UIAction(title: "Remove Download", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in downloads.remove(episode.id) })
         } else if downloads.downloads[episode.id]?.status == "downloading" {
             actions.append(UIAction(title: "Cancel Download", image: UIImage(systemName: "xmark.circle")) { _ in downloads.remove(episode.id) })
@@ -92,7 +96,7 @@ import LunaDesignSystem
         }
         actions += [
             UIAction(title: "Episode Details", image: UIImage(systemName: "info.circle")) { _ in controller.navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true) },
-            UIAction(title: "Go to Show", image: UIImage(systemName: "dot.radiowaves.left.and.right")) { _ in controller.navigationController?.pushViewController(PodcastShowViewController(showID: episode.showID), animated: true) },
+            UIAction(title: episode.showID == ReaderPodcastSource.showID ? "Luna Reader" : "Go to Show", image: UIImage(systemName: "dot.radiowaves.left.and.right")) { _ in controller.navigationController?.pushViewController(episode.showID == ReaderPodcastSource.showID ? ReaderPodcastsViewController() : PodcastShowViewController(showID: episode.showID), animated: true) },
             UIAction(title: "Share Episode", image: UIImage(systemName: "square.and.arrow.up")) { _ in
                 let activity = UIActivityViewController(activityItems: [episode.websiteURL ?? episode.mediaURL], applicationActivities: nil)
                 activity.popoverPresentationController?.sourceView = controller.view

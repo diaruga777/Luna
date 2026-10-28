@@ -97,6 +97,12 @@ import LunaMusicCore
         }
     }
 
+    public func openReader(saveID: UUID?) {
+        route(to: .podcasts) {
+            self.setViewControllers([self.podcasts, ReaderPodcastsViewController(saveID: saveID)], animated: false)
+        }
+    }
+
     public func openPodcastEpisode(_ id: String) {
         route(to: .podcasts) { self.podcasts.openEpisode(id) }
     }

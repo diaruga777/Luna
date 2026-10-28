@@ -25,6 +25,7 @@ struct ArchiveTrayItem {
     /// Surface-owned permanent deletion. Both surfaces supply their complete
     /// save-cleanup path.
     let delete: (() -> Void)?
+    var additionalMenuActions: (() -> [UIMenuElement])? = nil
 }
 
 /// What the arc asks of the deck it is mounted in: the views it shifts left as
@@ -453,7 +454,7 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
                 attributes: .destructive
             ) { _ in delete() })
         }
-        return UIMenu(children: actions)
+        return UIMenu(children: actions + (item.additionalMenuActions?() ?? []))
     }
 
 }

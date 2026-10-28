@@ -16,6 +16,40 @@ final class MusicForegroundTests: XCTestCase {
         }
     }
 
+    func testReaderRowOpensTextSavesAndWarmAndColdReaderLinks() {
+        let podcasts = app.buttons["media.library.podcasts"]
+        XCTAssertTrue(podcasts.waitForExistence(timeout: 5)); podcasts.tap()
+        let reader = app.staticTexts["Luna Reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 5), "Install Luna Reader on this simulator before this integration check")
+        reader.tap()
+        XCTAssertTrue(app.searchFields["podcasts.reader.search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Luna Reader"].exists)
+        let browser = XCTAttachment(screenshot: app.screenshot()); browser.name = "Luna Reader text saves"; browser.lifetime = .keepAlways; add(browser)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Luna Reader"].waitForExistence(timeout: 5))
+        let root = XCTAttachment(screenshot: app.screenshot()); root.name = "Podcasts with Reader icon"; root.lifetime = .keepAlways; add(root)
+        app.open(URL(string: "lunamusic://reader")!)
+        XCTAssertTrue(app.searchFields["podcasts.reader.search"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.open(URL(string: "lunamusic://reader")!)
+        XCTAssertTrue(app.searchFields["podcasts.reader.search"].waitForExistence(timeout: 5))
+    }
+
+    func testSavedItemLinkCreatesReadoutAndShowsItInPodcastQueue() throws {
+        app.open(URL(string: "lunamusic://reader")!)
+        let cells = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "podcasts.reader.save."))
+        guard cells.firstMatch.waitForExistence(timeout: 5) else { throw XCTSkip("Save text in Luna Reader before this cross-app integration check.") }
+        let cell = cells.firstMatch
+        let saveID = String(cell.identifier.dropFirst("podcasts.reader.save.".count))
+        XCTAssertNotNil(UUID(uuidString: saveID))
+        let title = cell.staticTexts.element(boundBy: 0).label
+        app.open(URL(string: "lunamusic://reader?save=\(saveID)")!)
+        XCTAssertTrue(app.staticTexts["In Podcast Queue"].waitForExistence(timeout: 90))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Reader save added to queue"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.navigationBars.buttons["Podcast Queue"].tap()
+        XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testPodcastsNavigationAndPlaybackSettings() {
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
         else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }

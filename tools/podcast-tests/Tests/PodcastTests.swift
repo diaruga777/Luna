@@ -524,3 +524,25 @@ private final class PodcastSaveGate: @unchecked Sendable {
     }
     func release() { semaphore.signal() }
 }
+
+final class ReaderPodcastPrivacyTests: XCTestCase {
+    func testLocalReadoutsStayOutOfCloudMergeAndDownloadBudget() {
+        var state = PodcastLibraryState()
+        let reader = PodcastShow(feedURL: URL(string: "lunamusic://reader")!, title: "Luna Reader", id: ReaderPodcastSource.showID)
+        let readout = PodcastEpisode(showID: reader.id, guid: UUID().uuidString, title: "Private save", publishedAt: Date(), mediaURL: URL(fileURLWithPath: "/private/readout.m4a"))
+        let show = PodcastShow(feedURL: URL(string: "https://example.com/feed")!, title: "RSS")
+        let episode = PodcastEpisode(showID: show.id, guid: "one", title: "Episode", publishedAt: Date(), mediaURL: URL(string: "https://example.com/audio.mp3")!)
+        state.shows = [reader.id: reader, show.id: show]; state.episodes = [readout.id: readout, episode.id: episode]
+        state.progress[readout.id] = PodcastEpisodeState(); state.cursors[reader.id] = PodcastCursor(episode: readout)
+        state.queue = [readout.id, episode.id]; state.currentEpisodeID = readout.id; state.lastPlayedEpisodeID = readout.id
+        let cloud = ReaderPodcastSource.cloudState(state)
+        XCTAssertEqual(Set(cloud.shows.keys), [show.id]); XCTAssertEqual(Set(cloud.episodes.keys), [episode.id])
+        XCTAssertTrue(cloud.progress.isEmpty); XCTAssertTrue(cloud.cursors.isEmpty)
+        XCTAssertNil(cloud.currentEpisodeID); XCTAssertNil(cloud.lastPlayedEpisodeID); XCTAssertEqual(cloud.queue, [episode.id])
+        let imported = PodcastLibraryMerge.merge(local: PodcastLibraryState(), remote: state)
+        XCTAssertNil(imported.episodes[readout.id]); XCTAssertNil(imported.shows[reader.id])
+        let plan = PodcastDownloadPlan(state: state, sizes: [episode.id: 100])
+        XCTAssertEqual(plan.episodeIDs, [episode.id])
+        XCTAssertEqual(PodcastLibraryMerge.merge(local: state, remote: cloud).episodes[readout.id], readout)
+    }
+}

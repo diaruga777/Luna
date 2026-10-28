@@ -5,7 +5,7 @@ shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connecti
 
 Standalone iOS 26 player: scheme `LunaMusic`, bundle ID
 `$(PRODUCT_BUNDLE_PREFIX).music`, app module `LunaMusicApp`. Apple library songs
-and Luna Vault files coexist in the same songs, artists, albums and search views. Music uses its own library state; it does not use `saves.sqlite`.
+and Luna Vault files coexist in the same songs, artists, albums and search views. Music owns its library and queue state. Its Reader integration reads text saves from the shared `saves.sqlite` without changing Reader progress.
 The app links `LunaMusicKit` plus the existing Vault connection/pairing services.
 
 ## Library and playback
@@ -961,3 +961,42 @@ actual clock advancement and chime cleanup. Pause (including late network data),
 interruption, failure, replacement playback, explicit Play and sleep-at-end are
 covered. The previously documented prime start-count failure remains excluded.
 Physical-device/background audio output and AirPlay have not been measured.
+
+### Luna Reader readouts
+
+When Luna Reader is installed, the podcast root includes **Luna Reader**, with
+Reader’s monochrome app artwork. It opens a searchable list of ready text saves,
+including archived articles and extracted documents. Tapping a save creates its
+readout and appends it to the podcast queue; long press also offers **Play Next**.
+Generation shows per-save progress and failures can be retried. Reader’s active
+and archived text-save menus offer **Add to Luna Music** when Music is installed.
+The `lunamusic://reader?save=<UUID>` handoff opens this page and adds that save;
+a bare `lunamusic://reader` opens the browser. Invalid save IDs are rejected.
+
+Music reads the shared saves store but does not update Reader reading positions,
+read state or archives. It uses the existing offline speech renderer, selected
+Reader voice and cached trimming script (or the same heuristic fallback). Each
+block is written to AAC in turn; memory does not grow with the full readout.
+The completed M4A is installed before a stable, save-ID-based episode is queued.
+Concurrent adds share generation and repeated adds reuse audio without duplicating
+queue entries. Adding a readout does not start or interrupt playback.
+
+Readouts live in Music’s private `Podcasts/ReaderAudio` directory and survive
+deletion of the source save. They support podcast transport, seeking, speed,
+listening progress, queue ordering and restoration alongside RSS episodes.
+**Remove Readout** deletes Music’s copy (after selecting another episode if it is
+current); it does not delete the Reader save. Missing audio is regenerated on an
+explicit add. Container URLs are rebased when the Music sandbox moves.
+Readouts are excluded from RSS refresh, URLSession downloads and their byte budget,
+and podcast iCloud uploads/imports. No Reader text, metadata or audio is uploaded
+by podcast sync. Podcast follow and automatic-download behavior stays independent.
+
+Validation: Xcode 26.2 / iPhone 17 Pro / iOS 26.2. All 46 Foundation podcast
+tests, 12 focused Music tests, 20 focused Reader tests and two UI checks passed.
+Coverage includes actual speech-to-M4A rendering and playback after a podcast,
+selection order, concurrent duplicate adds, queue restoration, failed-render
+cleanup/retry, readout removal, Reader menu installation checks, cloud exclusion,
+and warm/cold Reader routes. The UI saved-item route rendered an existing text
+save and verified its title in the podcast queue. Root, browser and queued-state
+screenshots were visually inspected. Physical-device/background playback was not
+measured.

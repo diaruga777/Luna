@@ -232,7 +232,7 @@ extension AudioScriptPipeline: SavesSweepForegroundTracking {
 }
 
 extension AudioTrimHeuristics.Result {
-    func heuristicScript(for content: ArticleContent) -> AudioScript {
+    public func heuristicScript(for content: ArticleContent) -> AudioScript {
         AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: droppedBlockIndices)
     }
 }

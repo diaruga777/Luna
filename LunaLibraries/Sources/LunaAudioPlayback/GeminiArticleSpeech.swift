@@ -216,6 +216,7 @@ public actor GeminiArticleSpeech {
             guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             BackupPolicy.excludeFromBackups(folder)
+            var preferredModelIndex = 0
             for (index, text) in plan.chunks.enumerated() {
                 try Task.checkCancellation()
                 let file = folder.appendingPathComponent("\(index).m4a")
@@ -225,7 +226,8 @@ public actor GeminiArticleSpeech {
                 }
                 var audio = Data()
                 var selectedModel: String?
-                for model in Self.models {
+                for modelIndex in preferredModelIndex..<Self.models.count {
+                    let model = Self.models[modelIndex]
                     try Task.checkCancellation()
                     audio.removeAll(keepingCapacity: true)
                     var request = try Self.request(text: text, apiKey: apiKey, model: model)
@@ -241,11 +243,13 @@ public actor GeminiArticleSpeech {
                         }
                     } catch GeminiSpeechError.quota {
                         DiagnosticLog.shared.record("quota exhausted item=\(itemID) model=\(model)", category: "gemini-tts")
+                        preferredModelIndex = modelIndex + 1
                         continue
                     }
                     guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
                     DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) model=\(model) bytes=\(audio.count) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
                     selectedModel = model
+                    preferredModelIndex = modelIndex
                     break
                 }
                 guard selectedModel != nil else { throw GeminiSpeechError.quota }

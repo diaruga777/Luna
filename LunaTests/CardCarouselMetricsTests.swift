@@ -857,6 +857,23 @@ final class CardCarouselExpandedImmersionTests: XCTestCase {
         XCTAssertEqual(restored.width, resting.width, accuracy: 0.5)
     }
 
+    func testTopExtensionReclaimsHeaderReservationAndPreparesExactViewport() throws {
+        let (carousel, source) = makeCarousel()
+        carousel.setTopInset(120)
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+        let card = try XCTUnwrap(carousel.cardView(at: 0))
+        let resting = card.convert(card.bounds, to: carousel.view)
+        XCTAssertGreaterThan(resting.minY, 120)
+        carousel.setImmersed(true, extendsToTop: true, horizontalInset: 16)
+        let expanded = card.convert(card.bounds, to: carousel.view)
+        XCTAssertEqual(expanded.minY, 0, accuracy: 0.5)
+        XCTAssertEqual(expanded.maxY, carousel.view.bounds.maxY, accuracy: 0.5)
+        XCTAssertEqual(source.content.preparedSizes.last, expanded.size)
+        carousel.setImmersed(false)
+        XCTAssertEqual(card.convert(card.bounds, to: carousel.view), resting)
+    }
+
     func testAnimatedExpansionCoordinatesContentWithDestinationSize() throws {
         let (carousel, source) = makeCarousel()
         carousel.setImmersed(

@@ -15,8 +15,8 @@
 //    expands Scroll into the safe width. Wide windows browse a continuous two-row preview grid;
 //    tapping or vertically scrolling a visible card expands it for reading.
 //    Portrait phones keep directional scroll chrome (down hides, up restores).
-//    In RSVP, playing fades them out and pausing fades them back. The
-//    reader's own header never moves or changes.
+//    In RSVP, playing fades them out and pausing fades them back. Scroll
+//    mastheads join the content while chrome is dismissed; RSVP's stays fixed.
 //  - Long-pressing a card exposes its archive action through a context menu.
 //  - Horizontal swipes INSIDE the card page to the neighbor (readers have no
 //    timeline to scrub); the scrub strip shows mini-card chips, each badged
@@ -938,6 +938,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         guard carousel.setImmersed(
             immersed,
             extendsCard: extendsCard,
+            extendsToTop: extendsCard,
             horizontalInset: expandedReaderInset(for: card, immersed: immersed),
             animated: true)
         else { return }
@@ -971,6 +972,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         guard carousel.setImmersed(
             true,
             extendsCard: extendsCard,
+            extendsToTop: extendsCard,
             horizontalInset: expandedReaderInset(for: card, immersed: true),
             animated: true)
         else { return }
@@ -1278,8 +1280,8 @@ final class ReaderCardContentViewController: CardContentViewController,
     private let statusLabel = UILabel()
     /// The pinned copy shown while card chrome is surfaced and the scrollable
     /// copy that permanently occupies the reader's top content inset. Keeping
-    /// both copies laid out identically lets visibility change without changing
-    /// the live reader's geometry or content offset.
+    /// both copies laid out lets a single title presentation travel between
+    /// their positions without changing the reader's content offset.
     private let titleHeader: ReaderCardTitleHeaderView
     private let scrollTitleHeader: ReaderCardTitleHeaderView
     private let knownContent: ArticleContent?
@@ -1298,8 +1300,8 @@ final class ReaderCardContentViewController: CardContentViewController,
     /// trade visibility for a single frame after a card transition.
     private var pendingProgrammaticTitleUpdate: DispatchWorkItem?
     /// Independent glyphs for title reflow, plus a fixed-size image canvas.
-    private var viewportPinnedTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
     private var viewportTitlePresentation: ReaderCardTitleHeaderView.ReflowPresentation?
+    private var viewportTitleScrollOffset: CGFloat?
     private weak var viewportTransitionScrollReader: ScrollReaderViewController?
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
@@ -1357,9 +1359,9 @@ final class ReaderCardContentViewController: CardContentViewController,
         immersionBottomExtension
     }
 
-    /// How much taller the live card is than its resting footprint — the
-    /// distance the card's bottom edge travels back UP when the chrome returns.
-    /// Zero whenever the card is already resting.
+    /// The extra viewport height reclaimed from both edges while immersed.
+    /// Restoring at the article's end must compensate for this whole amount,
+    /// including the space above the resting card. Zero while resting.
     private var immersionBottomExtension: CGFloat {
         guard isViewLoaded, let resting = delegate?.readerCardRestingFrameInWindow(self)
         else { return 0 }
@@ -1377,12 +1379,9 @@ final class ReaderCardContentViewController: CardContentViewController,
         return maximum > 0 && maximum - position <= 12
     }
 
-    /// The chrome returns by pulling the card's bottom edge back up, which would
-    /// otherwise drag the article's end down out of sight behind it. The scroll
-    /// range grows by exactly that extension as the card shrinks, so sliding the
-    /// content up by the same amount — on the same curve — leaves the end of the
-    /// article exactly where the reader last saw it, now resting on the restored
-    /// card's bottom edge.
+    /// Returning chrome shrinks the viewport at both edges. Its scroll range
+    /// grows by that lost height, so slide the content by the same amount on the
+    /// same curve to keep the article's end at the returning bottom edge.
     private func keepArticleEndAtReturningCardEdge(by extensionHeight: CGFloat) {
         guard extensionHeight > 0.5,
               let scrollView = rabbitHoleReader?.focusedContentScrollView
@@ -1742,22 +1741,26 @@ final class ReaderCardContentViewController: CardContentViewController,
         applyReaderTopInset()
     }
 
-    /// Card immersion changes only the pinned copy's visibility. The scrollable
-    /// copy and the reader's top inset never move, so scroll/RSVP/archive layouts
-    /// remain stable throughout the transition. RSVP has no scroll surface and
-    /// therefore keeps the pinned title visible at all times.
+    /// Scroll modes hand the pinned masthead to the top of the scroll content.
+    /// RSVP has no scroll surface and keeps its title fixed.
     func setCardChromeVisible(_ visible: Bool, animated: Bool) {
         cardChromeVisible = visible
         updatePinnedTitleVisibility(animated: animated)
     }
 
     override func prepareForCardViewportTransition(to size: CGSize) {
-        viewportPinnedTitlePresentation?.finish()
-        viewportPinnedTitlePresentation = nil
-        titleHeader.isHidden = false
         viewportTitlePresentation?.finish()
         viewportTitlePresentation = nil
+        titleHeader.isHidden = false
+        scrollTitleHeader.isHidden = false
         viewportTransitionScrollReader = nil
+        viewportTitleScrollOffset = nil
+        // The carousel sets its destination state before preparing the content.
+        // Capture the currently visible copy before changing that state locally.
+        let source = cardChromeVisible || titleScrollView == nil ? titleHeader : scrollTitleHeader
+        if let carousel = parent as? CardCarouselViewController {
+            cardChromeVisible = !carousel.isImmersed
+        }
         if scrollDrivenViewportTransition {
             preservedScrollTitleSize = preservedScrollTitleSize ?? scrollTitleHeader.bounds.size
             preparedViewportWidth = size.width
@@ -1767,54 +1770,53 @@ final class ReaderCardContentViewController: CardContentViewController,
         }
         let destinationTitleHeight = titleHeader.heightThatFits(
             width: size.width, topInset: baseTopContentInset)
-        if scrollDrivenViewportTransition, let scrollReader = rabbitHoleReader?.focusedScrollReader {
+        // Measuring the destination also fits its title font/overflow. Restore
+        // the source fit before capturing glyphs at the old width.
+        _ = titleHeader.heightThatFits(width: titleHeader.bounds.width, topInset: baseTopContentInset)
+        let contentTitleHeight = preservedScrollTitleSize?.height ?? destinationTitleHeight
+        if let scrollReader = rabbitHoleReader?.focusedScrollReader {
             viewportTransitionScrollReader = scrollReader
             scrollReader.prepareForCardViewportTransition(
-                to: size, destinationTopChromeInset: destinationTitleHeight,
-                preservingVisibleLines: true)
-            if titleHeader.alpha > 0 {
-                viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
-                    x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
-            }
-            titleHeader.isHidden = viewportPinnedTitlePresentation != nil
-            return
+                to: size, destinationTopChromeInset: contentTitleHeight,
+                preservingVisibleLines: scrollDrivenViewportTransition)
         }
-        guard let scrollReader = rabbitHoleReader?.focusedScrollReader,
-              scrollReader.prepareForCardViewportTransition(
-                to: size,
-                destinationTopChromeInset: destinationTitleHeight) == true
-        else { return }
-        viewportTransitionScrollReader = scrollReader
-
-        let destinationOffset = scrollReader.preparedCardViewportDestinationOffsetY ?? 0
-        let readerOrigin = scrollReader.view.convert(CGPoint.zero, to: view)
-        let destinationFrame = CGRect(
-            x: readerOrigin.x,
-            y: readerOrigin.y - destinationTitleHeight - destinationOffset,
-            width: size.width, height: destinationTitleHeight)
-        viewportTitlePresentation = scrollTitleHeader.prepareReflow(to: destinationFrame, in: view)
-        if titleHeader.alpha > 0 {
-            viewportPinnedTitlePresentation = titleHeader.prepareReflow(to: CGRect(
-                x: 0, y: 0, width: size.width, height: destinationTitleHeight), in: view)
+        let destinationFrame: CGRect
+        if cardChromeVisible || titleScrollView == nil {
+            destinationFrame = CGRect(origin: .zero,
+                size: CGSize(width: size.width, height: destinationTitleHeight))
+        } else {
+            let width = preservedScrollTitleSize?.width ?? size.width
+            let offset = viewportTransitionScrollReader?.preparedCardViewportDestinationOffsetY
+                ?? titleScrollView?.contentOffset.y ?? -contentTitleHeight
+            destinationFrame = CGRect(x: (size.width - width) / 2,
+                y: -contentTitleHeight - offset, width: width, height: contentTitleHeight)
         }
-        titleHeader.isHidden = viewportPinnedTitlePresentation != nil
+        // One presentation moves from pinned to scrolling (or back). Crossfading
+        // two copies produces doubled glyphs even a few points below the top.
+        viewportTitlePresentation = source.prepareReflow(
+            to: destinationFrame, viewportWidth: size.width, in: view)
+        if scrollDrivenViewportTransition, !cardChromeVisible {
+            viewportTitleScrollOffset = titleScrollView?.contentOffset.y
+        }
+        titleHeader.isHidden = viewportTitlePresentation != nil
+        scrollTitleHeader.isHidden = viewportTitlePresentation != nil
+        updatePinnedTitleVisibility(animated: false)
     }
 
     override func animatePreparedCardViewportTransition() {
         viewportTransitionScrollReader?.animatePreparedCardViewportTransition()
         viewportTitlePresentation?.animate()
-        viewportPinnedTitlePresentation?.surface.alpha = titleHeader.alpha
-        viewportPinnedTitlePresentation?.animate()
     }
 
     override func finishCardViewportTransition(completed: Bool) {
         viewportTransitionScrollReader?.finishCardViewportTransition(completed: completed)
         viewportTransitionScrollReader = nil
-        viewportPinnedTitlePresentation?.finish()
-        viewportPinnedTitlePresentation = nil
-        titleHeader.isHidden = false
         viewportTitlePresentation?.finish()
         viewportTitlePresentation = nil
+        viewportTitleScrollOffset = nil
+        titleHeader.isHidden = false
+        scrollTitleHeader.isHidden = false
+        synchronizeScrollableTitleHeader()
     }
 
     /// Moves the permanent title copy into whichever scroll surface is focused
@@ -1860,6 +1862,13 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     private func scrollOffsetDidChange(in scrollView: UIScrollView?) {
         guard let scrollView, scrollView === titleScrollView else { return }
+        if let initialOffset = viewportTitleScrollOffset,
+           !ScrollPresentationState.isSuppressed(for: scrollView) {
+            // A drag/deceleration can continue through the card animation. Keep
+            // the travelling title attached to that live passage, not its old offset.
+            viewportTitlePresentation?.surface.transform = CGAffineTransform(
+                translationX: 0, y: initialOffset - scrollView.contentOffset.y)
+        }
         guard isCentered else {
             pendingProgrammaticTitleUpdate?.cancel()
             pendingProgrammaticTitleUpdate = nil
@@ -1888,28 +1897,17 @@ final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private func updatePinnedTitleVisibility(animated: Bool) {
-        // With no scroll surface the active reader is RSVP (or a non-ready
-        // placeholder), whose title is fixed and never follows card chrome.
-        // A library preview keeps its identity visible even when the article
-        // remembers a reading position below its title.
-        let isLibraryPreview = cardChromeVisible
-            && (parent as? CardCarouselViewController)?.usesReaderGrid == true
-        // A scroll reader has one scrolling masthead. Reaching its end must
-        // never summon a second title over the body, even before immersion's
-        // directional threshold has been reached or after chrome is restored.
-        let showsPinnedTitle = titleScrollView == nil || isLibraryPreview
-        scrollTitleHeader.alpha = isLibraryPreview ? 0 : 1
-        viewportTitlePresentation?.surface.alpha = scrollTitleHeader.alpha
+        let showsPinnedTitle = titleScrollView == nil || cardChromeVisible
         let changes = {
+            self.scrollTitleHeader.alpha = showsPinnedTitle ? 0 : 1
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
-            self.viewportPinnedTitlePresentation?.surface.alpha = self.titleHeader.alpha
         }
         titleHeader.accessibilityElementsHidden = !showsPinnedTitle
         scrollTitleHeader.accessibilityElementsHidden = showsPinnedTitle
-        if animated {
+        if animated, viewportTitlePresentation == nil {
             UIView.animate(
                 withDuration: 0.32, delay: 0,
-                options: [.curveEaseInOut, .allowUserInteraction], animations: changes)
+                options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState], animations: changes)
         } else {
             changes()
         }
@@ -2192,7 +2190,13 @@ private final class ReaderCardTitleHeaderView: UIView {
 
         init(source: ReaderCardTitleHeaderView, destination: ReaderCardTitleHeaderView, in host: UIView) {
             let sourceFrame = source.bannerCrop.convert(source.bannerCrop.bounds, to: host)
-            self.destination = destination.frame
+            let destinationFrame = destination.bannerCrop.convert(destination.bannerCrop.bounds, to: host)
+            // Fully offscreen headers can start/end just beyond the clip. A
+            // deep reading offset must not make the title race thousands of
+            // points or arrive only in the last frame of a chrome restore.
+            let sourceShift = max(0, -sourceFrame.height - sourceFrame.minY)
+            let destinationShift = max(0, -destinationFrame.height - destinationFrame.minY)
+            self.destination = destinationFrame.offsetBy(dx: 0, dy: destinationShift)
             canvasSize = source.bannerView.bounds.size
             surface = UIView(frame: host.bounds)
             surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -2201,7 +2205,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             surface.alpha = source.alpha
             surface.accessibilityIdentifier = "reader.header.reflow"
             host.addSubview(surface)
-            crop = UIView(frame: sourceFrame)
+            crop = UIView(frame: sourceFrame.offsetBy(dx: 0, dy: sourceShift))
             crop.clipsToBounds = true
             crop.backgroundColor = source.backgroundColor
             surface.addSubview(crop)
@@ -2221,10 +2225,18 @@ private final class ReaderCardTitleHeaderView: UIView {
             icon.layer.cornerRadius = source.iconView.layer.cornerRadius
             icon.clipsToBounds = true
             icon.frame = source.iconView.convert(source.iconView.bounds, to: host)
+                .offsetBy(dx: 0, dy: sourceShift)
             destinationIcon = destination.iconView.convert(destination.iconView.bounds, to: host)
+                .offsetBy(dx: 0, dy: destinationShift)
             surface.addSubview(icon)
-            glyphs = ReaderHeaderGlyphTransition(source: source.transitionGlyphs(in: host),
-                destination: destination.transitionGlyphs(in: host), in: surface)
+            func shiftedGlyphs(_ header: ReaderCardTitleHeaderView, by shift: CGFloat)
+                -> [ReaderHeaderGlyphTransition.Glyph] {
+                header.transitionGlyphs(in: host).map {
+                    .init(key: $0.key, image: $0.image, frame: $0.frame.offsetBy(dx: 0, dy: shift))
+                }
+            }
+            glyphs = ReaderHeaderGlyphTransition(source: shiftedGlyphs(source, by: sourceShift),
+                destination: shiftedGlyphs(destination, by: destinationShift), in: surface)
         }
 
         func animate() {
@@ -2238,7 +2250,9 @@ private final class ReaderCardTitleHeaderView: UIView {
         func finish() { surface.removeFromSuperview() }
     }
 
-    func prepareReflow(to destinationFrame: CGRect, in host: UIView) -> ReflowPresentation? {
+    func prepareReflow(
+        to destinationFrame: CGRect, viewportWidth: CGFloat? = nil, in host: UIView
+    ) -> ReflowPresentation? {
         let sourceFrame = convert(bounds, to: host)
         guard sourceFrame.intersects(host.bounds) || destinationFrame.intersects(host.bounds),
               !UIAccessibility.isReduceMotionEnabled else { return nil }
@@ -2247,7 +2261,8 @@ private final class ReaderCardTitleHeaderView: UIView {
         let destination = ReaderCardTitleHeaderView(title: fullTitle, subtitle: subtitleLabel.text)
         destination.setBanner(bannerView.image)
         destination.setIcon(iconView.image ?? UIImage())
-        destination.setBannerGeometry(viewportWidth: destinationFrame.width, canvasSize: bannerCanvasSize)
+        destination.setBannerGeometry(viewportWidth: viewportWidth ?? destinationFrame.width,
+                                      canvasSize: bannerCanvasSize)
         _ = destination.heightThatFits(width: destinationFrame.width, topInset: topInset)
         destination.frame = destinationFrame
         destination.isHidden = true

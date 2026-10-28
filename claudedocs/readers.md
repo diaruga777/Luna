@@ -41,15 +41,20 @@ narrower than both.
 The Reader carousel gives every card a stable title region using the normal 30pt
 reader-title font and the saved page's asynchronously cached favicon (a globe while
 loading). Scroll and Original/web-archive modes keep their title in the scroll
-view's top content-inset region. Scrolling past it never reveals a pinned copy,
-including before immersion dismisses chrome or after chrome returns. RSVP and
-library previews use the fixed card header. An
+view's top content-inset region while chrome is dismissed. With chrome present,
+the fixed card header always shows, regardless of scroll offset. The handoff uses
+one moving banner/icon/glyph presentation between the pinned and scrolling positions,
+including fractional and small nonzero offsets; the live copies stay hidden until
+it finishes. Continued scrolling moves the travelling copy with the passage.
+Fully offscreen endpoints stop just outside the clip so deep reading offsets keep
+the same visible animation duration. RSVP and library previews use the fixed card header. An
 offset within that title region is normalized to zero when Scroll or Original persists,
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore
 (`-adjustedContentInset.top`); applying it as raw zero would hide the title again.
-Hiding Scroll chrome widens the card. Scroll-driven changes keep the text and title
-column fixed for the displayed passage, then widen incoming lines gradually;
+Hiding Scroll chrome widens the card and extends its viewport to the screen's top,
+so neither text nor the scrolling masthead is clipped by a reserved header band.
+Scroll-driven changes keep the text and title column fixed for the displayed passage, then widen incoming lines gradually;
 tap-driven changes may wrap the wider title to a different height.
 The tap's TextKit transition resolves that destination inset up front and anchors
 the same reading glyph, so the title-height change cannot jump the passage. Both copies'

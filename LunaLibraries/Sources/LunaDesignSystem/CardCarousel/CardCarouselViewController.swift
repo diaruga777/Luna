@@ -755,6 +755,8 @@ public final class CardCarouselViewController: UIViewController {
     /// layout (the RSVP reader) immerses WITHOUT the extension, so nothing
     /// inside the card moves — only the chrome fades.
     private var immersionExtendsCard = true
+    /// Scroll hosts can also reclaim the space above the resting card.
+    private var immersionExtendsToTop = false
 
     /// Nil keeps the centered card's resting width. A value expands it to the
     /// carousel bounds with this much breathing room on either side.
@@ -784,6 +786,7 @@ public final class CardCarouselViewController: UIViewController {
     public func setImmersed(
         _ immersed: Bool,
         extendsCard: Bool = true,
+        extendsToTop: Bool = false,
         horizontalInset: CGFloat? = nil,
         animated: Bool = false
     ) -> Bool {
@@ -805,15 +808,18 @@ public final class CardCarouselViewController: UIViewController {
             // frame without re-reporting the unchanged immersion state.
             guard immersed,
                   immersionExtendsCard != extendsCard
+                    || immersionExtendsToTop != extendsToTop
                     || immersionHorizontalInset != resolvedHorizontalInset
             else { return true }
             immersionExtendsCard = extendsCard
+            immersionExtendsToTop = extendsToTop
             immersionHorizontalInset = resolvedHorizontalInset
             updateImmersionLayout(animated: animated)
             return true
         }
         isImmersed = immersed
         immersionExtendsCard = extendsCard
+        immersionExtendsToTop = extendsToTop
         immersionHorizontalInset = resolvedHorizontalInset
         scrubber.isUserInteractionEnabled = !immersed && !isColumnAside
         // Immersion hands the runway under the card to the reader's own chrome.
@@ -954,9 +960,13 @@ public final class CardCarouselViewController: UIViewController {
             frame.size.width = width
             if usesReaderGrid { frame.origin.y = CardCarouselMetrics.verticalPadding }
         }
+        if isImmersed, immersionExtendsToTop {
+            let target = view.convert(view.bounds, to: cardArea)
+            frame.size.height += frame.minY - target.minY
+            frame.origin.y = target.minY
+        }
         if isImmersed, immersionExtendsCard || usesReaderGrid {
-            // Extend only the bottom edge to the carousel view's bottom (the
-            // room the faded scrub strip frees up).
+            // Extend to the carousel bottom, including the faded strip's room.
             let target = view.convert(view.bounds, to: cardArea)
             frame.size.height = max(target.maxY - frame.minY, frame.height)
         }
@@ -983,6 +993,11 @@ public final class CardCarouselViewController: UIViewController {
             frame.origin.x = target.midX - width / 2
             frame.size.width = width
             if usesReaderGrid { frame.origin.y = CardCarouselMetrics.verticalPadding }
+        }
+        if isImmersed, immersionExtendsToTop {
+            let target = view.convert(view.bounds, to: cardArea)
+            frame.size.height += frame.minY - target.minY
+            frame.origin.y = target.minY
         }
         if isImmersed, immersionExtendsCard || usesReaderGrid {
             let target = view.convert(view.bounds, to: cardArea)

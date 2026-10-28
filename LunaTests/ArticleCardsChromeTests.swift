@@ -641,7 +641,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         }
     }
 
-    func testScrollableTitleCopyKeepsInsetStableAndCentersFaviconBesideMultilineTitle() throws {
+    func testPinnedTitleFollowsChromeAndKeepsScrollableInsetStable() throws {
         let title = "A deliberately long article title that wraps across multiple header lines"
         let controller = makeArticleController(seed: "stable-title", title: title)
         let textView = try XCTUnwrap(firstSubview(of: UITextView.self, in: controller.view))
@@ -656,7 +656,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertGreaterThan(label.frame.height, label.font.lineHeight)
         XCTAssertEqual(icon.frame.midY, label.frame.midY, accuracy: 0.5)
         XCTAssertEqual(pinned.frame.minY, 0, accuracy: 0.5)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(scrolling.alpha, 0, accuracy: 0.001)
         let pinnedFrame = pinned.convert(pinned.bounds, to: controller.view)
         let scrollingFrame = scrolling.convert(scrolling.bounds, to: controller.view)
         XCTAssertEqual(pinnedFrame.minX, scrollingFrame.minX, accuracy: 0.5)
@@ -671,14 +672,14 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         textView.setContentOffset(
             CGPoint(x: 0, y: -textView.adjustedContentInset.top + 40), animated: false)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
         textView.setContentOffset(
             CGPoint(
                 x: 0,
                 y: -textView.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001,
-                       "The title must stay in scroll content after leaving the viewport")
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001,
+                       "Chrome always keeps the title visible, even far down the article")
         let card = try XCTUnwrap(controller.carousel.contentController(
             at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
         card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: true, extendsCard: true)
@@ -689,8 +690,144 @@ final class ArticleCardsChromeTests: XCTestCase {
         card.immersionTracker(ScrollDirectionImmersionTracker(), didChangeImmersion: false, extendsCard: true)
         controller.view.layoutIfNeeded()
         XCTAssertFalse(controller.carousel.isImmersed)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001,
-                       "Restoring chrome must not restore the article title over the body")
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001,
+                       "Restoring chrome must bring the pinned title back")
+    }
+
+    @MainActor
+    func testHeaderTravelsBetweenPinnedAndScrollPositionsAtEveryOffset() throws {
+        let title = "A header that joins the top of the article"
+        let controller = makeArticleController(seed: "header-handoff-offsets", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        let headers = headerViews(labelled: title, in: card.view)
+        let pinned = try XCTUnwrap(headers.first { !hasScrollViewAncestor($0) })
+        let scrolling = try XCTUnwrap(headers.first { hasScrollViewAncestor($0) })
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        for distance in [CGFloat(0), 0.5, 2, 12, 40, scrolling.bounds.height + 100] {
+            text.contentOffset.y = -text.adjustedContentInset.top + distance
+            for visible in [false, true] {
+                card.setCardChromeVisible(!visible, animated: false)
+                controller.carousel.setImmersed(!visible, extendsToTop: true, horizontalInset: 0)
+                card.view.layoutIfNeeded()
+                let expandedFrame = card.view.convert(card.view.bounds, to: controller.view)
+                if !visible {
+                    XCTAssertEqual(expandedFrame.minY, 0, accuracy: 0.5,
+                                   "No header-sized band may clip the immersed reader")
+                    XCTAssertEqual(text.convert(text.bounds, to: card.view).minY, 0, accuracy: 0.5)
+                }
+                XCTAssertEqual(pinned.alpha, visible ? 1 : 0, accuracy: 0.001)
+                XCTAssertEqual(scrolling.alpha, visible ? 0 : 1, accuracy: 0.001)
+                XCTAssertFalse(pinned.isHidden)
+                XCTAssertFalse(scrolling.isHidden)
+                if distance >= 40 {
+                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: controller.view.bounds)
+                        .image { controller.view.layer.render(in: $0.cgContext) })
+                    attachment.name = "Reader header offset \(distance) chrome \(visible)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+                XCTAssertEqual(scrolling.convert(scrolling.bounds, to: text).minY,
+                               -scrolling.bounds.height, accuracy: 0.5)
+            }
+        }
+    }
+
+    @MainActor
+    func testAnimatedHeaderHandoffUsesOneMovingCopyNearTopAndDeepInArticle() throws {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let title = "A title just below its resting scroll position"
+        let controller = makeArticleController(seed: "animated-title-handoff", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        text.contentOffset.y = -text.adjustedContentInset.top + 12
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        for distance in [CGFloat(12), 400] {
+            text.contentOffset.y = -text.adjustedContentInset.top + distance
+            for visible in [false, true] {
+                controller.carousel.setImmersed(!visible, extendsToTop: true,
+                                               horizontalInset: 0, animated: true)
+                let surfaces = allSubviews(in: card.view).filter {
+                    $0.accessibilityIdentifier == "reader.header.reflow"
+                }
+                XCTAssertEqual(surfaces.count, 1, "The title must move, without crossfading duplicates")
+                XCTAssertEqual(surfaces.first?.alpha ?? 0, 1, accuracy: 0.001)
+                let crop = try XCTUnwrap(surfaces.first?.subviews.first)
+                let headers = headerViews(labelled: title, in: card.view)
+                XCTAssertTrue(headers.allSatisfy(\.isHidden))
+                if visible {
+                    XCTAssertEqual(crop.frame.minY, 0, accuracy: 0.5)
+                } else {
+                    let destinationOffset = card.rabbitHoleReader?.focusedScrollReader?
+                        .preparedCardViewportDestinationOffsetY ?? text.contentOffset.y
+                    XCTAssertEqual(crop.frame.minY,
+                        max(-crop.bounds.height, -crop.bounds.height - destinationOffset), accuracy: 0.5)
+                }
+                let done = expectation(description: "header handoff")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { done.fulfill() }
+                wait(for: [done], timeout: 1)
+                XCTAssertTrue(allSubviews(in: card.view).allSatisfy {
+                    $0.accessibilityIdentifier != "reader.header.reflow"
+                })
+                XCTAssertTrue(headers.allSatisfy { !$0.isHidden })
+            }
+        }
+    }
+
+    @MainActor
+    func testScrollDrivenHeaderHandoffFollowsContinuedScroll() throws {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let title = "A title still moving with the reader's gesture"
+        let controller = makeArticleController(seed: "scrolling-title-handoff", title: title)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        text.contentOffset.y = -text.adjustedContentInset.top + 12
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        card.immersionTracker(ScrollDirectionImmersionTracker(),
+                              didChangeImmersion: true, extendsCard: true)
+        let surface = try XCTUnwrap(allSubviews(in: card.view).first {
+            $0.accessibilityIdentifier == "reader.header.reflow"
+        })
+        text.contentOffset.y += 9
+        XCTAssertEqual(surface.transform.ty, -9, accuracy: 0.5)
+        let done = expectation(description: "scrolling title handoff")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { done.fulfill() }
+        wait(for: [done], timeout: 1)
+        let scrolling = try XCTUnwrap(headerViews(labelled: title, in: card.view)
+            .first { hasScrollViewAncestor($0) })
+        XCTAssertFalse(scrolling.isHidden)
+        XCTAssertEqual(scrolling.alpha, 1)
+        XCTAssertEqual(scrolling.convert(scrolling.bounds, to: card.view).minY,
+                       -scrolling.bounds.height - text.contentOffset.y, accuracy: 0.5)
+    }
+
+    @MainActor
+    func testReturningChromeKeepsArticleEndAtTheRestoredBottomEdge() throws {
+        let controller = makeArticleController(seed: "header-end-restore", title: "Article end")
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        controller.toggleImmersion(for: card)
+        controller.view.layoutIfNeeded()
+        text.contentOffset.y = text.contentSize.height + text.adjustedContentInset.bottom - text.bounds.height
+        card.immersionTracker(ScrollDirectionImmersionTracker(),
+                              didChangeImmersion: false, extendsCard: true)
+        controller.view.layoutIfNeeded()
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(text.contentOffset.y,
+            text.contentSize.height + text.adjustedContentInset.bottom - text.bounds.height, accuracy: 1)
     }
 
     func testScrollableTitleUsesCardWidthWhileReaderBoundsAreStillProvisional() throws {
@@ -863,13 +1000,13 @@ final class ArticleCardsChromeTests: XCTestCase {
         defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
         scroll.setContentOffset(
             CGPoint(x: 0, y: -scroll.adjustedContentInset.top + 40), animated: false)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
         scroll.setContentOffset(
             CGPoint(
                 x: 0,
                 y: -scroll.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
-        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
 
         controller.carousel(
             controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)

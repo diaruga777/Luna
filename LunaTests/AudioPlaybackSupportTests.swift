@@ -908,3 +908,35 @@ private final class PlayerSpy: ReaderPlaybackPausable {
     private(set) var pauseCount = 0
     func pauseForExclusivePlayback() { pauseCount += 1 }
 }
+
+final class AudioScriptFileRendererTests: XCTestCase {
+    private func segment(_ index: Int, empty: Bool = false) -> RenderedSegment {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2205)!
+        buffer.frameLength = 2205
+        for frame in 0..<2205 { buffer.floatChannelData![0][frame] = Float(sin(Double(frame) * 0.05) * 0.1) }
+        return RenderedSegment(blockIndex: index, buffers: empty ? [] : [buffer], wordMarkers: [], duration: empty ? 0 : 0.1, format: format)
+    }
+    func testWritesFinalizedPlayableAudioInBlockOrder() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let script = AudioScript(spokenBlocks: [.init(blockIndex: 2, text: "First"), .init(blockIndex: 5, text: "Second")], totalWordCount: 2, builderVersion: 3)
+        var order: [Int] = []; var progress: [Double] = []
+        let duration = try await AudioScriptFileRenderer.write(script, to: url, render: {
+            order.append($0.blockIndex); return self.segment($0.blockIndex)
+        }, progress: { progress.append($0) })
+        XCTAssertEqual(order, [2, 5]); XCTAssertEqual(progress, [0.5, 1]); XCTAssertEqual(duration, 0.2, accuracy: 0.001)
+        let asset = AVURLAsset(url: url)
+        let actual = try await asset.load(.duration).seconds
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        XCTAssertFalse(tracks.isEmpty); XCTAssertEqual(actual, 0.2, accuracy: 0.06)
+    }
+    func testEmptyVoiceOutputRemovesPartialFile() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        let script = AudioScript(spokenBlocks: [.init(blockIndex: 0, text: "First"), .init(blockIndex: 1, text: "Second")], totalWordCount: 2, builderVersion: 3)
+        do {
+            _ = try await AudioScriptFileRenderer.write(script, to: url, render: { self.segment($0.blockIndex, empty: $0.blockIndex == 1) }, progress: { _ in })
+            XCTFail("Empty speech must fail the whole export")
+        } catch { XCTAssertFalse(FileManager.default.fileExists(atPath: url.path)) }
+    }
+}

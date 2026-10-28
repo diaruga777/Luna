@@ -4,7 +4,6 @@
 //
 
 import LunaSavesUI
-import LunaSocialUI
 import LunaSaves
 import LunaDesignSystem
 import LunaStorage
@@ -88,12 +87,8 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 
     private func makeCategories() -> [SettingsCategory] {
         // Kind rows first (Reader/Audio/Email/Kindle for article apps,
-        // Auto-Download for media apps), then the universal tail. Contacts is
-        // email sharing's address book, so it appears only where email exists.
+        // Auto-Download for media apps), then the universal tail.
         let categories = KindWiring.settingsCategories()
-        + (LunaApp.current.sharesByEmail
-            ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
-            : [])
         // Shortcut & Safari holds the suggestion-button toggle and the
         // cookie auto-decline switch (article apps only), the in-page video
         // player's off switch (media apps only), and the Action Button

@@ -3,13 +3,19 @@ import AppIntents
 import AVFAudio
 import Foundation
 import MediaPlayer
+import CoreSpotlight
 
-struct LibraryMusicEntity: AppEntity {
+struct LibraryMusicEntity: IndexedEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Library Music"
     static var defaultQuery = LibraryMusicQuery()
     var id: String
-    var name: String
-    var detail: String
+    @Property(title: "Name") var name: String
+    @Property(title: "Details") var detail: String
+    init(id: String, name: String, detail: String) {
+        self.id = id
+        self.name = name
+        self.detail = detail
+    }
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(name)", subtitle: "\(detail)")
     }
@@ -20,17 +26,26 @@ struct LibraryMusicQuery: EntityStringQuery {
         // Entity suggestions never trigger a permission prompt outside the app.
         let library = MusicLibraryController.shared
         await library.reload()
-        return library.playlists.map {
-            LibraryMusicEntity(id: "playlist:\($0.persistentID)", name: $0.name ?? "Playlist", detail: "Playlist")
-        } + library.albums.compactMap { collection in
-            guard let item = collection.representativeItem else { return nil }
-            return LibraryMusicEntity(id: "album:\(item.albumPersistentID)", name: item.albumTitle ?? "Untitled Album", detail: "Album · \(item.albumArtist ?? item.artist ?? "Unknown Artist")")
-        } + library.artists.compactMap { collection in
-            guard let item = collection.representativeItem else { return nil }
-            return LibraryMusicEntity(id: "artist:\(item.artistPersistentID)", name: item.artist ?? "Unknown Artist", detail: "Artist")
-        } + library.songs.map {
-            LibraryMusicEntity(id: "song:\($0.persistentID)", name: $0.title ?? "Untitled Song", detail: $0.artist ?? "Unknown Artist")
+        return Self.entities(in: library)
+    }
+    @MainActor private static func entities(in library: MusicLibraryController) -> [LibraryMusicEntity] {
+        var entities: [LibraryMusicEntity] = []
+        entities.reserveCapacity(library.playlists.count + library.albums.count + library.artists.count + library.songs.count)
+        for playlist in library.playlists {
+            entities.append(LibraryMusicEntity(id: "playlist:\(playlist.persistentID)", name: playlist.name ?? "Playlist", detail: "Playlist"))
         }
+        for collection in library.albums {
+            guard let item = collection.representativeItem else { continue }
+            entities.append(LibraryMusicEntity(id: "album:\(item.albumPersistentID)", name: item.albumTitle ?? "Untitled Album", detail: "Album · \(item.albumArtist ?? item.artist ?? "Unknown Artist")"))
+        }
+        for collection in library.artists {
+            guard let item = collection.representativeItem else { continue }
+            entities.append(LibraryMusicEntity(id: "artist:\(item.artistPersistentID)", name: item.artist ?? "Unknown Artist", detail: "Artist"))
+        }
+        for song in library.songs {
+            entities.append(LibraryMusicEntity(id: "song:\(song.persistentID)", name: song.title ?? "Untitled Song", detail: song.artist ?? "Unknown Artist"))
+        }
+        return entities
     }
     func entities(for identifiers: [String]) async throws -> [LibraryMusicEntity] {
         let requested = Set(identifiers)
@@ -41,6 +56,33 @@ struct LibraryMusicQuery: EntityStringQuery {
     }
     func suggestedEntities() async throws -> [LibraryMusicEntity] {
         Array(await library().prefix(20))
+    }
+    @MainActor func allEntities() async -> [LibraryMusicEntity] {
+        Self.entities(in: MusicLibraryController.shared)
+    }
+}
+
+@MainActor enum MusicEntityIndexing {
+    private static let index = CSSearchableIndex(name: "LunaMusic.Library")
+    private static var isRefreshing = false
+    private static var needsRefresh = false
+
+    static func refresh() async {
+        let library = MusicLibraryController.shared
+        guard library.hasLoaded else { return }
+        guard !isRefreshing else { needsRefresh = true; return }
+        isRefreshing = true
+        repeat {
+            needsRefresh = false
+            let entities = await LibraryMusicQuery().allEntities()
+            do {
+                try await index.deleteAppEntities(ofType: LibraryMusicEntity.self)
+                try await index.indexAppEntities(entities, priority: 10)
+            } catch {
+                // Siri can still resolve entities through LibraryMusicQuery if indexing is unavailable.
+            }
+        } while needsRefresh
+        isRefreshing = false
     }
 }
 

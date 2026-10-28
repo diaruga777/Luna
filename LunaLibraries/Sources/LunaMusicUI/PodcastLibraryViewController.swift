@@ -31,6 +31,10 @@ import LunaDesignSystem
         Task { await PodcastLibraryController.shared.refresh() }
     }
     public func showQueue() { loadViewIfNeeded(); content.presentPodcastPlayer(queue: true) }
+    public func foregroundSearch(query: String = "") {
+        loadViewIfNeeded()
+        content.foregroundSearch(query: query)
+    }
     public func openEpisode(_ id: String) {
         guard let episode = PodcastLibraryController.shared.state.episodes[id] else { return }
         navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
@@ -86,6 +90,16 @@ import LunaDesignSystem
     }
     private func configureSearch() {
         if mode == 3 || mode == 4 { search.install(on: navigationOwner ?? self) }
+    }
+    func foregroundSearch(query: String) {
+        loadViewIfNeeded()
+        configureSearch()
+        search.searchBar.text = query
+        updateSearchResults(for: search)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.view.window != nil else { return }
+            self.search.focusSearch()
+        }
     }
     private var showingSearch: Bool {
         mode == 3 || (mode == 4 && !(search.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

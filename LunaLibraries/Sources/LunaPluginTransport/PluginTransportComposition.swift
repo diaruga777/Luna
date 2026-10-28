@@ -76,17 +76,32 @@ public enum PluginTransportComposition {
         pairedDevices: PluginPairedDeviceStore = PluginPairedDeviceStore()
     ) {
         let migratedKey = "_migratedFromSwift"
-        guard keyValueStore.valueJSON(
-            pluginID: xteinkPluginID, key: migratedKey) == nil
-        else { return }
-        keyValueStore.setValueJSON(
-            "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
+        let migrationFinished = keyValueStore.valueJSON(
+            pluginID: xteinkPluginID, key: migratedKey) != nil
+        let pairingSecretKey = XteinkPluginMigration.pairingSecretKey
 
-        if let secret = pairingStore.credential(for: XteinkPluginMigration.hostID) {
-            secrets.setSecret(
-                secret, pluginID: xteinkPluginID,
-                key: XteinkPluginMigration.pairingSecretKey)
+        // A plugin pairing is authoritative. This also lets a fresh install
+        // finish migration after its first plugin-owned pairing without
+        // replacing that secret with stale Swift state on a later launch.
+        if secrets.secret(pluginID: xteinkPluginID, key: pairingSecretKey) != nil {
+            if !migrationFinished {
+                _ = keyValueStore.setValueJSON(
+                    "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
+            }
+            return
         }
+
+        // Retry this copy even when the old migration marker exists. Earlier
+        // builds wrote the marker before reading Keychain, so a temporarily
+        // unavailable legacy credential could leave the plugin permanently
+        // unpaired while Luna's Swift settings still showed it as paired.
+        guard let secret = pairingStore.credential(for: XteinkPluginMigration.hostID)
+        else { return }
+        secrets.setSecret(secret, pluginID: xteinkPluginID, key: pairingSecretKey)
+        guard secrets.secret(pluginID: xteinkPluginID, key: pairingSecretKey) == secret
+        else { return }
+
+        guard !migrationFinished else { return }
         if let identifier = XteinkSendSettings.pairedPeripheralID {
             pairedDevices.add(
                 PluginBluetoothDevice(
@@ -100,6 +115,8 @@ public enum PluginTransportComposition {
                 "true", pluginID: xteinkPluginID,
                 key: XteinkPluginMigration.enabledSettingKey)
         }
+        _ = keyValueStore.setValueJSON(
+            "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
     }
 
     /// Opens every set-up plugin's standing connect and scan. A device

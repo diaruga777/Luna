@@ -17,6 +17,12 @@ public enum AudioSettings {
 
     private static let autoplayKey = "audioAutoplayEnabled"
     private static let intelligentTrimmingKey = "audioIntelligentTrimmingEnabled"
+    /// Cloud speech is opt-in; the credential itself never enters defaults.
+    public static var usesGeminiVoice: Bool {
+        get { defaults.bool(forKey: "audioUsesGeminiVoice") }
+        set { defaults.set(newValue, forKey: "audioUsesGeminiVoice") }
+    }
+
     private static let rateKey = "audioPreferredRate"
 
     /// The only rates the legacy reader's rate-cycling control

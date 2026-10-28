@@ -105,9 +105,13 @@ public protocol AudioPlaybackObserver: AnyObject {
         _ center: AudioPlaybackCenter, didUpdateProgress fraction: Double,
         elapsed: TimeInterval, duration: TimeInterval)
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent)
+    func audioPlaybackCenterDidUpdatePreparation(_ center: AudioPlaybackCenter)
+    func audioPlaybackCenter(_ center: AudioPlaybackCenter, didFailPreparation message: String)
 }
 
 public extension AudioPlaybackObserver {
+    func audioPlaybackCenterDidUpdatePreparation(_ center: AudioPlaybackCenter) {}
+    func audioPlaybackCenter(_ center: AudioPlaybackCenter, didFailPreparation message: String) {}
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didChangeState state: AudioPlaybackState) {}
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didUpdateItem info: AudioPlaybackItemInfo?) {}
     func audioPlaybackCenter(
@@ -196,6 +200,21 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// next candidate.
     public weak var dataSource: AudioPlaybackCenterDataSource?
 
+    /// Reader installs the optional cloud/cache provider. Autoplay and cold
+    /// restoration may read its cache but must never start paid/quota work.
+    public var articleRendererProvider: ((UUID, AudioScript, Bool) async throws -> SpeechRendering?)?
+    public private(set) var isPreparingArticleAudio = false {
+        didSet {
+            if oldValue != isPreparingArticleAudio {
+                notifyObservers { $0.audioPlaybackCenterDidUpdatePreparation(self) }
+            }
+        }
+    }
+    private var articleRenderer: SpeechRendering?
+    private var articleRendererPrepared = false
+    private var allowsArticleGeneration = false
+    private var engineFormat: AVAudioFormat?
+
     public var currentSnapshot: AudioPlaybackSnapshot {
         let totalWords = currentScript?.totalWordCount ?? 0
         let remainingWords = max(0, totalWords - sessionStartWordsSkipped - wordsRenderedSoFar)
@@ -267,6 +286,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// progress timer to fire word events in sync with `engine.currentTime`.
     private var pendingMarkerQueue: [(absoluteTime: TimeInterval, blockIndex: Int, range: NSRange)] = []
     private var markerCursor = 0
+    private var pendingBlockPositions: [(time: TimeInterval, wordIndex: Int)] = []
+    private var blockPositionCursor = 0
     /// Global word index at the start of the block this SESSION began
     /// rendering from (fixed for the session — used to estimate the content
     /// time "skipped" by a resume/seek, and the words still ahead).
@@ -351,7 +372,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// resumes from the persisted position store IF it names this same item;
     /// otherwise (or when explicitly `0`) starts from the top.
     public func play(item: SavedItem, content: ArticleContent, fromWordIndex: Int? = nil) {
-        beginPlayback(item: item, content: content, fromWordIndex: fromWordIndex)
+        beginPlayback(item: item, content: content, fromWordIndex: fromWordIndex, allowGeneration: true)
     }
 
     public func togglePlayPause() {
@@ -366,6 +387,15 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         pauseInternal(deactivateSessionAfterGrace: true)
     }
 
+    /// Explicit recovery after a cloud error; affects this article session only.
+    public func useDeviceVoiceForCurrentArticle() {
+        guard case .paused = state, !isPreparingArticleAudio else { return }
+        articleRenderer = nil
+        articleRendererPrepared = true
+        isPreparingArticleAudio = false
+        resume()
+    }
+
     public func resume() {
         guard case .paused(let itemID) = state else { return }
         sessionCoordinator.activate()
@@ -377,6 +407,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         case .playing, nil: setState(.playing(itemID: itemID))
         }
         stateBeforePause = nil
+        pumpRenderingIfNeeded()
     }
 
     /// Rebuilds a playback session from the persisted App-Group position —
@@ -517,6 +548,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         scheduledNotYetPlayedCount = 0
         pendingMarkerQueue = []
         markerCursor = 0
+        pendingBlockPositions = []
+        blockPositionCursor = 0
         renderedDurationSoFar = 0
         wordsRenderedSoFar = 0
 
@@ -527,7 +560,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         lastKnownWordIndex = sessionStartWordsSkipped
     }
 
-    private func beginPlayback(item: SavedItem, content: ArticleContent, fromWordIndex: Int?) {
+    private func beginPlayback(item: SavedItem, content: ArticleContent, fromWordIndex: Int?, allowGeneration: Bool = false) {
         // Cache hit, or a fast synchronous heuristic build on miss (see
         // `AudioPlaybackCenterDataSource.script(for:content:)`'s doc
         // comment) — never the LLM refinement pass, which only ever updates
@@ -538,6 +571,10 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
         sessionCoordinator.activate()
 
+        articleRenderer = nil
+        articleRendererPrepared = false
+        allowsArticleGeneration = allowGeneration
+        isPreparingArticleAudio = false
         currentItem = item
         currentScript = script
         blockStartWordIndices = AudioWordIndexing.blockStartWordIndices(script.spokenBlocks)
@@ -623,15 +660,56 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         guard scheduledNotYetPlayedCount < Self.maxBlocksAhead else { return }
         guard renderCursor < script.spokenBlocks.count else { return }
 
+        if !articleRendererPrepared, let provider = articleRendererProvider, let itemID = currentItem?.id {
+            isPumping = true
+            isPreparingArticleAudio = true
+            let token = sessionToken
+            let allowGeneration = allowsArticleGeneration
+            Task { [weak self] in
+                do {
+                    let prepared = try await provider(itemID, script, allowGeneration)
+                    await MainActor.run {
+                        guard let self, token == self.sessionToken else { return }
+                        self.articleRenderer = prepared
+                        self.articleRendererPrepared = true
+                        self.isPumping = false
+                        self.isPreparingArticleAudio = false
+                        self.pumpRenderingIfNeeded()
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self, token == self.sessionToken else { return }
+                        self.isPumping = false
+                        self.isPreparingArticleAudio = false
+                        self.pause()
+                        self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
+                    }
+                }
+            }
+            return
+        }
         let block = script.spokenBlocks[renderCursor]
+        let isArticleRenderer = articleRenderer != nil
+        let activeRenderer = articleRenderer ?? renderer
         isPumping = true
         let token = sessionToken
         Task { [weak self] in
             guard let self else { return }
             let segment: RenderedSegment
             do {
-                segment = try await self.renderer.render(block)
+                segment = try await activeRenderer.render(block)
             } catch {
+                if isArticleRenderer {
+                    await MainActor.run {
+                        guard token == self.sessionToken else { return }
+                        self.isPumping = false
+                        self.articleRenderer = nil
+                        self.articleRendererPrepared = false
+                        self.pause()
+                        self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
+                    }
+                    return
+                }
                 // Render failure degrades to an empty (silently skippable)
                 // segment rather than stalling the article — the same
                 // "empty segment is always valid" contract `SpeechRenderer`
@@ -654,11 +732,20 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         }
     }
 
-    private func handleRendered(_ segment: RenderedSegment) {
+    private func handleRendered(_ input: RenderedSegment) {
         guard currentScript != nil else { return }
+        let segment: RenderedSegment
+        do { segment = try normalizedForEngine(input) }
+        catch {
+            renderCursor = max(0, renderCursor - 1)
+            pause()
+            notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
+            return
+        }
         if engine == nil {
             do {
                 engine = try engines.makeEngine(format: segment.format)
+                engineFormat = segment.format
                 engine?.delegate = self
             } catch {
                 setState(.idle)
@@ -678,9 +765,24 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         pumpRenderingIfNeeded()
     }
 
+    private func normalizedForEngine(_ segment: RenderedSegment) throws -> RenderedSegment {
+        guard let target = engineFormat, segment.format != target else { return segment }
+        let buffers = try AudioFormatConversion.convert(segment.buffers, from: segment.format, to: target)
+        let markers = segment.wordMarkers.map {
+            WordMarker(utteranceRange: $0.utteranceRange,
+                       sampleOffset: AVAudioFramePosition(Double($0.sampleOffset) * target.sampleRate / segment.format.sampleRate))
+        }
+        return RenderedSegment(blockIndex: segment.blockIndex, buffers: buffers, wordMarkers: markers,
+                               duration: buffers.reduce(0) { $0 + Double($1.frameLength) / target.sampleRate }, format: target)
+    }
+
     private func scheduleRendered(_ segment: RenderedSegment) {
         guard let script = currentScript else { return }
         let segmentStart = scheduledContentTimeCursor
+        if segment.wordMarkers.isEmpty,
+           let position = script.spokenBlocks.firstIndex(where: { $0.blockIndex == segment.blockIndex }) {
+            pendingBlockPositions.append((segmentStart, blockStartWordIndices[position]))
+        }
         for marker in segment.wordMarkers {
             let absoluteTime = segmentStart + Double(marker.sampleOffset) / segment.format.sampleRate
             pendingMarkerQueue.append((absoluteTime, segment.blockIndex, marker.utteranceRange))
@@ -757,7 +859,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             guard let self else { return }
             let segment: RenderedSegment
             do {
-                segment = try await self.renderer.render(announcementBlock)
+                segment = try self.normalizedForEngine(await self.renderer.render(announcementBlock))
             } catch {
                 segment = RenderedSegment(
                     blockIndex: -1, buffers: [], wordMarkers: [], duration: 0,
@@ -798,6 +900,11 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     }
 
     private func transitionToIdle() {
+        sessionToken = UUID()
+        isPumping = false
+        isPreparingArticleAudio = false
+        articleRenderer = nil
+        articleRendererPrepared = false
         currentItem = nil
         currentScript = nil
         currentItemInfo = nil
@@ -885,6 +992,10 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     private func tickProgress() {
         guard let engine, isAudiblyPlaying else { return }
         let elapsed = engine.currentTime
+        while blockPositionCursor < pendingBlockPositions.count, pendingBlockPositions[blockPositionCursor].time <= elapsed {
+            lastKnownWordIndex = max(lastKnownWordIndex, pendingBlockPositions[blockPositionCursor].wordIndex)
+            blockPositionCursor += 1
+        }
         while markerCursor < pendingMarkerQueue.count, pendingMarkerQueue[markerCursor].absoluteTime <= elapsed {
             let marker = pendingMarkerQueue[markerCursor]
             markerCursor += 1

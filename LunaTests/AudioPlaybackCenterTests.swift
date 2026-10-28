@@ -87,6 +87,64 @@ final class AudioPlaybackCenterTests: XCTestCase {
         }
     }
 
+    func testArticlePreparationFailurePausesWithoutSkippingOrMarkingFinishedAndResumeRetries() {
+        var attempts = 0
+        let cloud = FakeRenderer()
+        center.articleRendererProvider = { _, _, _ in
+            attempts += 1
+            if attempts == 1 { throw GeminiSpeechError.quota }
+            return cloud
+        }
+        let item = AudioPlaybackFixtures.item(seed: "quota")
+        let content = AudioPlaybackFixtures.content(blockCount: 3)
+        store.seed(item, content: content)
+        center.play(item: item, content: content)
+        waitUntil(self.center.state == .paused(itemID: item.id))
+        XCTAssertTrue(engine.scheduledSegments.isEmpty)
+        XCTAssertTrue(store.finishedIDs.isEmpty)
+        XCTAssertFalse(center.isPreparingArticleAudio)
+        center.resume()
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        XCTAssertEqual(attempts, 2)
+        XCTAssertTrue(renderer.renderedBlocks.isEmpty)
+        XCTAssertEqual(cloud.renderedBlocks.count, 2)
+    }
+
+    func testCloudErrorCanUseDeviceVoiceWithoutRetryingCloud() {
+        var attempts = 0
+        center.articleRendererProvider = { _, _, _ in attempts += 1; throw GeminiSpeechError.quota }
+        let item = AudioPlaybackFixtures.item(seed: "fallback")
+        let content = AudioPlaybackFixtures.content(blockCount: 3)
+        store.seed(item, content: content)
+        center.play(item: item, content: content)
+        waitUntil(self.center.state == .paused(itemID: item.id))
+        center.useDeviceVoiceForCurrentArticle()
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(renderer.renderedBlocks.count, 2)
+        XCTAssertEqual(center.state, .playing(itemID: item.id))
+    }
+
+    func testSeekReusesPreparedArticleRendererAndMarkerlessPlaybackPersistsParagraph() {
+        var preparations = 0
+        let cloud = FakeRenderer()
+        center.articleRendererProvider = { _, _, _ in preparations += 1; return cloud }
+        let (item, _) = startPlayback(blockCount: 4)
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        engine.currentTime = 1.1 // Second four-word paragraph, at 0.25 seconds per word.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        center.pause()
+        XCTAssertEqual(positionStore.load()?.wordIndex, 4)
+        center.seek(toFraction: 0.75)
+        waitUntil(self.cloudHasRendered(cloud, count: 3))
+        XCTAssertEqual(preparations, 1)
+        XCTAssertEqual(center.state, .paused(itemID: item.id))
+    }
+
+    private func cloudHasRendered(_ cloud: FakeRenderer, count: Int) -> Bool {
+        cloud.renderedBlocks.count >= count
+    }
+
     // MARK: - State machine
 
     func testPlayEntersPlayingStateAndMarksOpened() {
@@ -203,6 +261,11 @@ final class AudioPlaybackCenterTests: XCTestCase {
         dataSource.nextCandidateResult = QueueCandidate(item: nextItem, content: nextContent)
         center.dataSource = dataSource
 
+        var generationPermissions: [Bool] = []
+        center.articleRendererProvider = { _, _, allow in
+            generationPermissions.append(allow)
+            return nil
+        }
         let (item, _) = startPlayback(blockCount: 2)
         finishArticle(totalBlocks: 2)
 
@@ -229,6 +292,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         waitUntil(self.engine.scheduledSegments.count == 5, message: "next article's look-ahead never rendered")
         XCTAssertEqual(engine.scheduledSegments[3].segment.blockIndex, 0)
         XCTAssertEqual(engine.scheduledSegments[3].rateMode, .followsUserRate)
+        XCTAssertEqual(generationPermissions, [true, false], "Only an explicit article play may generate cloud speech")
     }
 
     func testAutoplayToggledOffDuringAnnouncementFallsBackToFinalChime() {

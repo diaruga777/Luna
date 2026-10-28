@@ -220,7 +220,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
         guard let info = snapshot.itemInfo else { return }
         miniPlayer.apply(.init(
-            title: info.title,
+            title: center.isPreparingArticleAudio ? L10n.string("Gemini_preparing") : info.title,
             isUpNext: false,
             thumbnailPath: thumbnailPath(fileName: info.thumbnailFileName),
             isPlaying: snapshot.isAudiblyPlaying,
@@ -347,6 +347,22 @@ extension MiniPlayerHostViewController: AudioMiniPlayerViewDelegate {
 // MARK: - AudioPlaybackObserver
 
 extension MiniPlayerHostViewController: AudioPlaybackObserver {
+    func audioPlaybackCenterDidUpdatePreparation(_ center: AudioPlaybackCenter) {
+        refreshDisplay()
+    }
+
+    func audioPlaybackCenter(_ center: AudioPlaybackCenter, didFailPreparation message: String) {
+        let alert = UIAlertController(title: L10n.string("Gemini_failedTitle"), message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Gemini_retry"), style: .default) { _ in center.resume() })
+        alert.addAction(UIAlertAction(title: L10n.string("Gemini_deviceVoice"), style: .default) { _ in
+            center.useDeviceVoiceForCurrentArticle()
+        })
+        alert.addAction(UIAlertAction(title: L10n.string("Gemini_cancel"), style: .cancel))
+        var presenter: UIViewController = self
+        while let next = presenter.presentedViewController { presenter = next }
+        presenter.present(alert, animated: true)
+    }
+
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didChangeState state: AudioPlaybackState) {
         // Any real state (from tapping play on the preview, or any other
         // trigger — e.g. a remote "play" command while this preview shows)

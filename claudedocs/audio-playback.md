@@ -8,6 +8,14 @@ article text, extension-safe playback handoff, and a Siri/Spotlight surface —
 this doc describes what exists now, not the phase-by-phase history (see git
 log for that).
 
+## Optional Gemini voice
+
+Settings → Audio can use a user-provided Gemini 3.8 Flash TTS API key.
+Generation happens on an explicit article play; completed audio is cached for
+later playback. Autoplay and cold restoration use only cached Gemini audio or
+the device voice. See [Gemini read-aloud](gemini-tts.md) for credentials,
+privacy, chunking, timing limitations, storage and the free-quota evaluation.
+
 ## Architecture
 
 New SwiftPM module **`LunaAudioPlayback`** in `LunaLibraries/Package.swift`

@@ -25,6 +25,7 @@ import Foundation
 /// `LunaAudioPlayback` cannot know about `SavesSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {
+    private static var cacheObserver: NSObjectProtocol?
 
     static func install() {
         AudioPlaybackCenter.shared.dataSource = AppAudioPlaybackDataSource.shared
@@ -35,6 +36,21 @@ enum AudioPlaybackWiring {
         // SpeechController; the share/action extensions never install it and
         // keep the legacy path.
         ReaderAudioLauncher.center = .shared
+        if cacheObserver == nil {
+            cacheObserver = NotificationCenter.default.addObserver(forName: .savesChanged, object: nil, queue: .main) { _ in
+                removeDeletedArticleAudio()
+            }
+        }
+        removeDeletedArticleAudio()
+        AudioPlaybackCenter.shared.articleRendererProvider = { itemID, script, allowGeneration in
+            guard AudioSettings.usesGeminiVoice else { return nil }
+            return try await GeminiArticleSpeech.shared.renderer(
+                itemID: itemID, script: script, allowGeneration: allowGeneration)
+        }
+    }
+    private static func removeDeletedArticleAudio() {
+        let ids = Set(SavesStore.shared.items().map { $0.id })
+        Task { try? await GeminiArticleSpeech.shared.removeAudio(except: ids) }
     }
 }
 

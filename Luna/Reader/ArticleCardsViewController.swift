@@ -62,6 +62,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// inline reader is a screen-level eclipse overlay that keeps its own
     /// self-installed indicator, so the host one steps aside for it.
     private let cardScrollIndicator = HorizonScrollIndicator.makeHosted()
+    private let readingProgressEdge = ReadingProgressEdgeView()
     private var chromeModes: [SavedItem.ReaderMode] = []
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
@@ -121,6 +122,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     override func deckWillMountBottomControls() {
         cardScrollIndicator.isHidden = true
         view.addSubview(cardScrollIndicator)
+
+        readingProgressEdge.alpha = 0
+        view.addSubview(readingProgressEdge)
 
         // Immersion extends the reader below its resting card edge. Keep that
         // extra content from entering the footer controls' safe area: the veil
@@ -359,6 +363,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// Hidden when the centered card has no scrollable reader (no article yet,
     /// or RSVP, whose word display has nothing to scroll).
     private func layoutCardScrollIndicator(animated: Bool) {
+        layoutReadingProgressEdge(animated: animated)
         // Only the root card reader is host-tracked; a link-opened inline reader
         // (an over-screen eclipse overlay) keeps its own self-installed indicator.
         guard let reader = readerForChrome as? RabbitHoleReaderViewController,
@@ -369,7 +374,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
             cardScrollIndicator.track(nil)
             return
         }
-        cardScrollIndicator.isHidden = false
+        cardScrollIndicator.isHidden = carousel.isImmersed && reader.focusedScrollReader != nil
         cardScrollIndicator.track(scrollView)
 
         let width = HorizonScrollIndicator.bloomDiameter
@@ -395,6 +400,42 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
             UIView.animate(
                 withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
                 animations: apply, completion: { [weak self] _ in self?.isIndicatorSliding = false })
+        } else {
+            apply()
+        }
+    }
+
+    /// Reading progress belongs to extracted text with dismissed card chrome.
+    /// Host it outside the card mask so its soft glow can reach the leading edge.
+    private func layoutReadingProgressEdge(animated: Bool) {
+        guard let reader = readerForChrome as? RabbitHoleReaderViewController,
+              reader.focusedScrollReader != nil,
+              let scrollView = reader.focusedContentScrollView,
+              inlineColumn == nil
+        else {
+            readingProgressEdge.isHidden = true
+            readingProgressEdge.alpha = 0
+            readingProgressEdge.track(nil)
+            return
+        }
+        readingProgressEdge.isHidden = false
+        readingProgressEdge.track(scrollView)
+        let viewport = scrollView.convert(scrollView.bounds, to: view)
+        let top = viewport.minY + Self.contentEdgeFade
+        let bottom = settingsButton.frame.minY - Self.contentEdgeFade
+        let apply = {
+            self.readingProgressEdge.frame = CGRect(
+                x: viewport.minX + 4 - ReadingProgressEdgeView.glowWidth / 2,
+                y: top, width: ReadingProgressEdgeView.glowWidth,
+                height: max(bottom - top, 0))
+            self.readingProgressEdge.alpha = self.carousel.isImmersed ? 1 : 0
+            self.readingProgressEdge.layoutIfNeeded()
+        }
+        if animated {
+            UIView.animate(
+                withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.32, delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+                animations: apply)
         } else {
             apply()
         }

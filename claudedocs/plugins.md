@@ -1224,6 +1224,12 @@ device-level behavior (rendezvous windows, dequeue-on-read, checkpoint
 pacing) is documented in `claudedocs/xteink.md`, which now describes BOTH
 implementations.
 
+Central Luna copies an existing Swift pairing secret into the plugin's
+`luna.secrets` store. It waits until the legacy Keychain item is available
+before completing that migration, retries the copy on later launches even if
+an earlier version wrote its migration marker too soon, and leaves a secret
+created by the plugin's own pairing flow unchanged.
+
 `Luna/Settings/XteinkSettingsScreen.swift` (the old Swift settings page) is
 excluded from the central `Luna` target by a `project.pbxproj` membership
 exception (added by the orchestrator's scaffolding commits, not by an

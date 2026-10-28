@@ -633,4 +633,42 @@ final class XteinkPluginMigrationTests: XCTestCase {
             PluginSecretsStore.shared.secret(pluginID: pluginID, key: "pairingSecret"),
             "a-newer-secret")
     }
+
+    func testMissingLegacySecretDoesNotConsumeMigrationAndCanBeRetried() {
+        let pairing = InMemoryPairingStore([:])
+        let secrets = PluginSecretsStore.shared
+        secrets.removeSecret(pluginID: pluginID, key: "pairingSecret")
+
+        // Simulate an install that ran while Keychain could not return the
+        // legacy item. Preserve the marker written by affected older builds.
+        XCTAssertTrue(kv.setValueJSON(
+            "true", pluginID: pluginID, key: "_migratedFromSwift", now: Date()))
+        PluginTransportComposition.install(
+            keyValueStore: kv, pairingStore: pairing,
+            pairedDevices: PluginPairedDeviceStore(store: kv))
+        XCTAssertNil(secrets.secret(pluginID: pluginID, key: "pairingSecret"))
+
+        pairing.save("legacy-secret", for: "luna-ios")
+        PluginTransportComposition.install(
+            keyValueStore: kv, pairingStore: pairing,
+            pairedDevices: PluginPairedDeviceStore(store: kv))
+
+        XCTAssertEqual(
+            secrets.secret(pluginID: pluginID, key: "pairingSecret"), "legacy-secret")
+    }
+
+    func testFreshPluginPairingIsNotReplacedByLegacyMigration() {
+        let secrets = PluginSecretsStore.shared
+        secrets.setSecret("fresh-plugin-secret", pluginID: pluginID, key: "pairingSecret")
+        defer { secrets.removeSecret(pluginID: pluginID, key: "pairingSecret") }
+
+        PluginTransportComposition.install(
+            keyValueStore: kv,
+            pairingStore: InMemoryPairingStore(["luna-ios": "stale-legacy-secret"]),
+            pairedDevices: PluginPairedDeviceStore(store: kv))
+
+        XCTAssertEqual(
+            secrets.secret(pluginID: pluginID, key: "pairingSecret"), "fresh-plugin-secret")
+        XCTAssertNotNil(kv.valueJSON(pluginID: pluginID, key: "_migratedFromSwift"))
+    }
 }

@@ -88,7 +88,12 @@ import LunaPodcastCore
                 add.setImage(UIImage(systemName: "plus.circle"), for: .normal)
                 add.frame.size = CGSize(width: 44, height: 44)
                 add.accessibilityLabel = "Add to Podcast Queue"
-                add.addAction(UIAction { [weak self] _ in self?.enqueue(item.id) }, for: .touchUpInside)
+                if reader.hasGeminiAPIKey {
+                    add.menu = queueMenu(item.id)
+                    add.showsMenuAsPrimaryAction = true
+                } else {
+                    add.addAction(UIAction { [weak self] _ in self?.enqueue(item.id) }, for: .touchUpInside)
+                }
                 cell.accessoryView = add
             }
         }
@@ -105,13 +110,23 @@ import LunaPodcastCore
     public func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         let id = visibleItems[indexPath.row].id
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-            UIMenu(children: [
-                UIAction(title: "Add to Queue", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { _ in self?.enqueue(id) },
-                UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in self?.enqueue(id, next: true) },
-            ])
+            self?.queueMenu(id) ?? UIMenu(children: [])
         }
     }
-    private func enqueue(_ id: UUID, next: Bool = false) {
+    func queueMenu(_ id: UUID) -> UIMenu {
+        var actions = [
+            UIAction(title: "Add to Queue", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { [weak self] _ in self?.enqueue(id) },
+            UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { [weak self] _ in self?.enqueue(id, next: true) },
+        ]
+        if reader.hasGeminiAPIKey {
+            actions += [
+                UIAction(title: L10n.string("Music_reader_addGemini"), image: UIImage(systemName: "waveform")) { [weak self] _ in self?.enqueue(id, voice: .gemini) },
+                UIAction(title: L10n.string("Music_reader_nextGemini"), image: UIImage(systemName: "waveform")) { [weak self] _ in self?.enqueue(id, next: true, voice: .gemini) },
+            ]
+        }
+        return UIMenu(children: actions)
+    }
+    private func enqueue(_ id: UUID, next: Bool = false, voice: ReaderPodcastController.Voice? = nil) {
         guard enqueueTasks[id] == nil else { return }
         guard Self.isReaderInstalled else {
             PodcastUI.showError(PodcastError("Install Luna Reader to add its text saves."), from: self); return
@@ -119,7 +134,7 @@ import LunaPodcastCore
         enqueueTasks[id] = Task { [weak self] in
             guard let self else { return }
             defer { enqueueTasks[id] = nil; reload() }
-            do { try await reader.enqueue(id, next: next) }
+            do { try await reader.enqueue(id, next: next, voice: voice) }
             catch { PodcastUI.showError(error, from: self) }
         }
     }

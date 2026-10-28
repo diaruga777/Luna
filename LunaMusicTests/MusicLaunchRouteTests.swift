@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import AVFoundation
 import UserNotifications
 @testable import LunaMusicCore
@@ -134,12 +135,16 @@ final class ReaderMusicRouteTests: XCTestCase {
     private var root: URL!
     private var saves: SavesStore!
     private var library: PodcastLibraryController!
+    private var previousGeminiPreference = false
     override func setUp() async throws {
+        previousGeminiPreference = AudioSettings.usesGeminiVoice
+        AudioSettings.usesGeminiVoice = false
         root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         saves = SavesStore(containerURL: root.appendingPathComponent("shared"))
         library = PodcastLibraryController(url: root.appendingPathComponent("podcasts/library.json"))
     }
     override func tearDown() async throws {
+        AudioSettings.usesGeminiVoice = previousGeminiPreference
         saves = nil; library = nil
         try? FileManager.default.removeItem(at: root)
     }
@@ -150,6 +155,90 @@ final class ReaderMusicRouteTests: XCTestCase {
     private func controller(_ render: @escaping (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double) -> ReaderPodcastController {
         ReaderPodcastController(saves: saves, library: library, directory: root.appendingPathComponent("podcasts/ReaderAudio"), render: render)
     }
+    func testExplicitGeminiUpgradeUsesRequestedVoiceAndReusesAudioWithoutDuplicatingQueue() async throws {
+        let item = save()
+        var deviceRenders = 0, geminiRenders = 0
+        let reader = ReaderPodcastController(saves: saves, library: library,
+            directory: root.appendingPathComponent("podcasts/ReaderAudio"),
+            render: { _, url, _ in deviceRenders += 1; try Data("device".utf8).write(to: url); return 10 },
+            renderGemini: { id, script, url, progress in
+                XCTAssertEqual(id, item.id); XCTAssertFalse(script.spokenBlocks.isEmpty)
+                geminiRenders += 1; try Data("gemini".utf8).write(to: url); progress(1); return 12
+            }, preferredVoice: { .device }, geminiAvailable: { true })
+        let device = try await reader.enqueue(item.id)
+        var listened = PodcastEpisodeState(); listened.position = 5
+        try library.edit { $0.progress[device.id] = listened }
+        let gemini = try await reader.enqueue(item.id, voice: .gemini)
+        let repeated = try await reader.enqueue(item.id, voice: .gemini)
+        XCTAssertEqual(device.id, gemini.id); XCTAssertEqual(gemini.id, repeated.id)
+        XCTAssertTrue(gemini.mediaURL.lastPathComponent.hasSuffix(".gemini.m4a"))
+        XCTAssertEqual(deviceRenders, 1); XCTAssertEqual(geminiRenders, 1)
+        XCTAssertEqual(library.state.queue, [gemini.id]); XCTAssertNil(library.state.progress[gemini.id])
+        XCTAssertEqual(saves.item(withID: item.id)?.readState, .unopened)
+        try reader.removeReadout(gemini)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: device.mediaURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gemini.mediaURL.path))
+    }
+    func testDefaultAddFollowsReadersGeminiPreferenceAndFailureDoesNotUseDeviceSpeech() async throws {
+        let item = save()
+        var fail = true, calls = 0
+        let reader = ReaderPodcastController(saves: saves, library: library,
+            directory: root.appendingPathComponent("podcasts/ReaderAudio"),
+            render: { _, _, _ in XCTFail("Gemini failure must not silently switch voices"); return 0 },
+            renderGemini: { _, _, url, _ in
+                calls += 1
+                if fail { throw PodcastError("Quota reached") }
+                try Data("gemini".utf8).write(to: url); return 12
+            })
+        AudioSettings.usesGeminiVoice = true
+        do { _ = try await reader.enqueue(item.id); XCTFail("Expected quota failure") } catch {}
+        XCTAssertTrue(library.state.queue.isEmpty); XCTAssertTrue(library.state.episodes.isEmpty)
+        XCTAssertTrue(reader.progress.isEmpty)
+        fail = false
+        let episode = try await reader.enqueue(item.id)
+        XCTAssertTrue(episode.mediaURL.lastPathComponent.hasSuffix(".gemini.m4a"))
+        XCTAssertEqual(calls, 2)
+    }
+    func testCurrentReadoutCannotBeReplacedByAnotherVoice() async throws {
+        let item = save()
+        let reader = ReaderPodcastController(saves: saves, library: library,
+            directory: root.appendingPathComponent("podcasts/ReaderAudio"),
+            render: { _, url, _ in try Data("device".utf8).write(to: url); return 10 },
+            renderGemini: { _, _, _, _ in XCTFail("Must not generate before current-episode check"); return 0 },
+            preferredVoice: { .device })
+        let episode = try await reader.enqueue(item.id)
+        try library.edit { $0.currentEpisodeID = episode.id }
+        do { _ = try await reader.enqueue(item.id, voice: .gemini); XCTFail("Expected current readout error") } catch {}
+        XCTAssertEqual(library.state.episodes[episode.id]?.mediaURL, episode.mediaURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: episode.mediaURL.path))
+    }
+    func testGeminiActionsAreAvailableOnlyWhenReadersKeyIsConfigured() {
+        for available in [false, true] {
+            let reader = ReaderPodcastController(saves: saves, library: library,
+                directory: root.appendingPathComponent("podcasts/ReaderAudio"), geminiAvailable: { available })
+            let screen = ReaderPodcastsViewController(reader: reader, library: library)
+            let actions = screen.queueMenu(UUID()).children.compactMap { $0 as? UIAction }
+            XCTAssertEqual(actions.count, available ? 4 : 2)
+            XCTAssertEqual(actions.contains(where: { $0.title == L10n.string("Music_reader_addGemini") }), available)
+            XCTAssertEqual(actions.contains(where: { $0.title == L10n.string("Music_reader_nextGemini") }), available)
+        }
+    }
+    func testSandboxRebasePreservesGeminiFilename() async throws {
+        let item = save()
+        let reader = ReaderPodcastController(saves: saves, library: library,
+            directory: root.appendingPathComponent("podcasts/ReaderAudio"),
+            renderGemini: { _, _, url, _ in try Data("gemini".utf8).write(to: url); return 12 })
+        let episode = try await reader.enqueue(item.id, voice: .gemini)
+        let oldRoot = root.appendingPathComponent("podcasts")
+        let newRoot = root.appendingPathComponent("moved")
+        try FileManager.default.copyItem(at: oldRoot, to: newRoot)
+        let restored = PodcastLibraryController(url: newRoot.appendingPathComponent("library.json"))
+        let rebased = try XCTUnwrap(restored.state.episodes[episode.id])
+        XCTAssertEqual(rebased.mediaURL.lastPathComponent, episode.mediaURL.lastPathComponent)
+        XCTAssertEqual(rebased.mediaURL.deletingLastPathComponent(), newRoot.appendingPathComponent("ReaderAudio", isDirectory: true))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rebased.mediaURL.path))
+    }
+
     func testBrowseRenderQueueReuseAndRestoreWithoutChangingReaderProgress() async throws {
         let item = save()
         _ = saves.insertImported([SavesStore.ImportedLink(urlString: "https://example.com/pending", isArchived: false)])

@@ -25,7 +25,7 @@ import LunaPodcastCore
             if store!.state.episodes.values.contains(where: { $0.showID == ReaderPodcastSource.showID && $0.mediaURL.deletingLastPathComponent() != directory }) {
                 try store!.update { state in
                     for (id, episode) in state.episodes where episode.showID == ReaderPodcastSource.showID {
-                        state.episodes[id]?.mediaURL = directory.appendingPathComponent("\(id).m4a")
+                        state.episodes[id]?.mediaURL = directory.appendingPathComponent(episode.mediaURL.lastPathComponent == "\(id).gemini.m4a" ? "\(id).gemini.m4a" : "\(id).m4a")
                     }
                 }
             }

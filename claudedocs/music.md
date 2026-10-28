@@ -974,9 +974,21 @@ The `lunamusic://reader?save=<UUID>` handoff opens this page and adds that save;
 a bare `lunamusic://reader` opens the browser. Invalid save IDs are rejected.
 
 Music reads the shared saves store but does not update Reader reading positions,
-read state or archives. It uses the existing offline speech renderer, selected
-Reader voice and cached trimming script (or the same heuristic fallback). Each
-block is written to AAC in turn; memory does not grow with the full readout.
+read state or archives. Normal adds follow Reader's voice preference. If a Gemini
+API key is saved in Reader, the plus menu and long-press menu also offer **Add with
+Gemini** and **Play Next with Gemini**, even when the device voice is preferred.
+No second key setup is needed: the credential is read from the shared Keychain.
+Gemini uses the same generated-section cache as Reader, so audio generated in
+either app can be reused by the other without another API request. Existing
+Reader-local cache entries migrate automatically. See [Gemini read-aloud](gemini-tts.md)
+for quotas, privacy, progress, cancellation and request deadlines.
+
+Both voices use the cached trimming script (or the same heuristic fallback).
+Each block is written to AAC in turn; memory does not grow with the full readout.
+Explicit Gemini adds can replace an existing device readout rather than silently
+reusing it. A current episode must be changed before changing its voice. Both
+exports are retained for reuse; changing voices clears the old listening position.
+Failure preserves the existing readout and never silently substitutes another voice.
 The completed M4A is installed before a stable, save-ID-based episode is queued.
 Concurrent adds share generation and repeated adds reuse audio without duplicating
 queue entries. Adding a readout does not start or interrupt playback.
@@ -985,7 +997,7 @@ Readouts live in Music’s private `Podcasts/ReaderAudio` directory and survive
 deletion of the source save. They support podcast transport, seeking, speed,
 listening progress, queue ordering and restoration alongside RSS episodes.
 **Remove Readout** deletes Music’s copy (after selecting another episode if it is
-current); it does not delete the Reader save. Missing audio is regenerated on an
+current); it does not delete the Reader save or shared Gemini sections. Missing audio is regenerated on an
 explicit add. Container URLs are rebased when the Music sandbox moves.
 Readouts are excluded from RSS refresh, URLSession downloads and their byte budget,
 and podcast iCloud uploads/imports. No Reader text, metadata or audio is uploaded

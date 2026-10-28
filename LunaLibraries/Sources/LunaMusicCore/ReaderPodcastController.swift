@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Combine
 import LunaAudioPlayback
@@ -8,12 +9,18 @@ import LunaPodcastCore
 /// Music reads text saves from the App Group; only Music writes its podcast library.
 /// Rendered copies belong to Music and remain playable if the original save is deleted.
 @MainActor public final class ReaderPodcastController: ObservableObject {
+    public enum Voice: Sendable { case device, gemini }
+    public var hasGeminiAPIKey: Bool { geminiAvailable() }
     public static let shared = ReaderPodcastController()
     @Published public private(set) var progress: [UUID: Double] = [:]
     private let saves: SavesStore
     private let library: PodcastLibraryController
     private let directory: URL
     private let render: (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double
+    private let renderGemini: (UUID, AudioScript, URL, @escaping (Double) -> Void) async throws -> Double
+    private let preferredVoice: () -> Voice
+    private let geminiAvailable: () -> Bool
+    private var jobVoices: [UUID: Voice] = [:]
     private var jobs: [UUID: Task<PodcastEpisode, Error>] = [:]
     private var renderTail: Task<PodcastEpisode, Error>?
 
@@ -21,8 +28,17 @@ import LunaPodcastCore
                 directory: URL = PodcastLibraryController.directory.appendingPathComponent("ReaderAudio", isDirectory: true),
                 render: @escaping (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double = {
                     try await AudioScriptFileRenderer.write($0, to: $1, progress: $2)
-                }) {
+                },
+                renderGemini: @escaping (UUID, AudioScript, URL, @escaping (Double) -> Void) async throws -> Double = { id, script, url, progress in
+                    guard let voice = try await GeminiArticleSpeech.shared.renderer(itemID: id, script: script, allowGeneration: true, progress: { progress($0 * 0.9) }) else {
+                        throw PodcastError(L10n.string("Gemini_unavailable"))
+                    }
+                    return try await AudioScriptFileRenderer.write(script, to: url, using: voice, progress: { progress(0.9 + $0 * 0.1) })
+                },
+                preferredVoice: @escaping () -> Voice = { AudioSettings.usesGeminiVoice ? .gemini : .device },
+                geminiAvailable: @escaping () -> Bool = { GeminiSpeechCredential.apiKey?.isEmpty == false }) {
         self.saves = saves; self.library = library; self.directory = directory; self.render = render
+        self.renderGemini = renderGemini; self.preferredVoice = preferredVoice; self.geminiAvailable = geminiAvailable
     }
     public nonisolated static func isTextSave(_ item: SavedItem) -> Bool {
         item.state == .ready && item.exportKind == .article && item.contentFileName != nil
@@ -35,21 +51,25 @@ import LunaPodcastCore
             }) == true }
         }.value
     }
-    @discardableResult public func enqueue(_ saveID: UUID, next: Bool = false) async throws -> PodcastEpisode {
-        if let job = jobs[saveID] { return try await job.value }
+    @discardableResult public func enqueue(_ saveID: UUID, next: Bool = false, voice: Voice? = nil) async throws -> PodcastEpisode {
+        let voice = voice ?? preferredVoice()
+        if let job = jobs[saveID] {
+            guard jobVoices[saveID] == voice else { throw PodcastError(L10n.string("Music_reader_generationBusy")) }
+            return try await job.value
+        }
         progress[saveID] = 0
         // Keep selection order even when a later save is shorter or already rendered.
         // One speech job at a time also bounds synthesis memory and service usage.
         let previous = renderTail
         let job = Task {
             _ = try? await previous?.value
-            let episode = try await self.prepare(saveID)
+            let episode = try await self.prepare(saveID, voice: voice)
             try self.library.requireStore().enqueue(episode.id, next: next)
             self.library.reloadState()
             return episode
         }
-        jobs[saveID] = job; renderTail = job
-        defer { jobs[saveID] = nil; progress[saveID] = nil }
+        jobs[saveID] = job; jobVoices[saveID] = voice; renderTail = job
+        defer { jobs[saveID] = nil; jobVoices[saveID] = nil; progress[saveID] = nil }
         return try await job.value
     }
     public func removeReadout(_ episode: PodcastEpisode) throws {
@@ -63,12 +83,23 @@ import LunaPodcastCore
             if state.lastPlayedEpisodeID == episode.id { state.lastPlayedEpisodeID = nil }
         }
         // Derive the owned path from the episode ID rather than trusting a stored URL.
-        let url = directory.appendingPathComponent("\(episode.id).m4a")
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        for voice in [Voice.device, .gemini] {
+            let url = audioURL(episode.id, voice: voice)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
     }
-    private func prepare(_ saveID: UUID) async throws -> PodcastEpisode {
+    private func audioURL(_ id: String, voice: Voice) -> URL {
+        directory.appendingPathComponent(voice == .gemini ? "\(id).gemini.m4a" : "\(id).m4a")
+    }
+    private func prepare(_ saveID: UUID, voice: Voice) async throws -> PodcastEpisode {
         let id = ReaderPodcastSource.episodeID(saveID)
-        if let episode = library.state.episodes[id], FileManager.default.fileExists(atPath: episode.mediaURL.path) { return episode }
+        let destination = audioURL(id, voice: voice)
+        let existing = library.state.episodes[id]
+        let changingVoice = existing != nil && existing?.mediaURL.lastPathComponent != destination.lastPathComponent
+        if let episode = existing, !changingVoice, FileManager.default.fileExists(atPath: episode.mediaURL.path) { return episode }
+        guard !changingVoice || library.state.currentEpisodeID != id else {
+            throw PodcastError(L10n.string("Music_reader_changeVoiceWhilePlaying"))
+        }
         let saves = saves
         let (item, content, script) = try await Task.detached(priority: .userInitiated) {
             guard let item = saves.item(withID: saveID), Self.isTextSave(item),
@@ -82,15 +113,22 @@ import LunaPodcastCore
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let temporary = directory.appendingPathComponent("\(UUID().uuidString).partial.m4a")
         defer { try? FileManager.default.removeItem(at: temporary) }
-        let duration = try await render(script, temporary) { value in
-            Task { @MainActor in
-                if self.jobs[saveID] != nil { self.progress[saveID] = value }
+        let duration: Double
+        // Voice-specific exports let an existing device readout be upgraded to
+        // Gemini without mistaking the old audio for an already generated result.
+        if FileManager.default.fileExists(atPath: destination.path) {
+            duration = try await AVURLAsset(url: destination).load(.duration).seconds
+        } else {
+            let reportProgress: (Double) -> Void = { value in
+                Task { @MainActor in
+                    if self.jobs[saveID] != nil { self.progress[saveID] = value }
+                }
             }
+            duration = try await voice == .gemini
+                ? renderGemini(saveID, script, temporary, reportProgress)
+                : render(script, temporary, reportProgress)
+            try FileManager.default.moveItem(at: temporary, to: destination)
         }
-        let destination = directory.appendingPathComponent("\(id).m4a")
-        // Existing episodes with missing audio are repaired without resetting their position.
-        if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-        try FileManager.default.moveItem(at: temporary, to: destination)
         var episode = PodcastEpisode(showID: ReaderPodcastSource.showID, guid: saveID.uuidString,
             title: item.cardTitle ?? content.title, publishedAt: item.dateAdded, mediaURL: destination)
         episode.duration = duration; episode.mediaType = "audio/mp4"; episode.websiteURL = PodcastIdentity.webURL(item.urlString)
@@ -102,6 +140,7 @@ import LunaPodcastCore
             try library.edit { state in
                 if state.shows[show.id] == nil { state.shows[show.id] = show }
                 state.episodes[episode.id] = episode
+                if changingVoice { state.progress.removeValue(forKey: episode.id) }
             }
         } catch { try? FileManager.default.removeItem(at: destination); throw error }
         return episode

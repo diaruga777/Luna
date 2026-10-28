@@ -312,8 +312,10 @@ extension MusicScreenViewController {
         showLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? library.state.shows[episode?.showID ?? ""]?.title
         showLabel.textColor = player.errorMessage == nil ? UIColor.white.withAlphaComponent(0.5) : .systemRed
         let url = episode?.artworkURL ?? library.state.shows[episode?.showID ?? ""]?.artworkURL
-        if artworkID != url || artwork.image == nil {
-            artworkID = url; artworkTask?.cancel(); PodcastUI.artwork(url, into: artwork)
+        let expectedArtworkID = episode?.showID == ReaderPodcastSource.showID ? "luna-reader-icon" : url?.absoluteString
+        if artworkID != url || artwork.accessibilityIdentifier != expectedArtworkID || artwork.image == nil {
+            artworkID = url; artworkTask?.cancel()
+            PodcastUI.artwork(episode, show: library.state.shows[episode?.showID ?? ""], into: artwork)
             let cached = url.flatMap { PodcastUI.images.object(forKey: $0 as NSURL) }
             backdrop.image = cached
             view.backgroundColor = MusicStyle.artworkColor(cached) ?? UIColor(white: 0.16, alpha: 1)

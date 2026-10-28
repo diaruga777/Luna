@@ -20,8 +20,13 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   up to 1,200 words use one request; longer text is split into sequential requests
   of at most 1,200 words and 7,500 UTF-8 bytes, preserving the text. The byte limit
   also bounds text in languages without whitespace. Splits prefer nearby word
-  boundaries. The model and voice are fixed to `gemini-3.8-flash-tts` / `Kore`.
-- Requests use the documented Interactions REST API, stateless `store: false`,
+  boundaries. Requests use Gemini's Interactions streaming TTS mode: audio arrives
+  as raw 24 kHz mono PCM deltas while the model is speaking, and preparation
+  progress advances with the stream. A complete section is converted to AAC and
+  cached before playback consumes it. The preferred model and voice are
+  `gemini-3.8-flash-tts` / `Kore`; quota exhaustion falls through to
+  `gemini-3.1-flash-tts-preview`, then `gemini-2.5-flash-preview-tts`.
+- Requests use the documented streaming Interactions REST API, stateless `store: false`,
   an ephemeral URL session, a key header and verbatim transcript text. Keys
   never appear in URLs, defaults, cache filenames or error messages. Google’s
   free-tier data-use terms still apply even with interaction storage disabled.
@@ -37,11 +42,12 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   audio across pauses, seeks, replays, both apps and app restarts. Edited/refined spoken
   text creates a new cache identity. Audio remains until explicitly deleted,
   its article is removed, or the app is uninstalled.
-- Each successful WAV response is compressed to 64 kbps AAC, finalized,
+- Each successful streamed section is compressed to 64 kbps AAC, finalized,
   atomically published and validated before reuse.
-  Concurrent requests for an article share generation. A quota/network failure
-  pauses playback, reports an actionable error, and never silently skips text
-  or marks the article finished. An explicit retry reuses completed chunks.
+  Concurrent requests for an article share generation. When all three models
+  report quota exhaustion, a network failure pauses playback and reports an
+  actionable error; text is never skipped or marked finished. An explicit retry
+  reuses completed chunks.
 - Every request has a 120-second wall-clock deadline and a matching URLSession
   resource timeout. Pausing during initial preparation cancels that request;
   resuming retries explicitly, retaining completed sections. The mini-player
@@ -119,14 +125,11 @@ is quota math, not measured generation latency. Longer articles consume
 multiple daily requests. Replaying any cached article consumes **zero**
 requests and has no daily listening limit.
 
-The model's 16,384 output-token serving limit at 25 audio tokens/second is
-655.36 seconds, or about 10.9 minutes per request. At an assumed 150–170 WPM,
-that is roughly 1,638–1,857 words of theoretical audio output. Luna's smaller
-1,200-word chunks leave room for slower delivery and pauses and stay within
-the 8,192 input-token limit with the byte bound; they do not promise that every
-request will succeed. Incomplete responses are rejected rather than cached as
-complete readouts. Free-tier capacity, supported regions, account quotas and
-provider limits can change; the linked project dashboard is authoritative.
+Google does not provide a request-time remaining-quota lookup, so fallback begins
+when a model returns quota exhaustion. Reusing cached audio and generating only
+selected articles are practical ways to conserve free allowance; linking billing
+raises service limits but is paid. Free-tier capacity, supported regions, account
+quotas and provider limits can change; the linked project dashboard is authoritative.
 
 ## Sources
 

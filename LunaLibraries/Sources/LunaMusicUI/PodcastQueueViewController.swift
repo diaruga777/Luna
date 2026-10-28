@@ -124,7 +124,8 @@ import LunaMusicCore
         let duration = minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : minutes > 0 ? "\(minutes)m" : "\(Int(seconds))s"
         let status = progress?.listened == true ? "Played" : duration + ((progress?.position ?? 0) > 0 ? " left" : "")
         detail.text = [date, status].compactMap { $0 }.joined(separator: " · ")
-        PodcastUI.artwork(artworkURL, into: artwork)
+        if episode.showID == ReaderPodcastSource.showID { PodcastUI.artwork(episode, into: artwork) }
+        else { PodcastUI.artwork(artworkURL, into: artwork) }
         accessibilityLabel = [episode.title, detail.text].compactMap { $0 }.joined(separator: ", ")
     }
 }

@@ -42,6 +42,7 @@ import LunaPodcastCore
     }
     public nonisolated static func isTextSave(_ item: SavedItem) -> Bool {
         item.state == .ready && item.exportKind == .article && item.contentFileName != nil
+            && item.readState != .read && !item.isArchived && item.pendingArchiveAt == nil
     }
     public func items() async -> [SavedItem] {
         let saves = saves

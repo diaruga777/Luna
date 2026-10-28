@@ -365,7 +365,7 @@ internal final class MusicMiniPlayer: UIVisualEffectView {
             artistLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""]?.title ?? "Choose a podcast"
             if podcastArtworkID != player.currentEpisode?.id || art.image == nil {
                 podcastArtworkID = player.currentEpisode?.id; artworkID = nil
-                PodcastUI.artwork(player.currentEpisode?.artworkURL, into: art)
+                PodcastUI.artwork(player.currentEpisode, show: PodcastLibraryController.shared.state.shows[player.currentEpisode?.showID ?? ""], into: art)
             }
             play.configuration?.image = UIImage(systemName: player.isPlaying || player.isBuffering ? "pause.fill" : "play.fill")
             play.configuration?.showsActivityIndicator = player.isBuffering

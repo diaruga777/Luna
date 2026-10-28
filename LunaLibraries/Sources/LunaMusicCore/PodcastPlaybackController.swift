@@ -4,6 +4,7 @@ import MediaPlayer
 import UIKit
 import OSLog
 import LunaPodcastCore
+import LunaStorage
 
 @MainActor public final class PodcastPlaybackController: ObservableObject {
     public static let shared = PodcastPlaybackController()
@@ -687,6 +688,10 @@ import LunaPodcastCore
             // record natural exhaustion for download/restoration bookkeeping.
             next = try store.finishNaturally(episode.id, natural: natural)
             library.reloadState()
+        }
+        if episode.showID == ReaderPodcastSource.showID,
+           let saveID = UUID(uuidString: episode.guid) {
+            SavesStore.shared.markFinishedReading(saveID)
         }
         downloads.remove(episode.id)
         Task { await self.downloads.reconcile() }

@@ -51,7 +51,9 @@ public final class PluginImporter: PluginImporting {
             addedCapabilities: added,
             requiresConsent: installed == nil || !added.isEmpty,
             replacesVersion: installed?.manifest.version.description,
-            sourceText: sourceText)
+            sourceText: sourceText,
+            autoShowSafariPlayer: installed?.state.autoShowSafariPlayer
+                ?? (isBundled && store.state(manifest.id, isBundled: true).autoShowSafariPlayer))
     }
 
     public func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {
@@ -107,7 +109,9 @@ public final class PluginImporter: PluginImporting {
         }
         let previous = store.plugin(id: manifest.id)
         let previousSource = previous?.sourceText()
-        _ = try store.install(source: preview.sourceText, manifest: manifest, origin: origin)
+        _ = try store.install(
+            source: preview.sourceText, manifest: manifest, origin: origin,
+            autoShowSafariPlayer: preview.autoShowSafariPlayer)
         return StagedImport(
             manifest: manifest, previous: previous, previousSource: previousSource)
     }

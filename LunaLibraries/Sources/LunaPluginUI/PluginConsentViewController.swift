@@ -21,7 +21,7 @@ public protocol PluginConsentDelegate: AnyObject {
 
 public final class PluginConsentViewController: UIViewController {
 
-    private let preview: PluginImportPreview
+    private var preview: PluginImportPreview
     public weak var delegate: PluginConsentDelegate?
 
     private let stack = UIStackView()
@@ -115,6 +115,12 @@ public final class PluginConsentViewController: UIViewController {
                         : sentence))
         }
 
+        if preview.summary.produces.contains(.media) {
+            stack.addArrangedSubview(PluginSafariPlayerToggle(isOn: preview.autoShowSafariPlayer) { [weak self] enabled in
+                self?.preview.autoShowSafariPlayer = enabled
+            })
+        }
+
         stack.addArrangedSubview(
             label(
                 PluginCapabilityCopy.containmentDisclosure,
@@ -168,4 +174,32 @@ public final class PluginConsentViewController: UIViewController {
     @objc private func decline() {
         delegate?.pluginConsent(self, didDecide: false, for: preview)
     }
+}
+
+/// Shared by file/paste consent and generated-draft review; changing a preview
+/// never persists anything until the user installs it.
+final class PluginSafariPlayerToggle: UIStackView {
+    init(isOn: Bool, onChange: @escaping (Bool) -> Void) {
+        super.init(frame: .zero)
+        axis = .horizontal
+        alignment = .center
+        spacing = 12
+        let label = UILabel()
+        label.text = L10n.string("Plugins_autoShowSafariPlayer")
+        label.font = .preferredFont(forTextStyle: .body)
+        label.textColor = LunaColors.primaryText
+        label.numberOfLines = 0
+        let toggle = UISwitch()
+        toggle.isOn = isOn
+        toggle.accessibilityLabel = label.text
+        toggle.addAction(UIAction { action in
+            guard let toggle = action.sender as? UISwitch else { return }
+            onChange(toggle.isOn)
+        }, for: .valueChanged)
+        addArrangedSubview(label)
+        addArrangedSubview(toggle)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }

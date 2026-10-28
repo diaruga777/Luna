@@ -22,6 +22,7 @@ public final class NullPluginCatalog: PluginCatalogProviding {
     public func listing(pluginID: String) -> PluginListing? { nil }
     public func sourceText(pluginID: String) -> String? { nil }
     public func setEnabled(_ enabled: Bool, pluginID: String) throws { throw PluginPlatformUnavailable() }
+    public func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws { throw PluginPlatformUnavailable() }
     public func delete(pluginID: String) throws { throw PluginPlatformUnavailable() }
 }
 

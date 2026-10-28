@@ -155,6 +155,11 @@ public final class PluginDraftReviewViewController: UIViewController {
         addProducesAndMatches(parsed.summary)
         addCapabilities(parsed)
         addDeclarations(parsed)
+        if parsed.summary.produces.contains(.media) {
+            stack.addArrangedSubview(PluginSafariPlayerToggle(isOn: parsed.autoShowSafariPlayer) { [weak self] enabled in
+                self?.preview?.autoShowSafariPlayer = enabled
+            })
+        }
         addResultSection()
         stack.addArrangedSubview(
             label(

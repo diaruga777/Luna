@@ -1710,3 +1710,5 @@
 
 "Gemini_timedOut_Luna" = "Google took too long to create the audio. Try again or use the device voice.";
 "Gemini_preparingProgress_Luna" = "Creating readout… %d%%";
+
+"Plugins_autoShowSafariPlayer" = "Open player automatically in Safari";

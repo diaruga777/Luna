@@ -51,6 +51,14 @@ public final class PluginCatalog: PluginCatalogProviding {
         runtime.reload(pluginID: pluginID)
     }
 
+    public func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws {
+        guard let plugin = installed().first(where: { $0.id == pluginID }) else {
+            throw PluginStoreError.notInstalled(id: pluginID)
+        }
+        guard plugin.manifest.produces.contains(.media) else { return }
+        try store.setAutoShowSafariPlayerChecked(enabled, pluginID: pluginID, isBundled: plugin.isBundled)
+    }
+
     /// A bundled plugin can only be switched off. Deleting an imported one takes
     /// its stored rows with it, so a re-import starts clean.
     public func delete(pluginID: String) throws {
@@ -84,7 +92,8 @@ public final class PluginCatalog: PluginCatalogProviding {
             status: status(for: plugin),
             capabilities: plugin.manifest.capabilities,
             runsInBackground: plugin.manifest.runsInBackground,
-            settings: plugin.manifest.settings)
+            settings: plugin.manifest.settings,
+            autoShowSafariPlayer: plugin.state.autoShowSafariPlayer)
     }
 
     private func status(for plugin: InstalledPlugin) -> PluginStatus {

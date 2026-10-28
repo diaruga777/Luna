@@ -89,10 +89,10 @@ public final class PluginImportCoordinator: NSObject {
         do {
             let preview = try importer.preview(sourceText: sourceText)
             if bundleNavigationController != nil,
-                preview.requiresConsent || preview.replacesVersion != nil
+                preview.requiresConsent || preview.replacesVersion != nil || preview.summary.produces.contains(.media)
             {
                 presentBundleConsent(preview, origin: origin)
-            } else if preview.requiresConsent {
+            } else if preview.requiresConsent || preview.summary.produces.contains(.media) {
                 pendingOrigin = origin
                 let screen = PluginConsentViewController(preview: preview)
                 screen.delegate = self

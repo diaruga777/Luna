@@ -337,7 +337,13 @@ private final class StagePluginCatalog: PluginCatalogProviding {
         storedListings[index] = PluginListing(
             summary: existing.summary, description: existing.description,
             status: enabled ? .enabled : .disabled, capabilities: existing.capabilities,
-            runsInBackground: existing.runsInBackground, settings: existing.settings)
+            runsInBackground: existing.runsInBackground, settings: existing.settings,
+            autoShowSafariPlayer: existing.autoShowSafariPlayer)
+    }
+
+    func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws {
+        guard let index = storedListings.firstIndex(where: { $0.summary.id == pluginID }) else { return }
+        storedListings[index].autoShowSafariPlayer = enabled
     }
 
     func delete(pluginID: String) throws {

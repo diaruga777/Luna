@@ -68,6 +68,26 @@ final class PluginDraftReviewTests: XCTestCase {
             buttonTitles(in: screen).first, L10n.string("Plugins_review14SaveAnyway"))
     }
 
+    func testMediaDraftOffersAutoPlayerOffByDefaultAndInstallsTheSelectedChoice() async throws {
+        let source = Self.draft(
+            capabilities: "[]",
+            ingest: #"{kind:"media",title:"Video",assets:[{type:"video",url:"https://example.com/video.mp4"}]}"#)
+            .replacingOccurrences(of: #""produces":["article"]"#, with: #""produces":["media"]"#)
+            .replacingOccurrences(of: #"kind: "article""#, with: #"kind: "media""#)
+        let importer = RecordingImporter()
+        let screen = makeScreen(source: source, importer: importer)
+        _ = UITestSupport.host(screen)
+        await settle(screen)
+        let toggle = try XCTUnwrap(views(in: screen.view).compactMap { $0 as? UISwitch }.first)
+        XCTAssertFalse(toggle.isOn)
+        toggle.isOn = true
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertTrue(importer.installed.isEmpty)
+        tap(L10n.string("Plugins_review13Save"), in: screen)
+        await pump(until: { !importer.installed.isEmpty })
+        XCTAssertTrue(try XCTUnwrap(importer.installed.first).autoShowSafariPlayer)
+    }
+
     // MARK: - Save and Discard
 
     func testSaveInstallsTheDraftAndTellsTheDelegate() async {

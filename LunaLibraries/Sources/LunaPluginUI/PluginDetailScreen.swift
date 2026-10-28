@@ -26,6 +26,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         case runsInBackground
         case capability(PluginCapabilityName)
         case field(PluginSettingField)
+        case autoShowSafariPlayer
         case autoSend
         case showSource
         case delete
@@ -98,6 +99,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         }
 
         var settingsRows: [Row] = listing.settings.map { .field($0) }
+        if listing.summary.produces.contains(.media) { settingsRows.append(.autoShowSafariPlayer) }
         // A destination decides which capture sources auto-send to it, the
         // same question the two Swift destinations answer. The row appears
         // only where an app installed the screen that answers it.
@@ -146,6 +148,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         case .runsInBackground: return textCell(L10n.string("Plugins_runsInBackgroundLine"))
         case .capability(let capability): return textCell("•  " + PluginCapabilityCopy.sentence(for: capability))
         case .field(let field): return fieldCell(field)
+        case .autoShowSafariPlayer: return autoShowSafariPlayerCell()
         case .autoSend: return autoSendCell()
         case .showSource: return actionCell(L10n.string("Plugins_showSourceRow"), destructive: false)
         case .delete: return actionCell(L10n.string("Plugins_deleteRow"), destructive: true)
@@ -185,6 +188,28 @@ public final class PluginDetailScreen: NavHeaderTableController {
         cell.textLabel?.text = L10n.string("Plugins_autoSendRow")
         cell.detailTextLabel?.text = listing.summary.export?.title
         cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
+    private func autoShowSafariPlayerCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        cell.textLabel?.text = L10n.string("Plugins_autoShowSafariPlayer")
+        cell.textLabel?.numberOfLines = 0
+        let toggle = UISwitch()
+        toggle.isOn = listing.autoShowSafariPlayer
+        toggle.accessibilityLabel = cell.textLabel?.text
+        toggle.addAction(UIAction { [weak self] action in
+            guard let self, let toggle = action.sender as? UISwitch else { return }
+            do {
+                try self.catalog.setAutoShowSafariPlayer(toggle.isOn, pluginID: self.listing.summary.id)
+                self.listing.autoShowSafariPlayer = toggle.isOn
+            } catch {
+                toggle.isOn = self.listing.autoShowSafariPlayer
+                self.presentError(error)
+            }
+        }, for: .valueChanged)
+        cell.accessoryView = toggle
         return cell
     }
 

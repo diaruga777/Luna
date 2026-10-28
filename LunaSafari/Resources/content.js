@@ -577,7 +577,8 @@
             }
             if ((walk.plugin.produces || []).indexOf(model.kind) < 0) { return null; }
             recordPluginOutcome(walk.outcomes || [], walk.plugin, "ingest", "produced", model.kind);
-            return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id, url: url };
+            return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id, url: url,
+                autoShowSafariPlayer: walk.plugin.autoShowSafariPlayer === true };
         }, function (error) {
             if (error && error.code === "browser-deferred") { throw error; }
             recordPluginOutcome(
@@ -770,6 +771,10 @@
         if (walk.claim.kind === "media") {
             var target = pluginVideoOverlayTargetFor(resp, walk);
             injectLunaButton(target);
+            // Use the producing plugin's preference after fallback/rewrite, never
+            // a broad claim from a plugin that ultimately declined the page.
+            if (walk.resolvedOutcome && walk.resolvedOutcome.autoShowSafariPlayer === true
+                && target.canPlay && target.present) { target.present(); }
             return;
         }
         injectLunaButton(pluginSaveTargetFor(resp, walk));

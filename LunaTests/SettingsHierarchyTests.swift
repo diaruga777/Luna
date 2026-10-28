@@ -310,5 +310,6 @@ private final class SettingsPluginCatalog: PluginCatalogProviding {
     func listing(pluginID: String) -> PluginListing? { items.first { $0.summary.id == pluginID } }
     func sourceText(pluginID: String) -> String? { nil }
     func setEnabled(_ enabled: Bool, pluginID: String) throws {}
+    func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws {}
     func delete(pluginID: String) throws {}
 }

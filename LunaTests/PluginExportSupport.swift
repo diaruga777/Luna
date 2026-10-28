@@ -73,6 +73,7 @@ final class ExportFakeCatalog: PluginCatalogProviding {
     func listing(pluginID: String) -> PluginListing? { listingsByID[pluginID] }
     func sourceText(pluginID: String) -> String? { nil }
     func setEnabled(_ enabled: Bool, pluginID: String) throws {}
+    func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws {}
     func delete(pluginID: String) throws {}
 }
 

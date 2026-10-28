@@ -35,6 +35,8 @@ extension PluginStoreError: LocalizedError {
 
 /// What the store remembers about one plugin beside its file.
 public struct PluginState: Equatable, Codable, Sendable {
+    /// User-owned Safari presentation preference; never read from plugin source.
+    public var autoShowSafariPlayer: Bool
     public var isEnabled: Bool
     public var installedAt: Date?
     public var origin: PluginImportOrigin?
@@ -43,12 +45,26 @@ public struct PluginState: Equatable, Codable, Sendable {
 
     public init(
         isEnabled: Bool = true, installedAt: Date? = nil, origin: PluginImportOrigin? = nil,
-        consentedCapabilities: [PluginCapabilityName] = []
+        consentedCapabilities: [PluginCapabilityName] = [], autoShowSafariPlayer: Bool = false
     ) {
+        self.autoShowSafariPlayer = autoShowSafariPlayer
         self.isEnabled = isEnabled
         self.installedAt = installedAt
         self.origin = origin
         self.consentedCapabilities = consentedCapabilities
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled, installedAt, origin, consentedCapabilities, autoShowSafariPlayer
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try values.decode(Bool.self, forKey: .isEnabled)
+        installedAt = try values.decodeIfPresent(Date.self, forKey: .installedAt)
+        origin = try values.decodeIfPresent(PluginImportOrigin.self, forKey: .origin)
+        consentedCapabilities = try values.decode([PluginCapabilityName].self, forKey: .consentedCapabilities)
+        autoShowSafariPlayer = try values.decodeIfPresent(Bool.self, forKey: .autoShowSafariPlayer) ?? false
     }
 }
 
@@ -214,7 +230,8 @@ public final class PluginStore {
     /// source view.
     @discardableResult
     public func install(
-        source: String, manifest: PluginManifest, origin: PluginImportOrigin, now: Date = Date()
+        source: String, manifest: PluginManifest, origin: PluginImportOrigin, now: Date = Date(),
+        autoShowSafariPlayer: Bool? = nil
     ) throws -> InstalledPlugin {
         guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         let destination = fileURL(id: manifest.id, version: manifest.version)
@@ -236,6 +253,9 @@ public final class PluginStore {
             if hadDestination { try fileManager.moveItem(at: destination, to: backup) }
             try fileManager.moveItem(at: scratch, to: destination)
             var state = self.state(manifest.id)
+            if let autoShowSafariPlayer {
+                state.autoShowSafariPlayer = manifest.produces.contains(.media) && autoShowSafariPlayer
+            }
             state.isEnabled = true
             state.installedAt = now
             state.origin = origin
@@ -325,6 +345,15 @@ public final class PluginStore {
         guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         var state = self.state(pluginID, isBundled: isBundled)
         state.isEnabled = enabled
+        try writeChecked(state, id: pluginID, isBundled: isBundled)
+    }
+
+    public func setAutoShowSafariPlayerChecked(
+        _ enabled: Bool, pluginID: String, isBundled: Bool
+    ) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
+        var state = self.state(pluginID, isBundled: isBundled)
+        state.autoShowSafariPlayer = enabled
         try writeChecked(state, id: pluginID, isBundled: isBundled)
     }
 

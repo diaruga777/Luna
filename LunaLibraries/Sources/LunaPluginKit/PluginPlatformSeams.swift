@@ -245,11 +245,14 @@ public struct PluginListing: Equatable, Sendable {
     public let capabilities: [PluginCapabilityName]
     public let runsInBackground: Bool
     public let settings: [PluginSettingField]
+    public var autoShowSafariPlayer: Bool
 
     public init(summary: PluginSummary, description: String?, status: PluginStatus,
-                capabilities: [PluginCapabilityName], runsInBackground: Bool, settings: [PluginSettingField]) {
+                capabilities: [PluginCapabilityName], runsInBackground: Bool, settings: [PluginSettingField],
+                autoShowSafariPlayer: Bool = false) {
         self.summary = summary; self.description = description; self.status = status
         self.capabilities = capabilities; self.runsInBackground = runsInBackground; self.settings = settings
+        self.autoShowSafariPlayer = autoShowSafariPlayer
     }
 }
 
@@ -259,6 +262,7 @@ public protocol PluginCatalogProviding: AnyObject {
     /// The installed file's text, for the read-only source view.
     func sourceText(pluginID: String) -> String?
     func setEnabled(_ enabled: Bool, pluginID: String) throws
+    func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws
     /// Removes an imported plugin. A bundled plugin cannot be deleted; this throws.
     func delete(pluginID: String) throws
 }
@@ -276,13 +280,15 @@ public struct PluginImportPreview: Equatable, Sendable {
     /// The installed version this import replaces, if any.
     public let replacesVersion: String?
     public let sourceText: String
+    public var autoShowSafariPlayer: Bool
 
     public init(summary: PluginSummary, description: String?, capabilities: [PluginCapabilityName],
                 runsInBackground: Bool, addedCapabilities: [PluginCapabilityName], requiresConsent: Bool,
-                replacesVersion: String?, sourceText: String) {
+                replacesVersion: String?, sourceText: String, autoShowSafariPlayer: Bool = false) {
         self.summary = summary; self.description = description; self.capabilities = capabilities
         self.runsInBackground = runsInBackground; self.addedCapabilities = addedCapabilities
         self.requiresConsent = requiresConsent; self.replacesVersion = replacesVersion; self.sourceText = sourceText
+        self.autoShowSafariPlayer = autoShowSafariPlayer
     }
 }
 

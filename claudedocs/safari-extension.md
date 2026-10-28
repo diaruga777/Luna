@@ -665,7 +665,8 @@ Downloader-platform flow:
    Central Luna's X plugin verifies the requested status ID in the resolved
    payload and uses only that status's assets. Its confirmed video/GIF offers
    Play Video even without a rendered tweet or timestamp; selecting that menu
-   action opens the player. Static photos and ordinary
+   action opens the player. The per-plugin automatic-player opt-in can also open it
+   as soon as those assets resolve. Static photos and ordinary
    short text do not open it; reply/quote videos cannot qualify the opened post.
    The plugin decision watches URL changes and rejects stale results.
    In standalone extensions, `handleXPage` gates built-in decisions before any
@@ -721,14 +722,25 @@ Settings has written nothing, so no default is ever written anywhere.
 `SafariMediaPillTests` covers both halves of the off state and
 `SafariVideoOverlayContractTests` pins the key across all three processes.
 
-**Playback requires Play Video in the pill menu.** Recognizing a media page
-only offers the Luna pill. Tapping the pill opens its menu; selecting Play Video
-resolves the asset and opens the popup only after a playable video or GIF URL
-is available. Core may ingest a plugin match beforehand to decide whether to
-offer media controls, but that result never opens the player by itself.
-Delayed page hydration, SPA navigation, and a fresh visit also wait for the
-menu action. Closing the popup leaves the pill available for another explicit
-Play Video selection; Open in Luna remains a separate handoff.
+**Automatic opening is opt-in per media plugin.** By default, recognizing a
+media page only offers the Luna pill; its Play Video menu action opens the popup.
+In Luna Reader, each media plugin has an **Open player automatically in Safari**
+switch in Settings → Plugins → the plugin. The same switch is available during
+file/paste import, each bundle member's review, and generated-draft review. It
+starts off for new installations and existing installations without a saved choice.
+Updates preserve the choice; deleting and reinstalling starts off again.
+
+The preference is user-owned `PluginState.autoShowSafariPlayer`, separate from
+plugin-authored settings. The Safari catalog includes it and its cache stamp
+changes with the preference. Automatic presentation waits for successful ingest
+and a playable video/GIF URL, using the producing plugin's preference if another
+plugin declined or rewrote the URL. Audio-only and photo-only results cannot open
+the video popup. The global suggestion and player off switches still apply.
+
+Automatic opening runs once for a resolved page URL, including a fresh visit or
+SPA navigation. Closing the popup leaves it closed on that page and keeps the pill
+available for another Play Video selection. Resolving or opening the player does
+not save anything or launch Luna; Open in Luna remains a separate handoff.
 
 ```
 content.js (pill menu → Play Video)

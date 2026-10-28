@@ -55,6 +55,50 @@ final class PluginStoreTests: XCTestCase {
         return try store.install(source: text, manifest: manifest, origin: origin)
     }
 
+    func testLegacyStateKeepsConsentAndDisabledStatusWithAutoPlayerOff() throws {
+        let legacy = Data(#"{"isEnabled":false,"consentedCapabilities":["fetch"],"origin":"files"}"#.utf8)
+        let state = try JSONDecoder().decode(PluginState.self, from: legacy)
+        XCTAssertFalse(state.autoShowSafariPlayer)
+        XCTAssertFalse(state.isEnabled)
+        XCTAssertEqual(state.consentedCapabilities, [.fetch])
+        XCTAssertEqual(state.origin, .files)
+    }
+
+    func testAutoPlayerChoiceIsPerPluginSurvivesUpdatesAndResetsOnReinstall() throws {
+        let importer = PluginImporter(
+            store: store, bundled: BundledPluginCatalog(bundle: nil, store: store), runtime: nil)
+        var preview = try importer.preview(sourceText: source())
+        XCTAssertFalse(preview.autoShowSafariPlayer)
+        preview.autoShowSafariPlayer = true
+        try importer.install(preview, origin: .files)
+        try install(source(id: "app.luna.other"))
+        XCTAssertFalse(store.state("app.luna.other").autoShowSafariPlayer)
+        XCTAssertTrue(PluginStore(rootURL: containerURL).state("app.luna.test").autoShowSafariPlayer)
+
+        let update = try importer.preview(sourceText: source(version: "2.0.0"))
+        XCTAssertTrue(update.autoShowSafariPlayer)
+        try importer.install(update, origin: .files)
+        try store.setEnabledChecked(false, pluginID: "app.luna.test", isBundled: false)
+        XCTAssertTrue(store.state("app.luna.test").autoShowSafariPlayer)
+        try store.setAutoShowSafariPlayerChecked(false, pluginID: "app.luna.test", isBundled: false)
+        XCTAssertFalse(try importer.preview(sourceText: source()).autoShowSafariPlayer)
+        try store.delete(pluginID: "app.luna.test")
+        try install(source())
+        XCTAssertFalse(store.state("app.luna.test").autoShowSafariPlayer)
+    }
+
+    func testRejectedUpdateRestoresAutoPlayerChoice() throws {
+        try install(source())
+        try store.setAutoShowSafariPlayerChecked(true, pluginID: "app.luna.test", isBundled: false)
+        let importer = PluginImporter(
+            store: store, bundled: BundledPluginCatalog(bundle: nil, store: store),
+            runtime: FailOnceActivationInvoker())
+        var update = try importer.preview(sourceText: source(version: "2.0.0"))
+        update.autoShowSafariPlayer = false
+        XCTAssertThrowsError(try importer.install(update, origin: .files))
+        XCTAssertTrue(store.state("app.luna.test").autoShowSafariPlayer)
+    }
+
     // MARK: - Installing
 
     func testAnInstalledPluginIsReadBackVerbatimWithItsManifest() throws {

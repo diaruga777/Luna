@@ -266,6 +266,86 @@ final class SafariMediaPillTests: XCTestCase {
         }
     }
 
+    // MARK: - Per-plugin automatic player
+
+    private func offerPlugin(autoPlayer: String = "true", assetType: String = "video",
+                             context: String = "", fallback: Bool = false) {
+        let host = SafariJSTestHarness.source("LunaSafari/Resources/plugin_host.js")
+        js.load(html: Self.noVideoSignal, urlString: "https://example.test/watch/1")
+        js.evaluate("""
+            window.__ingestCalls = 0;
+            window.__queueCalls = 0;
+            window.fetch = function () { return Promise.resolve({text: function () {
+                return Promise.resolve(\(SafariJSTestHarness.jsString(host)));
+            }}); };
+            window.browser = {runtime: {getURL: function (p) { return p; }, sendMessage: function (m) {
+                if (m.type === 'plugins.catalog') return Promise.resolve({stamp:'test',plugins:[
+                    {id:'first',hosts:['example.test'],produces:['media'],capabilities:[],priority:10,
+                     autoShowSafariPlayer: \(fallback ? "true" : autoPlayer)},
+                    {id:'second',hosts:['example.test'],produces:['media'],capabilities:[],priority:0,
+                     autoShowSafariPlayer: \(autoPlayer)}]});
+                if (m.type === 'plugins.source') return Promise.resolve({source:
+                    "luna.register({classify:function(){return {kind:'media'};},ingest:function(){" +
+                    "window.__ingestCalls++;" +
+                    (\(fallback ? "true" : "false") && m.id === 'first' ? "return null;" :
+                    "return {kind:'media',title:'Video',assets:[{type:'\(assetType)',url:'https://cdn.example.test/media.mp4'}]};") + "}});"});
+                if (m.type === 'plugins.queueModel') window.__queueCalls++;
+                return Promise.resolve({});
+            }}};
+            window.__lunaStartPillDecision({scheme:'luna',supportsPlugins:true,supportsMedia:true \(context)});
+            void 0
+            """)
+        if !context.contains("never") {
+            XCTAssertTrue(eventually("!!document.getElementById(window.__lunaPillID)"))
+        }
+    }
+
+    func testPluginAutoPlayerRequiresExplicitTrueAndManualPlayStillWorks() {
+        for preference in ["undefined", "false", "'true'"] {
+            offerPlugin(autoPlayer: preference)
+            XCTAssertFalse(overlayExists(), preference)
+            tapPill()
+            XCTAssertTrue(waitForOverlay(), preference)
+        }
+    }
+
+    func testPluginAutoPlayerOpensOnceWithoutSavingAndStaysDismissed() {
+        offerPlugin()
+        XCTAssertTrue(waitForOverlay())
+        XCTAssertEqual(js.evaluate("window.__ingestCalls") as? Int, 1)
+        XCTAssertEqual(js.evaluate("window.__queueCalls") as? Int, 0)
+        dismissOverlay()
+        XCTAssertFalse(eventually("!!document.getElementById(window.__lunaVideoOverlayID)", within: 0.7))
+        tapPill()
+        XCTAssertTrue(waitForOverlay())
+        js.evaluate("history.pushState({}, '', '/watch/2'); window.dispatchEvent(new PopStateEvent('popstate')); void 0")
+        XCTAssertTrue(eventually("window.__ingestCalls === 2"))
+        XCTAssertTrue(waitForOverlay())
+    }
+
+    func testPluginAutoPlayerRespectsPlayerAndSuggestionOffSwitches() {
+        offerPlugin(context: ", videoPlayer:false")
+        XCTAssertFalse(overlayExists())
+        offerPlugin(context: ", mode:'never'")
+        XCTAssertFalse(pillExists())
+        XCTAssertFalse(overlayExists())
+    }
+
+    func testPluginAutoPlayerSkipsAudioOnlyAndSupportsGIFs() {
+        offerPlugin(assetType: "audio")
+        XCTAssertFalse(overlayExists())
+        offerPlugin(assetType: "gif")
+        XCTAssertTrue(waitForOverlay())
+    }
+
+    func testPluginAutoPlayerUsesProducingPluginsPreferenceAfterFallback() {
+        offerPlugin(autoPlayer: "false", fallback: true)
+        XCTAssertFalse(overlayExists())
+        XCTAssertEqual(js.evaluate("window.__ingestCalls") as? Int, 2)
+        offerPlugin(autoPlayer: "true", fallback: true)
+        XCTAssertTrue(waitForOverlay())
+    }
+
     // MARK: - Turned off
 
     /// Loads a media page and runs the pill decision with the player switched OFF

@@ -57,11 +57,11 @@ final class PluginImportCoordinatorTests: XCTestCase {
         super.tearDown()
     }
 
-    private func preview(requiresConsent: Bool) -> PluginImportPreview {
+    private func preview(requiresConsent: Bool, media: Bool = false) -> PluginImportPreview {
         PluginImportPreview(
             summary: PluginSummary(
                 id: "test.plugin", name: "Test Plugin", version: "1.0.0", priority: 0,
-                matchesAnyHost: true, hostPatterns: [], produces: [.article],
+                matchesAnyHost: true, hostPatterns: [], produces: media ? [.media] : [.article],
                 hooks: [.classify], export: nil, isBundled: false),
             description: nil, capabilities: [.fetch], runsInBackground: false,
             addedCapabilities: requiresConsent ? [.fetch] : [], requiresConsent: requiresConsent,
@@ -248,6 +248,26 @@ final class PluginImportCoordinatorTests: XCTestCase {
         pollUntil { observer.finishedCount == 2 }
         XCTAssertEqual(importer.installCalls.count, 2)
         XCTAssertTrue(importer.installCalls.allSatisfy { $0.origin == .files })
+    }
+
+    func testMediaInstallToggleStartsOffAndPassesChoiceOnlyOnAcceptance() throws {
+        let importer = FakeImporter()
+        importer.previewResult = .success(preview(requiresConsent: true, media: true))
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.begin(sourceText: "media", from: presenter)
+        let consent = try XCTUnwrap(presenter.presentedViewController as? PluginConsentViewController)
+        consent.loadViewIfNeeded()
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        let toggle = try XCTUnwrap(descendants(consent.view).compactMap { $0 as? UISwitch }.first)
+        XCTAssertFalse(toggle.isOn)
+        toggle.isOn = true
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertTrue(importer.installCalls.isEmpty)
+        let accept = try XCTUnwrap(descendants(consent.view).compactMap { $0 as? UIButton }
+            .first { $0.configuration?.title == L10n.string("Plugins_consentAllowButton") })
+        accept.sendActions(for: .touchUpInside)
+        pollUntil { importer.installCalls.count == 1 }
+        XCTAssertTrue(try XCTUnwrap(importer.installCalls.first).preview.autoShowSafariPlayer)
     }
 
     // MARK: - No consent required

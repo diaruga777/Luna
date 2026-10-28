@@ -22,6 +22,7 @@ final class PluginDetailScreenTests: XCTestCase {
         private(set) var deleteCalls: [String] = []
         private(set) var enabledCalls: [(pluginID: String, enabled: Bool)] = []
         var deleteError: Error?
+        private(set) var autoPlayerCalls: [(pluginID: String, enabled: Bool)] = []
 
         init(_ listings: [PluginListing]) { storedListings = listings }
         func listings() -> [PluginListing] { storedListings }
@@ -31,6 +32,12 @@ final class PluginDetailScreenTests: XCTestCase {
         func sourceText(pluginID: String) -> String? { "source" }
         func setEnabled(_ enabled: Bool, pluginID: String) throws {
             enabledCalls.append((pluginID, enabled))
+        }
+        func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws {
+            autoPlayerCalls.append((pluginID, enabled))
+            if let index = storedListings.firstIndex(where: { $0.summary.id == pluginID }) {
+                storedListings[index].autoShowSafariPlayer = enabled
+            }
         }
         func delete(pluginID: String) throws {
             deleteCalls.append(pluginID)
@@ -88,11 +95,12 @@ final class PluginDetailScreenTests: XCTestCase {
     }
 
     private func summary(
-        id: String = "p", isBundled: Bool, export: PluginExportSummary? = nil
+        id: String = "p", isBundled: Bool, export: PluginExportSummary? = nil,
+        produces: [PluginModelKind] = [.product]
     ) -> PluginSummary {
         PluginSummary(
             id: id, name: "Price Watch", version: "1.0.0", priority: 0, matchesAnyHost: true,
-            hostPatterns: [], produces: [.product], hooks: [.classify], export: export,
+            hostPatterns: [], produces: produces, hooks: [.classify], export: export,
             isBundled: isBundled)
     }
 
@@ -135,6 +143,34 @@ final class PluginDetailScreenTests: XCTestCase {
             }
         }
         return texts
+    }
+
+    func testAutoPlayerToggleIsOnlyOfferedForMediaAndPersistsAcrossScreens() throws {
+        for media in [false, true] {
+            let listing = PluginListing(
+                summary: summary(isBundled: false, produces: media ? [.media] : [.article]),
+                description: nil, status: .enabled, capabilities: [], runsInBackground: false, settings: [])
+            let catalog = FakeCatalog([listing])
+            let screen = PluginDetailScreen(
+                listing: listing, catalog: catalog, settingsStore: FakePluginSettingsStore(), invoker: nil)
+            screen.loadViewIfNeeded()
+            XCTAssertEqual(allRowTexts(screen).contains(L10n.string("Plugins_autoShowSafariPlayer")), media)
+            guard media else { continue }
+            let cell = screen.tableView(screen.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+            let toggle = try XCTUnwrap(cell.accessoryView as? UISwitch)
+            XCTAssertFalse(toggle.isOn)
+            toggle.isOn = true
+            toggle.sendActions(for: .valueChanged)
+            XCTAssertEqual(catalog.autoPlayerCalls.count, 1)
+            XCTAssertEqual(catalog.autoPlayerCalls.first?.pluginID, "p")
+            XCTAssertEqual(catalog.autoPlayerCalls.first?.enabled, true)
+            let reopened = PluginDetailScreen(
+                listing: try XCTUnwrap(catalog.listing(pluginID: "p")), catalog: catalog,
+                settingsStore: FakePluginSettingsStore(), invoker: nil)
+            reopened.loadViewIfNeeded()
+            let reopenedCell = reopened.tableView(reopened.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+            XCTAssertEqual((reopenedCell.accessoryView as? UISwitch)?.isOn, true)
+        }
     }
 
     // MARK: - Delete

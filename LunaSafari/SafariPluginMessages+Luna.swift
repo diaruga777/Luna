@@ -175,7 +175,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     private func pluginCatalogPayload() -> [String: Any] {
         let plugins = enabledPlugins(rescanning: true).filter(\.manifest.isIngestPlugin)
         let stamp = plugins
-            .map { "\($0.id)@\($0.manifest.version.description)" }
+            .map { "\($0.id)@\($0.manifest.version.description):player=\($0.state.autoShowSafariPlayer)" }
             .sorted()
             .joined(separator: "|")
         let list: [[String: Any]] = plugins.map { plugin in
@@ -186,6 +186,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
                 "any": plugin.manifest.matchesAnyHost,
                 "priority": plugin.manifest.priority,
                 "produces": plugin.manifest.produces.map(\.rawValue),
+                "autoShowSafariPlayer": plugin.manifest.produces.contains(.media) && plugin.state.autoShowSafariPlayer,
                 "capabilities": plugin.manifest.capabilities.map(\.rawValue),
             ]
         }

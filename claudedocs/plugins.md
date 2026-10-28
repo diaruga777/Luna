@@ -1260,6 +1260,16 @@ under the label, and committing a `choice` or a `toggle` redraws the row. Every 
 .setValueJSON` — the SAME entry point `luna.settings.set` uses — under the
 BARE key (no `settings.` prefix anywhere in the store).
 
+Media plugins also have a host-owned **Open player automatically in Safari**
+switch. It defaults off and is offered both in the plugin detail screen and
+before installation (manual import, each bundle member, and generated-draft
+review). `PluginImportPreview` carries the choice into the transactional install;
+`PluginState.autoShowSafariPlayer` persists it independently of plugin-authored
+settings and survives updates. Missing legacy values decode as false. Safari
+opens only after the producing plugin resolves playable video/GIF assets, once
+per page URL, and still respects the global player/suggestion off switches.
+See `safari-extension.md` for the presentation flow.
+
 ### 10.2 Storage layout
 
 ```
@@ -1267,8 +1277,8 @@ BARE key (no `settings.` prefix anywhere in the store).
   changed                           the change token, stamped on every
                                     install and delete
   user/<id>/<version>/plugin.js     installed verbatim
-  user/<id>/state.json              { enabled, installedAt, origin, consentedCapabilities }
-  state/<bundledId>.json            { enabled }  (absent = enabled)
+  user/<id>/state.json              { isEnabled, installedAt, origin, consentedCapabilities, autoShowSafariPlayer }
+  state/<bundledId>.json            same PluginState (absent = enabled, auto-player off)
   scratch/<id>/<generation>/        luna.files, reaped when the plugin's
                                     last in-flight call ends
 ```

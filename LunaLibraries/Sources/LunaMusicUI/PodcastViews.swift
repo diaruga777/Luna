@@ -57,15 +57,6 @@ import LunaDesignSystem
             view?.image = image; view?.contentMode = .scaleAspectFill
         }
     }
-    static func artwork(_ episode: PodcastEpisode?, show: PodcastShow? = nil, into view: UIImageView) {
-        guard let episode, episode.showID == ReaderPodcastSource.showID,
-              let icon = LunaAppIconImage.image(for: .reader) else {
-            artwork(episode?.artworkURL ?? show?.artworkURL, into: view)
-            return
-        }
-        view.accessibilityIdentifier = "luna-reader-icon"
-        view.image = icon; view.contentMode = .scaleAspectFill
-    }
     static func showError(_ error: Error, from controller: UIViewController) {
         guard !(error is CancellationError), controller.presentedViewController == nil else { return }
         let alert = UIAlertController(title: "Podcasts", message: error.localizedDescription, preferredStyle: .alert)
@@ -167,9 +158,7 @@ import LunaDesignSystem
             }])
         }
         let artworkURL = episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL
-        if episode.showID == ReaderPodcastSource.showID {
-            PodcastUI.artwork(episode, show: library.state.shows[episode.showID], into: artwork)
-        } else if artwork.accessibilityIdentifier != artworkURL?.absoluteString || artwork.image == nil {
+        if artwork.accessibilityIdentifier != artworkURL?.absoluteString || artwork.image == nil {
             PodcastUI.artwork(artworkURL, into: artwork)
         }
         let time = state?.listened == true ? "Played" : (state?.position ?? 0) > 0 ? "\(PodcastUI.time(max(0, episode.duration - (state?.position ?? 0)))) left" : PodcastUI.time(episode.duration)

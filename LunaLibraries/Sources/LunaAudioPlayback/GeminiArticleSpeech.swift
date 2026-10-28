@@ -97,7 +97,7 @@ struct GeminiSpeechPlan {
         self.chunks = chunks
         self.blockRanges = ranges
         // Include block boundaries, voice, model and cache schema, but never the API key.
-        let identity = "v3-stream-aac|gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts|Kore|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + text
+        let identity = "v2-aac|gemini-3.8-flash-tts|Kore|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + text
         self.fingerprint = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -106,10 +106,10 @@ struct GeminiSpeechPlan {
 /// extension or autoplay miss can spend the user's speech quota.
 public actor GeminiArticleSpeech {
     public static let shared = GeminiArticleSpeech()
-    static let models = ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"]
+    static let model = "gemini-3.8-flash-tts"
     private let directory: URL
     private let legacyDirectory: URL?
-    private let stream: (URLRequest, @escaping (Data) -> Void) async throws -> URLResponse
+    private let send: (URLRequest) async throws -> (Data, URLResponse)
     private var pending: [String: (id: UUID, task: Task<URL, Error>)] = [:]
     private let apiKey: () -> String?
     private let requestTimeout: TimeInterval
@@ -125,32 +125,7 @@ public actor GeminiArticleSpeech {
         configuration.timeoutIntervalForResource = 120
         let session = URLSession(configuration: configuration)
         self.requestTimeout = 120
-        self.stream = { request, receive in
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
-            guard (200..<300).contains(http.statusCode) else {
-                var body = Data()
-                for try await byte in bytes { body.append(byte) }
-                let code = Self.apiErrorCode(from: body)
-                throw Self.speechError(statusCode: http.statusCode, apiCode: code)
-            }
-            var line = "", eventData = ""
-            for try await byte in bytes {
-                let character = Character(UnicodeScalar(byte))
-                if character == "\n" {
-                    let trimmed = line.trimmingCharacters(in: .newlines)
-                    if trimmed.isEmpty {
-                        if !eventData.isEmpty { Self.consumeStreamEvent(eventData, receive: receive); eventData = "" }
-                    } else if trimmed.hasPrefix("data:") {
-                        if !eventData.isEmpty { eventData += "\n" }
-                        eventData += String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                    }
-                    line = ""
-                } else { line.append(character) }
-            }
-            if !eventData.isEmpty { Self.consumeStreamEvent(eventData, receive: receive) }
-            return response
-        }
+        self.send = { try await session.data(for: $0) }
         self.apiKey = { GeminiSpeechCredential.apiKey }
     }
 
@@ -158,16 +133,7 @@ public actor GeminiArticleSpeech {
         self.directory = directory
         self.legacyDirectory = legacyDirectory
         self.requestTimeout = requestTimeout
-        self.stream = { request, receive in
-            let (data, response) = try await send(request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                let http = response as? HTTPURLResponse
-                throw Self.speechError(statusCode: http?.statusCode ?? 500, apiCode: Self.apiErrorCode(from: data))
-            }
-            let audio = try Self.audio(from: data)
-            receive(audio)
-            return response
-        }
+        self.send = send
         self.apiKey = apiKey
     }
 
@@ -201,7 +167,7 @@ public actor GeminiArticleSpeech {
             progress(1)
             return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
         }
-        let stream = self.stream
+        let send = self.send
         let apiKey = self.apiKey
         let directory = self.directory
         let timeout = self.requestTimeout
@@ -223,35 +189,23 @@ public actor GeminiArticleSpeech {
                     progress(Double(index + 1) / Double(plan.chunks.count))
                     continue
                 }
-                var audio = Data()
-                var selectedModel: String?
-                for model in Self.models {
-                    try Task.checkCancellation()
-                    audio.removeAll(keepingCapacity: true)
-                    var request = try Self.request(text: text, apiKey: apiKey, model: model)
-                    request.timeoutInterval = timeout
-                    DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
-                    let started = Date()
-                    let response: URLResponse
-                    do {
-                        response = try await Self.streamWithinDeadline(request, timeout: timeout, stream: stream) { delta in
-                            audio.append(delta)
-                            let fraction = min(0.94, Double(audio.count) / Double(audio.count + 32_000))
-                            progress((Double(index) + fraction) / Double(plan.chunks.count))
-                        }
-                    } catch GeminiSpeechError.quota {
-                        DiagnosticLog.shared.record("quota exhausted item=\(itemID) model=\(model)", category: "gemini-tts")
-                        continue
-                    }
-                    guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
-                    DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) model=\(model) bytes=\(audio.count) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
-                    selectedModel = model
-                    break
-                }
-                guard selectedModel != nil else { throw GeminiSpeechError.quota }
+                var request = try Self.request(text: text, apiKey: apiKey)
+                request.timeoutInterval = timeout
+                DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count)", category: "gemini-tts")
+                let started = Date()
+                let (data, response) = try await Self.sendWithinDeadline(request, timeout: timeout, send: send)
+                DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) status=\((response as? HTTPURLResponse)?.statusCode ?? 0) bytes=\(data.count) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
                 try Task.checkCancellation()
-                let wav = try Self.wav(fromStream: audio)
-                try Self.cacheAudio(wav, at: file)
+                guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
+                guard (200..<300).contains(http.statusCode) else {
+                    let apiCode = Self.apiErrorCode(from: data)
+                    DiagnosticLog.shared.record(
+                        "api error item=\(itemID) chunk=\(index + 1) status=\(http.statusCode) code=\(apiCode ?? "unknown")",
+                        category: "gemini-tts")
+                    throw Self.speechError(statusCode: http.statusCode, apiCode: apiCode)
+                }
+                let audio = try Self.audio(from: data)
+                try Self.cacheAudio(audio, at: file)
                 guard Self.isPlayable(file) else {
                     try? FileManager.default.removeItem(at: file)
                     throw GeminiSpeechError.invalidAudio
@@ -311,6 +265,19 @@ public actor GeminiArticleSpeech {
                 return
             }
             try await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private static func sendWithinDeadline(_ request: URLRequest, timeout: TimeInterval,
+        send: @escaping (URLRequest) async throws -> (Data, URLResponse)) async throws -> (Data, URLResponse) {
+        try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            group.addTask { try await send(request) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(max(0.001, timeout) * 1_000_000_000))
+                throw GeminiSpeechError.timedOut
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
     }
 
@@ -376,7 +343,7 @@ public actor GeminiArticleSpeech {
         _ = close(descriptor)
     }
 
-    static func request(text: String, apiKey: String, model: String = models[0]) throws -> URLRequest {
+    static func request(text: String, apiKey: String) throws -> URLRequest {
         var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 240
@@ -386,44 +353,11 @@ public actor GeminiArticleSpeech {
             "model": model,
             "store": false,
             "input": [["type": "user_input", "content": [["type": "text", "text": text]]]],
+            // Unary Gemini TTS interactions return a complete WAV by default.
             "response_format": ["type": "audio"],
             "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": "Kore"]]],
-            "stream": true,
         ])
         return request
-    }
-
-    private static func consumeStreamEvent(_ data: String, receive: (Data) -> Void) {
-        guard let event = try? JSONSerialization.jsonObject(with: Data(data.utf8)) as? [String: Any],
-              event["event_type"] as? String == "step.delta",
-              let delta = event["delta"] as? [String: Any], delta["type"] as? String == "audio",
-              let encoded = delta["data"] as? String, let audio = Data(base64Encoded: encoded) else { return }
-        receive(audio)
-    }
-
-    private static func wav(fromStream data: Data) throws -> Data {
-        if data.starts(with: Data("RIFF".utf8)) { return data }
-        guard !data.isEmpty, data.count.isMultiple(of: 2), data.count <= Int(UInt32.max) - 36 else { throw GeminiSpeechError.invalidAudio }
-        var wav = Data("RIFF".utf8)
-        wav.appendLittleEndian(UInt32(data.count + 36)); wav.append(Data("WAVEfmt ".utf8))
-        wav.appendLittleEndian(UInt32(16)); wav.appendLittleEndian(UInt16(1)); wav.appendLittleEndian(UInt16(1))
-        wav.appendLittleEndian(UInt32(24_000)); wav.appendLittleEndian(UInt32(48_000)); wav.appendLittleEndian(UInt16(2)); wav.appendLittleEndian(UInt16(16))
-        wav.append(Data("data".utf8)); wav.appendLittleEndian(UInt32(data.count)); wav.append(data)
-        return wav
-    }
-
-    private static func streamWithinDeadline(_ request: URLRequest, timeout: TimeInterval,
-        stream: @escaping (URLRequest, @escaping (Data) -> Void) async throws -> URLResponse,
-        receive: @escaping (Data) -> Void) async throws -> URLResponse {
-        try await withThrowingTaskGroup(of: URLResponse.self) { group in
-            group.addTask { try await stream(request, receive) }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(max(0.001, timeout) * 1_000_000_000))
-                throw GeminiSpeechError.timedOut
-            }
-            defer { group.cancelAll() }
-            return try await group.next()!
-        }
     }
 
     /// Google returns structured error bodies for non-2xx Interactions API
@@ -537,13 +471,6 @@ public actor GeminiArticleSpeech {
 private actor GeminiGenerationCompletion {
     private(set) var isFinished = false
     func finish() { isFinished = true }
-}
-
-private extension Data {
-    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
-        var encoded = value.littleEndian
-        Swift.withUnsafeBytes(of: &encoded) { append(contentsOf: $0) }
-    }
 }
 
 final class GeminiCachedSpeechRenderer: SpeechRendering {

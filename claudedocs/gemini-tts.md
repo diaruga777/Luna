@@ -13,16 +13,28 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   **Play Next with Gemini** explicitly select Gemini whenever a key is available.
   Ingestion, background script refinement, autoplay misses and extensions never
   start Gemini requests.
-- Reader begins playback after the first generated section and prepares the rest
-  in the background. Missing later sections wait for their atomic cache files;
-  failures pause playback instead of skipping text. Music finishes its standalone
+- Reader begins playback from the first streamed PCM buffers, before the first
+  request finishes, and prepares the rest in the background. A pull renderer
+  supplies at most one second at a time through the existing engine's bounded
+  lookahead; temporary disk spools keep a whole article out of memory. Seeking
+  waits for the relevant chunk's final duration before applying proportional text
+  offsets. Stream failures pause playback instead of skipping text or marking
+  the save finished. Music finishes its standalone
   readout export before enqueueing it. Typical English articles
   up to 1,200 words use one request; longer text is split into sequential requests
   of at most 1,200 words and 7,500 UTF-8 bytes, preserving the text. The byte limit
   also bounds text in languages without whitespace. Splits prefer nearby word
-  boundaries. The model and voice are fixed to `gemini-3.8-flash-tts` / `Kore`.
-- Requests use the documented Interactions REST API, stateless `store: false`,
-  an ephemeral URL session, a key header and verbatim transcript text. Keys
+  boundaries. Voice stays `Kore`. Models fall back in order:
+  `gemini-3.8-flash-tts`, `gemini-3.1-flash-tts-preview`, then
+  `gemini-2.5-flash-preview-tts`. A quota or unavailable-model response advances
+  to the next model for the remaining chunks; authentication, transport and
+  malformed-audio failures do not spend another model's allowance.
+- Gemini 3.8/3.1 use the documented Interactions REST API with `stream: true`,
+  raw 24 kHz mono signed little-endian 16-bit PCM and stateless `store: false`.
+  The non-streaming 2.5 fallback uses its documented GenerateContent endpoint
+  and normalizes its completed audio into the same PCM/cache pipeline.
+  Requests use an ephemeral URL session, a key header and the article transcript.
+  Older models receive an explicit synthesis preamble; 3.8 receives verbatim text. Keys
   never appear in URLs, defaults, cache filenames or error messages. Google’s
   free-tier data-use terms still apply even with interaction storage disabled.
 - The key uses LunaStorage's `CredentialKeychain` primitive (including its
@@ -33,24 +45,33 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   from backups and shared between Reader and Music. Existing Reader-local cache
   entries migrate on first access without another request. A process-wide actor
   and a cross-process advisory file lock prevent duplicate API work. Identity includes the saved article UUID, text, block
-  boundaries, model, voice and cache format. An unchanged article reuses its
+  boundaries, primary model, voice and cache format. The previous v2 AAC identity
+  is preserved so enabling streaming does not invalidate existing audio. An unchanged article reuses its
   audio across pauses, seeks, replays, both apps and app restarts. Edited/refined spoken
   text creates a new cache identity. Audio remains until explicitly deleted,
   its article is removed, or the app is uninstalled.
-- Each successful WAV response is compressed to 64 kbps AAC, finalized,
-  atomically published and validated before reuse.
-  Concurrent requests for an article share generation. A quota/network failure
+- SSE framing handles metadata, multiline events and UTF-8 lines. Audio format,
+  base64 and an explicit successful terminal status are required; closing the
+  socket alone never publishes a cache entry. Valid completed PCM is compressed
+  to 64 kbps AAC, finalized, atomically published and validated before reuse.
+  Temporary PCM spools are removed with the generation/renderer lifetime.
+  Concurrent requests for an article share generation. Exhausting every model or a network failure
   pauses playback, reports an actionable error, and never silently skips text
   or marks the article finished. An explicit retry reuses completed chunks.
 - Every request has a 120-second wall-clock deadline and a matching URLSession
   resource timeout. Pausing during initial preparation cancels that request;
   resuming retries explicitly, retaining completed sections. The mini-player
-  shows preparation progress and a persistent failure title. Diagnostics record
-  cache hits, request section, HTTP status, byte count, elapsed time and error
+  shows incremental generation progress even after playback starts, and a
+  persistent failure title. Within-chunk percentages estimate duration at 170 WPM
+  because Google sends no final byte count; they remain below 100% until validated.
+  Diagnostics record cache hits, request section, selected model, fallback,
+  byte count, elapsed time and error
   type/code under `gemini-tts`, never the key, article text or raw server errors.
 - Autoplay and cold playback restoration only use existing Gemini audio; on a
   miss they use the device voice. There are no speculative cloud requests and
-  no automatic network retries after quota errors.
+  no automatic retries of the same exhausted model. Fallback occurs before any
+  audio from the failed request; a quota error after PCM arrives pauses instead
+  of restarting the chunk and potentially repeating words already heard.
 - Google does not supply speech alignment timestamps. Playback preserves every
   generated frame; paragraph seeking/resume uses proportional text offsets
   within each generated chunk. It is approximate and may land mid-sentence.
@@ -81,6 +102,21 @@ limits, explicitly says capacity is not guaranteed, and applies quotas per
 project rather than per key. Multiple keys do not multiply the allowance.
 Daily request quotas reset at midnight Pacific time. A Gemini consumer
 subscription is not a quota assumption used by this feature.
+
+
+Google does not provide a reliable remaining-quota counter in these synthesis
+responses. Luna reacts to `429`/`RESOURCE_EXHAUSTED` rather than inventing a
+balance. Model cooldowns are credential-specific and held in memory: honor
+`Retry-After` or structured `RetryInfo`, use the next Pacific midnight for a
+reported daily quota, otherwise wait 60 seconds before trying that model again.
+A missing model is skipped for one hour. Replacing a key does not inherit the
+old key's cooldown (but Google's underlying quota still belongs to the project).
+
+For additional free listening, keep generated audio cached or use Apple's
+on-device voice. Gemini 3.8 Flash-Lite TTS is another possible future fallback
+if the project's AI Studio dashboard shows a separate free allocation; it is
+not inserted into the requested model order. Extra keys in the same project do
+not add quota. No account/project rotation is implemented.
 
 ### Converting a project's actual quota to useful article capacity
 
@@ -139,18 +175,12 @@ Official Google sources checked on 2026-10-28:
 - [Speech generation REST request and WAV response](https://ai.google.dev/gemini-api/docs/speech-generation)
 - [Interactions API response status](https://ai.google.dev/api/interactions-api)
 
-## Follow-up validation (2026-10-28)
+## Streaming replacement validation (2026-10-28)
 
-60 focused Reader tests passed, including independent-app cache arbitration,
-Reader-local cache migration, first-section playback, deadline cancellation,
-retry after timeout, pause/resume cancellation, export to Music's AAC format and
-localization. Music's focused integration checks cover key-dependent menu
-availability, Reader voice preference, explicit Gemini upgrades, reuse, failed
-requests, queue order, current-episode protection, removal and sandbox rebasing.
-Google synthesis with the user's key has not been exercised from this workspace.
-The supplied diagnostic export had no Gemini request records; it did not establish
-whether the reported stall was a provider failure, full-article preparation or
-playback. New diagnostics separate those states without recording secrets or text.
-An existing real-speaker Music playback test failed in this environment when
-Core Audio could not start the simulator output device (AQME timeout/-66681);
-export, decoding and the focused integration checks run independently of it.
+Focused simulator coverage exercises early PCM playback before request completion,
+odd-byte delta boundaries, exact frame totals, cache-only replay, migration,
+SSE terminal/error validation, ranked quota fallback, per-credential cooldowns,
+Pacific-day resets, cancellation, deadlines, export and playback-center completion.
+Music coverage checks filtering, the bundled Reader icon and cell reuse, source
+completion, deleted-source handling, queue ordering, reuse and real readout playback.
+Live Google synthesis with the user's credential has not been exercised.

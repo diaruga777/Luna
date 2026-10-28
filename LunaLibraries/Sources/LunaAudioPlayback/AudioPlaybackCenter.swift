@@ -213,22 +213,30 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     private var articlePreparationTask: Task<Void, Never>?
     public private(set) var articlePreparationProgress: Double = 0
     public private(set) var articlePreparationError: String?
+    public var isGeneratingArticleAudio: Bool {
+        articleRenderer is ProgressiveSpeechRendering && articlePreparationProgress < 1 && articlePreparationError == nil
+    }
 
     public func reportArticlePreparationProgress(itemID: UUID, fraction: Double) {
-        guard isPreparingArticleAudio, currentItem?.id == itemID else { return }
-        articlePreparationProgress = min(max(fraction, 0), 1)
+        guard isPreparingArticleAudio || articleRenderer is ProgressiveSpeechRendering, currentItem?.id == itemID else { return }
+        articlePreparationProgress = max(articlePreparationProgress, min(max(fraction, 0), 1))
         notifyObservers { $0.audioPlaybackCenterDidUpdatePreparation(self) }
     }
 
     private var articleRenderer: SpeechRendering?
     private var articleRendererPrepared = false
+    private var articleRetryWordIndex: Int?
     private var allowsArticleGeneration = false
     private var engineFormat: AVAudioFormat?
 
     public var currentSnapshot: AudioPlaybackSnapshot {
         let totalWords = currentScript?.totalWordCount ?? 0
         let remainingWords = max(0, totalWords - sessionStartWordsSkipped - wordsRenderedSoFar)
-        let duration = elapsedBaselineAtResume + renderedDurationSoFar + Double(remainingWords) * avgSecPerWord
+        let duration: Double
+        if articleRenderer is ProgressiveSpeechRendering {
+            let rendered = elapsedBaselineAtResume + renderedDurationSoFar
+            duration = renderCursor >= (currentScript?.spokenBlocks.count ?? 0) ? rendered : max(rendered, Double(totalWords) * Self.defaultSecondsPerWord)
+        } else { duration = elapsedBaselineAtResume + renderedDurationSoFar + Double(remainingWords) * avgSecPerWord }
         let elapsed = engine?.currentTime ?? elapsedBaselineAtResume
         let fraction = duration > 0 ? min(max(elapsed / duration, 0), 1) : 0
         return AudioPlaybackSnapshot(
@@ -242,7 +250,11 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// estimate remaining duration and to map a skip/seek's seconds delta to
     /// a word-index delta.
     private var avgSecPerWord: Double {
-        wordsRenderedSoFar > 0
+        if articleRenderer is ProgressiveSpeechRendering {
+            guard let script = currentScript, renderCursor >= script.spokenBlocks.count else { return Self.defaultSecondsPerWord }
+            return renderedDurationSoFar / Double(max(1, script.totalWordCount - sessionStartWordsSkipped))
+        }
+        return wordsRenderedSoFar > 0
             ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
     }
 
@@ -288,6 +300,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// Rendered-and-scheduled blocks not yet fully heard (bounds the
     /// look-ahead to `maxBlocksAhead`).
     private var scheduledNotYetPlayedCount = 0
+    private var scheduledBlockIndices: Set<Int> = []
     /// Absolute content-time (seconds, `ArticleAudioEngine.currentTime`
     /// domain) at which the NEXT segment/tone to be scheduled will begin.
     private var scheduledContentTimeCursor: TimeInterval = 0
@@ -410,7 +423,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     public func resume() {
         guard case .paused(let itemID) = state else { return }
         sessionCoordinator.activate()
-        engine?.play()
+        if articleRetryWordIndex == nil { engine?.play() }
         startProgressTimer()
         startPositionPersistTimer()
         switch stateBeforePause {
@@ -418,7 +431,10 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         case .playing, nil: setState(.playing(itemID: itemID))
         }
         stateBeforePause = nil
-        pumpRenderingIfNeeded()
+        if let wordIndex = articleRetryWordIndex {
+            articleRetryWordIndex = nil
+            restartPlayback(fromWordIndex: wordIndex)
+        } else { pumpRenderingIfNeeded() }
     }
 
     /// Rebuilds a playback session from the persisted App-Group position —
@@ -565,9 +581,11 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         articlePreparationTask = nil
         articlePreparationProgress = 0
         articlePreparationError = nil
+        articleRetryWordIndex = nil
         sessionToken = UUID()
         isPumping = false
         scheduledNotYetPlayedCount = 0
+        scheduledBlockIndices = []
         pendingMarkerQueue = []
         markerCursor = 0
         pendingBlockPositions = []
@@ -715,6 +733,10 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             }
             return
         }
+        if let progressive = articleRenderer as? ProgressiveSpeechRendering {
+            pumpProgressiveRendering(progressive, script: script)
+            return
+        }
         let block = script.spokenBlocks[renderCursor]
         let isArticleRenderer = articleRenderer != nil
         let activeRenderer = articleRenderer ?? renderer
@@ -756,6 +778,38 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
                 self.renderCursor += 1
                 self.isPumping = false
                 self.handleRendered(segment)
+            }
+        }
+    }
+
+    private func pumpProgressiveRendering(_ renderer: ProgressiveSpeechRendering, script: AudioScript) {
+        isPumping = true
+        let token = sessionToken
+        let block = script.spokenBlocks[renderCursor]
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let segment = try await renderer.nextSegment(startingAt: block, sessionID: token)
+                guard token == self.sessionToken else { return }
+                self.isPumping = false
+                if let segment {
+                    self.handleRendered(segment)
+                } else {
+                    self.renderCursor = script.spokenBlocks.count
+                    self.articlePreparationProgress = 1
+                    if self.scheduledNotYetPlayedCount == 0 { self.handleArticleBodyFinished() }
+                }
+            } catch {
+                guard token == self.sessionToken else { return }
+                let wordIndex = self.currentSeekBaseWordIndex()
+                self.isPumping = false
+                self.articleRenderer = nil; self.articleRendererPrepared = false
+                self.articlePreparationError = error.localizedDescription
+                self.pause()
+                // Resume explicitly from the audible paragraph rather than
+                // appending the whole article to stale queued stream buffers.
+                self.articleRetryWordIndex = wordIndex
+                self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
             }
         }
     }
@@ -807,7 +861,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     private func scheduleRendered(_ segment: RenderedSegment) {
         guard let script = currentScript else { return }
         let segmentStart = scheduledContentTimeCursor
-        if segment.wordMarkers.isEmpty,
+        let isNewBlock = scheduledBlockIndices.insert(segment.blockIndex).inserted
+        if isNewBlock, segment.wordMarkers.isEmpty,
            let position = script.spokenBlocks.firstIndex(where: { $0.blockIndex == segment.blockIndex }) {
             pendingBlockPositions.append((segmentStart, blockStartWordIndices[position]))
         }
@@ -817,7 +872,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         }
         scheduledContentTimeCursor += segment.duration
         renderedDurationSoFar += segment.duration
-        if let spokenBlock = script.spokenBlocks.first(where: { $0.blockIndex == segment.blockIndex }) {
+        if isNewBlock, let spokenBlock = script.spokenBlocks.first(where: { $0.blockIndex == segment.blockIndex }) {
             wordsRenderedSoFar += AudioWordIndexing.wordCount(in: spokenBlock.text)
         }
 

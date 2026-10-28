@@ -220,7 +220,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
         guard let info = snapshot.itemInfo else { return }
         miniPlayer.apply(.init(
-            title: center.isPreparingArticleAudio
+            title: center.isPreparingArticleAudio || center.isGeneratingArticleAudio
                 ? (center.articlePreparationProgress > 0
                     ? L10n.string("Gemini_preparingProgress", Int(center.articlePreparationProgress * 100))
                     : L10n.string("Gemini_preparing"))

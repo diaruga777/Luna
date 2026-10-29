@@ -59,6 +59,49 @@ final class NightlyArticleAudioTests: XCTestCase {
         XCTAssertEqual(prepared, [newest.id, opened.id, old.id])
     }
 
+    func testScheduledGenerationSkipsReadAndTwoWeekOldArticles() async throws {
+        let fortnight: TimeInterval = 14 * 24 * 60 * 60
+        let fresh = item("fresh")
+        let justInside = item("just-inside", age: fortnight - 1, read: .opened)
+        let cutoff = item("cutoff", age: fortnight)
+        let older = item("older", age: fortnight + 1)
+        let oldOpened = item("old-opened", age: fortnight + 1, read: .opened)
+        let read = item("already-read", read: .read)
+        var prepared: [UUID] = []
+        try await worker(items: [older, cutoff, read, justInside, oldOpened, fresh],
+                         now: { self.date("2026-07-01T07:30:00Z") }) { item, _, _, _ in
+            prepared.append(item.id)
+        }.run()
+        XCTAssertEqual(prepared, [fresh.id, justInside.id])
+    }
+
+    func testRechecksAgeAndReadStateAfterEarlierArticle() async throws {
+        var clock = date("2026-07-01T07:30:00Z")
+        let first = item("first")
+        var becomesRead = item("becomes-read", age: 1)
+        let agesOut = item("ages-out", age: 14 * 24 * 60 * 60 - 1)
+        var prepared: [UUID] = []
+        try await worker(items: [agesOut, becomesRead, first], now: { clock }, current: { id in
+            [first, becomesRead, agesOut].first { $0.id == id }
+        }) { item, _, _, _ in
+            prepared.append(item.id)
+            becomesRead.readState = .read
+            clock = clock.addingTimeInterval(2)
+        }.run()
+        XCTAssertEqual(prepared, [first.id])
+    }
+
+    func testReadStateChangeDuringScriptPreparationSkipsGeneration() async throws {
+        var article = item("article")
+        try await NightlyArticleAudioWorker(
+            now: { self.date("2026-07-01T07:30:00Z") }, enabled: { true },
+            items: { [article] }, currentItem: { _ in article }, content: { _ in self.content },
+            script: { _, content in
+                article.readState = .read
+                return AudioTrimHeuristics.classify(content).heuristicScript(for: content)
+            }, prepare: { _, _, _, _ in XCTFail("Already read before generation") }).run()
+    }
+
     func testQuotaExitsEntireJobAndMidnightStopsNextArticle() async throws {
         let items = [item("newest"), item("older", age: 10)]
         var count = 0

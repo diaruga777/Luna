@@ -172,9 +172,12 @@ the renderer checks the window again after obtaining the cross-process lock,
 before every chunk/model request, for incoming PCM and before publishing audio.
 A response already sent to Google cannot be recalled by cancellation.
 
-Only ready, readable, unfinished articles are eligible, newest **dateAdded**
-first regardless of manual list order or bump dates. Read/deleted state and the
-Gemini voice/key opt-in are rechecked as the job advances. The job uses cached
+Only ready, readable, unfinished articles saved less than 14 days ago are
+eligible, newest **dateAdded** first regardless of manual list order or bump
+dates. Articles at or beyond the 14-day cutoff and already-read articles never
+start scheduled generation, even after their audio cache expires. Age and
+read/deleted state are rechecked immediately before preparing each article;
+the Gemini voice/key opt-in is rechecked as the job advances. The job uses cached
 trim scripts (or a heuristic script on a miss) without starting an on-device LLM.
 Current-identity complete audio is reused, partial audio resumes at missing
 chunks, and concurrent foreground generation is left alone. The first quota,

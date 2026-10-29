@@ -64,20 +64,30 @@ struct NightlyArticleAudioWorker {
     let prepare: (SavedItem, AudioScript, String?, Date) async throws -> Void
 
     func run() async throws {
-        guard let deadline = NightlyArticleAudioWindow.deadline(at: now()), enabled() else { return }
+        let started = now()
+        guard let deadline = NightlyArticleAudioWindow.deadline(at: started), enabled() else { return }
         // Saved order can be manually rearranged; recency here means save time.
-        let candidates = items().filter { $0.state == .ready && $0.readState != .read }
+        let candidates = items().filter { Self.isEligible($0, at: started) }
             .sorted { $0.dateAdded == $1.dateAdded ? $0.id.uuidString < $1.id.uuidString : $0.dateAdded > $1.dateAdded }
         for candidate in candidates {
             try Task.checkCancellation()
             guard now() < deadline, enabled() else { return }
-            guard let item = currentItem(candidate.id), item.state == .ready, item.readState != .read,
+            guard let item = currentItem(candidate.id), Self.isEligible(item, at: now()),
                   let content = content(item), AudioScriptPipeline.isReadable(content) else { continue }
             let script = script(item, content)
             guard !script.spokenBlocks.isEmpty else { continue }
+            guard now() < deadline, enabled() else { return }
+            // Loading content/building the script may overlap a read-state change
+            // or cross the age cutoff. Recheck immediately before preparation.
+            guard let current = currentItem(item.id), Self.isEligible(current, at: now()) else { continue }
             // Cache hits are network-free. Missing chunks resume sequentially.
             // Any error, especially quota, exits the entire job immediately.
-            try await prepare(item, script, content.author, deadline)
+            try await prepare(current, script, content.author, deadline)
         }
+    }
+
+    private static func isEligible(_ item: SavedItem, at date: Date) -> Bool {
+        item.state == .ready && item.readState != .read
+            && date.timeIntervalSince(item.dateAdded) < 14 * 24 * 60 * 60
     }
 }

@@ -1418,10 +1418,9 @@ public final class SavesStore {
                 return value
             }
             if wrote {
-                for (kind, id, operation) in committedChanges {
-                    if let automationJournal { _ = try? automationJournal.record(kind: kind, itemID: id, operation: operation) }
-                    else if overrideContainerURL == nil { AppAutomation.record(.reader, kind: kind, id: id, operation: operation) }
-                }
+                let mutations = committedChanges.map { AutomationMutation(kind: $0.0, itemID: $0.1, operation: $0.2) }
+                if let automationJournal { _ = try? automationJournal.record(mutations) }
+                else if overrideContainerURL == nil { AppAutomation.record(.reader, mutations: mutations) }
                 postChanged()
             }
             return result

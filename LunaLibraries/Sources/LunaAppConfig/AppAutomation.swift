@@ -10,15 +10,30 @@ import UserNotifications
 
 /// Public automation vocabulary. Notifications contain IDs, never item contents.
 public enum AutomationApp: String, Codable, CaseIterable, Sendable {
-    case reader, music, vault, keyboard
+    case reader, music, vault, keyboard, writer
     public var bundleIdentifier: String {
         AppConfig.productBundlePrefix + (self == .reader ? "" : "." + rawValue)
     }
-    public static var current: Self? {
-        let bundle = Bundle.main.bundleIdentifier ?? ""
-        return [.keyboard, .music, .vault, .reader].first {
-            bundle == $0.bundleIdentifier || bundle.hasPrefix($0.bundleIdentifier + ".")
+    public static var current: Self? { app(forBundleIdentifier: Bundle.main.bundleIdentifier ?? "") }
+
+    public static func app(forBundleIdentifier bundle: String) -> Self? {
+        // Reader owns only its known extensions. Matching its namespace prefix
+        // would impersonate Writer, retired apps, test runners and Mac helpers.
+        for app in [Self.keyboard, .music, .vault, .writer] {
+            if bundle == app.bundleIdentifier || bundle.hasPrefix(app.bundleIdentifier + ".") { return app }
         }
+        let reader = Self.reader.bundleIdentifier
+        return [reader, reader + ".share", reader + ".action2", reader + ".safari", reader + ".liveactivity"].contains(bundle) ? .reader : nil
+    }
+}
+
+/// A committed domain edit, before the journal assigns its identity and order.
+public struct AutomationMutation: Sendable {
+    public let kind: String
+    public let itemID: String
+    public let operation: String
+    public init(kind: String, itemID: String, operation: String) {
+        self.kind = kind; self.itemID = itemID; self.operation = operation
     }
 }
 
@@ -91,21 +106,29 @@ public final class AppAutomation: @unchecked Sendable {
         } else { await deliverPendingNotifications() }
     }
     @discardableResult public func record(kind: String, itemID: String, operation: String) throws -> AutomationChange {
-        let event = try locked { history in
-            history.sequence += 1
-            let event = AutomationChange(id: UUID().uuidString, sequence: history.sequence, date: Date(),
-                app: app, kind: kind, itemID: itemID, operation: operation)
-            history.changes.append(event)
+        try record([AutomationMutation(kind: kind, itemID: itemID, operation: operation)])[0]
+    }
+
+    /// Feed merges and imports append in one snapshot write instead of encoding
+    /// the entire retained history again for every item in the same commit.
+    @discardableResult public func record(_ mutations: [AutomationMutation]) throws -> [AutomationChange] {
+        guard !mutations.isEmpty else { return [] }
+        let events = try locked { history in
+            let events = mutations.map { mutation in
+                history.sequence += 1
+                return AutomationChange(id: UUID().uuidString, sequence: history.sequence, date: Date(),
+                    app: app, kind: mutation.kind, itemID: mutation.itemID, operation: mutation.operation)
+            }
+            history.changes.append(contentsOf: events)
             if notificationsEnabled {
-                var pending = history.pendingNotifications ?? []
-                pending.append(event.id); history.pendingNotifications = pending
+                history.pendingNotifications = (history.pendingNotifications ?? []) + events.map(\.id)
             }
             if history.changes.count > 10_000 {
                 history.changes.removeFirst(history.changes.count - 10_000)
                 let retained = Set(history.changes.map(\.id))
                 history.pendingNotifications?.removeAll { !retained.contains($0) }
             }
-            return event
+            return events
         }
         #if canImport(UserNotifications)
         if notificationsEnabled, AutomationApp.current == app {
@@ -113,11 +136,14 @@ public final class AppAutomation: @unchecked Sendable {
         }
         #endif
         NotificationCenter.default.post(name: .lunaAutomationChanged, object: app.rawValue)
-        return event
+        return events
     }
     /// Logging must never turn a successfully committed domain edit into a failure.
     public static func record(_ app: AutomationApp, kind: String, id: String, operation: String) {
-        do { try AppAutomation(app: app).record(kind: kind, itemID: id, operation: operation) }
+        record(app, mutations: [AutomationMutation(kind: kind, itemID: id, operation: operation)])
+    }
+    public static func record(_ app: AutomationApp, mutations: [AutomationMutation]) {
+        do { try AppAutomation(app: app).record(mutations) }
         catch { NSLog("Luna automation journal: %@", error.localizedDescription) }
     }
     public func changes(after token: String? = nil, limit: Int = 100) throws -> AutomationChangePage {
@@ -138,6 +164,15 @@ public final class AppAutomation: @unchecked Sendable {
             return AutomationChangePage(changes: page, nextToken: try JSONEncoder().encode(cursor).base64EncodedString(), hasMore: pending.count > page.count)
         }
     }
+    public func changes(withIDs identifiers: [String]) throws -> [AutomationChange] {
+        guard !identifiers.isEmpty else { return [] }
+        return try locked(write: false) { history in
+            let requested = Set(identifiers)
+            let matches = Dictionary(uniqueKeysWithValues: history.changes.filter { requested.contains($0.id) }.map { ($0.id, $0) })
+            return identifiers.compactMap { matches[$0] }
+        }
+    }
+
     private func locked<T>(write: Bool = true, _ body: (inout History) throws -> T) throws -> T {
         guard let root else { throw AutomationError.unavailable }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

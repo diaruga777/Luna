@@ -21,14 +21,8 @@ struct DataChangeEntity: AppEntity {
 }
 struct DataChangeQuery: EntityQuery {
     func entities(for identifiers: [String]) async throws -> [DataChangeEntity] {
-        let journal = AppAutomation(app: AutomationApp.current ?? .reader)
-        var token: String?; var result: [DataChangeEntity] = []
-        repeat {
-            let page = try journal.changes(after: token, limit: 500)
-            result += page.changes.filter { identifiers.contains($0.id) }.map(DataChangeEntity.init)
-            token = page.hasMore ? page.nextToken : nil
-        } while token != nil
-        return identifiers.compactMap { id in result.first { $0.id == id } }
+        guard let app = AutomationApp.current else { throw AutomationError.unavailable }
+        return try AppAutomation(app: app).changes(withIDs: identifiers).map(DataChangeEntity.init)
     }
 }
 struct DataChangePageEntity: TransientAppEntity {
@@ -49,7 +43,8 @@ struct GetDataChangesIntent: AppIntent {
     @Parameter(title: "After Token") var token: String?
     @Parameter(title: "Limit", default: 100, inclusiveRange: (1, 500)) var limit: Int
     func perform() async throws -> some IntentResult & ReturnsValue<DataChangePageEntity> {
-        .result(value: DataChangePageEntity(try AppAutomation(app: AutomationApp.current ?? .reader).changes(after: token, limit: limit)))
+        guard let app = AutomationApp.current else { throw AutomationError.unavailable }
+        return .result(value: DataChangePageEntity(try AppAutomation(app: app).changes(after: token, limit: limit)))
     }
 }
 struct DismissChangeNotificationsIntent: AppIntent {
@@ -57,7 +52,8 @@ struct DismissChangeNotificationsIntent: AppIntent {
     static var description = IntentDescription("Dismiss this app’s change notifications. Leave Changes empty to dismiss all change notifications. History and tokens are preserved.")
     @Parameter(title: "Changes") var changes: [DataChangeEntity]?
     func perform() async throws -> some IntentResult {
-        await AppAutomation(app: AutomationApp.current ?? .reader).dismissNotifications(eventIDs: changes?.map(\.id) ?? [])
+        guard let app = AutomationApp.current else { throw AutomationError.unavailable }
+        await AppAutomation(app: app).dismissNotifications(eventIDs: changes?.map(\.id) ?? [])
         return .result()
     }
 }

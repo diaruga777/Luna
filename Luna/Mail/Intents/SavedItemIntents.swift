@@ -144,11 +144,6 @@ struct SaveURLToReaderIntent: AppIntent {
     @Parameter(title: "URL") var url: URL
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<SavedItemEntity> {
         await AppLaunchServices.shared.waitUntilReady()
-        guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { throw SavedItemIntentError.invalidID }
-        let store = SavesStore.shared
-        let item = store.add(urlString: url.absoluteString, source: .manual)
-        _ = await SavesIngestor.shared.ingest(item, allowsInteractivePrompt: false)
-        guard let saved = store.item(withID: item.id) else { throw SavedItemIntentError.missing }
-        return .result(value: SavedItemEntity(saved))
+        return .result(value: SavedItemEntity(try await ReaderURLSave.save(url)))
     }
 }

@@ -106,4 +106,51 @@ final class AppAutomationTests: XCTestCase {
         XCTAssertEqual(try changes.changes(after: baseline.nextToken).changes.map(\.notificationTitle), ["Luna.reader.article.updated"])
     }
 
+    func testBundleIdentityDoesNotTreatCompanionsAsReader() {
+        let prefix = AppConfig.productBundlePrefix
+        for app in AutomationApp.allCases {
+            XCTAssertEqual(AutomationApp.app(forBundleIdentifier: app.bundleIdentifier), app)
+        }
+        XCTAssertEqual(AutomationApp.app(forBundleIdentifier: prefix + ".share"), .reader)
+        XCTAssertEqual(AutomationApp.app(forBundleIdentifier: prefix + ".keyboard.extension"), .keyboard)
+        for suffix in [".reader", ".downloader", ".shopping", ".mac", ".tests", ".unknown"] {
+            XCTAssertNil(AutomationApp.app(forBundleIdentifier: prefix + suffix))
+        }
+    }
+
+    func testBatchRetentionRejectsExpiredCursorAndKeepsSequence() throws {
+        let reader = journal()
+        let initial = try reader.changes().nextToken
+        let events = try reader.record((0..<10_001).map {
+            AutomationMutation(kind: "article", itemID: String($0), operation: "created")
+        })
+        XCTAssertEqual(events.count, 10_001)
+        XCTAssertThrowsError(try reader.changes(after: initial))
+        let retained = try reader.changes(limit: 500)
+        XCTAssertEqual(retained.changes.first?.sequence, 2)
+        XCTAssertEqual(retained.changes.last?.sequence, 501)
+        XCTAssertTrue(retained.hasMore)
+    }
+
+    func testDictionaryNoOpsDoNotPublishChanges() throws {
+        let changes = journal(.keyboard)
+        let store = KeyboardStore(saves: SavesStore(containerURL: directory.appendingPathComponent("Saves")),
+                                  containerURL: directory, automationJournal: changes)
+        try store.setWord("Luna", language: "en", included: true)
+        try store.setWord("Luna", language: "en", included: true)
+        try store.setWord("missing", language: "en", included: false)
+        try store.setWord("Luna", language: "en", included: false)
+        try store.setWord("Luna", language: "en", included: false)
+        XCTAssertEqual(try changes.changes().changes.map(\.notificationTitle), [
+            "Luna.keyboard.word.created", "Luna.keyboard.word.deleted"
+        ])
+    }
+
+    func testResolveChangesPreservesRequestedOrderAndSkipsMissingIDs() throws {
+        let reader = journal()
+        let first = try reader.record(kind: "article", itemID: "first", operation: "created")
+        let second = try reader.record(kind: "article", itemID: "second", operation: "created")
+        XCTAssertEqual(try reader.changes(withIDs: [second.id, "missing", first.id]), [second, first])
+    }
+
 }

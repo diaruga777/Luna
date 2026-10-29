@@ -37,8 +37,10 @@ public final class KeyboardStore {
   private let saves: SavesStore
   private let container: URL?
   private let publishesAutomation: Bool
-  public init(saves: SavesStore = .shared, containerURL: URL? = nil, lowMemory: Bool = false) {
+  private let automationJournal: AppAutomation?
+  public init(saves: SavesStore = .shared, containerURL: URL? = nil, lowMemory: Bool = false, automationJournal: AppAutomation? = nil) {
     self.saves = saves
+    self.automationJournal = automationJournal
     self.publishesAutomation = saves === SavesStore.shared && containerURL == nil
     self.container = containerURL ?? AppConfig.sharedContainerURL()
     if lowMemory {
@@ -78,8 +80,8 @@ public final class KeyboardStore {
   public func trimMemory() { try? saves.keyboardRead { try $0.execute("PRAGMA shrink_memory") } }
 
   private func publishAutomation(kind: String, id: String, operation: String) {
-    guard publishesAutomation else { return }
-    AppAutomation.record(.keyboard, kind: kind, id: id, operation: operation)
+    if let automationJournal { _ = try? automationJournal.record(kind: kind, itemID: id, operation: operation) }
+    else if publishesAutomation { AppAutomation.record(.keyboard, kind: kind, id: id, operation: operation) }
   }
   public func preferences() throws -> [String: String] {
     try saves.keyboardRead { db in
@@ -350,7 +352,8 @@ public final class KeyboardStore {
   public func setWord(_ word: String, language: String, included: Bool) throws {
     let value = word.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else { return }
-    try saves.keyboardWrite { db in
+    let changed = try saves.keyboardWrite { db in
+      let before = db.totalChanges
       try db.run(
         included
           ? "INSERT OR IGNORE INTO keyboard_dictionary(word,language) VALUES(?,?)"
@@ -359,8 +362,9 @@ public final class KeyboardStore {
         try $0.bind(1, value)
         try $0.bind(2, language)
       }
+      return db.totalChanges != before
     }
-    publishAutomation(kind: "word", id: language + ":" + value, operation: included ? "created" : "deleted")
+    if changed { publishAutomation(kind: "word", id: language + ":" + value, operation: included ? "created" : "deleted") }
   }
   public func recentLinks(limit: Int = 12, query: String = "") throws -> [KeyboardSavedLink] {
     try saves.keyboardRead { db in

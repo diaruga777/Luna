@@ -442,6 +442,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     }
 
     private func makeScrollReader() -> ScrollReaderViewController {
+        let item = store.item(withID: item.id) ?? item
         let scroll = ScrollReaderViewController(
             item: item, content: content, audioEnabled: audioOn,
             shareProvider: shareProvider,
@@ -479,6 +480,9 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
 extension ReaderViewController: ReaderCompletionDelegate {
     public func readerDidFinishReading(_ reader: UIViewController) {
         markRead()
+    }
+    public func readerDidMarkUnread(_ reader: UIViewController) {
+        store.markUnread(item.id)
     }
     public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
         // Completion remains durable while the user revisits earlier content.

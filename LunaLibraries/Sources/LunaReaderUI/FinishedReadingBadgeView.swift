@@ -28,7 +28,7 @@ public final class FinishedReadingBadgeView: UIView {
     private var isExpanded = false
     private var isPullPrompt = false
     private var promptWidth: CGFloat = 0
-    var onAccessibilityMarkRead: (() -> Void)?
+    var onAccessibilityToggleRead: (() -> Void)?
 
     public override init(frame: CGRect) {
         let effectView: UIVisualEffectView
@@ -99,12 +99,18 @@ public final class FinishedReadingBadgeView: UIView {
 
     /// Shares the completion lane and glass surface with the final Read pill.
     /// UIKit owns all drag resistance and spring-back; this is only the affordance.
-    func showPullPrompt(isArmed: Bool) {
-        let text = L10n.string(isArmed
-            ? "Reader_finishedBadge_releaseToReadTitle"
-            : "Reader_finishedBadge_pullToReadTitle")
+    func showPullPrompt(isArmed: Bool, markingUnread: Bool = false) {
+        let text = L10n.string(markingUnread
+            ? (isArmed ? "Reader_finishedBadge_releaseToUnreadTitle" : "Reader_finishedBadge_pullToUnreadTitle")
+            : (isArmed ? "Reader_finishedBadge_releaseToReadTitle" : "Reader_finishedBadge_pullToReadTitle"))
         isHidden = false
         guard !isPullPrompt || archiveLabel.text != text else { return }
+        cancelScheduledTransitions()
+        glassView.layer.removeAllAnimations()
+        checkLayer.removeAllAnimations()
+        readLabel.layer.removeAllAnimations()
+        archiveLabel.layer.removeAllAnimations()
+        isExpanded = false
         isPullPrompt = true
         checkLayer.isHidden = true
         readLabel.alpha = 0
@@ -112,30 +118,45 @@ public final class FinishedReadingBadgeView: UIView {
         archiveLabel.text = text
         promptWidth = archiveLabel.sizeThatFits(CGSize(width: 300, height: Self.pillHeight)).width + 28
         accessibilityLabel = text
-        accessibilityHint = L10n.string("Reader_finishedBadge_markReadAccessibilityHint")
-        setNeedsLayout()
+        accessibilityHint = L10n.string(markingUnread
+            ? "Reader_finishedBadge_markUnreadAccessibilityHint"
+            : "Reader_finishedBadge_markReadAccessibilityHint")
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            self.glassView.frame = self.pillFrame(width: self.promptWidth)
+            self.layoutPillContents()
+        }
     }
 
     public override func accessibilityActivate() -> Bool {
         if isPullPrompt {
-            guard let onAccessibilityMarkRead else { return false }
-            onAccessibilityMarkRead()
+            guard let onAccessibilityToggleRead else { return false }
+            onAccessibilityToggleRead()
         } else {
             expand()
         }
         return true
     }
 
-    /// Draws the check, reveals “Read,” and leaves the pill in place. On the
-    /// first completion per install, the archive state expands after a beat.
+    /// Restores the resting pill without replaying completion feedback.
+    func showReadState() {
+        guard isPullPrompt || isHidden else { return }
+        showReadPill(isNewCompletion: false)
+    }
+
+    /// Draws the check and reveals “Read.” The first completion per install
+    /// also expands the archive explanation after a beat.
     public func present() {
+        showReadPill(isNewCompletion: true)
+    }
+
+    private func showReadPill(isNewCompletion: Bool) {
         cancelScheduledTransitions()
         let wasPullPrompt = isPullPrompt
         isPullPrompt = false
         archiveLabel.text = L10n.string("Reader_finishedBadge_sentToArchiveTitle")
         accessibilityLabel = L10n.string("Reader_finishedBadge_readTitle")
         accessibilityHint = L10n.string("Reader_finishedBadge_accessibilityHint")
-        let shouldExplain = !UserDefaults.standard.bool(forKey: Self.didExplainDefaultsKey)
+        let shouldExplain = isNewCompletion && !UserDefaults.standard.bool(forKey: Self.didExplainDefaultsKey)
         if shouldExplain {
             UserDefaults.standard.set(true, forKey: Self.didExplainDefaultsKey)
         }
@@ -166,12 +187,14 @@ public final class FinishedReadingBadgeView: UIView {
         layoutPillContents()
         updateForegroundColor()
 
-        let draw = CABasicAnimation(keyPath: "strokeEnd")
-        draw.fromValue = 0
-        draw.toValue = 1
-        draw.duration = 0.42
-        draw.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        checkLayer.add(draw, forKey: "drawCheckmark")
+        if isNewCompletion {
+            let draw = CABasicAnimation(keyPath: "strokeEnd")
+            draw.fromValue = 0
+            draw.toValue = 1
+            draw.duration = 0.42
+            draw.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            checkLayer.add(draw, forKey: "drawCheckmark")
+        }
 
         if shouldExplain {
             let work = DispatchWorkItem { [weak self] in self?.expand() }
@@ -179,7 +202,9 @@ public final class FinishedReadingBadgeView: UIView {
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + Self.automaticExpansionDelay, execute: work)
         }
-        UIAccessibility.post(notification: .announcement, argument: L10n.string("Reader_finishedBadge_readTitle"))
+        if isNewCompletion {
+            UIAccessibility.post(notification: .announcement, argument: L10n.string("Reader_finishedBadge_readTitle"))
+        }
     }
 
     public func resetForReuse() {
@@ -280,7 +305,7 @@ public final class FinishedReadingBadgeView: UIView {
             self.archiveLabel.alpha = 0
             self.layoutPillContents()
         } completion: { _ in
-            guard !self.isExpanded else { return }
+            guard !self.isExpanded, !self.isPullPrompt else { return }
             self.checkLayer.isHidden = false
             self.readLabel.alpha = 1
         }

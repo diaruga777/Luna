@@ -195,6 +195,7 @@
 		<string>com.hsanabria.luna.mailFetch</string>
 		<string>com.hsanabria.luna.priceRefresh</string>
 		<string>com.hsanabria.luna.weeklyProposalCheck</string>
+		<string>com.hsanabria.luna.nightlyArticleAudio</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

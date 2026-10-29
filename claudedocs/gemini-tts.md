@@ -11,8 +11,9 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   Reader-article browser can also generate a readout using Reader's saved key:
   normal adds follow Reader's voice preference; **Add with Gemini** and
   **Play Next with Gemini** explicitly select Gemini whenever a key is available.
-  Ingestion, background script refinement, autoplay misses and extensions never
-  start Gemini requests.
+  Reader also schedules nightly pre-generation for unread articles when this
+  voice is enabled and a key is saved (see below). Ingestion, background script
+  refinement, autoplay misses and extensions never start Gemini requests.
 - New audio chooses a voice from the extracted article byline: likely male
   → **Charon**, likely female → **Kore**. Explicit he/him or she/her pronouns
   take precedence; they/them keeps Kore. A bundled given-name lookup makes the
@@ -26,7 +27,8 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   a three-second budget. Refusals/errors/unavailability keep Kore. Local model
   checks returned unknown for common names and refused a more direct prompt,
   which is why the table is primary. No extra cloud requests or lookup service.
-  Classification runs only on explicit generation, never cache-only autoplay.
+  Classification runs when audio is generated, never during cache-only autoplay.
+  Nightly preparation uses only the offline lookup and never starts Apple's model.
   A hashed-byline sidecar stores only the selected voice inside the article's
   shared cache folder, under the same cross-process lock. Reader and Music reuse
   that choice for every section, retry and model fallback, even without Apple
@@ -38,6 +40,7 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   input SHA-256, coverage years and thresholds are recorded in the resource header.
   Only the federal statistical data is used, with no mirror code dependency.
   [SSA source and license](https://catalog.data.gov/dataset/baby-names-from-social-security-card-applications-national-data).
+
 - Reader begins playback from the first streamed PCM buffers, before the first
   request finishes, and prepares the rest in the background. A pull renderer
   supplies at most one second at a time through the existing engine's bounded
@@ -73,8 +76,15 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   boundaries, primary model, voice and cache format. The previous v2 AAC identity
   is preserved so enabling streaming does not invalidate existing audio. An unchanged article reuses its
   audio across pauses, seeks, replays, both apps and app restarts. Edited/refined spoken
-  text creates a new cache identity. Audio remains until explicitly deleted,
-  its article is removed, or the app is uninstalled.
+  text creates a new cache identity. Each audio chunk expires 14 days after
+  generation while its article is unread (including opened-but-unfinished), or
+  2 days after generation if the article is read. Becoming read shortens the
+  lifetime; it does not restart the generation clock. Playback/cache hits never
+  refresh that clock. Legacy migration preserves original chunk timestamps.
+  Reader prunes expired/deleted audio at launch, foreground, saves changes and
+  nightly background runs, under the same cross-process lock as generation.
+  Cleanup is opportunistic when iOS allows the app to run. Explicit deletion,
+  removing the article and uninstalling also remove audio.
 - SSE framing handles metadata, multiline events and UTF-8 lines. Audio format,
   base64 and an explicit successful terminal status are required; closing the
   socket alone never publishes a cache entry. Valid completed PCM is compressed
@@ -106,12 +116,44 @@ Cloud Text-to-Speech API, which has different billing and quotas.
 - Delete saved Gemini audio in Audio settings to reclaim storage. Saves changes
   remove cached audio for deleted articles. At 64 kbps, cached audio uses about
   0.48 MB per minute: an 800-word readout at 170 WPM is about 2.3 MB, plus a
-  small container overhead. No automatic eviction is used, so later playback
-  remains free of synthesis requests until the user deletes its cache. Cloud failures also offer
+  small container overhead. Replaying retained audio uses no synthesis quota.
+  Cloud failures also offer
   **Use Device Voice** for this article without changing the global preference.
   Removing a Music readout deletes only Music's export; Reader's shared generated
   sections remain reusable. Clearing the shared cache from Reader does not remove
   already exported Music episodes.
+
+## Nightly unread-article audio
+
+Reader registers `com.hsanabria.luna.nightlyArticleAudio` before launch returns,
+permits it in Info.plist, and submits a network-enabled `BGProcessingTaskRequest`
+at launch/background (and when configuring Gemini). Existing pending requests
+are preserved. No external-power requirement is imposed. The request's earliest
+begin date is 23:00 **fixed PST (UTC−8)**, independent of device timezone and
+of daylight saving time. This is literal PST, rather than `America/Los_Angeles`:
+during PDT the requested window corresponds to midnight–1am Los Angeles time.
+Google documents its quota reset as midnight Pacific time; its reset and this
+explicitly requested fixed-PST window can therefore differ during DST.
+
+BGTaskScheduler does not guarantee a launch within an hour or on every day.
+An early/late launch exits without synthesis and queues the next eligible
+23:00 window. An in-window launch queues the following night before starting
+work. A midnight watchdog and per-request deadline cancel in-flight work;
+the renderer checks the window again after obtaining the cross-process lock,
+before every chunk/model request, for incoming PCM and before publishing audio.
+A response already sent to Google cannot be recalled by cancellation.
+
+Only ready, readable, unfinished articles are eligible, newest **dateAdded**
+first regardless of manual list order or bump dates. Read/deleted state and the
+Gemini voice/key opt-in are rechecked as the job advances. The job uses cached
+trim scripts (or a heuristic script on a miss) without starting an on-device LLM.
+Current-identity complete audio is reused, partial audio resumes at missing
+chunks, and concurrent foreground generation is left alone. The first quota,
+authentication, transport, invalid-audio or model error exits the whole job:
+**no nightly model fallback or quota retry**. Completed chunks remain cached.
+Normal explicit foreground playback keeps its existing model fallback behavior.
+Expiration cancels work and completes the BG task; the next request is already
+queued. There is no out-of-window foreground catch-up or live quota probe.
 
 ## Free allowance: evaluated 2026-10-28
 

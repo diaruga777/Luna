@@ -127,6 +127,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // launch returns, and this device can become a key-holder later in the
         // same session. Both the scheduler and the handler no-op without a key.
         WeeklyProposalBackgroundCheck.register()
+        NightlyArticleAudioBackgroundTask.register()
         // Price refresh only on the Price Tracker surface (see schedulesPriceRefresh).
         if schedulesPriceRefresh {
             BGTaskScheduler.shared.register(
@@ -244,6 +245,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             return
         }
         hasStartedLaunchMaintenance = true
+        NightlyArticleAudioBackgroundTask.schedule()
         if let launchRevealObserver {
             NotificationCenter.default.removeObserver(launchRevealObserver)
             self.launchRevealObserver = nil
@@ -293,6 +295,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
         WeeklyProposalBackgroundCheck.schedule(reason: "entered background")
+        NightlyArticleAudioBackgroundTask.schedule()
         // A file released by an extension while this app was in the foreground has
         // nobody else to unlink it.
         SavesStore.shared.reapPendingDeletes()

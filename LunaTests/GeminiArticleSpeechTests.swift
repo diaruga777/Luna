@@ -35,6 +35,86 @@ final class GeminiArticleSpeechTests: XCTestCase {
         HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
     }
 
+    func testNightlyQuotaDoesNotFallBackOrRetryAnotherModel() async throws {
+        let clock = ISO8601DateFormatter().date(from: "2026-07-01T07:30:00Z")!
+        let calls = Counter()
+        let provider = GeminiArticleSpeech(directory: directory, now: { clock }, send: { request in
+            await calls.increment()
+            return (Data(), self.http(request, status: 429))
+        })
+        do {
+            try await provider.cacheForNightlyReadout(itemID: UUID(), script: script(["Article"]),
+                                                      deadline: NightlyArticleAudioWindow.deadline(at: clock)!)
+            XCTFail("Quota must stop nightly work")
+        } catch { XCTAssertEqual(error as? GeminiSpeechError, .quota) }
+        let count = await calls.value
+        XCTAssertEqual(count, 1)
+    }
+
+    func testNightlyRejectsLateLaunchAndCrossingMidnightBeforePublishing() async throws {
+        var clock = ISO8601DateFormatter().date(from: "2026-07-01T07:59:59Z")!
+        let deadline = NightlyArticleAudioWindow.deadline(at: clock)!
+        let data = try response(wav())
+        let calls = Counter()
+        let provider = GeminiArticleSpeech(directory: directory.appendingPathComponent("cache"), now: { clock }, send: { request in
+            await calls.increment()
+            XCTAssertLessThanOrEqual(request.timeoutInterval, 1)
+            clock = deadline
+            return (data, self.http(request))
+        })
+        let id = UUID(), script = script(["Article"])
+        do {
+            try await provider.cacheForNightlyReadout(itemID: id, script: script, deadline: deadline)
+            XCTFail("Cannot publish after midnight")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let cache = try await provider.renderer(itemID: id, script: script, allowGeneration: false)
+        XCTAssertNil(cache)
+        do {
+            try await provider.cacheForNightlyReadout(itemID: UUID(), script: script, deadline: deadline)
+            XCTFail("Cannot start at midnight")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let count = await calls.value
+        XCTAssertEqual(count, 1)
+    }
+
+    func testRetentionUsesGenerationAgeAndReadStateIncludingLegacyAndPartialAudio() async throws {
+        let now = Date()
+        let day: TimeInterval = 86_400
+        let unread = SavedItem(seed: "unread", urlString: "https://example.com/1", title: nil, dateAdded: now)
+        let read = SavedItem(seed: "read", urlString: "https://example.com/2", title: nil, dateAdded: now, readState: .read)
+        let removed = UUID()
+        let cacheRoot = directory.appendingPathComponent("cache")
+        let legacy = directory.appendingPathComponent("legacy")
+        func chunk(_ root: URL, id: UUID, name: String, age: TimeInterval) throws -> URL {
+            let folder = root.appendingPathComponent(id.uuidString).appendingPathComponent("fingerprint")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent(name + ".m4a")
+            try Data("cache".utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-age)], ofItemAtPath: file.path)
+            return file
+        }
+        for root in [cacheRoot, legacy] {
+            let freshUnread = try chunk(root, id: unread.id, name: "0", age: 14 * day - 1)
+            let expiredUnread = try chunk(root, id: unread.id, name: "1", age: 14 * day)
+            let freshRead = try chunk(root, id: read.id, name: "0", age: 2 * day - 1)
+            let expiredRead = try chunk(root, id: read.id, name: "1", age: 2 * day)
+            let deleted = try chunk(root, id: removed, name: "0", age: 0)
+            let provider = GeminiArticleSpeech(directory: cacheRoot, legacyDirectory: legacy, send: { _ in
+                XCTFail("Retention never uses network")
+                throw GeminiSpeechError.unavailable
+            })
+            try await provider.pruneAudio(for: [unread, read], now: now)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: freshUnread.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: freshRead.path))
+            for file in [expiredUnread, expiredRead, deleted] { XCTAssertFalse(FileManager.default.fileExists(atPath: file.path)) }
+            // Becoming read shortens retention without extending the generation clock.
+            var finished = unread
+            finished.readState = .read
+            try await provider.pruneAudio(for: [finished, read], now: now)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: freshUnread.path))
+        }
+    }
+
     func testChunkingPreservesTextAndBoundsEnglishAndUnspacedText() {
         for text in [Array(repeating: "word", count: 2_100).joined(separator: " "), String(repeating: "新聞", count: 7_000)] {
             let plan = GeminiSpeechPlan(script: script([text]))
@@ -125,6 +205,24 @@ final class GeminiArticleSpeechTests: XCTestCase {
         XCTAssertEqual(count, 1)
         let files = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(id.uuidString).path)
         XCTAssertFalse(files.contains { $0.lowercased().contains("john") })
+    }
+
+    func testNightlyMatchesAuthorWithoutRunningOnDeviceModel() async throws {
+        let data = try response(wav()), id = UUID()
+        let now = ISO8601DateFormatter().date(from: "2026-07-01T07:30:00Z")!
+        let provider = GeminiArticleSpeech(directory: directory, now: { now }, authorVoice: { _ in
+            XCTFail("Background work must only use the offline table")
+            return .kore
+        }, send: { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let config = body["generation_config"] as! [String: Any]
+            XCTAssertEqual((config["speech_config"] as? [[String: String]])?.first?["voice"], "Charon")
+            return (data, self.http(request))
+        })
+        let article = script(["Nightly article"])
+        try await provider.cacheForNightlyReadout(itemID: id, script: article, author: "John Smith", deadline: now.addingTimeInterval(1800))
+        let cached = try await provider.renderer(itemID: id, script: article, author: "John Smith", allowGeneration: false)
+        XCTAssertNotNil(cached)
     }
 
     func testMissingInvalidAndCacheOnlyBylinesDoNotRunInference() async throws {

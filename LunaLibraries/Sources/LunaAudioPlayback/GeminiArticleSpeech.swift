@@ -104,8 +104,8 @@ struct GeminiSpeechPlan {
     }
 }
 
-/// Reader and explicit Music readout actions share this cache. No ingest sweep,
-/// extension or autoplay miss can spend the user's speech quota.
+/// Reader, explicit Music readouts and Reader's nightly pre-generation share this cache.
+/// Ingestion, extensions and autoplay misses never generate speech.
 public actor GeminiArticleSpeech {
     public static let shared = GeminiArticleSpeech()
     static let models = ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"]
@@ -117,6 +117,7 @@ public actor GeminiArticleSpeech {
     private var pending: [String: (id: UUID, task: Task<URL, Error>, live: GeminiSpeechSpool)] = [:]
     private let apiKey: () -> String?
     private var authorVoice: (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer
+    private let now: () -> Date
     private let requestTimeout: TimeInterval
 
     public init(directory: URL? = nil) {
@@ -129,6 +130,7 @@ public actor GeminiArticleSpeech {
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 120
         let session = URLSession(configuration: configuration)
+        self.now = Date.init
         self.requestTimeout = 120
         self.stream = { request, receive in
             let (bytes, response) = try await session.bytes(for: request)
@@ -168,10 +170,11 @@ public actor GeminiArticleSpeech {
         self.apiKey = { GeminiSpeechCredential.apiKey }
     }
 
-    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, apiKey: @escaping () -> String? = { "test-key" }, authorVoice: @escaping (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, authorVoice: @escaping (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
         self.authorVoice = authorVoice
         self.directory = directory
         self.legacyDirectory = legacyDirectory
+        self.now = now
         self.requestTimeout = requestTimeout
         self.stream = { request, receive in
             let (data, response) = try await send(request)
@@ -185,16 +188,41 @@ public actor GeminiArticleSpeech {
         self.apiKey = apiKey
     }
 
-    init(directory: URL, requestTimeout: TimeInterval = 120, apiKey: @escaping () -> String? = { "test-key" }, stream: @escaping Stream) {
+    init(directory: URL, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, stream: @escaping Stream) {
         self.directory = directory; self.legacyDirectory = nil; self.requestTimeout = requestTimeout
-        self.apiKey = apiKey; self.stream = stream
+        self.now = now; self.apiKey = apiKey; self.stream = stream
     }
 
     public func renderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
                          progress: @escaping (Double) -> Void = { _ in },
                          startBeforeCompletion: Bool = false) async throws -> SpeechRendering? {
-        let voice = try await narrationVoice(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration)
-        try Task.checkCancellation()
+        try await prepareRenderer(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration,
+                                  progress: progress, startBeforeCompletion: startBeforeCompletion)
+    }
+
+    /// Background work never joins/cancels a foreground playback operation.
+    public func cacheForNightlyReadout(itemID: UUID, script: AudioScript, author: String? = nil, deadline: Date) async throws {
+        guard !pending.keys.contains(where: { $0.hasPrefix(itemID.uuidString + "/") }) else { return }
+        _ = try await prepareRenderer(itemID: itemID, script: script, author: author, allowGeneration: true,
+                                      nightlyDeadline: deadline)
+    }
+
+    private func prepareRenderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
+                                 progress: @escaping (Double) -> Void = { _ in },
+                                 startBeforeCompletion: Bool = false,
+                                 nightlyDeadline: Date? = nil) async throws -> SpeechRendering? {
+        let now = self.now
+        func checkWindow() throws {
+            try Task.checkCancellation()
+            if let deadline = nightlyDeadline {
+                guard NightlyArticleAudioWindow.deadline(at: now()) == deadline, now() < deadline else {
+                    throw CancellationError()
+                }
+            }
+        }
+        try checkWindow()
+        let voice = try await narrationVoice(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration, allowOnDeviceModel: nightlyDeadline == nil)
+        try checkWindow()
         let plan = GeminiSpeechPlan(script: script, voice: voice)
         guard !plan.chunks.isEmpty else { throw GeminiSpeechError.incomplete }
         let key = itemID.uuidString + "/" + plan.fingerprint
@@ -216,6 +244,7 @@ public actor GeminiArticleSpeech {
         }
         guard allowGeneration else { return nil }
         if let operation = pending[key], !operation.task.isCancelled {
+            guard nightlyDeadline == nil else { return nil }
             operation.live.observeProgress(progress)
             if startBeforeCompletion {
                 let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: operation.live, task: operation.task)
@@ -242,13 +271,14 @@ public actor GeminiArticleSpeech {
             DiagnosticLog.shared.record("prepare item=\(itemID) chunks=\(plan.chunks.count)", category: "gemini-tts")
             let lock = try await Self.acquireCacheLock(directory, timeout: timeout)
             defer { Self.releaseCacheLock(lock) }
+            try checkWindow()
             if Self.isComplete(folder, count: plan.chunks.count) { live.reportProgress(1); return folder }
             guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             BackupPolicy.excludeFromBackups(folder)
             var preferredModelIndex = 0
             for (index, text) in plan.chunks.enumerated() {
-                try Task.checkCancellation()
+                try checkWindow()
                 let file = folder.appendingPathComponent("\(index).m4a")
                 if Self.isPlayable(file) {
                     live.reportProgress(Double(index + 1) / Double(plan.chunks.count))
@@ -257,13 +287,20 @@ public actor GeminiArticleSpeech {
                 var succeeded = false
                 for modelIndex in preferredModelIndex..<Self.models.count {
                     let model = Self.models[modelIndex]
-                    guard availability.available(model, credential: apiKey) else { continue }
+                    guard availability.available(model, credential: apiKey) else {
+                        if nightlyDeadline != nil { throw GeminiSpeechError.quota }
+                        continue
+                    }
+                    try checkWindow()
+                    let remaining = nightlyDeadline.map { $0.timeIntervalSince(now()) } ?? timeout
+                    let requestTimeout = min(timeout, remaining)
                     var request = try Self.request(text: text, apiKey: apiKey, model: model, voice: plan.voice)
-                    request.timeoutInterval = timeout
+                    request.timeoutInterval = requestTimeout
                     DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
                     let started = Date()
                     do {
-                        _ = try await Self.streamWithinDeadline(request, timeout: timeout, stream: stream) { delta in
+                        _ = try await Self.streamWithinDeadline(request, timeout: requestTimeout, stream: stream) { delta in
+                            try checkWindow()
                             try live.append(delta, chunk: index)
                             // The provider sends no alignment or final byte count. Estimate
                             // within a chunk from audio duration; only finalized chunks reach 100%.
@@ -281,6 +318,7 @@ public actor GeminiArticleSpeech {
                             retryAt = Date().addingTimeInterval(speech == .quota ? 60 : 3600)
                         } else { throw error }
                         availability.suspend(model, credential: apiKey, until: retryAt)
+                        if nightlyDeadline != nil { throw error }
                         // Restarting after emitting PCM could repeat words already heard.
                         guard live.snapshot(index).bytes == 0 else { throw GeminiSpeechError.quota }
                         preferredModelIndex = modelIndex + 1
@@ -288,9 +326,9 @@ public actor GeminiArticleSpeech {
                     }
                 }
                 guard succeeded else { throw GeminiSpeechError.quota }
-                try Task.checkCancellation()
+                try checkWindow()
                 let audio = try Self.wav(fromPCM: live.data(index))
-                try Self.cacheAudio(audio, at: file)
+                try Self.cacheAudio(audio, at: file, validatePublication: checkWindow)
                 guard Self.isPlayable(file) else {
                     try? FileManager.default.removeItem(at: file)
                     throw GeminiSpeechError.invalidAudio
@@ -334,7 +372,7 @@ public actor GeminiArticleSpeech {
 
     /// Persist before any chunks are generated so retries, cache-only playback and
     /// the other app use the same voice even when Apple Intelligence is unavailable.
-    private func narrationVoice(itemID: UUID, script: AudioScript, author: String?, allowGeneration: Bool) async throws -> GeminiNarrationVoice {
+    private func narrationVoice(itemID: UUID, script: AudioScript, author: String?, allowGeneration: Bool, allowOnDeviceModel: Bool = true) async throws -> GeminiNarrationVoice {
         guard let author = GeminiAuthorVoice.normalizedAuthor(author) else { return .kore }
         let digest = SHA256.hash(data: Data(author.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
         let itemFolder = directory.appendingPathComponent(itemID.uuidString, isDirectory: true)
@@ -355,7 +393,10 @@ public actor GeminiArticleSpeech {
         let alreadyGenerated = [directory, legacyDirectory].compactMap { $0 }.contains {
             Self.isComplete($0.appendingPathComponent(oldKey), count: oldPlan.chunks.count)
         }
-        let voice: GeminiNarrationVoice = alreadyGenerated ? .kore : await authorVoice(author)
+        let voice: GeminiNarrationVoice
+        if alreadyGenerated { voice = .kore }
+        else if allowOnDeviceModel { voice = await authorVoice(author) }
+        else { voice = GeminiAuthorVoice.lookup(author) ?? .kore }
         try Task.checkCancellation()
         try FileManager.default.createDirectory(at: itemFolder, withIntermediateDirectories: true)
         BackupPolicy.excludeFromBackups(itemFolder)
@@ -406,6 +447,43 @@ public actor GeminiArticleSpeech {
         }
     }
 
+    /// TTL starts at each chunk's atomic publication, never at last playback.
+    /// Legacy chunks use their original modification date; migration preserves it.
+    public func pruneAudio(for items: [SavedItem], now: Date = Date()) async throws {
+        let states = Dictionary(items.map { ($0.id.uuidString, $0.readState) }, uniquingKeysWith: { _, last in last })
+        for key in Array(pending.keys) where states[String(key.prefix(36))] == nil {
+            pending.removeValue(forKey: key)?.task.cancel()
+        }
+        let lock = try await Self.acquireCacheLock(directory)
+        defer { Self.releaseCacheLock(lock) }
+        let fm = FileManager.default
+        for root in [directory, legacyDirectory].compactMap({ $0 }) where fm.fileExists(atPath: root.path) {
+            for itemFolder in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+                try Task.checkCancellation()
+                guard let state = states[itemFolder.lastPathComponent] else {
+                    try fm.removeItem(at: itemFolder)
+                    continue
+                }
+                let lifetime: TimeInterval = (state == .read ? 2 : 14) * 24 * 60 * 60
+                guard let files = fm.enumerator(at: itemFolder, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]) else { continue }
+                for case let file as URL in files where file.pathExtension == "m4a" {
+                    let values = try file.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+                    guard values.isRegularFile == true else { continue }
+                    if values.contentModificationDate.map({ now.timeIntervalSince($0) >= lifetime }) ?? true {
+                        try fm.removeItem(at: file)
+                    }
+                }
+                // Empty fingerprint/item directories carry no reusable state.
+                if let folders = try? fm.contentsOfDirectory(at: itemFolder, includingPropertiesForKeys: nil) {
+                    for folder in folders where (try? fm.contentsOfDirectory(atPath: folder.path).isEmpty) == true {
+                        try? fm.removeItem(at: folder)
+                    }
+                }
+                if (try? fm.contentsOfDirectory(atPath: itemFolder.path).isEmpty) == true { try? fm.removeItem(at: itemFolder) }
+            }
+        }
+    }
+
     private static func migrateCache(from legacy: URL, to folder: URL, count: Int) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         BackupPolicy.excludeFromBackups(folder)
@@ -413,7 +491,11 @@ public actor GeminiArticleSpeech {
             let destination = folder.appendingPathComponent("\(index).m4a")
             if isPlayable(destination) { continue }
             if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-            try FileManager.default.copyItem(at: legacy.appendingPathComponent("\(index).m4a"), to: destination)
+            let source = legacy.appendingPathComponent("\(index).m4a")
+            try FileManager.default.copyItem(at: source, to: destination)
+            if let date = try source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
+                try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: destination.path)
+            }
         }
         if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
     }
@@ -583,7 +665,7 @@ public actor GeminiArticleSpeech {
 
     /// AAC keeps a library of readouts small. Publish only a finalized container;
     /// temporary response/audio files are removed on both success and failure.
-    private static func cacheAudio(_ data: Data, at destination: URL) throws {
+    private static func cacheAudio(_ data: Data, at destination: URL, validatePublication: () throws -> Void = {}) throws {
         let folder = destination.deletingLastPathComponent()
         let source = folder.appendingPathComponent(UUID().uuidString + ".wav")
         let staging = folder.appendingPathComponent(UUID().uuidString + ".m4a")
@@ -611,6 +693,7 @@ public actor GeminiArticleSpeech {
         }
         output = nil
         try Task.checkCancellation()
+        try validatePublication()
         // The destination may contain a corrupt old entry; replacement is local
         // and there is only one generation operation for this article identity.
         if FileManager.default.fileExists(atPath: destination.path) {

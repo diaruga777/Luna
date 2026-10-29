@@ -6,25 +6,36 @@ import LunaPodcastCore
 
 @MainActor public enum PodcastAutomation {
     public static func recordChanges(_ old: PodcastLibraryState, _ new: PodcastLibraryState) {
+        AppAutomation.record(.music, mutations: changes(from: old, to: new))
+    }
+
+    static func changes(from old: PodcastLibraryState, to new: PodcastLibraryState) -> [AutomationMutation] {
+        var result: [AutomationMutation] = []
+        func append(_ kind: String, _ id: String, _ operation: String) {
+            result.append(AutomationMutation(kind: kind, itemID: id, operation: operation))
+        }
         for id in Set(old.episodes.keys).union(new.episodes.keys).sorted() {
             if old.episodes[id] != new.episodes[id] {
-                AppAutomation.record(.music, kind: "episode", id: id, operation: new.episodes[id] == nil ? "deleted" : old.episodes[id] == nil ? "created" : "updated")
-            } else if old.progress[id]?.listened != new.progress[id]?.listened {
-                AppAutomation.record(.music, kind: "episode", id: id, operation: "updated")
+                append("episode", id, new.episodes[id] == nil ? "deleted" : old.episodes[id] == nil ? "created" : "updated")
+            } else if (old.progress[id]?.listened ?? false) != (new.progress[id]?.listened ?? false) {
+                append("episode", id, "updated")
             }
         }
         for id in Set(old.shows.keys).union(new.shows.keys).sorted() {
             let a = old.shows[id], b = new.shows[id]
             if a?.title != b?.title || a?.followed != b?.followed || a?.settings != b?.settings {
-                AppAutomation.record(.music, kind: "show", id: id, operation: b == nil ? "deleted" : a == nil ? "created" : "updated")
+                append("show", id, b == nil ? "deleted" : a == nil ? "created" : "updated")
             }
         }
-        for id in Set(old.stations.map(\.id)).union(new.stations.map(\.id)).sorted() {
-            let a = old.stations.first { $0.id == id }, b = new.stations.first { $0.id == id }
-            if a != b { AppAutomation.record(.music, kind: "station", id: id, operation: b == nil ? "deleted" : a == nil ? "created" : "updated") }
+        let oldStations = Dictionary(old.stations.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let newStations = Dictionary(new.stations.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        for id in Set(oldStations.keys).union(newStations.keys).sorted() where oldStations[id] != newStations[id] {
+            append("station", id, newStations[id] == nil ? "deleted" : oldStations[id] == nil ? "created" : "updated")
         }
-        if old.queue != new.queue { AppAutomation.record(.music, kind: "queue", id: "podcasts", operation: "updated") }
+        if old.queue != new.queue { append("queue", "podcasts", "updated") }
+        return result
     }
+
     /// A local show is a named list of imported audio, using the existing podcast
     /// library and player. It is never fetched as a remote feed.
     @discardableResult public static func createAudioList(name: String, library: PodcastLibraryController = .shared) throws -> PodcastShow {

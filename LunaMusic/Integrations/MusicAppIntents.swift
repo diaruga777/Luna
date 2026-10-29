@@ -9,6 +9,7 @@ struct LibraryMusicEntity: IndexedEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Library Music"
     static var defaultQuery = LibraryMusicQuery()
     var id: String
+    @Property(title: "ID") var identifier: String
     @Property(title: "Name") var name: String
     @Property(title: "Details") var detail: String
     @Property(title: "Kind") var kind: String
@@ -16,6 +17,7 @@ struct LibraryMusicEntity: IndexedEntity {
     @Property(title: "Duration") var duration: Double
     init(id: String, name: String, detail: String, savedDate: Date = .distantPast, duration: Double = 0) {
         self.id = id
+        self.identifier = id
         self.name = name
         self.detail = detail
         self.kind = String(id.prefix { $0 != ":" }); self.savedDate = savedDate; self.duration = duration
@@ -29,7 +31,7 @@ struct LibraryMusicQuery: EntityStringQuery {
     @MainActor private func library() async -> [LibraryMusicEntity] {
         // Entity suggestions never trigger a permission prompt outside the app.
         let library = MusicLibraryController.shared
-        await library.reload()
+        await library.reload(refreshVault: false)
         return Self.entities(in: library)
     }
     @MainActor private static func entities(in library: MusicLibraryController) -> [LibraryMusicEntity] {
@@ -52,8 +54,8 @@ struct LibraryMusicQuery: EntityStringQuery {
         return entities
     }
     func entities(for identifiers: [String]) async throws -> [LibraryMusicEntity] {
-        let requested = Set(identifiers)
-        return await library().filter { requested.contains($0.id) }
+        let entities = Dictionary(uniqueKeysWithValues: await library().map { ($0.id, $0) })
+        return identifiers.compactMap { entities[$0] }
     }
     func entities(matching string: String) async throws -> [LibraryMusicEntity] {
         await library().filter { $0.name.localizedStandardContains(string) || $0.detail.localizedStandardContains(string) }
@@ -241,27 +243,35 @@ struct FindLibraryMusicIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Library Music"
     @Parameter(title: "Search", default: "") var search: String
     @Parameter(title: "Kind") var kind: String?
+    @Parameter(title: "Item ID") var itemID: String?
     @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[LibraryMusicEntity]> {
-        await MusicLibraryController.shared.reload()
+        await MusicLibraryController.shared.reload(refreshVault: false)
         let entities = await LibraryMusicQuery().allEntities().filter {
             (search.isEmpty || $0.name.localizedStandardContains(search) || $0.detail.localizedStandardContains(search))
-                && (kind == nil || $0.kind == kind)
+                && (kind == nil || kind?.isEmpty == true || $0.kind == kind)
+                && (itemID == nil || itemID?.isEmpty == true || $0.id == itemID)
         }
         return .result(value: Array(entities.prefix(max(1, min(500, limit)))))
     }
+}
+enum MusicPlaylistSource: String, AppEnum {
+    case musicLibrary, vault
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Music Source"
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [.musicLibrary: "Music Library", .vault: "Vault"]
 }
 struct CreateMusicPlaylistIntent: AppIntent {
     static var title: LocalizedStringResource = "Create Music Playlist"
     @Parameter(title: "Name") var name: String
     @Parameter(title: "Songs") var songs: [LibraryMusicEntity]?
+    @Parameter(title: "Source for Empty Playlist", default: .musicLibrary) var source: MusicPlaylistSource
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<LibraryMusicEntity> {
         let library = MusicLibraryController.shared
-        await library.reload()
+        await library.reload(refreshVault: false)
         let resolved = try (songs ?? []).map { entity -> MusicSong in
             guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
         }
-        let playlist = try await library.createPlaylist(name: name, items: resolved)
+        let playlist = try await library.createPlaylist(name: name, items: resolved, source: source == .vault ? .vault : .apple)
         return .result(value: LibraryMusicEntity(id: "playlist:\(playlist.persistentID)", name: playlist.name ?? name, detail: "Playlist"))
     }
 }
@@ -271,7 +281,7 @@ struct AddSongsToMusicPlaylistIntent: AppIntent {
     @Parameter(title: "Playlist") var playlist: LibraryMusicEntity
     @MainActor func perform() async throws -> some IntentResult {
         let library = MusicLibraryController.shared
-        await library.reload()
+        await library.reload(refreshVault: false)
         guard let destination = library.playlists.first(where: { "playlist:\($0.persistentID)" == playlist.id }) else { throw MusicIntentError.missing }
         let resolved = try songs.map { entity -> MusicSong in
             guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
@@ -286,7 +296,7 @@ struct QueueLibraryMusicIntent: AppIntent {
     @Parameter(title: "Play Next", default: false) var next: Bool
     @MainActor func perform() async throws -> some IntentResult {
         let library = MusicLibraryController.shared
-        await library.reload()
+        await library.reload(refreshVault: false)
         let resolved = try songs.map { entity -> MusicSong in
             guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
         }

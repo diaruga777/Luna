@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-import LunaMusicCore
+@testable import LunaMusicCore
 import LunaPodcastCore
 
 @MainActor final class PodcastAutomationTests: XCTestCase {
@@ -61,4 +61,19 @@ import LunaPodcastCore
             XCTFail("Expected a local audio list validation error")
         } catch { XCTAssertTrue(library.state.episodes.isEmpty) }
     }
+    func testInitialProgressAndPositionTicksAreNotAutomationChanges() throws {
+        var before = PodcastLibraryState()
+        let episode = PodcastEpisode(showID: "show", guid: "episode", title: "Episode", publishedAt: Date(), mediaURL: URL(string: "https://example.com/audio.mp3")!)
+        before.episodes[episode.id] = episode
+        var after = before
+        after.progress[episode.id] = PodcastEpisodeState()
+        XCTAssertTrue(PodcastAutomation.changes(from: before, to: after).isEmpty)
+        after.progress[episode.id]?.position = 12
+        XCTAssertTrue(PodcastAutomation.changes(from: before, to: after).isEmpty)
+        after.progress[episode.id]?.listened = true
+        let changes = PodcastAutomation.changes(from: before, to: after)
+        XCTAssertEqual(changes.map(\.itemID), [episode.id])
+        XCTAssertEqual(changes.map(\.operation), ["updated"])
+    }
+
 }

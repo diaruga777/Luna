@@ -222,3 +222,62 @@ struct GetPodcastAudioFileIntent: AppIntent {
         return .result(value: IntentFile(fileURL: url))
     }
 }
+
+
+struct FindPodcastShowsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Find Podcast Shows and Audio Lists"
+    @Parameter(title: "Search", default: "") var search: String
+    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Followed Only", default: false) var followedOnly: Bool
+    @Parameter(title: "Local Audio Lists Only", default: false) var localOnly: Bool
+    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastShowEntity]> {
+        let shows = try PodcastShowQuery().all().filter {
+            (search.isEmpty || $0.title.localizedStandardContains(search))
+                && (itemID == nil || itemID?.isEmpty == true || $0.id == itemID)
+                && (!followedOnly || $0.followed) && (!localOnly || $0.localAudioList)
+        }
+        return .result(value: Array(shows.prefix(max(1, min(500, limit)))))
+    }
+}
+
+struct FindPodcastStationsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Find Podcast Stations"
+    @Parameter(title: "Search", default: "") var search: String
+    @Parameter(title: "Item ID") var itemID: String?
+    @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastStationEntity]> {
+        .result(value: try PodcastStationQuery().all().filter {
+            (search.isEmpty || $0.name.localizedStandardContains(search))
+                && (itemID == nil || itemID?.isEmpty == true || $0.id == itemID)
+        })
+    }
+}
+
+struct PlayPodcastEpisodeIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Play Podcast Episode"
+    @Parameter(title: "Episode") var episode: PodcastEpisodeEntity
+    @MainActor func perform() async throws -> some IntentResult {
+        guard let current = try PodcastLibraryController.shared.requireStore().state.episodes[episode.id] else {
+            throw PodcastError("This episode is no longer available.")
+        }
+        MediaPlaybackCoordinator.shared.install()
+        try await PodcastPlaybackController.shared.play(current)
+        return .result()
+    }
+}
+
+struct PlayPodcastStationIntent: AudioPlaybackIntent {
+    static var title: LocalizedStringResource = "Play Podcast Station"
+    @Parameter(title: "Station") var station: PodcastStationEntity
+    @MainActor func perform() async throws -> some IntentResult {
+        let state = try PodcastLibraryController.shared.requireStore().state
+        guard let current = state.stations.first(where: { $0.id == station.id }) else {
+            throw PodcastError("This station is no longer available.")
+        }
+        let episodes = PodcastPolicies.stationEpisodes(current, state: state)
+        guard !episodes.isEmpty else { throw PodcastError("This station has no episodes to play.") }
+        MediaPlaybackCoordinator.shared.install()
+        try await PodcastPlaybackController.shared.playEpisodes(episodes)
+        return .result()
+    }
+}

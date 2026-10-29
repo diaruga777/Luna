@@ -2331,7 +2331,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         func titles() -> [String] {
             browser.sections.flatMap(\.rows).compactMap { if case .action(let title, _, _) = $0 { return title }; return nil }
         }
-        XCTAssertEqual(Array(titles().prefix(6)), ["Home", "New", "Shows", "Latest Episodes", "Downloaded", "Played"])
+        XCTAssertEqual(Array(titles().prefix(7)), ["Home", "New", "Luna Reader", "Shows", "Latest Episodes", "Downloaded", "Played"])
         search.searchBar.text = "A podcast"
         browser.updateSearchResults(for: search)
         XCTAssertTrue(browser.isSearching)

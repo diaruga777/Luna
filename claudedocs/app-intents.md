@@ -15,7 +15,7 @@ app target (App Intents discovery requires it); all business logic lives in the
 > **Hard limit: an `AppShortcutsProvider` may list AT MOST 10 `AppShortcut`s.**
 > Exceeding it is a HALTING build error in `appintentsmetadataprocessor` — and
 > then NO AppIntents metadata is exported at all (every intent disappears from
-> Shortcuts). `LunaShortcuts.appShortcuts` lists 5 (Provide Context,
+> Shortcuts). `LunaShortcuts.appShortcuts` lists 6 (Get Safari URL, Provide Context,
 > Save, Read Article, Find Saved Items, Get Article Audio).
 
 To check what's actually registered, inspect the built metadata:
@@ -23,6 +23,20 @@ To check what's actually registered, inspect the built metadata:
 provider list, `actions` = all discoverable intents).
 
 ## The shortcut shape
+
+For a URL-only workflow, use **Get Current Safari URL**
+(`GetCurrentSafariURLIntent`) → any URL action, such as Open URLs or Get Contents
+of URL. It returns a typed `URL`, takes no parameters, does not save anything,
+and does not open Reader. It reads `SafariURLStore`, the same extension-backed
+page tracking used by Provide Context, preserving the full query and fragment.
+Enable the Luna Safari extension for the website first. The value is the last
+page reported by that extension, not a live query of Safari's foreground tab;
+it uses Reader's existing 72-hour freshness window. Missing, stale or non-HTTP(S)
+values produce an actionable error instead of returning an unrelated fallback.
+
+The searchable [automation overview](../docs/automation-overview.html) lists
+all apps' intent inputs/outputs, entities, enums and notification hooks. Rebuild
+it with `python3 scripts/build_automation_overview.py` after changing the catalogue.
 
 **Get Current App + on-screen URL extraction → Provide Context(CurrentApp,
 OnScreenURLs) → branch on result.outcome:**

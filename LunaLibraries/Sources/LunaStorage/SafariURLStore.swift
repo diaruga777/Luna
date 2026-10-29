@@ -55,4 +55,23 @@ public enum SafariURLStore {
         guard let lastURL, !lastURL.isEmpty, let lastDate else { return false }
         return abs(now.timeIntervalSince(lastDate)) <= window
     }
+
+    /// The same extension-backed page used by Reader's capture flow. This is
+    /// the last reported page, not a live query of Safari's foreground tab.
+    public static func currentPageURL(now: Date = Date()) throws -> URL {
+        guard isFresh(now: now), let lastURL,
+              let url = URL(string: lastURL),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty else {
+            throw PageURLError.unavailable
+        }
+        return url
+    }
+
+    public enum PageURLError: LocalizedError {
+        case unavailable
+        public var errorDescription: String? {
+            "Open a webpage in Safari with the Luna extension enabled, then try again."
+        }
+    }
 }

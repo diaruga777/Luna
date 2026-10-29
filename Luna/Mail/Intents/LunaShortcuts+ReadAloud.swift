@@ -10,6 +10,7 @@ import AppIntents
 /// remaining composable actions are discoverable without using a shortcut slot.
 struct LunaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: GetCurrentSafariURLIntent(), phrases: ["Get the Safari URL with \(.applicationName)"], shortTitle: "Get Safari URL", systemImageName: "safari")
         AppShortcut(intent: FindSavedItemsIntent(), phrases: ["Find saves in \(.applicationName)"], shortTitle: "Find Saved Items", systemImageName: "magnifyingglass")
         AppShortcut(intent: GetArticleAudioIntent(), phrases: ["Get article audio from \(.applicationName)"], shortTitle: "Get Article Audio", systemImageName: "waveform")
         AppShortcut(

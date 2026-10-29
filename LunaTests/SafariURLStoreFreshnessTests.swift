@@ -99,4 +99,23 @@ final class SafariURLStoreFreshnessTests: XCTestCase {
         XCTAssertFalse(SafariURLStore.isFresh(within: 10, now: now))
         XCTAssertTrue(SafariURLStore.isFresh(within: 60, now: now))
     }
+
+    func testCurrentPageURLPreservesFullURLForShortcutComposition() throws {
+        let now = Date()
+        let value = "https://example.com/story?source=safari&item=42#section"
+        write(url: value, date: now)
+        XCTAssertEqual(try SafariURLStore.currentPageURL(now: now).absoluteString, value)
+    }
+
+    func testCurrentPageURLRejectsMissingStaleAndNonWebPages() {
+        let now = Date()
+        for value: String? in [nil, "", "not a URL", "file:///tmp/page.html", "javascript:alert(1)", "https://"] {
+            write(url: value, date: now)
+            XCTAssertThrowsError(try SafariURLStore.currentPageURL(now: now))
+        }
+        write(url: "https://example.com", date: nil)
+        XCTAssertThrowsError(try SafariURLStore.currentPageURL(now: now))
+        write(url: "https://example.com", date: now.addingTimeInterval(-SafariURLStore.freshnessWindow - 1))
+        XCTAssertThrowsError(try SafariURLStore.currentPageURL(now: now))
+    }
 }

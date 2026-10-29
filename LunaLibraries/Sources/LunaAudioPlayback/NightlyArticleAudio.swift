@@ -46,8 +46,8 @@ public enum NightlyArticleAudio {
                 }
                 return script
             },
-            prepare: { item, script, deadline in
-                try await GeminiArticleSpeech.shared.cacheForNightlyReadout(itemID: item.id, script: script, deadline: deadline)
+            prepare: { item, script, author, deadline in
+                try await GeminiArticleSpeech.shared.cacheForNightlyReadout(itemID: item.id, script: script, author: author, deadline: deadline)
             }).run()
     }
 }
@@ -61,7 +61,7 @@ struct NightlyArticleAudioWorker {
     let currentItem: (UUID) -> SavedItem?
     let content: (SavedItem) -> ArticleContent?
     let script: (SavedItem, ArticleContent) -> AudioScript
-    let prepare: (SavedItem, AudioScript, Date) async throws -> Void
+    let prepare: (SavedItem, AudioScript, String?, Date) async throws -> Void
 
     func run() async throws {
         guard let deadline = NightlyArticleAudioWindow.deadline(at: now()), enabled() else { return }
@@ -77,7 +77,7 @@ struct NightlyArticleAudioWorker {
             guard !script.spokenBlocks.isEmpty else { continue }
             // Cache hits are network-free. Missing chunks resume sequentially.
             // Any error, especially quota, exits the entire job immediately.
-            try await prepare(item, script, deadline)
+            try await prepare(item, script, content.author, deadline)
         }
     }
 }

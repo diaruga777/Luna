@@ -3,7 +3,7 @@ import NaturalLanguage
 
 enum GeminiSpeechSentences {
     /// Include separators in the preceding sentence so concatenating ranges is
-    /// lossless. Tokenize each paragraph separately to keep headings intact.
+    /// lossless. The plan calls this separately for each block to keep headings intact.
     static func ranges(in text: String) -> [NSRange] {
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = text

@@ -202,7 +202,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     /// Reader installs the optional cloud/cache provider. Autoplay and cold
     /// restoration may read its cache but must never start paid/quota work.
-    public var articleRendererProvider: ((UUID, AudioScript, Bool) async throws -> SpeechRendering?)?
+    public var articleRendererProvider: ((UUID, AudioScript, String?, Bool) async throws -> SpeechRendering?)?
     public private(set) var isPreparingArticleAudio = false {
         didSet {
             if oldValue != isPreparingArticleAudio {
@@ -290,6 +290,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     // MARK: - Session/render pipeline state (reset per `beginPlayback`)
 
+    private var currentAuthor: String?
     private var currentItem: SavedItem?
     private var currentScript: AudioScript?
     private var blockStartWordIndices: [Int] = []
@@ -623,6 +624,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         allowsArticleGeneration = allowGeneration
         isPreparingArticleAudio = false
         currentItem = item
+        currentAuthor = content.author
         currentScript = script
         blockStartWordIndices = AudioWordIndexing.blockStartWordIndices(script.spokenBlocks)
 
@@ -714,11 +716,12 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             articlePreparationProgress = 0
             isPreparingArticleAudio = true
             let token = sessionToken
+            let author = currentAuthor
             let allowGeneration = allowsArticleGeneration
             let resumePosition = pendingArticleResumePosition
             articlePreparationTask = Task { [weak self] in
                 do {
-                    let prepared = try await provider(itemID, script, allowGeneration)
+                    let prepared = try await provider(itemID, script, author, allowGeneration)
                     if let resumePosition, let progressive = prepared as? ProgressiveSpeechRendering {
                         await progressive.resume(from: resumePosition)
                     }
@@ -1007,6 +1010,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         articleRenderer = nil
         articleRendererPrepared = false
         currentItem = nil
+        currentAuthor = nil
         currentScript = nil
         currentItemInfo = nil
         stateBeforePause = nil

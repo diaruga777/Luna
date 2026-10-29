@@ -40,12 +40,14 @@ enum GeminiSpeechError: LocalizedError, Equatable {
 /// Sentence-aligned, disjoint requests preserve all text, including unspaced scripts.
 /// Every chunk is cached independently so a quota failure never discards earlier work.
 struct GeminiSpeechPlan {
+    let voice: GeminiNarrationVoice
     let chunks: [String]
     let blockRanges: [Int: NSRange]
     let chunkRanges: [NSRange]
     let fingerprint: String
 
-    init(script: AudioScript) {
+    init(script: AudioScript, voice: GeminiNarrationVoice = .kore) {
+        self.voice = voice
         var text = ""
         var ranges: [Int: NSRange] = [:]
         var previousBlock: Int?
@@ -72,7 +74,12 @@ struct GeminiSpeechPlan {
         self.chunks = chunkRanges.map { source.substring(with: $0) }
         self.blockRanges = ranges
         // Include block boundaries, voice, model and cache schema, but never the API key.
-        let identity = "v3-sentences-aac|gemini-3.8-flash-tts|Kore|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + String(describing: chunkRanges) + text
+        // A bounded single request has exactly the same text/range as v2, so
+        // existing short readouts can still play without spending more quota.
+        let unchangedSingleChunk = chunks.count == 1 && text.utf8.count <= 7_500 && AudioWordIndexing.wordCount(in: text) <= 1_200
+        let schema = unchangedSingleChunk ? "v2-aac" : "v3-sentences-aac"
+        let boundaries = unchangedSingleChunk ? "" : String(describing: chunkRanges)
+        let identity = schema + "|gemini-3.8-flash-tts|" + voice.rawValue + "|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + boundaries + text
         self.fingerprint = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -89,6 +96,7 @@ public actor GeminiArticleSpeech {
     private let stream: Stream
     private var pending: [String: (id: UUID, task: Task<URL, Error>, live: GeminiSpeechSpool)] = [:]
     private let apiKey: () -> String?
+    private var authorVoice: (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer
     private let now: () -> Date
     private let requestTimeout: TimeInterval
     private let recognize: GeminiSpeechAlignment.Recognize
@@ -144,7 +152,8 @@ public actor GeminiArticleSpeech {
         self.apiKey = { GeminiSpeechCredential.apiKey }
     }
 
-    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, authorVoice: @escaping (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+        self.authorVoice = authorVoice
         self.directory = directory
         self.legacyDirectory = legacyDirectory
         self.now = now
@@ -167,22 +176,21 @@ public actor GeminiArticleSpeech {
         self.now = now; self.apiKey = apiKey; self.stream = stream; self.recognize = recognize
     }
 
-    public func renderer(itemID: UUID, script: AudioScript, allowGeneration: Bool,
+    public func renderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
                          progress: @escaping (Double) -> Void = { _ in },
                          startBeforeCompletion: Bool = false) async throws -> SpeechRendering? {
-        try await prepareRenderer(itemID: itemID, script: script, allowGeneration: allowGeneration,
+        try await prepareRenderer(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration,
                                   progress: progress, startBeforeCompletion: startBeforeCompletion)
     }
 
     /// Background work never joins/cancels a foreground playback operation.
-    public func cacheForNightlyReadout(itemID: UUID, script: AudioScript, deadline: Date) async throws {
-        let key = itemID.uuidString + "/" + GeminiSpeechPlan(script: script).fingerprint
-        guard pending[key] == nil else { return }
-        _ = try await prepareRenderer(itemID: itemID, script: script, allowGeneration: true,
+    public func cacheForNightlyReadout(itemID: UUID, script: AudioScript, author: String? = nil, deadline: Date) async throws {
+        guard !pending.keys.contains(where: { $0.hasPrefix(itemID.uuidString + "/") }) else { return }
+        _ = try await prepareRenderer(itemID: itemID, script: script, author: author, allowGeneration: true,
                                       nightlyDeadline: deadline)
     }
 
-    private func prepareRenderer(itemID: UUID, script: AudioScript, allowGeneration: Bool,
+    private func prepareRenderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
                                  progress: @escaping (Double) -> Void = { _ in },
                                  startBeforeCompletion: Bool = false,
                                  nightlyDeadline: Date? = nil) async throws -> SpeechRendering? {
@@ -196,7 +204,9 @@ public actor GeminiArticleSpeech {
             }
         }
         try checkWindow()
-        let plan = GeminiSpeechPlan(script: script)
+        let voice = try await narrationVoice(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration, allowOnDeviceModel: nightlyDeadline == nil)
+        try checkWindow()
+        let plan = GeminiSpeechPlan(script: script, voice: voice)
         guard !plan.chunks.isEmpty else { throw GeminiSpeechError.incomplete }
         let key = itemID.uuidString + "/" + plan.fingerprint
         let folder = directory.appendingPathComponent(key, isDirectory: true)
@@ -217,6 +227,7 @@ public actor GeminiArticleSpeech {
         }
         guard allowGeneration else { return nil }
         if let operation = pending[key], !operation.task.isCancelled, operation.live.snapshot(0).error == nil {
+            guard nightlyDeadline == nil else { return nil }
             operation.live.observeProgress(progress)
             if startBeforeCompletion {
                 let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: operation.live, task: operation.task, recognize: self.recognize)
@@ -274,7 +285,7 @@ public actor GeminiArticleSpeech {
                         try checkWindow()
                         let remaining = nightlyDeadline.map { $0.timeIntervalSince(now()) } ?? timeout
                         let requestTimeout = min(timeout, remaining)
-                        var request = try Self.request(text: remainingText, apiKey: apiKey, model: model)
+                        var request = try Self.request(text: remainingText, apiKey: apiKey, model: model, voice: plan.voice)
                         request.timeoutInterval = requestTimeout
                         DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
                         let started = Date()
@@ -353,6 +364,40 @@ public actor GeminiArticleSpeech {
             if (error as? URLError)?.code == .timedOut { throw GeminiSpeechError.timedOut }
             throw error
         }
+    }
+
+    /// Persist before any chunks are generated so retries, cache-only playback and
+    /// the other app use the same voice even when Apple Intelligence is unavailable.
+    private func narrationVoice(itemID: UUID, script: AudioScript, author: String?, allowGeneration: Bool, allowOnDeviceModel: Bool = true) async throws -> GeminiNarrationVoice {
+        guard let author = GeminiAuthorVoice.normalizedAuthor(author) else { return .kore }
+        let digest = SHA256.hash(data: Data(author.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+        let itemFolder = directory.appendingPathComponent(itemID.uuidString, isDirectory: true)
+        let choice = itemFolder.appendingPathComponent("voice-v1-" + digest + ".json")
+        func savedVoice() -> GeminiNarrationVoice? {
+            guard let data = try? Data(contentsOf: choice) else { return nil }
+            return try? JSONDecoder().decode(GeminiNarrationVoice.self, from: data)
+        }
+        if let voice = savedVoice() { return voice }
+        guard allowGeneration, apiKey()?.isEmpty == false else { return .kore }
+        let lock = try await Self.acquireCacheLock(directory, timeout: requestTimeout)
+        defer { Self.releaseCacheLock(lock) }
+        if let voice = savedVoice() { return voice }
+        try Task.checkCancellation()
+        let oldPlan = GeminiSpeechPlan(script: script)
+        let oldKey = itemID.uuidString + "/" + oldPlan.fingerprint
+        // Preserve completed pre-feature audio without spending quota to replace it.
+        let alreadyGenerated = [directory, legacyDirectory].compactMap { $0 }.contains {
+            Self.isComplete($0.appendingPathComponent(oldKey), count: oldPlan.chunks.count)
+        }
+        let voice: GeminiNarrationVoice
+        if alreadyGenerated { voice = .kore }
+        else if allowOnDeviceModel { voice = await authorVoice(author) }
+        else { voice = GeminiAuthorVoice.lookup(author) ?? .kore }
+        try Task.checkCancellation()
+        try FileManager.default.createDirectory(at: itemFolder, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(itemFolder)
+        try JSONEncoder().encode(voice).write(to: choice, options: .atomic)
+        return voice
     }
 
     private func cachedRenderer(folder: URL, plan: GeminiSpeechPlan, progressive: Bool) throws -> SpeechRendering {
@@ -486,7 +531,7 @@ public actor GeminiArticleSpeech {
         _ = close(descriptor)
     }
 
-    static func request(text: String, apiKey: String, model: String = models[0]) throws -> URLRequest {
+    static func request(text: String, apiKey: String, model: String = models[0], voice: GeminiNarrationVoice = .kore) throws -> URLRequest {
         if model == models[2] {
             // Gemini 2.5 does not stream. Use its documented GenerateContent
             // API rather than assuming legacy models support Interactions.
@@ -497,7 +542,7 @@ public actor GeminiArticleSpeech {
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "contents": [["role": "user", "parts": [["text": "Read aloud the following transcript verbatim. Do not add commentary.\n\nTranscript:\n" + text]]]],
                 "generationConfig": ["responseModalities": ["AUDIO"], "maxOutputTokens": 16_384,
-                    "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Kore"]]]],
+                    "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice.rawValue]]]],
             ])
             return request
         }
@@ -516,7 +561,7 @@ public actor GeminiArticleSpeech {
             "input": [["type": "user_input", "content": [["type": "text", "text": transcript]]]],
             "stream": true,
             "response_format": ["type": "audio", "mime_type": "audio/l16", "sample_rate": 24_000],
-            "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": "Kore"]]],
+            "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": voice.rawValue]]],
         ])
         return request
     }

@@ -11,11 +11,11 @@ final class NightlyArticleAudioTests: XCTestCase {
                   dateAdded: date("2026-07-01T07:30:00Z").addingTimeInterval(-age), state: state, readState: read)
     }
     private var content: ArticleContent {
-        ArticleContent(title: "Article", blocks: [.init(kind: .paragraph, text: "Words to speak.", links: [])])
+        ArticleContent(title: "Article", author: "Jane Smith", blocks: [.init(kind: .paragraph, text: "Words to speak.", links: [])])
     }
     private func worker(items: [SavedItem], now: @escaping () -> Date, enabled: @escaping () -> Bool = { true },
                         current: ((UUID) -> SavedItem?)? = nil,
-                        prepare: @escaping (SavedItem, AudioScript, Date) async throws -> Void) -> NightlyArticleAudioWorker {
+                        prepare: @escaping (SavedItem, AudioScript, String?, Date) async throws -> Void) -> NightlyArticleAudioWorker {
         NightlyArticleAudioWorker(now: now, enabled: enabled, items: { items },
             currentItem: current ?? { id in items.first { $0.id == id } }, content: { _ in self.content },
             script: { _, content in AudioTrimHeuristics.classify(content).heuristicScript(for: content) }, prepare: prepare)
@@ -37,9 +37,9 @@ final class NightlyArticleAudioTests: XCTestCase {
 
     func testEarlyLateAndDisabledJobsDoNoWork() async throws {
         for clock in ["2026-07-01T06:59:59Z", "2026-07-01T08:00:00Z"] {
-            try await worker(items: [item("article")], now: { self.date(clock) }) { _, _, _ in XCTFail("Outside window") }.run()
+            try await worker(items: [item("article")], now: { self.date(clock) }) { _, _, _, _ in XCTFail("Outside window") }.run()
         }
-        try await worker(items: [item("article")], now: { self.date("2026-07-01T07:30:00Z") }, enabled: { false }) { _, _, _ in XCTFail("Opted out") }.run()
+        try await worker(items: [item("article")], now: { self.date("2026-07-01T07:30:00Z") }, enabled: { false }) { _, _, _, _ in XCTFail("Opted out") }.run()
     }
 
     func testNewestUnreadFirstIncludingOpenedAndRecheckCurrentState() async throws {
@@ -51,7 +51,8 @@ final class NightlyArticleAudioTests: XCTestCase {
         let pending = item("pending", state: .pending)
         var prepared: [UUID] = []
         try await worker(items: [old, read, pending, removed, opened, newest], now: { self.date("2026-07-01T07:30:00Z") },
-            current: { id in id == removed.id ? nil : [old, opened, newest, read, pending].first { $0.id == id } }) { item, _, deadline in
+            current: { id in id == removed.id ? nil : [old, opened, newest, read, pending].first { $0.id == id } }) { item, _, author, deadline in
+                XCTAssertEqual(author, "Jane Smith")
                 prepared.append(item.id)
                 XCTAssertEqual(deadline, self.date("2026-07-01T08:00:00Z"))
             }.run()
@@ -62,7 +63,7 @@ final class NightlyArticleAudioTests: XCTestCase {
         let items = [item("newest"), item("older", age: 10)]
         var count = 0
         do {
-            try await worker(items: items, now: { self.date("2026-07-01T07:30:00Z") }) { _, _, _ in
+            try await worker(items: items, now: { self.date("2026-07-01T07:30:00Z") }) { _, _, _, _ in
                 count += 1
                 throw GeminiSpeechError.quota
             }.run()
@@ -71,7 +72,7 @@ final class NightlyArticleAudioTests: XCTestCase {
         XCTAssertEqual(count, 1)
         var clock = date("2026-07-01T07:59:59Z")
         count = 0
-        try await worker(items: items, now: { clock }) { _, _, _ in
+        try await worker(items: items, now: { clock }) { _, _, _, _ in
             count += 1
             clock = self.date("2026-07-01T08:00:00Z")
         }.run()
@@ -81,7 +82,7 @@ final class NightlyArticleAudioTests: XCTestCase {
     func testCancellationStopsBeforeFirstArticle() async {
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            try await worker(items: [item("article")], now: { self.date("2026-07-01T07:30:00Z") }) { _, _, _ in XCTFail("Cancelled") }.run()
+            try await worker(items: [item("article")], now: { self.date("2026-07-01T07:30:00Z") }) { _, _, _, _ in XCTFail("Cancelled") }.run()
         }
         do { try await task.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
     }

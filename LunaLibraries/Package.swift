@@ -239,6 +239,7 @@ let package = Package(
         // behind the SavesPlaybackStore seam) are Phase 2 additions; UI wiring
         // (mini-player, settings screen) is still later phases.
         .target(name: "LunaAudioPlayback", dependencies: ["LunaModels", "LunaAppConfig", "LunaStorage", "LunaDesignSystem"], resources: [
+            .copy("Resources/AuthorVoiceNames.txt"),
             .copy("Resources/ChimeTransition.caf"),
             .copy("Resources/ChimeFinal.caf"),
         ]),

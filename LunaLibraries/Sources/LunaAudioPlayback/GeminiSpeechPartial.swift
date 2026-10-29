@@ -25,7 +25,7 @@ final class GeminiSpeechPartial {
         var previous = GeminiSpeechAlignment.Boundary(textEnd: 0, frames: 0)
         let valid = manifest.boundaries.allSatisfy { current in
             defer { previous = current }
-            return ends.contains(current.textEnd) && current.textEnd > previous.textEnd && current.frames > previous.frames && current.frames <= bytes / 2
+            return ends.contains(current.textEnd) && current.textEnd < text.utf16.count && current.textEnd > previous.textEnd && current.frames > previous.frames && current.frames <= bytes / 2
         }
         if !valid || bytes > 64 * 1_024 * 1_024 {
             manifest = Manifest(); bytes = 0
@@ -34,6 +34,9 @@ final class GeminiSpeechPartial {
     }
 
     func recover(text: String, recognize: @escaping GeminiSpeechAlignment.Recognize) async throws -> Data {
+        // Query the filesystem directly; URL resource metadata can be cached
+        // across the writes/truncation performed by an earlier attempt.
+        let receivedAt = (try? FileManager.default.attributesOfItem(atPath: pcmURL.path))?[.modificationDate] as? Date
         let old = boundary
         let evenBytes = bytes - bytes % 2
         if evenBytes > old.frames * 2 {
@@ -68,6 +71,10 @@ final class GeminiSpeechPartial {
         let handle = try FileHandle(forWritingTo: pcmURL)
         defer { try? handle.close() }
         try handle.truncate(atOffset: UInt64(keep))
+        try handle.close()
+        if let receivedAt {
+            try FileManager.default.setAttributes([.modificationDate: receivedAt], ofItemAtPath: pcmURL.path)
+        }
         bytes = keep
         return try Data(contentsOf: pcmURL)
     }

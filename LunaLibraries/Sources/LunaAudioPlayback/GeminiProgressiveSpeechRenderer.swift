@@ -160,6 +160,15 @@ actor GeminiProgressiveSpeechRenderer: ProgressiveSpeechRendering {
             let cached = GeminiArticleSpeech.isPlayable(fileURL)
             if let position = resumePosition {
                 guard cached || snapshot.prepared else { try await Task.sleep(nanoseconds: 50_000_000); continue }
+                if snapshot.complete || cached {
+                    let total = snapshot.bytes > 0 ? snapshot.bytes / 2 : Int(try AVAudioFile(forReading: fileURL).length)
+                    if position.frame >= total {
+                        // The audible playhead reached a validated chunk end.
+                        // Its boundary is exact even without speech alignment.
+                        chunk += 1; frame = 0; resumePosition = nil
+                        continue
+                    }
+                }
                 var boundaries = snapshot.boundaries
                 if cached {
                     // Successful sections have no provider timestamps either.

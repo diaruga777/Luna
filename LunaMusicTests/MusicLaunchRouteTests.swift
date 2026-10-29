@@ -149,9 +149,9 @@ final class ReaderMusicRouteTests: XCTestCase {
         saves = nil; library = nil
         try? FileManager.default.removeItem(at: root)
     }
-    private func save(_ title: String = "A text save") -> SavedItem {
+    private func save(_ title: String = "A text save", author: String? = nil) -> SavedItem {
         let item = saves.insertImported([SavesStore.ImportedLink(urlString: "https://example.com/\(UUID())", isArchived: false)])[0].item
-        return saves.saveContent(ArticleContent(title: title, blocks: [.init(kind: .paragraph, text: "Here is the complete readable text of an article.", links: [])]), for: item)
+        return saves.saveContent(ArticleContent(title: title, author: author, blocks: [.init(kind: .paragraph, text: "Here is the complete readable text of an article.", links: [])]), for: item)
     }
     private func controller(_ render: @escaping (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double) -> ReaderPodcastController {
         ReaderPodcastController(saves: saves, library: library, directory: root.appendingPathComponent("podcasts/ReaderAudio"), render: render)
@@ -207,13 +207,14 @@ final class ReaderMusicRouteTests: XCTestCase {
     }
 
     func testExplicitGeminiUpgradeUsesRequestedVoiceAndReusesAudioWithoutDuplicatingQueue() async throws {
-        let item = save()
+        let item = save(author: "Jane Smith")
         var deviceRenders = 0, geminiRenders = 0
         let reader = ReaderPodcastController(saves: saves, library: library,
             directory: root.appendingPathComponent("podcasts/ReaderAudio"),
             render: { _, url, _ in deviceRenders += 1; try Data("device".utf8).write(to: url); return 10 },
-            renderGemini: { id, script, url, progress in
+            renderGemini: { id, script, author, url, progress in
                 XCTAssertEqual(id, item.id); XCTAssertFalse(script.spokenBlocks.isEmpty)
+                XCTAssertEqual(author, "Jane Smith")
                 geminiRenders += 1; try Data("gemini".utf8).write(to: url); progress(1); return 12
             }, preferredVoice: { .device }, geminiAvailable: { true })
         let device = try await reader.enqueue(item.id)
@@ -236,7 +237,7 @@ final class ReaderMusicRouteTests: XCTestCase {
         let reader = ReaderPodcastController(saves: saves, library: library,
             directory: root.appendingPathComponent("podcasts/ReaderAudio"),
             render: { _, _, _ in XCTFail("Gemini failure must not silently switch voices"); return 0 },
-            renderGemini: { _, _, url, _ in
+            renderGemini: { _, _, _, url, _ in
                 calls += 1
                 if fail { throw PodcastError("Quota reached") }
                 try Data("gemini".utf8).write(to: url); return 12
@@ -255,7 +256,7 @@ final class ReaderMusicRouteTests: XCTestCase {
         let reader = ReaderPodcastController(saves: saves, library: library,
             directory: root.appendingPathComponent("podcasts/ReaderAudio"),
             render: { _, url, _ in try Data("device".utf8).write(to: url); return 10 },
-            renderGemini: { _, _, _, _ in XCTFail("Must not generate before current-episode check"); return 0 },
+            renderGemini: { _, _, _, _, _ in XCTFail("Must not generate before current-episode check"); return 0 },
             preferredVoice: { .device })
         let episode = try await reader.enqueue(item.id)
         try library.edit { $0.currentEpisodeID = episode.id }
@@ -278,7 +279,7 @@ final class ReaderMusicRouteTests: XCTestCase {
         let item = save()
         let reader = ReaderPodcastController(saves: saves, library: library,
             directory: root.appendingPathComponent("podcasts/ReaderAudio"),
-            renderGemini: { _, _, url, _ in try Data("gemini".utf8).write(to: url); return 12 })
+            renderGemini: { _, _, _, url, _ in try Data("gemini".utf8).write(to: url); return 12 })
         let episode = try await reader.enqueue(item.id, voice: .gemini)
         let oldRoot = root.appendingPathComponent("podcasts")
         let newRoot = root.appendingPathComponent("moved")

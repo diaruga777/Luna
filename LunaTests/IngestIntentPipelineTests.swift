@@ -20,15 +20,20 @@ import LunaPluginKit
 final class IngestIntentPipelineTests: XCTestCase {
 
     private var previousStage: PluginIngestStaging?
+    private var previousURLPolicy = true
     private let url = URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
 
     override func setUp() {
         super.setUp()
         previousStage = IngestPipeline.pluginStage
+        previousURLPolicy = URLBehaviorPolicy.pluginsOnly
+        // These legacy-floor tests explicitly exercise sibling/native policy.
+        URLBehaviorPolicy.pluginsOnly = false
     }
 
     override func tearDown() {
         IngestPipeline.pluginStage = previousStage
+        URLBehaviorPolicy.pluginsOnly = previousURLPolicy
         super.tearDown()
     }
 
@@ -64,9 +69,9 @@ final class IngestIntentPipelineTests: XCTestCase {
         XCTAssertEqual(itemID, "dQw4w9WgXcQ")
     }
 
-    /// With no plugin stage installed at all (the three sibling apps), an
-    /// intent cannot change anything: there is no plugin to serve it and the
-    /// rule only fires after a stage has passed.
+    /// Under legacy/native policy with no plugin stage, intent-specific failure
+    /// only applies after a stage has actually declined. Reader's current
+    /// plugin-only policy is covered separately below.
     func testWithoutAStageTheIntentRuleNeverFires() async {
         IngestPipeline.pluginStage = nil
         let outcome = await process(intent: .transcribe)
@@ -74,6 +79,20 @@ final class IngestIntentPipelineTests: XCTestCase {
             return XCTFail("expected the Swift floor's .video, got \(outcome)")
         }
     }
+    func testPluginOnlyReaderKeepsPlainSavesAsLinksWhenPluginsDecline() async {
+        URLBehaviorPolicy.pluginsOnly = true
+        _ = installDecliningStage()
+        let outcome = await process(intent: nil)
+        XCTAssertEqual(outcome, .link)
+    }
+
+    func testPluginOnlyReaderCannotUseNativeDownloadAsTranscriptionFallback() async {
+        URLBehaviorPolicy.pluginsOnly = true
+        IngestPipeline.pluginStage = nil
+        let outcome = await process(intent: .transcribe)
+        XCTAssertEqual(outcome, .failed(.noTranscriptSource))
+    }
+
 }
 
 /// A session whose every request fails at once, so a test that must stay off

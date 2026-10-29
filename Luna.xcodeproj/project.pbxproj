@@ -136,6 +136,10 @@
 		3D6E6C247708D0945741D398 /* VaultAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49E44F2F27EBE3B50060538 /* VaultAppIntents.swift */; };
 		BFC0C21DB6528E8AB6A7154B /* PodcastAutomationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9D9C512190AC126651E97D /* PodcastAutomationTests.swift */; };
 		09AAEDDBCBA24888AE40F160 /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
+		09AAEDDBCBA24888AE40F170 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5C570000000000000000001A /* LunaModels */; };
+		09AAEDDBCBA24888AE40F171 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 09AAEDDBCBA24888AE40F181 /* LunaStorage */; };
+		09AAEDDBCBA24888AE40F172 /* LunaAppConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 09AAEDDBCBA24888AE40F182 /* LunaAppConfig */; };
+		09AAEDDBCBA24888AE40F173 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000019 /* LunaDesignSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -621,6 +625,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				09AAEDDBCBA24888AE40F170 /* LunaModels in Frameworks */,
+				09AAEDDBCBA24888AE40F171 /* LunaStorage in Frameworks */,
+				09AAEDDBCBA24888AE40F172 /* LunaAppConfig in Frameworks */,
+				09AAEDDBCBA24888AE40F173 /* LunaDesignSystem in Frameworks */,
 				427AFF7133679C5D90475470 /* LunaMusicKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1335,6 +1343,10 @@
 			);
 			name = LunaMusicTests;
 			packageProductDependencies = (
+				5C570000000000000000001A /* LunaModels */,
+				09AAEDDBCBA24888AE40F181 /* LunaStorage */,
+				09AAEDDBCBA24888AE40F182 /* LunaAppConfig */,
+				5C5700000000000000000019 /* LunaDesignSystem */,
 				1D3B744686E24603C334E243 /* LunaMusicKit */,
 			);
 			productName = LunaMusicTests;
@@ -3825,6 +3837,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaPremium;
+		};
+		09AAEDDBCBA24888AE40F181 /* LunaStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaStorage;
+		};
+		09AAEDDBCBA24888AE40F182 /* LunaAppConfig */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaAppConfig;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

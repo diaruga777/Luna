@@ -30,6 +30,7 @@ final class BGTaskIdentifierPlistTests: XCTestCase {
             ("Luna/AppDelegate.swift", "mailFetchTaskID = \""),
             ("Luna/AppDelegate.swift", "priceRefreshTaskID = \""),
             ("Luna/UtilCard/WeeklyProposalBackgroundCheck.swift", "taskID = \""),
+            ("Luna/NightlyArticleAudioBackgroundTask.swift", "taskID = \""),
         ] {
             let source = try String(
                 contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
@@ -62,7 +63,7 @@ final class BGTaskIdentifierPlistTests: XCTestCase {
 
     func testEverySwiftTaskIdentifierIsPermittedInInfoPlist() throws {
         let declared = try swiftDeclaredTaskIdentifiers()
-        XCTAssertEqual(declared.count, 3, "expected three BGTask identifiers in Swift — parser drifted")
+        XCTAssertEqual(declared.count, 4, "expected four BGTask identifiers in Swift — parser drifted")
         let permitted = Set(try plistPermittedIdentifiers())
         for identifier in declared {
             XCTAssertTrue(

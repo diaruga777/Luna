@@ -1669,7 +1669,7 @@
 
 // Gemini article read-aloud
 "Gemini_model_Luna" = "Gemini 3.8 Flash TTS";
-"Gemini_privacy_Luna" = "When you start read-aloud, article text is sent to Google and the audio is saved for replay. Google may use free-tier content to improve its products. Free limits vary by project; a paid project’s key may incur charges. Autoplay only uses saved Gemini audio or the device voice.";
+"Gemini_privacy_Luna" = "Article text is sent to Google when you start read-aloud or Luna prepares unread articles overnight (11pm–midnight PST). Audio is saved for up to 14 days, or 2 days for read articles. Google may use free-tier content to improve its products. Free limits vary by project; a paid project’s key may incur charges. Autoplay only uses saved Gemini audio or the device voice.";
 "Gemini_toggle_Luna" = "Use Gemini voice";
 "Gemini_key_Luna" = "API key";
 "Gemini_savedKey_Luna" = "Saved in Keychain";

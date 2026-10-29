@@ -55,10 +55,11 @@ enum AudioPlaybackWiring {
         cacheSweepDriver.install(immediateLaunchSweep: false)
     }
 
-    private final class DeletedAudioSweeper: SavesSweeping {
+    private final class DeletedAudioSweeper: SavesSweepForegroundTracking {
+        func savesSweepForegroundChanged(to isForeground: Bool) { }
         func runSavesSweep() {
-            let ids = Set(SavesStore.shared.items().map(\.id))
-            Task { try? await GeminiArticleSpeech.shared.removeAudio(except: ids) }
+            let items = SavesStore.shared.items()
+            Task { try? await GeminiArticleSpeech.shared.pruneAudio(for: items) }
         }
     }
 }

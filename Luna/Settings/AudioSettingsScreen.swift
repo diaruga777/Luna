@@ -10,7 +10,7 @@ import UIKit
 import LunaModels
 
 /// Device and optional Gemini read-aloud preferences. Cloud consent and key
-/// management live here; playback alone decides when audio may be generated.
+/// management live here; nightly preparation follows the same voice opt-in.
 final class AudioSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case autoplay, cleanup, gemini, voice }
@@ -154,6 +154,7 @@ final class AudioSettingsScreen: NavHeaderTableController {
             return
         }
         AudioSettings.usesGeminiVoice = toggle.isOn
+        NightlyArticleAudioBackgroundTask.schedule()
     }
 
     private func editGeminiKey(enableAfterSave: Bool = false) {
@@ -174,6 +175,7 @@ final class AudioSettingsScreen: NavHeaderTableController {
                 return
             }
             if enableAfterSave { AudioSettings.usesGeminiVoice = true }
+            NightlyArticleAudioBackgroundTask.schedule()
             self?.tableView.reloadData()
         })
         if GeminiSpeechCredential.apiKey != nil {

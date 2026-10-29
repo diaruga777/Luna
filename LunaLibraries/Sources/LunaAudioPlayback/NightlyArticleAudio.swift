@@ -87,7 +87,8 @@ struct NightlyArticleAudioWorker {
     }
 
     private static func isEligible(_ item: SavedItem, at date: Date) -> Bool {
-        item.state == .ready && item.readState != .read
+        item.state == .ready && item.exportKind == .article && item.readState != .read
+            && !item.isArchived && item.pendingArchiveAt == nil
             && date.timeIntervalSince(item.dateAdded) < 14 * 24 * 60 * 60
     }
 }

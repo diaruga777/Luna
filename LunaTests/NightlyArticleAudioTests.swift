@@ -129,4 +129,19 @@ final class NightlyArticleAudioTests: XCTestCase {
         }
         do { try await task.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
     }
+    func testScheduledGenerationSkipsArchivedAndNonArticleSaves() async throws {
+        var archived = item("archived")
+        archived.archivedAt = date("2026-07-01T07:00:00Z")
+        var awaitingArchive = item("awaiting-archive")
+        awaitingArchive.pendingArchiveAt = date("2026-07-01T07:31:00Z")
+        var media = item("media")
+        media.platform = .youtube
+        let article = item("article")
+        var prepared: [UUID] = []
+        try await worker(items: [archived, awaitingArchive, media, article], now: { self.date("2026-07-01T07:30:00Z") }) { item, _, _, _ in
+            prepared.append(item.id)
+        }.run()
+        XCTAssertEqual(prepared, [article.id])
+    }
+
 }

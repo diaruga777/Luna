@@ -13,6 +13,20 @@ final class KeyboardTests: XCTestCase {
   private var directory: URL!
   private var saves: SavesStore!
   private var store: KeyboardStore!
+  func testAutomationPreferencesIncludeDefaultsAndValidateSupportedValues() throws {
+    let preferences = KeyboardPreferences(values: ["internalFlag": "private"])
+    XCTAssertEqual(preferences.automationValues["language"], "en")
+    XCTAssertEqual(preferences.automationValues["autoCapitalize"], "true")
+    XCTAssertEqual(preferences.automationValues["secondaryLanguage"], "")
+    XCTAssertNil(preferences.automationValues["internalFlag"])
+    XCTAssertEqual(try KeyboardPreferences.validatedAutomationValue(" FALSE ", for: "autocorrect"), "false")
+    XCTAssertEqual(try KeyboardPreferences.validatedAutomationValue("ocean", for: "theme"), "Ocean")
+    XCTAssertEqual(try KeyboardPreferences.validatedAutomationValue("es-419", for: "language"), "es-419")
+    XCTAssertThrowsError(try KeyboardPreferences.validatedAutomationValue("maybe", for: "autocorrect"))
+    XCTAssertThrowsError(try KeyboardPreferences.validatedAutomationValue("unsupported", for: "language"))
+    XCTAssertThrowsError(try KeyboardPreferences.validatedAutomationValue("true", for: "internalFlag"))
+  }
+
   override func setUpWithError() throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -1,7 +1,9 @@
 import AppIntents
 import CoreSpotlight
 import Foundation
+import UniformTypeIdentifiers
 import LunaAppConfig
+import LunaKeyboardCore
 import LunaStorage
 
 struct KeyboardShortcutEntity: IndexedEntity {
@@ -33,9 +35,10 @@ struct FindKeyboardShortcutsIntent: AppIntent {
 }
 struct SaveKeyboardShortcutIntent: AppIntent {
     static var title: LocalizedStringResource = "Save Keyboard Shortcut"
-    static var description = IntentDescription("Create a text shortcut, or update an existing shortcut’s text and keywords.")
+    static var description = IntentDescription("Create a text or image shortcut, or update an existing shortcut.")
     @Parameter(title: "Existing Shortcut") var existing: KeyboardShortcutEntity?
-    @Parameter(title: "Text") var text: String
+    @Parameter(title: "Text", default: "") var text: String
+    @Parameter(title: "Image") var image: IntentFile?
     @Parameter(title: "Keywords") var keywords: [String]
     @Parameter(title: "Suggest While Typing", default: true) var suggest: Bool
     func perform() async throws -> some IntentResult & ReturnsValue<KeyboardShortcutEntity> {
@@ -45,7 +48,29 @@ struct SaveKeyboardShortcutIntent: AppIntent {
             guard let value = try store.shortcut(id: existing.id) else { throw CocoaError(.fileNoSuchFile) }; shortcut = value
         } else { shortcut = KeyboardShortcut(keywords: [], text: "") }
         shortcut.text = text; shortcut.keywords = keywords; shortcut.suggestWhileTyping = suggest
-        try store.save(shortcut)
+        var temporary: URL?
+        defer { if let temporary { try? FileManager.default.removeItem(at: temporary) } }
+        let source: URL?
+        if let image {
+            let filename = (image.filename as NSString).lastPathComponent
+            let ext = (filename as NSString).pathExtension.lowercased()
+            guard let type = UTType(filenameExtension: ext), type.conforms(to: .image) else {
+                throw CocoaError(.fileReadUnsupportedScheme)
+            }
+            if let url = image.fileURL { source = url }
+            else {
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                temporary = directory
+                let url = directory.appendingPathComponent(filename)
+                try image.data.write(to: url)
+                source = url
+            }
+            shortcut.kind = ext == "gif" ? "gif" : "image"
+        } else { source = nil }
+        let access = source?.startAccessingSecurityScopedResource() ?? false
+        defer { if access { source?.stopAccessingSecurityScopedResource() } }
+        try store.save(shortcut, importing: source)
         guard let saved = try store.shortcut(id: shortcut.id) else { throw CocoaError(.fileNoSuchFile) }
         return .result(value: KeyboardShortcutEntity(saved))
     }
@@ -141,11 +166,11 @@ struct KeyboardPreferenceEntity: IndexedEntity {
 }
 struct KeyboardPreferenceQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [KeyboardPreferenceEntity] {
-        let values = try KeyboardStore().preferences()
+        let values = KeyboardPreferences(values: try KeyboardStore().preferences()).automationValues
         return identifiers.compactMap { key in values[key].map { KeyboardPreferenceEntity(key: key, value: $0) } }
     }
     func entities(matching string: String) async throws -> [KeyboardPreferenceEntity] {
-        try KeyboardStore().preferences().filter { string.isEmpty || $0.key.localizedStandardContains(string) }.sorted { $0.key < $1.key }.map { KeyboardPreferenceEntity(key: $0.key, value: $0.value) }
+        KeyboardPreferences(values: try KeyboardStore().preferences()).automationValues.filter { string.isEmpty || $0.key.localizedStandardContains(string) }.sorted { $0.key < $1.key }.map { KeyboardPreferenceEntity(key: $0.key, value: $0.value) }
     }
     func suggestedEntities() async throws -> [KeyboardPreferenceEntity] { try await entities(matching: "") }
 }
@@ -161,8 +186,8 @@ struct SetKeyboardPreferenceIntent: AppIntent {
     @Parameter(title: "Value") var value: String
     func perform() async throws -> some IntentResult {
         // Resolve the key again instead of trusting a stale entity snapshot.
-        guard try KeyboardStore().preferences()[preference.id] != nil else { throw CocoaError(.fileNoSuchFile) }
-        try KeyboardStore().setPreference(preference.id, value: value)
+        let validated = try KeyboardPreferences.validatedAutomationValue(value, for: preference.id)
+        try KeyboardStore().setPreference(preference.id, value: validated)
         return .result()
     }
 }

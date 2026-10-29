@@ -28,6 +28,33 @@ public struct KeyboardPreferences {
   public var style: TextStyle {
     enabled("rememberStyle") ? TextStyle(rawValue: values["textStyle"] ?? "") ?? .regular : .regular
   }
+  /// Public settings exist even before the user changes them. Unknown stored
+  /// keys are implementation details rather than automatable preferences.
+  public var automationValues: [String: String] {
+    var result = Dictionary(uniqueKeysWithValues: Self.toggles.map { ($0.0, String(enabled($0.0))) })
+    result["theme"] = theme.rawValue
+    result["language"] = language
+    result["secondaryLanguage"] = secondaryLanguage ?? ""
+    result["textStyle"] = (TextStyle(rawValue: values["textStyle"] ?? "") ?? .regular).rawValue
+    return result
+  }
+
+  public static func validatedAutomationValue(_ value: String, for key: String) throws -> String {
+    let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if toggles.contains(where: { $0.0 == key }), ["true", "false"].contains(value.lowercased()) { return value.lowercased() }
+    if key == "theme", let theme = KeyboardTheme.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(value) == .orderedSame }) { return theme.rawValue }
+    if key == "language" || key == "secondaryLanguage" {
+      if key == "secondaryLanguage", value.isEmpty { return "" }
+      if let language = languages.first(where: { $0.0.caseInsensitiveCompare(value) == .orderedSame }) { return language.0 }
+    }
+    if key == "textStyle", let style = TextStyle.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(value) == .orderedSame }) { return style.rawValue }
+    throw PreferenceError.invalidValue
+  }
+
+  public enum PreferenceError: LocalizedError {
+    case invalidValue
+    public var errorDescription: String? { "Choose a supported keyboard setting and value." }
+  }
   public static let languages = [
     ("en", "English"), ("es", "Español"), ("es-419", "Español (Latinoamérica)"), ("it", "Italiano"),
   ]

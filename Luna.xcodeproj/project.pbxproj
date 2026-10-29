@@ -108,7 +108,7 @@
 		C4C2F94C7F25B8F6508C19BB /* LunaPremium in Frameworks */ = {isa = PBXBuildFile; productRef = 8858C3FC73D1A554D0D2CC38 /* LunaPremium */; };
 		C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746380049BFBCA632316E778 /* VaultShareViewController.swift */; };
 		C90D922BF90E20ADB0880098 /* MusicSystemIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F85534CCAA1A696A83832 /* MusicSystemIntegration.swift */; };
-		D0DD003694A125175278F50F /* BuildFile in Resources */ = {isa = PBXBuildFile; };
+		D0DD003694A125175278F50F /* (null) in Resources */ = {isa = PBXBuildFile; };
 		D3376DB5E6C495F7AC1CD855 /* LunaAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2F9497B9CCD94E28698A4E6B /* LunaAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D43E9CF4D30B404173C20E00 /* VaultAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */; };
 		D8130E40B35FA09662DD472B /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
@@ -411,35 +411,35 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		5C570000000000000000AA04 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
+		5C570000000000000000AA04 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 5C570000000000000000AA01 /* LunaWriter */;
 		};
-		83D9DA958F41E60A2CF03609 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
+		83D9DA958F41E60A2CF03609 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 5E393E646C6A24066F73EE08 /* LunaShare */;
 		};
-		D1D142500025E25B4A0A5B54 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
+		D1D142500025E25B4A0A5B54 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 3FD5F33FCDC0F220DB5FE276 /* LunaSafari */;
 		};
-		D8198567C97F8AADEC1E6928 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
+		D8198567C97F8AADEC1E6928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 892513B3F00DED1B930AD2AE /* LunaAction */;
 		};
-		EA354A2407FE8182155F337B /* FileSystemSynchronizedBuildFileExceptionSet */ = {
+		EA354A2407FE8182155F337B /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -450,128 +450,15 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		32F2F3F1CEBA14248C076A3D /* LunaVaultTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaVaultTests;
-			sourceTree = "<group>";
-		};
-		5C570000000000000000AA03 /* LunaWriter */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-				5C570000000000000000AA04 /* FileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaWriter;
-			sourceTree = "<group>";
-		};
-		79583E002FE0BAD100C775CA /* LunaAction */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-				D8198567C97F8AADEC1E6928 /* FileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaAction;
-			sourceTree = "<group>";
-		};
-		9CA8520926BDF43BB5D0CEB8 /* LunaWriterTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaWriterTests;
-			sourceTree = "<group>";
-		};
-		AA0700000000000000000001 /* Luna */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-				EA354A2407FE8182155F337B /* FileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = Luna;
-			sourceTree = "<group>";
-		};
-		AA0700000000000000000002 /* LunaSafari */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-				D1D142500025E25B4A0A5B54 /* FileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaSafari;
-			sourceTree = "<group>";
-		};
-		AA0700000000000000000003 /* LunaTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaTests;
-			sourceTree = "<group>";
-		};
-		AA0700000000000000000004 /* LunaShare */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-				83D9DA958F41E60A2CF03609 /* FileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaShare;
-			sourceTree = "<group>";
-		};
-		LDLA0000000000000000008 /* LunaLiveActivity */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			children = (
-			);
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = LunaLiveActivity;
-			sourceTree = "<group>";
-		};
+		32F2F3F1CEBA14248C076A3D /* LunaVaultTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaVaultTests; sourceTree = "<group>"; };
+		5C570000000000000000AA03 /* LunaWriter */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (5C570000000000000000AA04 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaWriter; sourceTree = "<group>"; };
+		79583E002FE0BAD100C775CA /* LunaAction */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (D8198567C97F8AADEC1E6928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaAction; sourceTree = "<group>"; };
+		9CA8520926BDF43BB5D0CEB8 /* LunaWriterTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaWriterTests; sourceTree = "<group>"; };
+		AA0700000000000000000001 /* Luna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (EA354A2407FE8182155F337B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Luna; sourceTree = "<group>"; };
+		AA0700000000000000000002 /* LunaSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (D1D142500025E25B4A0A5B54 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaSafari; sourceTree = "<group>"; };
+		AA0700000000000000000003 /* LunaTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaTests; sourceTree = "<group>"; };
+		AA0700000000000000000004 /* LunaShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (83D9DA958F41E60A2CF03609 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaShare; sourceTree = "<group>"; };
+		LDLA0000000000000000008 /* LunaLiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaLiveActivity; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1036,8 +923,6 @@
 			dependencies = (
 				D9E4EC7F3D2A03EFBB26C9D8 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaVault;
 			packageProductDependencies = (
 				4C1000000000000000000011 /* LunaVaultBackend */,
@@ -1099,8 +984,6 @@
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaVaultConnectionTests;
 			packageProductDependencies = (
 				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
@@ -1148,8 +1031,6 @@
 			dependencies = (
 				6C7C84CD9267C73D4F891575 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaKeyboardTests;
 			packageProductDependencies = (
 				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
@@ -1170,8 +1051,6 @@
 			);
 			dependencies = (
 				5C57000000000000000000B8 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
 			);
 			name = LunaWriterUITests;
 			productName = LunaWriterUITests;
@@ -1251,8 +1130,6 @@
 			dependencies = (
 				6E64EDCBBC2206AEBBE8ACAA /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaMusic;
 			packageProductDependencies = (
 				1D3B744686E24603C334E243 /* LunaMusicKit */,
@@ -1277,8 +1154,6 @@
 			dependencies = (
 				7EB2E9026F58D93FE4EB7AE8 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaLaunchTests;
 			productName = LunaLaunchTests;
 			productReference = 644462699E3679C7B4128524 /* LunaLaunchTests.xctest */;
@@ -1295,8 +1170,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
 			);
 			name = LunaVaultShare;
 			productName = LunaVaultShare;
@@ -1339,8 +1212,6 @@
 			dependencies = (
 				3663303B613E3CD3B523D882 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaMusicTests;
 			packageProductDependencies = (
 				5C570000000000000000001A /* LunaModels */,
@@ -1365,8 +1236,6 @@
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaKeyboardExtension;
 			packageProductDependencies = (
 				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
@@ -1387,8 +1256,6 @@
 			);
 			dependencies = (
 				737AEF1B283706AAECDDAC48 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
 			);
 			name = LunaMusicUITests;
 			productName = LunaMusicUITests;
@@ -1460,8 +1327,6 @@
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaLiveActivity;
 			packageProductDependencies = (
 				13DEE2A88425ECF9503F1EF9 /* LunaKit */,
@@ -1486,8 +1351,6 @@
 			dependencies = (
 				FF8673C362493AE635C21E41 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-			);
 			name = LunaKeyboard;
 			packageProductDependencies = (
 				F30021B489EEC5A84775B78F /* LunaKeyboardKit */,
@@ -1508,8 +1371,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
 			);
 			name = LunaMusicWidgets;
 			productName = LunaMusicWidgets;
@@ -1588,7 +1449,7 @@
 			);
 			mainGroup = AA0900000000000000000001;
 			packageReferences = (
-				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */,
+				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */,
 				7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */,
 			);
@@ -1749,7 +1610,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0DD003694A125175278F50F /* BuildFile in Resources */,
+				D0DD003694A125175278F50F /* (null) in Resources */,
 				DBE17E7B08A7452552AFA03D /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2741,8 +2602,8 @@
 				LUNA_URL_SCHEME = luna;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				PRODUCT_MODULE_NAME = Luna;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2876,8 +2737,8 @@
 				LUNA_URL_SCHEME = luna;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				PRODUCT_MODULE_NAME = Luna;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -3647,7 +3508,7 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */ = {
+		AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
 			requirement = {

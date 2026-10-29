@@ -263,6 +263,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
+        if item.readState == .read { finishedReadingTracker.markFinished() }
         // If the prefix already covers the whole (short) article there's nothing to
         // swap — Phase 2 is skipped.
         if rendered.isComplete { fullContentLoad = .done }
@@ -343,6 +344,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.explicitResumeWordIndex = resumeWordIndex
+        if item.readState == .read { finishedReadingTracker.markFinished() }
 
         let needsFullUpFront = fullRenderUpFront || audioEnabled
             || Self.openPositionLikelyBeyondPrefix(
@@ -680,8 +682,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func installFinishedBadge() {
         textView.addSubview(finishedBadge)
-        finishedBadge.onAccessibilityMarkRead = { [weak self] in
-            self?.finishReadingFromPull()
+        finishedBadge.onAccessibilityToggleRead = { [weak self] in
+            self?.toggleReadStateFromPull()
         }
         contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
             self?.layoutCompletionArea()
@@ -1537,7 +1539,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         // A drag begun against the progressive prefix cannot complete the article.
-        isPullingToRead = fullContentLoad == .done && !finishedReadingTracker.isFinished
+        isPullingToRead = fullContentLoad == .done
         pullIsArmed = false
     }
 
@@ -1551,7 +1553,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // restored offset, audio follow-scroll, or merely arriving at the bottom.
         updateReadPullPrompt()
         if isPullingToRead && pullIsArmed && scrollView.panGestureRecognizer.state != .cancelled {
-            finishReadingFromPull()
+            toggleReadStateFromPull()
         }
         isPullingToRead = false
         pullIsArmed = false
@@ -1602,8 +1604,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     private func updateReadPullPrompt() {
-        guard fullContentLoad == .done, textView.contentSize.height > 0,
-              !finishedReadingTracker.isFinished else { return }
+        guard fullContentLoad == .done, textView.contentSize.height > 0 else { return }
         // Keep offscreen glass out of TextKit's compositing tree until the
         // completion lane enters the viewport (also avoids blank layer snapshots).
         guard textView.contentOffset.y + textView.bounds.height > finishedBadge.frame.minY else {
@@ -1620,11 +1621,25 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
         pullIsArmed = armed
-        finishedBadge.showPullPrompt(isArmed: armed)
+        if finishedReadingTracker.isFinished, !(isPullingToRead && distance > 0) {
+            finishedBadge.showReadState()
+        } else {
+            finishedBadge.showPullPrompt(
+                isArmed: armed, markingUnread: finishedReadingTracker.isFinished)
+        }
     }
 
-    private func finishReadingFromPull() {
-        guard fullContentLoad == .done, !finishedReadingTracker.isFinished else { return }
+    private func toggleReadStateFromPull() {
+        guard fullContentLoad == .done else { return }
+        // Disarm before notifying the host: its store updates can trigger layout.
+        isPullingToRead = false
+        pullIsArmed = false
+        if finishedReadingTracker.isFinished {
+            finishedReadingTracker.update(reachedEnd: false)
+            finishedBadge.showPullPrompt(isArmed: false)
+            completionDelegate?.readerDidMarkUnread(self)
+            return
+        }
         finishedReadingTracker.markFinished()
         finishedBadge.present()
         completionDelegate?.readerDidFinishReading(self)

@@ -13,6 +13,8 @@ import UIKit
 public protocol ReaderCompletionDelegate: AnyObject {
     /// Fired when playback finishes or the user pulls up to mark the scroll reader read.
     func readerDidFinishReading(_ reader: UIViewController)
+    /// Fired when the user explicitly pulls up again to mark a scroll article unread.
+    func readerDidMarkUnread(_ reader: UIViewController)
     /// Fired when a reader that had reached the end moves back before it.
     func readerDidMoveAwayFromEnd(_ reader: UIViewController)
 }

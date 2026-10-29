@@ -946,6 +946,10 @@ extension RabbitHoleLayerViewController: ReaderCompletionDelegate {
     public func readerDidFinishReading(_ reader: UIViewController) {
         markEmbeddedItemRead()
     }
+    public func readerDidMarkUnread(_ reader: UIViewController) {
+        guard let id = embeddedReaderItemID else { return }
+        SavesStore.shared.markUnread(id)
+    }
     public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
         // Completion remains durable while the user revisits earlier content.
     }

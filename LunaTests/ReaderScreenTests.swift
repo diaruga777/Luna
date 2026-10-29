@@ -21,7 +21,9 @@ private final class RecordingReaderCompletionDelegate: ReaderCompletionDelegate 
     var didFinish = false
     var finishCount = 0
     var didMoveAway = false
+    var unreadCount = 0
     func readerDidFinishReading(_ reader: UIViewController) { didFinish = true; finishCount += 1 }
+    func readerDidMarkUnread(_ reader: UIViewController) { unreadCount += 1 }
     func readerDidMoveAwayFromEnd(_ reader: UIViewController) { didMoveAway = true }
 }
 
@@ -190,9 +192,78 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(prompt?.accessibilityLabel, "Read")
 
         pullToRead(reader, textView)
-        XCTAssertEqual(delegate.finishCount, 1, "Completion is durable and fires once")
+        XCTAssertEqual(delegate.finishCount, 1)
+        XCTAssertEqual(delegate.unreadCount, 1, "A second pull explicitly marks the article unread")
+        XCTAssertEqual(prompt?.accessibilityLabel, "Pull up to mark read")
+        pullToRead(reader, textView)
+        XCTAssertEqual(delegate.finishCount, 2, "The article can be marked read again")
+        XCTAssertEqual(prompt?.accessibilityLabel, "Read")
         let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
         XCTAssertFalse(badge?.isHidden ?? true)
+    }
+
+    func testReadArticlePullPromptRestoresReadUntilUnreadIsCommitted() {
+        var readItem = item
+        readItem.readState = .read
+        let delegate = RecordingReaderCompletionDelegate()
+        let reader = ScrollReaderViewController(item: readItem, content: shortArticleContent())
+        reader.completionDelegate = delegate
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let textView = findTextView(in: reader.view),
+              let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view) else {
+            return XCTFail("Missing reader controls")
+        }
+        let bottom = max(-textView.adjustedContentInset.top,
+                         textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        textView.contentOffset.y = bottom
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Read")
+
+        // A bounce without an active drag leaves the read state alone.
+        textView.contentOffset.y = bottom + 100
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Read")
+        XCTAssertEqual(delegate.unreadCount, 0)
+
+        textView.contentOffset.y = bottom
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 1
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Pull up to mark unread")
+        textView.contentOffset.y = bottom
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Read", "Returning to zero pull restores the checkmark")
+        textView.contentOffset.y = bottom + 30
+        reader.scrollViewDidScroll(textView)
+        releaseReadPull(reader, textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Read")
+        XCTAssertEqual(delegate.unreadCount, 0)
+
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 100
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Release to mark unread")
+        textView.contentOffset.y = bottom + 10
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Pull up to mark unread")
+        releaseReadPull(reader, textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Read")
+        XCTAssertEqual(delegate.unreadCount, 0)
+
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 100
+        reader.scrollViewDidScroll(textView)
+        reader.scrollViewDidEndDragging(textView, willDecelerate: false)
+        XCTAssertEqual(badge.accessibilityLabel, "Read")
+        XCTAssertEqual(delegate.unreadCount, 0, "Cancellation preserves read state")
+
+        pullToRead(reader, textView)
+        XCTAssertEqual(delegate.unreadCount, 1)
+        XCTAssertEqual(delegate.finishCount, 0)
+        XCTAssertEqual(badge.accessibilityLabel, "Pull up to mark read")
     }
 
     func testScrollReaderShortContentCancelsInsufficientAndRetreatedPulls() {
@@ -260,6 +331,14 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertFalse(delegate.didFinish)
         XCTAssertTrue(badge.accessibilityActivate())
         XCTAssertTrue(delegate.didFinish)
+        let bottom = max(-textView.adjustedContentInset.top,
+                         textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        reader.scrollViewWillBeginDragging(textView)
+        textView.contentOffset.y = bottom + 1
+        reader.scrollViewDidScroll(textView)
+        XCTAssertEqual(badge.accessibilityLabel, "Pull up to mark unread")
+        XCTAssertTrue(badge.accessibilityActivate())
+        XCTAssertEqual(delegate.unreadCount, 1)
     }
 
     private func pullToRead(_ reader: ScrollReaderViewController, _ textView: UITextView) {
@@ -458,6 +537,56 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(fresh?.readingProgress, 1)
         XCTAssertNotNil(fresh?.pendingArchiveAt)
         XCTAssertNil(fresh?.archivedAt)
+
+        pullToRead(scroll, textView)
+        let unread = SavesStore.shared.item(withID: storeItem.id)
+        XCTAssertEqual(unread?.readState, .unopened)
+        XCTAssertNil(unread?.pendingArchiveAt)
+        XCTAssertNil(unread?.archivedAt)
+
+        pullToRead(scroll, textView)
+        XCTAssertEqual(SavesStore.shared.item(withID: storeItem.id)?.readState, .read)
+        XCTAssertNotNil(SavesStore.shared.item(withID: storeItem.id)?.pendingArchiveAt)
+    }
+
+    func testReaderCardPullMarksArchivedArticleUnreadAndSurvivesModeSwitch() {
+        let store = SavesStore.shared
+        let added = store.add(urlString: "https://example.com/card-pull-unread-\(UUID().uuidString)")
+        defer { store.delete(added) }
+        store.markFinishedReading(added.id)
+        store.setArchived(true, for: added.id)
+        let layer = RabbitHoleLayerViewController(shareProvider: nil, layout: RabbitHoleLayout())
+        layer.showsHeaderChrome = false
+        layer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(urlString: added.urlString, readerMode: .scroll),
+            knownContent: shortArticleContent())
+        layer.view.layoutIfNeeded()
+        layer.activatePrimaryContent()
+        guard let scroll = layer.activeScrollReader,
+              let textView = findTextView(in: scroll.view) else {
+            return XCTFail("Missing card reader")
+        }
+        let bottom = max(-textView.adjustedContentInset.top,
+                         textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        textView.contentOffset.y = bottom
+        scroll.scrollViewDidScroll(textView)
+        XCTAssertEqual(findView(of: FinishedReadingBadgeView.self, in: scroll.view)?.accessibilityLabel, "Read")
+        pullToRead(scroll, textView)
+        XCTAssertEqual(store.item(withID: added.id)?.readState, .unopened)
+        XCTAssertNil(store.item(withID: added.id)?.pendingArchiveAt)
+        XCTAssertNil(store.item(withID: added.id)?.archivedAt)
+
+        layer.setMode(.rsvp)
+        layer.setMode(.scroll)
+        guard let reconfigured = layer.activeScrollReader,
+              let reconfiguredText = findTextView(in: reconfigured.view) else {
+            return XCTFail("Missing reconfigured card reader")
+        }
+        reconfigured.view.layoutIfNeeded()
+        pullToRead(reconfigured, reconfiguredText)
+        XCTAssertEqual(store.item(withID: added.id)?.readState, .read)
+        XCTAssertNotNil(store.item(withID: added.id)?.pendingArchiveAt)
     }
 
     func testReaderHostKeepsScrollCompletionWhenUserScrollsBack() {

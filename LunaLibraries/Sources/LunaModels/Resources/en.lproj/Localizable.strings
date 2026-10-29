@@ -1595,6 +1595,10 @@
 "Settings_importExport_epubImported_Luna" = "Book added to your reading list.";
 "Settings_importExport_epubFailed_Luna" = "This EPUB could not be read. Choose an unencrypted book with readable text.";
 
+"Reader_finishedBadge_pullToUnreadTitle_Luna" = "Pull up to mark unread";
+"Reader_finishedBadge_releaseToUnreadTitle_Luna" = "Release to mark unread";
+"Reader_finishedBadge_markUnreadAccessibilityHint_Luna" = "Marks this article as unread and keeps it out of the archive";
+
 "Reader_finishedBadge_pullToReadTitle_Luna" = "Pull up to mark read";
 "Reader_finishedBadge_releaseToReadTitle_Luna" = "Release to mark read";
 "Reader_finishedBadge_markReadAccessibilityHint_Luna" = "Marks this article as read and moves it to the archive";

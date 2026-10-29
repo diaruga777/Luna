@@ -23,9 +23,13 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   the save finished. Music finishes its standalone
   readout export before enqueueing it. Typical English articles
   up to 1,200 words use one request; longer text is split into sequential requests
-  of at most 1,200 words and 7,500 UTF-8 bytes, preserving the text. The byte limit
-  also bounds text in languages without whitespace. Splits prefer nearby word
-  boundaries. Voice stays `Kore`. Models fall back in order:
+  targeting 1,200 words and 7,500 UTF-8 bytes. Natural Language sentence ranges
+  partition the original text exactly once, including separators, quotes and
+  scripts without whitespace. Every split is a sentence or paragraph end;
+  requests never repeat a previous chunk's words as context. An indivisible
+  sentence exceeding either target stays whole, so unusually long sentences can
+  exceed those targets and may be rejected by the provider. Voice stays `Kore`.
+  Models fall back in order:
   `gemini-3.8-flash-tts`, `gemini-3.1-flash-tts-preview`, then
   `gemini-2.5-flash-preview-tts`. A quota or unavailable-model response advances
   to the next model for the remaining chunks; authentication, transport and
@@ -46,8 +50,10 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   from backups and shared between Reader and Music. Existing Reader-local cache
   entries migrate on first access without another request. A process-wide actor
   and a cross-process advisory file lock prevent duplicate API work. Identity includes the saved article UUID, text, block
-  boundaries, primary model, voice and cache format. The previous v2 AAC identity
-  is preserved so enabling streaming does not invalidate existing audio. An unchanged article reuses its
+  boundaries, primary model, voice, cache format and the actual chunk ranges.
+  The v3 sentence cache separates the previous v2 word-split audio, whose
+  boundaries cannot safely be reused with the new plan. Old entries remain
+  subject to retention/deletion; readouts generate once under v3. An unchanged article reuses its
   audio across pauses, seeks, replays, both apps and app restarts. Edited/refined spoken
   text creates a new cache identity. Each audio chunk expires 14 days after
   generation while its article is unread (including opened-but-unfinished), or
@@ -58,14 +64,33 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   nightly background runs, under the same cross-process lock as generation.
   Cleanup is opportunistic when iOS allows the app to run. Explicit deletion,
   removing the article and uninstalling also remove audio.
-- SSE framing handles metadata, multiline events and UTF-8 lines. Audio format,
+- SSE framing handles metadata, multiline events and UTF-8 lines. Replayed
+  event IDs are consumed once; a conflicting payload for the same ID fails
+  rather than appending duplicate PCM. Identical audio under different IDs is
+  preserved (silence and repeated samples are valid). Audio format,
   base64 and an explicit successful terminal status are required; closing the
   socket alone never publishes a cache entry. Valid completed PCM is compressed
   to 64 kbps AAC, finalized, atomically published and validated before reuse.
-  Temporary PCM spools are removed with the generation/renderer lifetime.
-  Concurrent requests for an article share generation. Exhausting every model or a network failure
-  pauses playback, reports an actionable error, and never silently skips text
-  or marks the article finished. An explicit retry reuses completed chunks.
+  Temporary playback spools are removed with the generation/renderer lifetime.
+  Every received PCM delta is also appended to a durable `.partial.pcm` file in
+  the same cache before it becomes available for playback. An atomic
+  `.partial.json` manifest records confirmed sentence text/frame checkpoints.
+  These files survive transport errors, quota exhaustion, malformed terminal
+  events, deadlines, cancellation and process termination. They never count as
+  completed readouts or exports. Successful AAC publication removes that chunk's
+  partial files. Partial PCM uses the same read/unread retention window as AAC,
+  measured from its last received audio. Concurrent requests share generation.
+  Exhausting every model or a network failure pauses playback, reports an
+  actionable error, and never silently skips text or marks the article finished.
+  An explicit retry reuses completed chunks and recovers interrupted audio:
+  installed on-device SpeechTranscriber models align the unfinished stream to
+  the exact input prefix, retaining audio only through the last confirmed full
+  sentence and requesting only the remaining suffix. The incomplete final
+  sentence is regenerated. Subsequent failures retain all earlier confirmed
+  prefixes. No WPM estimate is used to drop text. Recovery does not download
+  speech assets or use another cloud service. If the device/language has no
+  installed model, alignment times out (30 seconds), or words do not match,
+  recovery falls back to the previous confirmed sentence or complete chunk.
 - Every request has a 120-second wall-clock deadline and a matching URLSession
   resource timeout. Pausing during initial preparation cancels that request;
   resuming retries explicitly, retaining completed sections. The mini-player
@@ -81,8 +106,12 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   audio from the failed request; a quota error after PCM arrives pauses instead
   of restarting the chunk and potentially repeating words already heard.
 - Google does not supply speech alignment timestamps. Playback preserves every
-  generated frame; paragraph seeking/resume uses proportional text offsets
-  within each generated chunk. It is approximate and may land mid-sentence.
+  generated frame exactly once. After a stream failure, the renderer hands the
+  audible chunk/frame position (excluding queued lookahead) to its replacement,
+  which resumes at the previous confirmed sentence. Completed cached sections
+  can be aligned on device for the same recovery; absent reliable timing, their
+  sentence-aligned start is the safe fallback. Ordinary paragraph seeking and
+  cold restoration still use approximate proportional text offsets.
   Gemini audio emits no word events, so RSVP does not pretend to synchronize
   individual words. Speed control, mini-player, Now Playing, background audio
   and article completion use the existing playback center and engine.
@@ -163,7 +192,8 @@ not add quota. No account/project rotation is implemented.
 Let `R` = free requests/day, `M` = requests/minute, `T` = input tokens/minute,
 `L` = article words, and `C` = the actual number of chunks produced by Luna.
 For ordinary English with roughly six UTF-8 bytes per word including spacing,
-`C ≈ ceil(L / 1200)`; long words, other languages or the byte bound can increase it.
+`C ≈ ceil(L / 1200)`; sentence boundaries, long words, other languages or the
+byte target can increase it.
 
 - Complete articles/day: `floor(R / C)`.
 - Words/day for equal-length articles: `L × floor(R / C)`.
@@ -224,3 +254,15 @@ Pacific-day resets, cancellation, deadlines, export and playback-center completi
 Music coverage checks filtering, the bundled Reader icon and cell reuse, source
 completion, deleted-source handling, queue ordering, reuse and real readout playback.
 Live Google synthesis with the user's credential has not been exercised.
+
+## Sentence recovery validation (2026-10-29)
+
+Simulator regressions cover disjoint/lossless sentence ranges, abbreviations,
+quotes, emoji and unspaced scripts; indivisible oversized sentences; repeated
+network/quota failures across new provider instances; exact retained-frame and
+remaining-transcript totals; odd-byte interruption; cancellation/deadline
+persistence; unavailable/mismatched alignment; audible-frame retry handoff;
+and SSE replay deduplication. Recovery timing is injected in these tests;
+installed-device SpeechTranscriber and live Google synthesis have not been
+exercised. Speech timing APIs follow [Apple's SpeechAnalyzer documentation](https://developer.apple.com/documentation/speech/speechanalyzer);
+Gemini audio/event fields follow the [Interactions API reference](https://ai.google.dev/api/interactions-api).

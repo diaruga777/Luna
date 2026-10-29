@@ -1,15 +1,19 @@
 import Foundation
+import CryptoKit
 
 /// Incremental SSE framing. A closed socket is not evidence of a complete readout.
 /// Parsing bytes as UTF-8 lines also handles CRLF and non-ASCII server metadata.
 struct GeminiSpeechEvents {
     private var dataLines: [String] = []
     private var eventBytes = 0
+    private var eventID: String?
+    private var seenEvents: [String: SHA256.Digest] = [:]
     private(set) var completed = false
     private(set) var audioBytes = 0
 
     mutating func line(_ line: String, receive: (Data) throws -> Void) throws {
         guard !line.isEmpty else { try dispatch(receive: receive); return }
+        if line.hasPrefix("id:") { eventID = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces); return }
         guard line.hasPrefix("data:") else { return }
         var value = String(line.dropFirst(5))
         if value.first == " " { value.removeFirst() }
@@ -26,9 +30,20 @@ struct GeminiSpeechEvents {
     private mutating func dispatch(receive: (Data) throws -> Void) throws {
         guard !dataLines.isEmpty else { return }
         let data = Data(dataLines.joined(separator: "\n").utf8)
+        let framingID = eventID
+        eventID = nil
         dataLines = []; eventBytes = 0
         guard let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = event["event_type"] as? String else { throw GeminiSpeechError.incomplete }
+        if let id = event["event_id"] as? String ?? framingID, !id.isEmpty {
+            let digest = SHA256.hash(data: data)
+            if let previous = seenEvents[id] {
+                guard previous == digest else { throw GeminiSpeechError.incomplete }
+                return // A replayed event must never append its PCM twice.
+            }
+            guard seenEvents.count < 100_000 else { throw GeminiSpeechError.invalidAudio }
+            seenEvents[id] = digest
+        }
         if type == "error" || event["error"] != nil {
             throw GeminiArticleSpeech.speechError(statusCode: 500, apiCode: GeminiArticleSpeech.apiErrorCode(from: data))
         }

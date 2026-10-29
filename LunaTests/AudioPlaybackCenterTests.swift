@@ -146,6 +146,33 @@ final class AudioPlaybackCenterTests: XCTestCase {
         XCTAssertEqual(cloud.renderedBlocks.count, 2)
     }
 
+    func testProgressiveRetryHandsAudibleFrameToReplacementRenderer() {
+        let gate = ProgressiveTestGate(), retryGate = ProgressiveTestGate()
+        let original = ProgressiveTestRenderer(gate: gate), retry = ProgressiveTestRenderer(gate: retryGate)
+        let point = ProgressiveSpeechPosition(chunk: 2, frame: 36_000)
+        original.recoveryPosition = point
+        var attempts = 0
+        center.articleRendererProvider = { _, _, _ in
+            attempts += 1
+            return attempts == 1 ? original : retry
+        }
+        let (item, _) = startPlayback(blockCount: 3)
+        waitUntil(self.engine.scheduledSegments.count == 2)
+        engine.currentTime = 1.5
+        engine.completeSegment(at: 0); engine.completeSegment(at: 1)
+        Task { await gate.finish(error: GeminiSpeechError.incomplete) }
+        waitUntil(original.requestedSeconds != nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        XCTAssertEqual(center.state, .paused(itemID: item.id))
+        XCTAssertEqual(original.requestedSeconds, 1.5)
+        center.resume()
+        waitUntil(retry.resumedPosition != nil)
+        XCTAssertEqual(retry.resumedPosition, point)
+        XCTAssertEqual(attempts, 2)
+        XCTAssertTrue(store.finishedIDs.isEmpty)
+        Task { await retryGate.finish() }
+    }
+
     func testPauseCancelsPendingCloudPreparationAndResumeCanRetry() {
         var attempts = 0
         center.articleRendererProvider = { _, _, _ in
@@ -616,8 +643,16 @@ private final class ProgressiveTestRenderer: ProgressiveSpeechRendering {
     let canonicalFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)
     private let gate: ProgressiveTestGate
     private var count = 0
+    var recoveryPosition: ProgressiveSpeechPosition?
+    private(set) var requestedSeconds: TimeInterval?
+    private(set) var resumedPosition: ProgressiveSpeechPosition?
     init(gate: ProgressiveTestGate) { self.gate = gate }
     func render(_ block: AudioScript.SpokenBlock) async throws -> RenderedSegment { throw GeminiSpeechError.unavailable }
+    func position(afterPlaying seconds: TimeInterval) async -> ProgressiveSpeechPosition? {
+        requestedSeconds = seconds
+        return recoveryPosition
+    }
+    func resume(from position: ProgressiveSpeechPosition) async { resumedPosition = position }
     func nextSegment(startingAt block: AudioScript.SpokenBlock, sessionID: UUID) async throws -> RenderedSegment? {
         guard count < 2 else { try await gate.wait(); return nil }
         count += 1

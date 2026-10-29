@@ -5,17 +5,36 @@ import Foundation
 /// invalidates an in-flight pull on seek, pause/restart or article replacement.
 protocol ProgressiveSpeechRendering: SpeechRendering {
     func nextSegment(startingAt block: AudioScript.SpokenBlock, sessionID: UUID) async throws -> RenderedSegment?
+    func position(afterPlaying seconds: TimeInterval) async -> ProgressiveSpeechPosition?
+    func resume(from position: ProgressiveSpeechPosition) async
+}
+
+struct ProgressiveSpeechPosition: Equatable {
+    let chunk: Int
+    let frame: Int
+}
+
+extension ProgressiveSpeechRendering {
+    func position(afterPlaying seconds: TimeInterval) async -> ProgressiveSpeechPosition? { nil }
+    func resume(from position: ProgressiveSpeechPosition) async {}
 }
 
 /// Disk-backed PCM avoids retaining an entire article while generation runs
 /// ahead of listening. These files are private temporary transport buffers;
 /// only validated, finalized AAC files enter the durable shared cache.
 final class GeminiSpeechSpool: @unchecked Sendable {
-    struct Snapshot { let bytes: Int; let complete: Bool; let error: Error? }
+    struct Snapshot {
+        let bytes: Int
+        let complete: Bool
+        let error: Error?
+        let prepared: Bool
+        let boundaries: [GeminiSpeechAlignment.Boundary]
+    }
     private let lock = NSLock()
     private let directory: URL
     private var sizes: [Int]
     private var completed: Set<Int> = []
+    private var prepared: [Int: [GeminiSpeechAlignment.Boundary]] = [:]
     private var failure: Error?
     private var fraction: Double = 0
     private var progressHandlers: [(Double) -> Void] = []
@@ -37,7 +56,8 @@ final class GeminiSpeechSpool: @unchecked Sendable {
     }
     func snapshot(_ chunk: Int) -> Snapshot {
         lock.lock(); defer { lock.unlock() }
-        return Snapshot(bytes: sizes[chunk], complete: completed.contains(chunk), error: failure)
+        return Snapshot(bytes: sizes[chunk], complete: completed.contains(chunk), error: failure,
+                        prepared: prepared[chunk] != nil, boundaries: prepared[chunk] ?? [])
     }
     func data(_ chunk: Int, offset: Int = 0, count: Int? = nil) throws -> Data {
         let handle = try FileHandle(forReadingFrom: url(chunk)); defer { try? handle.close() }
@@ -45,6 +65,9 @@ final class GeminiSpeechSpool: @unchecked Sendable {
         return try handle.read(upToCount: count ?? 64 * 1_024 * 1_024) ?? Data()
     }
     func complete(_ chunk: Int) { lock.lock(); completed.insert(chunk); lock.unlock() }
+    func prepare(_ chunk: Int, boundaries: [GeminiSpeechAlignment.Boundary]) {
+        lock.lock(); prepared[chunk] = boundaries; lock.unlock()
+    }
     func fail(_ error: Error) { lock.lock(); failure = error; progressHandlers = []; lock.unlock() }
     func observeProgress(_ report: @escaping (Double) -> Void) {
         lock.lock()
@@ -75,11 +98,26 @@ actor GeminiProgressiveSpeechRenderer: ProgressiveSpeechRendering {
     private var frame = 0
     private var seekRange: NSRange?
     private var lastTextOffset = 0
+    private var resumePosition: ProgressiveSpeechPosition?
+    private var timeline: [(seconds: Double, chunk: Int, frame: Int, count: Int)] = []
+    private var renderedSeconds = 0.0
+    private let recognize: GeminiSpeechAlignment.Recognize
 
-    init(folder: URL, plan: GeminiSpeechPlan, live: GeminiSpeechSpool, task: Task<URL, Error>) {
+    init(folder: URL, plan: GeminiSpeechPlan, live: GeminiSpeechSpool, task: Task<URL, Error>,
+         recognize: @escaping GeminiSpeechAlignment.Recognize = GeminiSpeechAlignment.recognize) {
         self.folder = folder; self.plan = plan; self.live = live; self.task = task
+        self.recognize = recognize
+    }
+    func position(afterPlaying seconds: TimeInterval) -> ProgressiveSpeechPosition? {
+        guard let entry = timeline.last(where: { $0.seconds <= max(0, seconds) }) else { return nil }
+        let offset = min(entry.count, max(0, Int((seconds - entry.seconds) * 24_000)))
+        return ProgressiveSpeechPosition(chunk: entry.chunk, frame: entry.frame + offset)
+    }
+    func resume(from position: ProgressiveSpeechPosition) {
+        resumePosition = position
     }
     func ready() async throws {
+        if let error = live.snapshot(0).error { throw error }
         while live.snapshot(0).bytes < 2 && !GeminiArticleSpeech.isPlayable(folder.appendingPathComponent("0.m4a")) {
             try Task.checkCancellation()
             if let error = live.snapshot(0).error { throw error }
@@ -105,8 +143,13 @@ actor GeminiProgressiveSpeechRenderer: ProgressiveSpeechRendering {
                 throw GeminiSpeechError.invalidAudio
             }
             sessionID = token; chunk = index; frame = 0
+            timeline = []; renderedSeconds = 0
             lastTextOffset = range.location
             seekRange = range.location > plan.chunkRanges[index].location ? range : nil
+            if let resumePosition, plan.chunks.indices.contains(resumePosition.chunk) {
+                chunk = resumePosition.chunk; seekRange = nil
+                lastTextOffset = plan.chunkRanges[chunk].location
+            }
         }
         while chunk < plan.chunks.count {
             try Task.checkCancellation()
@@ -115,6 +158,27 @@ actor GeminiProgressiveSpeechRenderer: ProgressiveSpeechRendering {
             if let error = snapshot.error { throw error }
             let fileURL = folder.appendingPathComponent("\(chunk).m4a")
             let cached = GeminiArticleSpeech.isPlayable(fileURL)
+            if let position = resumePosition {
+                guard cached || snapshot.prepared else { try await Task.sleep(nanoseconds: 50_000_000); continue }
+                var boundaries = snapshot.boundaries
+                if cached {
+                    // Successful sections have no provider timestamps either.
+                    // Recover the audible sentence, not the generation frontier.
+                    let audio = try GeminiArticleSpeech.pcm(fromAudioAt: fileURL)
+                    let wav = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+                    defer { try? FileManager.default.removeItem(at: wav) }
+                    try GeminiArticleSpeech.wav(fromPCM: audio).write(to: wav)
+                    if let spans = try? await GeminiSpeechAlignment.measure(wav, text: plan.chunks[chunk], recognize: recognize) {
+                        boundaries = GeminiSpeechAlignment.boundaries(text: plan.chunks[chunk], spans: spans, frames: audio.count / 2)
+                    }
+                    try Task.checkCancellation()
+                    guard sessionID == token else { throw CancellationError() }
+                }
+                let boundary = boundaries.last(where: { $0.frames <= position.frame })
+                frame = boundary?.frames ?? 0
+                lastTextOffset = plan.chunkRanges[chunk].location + (boundary?.textEnd ?? 0)
+                resumePosition = nil
+            }
             // A proportional seek needs the final duration. Fresh playback can
             // consume the first PCM frames immediately, before any chunk closes.
             if seekRange != nil && !snapshot.complete && !cached {
@@ -158,6 +222,8 @@ actor GeminiProgressiveSpeechRenderer: ProgressiveSpeechRendering {
                 let textOffset = max(lastTextOffset, range.location + min(range.length - 1, Int(Double(frame) / Double(expectedFrames) * Double(range.length))))
                 lastTextOffset = textOffset
                 let blockIndex = plan.blockRanges.first(where: { NSLocationInRange(textOffset, $0.value) })?.key ?? block.blockIndex
+                timeline.append((renderedSeconds, chunk, frame, count))
+                renderedSeconds += Double(count) / 24_000
                 frame += count
                 return RenderedSegment(blockIndex: blockIndex, buffers: buffers, wordMarkers: [], duration: Double(count) / 24_000, format: target)
             }

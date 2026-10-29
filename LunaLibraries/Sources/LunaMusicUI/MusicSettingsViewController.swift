@@ -1,4 +1,5 @@
 import UIKit
+import LunaAppConfig
 import LunaMusicCore
 
 @MainActor
@@ -24,14 +25,15 @@ public final class MusicSettingsViewController: UITableViewController {
     }
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     private func reload() { cached = vault.cachedSongs; tableView.reloadData() }
-    public override func numberOfSections(in tableView: UITableView) -> Int { 3 }
+    public override func numberOfSections(in tableView: UITableView) -> Int { 4 }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 2 : section == 1 ? 2 : cached.count
+        section == 3 ? 1 : section == 0 ? 2 : section == 1 ? 2 : cached.count
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        ["Music Sources", "Automatic Downloads", "Downloaded Songs (\(cached.count))"][section]
+        ["Music Sources", "Automatic Downloads", "Downloaded Songs (\(cached.count))", "Automations"][section]
     }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        if section == 3 { return nil }
         if section == 0 { return MusicSettings.connectionError ?? vault.errorMessage ?? "Add songs to the Music folder inside your Mac’s Vault folder, organized by artist and album." }
         if section == 1 { return vault.cacheProgress ?? "Automatically download your most-played Vault playlists. Set to 0 to turn this off. Songs you download yourself are kept." }
         let bytes = cached.reduce(Int64(0)) { $0 + ($1.file?.size ?? 0) }
@@ -42,6 +44,8 @@ public final class MusicSettingsViewController: UITableViewController {
         cell.accessoryView = nil; cell.accessoryType = .none; cell.selectionStyle = .default
         var config = cell.defaultContentConfiguration()
         switch indexPath.section {
+        case 3:
+            config.text = "Automations"; config.image = UIImage(systemName: "arrow.triangle.branch"); cell.accessoryType = .disclosureIndicator
         case 0:
             config.text = indexPath.row == 0 ? "Luna Mac" : "Apple Music Access"
             config.image = UIImage(systemName: indexPath.row == 0 ? "desktopcomputer" : "music.note")
@@ -69,7 +73,8 @@ public final class MusicSettingsViewController: UITableViewController {
     }
     public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if indexPath.section == 0, indexPath.row == 0, let controller = MusicSettings.connectionController?() {
+        if indexPath.section == 3 { navigationController?.pushViewController(AutomationSettingsViewController(app: .music), animated: true) }
+        else if indexPath.section == 0, indexPath.row == 0, let controller = MusicSettings.connectionController?() {
             navigationController?.pushViewController(controller, animated: true)
         } else if indexPath.section == 0, indexPath.row == 1, let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
         else if indexPath.section == 1, indexPath.row == 1 { vault.retryDownloads() }

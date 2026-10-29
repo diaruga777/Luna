@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import LunaAppConfig
 import MediaPlayer
 import MusicKit
 
@@ -147,6 +148,7 @@ public final class MusicLibraryController: ObservableObject {
         }
         if !items.isEmpty { try await add(items, to: MusicPlaylist(playlist)) }
         else { await reload() }
+        AppAutomation.record(.music, kind: "playlist", id: "playlist:apple:\(playlist.persistentID)", operation: "created")
         return MusicPlaylist(playlist)
     }
 
@@ -163,6 +165,7 @@ public final class MusicLibraryController: ObservableObject {
             }
         }
         await reload()
+        AppAutomation.record(.music, kind: "playlist", id: "playlist:\(playlist.persistentID)", operation: "updated")
     }
 
     private static var libraryAuthorizationStatus: MusicAuthorization.Status {

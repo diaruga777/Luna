@@ -128,8 +128,8 @@ let package = Package(
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicFiles"),
         .target(name: "LunaPodcastCore"),
-        .target(name: "LunaMusicCore", dependencies: ["LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
-        .target(name: "LunaMusicUI", dependencies: ["LunaMusicCore", "LunaPodcastCore", "LunaDesignSystem", "LunaModels"]),
+        .target(name: "LunaMusicCore", dependencies: ["LunaAppConfig", "LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
+        .target(name: "LunaMusicUI", dependencies: ["LunaAppConfig", "LunaMusicCore", "LunaPodcastCore", "LunaDesignSystem", "LunaModels"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
         .target(name: "LunaAppConfig"),

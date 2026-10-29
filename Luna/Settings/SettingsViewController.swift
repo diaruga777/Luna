@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaAppConfig
 import LunaSavesUI
 import LunaSaves
 import LunaDesignSystem
@@ -99,6 +100,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             ? [SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() }]
             : [])
         + [
+            SettingsCategory(title: "Automations", symbol: "arrow.triangle.branch") { AutomationSettingsViewController(app: .reader) },
             SettingsCategory(title: L10n.string("Settings_appearance_title"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             // Universal: every app can hand its own links out and take a file
             // back, and each keeps only its own kinds either way.

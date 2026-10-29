@@ -1,3 +1,4 @@
+import LunaAppConfig
 import LunaKeyboardCore
 import LunaKeyboardUI
 import LunaStorage
@@ -14,11 +15,14 @@ final class KeyboardPreferencesController: KeyboardTableController {
     tableView.reloadData()
   }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    KeyboardPreferences.toggles.count + 1
+    KeyboardPreferences.toggles.count + 2
   }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath)
     -> UITableViewCell
   {
+    if indexPath.row == KeyboardPreferences.toggles.count + 1 {
+      let c = cell("Automations"); c.accessoryType = .disclosureIndicator; return c
+    }
     if indexPath.row == KeyboardPreferences.toggles.count {
       let c = cell("Theme", detail: KeyboardPreferences(values: values).theme.rawValue)
       c.accessoryType = .disclosureIndicator
@@ -44,6 +48,9 @@ final class KeyboardPreferencesController: KeyboardTableController {
     return c
   }
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    if indexPath.row == KeyboardPreferences.toggles.count + 1 {
+      navigationController?.pushViewController(AutomationSettingsViewController(app: .keyboard), animated: true); return
+    }
     guard indexPath.row == KeyboardPreferences.toggles.count else { return }
     let menu = UIAlertController(title: "Keyboard Theme", message: nil, preferredStyle: .actionSheet)
     for theme in KeyboardTheme.allCases {

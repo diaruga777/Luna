@@ -48,6 +48,7 @@ public final class SavesStore {
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
+    private let automationJournal: AppAutomation?
 
     /// Off-main home for fire-and-forget position writes (`asyncUpdate` below) —
     /// a serial queue so those writes still apply in submission order relative to
@@ -67,13 +68,15 @@ public final class SavesStore {
 
     /// The whole list as last read, valid while `cachedDataVersion` still matches
     /// the file's. Only ever read or written from inside a database transaction.
+    private var automationChanges: [(String, String, String)] = []
     private var cachedItems: [SavedItem]?
     private var cachedDataVersion: Int64?
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
-    public init(containerURL: URL? = nil, preloadStore: PreloadStore? = nil) {
+    public init(containerURL: URL? = nil, preloadStore: PreloadStore? = nil, automationJournal: AppAutomation? = nil) {
         self.overrideContainerURL = containerURL
+        self.automationJournal = automationJournal
         self.preloads = preloadStore ?? .shared
     }
 
@@ -1058,6 +1061,10 @@ public final class SavesStore {
                 try self.writeSave(stored, previous: previous, in: db)
             }
             if let ownedImages {
+                // The content file may change without any save column changing.
+                if !self.automationChanges.contains(where: { $0.1 == item.id.uuidString }) {
+                    self.automationChanges.append((stored.item.exportKind.rawValue, item.id.uuidString, "updated"))
+                }
                 try SavedLibrarySearchSchema.setBody(SavedLibrarySearchSchema.text(persistedContent), id: item.id, in: db)
                 // The images are reconciled even when no column changed — the same
                 // content re-saved still has to hold its pictures.
@@ -1393,8 +1400,11 @@ public final class SavesStore {
     private func write<T>(_ body: (SavesDatabase) throws -> T) -> T? {
         guard let database = database() else { return nil }
         var wrote = false
+        var committedChanges: [(String, String, String)] = []
         do {
             let result = try database.transaction { db in
+                self.automationChanges = []
+                defer { committedChanges = self.automationChanges; self.automationChanges = [] }
                 let changesBefore = db.totalChanges
                 let value = try body(db)
                 wrote = db.totalChanges != changesBefore
@@ -1407,7 +1417,13 @@ public final class SavesStore {
                 }
                 return value
             }
-            if wrote { postChanged() }
+            if wrote {
+                for (kind, id, operation) in committedChanges {
+                    if let automationJournal { _ = try? automationJournal.record(kind: kind, itemID: id, operation: operation) }
+                    else if overrideContainerURL == nil { AppAutomation.record(.reader, kind: kind, id: id, operation: operation) }
+                }
+                postChanged()
+            }
             return result
         } catch {
             record(error, "write")
@@ -2310,6 +2326,21 @@ public final class SavesStore {
             stored.item.sendQueuedWhileRead[xteink] = nil
         }
         try db.run(SaveRow.upsertSQL) { try SaveRow.bind(stored.item, seq: stored.seq, to: $0) }
+        let item = stored.item
+        // Ingestion placeholders become usable only at ready/plain-link. Resume
+        // positions and bookkeeping are deliberately not automation events.
+        if item.state == .ready || item.state == .link {
+            let kind = item.state == .link ? "link" : item.exportKind.rawValue
+            let wasUsable = previous.map {
+                ($0.state == .ready || $0.state == .link) && ($0.state == .link ? "link" : $0.exportKind.rawValue) == kind
+            } ?? false
+            if !wasUsable || previous?.title != item.title || previous?.contentFileName != item.contentFileName
+                || previous?.readState != item.readState || previous?.archivedAt != item.archivedAt
+                || previous?.priceTracker != item.priceTracker || previous?.bumpDate != item.bumpDate {
+                let operation = !wasUsable ? "created" : "updated"
+                automationChanges.append((kind, item.id.uuidString, operation))
+            }
+        }
         // Every artifact this save's own columns name, claimed in the same
         // transaction as the columns. A file a column stopped pointing at loses
         // this owner here, which is how a replaced thumbnail is freed. Skipped when
@@ -2423,7 +2454,9 @@ public final class SavesStore {
     }
 
     private func deleteRow(_ itemID: UUID, in db: SavesDatabase) throws {
+        let existing = try SavesReader.item(id: itemID, in: db)?.item
         try db.run("DELETE FROM saves WHERE id = ?") { try $0.bind(1, uuid: itemID) }
+        if let existing { automationChanges.append((existing.state == .link ? "link" : existing.exportKind.rawValue, itemID.uuidString, "deleted")) }
     }
 
     // MARK: - Private

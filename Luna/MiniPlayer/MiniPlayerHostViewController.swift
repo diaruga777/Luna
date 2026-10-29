@@ -29,7 +29,14 @@ final class MiniPlayerHostViewController: UIViewController {
     /// The wrapped main navigation controller used by deep links and notification routes.
     let contentNavigationController: UINavigationController
 
-    private lazy var miniPlayer = AudioMiniPlayerView()
+    private lazy var miniPlayer: AudioMiniPlayerView = {
+        let player = AudioMiniPlayerView()
+        player.isHidden = true
+        player.alpha = 0
+        player.delegate = self
+        view.addSubview(player)
+        return player
+    }()
     private var barMode: AudioMiniPlayerView.BarMode = .hidden
     private var meldObserver: NSObjectProtocol?
     /// Extension → main-app handoff: true while the bar shows a paused
@@ -71,11 +78,6 @@ final class MiniPlayerHostViewController: UIViewController {
     }
 
     private func installPlayer() {
-        miniPlayer.isHidden = true
-        miniPlayer.alpha = 0
-        view.addSubview(miniPlayer)
-
-        wireControls()
         AudioPlaybackCenter.shared.addObserver(self)
         meldObserver = NotificationCenter.default.addObserver(
             forName: AudioMiniPlayerMeld.didChangeNotification, object: nil, queue: .main
@@ -95,10 +97,6 @@ final class MiniPlayerHostViewController: UIViewController {
         if barMode != .hidden {
             miniPlayer.frame = barFrame(for: barMode)
         }
-    }
-
-    private func wireControls() {
-        miniPlayer.delegate = self
     }
 
     // MARK: - Bar placement

@@ -282,7 +282,6 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         view.addSubview(weeklyHost)
         view.addSubview(pasteRow)
-        pasteRow.pasteTarget = self
         if TranscribeSaveAction.isOffered {
             pasteRow.addInteraction(UIContextMenuInteraction(delegate: self))
         }
@@ -693,6 +692,9 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCardCentered = true
+        // A neighbouring utility card must not contact the pasteboard daemon
+        // while the user is opening an article. Bind only on first selection.
+        if pasteRow.pasteTarget == nil { pasteRow.pasteTarget = self }
         if pasteRow.state == .success { pasteRow.setState(.idle) }
         weeklyHost.cardDidBecomeCentered()
         updateSetupLabelClock()

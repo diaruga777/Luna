@@ -119,7 +119,7 @@ final class UtilCardTests: XCTestCase {
 
     // MARK: - Paste action
 
-    func testPasteActionFillsTheIdleRowAndTargetsItsOwnerBeforeMounting() throws {
+    func testPasteActionBindsOnlyWhenTheUtilityCardIsCentered() throws {
         let card = makeCard(showsOnboarding: false)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
@@ -128,6 +128,8 @@ final class UtilCardTests: XCTestCase {
         row.layoutIfNeeded()
         let control = try XCTUnwrap(row.descendants(of: UIPasteControl.self).first)
 
+        XCTAssertNil(control.target, "Article launch must not initialize the neighbour's pasteboard")
+        card.cardDidBecomeCentered()
         XCTAssertTrue(control.target === card)
         XCTAssertEqual(control.configuration.displayMode, .iconAndLabel)
         XCTAssertEqual(control.frame, row.bounds)
@@ -146,6 +148,7 @@ final class UtilCardTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         let row = try XCTUnwrap(card.view.descendants(of: OnboardingPasteRow.self).first)
+        card.cardDidBecomeCentered()
         let original = try XCTUnwrap(row.descendants(of: UIPasteControl.self).first)
         XCTAssertTrue(original.target === card)
         XCTAssertTrue(card.canPaste([NSItemProvider(object: "https://example.com" as NSString)]))

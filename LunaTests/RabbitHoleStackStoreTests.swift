@@ -12,6 +12,36 @@ final class RabbitHoleStackStoreTests: XCTestCase {
 
     // MARK: - Layer mode segments (regression: web-URL saves regain Original mode)
 
+    @MainActor
+    func testTextLaunchCreatesOnlyTheSelectedReaderMode() throws {
+        let layer = RabbitHoleLayerViewController(
+            shareProvider: nil, layout: RabbitHoleLayout())
+        layer.showsHeaderChrome = false
+        layer.externalChromeContentInset = 90
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(urlString: "https://example.com/lazy"),
+            knownContent: ArticleContent(title: "Lazy modes", blocks: [
+                .init(kind: .paragraph, text: "Saved text.", links: []),
+            ]))
+        layer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
+        layer.view.layoutIfNeeded()
+        layer.activatePrimaryContent()
+        XCTAssertNotNil(layer.activeScrollReader)
+        XCTAssertFalse(layer.hasCreatedRSVPReaderForTesting)
+        XCTAssertFalse(layer.hasCreatedOriginalReaderForTesting)
+
+        layer.setMode(.rsvp)
+        let rsvp = try XCTUnwrap(layer.children.first { $0 is RSVPViewController })
+        XCTAssertTrue(layer.hasCreatedRSVPReaderForTesting)
+        XCTAssertFalse(layer.hasCreatedOriginalReaderForTesting)
+        layer.setMode(.scroll)
+        layer.setMode(.rsvp)
+        XCTAssertTrue(layer.children.contains { $0 === rsvp }, "Selected modes remain reusable")
+        layer.setMode(.original)
+        XCTAssertTrue(layer.hasMountedOriginalReaderForTesting)
+        XCTAssertTrue(layer.hasCreatedOriginalReaderForTesting)
+    }
+
     /// A web-URL save must offer all three reading modes — scroll, RSVP, and the
     /// original (live/archived) page. The blank layer shell builds its chrome against a
     /// placeholder empty URL (which excludes `.original`), so `configure(...)` must

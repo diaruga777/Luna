@@ -18,7 +18,10 @@ import WebKit
 public final class OriginalPageViewController: UIViewController, WKNavigationDelegate {
     private var item: SavedItem?
     private var store: SavesStore
-    private let webView: WKWebView
+    private lazy var webView: WKWebView = {
+        let configuration = SavedArchiveWebConfiguration.makeReplayConfiguration()
+        return WKWebView(frame: .zero, configuration: configuration)
+    }()
     private enum LoadedDocument: Equatable {
         case archive
         case articleSnapshot
@@ -43,14 +46,11 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         self.store = store
         self.persistsScrollOffset = persistsScrollOffset
         self.pendingRestoreOffset = savedScrollOffset ?? (persistsScrollOffset ? item.lastOriginalScrollOffset : nil)
-        let configuration = SavedArchiveWebConfiguration.makeReplayConfiguration()
-        self.webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// Creates an empty, laid-out original/archive reader shell. RabbitHole uses this
-    /// to keep WebKit construction off the link-tap path, then supplies the item when
-    /// Original mode is actually selected.
+    /// Creates an empty archive reader. WebKit is created only when its view
+    /// is requested, so preparing a reader or changing its insets is cheap.
     public convenience init(store: SavesStore = .shared) {
         self.init(item: SavedItem(urlString: "about:blank"), store: store)
         self.item = nil
@@ -276,6 +276,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     """
 
     private func applyTopContentInset() {
+        guard isViewLoaded else { return }
         webView.scrollView.contentInset.top = topContentInset
         webView.scrollView.verticalScrollIndicatorInsets.top = topContentInset
     }

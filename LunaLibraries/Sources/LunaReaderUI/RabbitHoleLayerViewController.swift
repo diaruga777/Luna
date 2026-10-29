@@ -80,8 +80,24 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private var currentRole: RabbitHoleLayout.Role = .focused
     private var webView: WKWebView?
     private let scrollReader: ScrollReaderViewController
-    private let rsvpReader: RSVPViewController
-    private let originalReader: OriginalPageViewController
+    // Alternate modes are created only when selected. Building WebKit and the
+    // RSVP controls for every mounted text card blocks the initial deck.
+    private lazy var rsvpReader: RSVPViewController = {
+        #if DEBUG
+        hasCreatedRSVPReaderForTesting = true
+        #endif
+        return RSVPViewController(item: Self.emptyItem, content: Self.emptyContent)
+    }()
+    private lazy var originalReader: OriginalPageViewController = {
+        #if DEBUG
+        hasCreatedOriginalReaderForTesting = true
+        #endif
+        return OriginalPageViewController()
+    }()
+    #if DEBUG
+    public private(set) var hasCreatedRSVPReaderForTesting = false
+    public private(set) var hasCreatedOriginalReaderForTesting = false
+    #endif
 
     // Chrome (focused header + ancestor lips).
     private let header = UIView()
@@ -232,8 +248,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         self.scrollReader = ScrollReaderViewController(
             item: emptyItem, content: Self.emptyContent, audioEnabled: false,
             includesArticleTitle: includesArticleTitle)
-        self.rsvpReader = RSVPViewController(item: emptyItem, content: Self.emptyContent)
-        self.originalReader = OriginalPageViewController()
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -319,8 +333,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func applyExternalChromeInset() {
         let inset = showsHeaderChrome ? 0 : externalChromeContentInset
         scrollReader.topChromeInset = inset
-        rsvpReader.topContentInset = inset
-        originalReader.topContentInset = inset
+        (readerChild as? RSVPViewController)?.topContentInset = inset
+        (readerChild as? OriginalPageViewController)?.topContentInset = inset
         webView?.scrollView.contentInset.top = inset
         webView?.scrollView.verticalScrollIndicatorInsets.top = inset
     }
@@ -706,6 +720,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             removeLiveWebView()
             let originalItem = readerItem(for: url)
             // Restore the archive's OWN disjoint offset — never the shared reading position.
+            originalReader.topContentInset = showsHeaderChrome ? 0 : externalChromeContentInset
             originalReader.configure(
                 item: originalItem, savedScrollOffset: descriptor.originalScrollOffset)
             showChild(originalReader)
@@ -717,6 +732,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         embeddedReaderItemID = readerItem.id
 
         if mode == .rsvp {
+            rsvpReader.topContentInset = showsHeaderChrome ? 0 : externalChromeContentInset
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
             rsvpReader.linkActivationDelegate = self
             rsvpReader.completionDelegate = self
@@ -835,7 +851,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// Regression hook: a descriptor restored directly into Original must have
     /// mounted the archive reader, not merely selected the mode in chrome.
     public var hasMountedOriginalReaderForTesting: Bool {
-        readerChild === originalReader
+        readerChild is OriginalPageViewController
     }
     #endif
 

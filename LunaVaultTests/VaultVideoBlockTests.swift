@@ -3,6 +3,7 @@ import AVKit
 import UIKit
 import LunaVaultBEP
 import LunaVaultStore
+import LunaAppConfig
 import LunaVaultSync
 import LunaVaultUI
 
@@ -68,3 +69,49 @@ final class VaultVideoBlockTests: XCTestCase {
     }
 }
 
+
+final class VaultAutomationTests: XCTestCase {
+    func testPeerEventsDescribeVisibleObjectsAndResurrection() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "VaultAutomationTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let journal = AppAutomation(app: .vault, directory: root, defaults: defaults)
+        let store = try VaultFolderStore(rootURL: root.appendingPathComponent("Vault"), automationJournal: journal)
+        try store.savePeer(VaultPeerRecord(deviceID: DeviceID(bytes: Data(repeating: 1, count: 32)), name: "Mac", folderID: "vault"))
+        func apply(_ name: String = "article.txt", version: UInt64, deleted: Bool = false, invalid: Bool = false, folder: Bool = false) throws {
+            let blocks = folder || deleted || invalid ? [] : BlockLayout.blocks(for: Data()).blocks
+            let file = BEPFileInfo(name: name, type: folder ? .directory : .file, deleted: deleted, invalid: invalid,
+                version: VersionVector(counters: [.init(id: 1, value: version)]), sequence: Int64(version), blocks: blocks)
+            _ = try store.applyIndex(BEPIndex(folder: "vault", files: [file], isUpdate: true), ourShortID: 2)
+        }
+        try apply("unknown.txt", version: 1, deleted: true)
+        try apply(version: 1)
+        try apply(version: 1)
+        try store.setCachePinned(name: "article.txt", pinned: false)
+        try apply(version: 2, deleted: true)
+        try apply(version: 3)
+        try apply(version: 4, invalid: true)
+        try apply(version: 5, invalid: true)
+        XCTAssertEqual(try journal.changes().changes.map(\.notificationTitle), [
+            "Luna.vault.file.created", "Luna.vault.file.deleted", "Luna.vault.file.created", "Luna.vault.file.deleted"
+        ])
+        XCTAssertTrue(try store.automationItems().isEmpty)
+    }
+
+    func testFullIndexPurgePublishesDeletionForMissingObjects() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "VaultAutomationTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let journal = AppAutomation(app: .vault, directory: root, defaults: defaults)
+        let store = try VaultFolderStore(rootURL: root.appendingPathComponent("Vault"), automationJournal: journal)
+        try store.savePeer(VaultPeerRecord(deviceID: DeviceID(bytes: Data(repeating: 1, count: 32)), name: "Mac", folderID: "vault"))
+        let version = VersionVector(counters: [.init(id: 1, value: 1)])
+        _ = try store.applyIndex(BEPIndex(folder: "vault", files: [BEPFileInfo(name: "Empty", type: .directory, version: version)], isUpdate: false), ourShortID: 2)
+        let token = try journal.changes().nextToken
+        _ = try store.applyIndex(BEPIndex(folder: "vault", files: [], isUpdate: false), ourShortID: 2)
+        XCTAssertEqual(try store.purgeStaleGenerations(), ["Empty"])
+        XCTAssertEqual(try journal.changes(after: token).changes.map(\.notificationTitle), ["Luna.vault.folder.deleted"])
+    }
+}

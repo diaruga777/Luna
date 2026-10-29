@@ -15,6 +15,7 @@ public final class VaultFolderStore: @unchecked Sendable {
     public let rootURL: URL
     public let databaseURL: URL
     private let db: SQLiteDatabase
+    private let automationJournal: AppAutomation?
 
     /// Directories the store owns. Callers create files only inside these.
     public var cacheDirectory: URL { rootURL.appendingPathComponent("Cache", isDirectory: true) }
@@ -30,7 +31,8 @@ public final class VaultFolderStore: @unchecked Sendable {
         return try VaultFolderStore(rootURL: container.appendingPathComponent("Vault", isDirectory: true))
     }
 
-    public init(rootURL: URL) throws {
+    public init(rootURL: URL, automationJournal: AppAutomation? = nil) throws {
+        self.automationJournal = automationJournal
         self.rootURL = rootURL
         databaseURL = rootURL.appendingPathComponent("vault.sqlite")
         for directory in [rootURL, rootURL.appendingPathComponent("Cache"), rootURL.appendingPathComponent("Scratch"),
@@ -189,7 +191,7 @@ public final class VaultFolderStore: @unchecked Sendable {
     /// new generation; rows the peer no longer lists are purged by
     /// `purgeStaleGenerations()` at the start of the next session.
     public func applyIndex(_ index: BEPIndex, ourShortID: UInt64, now: Date = Date()) throws -> VaultIndexApplyResult {
-        var events: [(String, String, String)] = []
+        var events: [AutomationMutation] = []
         let result = try db.transaction {
             var result = VaultIndexApplyResult()
             var generation = try db.scalarUnlocked("SELECT index_generation FROM peer WHERE id = 1")
@@ -207,16 +209,14 @@ public final class VaultFolderStore: @unchecked Sendable {
                 let previous = try fileUnlocked(named: file.name)
                 try applyOne(file, generation: generation, ourShortID: ourShortID, now: now, into: &result)
                 let current = try fileUnlocked(named: file.name)
-                if previous?.version != current?.version || previous?.deleted != current?.deleted || previous?.type != current?.type {
-                    events.append((file.name, file.type == .directory ? "folder" : "file", file.deleted ? "deleted" : previous == nil ? "created" : "updated"))
-                }
+                events += Self.automationChanges(from: previous, to: current)
             }
             if maxSequence > 0 {
                 try db.executeUnlocked("UPDATE peer SET their_max_sequence = MAX(their_max_sequence, ?) WHERE id = 1", [.integer(maxSequence)])
             }
             return result
         }
-        for (name, kind, operation) in events { publishAutomation(name, kind: kind, operation: operation) }
+        publishAutomation(events)
         return result
     }
 
@@ -302,15 +302,19 @@ public final class VaultFolderStore: @unchecked Sendable {
     /// Drops peer rows a full `Index` did not repeat. Call at session start,
     /// when the previous full transfer has certainly finished.
     public func purgeStaleGenerations() throws -> [String] {
-        try db.transaction {
+        var events: [AutomationMutation] = []
+        let names = try db.transaction {
             let generation = try db.scalarUnlocked("SELECT index_generation FROM peer WHERE id = 1")
             var names: [String] = []
             try db.queryUnlocked("SELECT name FROM files WHERE origin = 0 AND generation < ? AND deleted = 0", [.integer(generation)]) {
                 names.append($0.text(0))
             }
+            for name in names { events += Self.automationChanges(from: try fileUnlocked(named: name), to: nil) }
             try db.executeUnlocked("DELETE FROM files WHERE origin = 0 AND generation < ?", [.integer(generation)])
             return names
         }
+        publishAutomation(events)
+        return names
     }
 
     static func parent(of name: String) -> String {
@@ -525,9 +529,33 @@ public final class VaultFolderStore: @unchecked Sendable {
             return records
         }
     }
+    private static func automationChanges(from previous: VaultFileRecord?, to current: VaultFileRecord?) -> [AutomationMutation] {
+        func live(_ value: VaultFileRecord?) -> VaultFileRecord? {
+            guard let value, !value.deleted, !value.invalid, value.type == .file || value.type == .directory else { return nil }
+            return value
+        }
+        let before = live(previous), after = live(current)
+        var changes: [AutomationMutation] = []
+        if let before, after == nil || before.type != after?.type {
+            changes.append(AutomationMutation(kind: before.type == .directory ? "folder" : "file", itemID: before.name, operation: "deleted"))
+        }
+        if let after {
+            if before == nil || before?.type != after.type {
+                changes.append(AutomationMutation(kind: after.type == .directory ? "folder" : "file", itemID: after.name, operation: "created"))
+            } else if before?.version != after.version {
+                changes.append(AutomationMutation(kind: after.type == .directory ? "folder" : "file", itemID: after.name, operation: "updated"))
+            }
+        }
+        return changes
+    }
     private func publishAutomation(_ name: String, kind: String, operation: String) {
-        guard rootURL == AppConfig.sharedContainerURL()?.appendingPathComponent("Vault", isDirectory: true) else { return }
-        AppAutomation.record(.vault, kind: kind, id: name, operation: operation)
+        publishAutomation([AutomationMutation(kind: kind, itemID: name, operation: operation)])
+    }
+    private func publishAutomation(_ mutations: [AutomationMutation]) {
+        if let automationJournal { _ = try? automationJournal.record(mutations) }
+        else if rootURL == AppConfig.sharedContainerURL()?.appendingPathComponent("Vault", isDirectory: true) {
+            AppAutomation.record(.vault, mutations: mutations)
+        }
     }
     public func liveFileCount() throws -> Int {
         try db.sync { Int(try db.scalarUnlocked("SELECT COUNT(*) FROM files WHERE deleted = 0 AND invalid = 0 AND type = 0")) }
@@ -557,7 +585,7 @@ public final class VaultFolderStore: @unchecked Sendable {
     }
 
     public func setCachePinned(name: String, pinned: Bool) throws {
-        guard let previous = try file(named: name), previous.cache?.pinned != pinned else { return }
+        guard let previous = try file(named: name), (previous.cache?.pinned ?? false) != pinned else { return }
         try db.execute("UPDATE files SET cache_pinned = ? WHERE name = ?", [.integer(pinned ? 1 : 0), .text(name)])
         publishAutomation(name, kind: "file", operation: "updated")
     }

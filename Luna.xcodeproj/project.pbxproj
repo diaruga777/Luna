@@ -135,6 +135,7 @@
 		156A2B7BD72FFDB508B39A51 /* KeyboardAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA88C65970E66C5F9D4673A6 /* KeyboardAppIntents.swift */; };
 		3D6E6C247708D0945741D398 /* VaultAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49E44F2F27EBE3B50060538 /* VaultAppIntents.swift */; };
 		BFC0C21DB6528E8AB6A7154B /* PodcastAutomationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9D9C512190AC126651E97D /* PodcastAutomationTests.swift */; };
+		09AAEDDBCBA24888AE40F160 /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -2008,6 +2009,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				09AAEDDBCBA24888AE40F160 /* AutomationAppIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

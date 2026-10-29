@@ -1,5 +1,6 @@
 import Foundation
 import LunaWriterModels
+import LunaAppConfig
 
 /// Everything this tier owns, built from two folders.
 ///
@@ -26,10 +27,11 @@ public final class WriterStorageStack {
     public init(
         databaseURL: URL, libraryRoot: URL,
         embedding: SentenceEmbedding? = nil,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        automationJournal: AppAutomation? = nil
     ) throws {
         self.libraryRoot = libraryRoot
-        self.database = try WriterDatabase(fileURL: databaseURL)
+        self.database = try WriterDatabase(fileURL: databaseURL, automationJournal: automationJournal)
         self.documentIndex = SQLiteDocumentIndex(database: database, embedding: embedding)
         self.noteIndex = SQLiteNoteIndex(database: database, embedding: embedding)
         // The library takes both indexes as collaborators, so its own writes
@@ -80,7 +82,7 @@ public final class WriterStorageStack {
         #endif
         return try WriterStorageStack(
             databaseURL: support.appendingPathComponent("writer.sqlite"),
-            libraryRoot: documents, embedding: embedding)
+            libraryRoot: documents, embedding: embedding, automationJournal: AppAutomation(app: .writer))
     }
 
     /// Runs off the main thread after startup. Old automatic links are derived

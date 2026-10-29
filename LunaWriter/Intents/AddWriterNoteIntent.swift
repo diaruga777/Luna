@@ -28,15 +28,15 @@ struct AddWriterNoteIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        let result = try WriterWiring.intentServices().addNote(text: text, to: document?.documentID)
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<[WriterNoteEntity]> {
+        let result = try WriterWiring.intentServices().captureNote(text: text, to: document?.documentID)
         let spoken: String
-        switch result {
+        switch result.destination {
         case .document(let sheet):
             spoken = L10n.string("WriterIntents_addNote_addedToSheet", sheet.title)
         case .inbox:
             spoken = L10n.string("WriterIntents_addNote_addedToInbox")
         }
-        return .result(dialog: IntentDialog(stringLiteral: spoken))
+        return .result(value: result.notes.map(WriterNoteEntity.init), dialog: IntentDialog(stringLiteral: spoken))
     }
 }

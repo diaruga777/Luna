@@ -1,5 +1,6 @@
 import Foundation
 import LunaWriterModels
+import LunaAppConfig
 import SQLite3
 
 /// A SQLite failure carrying the library's own message, so a log line says what
@@ -46,6 +47,7 @@ public final class WriterDatabase {
 
     public let fileURL: URL
 
+    private let automationJournal: AppAutomation?
     private var handle: OpaquePointer?
     private let queue: DispatchQueue
     private var statements: [String: OpaquePointer] = [:]
@@ -61,7 +63,8 @@ public final class WriterDatabase {
 
     /// Opens (creating if needed) the database at `fileURL`, applies the
     /// connection settings and brings the schema up to `schemaVersion`.
-    public init(fileURL: URL) throws {
+    public init(fileURL: URL, automationJournal: AppAutomation? = nil) throws {
+        self.automationJournal = automationJournal
         self.fileURL = fileURL
         self.queue = DispatchQueue(label: "com.hsanabria.luna.writerDatabase")
         try? FileManager.default.createDirectory(
@@ -82,6 +85,7 @@ public final class WriterDatabase {
             // throw the whole store out of existence; retry the migration
             // rather than leaving `makeDefault` with nothing to show.
             try retryingWhileBusy { try WriterSchema.migrate(self) }
+            if automationJournal != nil { try installAutomationTracking() }
         }
     }
 
@@ -122,11 +126,18 @@ public final class WriterDatabase {
     /// a lock race is retried, so anything it does outside SQL must be
     /// idempotent.
     public func transaction<T>(_ body: (WriterDatabase) throws -> T) throws -> T {
-        try queue.sync {
+        var mutations: [AutomationMutation] = []
+        let result = try queue.sync {
             try retryingWhileBusy {
                 try execute("BEGIN IMMEDIATE")
                 do {
                     let result = try body(self)
+                    if automationJournal != nil {
+                        // TEMP triggers participate in this same transaction:
+                        // rollbacks and busy retries never publish phantom edits.
+                        mutations = try pendingAutomationMutations()
+                        try execute("DELETE FROM luna_automation_changes")
+                    }
                     try execute("COMMIT")
                     return result
                 } catch {
@@ -135,6 +146,59 @@ public final class WriterDatabase {
                 }
             }
         }
+        if let automationJournal {
+            do { try automationJournal.record(mutations) }
+            catch { NSLog("Writer automation journal: %@", error.localizedDescription) }
+        }
+        return result
+    }
+
+    private func installAutomationTracking() throws {
+        try execute("CREATE TEMP TABLE luna_automation_changes (kind TEXT, item_id TEXT, operation TEXT)")
+        // updated_at, sort renumbering, embeddings, snapshots and reading marks
+        // are bookkeeping. Text revisions and user-owned fields are meaningful.
+        let tables: [(String, String, [String])] = [
+            ("documents", "document", ["group_id", "title", "snippet", "favorite", "goal_unit", "goal_target", "goal_mode", "file_path", "word_count", "char_count", "sentence_count", "revision", "trashed_at"]),
+            ("notes", "note", ["text", "source", "anchor_document_id", "anchor_start", "anchor_end", "anchor_exact", "anchor_prefix", "anchor_suffix"]),
+            ("groups", "group", ["name", "icon", "parent_id", "sort_index"])
+        ]
+        for (table, kind, columns) in tables {
+            for (operation, sql, row) in [("created", "INSERT", "NEW"), ("updated", "UPDATE", "NEW"), ("deleted", "DELETE", "OLD")] {
+                let condition = operation == "updated" ? " WHEN " + columns.map { "OLD.\($0) IS NOT NEW.\($0)" }.joined(separator: " OR ") : ""
+                try execute("""
+                    CREATE TEMP TRIGGER luna_\(table)_\(operation) AFTER \(sql) ON main.\(table)\(condition)
+                    BEGIN INSERT INTO luna_automation_changes VALUES ('\(kind)', \(row).id, '\(operation)'); END
+                    """)
+            }
+        }
+        for (operation, row) in [("INSERT", "NEW"), ("DELETE", "OLD")] {
+            try execute("""
+                CREATE TEMP TRIGGER luna_note_links_\(operation) AFTER \(operation) ON main.note_documents
+                BEGIN INSERT INTO luna_automation_changes VALUES ('note', \(row).note_id, 'updated'); END
+                """)
+        }
+    }
+
+    private func pendingAutomationMutations() throws -> [AutomationMutation] {
+        var order: [String] = []
+        var mutations: [String: AutomationMutation] = [:]
+        try query("SELECT kind, item_id, operation FROM luna_automation_changes ORDER BY rowid") { row in
+            guard let kind = row.string(0), let id = row.string(1), let operation = row.string(2) else { return }
+            let key = kind + ":" + id
+            if !order.contains(key) { order.append(key) }
+            if let previous = mutations[key] {
+                if previous.operation == "created" {
+                    if operation == "deleted" { mutations[key] = nil }
+                    return
+                }
+                if previous.operation == "deleted", operation == "created" {
+                    mutations[key] = AutomationMutation(kind: kind, itemID: id, operation: "updated")
+                    return
+                }
+            }
+            mutations[key] = AutomationMutation(kind: kind, itemID: id, operation: operation)
+        }
+        return order.compactMap { mutations[$0] }
     }
 
     /// A `ROLLBACK` that itself fails leaves the connection mid-transaction —

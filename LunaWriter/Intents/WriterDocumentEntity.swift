@@ -7,12 +7,16 @@
 //
 
 import AppIntents
+import CoreSpotlight
 import Foundation
 import LunaWriterModels
 import LunaWriterStorage
 
-struct WriterDocumentEntity: AppEntity {
+struct WriterDocumentEntity: IndexedEntity {
     let id: UUID
+    @Property(title: "ID") var identifier: String
+    @Property(title: "Word Count") var wordCount: Int
+    @Property(title: "Trashed") var trashed: Bool
     @Property(title: "WriterIntents_documentEntity_titleProperty_title_Luna") var title: String
     @Property(title: "WriterIntents_documentEntity_modifiedProperty_title_Luna") var modified: Date
 
@@ -32,6 +36,9 @@ struct WriterDocumentEntity: AppEntity {
 
     init(document: WriterDocument) {
         id = document.id.rawValue
+        identifier = id.uuidString
+        wordCount = document.wordCount
+        trashed = document.trashedAt != nil
         title = document.title
         modified = document.updatedAt
     }

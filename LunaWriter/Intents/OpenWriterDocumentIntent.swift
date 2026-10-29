@@ -5,6 +5,7 @@
 
 import AppIntents
 import Foundation
+import LunaWriterStorage
 
 /// "Open <sheet> in Luna Writer".
 struct OpenWriterDocumentIntent: AppIntent {
@@ -21,6 +22,9 @@ struct OpenWriterDocumentIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard try WriterWiring.intentServices().document(document.documentID) != nil else {
+            throw WriterIntentServices.Failure.missingDocument
+        }
         WriterWiring.show(document: document.documentID)
         return .result()
     }

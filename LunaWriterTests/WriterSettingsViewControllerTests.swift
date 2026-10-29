@@ -43,8 +43,8 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         let controller = WriterSettingsViewController(environment: environment)
         layoutWriterScreen(controller)
 
-        // Editor, Library, Appearance, About — no Read-along.
-        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 4)
+        // Editor, Library, Appearance, Automations, About — no Read-along.
+        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 5)
     }
 
     @MainActor
@@ -57,9 +57,22 @@ final class WriterSettingsViewControllerTests: XCTestCase {
         let controller = WriterSettingsViewController(environment: environment)
         layoutWriterScreen(controller)
 
-        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 4)
+        XCTAssertEqual(controller.numberOfSections(in: controller.tableView), 5)
         // Gaze + Calibrate, no Voice row.
         XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 1), 1)
+    }
+
+    @MainActor
+    func testAutomationRowOpensChangeNotificationSettings() throws {
+        let stack = try makeWriterStack()
+        let controller = WriterSettingsViewController(environment: makeLibraryEnvironment(stack: stack))
+        let navigation = UINavigationController(rootViewController: controller)
+        layoutWriterScreen(navigation)
+        let index = IndexPath(row: 0, section: 3)
+        let cell = controller.tableView(controller.tableView, cellForRowAt: index)
+        XCTAssertEqual(cell.textLabel?.text, "Change Notifications")
+        controller.tableView(controller.tableView, didSelectRowAt: index)
+        XCTAssertEqual(navigation.topViewController?.title, "Automations")
     }
 
     @MainActor

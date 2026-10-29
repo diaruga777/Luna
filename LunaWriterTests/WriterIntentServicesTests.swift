@@ -7,6 +7,7 @@ import Foundation
 import XCTest
 @testable import LunaWriterStorage
 import LunaWriterModels
+import LunaAppConfig
 
 final class WriterIntentServicesTests: XCTestCase {
 
@@ -51,7 +52,9 @@ final class WriterIntentServicesTests: XCTestCase {
     func testAnEmptyNoteIsNotStored() throws {
         let stack = try makeWriterStack(embedding: ScriptedEmbedding(fallback: [1, 0]))
 
-        XCTAssertEqual(try stack.intents.addNote(text: "   \n ", to: nil), .inbox)
+        XCTAssertThrowsError(try stack.intents.addNote(text: "   \n ", to: nil)) { error in
+            XCTAssertEqual(error as? WriterIntentServices.Failure, .emptyNote)
+        }
         XCTAssertEqual(try stack.library.unattachedNotes().count, 0)
         XCTAssertEqual(
             try stack.library.documents(matching: FilterPredicate(), scope: nil).count, 0)
@@ -132,4 +135,53 @@ final class WriterIntentServicesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: stack.libraryRoot.appendingPathComponent(created.fileRelativePath).path))
     }
+    func testMissingOrTrashedDestinationDoesNotRerouteNote() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Sheet")
+        try stack.library.trash(document.id)
+        for id in [document.id, DocumentID(UUID())] {
+            XCTAssertThrowsError(try stack.intents.addNote(text: "Keep this private", to: id)) { error in
+                XCTAssertEqual(error as? WriterIntentServices.Failure, .missingDocument)
+            }
+        }
+        XCTAssertTrue(try stack.library.allNotes().isEmpty)
+    }
+
+    func testFindAndReadSheetCanResolveAnOlderSheetByStableID() throws {
+        let stack = try makeWriterStack()
+        let document = try stack.intents.createDocument(title: "Rivers", text: "Flowing water", in: nil)
+        XCTAssertEqual(try stack.intents.findDocuments(id: document.id).map(\.id), [document.id])
+        XCTAssertEqual(try stack.intents.text(for: document.id), "# Rivers\n\nFlowing water")
+        XCTAssertTrue(try stack.intents.findDocuments(search: "missing").isEmpty)
+    }
+
+    func testAutomationTracksCommittedObjectsAndSuppressesBookkeepingAndRollback() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "WriterAutomationTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
+        let journal = AppAutomation(app: .writer, directory: directory, defaults: defaults)
+        let stack = try WriterStorageStack(databaseURL: directory.appendingPathComponent("writer.sqlite"),
+            libraryRoot: directory.appendingPathComponent("Library"), automationJournal: journal)
+        let baseline = try journal.changes().nextToken
+        let sheet = try stack.intents.createDocument(title: "Rivers", text: "Water", in: nil)
+        let capture = try stack.intents.captureNote(text: "A thought", to: sheet.id)
+        let note = try XCTUnwrap(capture.notes.first)
+        let events = try journal.changes(after: baseline).changes
+        XCTAssertEqual(events.map(\.notificationTitle), ["Luna.writer.document.created", "Luna.writer.document.updated", "Luna.writer.note.created"])
+        XCTAssertEqual(events.last?.itemID, note.id.rawValue.uuidString)
+        let token = try journal.changes().nextToken
+        try stack.library.setFavorite(false, for: sheet.id)
+        XCTAssertTrue(try journal.changes(after: token).changes.isEmpty)
+        enum Rejected: Error { case edit }
+        XCTAssertThrowsError(try stack.database.transaction { db in
+            try db.execute("UPDATE documents SET title = 'Never committed'")
+            throw Rejected.edit
+        })
+        XCTAssertTrue(try journal.changes(after: token).changes.isEmpty)
+        _ = try stack.intents.updateNote(note.id, text: "Another thought")
+        try stack.intents.deleteNotes([note.id])
+        XCTAssertEqual(try journal.changes(after: token).changes.map(\.operation), ["updated", "deleted"])
+    }
+
 }

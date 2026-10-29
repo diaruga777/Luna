@@ -6,6 +6,7 @@
 import AppIntents
 import Foundation
 import LunaWriterStorage
+import LunaWriterModels
 
 /// "New sheet in Luna Writer": creates the sheet, then opens the app on it.
 struct CreateWriterDocumentIntent: AppIntent {
@@ -19,6 +20,8 @@ struct CreateWriterDocumentIntent: AppIntent {
     @Parameter(title: "WriterIntents_createDocument_textParameter_title_Luna")
     var text: String?
 
+    @Parameter(title: "Folder") var group: WriterGroupEntity?
+
     static var parameterSummary: some ParameterSummary {
         Summary("WriterIntents_createDocument_summary_Luna") {
             \.$sheetTitle
@@ -27,10 +30,10 @@ struct CreateWriterDocumentIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ReturnsValue<WriterDocumentEntity> {
         let document = try WriterWiring.intentServices().createDocument(
-            title: sheetTitle, text: text, in: nil)
+            title: sheetTitle, text: text, in: group.map { GroupID($0.id) })
         WriterWiring.show(document: document.id)
-        return .result()
+        return .result(value: WriterDocumentEntity(document: document))
     }
 }

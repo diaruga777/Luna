@@ -1,16 +1,31 @@
 import LunaPremium
 import UIKit
+import UserNotifications
 import LunaWriterLibraryUI
 
 @main
-final class WriterAppDelegate: UIResponder, UIApplicationDelegate {
+final class WriterAppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         PremiumAccess.shared.start()
         WriterWiring.install()
+        UNUserNotificationCenter.current().delegate = self
+        if NSClassFromString("XCTestCase") == nil {
+            AutomationEntityIndex.install {
+                let stack = try WriterWiring.storageStack()
+                try await AutomationEntityIndex.replace(WriterDocumentEntity.self, entities: stack.library.documents(matching: .init(), scope: nil).map(WriterDocumentEntity.init(document:)))
+                try await AutomationEntityIndex.replace(WriterNoteEntity.self, entities: stack.library.allNotes().map(WriterNoteEntity.init))
+                try await AutomationEntityIndex.replace(WriterGroupEntity.self, entities: stack.library.groups().map(WriterGroupEntity.init))
+            }
+        }
         return true
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler(notification.request.identifier.hasPrefix("luna.change.") ? [] : [.banner, .list, .sound])
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

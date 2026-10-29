@@ -1,4 +1,5 @@
 import UIKit
+import LunaAppConfig
 import LunaDesignSystem
 import LunaModels
 import LunaWriterModels
@@ -9,7 +10,7 @@ import LunaWriterStorage
 /// showing disabled.
 public final class WriterSettingsViewController: NavHeaderTableController {
 
-    private enum Section: Int, CaseIterable { case editor, readAlong, library, appearance, about }
+    private enum Section: Int, CaseIterable { case editor, readAlong, library, appearance, automations, about }
 
     private enum EditorRow: Int, CaseIterable {
         case font, fontSize, lineWidth, focusMode, syntaxColouring, typewriter, authorship, palette
@@ -79,7 +80,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
 
     private var visibleSections: [Section] {
         readAlongRows.isEmpty
-            ? [.editor, .library, .appearance, .about]
+            ? [.editor, .library, .appearance, .automations, .about]
             : Section.allCases
     }
 
@@ -93,6 +94,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         case .readAlong: return readAlongRows.count
         case .library: return 1
         case .appearance: return AppearanceRow.allCases.count
+        case .automations: return 1
         case .about: return AboutRow.allCases.count
         }
     }
@@ -105,6 +107,7 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         case .readAlong: return L10n.string("WriterLibrary_settings_readAlongSectionHeader")
         case .library: return L10n.string("WriterLibrary_settings_librarySectionHeader")
         case .appearance: return L10n.string("Settings_appearance_title")
+        case .automations: return "Automations"
         case .about: return L10n.string("WriterLibrary_settings_aboutSectionHeader")
         }
     }
@@ -117,6 +120,11 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         case .readAlong: return readAlongCell(for: readAlongRows[indexPath.row])
         case .library: return libraryCell(for: LibraryRow.allCases[indexPath.row])
         case .appearance: return appearanceCell()
+        case .automations:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.textLabel?.text = "Change Notifications"
+            cell.accessoryType = .disclosureIndicator
+            return cell
         case .about: return aboutCell()
         }
     }
@@ -126,6 +134,10 @@ public final class WriterSettingsViewController: NavHeaderTableController {
         // Font / line width / focus mode select through their own `UIMenu`
         // button (organiser #12); the row itself does nothing on tap.
         switch visibleSections[indexPath.section] {
+        case .automations:
+            let controller = AutomationSettingsViewController(app: .writer)
+            if let navigationController { navigationController.pushViewController(controller, animated: true) }
+            else { present(UINavigationController(rootViewController: controller), animated: true) }
         case .readAlong:
             if readAlongRows[indexPath.row] == .calibrate {
                 environment.readAlongSettings?.presentCalibration(from: self)

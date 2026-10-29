@@ -13,6 +13,31 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   **Play Next with Gemini** explicitly select Gemini whenever a key is available.
   Ingestion, background script refinement, autoplay misses and extensions never
   start Gemini requests.
+- New audio chooses a voice from the extracted article byline: likely male
+  → **Charon**, likely female → **Kore**. Explicit he/him or she/her pronouns
+  take precedence; they/them keeps Kore. A bundled given-name lookup makes the
+  usual case immediate, free and fully offline, including without Apple
+  Intelligence. The table aggregates SSA national name counts (1880–2020),
+  requiring 1,000 occurrences and at least 95% of one recorded sex. Statistically
+  ambiguous names retain Kore. This is a rough, US-biased name association,
+  not verified identity; it can be wrong across cultures and for individual authors.
+  Organizations, multiple authors, initials and unusable bylines keep Kore.
+  Unfamiliar names may use Apple's on-device Foundation Models framework with
+  a three-second budget. Refusals/errors/unavailability keep Kore. Local model
+  checks returned unknown for common names and refused a more direct prompt,
+  which is why the table is primary. No extra cloud requests or lookup service.
+  Classification runs only on explicit generation, never cache-only autoplay.
+  A hashed-byline sidecar stores only the selected voice inside the article's
+  shared cache folder, under the same cross-process lock. Reader and Music reuse
+  that choice for every section, retry and model fallback, even without Apple
+  Intelligence. Clearing the audio cache also clears voice choices. Existing
+  completed Kore audio stays reusable; delete it to apply matching to that article.
+  Regenerate the table with `scripts/build_author_voice_names.py` from SSA's
+  national ZIP (CC0), or `name,sex,count,year` records. The bundled input is the
+  [SSA data mirror](https://github.com/hackerb9/ssa-baby-names/blob/main/alldata.txt);
+  input SHA-256, coverage years and thresholds are recorded in the resource header.
+  Only the federal statistical data is used, with no mirror code dependency.
+  [SSA source and license](https://catalog.data.gov/dataset/baby-names-from-social-security-card-applications-national-data).
 - Reader begins playback from the first streamed PCM buffers, before the first
   request finishes, and prepares the rest in the background. A pull renderer
   supplies at most one second at a time through the existing engine's bounded
@@ -24,7 +49,7 @@ Cloud Text-to-Speech API, which has different billing and quotas.
   up to 1,200 words use one request; longer text is split into sequential requests
   of at most 1,200 words and 7,500 UTF-8 bytes, preserving the text. The byte limit
   also bounds text in languages without whitespace. Splits prefer nearby word
-  boundaries. Voice stays `Kore`. Models fall back in order:
+  boundaries. The selected voice stays fixed across sections and models. Models fall back in order:
   `gemini-3.8-flash-tts`, `gemini-3.1-flash-tts-preview`, then
   `gemini-2.5-flash-preview-tts`. A quota or unavailable-model response advances
   to the next model for the remaining chunks; authentication, transport and
@@ -174,6 +199,8 @@ Official Google sources checked on 2026-10-28:
 - [Gemini 3.8 Flash TTS model limits](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash-tts)
 - [Speech generation REST request and WAV response](https://ai.google.dev/gemini-api/docs/speech-generation)
 - [Interactions API response status](https://ai.google.dev/api/interactions-api)
+- [Google voice names and genders](https://firebase.google.com/docs/ai-logic/generate-speech#voices)
+- [Apple on-device SystemLanguageModel](https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel)
 
 ## Streaming replacement validation (2026-10-28)
 

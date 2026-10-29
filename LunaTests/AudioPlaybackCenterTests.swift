@@ -87,10 +87,27 @@ final class AudioPlaybackCenterTests: XCTestCase {
         }
     }
 
+    func testArticleRendererReceivesExtractedAuthor() {
+        let item = AudioPlaybackFixtures.item(seed: "author")
+        var content = AudioPlaybackFixtures.content(blockCount: 1)
+        content.author = "Jane Smith"
+        store.seed(item, content: content)
+        var receivedAuthor: String?
+        center.articleRendererProvider = { id, _, author, allowed in
+            XCTAssertEqual(id, item.id)
+            XCTAssertTrue(allowed)
+            receivedAuthor = author
+            return nil
+        }
+        center.play(item: item, content: content)
+        waitUntil(self.engine.scheduledSegments.count >= 1)
+        XCTAssertEqual(receivedAuthor, "Jane Smith")
+    }
+
     func testProgressivePlaybackSchedulesEarlyButWaitsForProviderCompletionToMarkRead() {
         AudioSettings.isAutoplayEnabled = false
         let gate = ProgressiveTestGate()
-        center.articleRendererProvider = { _, _, _ in ProgressiveTestRenderer(gate: gate) }
+        center.articleRendererProvider = { _, _, _, _ in ProgressiveTestRenderer(gate: gate) }
         let (item, _) = startPlayback(blockCount: 1)
         waitUntil(self.engine.scheduledSegments.count == 2)
         center.reportArticlePreparationProgress(itemID: item.id, fraction: 0.4)
@@ -108,7 +125,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testProgressiveFailureAfterAudibleBuffersPausesWithoutMarkingRead() {
         let gate = ProgressiveTestGate()
-        center.articleRendererProvider = { _, _, _ in ProgressiveTestRenderer(gate: gate) }
+        center.articleRendererProvider = { _, _, _, _ in ProgressiveTestRenderer(gate: gate) }
         let (item, _) = startPlayback(blockCount: 3)
         waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 1.5 // Four words at the initial 0.35 s/word estimate.
@@ -126,7 +143,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
     func testArticlePreparationFailurePausesWithoutSkippingOrMarkingFinishedAndResumeRetries() {
         var attempts = 0
         let cloud = FakeRenderer()
-        center.articleRendererProvider = { _, _, _ in
+        center.articleRendererProvider = { _, _, _, _ in
             attempts += 1
             if attempts == 1 { throw GeminiSpeechError.quota }
             return cloud
@@ -148,7 +165,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testPauseCancelsPendingCloudPreparationAndResumeCanRetry() {
         var attempts = 0
-        center.articleRendererProvider = { _, _, _ in
+        center.articleRendererProvider = { _, _, _, _ in
             attempts += 1
             if attempts == 1 { try await Task.sleep(nanoseconds: 5_000_000_000) }
             return FakeRenderer()
@@ -170,7 +187,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testCloudErrorCanUseDeviceVoiceWithoutRetryingCloud() {
         var attempts = 0
-        center.articleRendererProvider = { _, _, _ in attempts += 1; throw GeminiSpeechError.quota }
+        center.articleRendererProvider = { _, _, _, _ in attempts += 1; throw GeminiSpeechError.quota }
         let item = AudioPlaybackFixtures.item(seed: "fallback")
         let content = AudioPlaybackFixtures.content(blockCount: 3)
         store.seed(item, content: content)
@@ -186,7 +203,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
     func testSeekReusesPreparedArticleRendererAndMarkerlessPlaybackPersistsParagraph() {
         var preparations = 0
         let cloud = FakeRenderer()
-        center.articleRendererProvider = { _, _, _ in preparations += 1; return cloud }
+        center.articleRendererProvider = { _, _, _, _ in preparations += 1; return cloud }
         let (item, _) = startPlayback(blockCount: 4)
         waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 1.1 // Second four-word paragraph, at 0.25 seconds per word.
@@ -320,7 +337,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         center.dataSource = dataSource
 
         var generationPermissions: [Bool] = []
-        center.articleRendererProvider = { _, _, allow in
+        center.articleRendererProvider = { _, _, _, allow in
             generationPermissions.append(allow)
             return nil
         }

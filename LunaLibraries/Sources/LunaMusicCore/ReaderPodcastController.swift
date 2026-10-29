@@ -18,7 +18,7 @@ import LunaPodcastCore
     private let library: PodcastLibraryController
     private let directory: URL
     private let render: (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double
-    private let renderGemini: (UUID, AudioScript, URL, @escaping (Double) -> Void) async throws -> Double
+    private let renderGemini: (UUID, AudioScript, String?, URL, @escaping (Double) -> Void) async throws -> Double
     private let preferredVoice: () -> Voice
     private let geminiAvailable: () -> Bool
     private var jobVoices: [UUID: Voice] = [:]
@@ -30,8 +30,8 @@ import LunaPodcastCore
                 render: @escaping (AudioScript, URL, @escaping (Double) -> Void) async throws -> Double = {
                     try await AudioScriptFileRenderer.write($0, to: $1, progress: $2)
                 },
-                renderGemini: @escaping (UUID, AudioScript, URL, @escaping (Double) -> Void) async throws -> Double = { id, script, url, progress in
-                    guard let voice = try await GeminiArticleSpeech.shared.renderer(itemID: id, script: script, allowGeneration: true, progress: { progress($0 * 0.9) }) else {
+                renderGemini: @escaping (UUID, AudioScript, String?, URL, @escaping (Double) -> Void) async throws -> Double = { id, script, author, url, progress in
+                    guard let voice = try await GeminiArticleSpeech.shared.renderer(itemID: id, script: script, author: author, allowGeneration: true, progress: { progress($0 * 0.9) }) else {
                         throw PodcastError(L10n.string("Gemini_unavailable"))
                     }
                     return try await AudioScriptFileRenderer.write(script, to: url, using: voice, progress: { progress(0.9 + $0 * 0.1) })
@@ -133,7 +133,7 @@ import LunaPodcastCore
                 }
             }
             duration = try await voice == .gemini
-                ? renderGemini(saveID, script, temporary, reportProgress)
+                ? renderGemini(saveID, script, content.author, temporary, reportProgress)
                 : render(script, temporary, reportProgress)
             try FileManager.default.moveItem(at: temporary, to: destination)
         }

@@ -63,6 +63,113 @@ final class GeminiArticleSpeechTests: XCTestCase {
         let content = try XCTUnwrap(input[0]["content"] as? [[String: Any]])
         XCTAssertEqual(content[0]["text"] as? String, "Hello, article.")
     }
+    func testBundledNameLookupWorksWithoutAppleIntelligence() async {
+        for author in ["John Smith", "By Dr. Michael Brown", "José Martínez", "John Smith (he/him)"] {
+            XCTAssertEqual(GeminiAuthorVoice.lookup(author), .charon, author)
+            let voice = await GeminiAuthorVoice.infer(author)
+            XCTAssertEqual(voice, .charon, author)
+        }
+        for author in ["Jane Smith", "Mary Jones", "Marie Curie", "Morgan Smith", "Taylor Smith", "The Guardian", "John Smith and Jane Smith", "John Smith & Jane Smith", "John Smith (they/them)", "J. Smith", "John Smith, Jane Smith", "John News Team"] {
+            XCTAssertEqual(GeminiAuthorVoice.lookup(author), .kore, author)
+        }
+        XCTAssertNil(GeminiAuthorVoice.lookup("Zqxwvu Smith"))
+        XCTAssertNil(GeminiAuthorVoice.lookup("Reuters"))
+    }
+
+    func testBothRequestAPIsUseSelectedVoiceAndPartitionCache() throws {
+        let article = script(["Same article"])
+        XCTAssertNotEqual(GeminiSpeechPlan(script: article, voice: .kore).fingerprint,
+                          GeminiSpeechPlan(script: article, voice: .charon).fingerprint)
+        for voice in [GeminiNarrationVoice.kore, .charon] {
+            for model in GeminiArticleSpeech.models {
+                let request = try GeminiArticleSpeech.request(text: "Article", apiKey: "key", model: model, voice: voice)
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any])
+                if model == GeminiArticleSpeech.models[2] {
+                    let config = try XCTUnwrap(body["generationConfig"] as? [String: Any])
+                    let speech = try XCTUnwrap(config["speechConfig"] as? [String: Any])
+                    let configVoice = try XCTUnwrap(speech["voiceConfig"] as? [String: Any])
+                    let prebuilt = try XCTUnwrap(configVoice["prebuiltVoiceConfig"] as? [String: Any])
+                    XCTAssertEqual(prebuilt["voiceName"] as? String, voice.rawValue)
+                } else {
+                    let config = try XCTUnwrap(body["generation_config"] as? [String: Any])
+                    let speech = try XCTUnwrap(config["speech_config"] as? [[String: Any]])
+                    XCTAssertEqual(speech.first?["voice"] as? String, voice.rawValue)
+                }
+            }
+        }
+    }
+
+    func testAuthorChoiceSurvivesRestartOfflineAndScriptChanges() async throws {
+        let data = try response(wav()), id = UUID(), calls = Counter()
+        let root = directory.appendingPathComponent("cache")
+        let provider = GeminiArticleSpeech(directory: root, authorVoice: { author in
+            XCTAssertEqual(author, "John Smith")
+            await calls.increment()
+            return .charon
+        }, send: { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let config = body["generation_config"] as! [String: Any]
+            XCTAssertEqual((config["speech_config"] as? [[String: String]])?.first?["voice"], "Charon")
+            return (data, self.http(request))
+        })
+        let article = script(["First version"])
+        _ = try await provider.renderer(itemID: id, script: article, author: "  John \n Smith  ", allowGeneration: true)
+        let offline = GeminiArticleSpeech(directory: root, apiKey: { nil }, authorVoice: { _ in
+            XCTFail("Saved voice must survive without Apple Intelligence")
+            return .kore
+        }, send: { _ in XCTFail("Offline cache replay must not synthesize"); throw GeminiSpeechError.unavailable })
+        let replay = try await offline.renderer(itemID: id, script: article, author: "john smith", allowGeneration: false)
+        XCTAssertNotNil(replay)
+        _ = try await provider.renderer(itemID: id, script: script(["Refined version"]), author: "John Smith", allowGeneration: true)
+        let count = await calls.value
+        XCTAssertEqual(count, 1)
+        let files = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(id.uuidString).path)
+        XCTAssertFalse(files.contains { $0.lowercased().contains("john") })
+    }
+
+    func testMissingInvalidAndCacheOnlyBylinesDoNotRunInference() async throws {
+        let data = try response(wav())
+        let provider = GeminiArticleSpeech(directory: directory, authorVoice: { _ in
+            XCTFail("No author inference expected")
+            return .charon
+        }, send: { request in (data, self.http(request)) })
+        for author in [nil, "   ", "123", String(repeating: "a", count: 201)] as [String?] {
+            _ = try await provider.renderer(itemID: UUID(), script: script(["Article"]), author: author, allowGeneration: true)
+        }
+        let miss = try await provider.renderer(itemID: UUID(), script: script(["Article"]), author: "John Smith", allowGeneration: false)
+        XCTAssertNil(miss)
+    }
+
+    func testExistingKoreAudioIsReusedWhenAuthorBecomesAvailable() async throws {
+        let data = try response(wav()), calls = Counter(), id = UUID()
+        let provider = GeminiArticleSpeech(directory: directory, authorVoice: { _ in
+            XCTFail("Do not replace completed audio")
+            return .charon
+        }, send: { request in await calls.increment(); return (data, self.http(request)) })
+        let article = script(["Article"])
+        _ = try await provider.renderer(itemID: id, script: article, allowGeneration: true)
+        let replay = try await provider.renderer(itemID: id, script: article, author: "John Smith", allowGeneration: true)
+        XCTAssertNotNil(replay)
+        let count = await calls.value
+        XCTAssertEqual(count, 1)
+    }
+
+    func testFallbackVoiceIsStableUntilCacheIsCleared() async throws {
+        let data = try response(wav()), calls = Counter(), id = UUID()
+        let provider = GeminiArticleSpeech(directory: directory, authorVoice: { _ in
+            await calls.increment() == 1 ? .kore : .charon
+        }, send: { request in (data, self.http(request)) })
+        let article = script(["Article"])
+        _ = try await provider.renderer(itemID: id, script: article, author: "Alex Smith", allowGeneration: true)
+        _ = try await provider.renderer(itemID: id, script: article, author: "Alex Smith", allowGeneration: true)
+        let before = await calls.value
+        XCTAssertEqual(before, 1)
+        try await provider.clearCache()
+        _ = try await provider.renderer(itemID: id, script: article, author: "Alex Smith", allowGeneration: true)
+        let after = await calls.value
+        XCTAssertEqual(after, 2)
+    }
+
     func testRejectsIncompleteAndInvalidAudio() throws {
         let audio = try wav()
         XCTAssertEqual(try GeminiArticleSpeech.audio(from: response(audio)), audio)

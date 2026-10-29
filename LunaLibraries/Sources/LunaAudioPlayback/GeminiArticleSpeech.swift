@@ -40,12 +40,14 @@ enum GeminiSpeechError: LocalizedError, Equatable {
 /// Bounded requests preserve all text, including scripts without whitespace.
 /// Every chunk is cached independently so a quota failure never discards earlier work.
 struct GeminiSpeechPlan {
+    let voice: GeminiNarrationVoice
     let chunks: [String]
     let blockRanges: [Int: NSRange]
     let chunkRanges: [NSRange]
     let fingerprint: String
 
-    init(script: AudioScript) {
+    init(script: AudioScript, voice: GeminiNarrationVoice = .kore) {
+        self.voice = voice
         var text = ""
         var ranges: [Int: NSRange] = [:]
         var previousBlock: Int?
@@ -97,7 +99,7 @@ struct GeminiSpeechPlan {
         self.chunks = chunks
         self.blockRanges = ranges
         // Include block boundaries, voice, model and cache schema, but never the API key.
-        let identity = "v2-aac|gemini-3.8-flash-tts|Kore|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + text
+        let identity = "v2-aac|gemini-3.8-flash-tts|" + voice.rawValue + "|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + text
         self.fingerprint = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -114,6 +116,7 @@ public actor GeminiArticleSpeech {
     private let stream: Stream
     private var pending: [String: (id: UUID, task: Task<URL, Error>, live: GeminiSpeechSpool)] = [:]
     private let apiKey: () -> String?
+    private var authorVoice: (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer
     private let requestTimeout: TimeInterval
 
     public init(directory: URL? = nil) {
@@ -165,7 +168,8 @@ public actor GeminiArticleSpeech {
         self.apiKey = { GeminiSpeechCredential.apiKey }
     }
 
-    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, apiKey: @escaping () -> String? = { "test-key" }, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+    init(directory: URL, legacyDirectory: URL? = nil, requestTimeout: TimeInterval = 120, apiKey: @escaping () -> String? = { "test-key" }, authorVoice: @escaping (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer, send: @escaping (URLRequest) async throws -> (Data, URLResponse)) {
+        self.authorVoice = authorVoice
         self.directory = directory
         self.legacyDirectory = legacyDirectory
         self.requestTimeout = requestTimeout
@@ -186,10 +190,12 @@ public actor GeminiArticleSpeech {
         self.apiKey = apiKey; self.stream = stream
     }
 
-    public func renderer(itemID: UUID, script: AudioScript, allowGeneration: Bool,
+    public func renderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
                          progress: @escaping (Double) -> Void = { _ in },
                          startBeforeCompletion: Bool = false) async throws -> SpeechRendering? {
-        let plan = GeminiSpeechPlan(script: script)
+        let voice = try await narrationVoice(itemID: itemID, script: script, author: author, allowGeneration: allowGeneration)
+        try Task.checkCancellation()
+        let plan = GeminiSpeechPlan(script: script, voice: voice)
         guard !plan.chunks.isEmpty else { throw GeminiSpeechError.incomplete }
         let key = itemID.uuidString + "/" + plan.fingerprint
         let folder = directory.appendingPathComponent(key, isDirectory: true)
@@ -252,7 +258,7 @@ public actor GeminiArticleSpeech {
                 for modelIndex in preferredModelIndex..<Self.models.count {
                     let model = Self.models[modelIndex]
                     guard availability.available(model, credential: apiKey) else { continue }
-                    var request = try Self.request(text: text, apiKey: apiKey, model: model)
+                    var request = try Self.request(text: text, apiKey: apiKey, model: model, voice: plan.voice)
                     request.timeoutInterval = timeout
                     DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
                     let started = Date()
@@ -324,6 +330,37 @@ public actor GeminiArticleSpeech {
             if (error as? URLError)?.code == .timedOut { throw GeminiSpeechError.timedOut }
             throw error
         }
+    }
+
+    /// Persist before any chunks are generated so retries, cache-only playback and
+    /// the other app use the same voice even when Apple Intelligence is unavailable.
+    private func narrationVoice(itemID: UUID, script: AudioScript, author: String?, allowGeneration: Bool) async throws -> GeminiNarrationVoice {
+        guard let author = GeminiAuthorVoice.normalizedAuthor(author) else { return .kore }
+        let digest = SHA256.hash(data: Data(author.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+        let itemFolder = directory.appendingPathComponent(itemID.uuidString, isDirectory: true)
+        let choice = itemFolder.appendingPathComponent("voice-v1-" + digest + ".json")
+        func savedVoice() -> GeminiNarrationVoice? {
+            guard let data = try? Data(contentsOf: choice) else { return nil }
+            return try? JSONDecoder().decode(GeminiNarrationVoice.self, from: data)
+        }
+        if let voice = savedVoice() { return voice }
+        guard allowGeneration, apiKey()?.isEmpty == false else { return .kore }
+        let lock = try await Self.acquireCacheLock(directory, timeout: requestTimeout)
+        defer { Self.releaseCacheLock(lock) }
+        if let voice = savedVoice() { return voice }
+        try Task.checkCancellation()
+        let oldPlan = GeminiSpeechPlan(script: script)
+        let oldKey = itemID.uuidString + "/" + oldPlan.fingerprint
+        // Preserve completed pre-feature audio without spending quota to replace it.
+        let alreadyGenerated = [directory, legacyDirectory].compactMap { $0 }.contains {
+            Self.isComplete($0.appendingPathComponent(oldKey), count: oldPlan.chunks.count)
+        }
+        let voice: GeminiNarrationVoice = alreadyGenerated ? .kore : await authorVoice(author)
+        try Task.checkCancellation()
+        try FileManager.default.createDirectory(at: itemFolder, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(itemFolder)
+        try JSONEncoder().encode(voice).write(to: choice, options: .atomic)
+        return voice
     }
 
     private func finishOperation(key: String, id: UUID) {
@@ -405,7 +442,7 @@ public actor GeminiArticleSpeech {
         _ = close(descriptor)
     }
 
-    static func request(text: String, apiKey: String, model: String = models[0]) throws -> URLRequest {
+    static func request(text: String, apiKey: String, model: String = models[0], voice: GeminiNarrationVoice = .kore) throws -> URLRequest {
         if model == models[2] {
             // Gemini 2.5 does not stream. Use its documented GenerateContent
             // API rather than assuming legacy models support Interactions.
@@ -416,7 +453,7 @@ public actor GeminiArticleSpeech {
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "contents": [["role": "user", "parts": [["text": "Read aloud the following transcript verbatim. Do not add commentary.\n\nTranscript:\n" + text]]]],
                 "generationConfig": ["responseModalities": ["AUDIO"], "maxOutputTokens": 16_384,
-                    "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Kore"]]]],
+                    "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice.rawValue]]]],
             ])
             return request
         }
@@ -435,7 +472,7 @@ public actor GeminiArticleSpeech {
             "input": [["type": "user_input", "content": [["type": "text", "text": transcript]]]],
             "stream": true,
             "response_format": ["type": "audio", "mime_type": "audio/l16", "sample_rate": 24_000],
-            "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": "Kore"]]],
+            "generation_config": ["max_output_tokens": 16_384, "speech_config": [["voice": voice.rawValue]]],
         ])
         return request
     }

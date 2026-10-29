@@ -38,11 +38,11 @@ enum AudioPlaybackWiring {
         // SpeechController; the share/action extensions never install it and
         // keep the legacy path.
         ReaderAudioLauncher.center = .shared
-        AudioPlaybackCenter.shared.articleRendererProvider = { itemID, script, allowGeneration in
+        AudioPlaybackCenter.shared.articleRendererProvider = { itemID, script, author, allowGeneration in
             DiagnosticLog.shared.record("play item=\(itemID) gemini=\(AudioSettings.usesGeminiVoice) generationAllowed=\(allowGeneration)", category: "gemini-tts")
             guard AudioSettings.usesGeminiVoice else { return nil }
             return try await GeminiArticleSpeech.shared.renderer(
-                itemID: itemID, script: script, allowGeneration: allowGeneration, progress: { fraction in
+                itemID: itemID, script: script, author: author, allowGeneration: allowGeneration, progress: { fraction in
                     Task { @MainActor in
                         AudioPlaybackCenter.shared.reportArticlePreparationProgress(itemID: itemID, fraction: fraction)
                     }

@@ -85,9 +85,8 @@ public final class UnavailableTrimSession: AudioTrimModelSession {
     }
 }
 
-/// The real, on-device-model-backed conformer. The ONLY place in this module
-/// (and in `LunaAudioPlayback`) that imports `FoundationModels` or names one
-/// of its types.
+/// The real, on-device-model-backed conformer. The trimming adapter that imports
+/// `FoundationModels`; author voice selection has its own isolated session.
 @available(iOS 26.0, *)
 public final class FoundationModelsTrimSession: AudioTrimModelSession {
     public static let shared = FoundationModelsTrimSession()

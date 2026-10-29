@@ -13,6 +13,7 @@ import UIKit
 import WidgetKit
 
 struct SuspendLiveMediaDownloadIntent: AppIntent {
+    static var isDiscoverable = false
     static var title: LocalizedStringResource = "Intents_cancelLiveDownload_title_Luna"
     static var description = IntentDescription("Intents_cancelLiveDownload_description_Luna")
 
@@ -32,6 +33,7 @@ struct SuspendLiveMediaDownloadIntent: AppIntent {
 }
 
 struct ResumeLiveMediaDownloadIntent: AppIntent {
+    static var isDiscoverable = false
     static var title: LocalizedStringResource = "Intents_resumeLiveDownload_title_Luna"
     static var description = IntentDescription("Intents_resumeLiveDownload_description_Luna")
 

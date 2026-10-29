@@ -6,6 +6,26 @@ extraction. Domain operations remain in services/stores: UIKit and intents use
 the same implementations, permissions, file ownership and persistence rules.
 An intent is an adapter to a domain action, rather than a second implementation.
 
+For the searchable per-action inventory, open the
+[automation atlas](../docs/automation-overview.html). It includes inputs, outputs,
+entity properties, enums, notification contracts and internal events. Regenerate
+it with `python3 scripts/build_automation_overview.py`.
+
+Reader also exposes **Get Current Safari URL**: a no-input, non-opening action
+that returns a typed URL from the same Safari extension tracking used by Reader.
+It does not save or fetch content. It preserves query strings and fragments,
+uses the existing 72-hour freshness window, and errors on missing, stale or
+non-HTTP(S) values. This is the last extension-reported page, not a live active-tab
+query. With this addition, Reader defines 11 discoverable actions including the
+two shared change actions, plus two private Live Activity controls; its automatic
+shortcut provider has six entries.
+
+October 30 validation: the new action and its actual storage dependencies pass
+an iOS 26 SDK type-check; all 11 Safari URL-store tests pass in an isolated macOS
+test harness. The full app build and a device Shortcut invocation were not run
+for this addition. Earlier build/metadata counts below describe their dated
+verification runs.
+
 ## Entities and actions
 
 | App | Entities | Actions |

@@ -189,7 +189,8 @@ public final class VaultFolderStore: @unchecked Sendable {
     /// new generation; rows the peer no longer lists are purged by
     /// `purgeStaleGenerations()` at the start of the next session.
     public func applyIndex(_ index: BEPIndex, ourShortID: UInt64, now: Date = Date()) throws -> VaultIndexApplyResult {
-        try db.transaction {
+        var events: [(String, String, String)] = []
+        let result = try db.transaction {
             var result = VaultIndexApplyResult()
             var generation = try db.scalarUnlocked("SELECT index_generation FROM peer WHERE id = 1")
             if !index.isUpdate {
@@ -203,13 +204,20 @@ public final class VaultFolderStore: @unchecked Sendable {
                 // Refuse malformed lengths and offsets before persisting hashes;
                 // the mirror reconstructs offsets from its stored block size.
                 try file.validateForWire()
+                let previous = try fileUnlocked(named: file.name)
                 try applyOne(file, generation: generation, ourShortID: ourShortID, now: now, into: &result)
+                let current = try fileUnlocked(named: file.name)
+                if previous?.version != current?.version || previous?.deleted != current?.deleted || previous?.type != current?.type {
+                    events.append((file.name, file.type == .directory ? "folder" : "file", file.deleted ? "deleted" : previous == nil ? "created" : "updated"))
+                }
             }
             if maxSequence > 0 {
                 try db.executeUnlocked("UPDATE peer SET their_max_sequence = MAX(their_max_sequence, ?) WHERE id = 1", [.integer(maxSequence)])
             }
             return result
         }
+        for (name, kind, operation) in events { publishAutomation(name, kind: kind, operation: operation) }
+        return result
     }
 
     private func applyOne(_ file: BEPFileInfo, generation: Int64, ourShortID: UInt64, now: Date,
@@ -318,8 +326,10 @@ public final class VaultFolderStore: @unchecked Sendable {
     public func stageImport(name: String, size: Int64, blockSize: Int, blocks: [BlockInfo], modified: Date,
                             ourShortID: UInt64, now: Date = Date()) throws -> VaultFileRecord {
         try BEPFileInfo.validateName(name)
-        return try db.transaction {
+        var existed = false
+        let result = try db.transaction {
             let existing = try fileUnlocked(named: name)
+            existed = existing != nil && existing?.deleted == false
             let version = (existing?.version ?? .empty).updated(by: ourShortID, now: now)
             let blocksHash = BlockLayout.blocksHash(blocks)
             let modifiedS = Int64(modified.timeIntervalSince1970.rounded(.down))
@@ -349,6 +359,8 @@ public final class VaultFolderStore: @unchecked Sendable {
             guard let record = try fileUnlocked(named: name) else { throw VaultStoreError.invalidRecord(name) }
             return record
         }
+        publishAutomation(name, kind: "file", operation: existed ? "updated" : "created")
+        return result
     }
 
     /// A folder is an index entry too, including when it has no files.
@@ -356,8 +368,10 @@ public final class VaultFolderStore: @unchecked Sendable {
     public func stageDirectory(name: String, modified: Date, ourShortID: UInt64,
                                now: Date = Date()) throws -> VaultFileRecord {
         try BEPFileInfo.validateName(name)
-        return try db.transaction {
+        var existed = false
+        let result = try db.transaction {
             let existing = try fileUnlocked(named: name)
+            existed = existing != nil && existing?.deleted == false
             let version = (existing?.version ?? .empty).updated(by: ourShortID, now: now)
             let modifiedS = Int64(modified.timeIntervalSince1970.rounded(.down))
             let modifiedNs = Int32((modified.timeIntervalSince1970 - TimeInterval(modifiedS)) * 1_000_000_000)
@@ -382,13 +396,15 @@ public final class VaultFolderStore: @unchecked Sendable {
             guard let record = try fileUnlocked(named: name) else { throw VaultStoreError.invalidRecord(name) }
             return record
         }
+        publishAutomation(name, kind: "folder", operation: existed ? "updated" : "created")
+        return result
     }
 
     /// Records a delete: a tombstone with our version and a pending change.
     /// Returns nil when the file is unknown or already deleted.
     @discardableResult
     public func stageDelete(name: String, ourShortID: UInt64, now: Date = Date()) throws -> VaultFileRecord? {
-        try db.transaction {
+        let result: VaultFileRecord? = try db.transaction {
             guard let existing = try fileUnlocked(named: name), !existing.deleted else { return nil }
             let version = existing.version.updated(by: ourShortID, now: now)
             let modifiedS = Int64(now.timeIntervalSince1970.rounded(.down))
@@ -405,6 +421,8 @@ public final class VaultFolderStore: @unchecked Sendable {
             """, [.text(name), .blob(version.storageBytes), .double(now.timeIntervalSinceReferenceDate)])
             return try fileUnlocked(named: name)
         }
+        if let result { publishAutomation(name, kind: result.type == .directory ? "folder" : "file", operation: "deleted") }
+        return result
     }
 
     public func pendingLocalChanges() throws -> [VaultLocalChange] {
@@ -498,6 +516,19 @@ public final class VaultFolderStore: @unchecked Sendable {
         }
     }
 
+    /// All user-visible files and folders, including empty directories.
+    public func automationItems(limit: Int = Int.max) throws -> [VaultFileRecord] {
+        try db.sync {
+            var records: [VaultFileRecord] = []
+            try db.queryUnlocked("SELECT \(Self.fileColumns) FROM files WHERE deleted=0 AND invalid=0 AND type IN (0,1) ORDER BY modified_s DESC,name LIMIT ?",
+                [.integer(Int64(max(0, limit)))]) { records.append(try Self.record(from: $0)) }
+            return records
+        }
+    }
+    private func publishAutomation(_ name: String, kind: String, operation: String) {
+        guard rootURL == AppConfig.sharedContainerURL()?.appendingPathComponent("Vault", isDirectory: true) else { return }
+        AppAutomation.record(.vault, kind: kind, id: name, operation: operation)
+    }
     public func liveFileCount() throws -> Int {
         try db.sync { Int(try db.scalarUnlocked("SELECT COUNT(*) FROM files WHERE deleted = 0 AND invalid = 0 AND type = 0")) }
     }
@@ -526,7 +557,9 @@ public final class VaultFolderStore: @unchecked Sendable {
     }
 
     public func setCachePinned(name: String, pinned: Bool) throws {
+        guard let previous = try file(named: name), previous.cache?.pinned != pinned else { return }
         try db.execute("UPDATE files SET cache_pinned = ? WHERE name = ?", [.integer(pinned ? 1 : 0), .text(name)])
+        publishAutomation(name, kind: "file", operation: "updated")
     }
 
     public func clearCache(name: String) throws {

@@ -11,10 +11,14 @@ struct LibraryMusicEntity: IndexedEntity {
     var id: String
     @Property(title: "Name") var name: String
     @Property(title: "Details") var detail: String
-    init(id: String, name: String, detail: String) {
+    @Property(title: "Kind") var kind: String
+    @Property(title: "Saved Date") var savedDate: Date
+    @Property(title: "Duration") var duration: Double
+    init(id: String, name: String, detail: String, savedDate: Date = .distantPast, duration: Double = 0) {
         self.id = id
         self.name = name
         self.detail = detail
+        self.kind = String(id.prefix { $0 != ":" }); self.savedDate = savedDate; self.duration = duration
     }
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(name)", subtitle: "\(detail)")
@@ -43,7 +47,7 @@ struct LibraryMusicQuery: EntityStringQuery {
             entities.append(LibraryMusicEntity(id: "artist:\(item.artistPersistentID)", name: item.artist ?? "Unknown Artist", detail: "Artist"))
         }
         for song in library.songs {
-            entities.append(LibraryMusicEntity(id: "song:\(song.persistentID)", name: song.title ?? "Untitled Song", detail: song.artist ?? "Unknown Artist"))
+            entities.append(LibraryMusicEntity(id: "song:\(song.persistentID)", name: song.title ?? "Untitled Song", detail: song.artist ?? "Unknown Artist", savedDate: song.dateAdded, duration: song.playbackDuration))
         }
         return entities
     }
@@ -194,6 +198,8 @@ struct SearchMusicLibraryIntent: AppIntent {
 
 struct LunaMusicShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: ImportPodcastAudioIntent(), phrases: ["Add audio to \(.applicationName)"], shortTitle: "Add Audio to Podcasts", systemImageName: "waveform.badge.plus")
+        AppShortcut(intent: CreatePodcastAudioListIntent(), phrases: ["Create an audio list in \(.applicationName)"], shortTitle: "Create Audio List", systemImageName: "text.badge.plus")
         AppShortcut(intent: ResumeLastPodcastIntent(), phrases: ["Resume my podcast queue in \(.applicationName)"], shortTitle: "Resume Podcast Queue", systemImageName: "dot.radiowaves.left.and.right")
         AppShortcut(intent: SwitchMediaQueueIntent(), phrases: ["Switch queues in \(.applicationName)"], shortTitle: "Switch Music and Podcasts", systemImageName: "arrow.triangle.swap")
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
@@ -227,6 +233,66 @@ struct SwitchMediaQueueIntent: AudioPlaybackIntent {
     @MainActor func perform() async throws -> some IntentResult {
         MediaPlaybackCoordinator.shared.install()
         await MediaPlaybackCoordinator.shared.switchQueue()
+        return .result()
+    }
+}
+
+struct FindLibraryMusicIntent: AppIntent {
+    static var title: LocalizedStringResource = "Find Library Music"
+    @Parameter(title: "Search", default: "") var search: String
+    @Parameter(title: "Kind") var kind: String?
+    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[LibraryMusicEntity]> {
+        await MusicLibraryController.shared.reload()
+        let entities = await LibraryMusicQuery().allEntities().filter {
+            (search.isEmpty || $0.name.localizedStandardContains(search) || $0.detail.localizedStandardContains(search))
+                && (kind == nil || $0.kind == kind)
+        }
+        return .result(value: Array(entities.prefix(max(1, min(500, limit)))))
+    }
+}
+struct CreateMusicPlaylistIntent: AppIntent {
+    static var title: LocalizedStringResource = "Create Music Playlist"
+    @Parameter(title: "Name") var name: String
+    @Parameter(title: "Songs") var songs: [LibraryMusicEntity]?
+    @MainActor func perform() async throws -> some IntentResult & ReturnsValue<LibraryMusicEntity> {
+        let library = MusicLibraryController.shared
+        await library.reload()
+        let resolved = try (songs ?? []).map { entity -> MusicSong in
+            guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
+        }
+        let playlist = try await library.createPlaylist(name: name, items: resolved)
+        return .result(value: LibraryMusicEntity(id: "playlist:\(playlist.persistentID)", name: playlist.name ?? name, detail: "Playlist"))
+    }
+}
+struct AddSongsToMusicPlaylistIntent: AppIntent {
+    static var title: LocalizedStringResource = "Add Songs to Playlist"
+    @Parameter(title: "Songs") var songs: [LibraryMusicEntity]
+    @Parameter(title: "Playlist") var playlist: LibraryMusicEntity
+    @MainActor func perform() async throws -> some IntentResult {
+        let library = MusicLibraryController.shared
+        await library.reload()
+        guard let destination = library.playlists.first(where: { "playlist:\($0.persistentID)" == playlist.id }) else { throw MusicIntentError.missing }
+        let resolved = try songs.map { entity -> MusicSong in
+            guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
+        }
+        try await library.add(resolved, to: destination)
+        return .result()
+    }
+}
+struct QueueLibraryMusicIntent: AppIntent {
+    static var title: LocalizedStringResource = "Add Songs to Music Queue"
+    @Parameter(title: "Songs") var songs: [LibraryMusicEntity]
+    @Parameter(title: "Play Next", default: false) var next: Bool
+    @MainActor func perform() async throws -> some IntentResult {
+        let library = MusicLibraryController.shared
+        await library.reload()
+        let resolved = try songs.map { entity -> MusicSong in
+            guard let song = library.songs.first(where: { "song:\($0.persistentID)" == entity.id }) else { throw MusicIntentError.missing }; return song
+        }
+        for song in next ? Array(resolved.reversed()) : resolved {
+            if next { MusicPlaybackController.shared.playNext(song) } else { MusicPlaybackController.shared.playLater(song) }
+        }
         return .result()
     }
 }

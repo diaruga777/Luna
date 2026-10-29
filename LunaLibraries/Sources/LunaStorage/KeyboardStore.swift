@@ -36,8 +36,10 @@ public struct KeyboardSavedLink: Equatable {
 public final class KeyboardStore {
   private let saves: SavesStore
   private let container: URL?
+  private let publishesAutomation: Bool
   public init(saves: SavesStore = .shared, containerURL: URL? = nil, lowMemory: Bool = false) {
     self.saves = saves
+    self.publishesAutomation = saves === SavesStore.shared && containerURL == nil
     self.container = containerURL ?? AppConfig.sharedContainerURL()
     if lowMemory {
       try? saves.keyboardRead { try $0.execute("PRAGMA cache_size=-256") }
@@ -75,6 +77,10 @@ public final class KeyboardStore {
   /// Release SQLite's reclaimable page buffers without changing the shared store on disk.
   public func trimMemory() { try? saves.keyboardRead { try $0.execute("PRAGMA shrink_memory") } }
 
+  private func publishAutomation(kind: String, id: String, operation: String) {
+    guard publishesAutomation else { return }
+    AppAutomation.record(.keyboard, kind: kind, id: id, operation: operation)
+  }
   public func preferences() throws -> [String: String] {
     try saves.keyboardRead { db in
       var values: [String: String] = [:]
@@ -85,6 +91,7 @@ public final class KeyboardStore {
     }
   }
   public func setPreference(_ key: String, value: String) throws {
+    guard try preferences()[key] != value else { return }
     try saves.keyboardWrite { db in
       try db.run(
         "INSERT INTO keyboard_preferences(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
@@ -92,6 +99,26 @@ public final class KeyboardStore {
         try $0.bind(1, key)
         try $0.bind(2, value)
       }
+    }
+    publishAutomation(kind: "preference", id: key, operation: "updated")
+  }
+  public func allShortcuts() throws -> [KeyboardShortcut] {
+    let ids: [String] = try saves.keyboardRead { db in
+      var result: [String] = []
+      try db.query("SELECT id FROM keyboard_shortcuts ORDER BY updated_at DESC, id") { row in
+        if let id = row.string(0) { result.append(id) }
+      }
+      return result
+    }
+    return try ids.compactMap { try shortcut(id: $0) }
+  }
+  public func allDictionaryWords() throws -> [(word: String, language: String)] {
+    try saves.keyboardRead { db in
+      var result: [(String, String)] = []
+      try db.query("SELECT word,language FROM keyboard_dictionary ORDER BY language,word") { row in
+        if let word = row.string(0), let language = row.string(1) { result.append((word, language)) }
+      }
+      return result
     }
   }
   public func shortcuts(matching query: String = "", limit: Int = 100, forTyping: Bool = false, searchTokens: [String] = []) throws -> [KeyboardShortcut]
@@ -136,11 +163,30 @@ public final class KeyboardStore {
       return result
     }
   }
+  public func shortcut(id: String) throws -> KeyboardShortcut? {
+    try saves.keyboardRead { db in
+      var result: KeyboardShortcut?
+      try db.query("SELECT text,kind,relative_path FROM keyboard_shortcuts WHERE id=?", { try $0.bind(1, id) }) { row in
+        result = KeyboardShortcut(id: id, keywords: [], text: row.string(0) ?? "", kind: row.string(1) ?? "text", relativePath: row.string(2))
+      }
+      if result != nil {
+        try db.query("SELECT keyword FROM keyboard_keywords WHERE shortcut_id=? ORDER BY keyword", { try $0.bind(1, id) }) { row in
+          if let keyword = row.string(0) { result?.keywords.append(keyword) }
+        }
+        try db.query("SELECT suggest_while_typing,is_cosmetic FROM keyboard_shortcut_options WHERE shortcut_id=?", { try $0.bind(1, id) }) { row in
+          result?.suggestWhileTyping = row.int(0) != 0; result?.isCosmetic = row.int(1) != 0
+        }
+      }
+      return result
+    }
+  }
   public func searchShortcuts(_ query: String, limit: Int = 40) throws -> [KeyboardShortcut] {
     let tokens = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).prefix(8).map { String($0.prefix(64)) }
     return try shortcuts(limit: min(40, limit), searchTokens: tokens)
   }
   public func save(_ shortcut: KeyboardShortcut, importing source: URL? = nil) throws {
+    let previous = try self.shortcut(id: shortcut.id)
+    if source == nil, previous == shortcut { return }
     guard let container else { throw CocoaError(.fileWriteNoPermission) }
     var relative: String? = shortcut.relativePath
     var copied: URL?
@@ -213,12 +259,15 @@ public final class KeyboardStore {
       if let copied { try? FileManager.default.removeItem(at: copied) }
       throw error
     }
+    publishAutomation(kind: "shortcut", id: shortcut.id, operation: previous == nil ? "created" : "updated")
     saves.reapPendingDeletes()
   }
   public func delete(id: String) throws {
+    let existed = try shortcut(id: id) != nil
     try saves.keyboardWrite { db in
       try db.run("DELETE FROM keyboard_shortcuts WHERE id=?") { try $0.bind(1, id) }
     }
+    if existed { publishAutomation(kind: "shortcut", id: id, operation: "deleted") }
     saves.reapPendingDeletes()
   }
   /// Imported files are created under the same write lock as their holder.
@@ -311,6 +360,7 @@ public final class KeyboardStore {
         try $0.bind(2, language)
       }
     }
+    publishAutomation(kind: "word", id: language + ":" + value, operation: included ? "created" : "deleted")
   }
   public func recentLinks(limit: Int = 12, query: String = "") throws -> [KeyboardSavedLink] {
     try saves.keyboardRead { db in

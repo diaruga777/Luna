@@ -1,4 +1,5 @@
 import Foundation
+import LunaAppConfig
 import Combine
 import LunaMusicFiles
 
@@ -131,7 +132,21 @@ public final class VaultMusicController: ObservableObject {
     private func save(_ next: VaultMusicState) throws {
         if let storageError { throw storageError }
         try JSONEncoder().encode(next).write(to: stateURL, options: .atomic)
+        let previous = state
         state = next
+        if stateURL.deletingLastPathComponent().lastPathComponent == "LunaMusic" {
+            let oldFiles = Dictionary(previous.files.map { ($0.id(peer: previous.peer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
+            let newFiles = Dictionary(next.files.map { ($0.id(peer: next.peer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
+            for id in Set(oldFiles.keys).union(newFiles.keys).sorted() where oldFiles[id] != newFiles[id] {
+                AppAutomation.record(.music, kind: "song", id: "song:" + id, operation: newFiles[id] == nil ? "deleted" : oldFiles[id] == nil ? "created" : "updated")
+            }
+            for id in Set(previous.playlists.map(\.id)).union(next.playlists.map(\.id)).sorted() {
+                let old = previous.playlists.first { $0.id == id }, new = next.playlists.first { $0.id == id }
+                if old?.name != new?.name || old?.songIDs != new?.songIDs {
+                    AppAutomation.record(.music, kind: "playlist", id: "playlist:" + id.rawValue, operation: new == nil ? "deleted" : old == nil ? "created" : "updated")
+                }
+            }
+        }
     }
     private func changed() { NotificationCenter.default.post(name: .lunaMusicVaultChanged, object: self) }
     private func reconcile() {

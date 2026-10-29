@@ -194,3 +194,9 @@ there is no transcoding or third-party decoder fallback.
 64-bit seeks, durable history, episode ordering and timing, real AVFoundation
 loading/seeking of a ten-minute MP4 with tail metadata, local resume, streamed
 next-episode selection, and the absence of disk-cache installs.
+
+## System automation
+
+See [composable-automation.md](composable-automation.md) for the App Entity and
+App Intent surface, mutation notifications, change tokens and the Reader-to-Music
+Shortcuts workflow.

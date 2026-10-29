@@ -1,4 +1,5 @@
 import Foundation
+import LunaAppConfig
 import Combine
 import UserNotifications
 import LunaPodcastCore
@@ -29,7 +30,18 @@ import LunaPodcastCore
                     }
                 }
             }
+            if store!.state.episodes.values.contains(where: { $0.mediaURL.isFileURL && $0.mediaURL.pathComponents.contains("ImportedAudio") }) {
+                try store!.update { state in
+                    for (id, episode) in state.episodes where episode.mediaURL.isFileURL && episode.mediaURL.pathComponents.contains("ImportedAudio") {
+                        let filename = id + "." + episode.mediaURL.pathExtension
+                        state.episodes[id]?.mediaURL = url.deletingLastPathComponent().appendingPathComponent("ImportedAudio").appendingPathComponent(filename)
+                    }
+                }
+            }
             state = store!.state
+            if url == Self.directory.appendingPathComponent("library.json") {
+                store?.mutationHandler = PodcastAutomation.recordChanges
+            }
         }
         catch { errorMessage = "Your podcast library could not be opened: \(error.localizedDescription)" }
         observer = NotificationCenter.default.addObserver(forName: .lunaPodcastsChanged, object: store, queue: .main) { [weak self] _ in
@@ -103,6 +115,7 @@ import LunaPodcastCore
         if let task = refreshTasks[id] { await task.value; return }
         guard !Task.isCancelled, let show = state.shows[id],
               show.id != ReaderPodcastSource.showID,
+              ["http", "https"].contains(show.feedURL.scheme?.lowercased() ?? ""),
               force || Date().timeIntervalSince(show.lastRefreshAttempt ?? show.lastRefresh ?? .distantPast) >= minimumInterval else { return }
         refreshingShowIDs.insert(id); isRefreshing = true
         let task = Task { [self] in

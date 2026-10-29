@@ -8,6 +8,7 @@ import Glibc
 @MainActor public final class PodcastStore {
     public private(set) var state: PodcastLibraryState
     public let url: URL
+    public var mutationHandler: ((PodcastLibraryState, PodcastLibraryState) -> Void)?
     private var revision: UInt64 = 0
     public init(url: URL) throws {
         self.url = url
@@ -27,7 +28,9 @@ import Glibc
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(candidate)
         try data.write(to: url, options: [.atomic])
+        let previous = state
         state = candidate
+        if !positionOnly { mutationHandler?(previous, candidate) }
         revision &+= 1
         NotificationCenter.default.post(name: .lunaPodcastsChanged, object: self, userInfo: ["positionOnly": positionOnly])
     }
@@ -58,7 +61,9 @@ import Glibc
             guard rename(prepared.2.path, destination.path) == 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
+            let previous = state
             state = prepared.0
+            if !positionOnly { mutationHandler?(previous, state) }
             revision &+= 1
             NotificationCenter.default.post(name: .lunaPodcastsChanged, object: self, userInfo: ["positionOnly": positionOnly])
             return prepared.1

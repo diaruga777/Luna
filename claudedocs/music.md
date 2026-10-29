@@ -1028,3 +1028,9 @@ Streaming/readout replacement validation (2026-10-28): focused Reader/audio and
 Music integration simulator suites pass, including actual device-voice rendering
 and podcast-to-Reader playback followed by the original save's read transition.
 Live Google synthesis has not been exercised with a user credential.
+
+## System automation
+
+See [composable-automation.md](composable-automation.md) for the App Entity and
+App Intent surface, mutation notifications, change tokens and the Reader-to-Music
+Shortcuts workflow.

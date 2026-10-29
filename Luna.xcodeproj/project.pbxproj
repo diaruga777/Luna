@@ -127,6 +127,14 @@
 		F87CA3D2CEE13AD893C48665 /* MusicControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED88FFD5482D03E424F7D149 /* MusicControlIntents.swift */; };
 		F93AB620C2214228B585BCF9 /* LunaWriterReadAlong in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000017 /* LunaWriterReadAlong */; };
 		FB950E259D3BCCE8086784D0 /* KeyboardShortcutsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9902E4E5BD4291F7145229C2 /* KeyboardShortcutsController.swift */; };
+		A0157B08E48B28EED30C8A9E /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
+		664624AA7FA41421CC667518 /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
+		43981B5AC4320D98B87A2F7E /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
+		9227CC5D64A515408751978F /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
+		166D9007C2E56AA344B7AB06 /* PodcastAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA7B245CE58CB10B0DFCEB /* PodcastAppIntents.swift */; };
+		156A2B7BD72FFDB508B39A51 /* KeyboardAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA88C65970E66C5F9D4673A6 /* KeyboardAppIntents.swift */; };
+		3D6E6C247708D0945741D398 /* VaultAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49E44F2F27EBE3B50060538 /* VaultAppIntents.swift */; };
+		BFC0C21DB6528E8AB6A7154B /* PodcastAutomationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9D9C512190AC126651E97D /* PodcastAutomationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -390,6 +398,11 @@
 		FB9905F9A0D497FECE90F903 /* LunaKeyboardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaKeyboardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF703AF04B63ED294953F60F /* LunaVault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		QZ00000000000000000001 /* Luna.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Luna.xcconfig; path = Config/Luna.xcconfig; sourceTree = "<group>"; };
+		D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAutomation/AutomationAppIntents.swift; sourceTree = SOURCE_ROOT; };
+		7CEA7B245CE58CB10B0DFCEB /* PodcastAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LunaMusic/Integrations/PodcastAppIntents.swift; sourceTree = SOURCE_ROOT; };
+		FA88C65970E66C5F9D4673A6 /* KeyboardAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LunaKeyboard/KeyboardAppIntents.swift; sourceTree = SOURCE_ROOT; };
+		E49E44F2F27EBE3B50060538 /* VaultAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LunaVault/VaultAppIntents.swift; sourceTree = SOURCE_ROOT; };
+		CD9D9C512190AC126651E97D /* PodcastAutomationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LunaMusicTests/PodcastAutomationTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -805,6 +818,7 @@
 		644BF23FB632F152B0695C0E /* LunaMusicTests */ = {
 			isa = PBXGroup;
 			children = (
+				CD9D9C512190AC126651E97D /* PodcastAutomationTests.swift */,
 				889D6F24F2D1C20E6A73A72D /* MusicLaunchRouteTests.swift */,
 				1E95760DD95DDF544645B7F9 /* MusicQueuePlannerTests.swift */,
 				74CD6EE98F165406B6FB1A7D /* MusicQueueSnapshotTests.swift */,
@@ -855,6 +869,10 @@
 		AA0900000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */,
+				7CEA7B245CE58CB10B0DFCEB /* PodcastAppIntents.swift */,
+				FA88C65970E66C5F9D4673A6 /* KeyboardAppIntents.swift */,
+				E49E44F2F27EBE3B50060538 /* VaultAppIntents.swift */,
 				QZ00000000000000000001 /* Luna.xcconfig */,
 				AA0700000000000000000001 /* Luna */,
 				AA0700000000000000000002 /* LunaSafari */,
@@ -1921,6 +1939,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BFC0C21DB6528E8AB6A7154B /* PodcastAutomationTests.swift in Sources */,
 				5D7820E5AD2230B75F6E5D33 /* MusicLaunchRouteTests.swift in Sources */,
 				67BF46F78203B8DE1DBD801E /* MusicQueuePlannerTests.swift in Sources */,
 				6A478E3BCBFFB9DB678B80DA /* MusicQueueSnapshotTests.swift in Sources */,
@@ -1941,6 +1960,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				166D9007C2E56AA344B7AB06 /* PodcastAppIntents.swift in Sources */,
+				664624AA7FA41421CC667518 /* AutomationAppIntents.swift in Sources */,
 				E3FCE933D8BCAF5607D469A2 /* MusicAppIntents.swift in Sources */,
 				9B55D77523AF18E81E55292A /* MusicAppDelegate.swift in Sources */,
 				E36CA239EEBD6F4468BDC028 /* MusicLaunchRoute.swift in Sources */,
@@ -1957,6 +1978,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0157B08E48B28EED30C8A9E /* AutomationAppIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1993,6 +2015,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3D6E6C247708D0945741D398 /* VaultAppIntents.swift in Sources */,
+				43981B5AC4320D98B87A2F7E /* AutomationAppIntents.swift in Sources */,
 				D43E9CF4D30B404173C20E00 /* VaultAppDelegate.swift in Sources */,
 				15C9B45A3E78445980FFF42E /* VaultSceneDelegate.swift in Sources */,
 				5797E264941DA0861AD0C231 /* KindWiring+Vault.swift in Sources */,
@@ -2040,6 +2064,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				156A2B7BD72FFDB508B39A51 /* KeyboardAppIntents.swift in Sources */,
+				9227CC5D64A515408751978F /* AutomationAppIntents.swift in Sources */,
 				3D66E035BBD6D1B51B8B048D /* AppDelegate.swift in Sources */,
 				BB0871C494FB5482159BEA16 /* KeyboardDictionaryController.swift in Sources */,
 				13EB79D6051BD6FB8560A610 /* KeyboardHomeController.swift in Sources */,

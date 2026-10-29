@@ -14,6 +14,13 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         PodcastBackgroundServices.shared.start()
         MusicVaultWiring.install()
         MusicSystemIntegration.shared.start()
+        if NSClassFromString("XCTestCase") == nil {
+            AutomationEntityIndex.install {
+                try await AutomationEntityIndex.replace(PodcastEpisodeEntity.self, entities: PodcastEpisodeQuery().all())
+                try await AutomationEntityIndex.replace(PodcastShowEntity.self, entities: PodcastShowQuery().all())
+                try await AutomationEntityIndex.replace(PodcastStationEntity.self, entities: PodcastStationQuery().all())
+            }
+        }
         return true
     }
 
@@ -102,6 +109,6 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        notification.request.identifier.hasPrefix("luna.change.") ? [.list] : [.banner, .list, .sound]
     }
 }

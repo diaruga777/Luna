@@ -37,7 +37,7 @@ enum GeminiSpeechError: LocalizedError, Equatable {
     }
 }
 
-/// Bounded requests preserve all text, including scripts without whitespace.
+/// Sentence-aligned, disjoint requests preserve all text, including unspaced scripts.
 /// Every chunk is cached independently so a quota failure never discards earlier work.
 struct GeminiSpeechPlan {
     let voice: GeminiNarrationVoice
@@ -63,43 +63,23 @@ struct GeminiSpeechPlan {
             ranges[block.blockIndex] = NSRange(location: start, length: text.utf16.count - start)
             previousBlock = block.blockIndex
         }
-        var chunks: [String] = []
-        var chunk = ""
-        var bytes = 0
-        var words = 0
-        var previousWhitespace = true
-        for character in text {
-            let newWord = previousWhitespace && !character.isWhitespace
-            let size = String(character).utf8.count
-            if !chunk.isEmpty && (bytes + size > 7_500 || (newWord && words >= 1_200)) {
-                if let boundary = chunk.lastIndex(where: { $0.isWhitespace }),
-                   chunk.distance(from: boundary, to: chunk.endIndex) < 100,
-                   !chunk[..<boundary].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let end = chunk.index(after: boundary)
-                    chunks.append(String(chunk[..<end]))
-                    chunk = String(chunk[end...])
-                    bytes = chunk.utf8.count
-                    words = AudioWordIndexing.wordCount(in: chunk)
-                } else {
-                    chunks.append(chunk)
-                    chunk = ""; bytes = 0; words = 0
-                }
+        let source = text as NSString
+        let sentences = script.spokenBlocks.flatMap { block -> [NSRange] in
+            guard let range = ranges[block.blockIndex] else { return [] }
+            return GeminiSpeechSentences.ranges(in: source.substring(with: range)).map {
+                NSRange(location: range.location + $0.location, length: $0.length)
             }
-            chunk.append(character)
-            bytes += size
-            if newWord { words += 1 }
-            previousWhitespace = character.isWhitespace
         }
-        if !chunk.isEmpty { chunks.append(chunk) }
-        var offset = 0
-        self.chunkRanges = chunks.map { chunk in
-            defer { offset += chunk.utf16.count }
-            return NSRange(location: offset, length: chunk.utf16.count)
-        }
-        self.chunks = chunks
+        self.chunkRanges = GeminiSpeechSentences.chunks(in: text, sentences: sentences)
+        self.chunks = chunkRanges.map { source.substring(with: $0) }
         self.blockRanges = ranges
         // Include block boundaries, voice, model and cache schema, but never the API key.
-        let identity = "v2-aac|gemini-3.8-flash-tts|" + voice.rawValue + "|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + text
+        // A bounded single request has exactly the same text/range as v2, so
+        // existing short readouts can still play without spending more quota.
+        let unchangedSingleChunk = chunks.count == 1 && text.utf8.count <= 7_500 && AudioWordIndexing.wordCount(in: text) <= 1_200
+        let schema = unchangedSingleChunk ? "v2-aac" : "v3-sentences-aac"
+        let boundaries = unchangedSingleChunk ? "" : String(describing: chunkRanges)
+        let identity = schema + "|gemini-3.8-flash-tts|" + voice.rawValue + "|" + String(describing: script.spokenBlocks.map { $0.blockIndex }) + boundaries + text
         self.fingerprint = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -119,6 +99,7 @@ public actor GeminiArticleSpeech {
     private var authorVoice: (String) async -> GeminiNarrationVoice = GeminiAuthorVoice.infer
     private let now: () -> Date
     private let requestTimeout: TimeInterval
+    private let recognize: GeminiSpeechAlignment.Recognize
 
     public init(directory: URL? = nil) {
         let local = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -132,6 +113,7 @@ public actor GeminiArticleSpeech {
         let session = URLSession(configuration: configuration)
         self.now = Date.init
         self.requestTimeout = 120
+        self.recognize = GeminiSpeechAlignment.recognize
         self.stream = { request, receive in
             let (bytes, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
@@ -176,6 +158,7 @@ public actor GeminiArticleSpeech {
         self.legacyDirectory = legacyDirectory
         self.now = now
         self.requestTimeout = requestTimeout
+        self.recognize = GeminiSpeechAlignment.recognize
         self.stream = { request, receive in
             let (data, response) = try await send(request)
             guard let http = response as? HTTPURLResponse else { throw GeminiSpeechError.unavailable }
@@ -188,9 +171,9 @@ public actor GeminiArticleSpeech {
         self.apiKey = apiKey
     }
 
-    init(directory: URL, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, stream: @escaping Stream) {
+    init(directory: URL, requestTimeout: TimeInterval = 120, now: @escaping () -> Date = Date.init, apiKey: @escaping () -> String? = { "test-key" }, recognize: @escaping GeminiSpeechAlignment.Recognize = GeminiSpeechAlignment.recognize, stream: @escaping Stream) {
         self.directory = directory; self.legacyDirectory = nil; self.requestTimeout = requestTimeout
-        self.now = now; self.apiKey = apiKey; self.stream = stream
+        self.now = now; self.apiKey = apiKey; self.stream = stream; self.recognize = recognize
     }
 
     public func renderer(itemID: UUID, script: AudioScript, author: String? = nil, allowGeneration: Bool,
@@ -230,7 +213,7 @@ public actor GeminiArticleSpeech {
         if Self.isComplete(folder, count: plan.chunks.count) {
             DiagnosticLog.shared.record("cache hit item=\(itemID)", category: "gemini-tts")
             progress(1)
-            return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
+            return try cachedRenderer(folder: folder, plan: plan, progressive: startBeforeCompletion)
         }
         // Previously generated Reader-local audio is adopted before requiring a
         // key or network permission, including cache-only autoplay/restoration.
@@ -240,14 +223,14 @@ public actor GeminiArticleSpeech {
             try Self.migrateCache(from: legacy, to: folder, count: plan.chunks.count)
             DiagnosticLog.shared.record("migrated cache item=\(itemID)", category: "gemini-tts")
             progress(1)
-            return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
+            return try cachedRenderer(folder: folder, plan: plan, progressive: startBeforeCompletion)
         }
         guard allowGeneration else { return nil }
-        if let operation = pending[key], !operation.task.isCancelled {
+        if let operation = pending[key], !operation.task.isCancelled, operation.live.snapshot(0).error == nil {
             guard nightlyDeadline == nil else { return nil }
             operation.live.observeProgress(progress)
             if startBeforeCompletion {
-                let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: operation.live, task: operation.task)
+                let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: operation.live, task: operation.task, recognize: self.recognize)
                 try await withTaskCancellationHandler { try await renderer.ready() } onCancel: { operation.task.cancel() }
                 return renderer
             }
@@ -255,7 +238,7 @@ public actor GeminiArticleSpeech {
                 try await operation.task.value
             } onCancel: { operation.task.cancel() }
             progress(1)
-            return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
+            return try cachedRenderer(folder: folder, plan: plan, progressive: startBeforeCompletion)
         }
         let stream = self.stream
         let availability = self.availability
@@ -264,95 +247,108 @@ public actor GeminiArticleSpeech {
         let apiKey = self.apiKey
         let directory = self.directory
         let timeout = self.requestTimeout
+        let recognize = self.recognize
         let task = Task<URL, Error> {
-            // Actors only serialize within one app. This advisory lock also
-            // excludes another Reader/Music process until its complete result
-            // can be reused, and the OS releases it if the generating app dies.
-            DiagnosticLog.shared.record("prepare item=\(itemID) chunks=\(plan.chunks.count)", category: "gemini-tts")
-            let lock = try await Self.acquireCacheLock(directory, timeout: timeout)
-            defer { Self.releaseCacheLock(lock) }
-            try checkWindow()
-            if Self.isComplete(folder, count: plan.chunks.count) { live.reportProgress(1); return folder }
-            guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            BackupPolicy.excludeFromBackups(folder)
-            var preferredModelIndex = 0
-            for (index, text) in plan.chunks.enumerated() {
+            do {
+                // Actors only serialize within one app. This advisory lock also
+                // excludes another Reader/Music process until its complete result
+                // can be reused, and the OS releases it if the generating app dies.
+                DiagnosticLog.shared.record("prepare item=\(itemID) chunks=\(plan.chunks.count)", category: "gemini-tts")
+                let lock = try await Self.acquireCacheLock(directory, timeout: timeout)
+                defer { Self.releaseCacheLock(lock) }
                 try checkWindow()
-                let file = folder.appendingPathComponent("\(index).m4a")
-                if Self.isPlayable(file) {
-                    live.reportProgress(Double(index + 1) / Double(plan.chunks.count))
-                    continue
-                }
-                var succeeded = false
-                for modelIndex in preferredModelIndex..<Self.models.count {
-                    let model = Self.models[modelIndex]
-                    guard availability.available(model, credential: apiKey) else {
-                        if nightlyDeadline != nil { throw GeminiSpeechError.quota }
+                if Self.isComplete(folder, count: plan.chunks.count) { live.reportProgress(1); return folder }
+                guard let apiKey = apiKey(), !apiKey.isEmpty else { throw GeminiSpeechError.missingKey }
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                BackupPolicy.excludeFromBackups(folder)
+                var preferredModelIndex = 0
+                for (index, text) in plan.chunks.enumerated() {
+                    try checkWindow()
+                    let file = folder.appendingPathComponent("\(index).m4a")
+                    if Self.isPlayable(file) {
+                        live.reportProgress(Double(index + 1) / Double(plan.chunks.count))
                         continue
                     }
-                    try checkWindow()
-                    let remaining = nightlyDeadline.map { $0.timeIntervalSince(now()) } ?? timeout
-                    let requestTimeout = min(timeout, remaining)
-                    var request = try Self.request(text: text, apiKey: apiKey, model: model, voice: plan.voice)
-                    request.timeoutInterval = requestTimeout
-                    DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
-                    let started = Date()
-                    do {
-                        _ = try await Self.streamWithinDeadline(request, timeout: requestTimeout, stream: stream) { delta in
-                            try checkWindow()
-                            try live.append(delta, chunk: index)
-                            // The provider sends no alignment or final byte count. Estimate
-                            // within a chunk from audio duration; only finalized chunks reach 100%.
-                            let expectedBytes = max(48_000, Double(AudioWordIndexing.wordCount(in: text)) / 170 * 60 * 48_000)
-                            let fraction = min(0.95, Double(live.snapshot(index).bytes) / expectedBytes)
-                            live.reportProgress((Double(index) + fraction) / Double(plan.chunks.count))
+                    let partial = try GeminiSpeechPartial(folder: folder, chunk: index, text: text)
+                    let prefix = try await partial.recover(text: text, recognize: recognize)
+                    if !prefix.isEmpty { try live.append(prefix, chunk: index) }
+                    live.prepare(index, boundaries: partial.boundaries)
+                    let remainingText = (text as NSString).substring(from: partial.boundary.textEnd)
+                    let initialBytes = live.snapshot(index).bytes
+                    var succeeded = false
+                    for modelIndex in preferredModelIndex..<Self.models.count {
+                        let model = Self.models[modelIndex]
+                        guard availability.available(model, credential: apiKey) else {
+                            if nightlyDeadline != nil { throw GeminiSpeechError.quota }
+                            continue
                         }
-                        succeeded = true
-                        DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) model=\(model) bytes=\(live.snapshot(index).bytes) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
-                        break
-                    } catch {
-                        let retryAt: Date
-                        if let quota = error as? GeminiSpeechQuotaFailure { retryAt = quota.retryAt }
-                        else if let speech = error as? GeminiSpeechError, speech == .quota || speech == .modelUnavailable {
-                            retryAt = Date().addingTimeInterval(speech == .quota ? 60 : 3600)
-                        } else { throw error }
-                        availability.suspend(model, credential: apiKey, until: retryAt)
-                        if nightlyDeadline != nil { throw error }
-                        // Restarting after emitting PCM could repeat words already heard.
-                        guard live.snapshot(index).bytes == 0 else { throw GeminiSpeechError.quota }
-                        preferredModelIndex = modelIndex + 1
-                        DiagnosticLog.shared.record("fallback item=\(itemID) model=\(model)", category: "gemini-tts")
+                        try checkWindow()
+                        let remaining = nightlyDeadline.map { $0.timeIntervalSince(now()) } ?? timeout
+                        let requestTimeout = min(timeout, remaining)
+                        var request = try Self.request(text: remainingText, apiKey: apiKey, model: model, voice: plan.voice)
+                        request.timeoutInterval = requestTimeout
+                        DiagnosticLog.shared.record("request item=\(itemID) chunk=\(index + 1)/\(plan.chunks.count) model=\(model)", category: "gemini-tts")
+                        let started = Date()
+                        do {
+                            _ = try await Self.streamWithinDeadline(request, timeout: requestTimeout, stream: stream) { delta in
+                                try partial.append(delta)
+                                try checkWindow()
+                                try live.append(delta, chunk: index)
+                                // The provider sends no alignment or final byte count. Estimate
+                                // within a chunk from audio duration; only finalized chunks reach 100%.
+                                let expectedBytes = max(48_000, Double(AudioWordIndexing.wordCount(in: text)) / 170 * 60 * 48_000)
+                                let fraction = min(0.95, Double(live.snapshot(index).bytes) / expectedBytes)
+                                live.reportProgress((Double(index) + fraction) / Double(plan.chunks.count))
+                            }
+                            succeeded = true
+                            DiagnosticLog.shared.record("response item=\(itemID) chunk=\(index + 1) model=\(model) bytes=\(live.snapshot(index).bytes) seconds=\(Int(Date().timeIntervalSince(started)))", category: "gemini-tts")
+                            break
+                        } catch {
+                            let retryAt: Date
+                            if let quota = error as? GeminiSpeechQuotaFailure { retryAt = quota.retryAt }
+                            else if let speech = error as? GeminiSpeechError, speech == .quota || speech == .modelUnavailable {
+                                retryAt = Date().addingTimeInterval(speech == .quota ? 60 : 3600)
+                            } else { throw error }
+                            availability.suspend(model, credential: apiKey, until: retryAt)
+                            if nightlyDeadline != nil { throw error }
+                            // Restarting after emitting PCM could repeat words already heard.
+                            guard live.snapshot(index).bytes == initialBytes else { throw GeminiSpeechError.quota }
+                            preferredModelIndex = modelIndex + 1
+                            DiagnosticLog.shared.record("fallback item=\(itemID) model=\(model)", category: "gemini-tts")
+                        }
                     }
+                    guard succeeded else { throw GeminiSpeechError.quota }
+                    try checkWindow()
+                    let audio = try Self.wav(fromPCM: live.data(index))
+                    try Self.cacheAudio(audio, at: file, validatePublication: checkWindow)
+                    guard Self.isPlayable(file) else {
+                        try? FileManager.default.removeItem(at: file)
+                        throw GeminiSpeechError.invalidAudio
+                    }
+                    partial.remove()
+                    live.complete(index)
+                    // Report completed work, not the chunk we're about to request.
+                    live.reportProgress(Double(index + 1) / Double(plan.chunks.count))
                 }
-                guard succeeded else { throw GeminiSpeechError.quota }
-                try checkWindow()
-                let audio = try Self.wav(fromPCM: live.data(index))
-                try Self.cacheAudio(audio, at: file, validatePublication: checkWindow)
-                guard Self.isPlayable(file) else {
-                    try? FileManager.default.removeItem(at: file)
-                    throw GeminiSpeechError.invalidAudio
-                }
-                live.complete(index)
-                // Report completed work, not the chunk we're about to request.
-                live.reportProgress(Double(index + 1) / Double(plan.chunks.count))
+                live.reportProgress(1)
+                DiagnosticLog.shared.record("ready item=\(itemID)", category: "gemini-tts")
+                return folder
+            } catch {
+                live.fail(error)
+                throw error
             }
-            live.reportProgress(1)
-            DiagnosticLog.shared.record("ready item=\(itemID)", category: "gemini-tts")
-            return folder
         }
         let operationID = UUID()
         pending[key] = (operationID, task, live)
         Task { [weak self] in
             if case .failure(let error) = await task.result {
-                live.fail(error)
                 DiagnosticLog.shared.record("generation failed item=\(itemID) error=\(String(describing: type(of: error))) code=\((error as NSError).code)", category: "gemini-tts")
             }
             await self?.finishOperation(key: key, id: operationID)
         }
         do {
             if startBeforeCompletion {
-                let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: live, task: task)
+                let renderer = GeminiProgressiveSpeechRenderer(folder: folder, plan: plan, live: live, task: task, recognize: recognize)
                 try await withTaskCancellationHandler { try await renderer.ready() } onCancel: { task.cancel() }
                 return renderer
             }
@@ -402,6 +398,14 @@ public actor GeminiArticleSpeech {
         BackupPolicy.excludeFromBackups(itemFolder)
         try JSONEncoder().encode(voice).write(to: choice, options: .atomic)
         return voice
+    }
+
+    private func cachedRenderer(folder: URL, plan: GeminiSpeechPlan, progressive: Bool) throws -> SpeechRendering {
+        if progressive {
+            return GeminiProgressiveSpeechRenderer(folder: folder, plan: plan,
+                live: try GeminiSpeechSpool(count: plan.chunks.count), task: Task { folder }, recognize: recognize)
+        }
+        return try GeminiCachedSpeechRenderer(folder: folder, plan: plan)
     }
 
     private func finishOperation(key: String, id: UUID) {
@@ -466,11 +470,14 @@ public actor GeminiArticleSpeech {
                 }
                 let lifetime: TimeInterval = (state == .read ? 2 : 14) * 24 * 60 * 60
                 guard let files = fm.enumerator(at: itemFolder, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]) else { continue }
-                for case let file as URL in files where file.pathExtension == "m4a" {
+                for case let file as URL in files where file.pathExtension == "m4a" || file.lastPathComponent.hasSuffix(".partial.pcm") {
                     let values = try file.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
                     guard values.isRegularFile == true else { continue }
                     if values.contentModificationDate.map({ now.timeIntervalSince($0) >= lifetime }) ?? true {
                         try fm.removeItem(at: file)
+                        if file.lastPathComponent.hasSuffix(".partial.pcm") {
+                            try? fm.removeItem(at: file.deletingPathExtension().appendingPathExtension("json"))
+                        }
                     }
                 }
                 // Empty fingerprint/item directories carry no reusable state.
@@ -641,6 +648,10 @@ public actor GeminiArticleSpeech {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         defer { try? FileManager.default.removeItem(at: url) }
         try data.write(to: url)
+        return try pcm(fromAudioAt: url)
+    }
+
+    static func pcm(fromAudioAt url: URL) throws -> Data {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatInt16, interleaved: true)
         guard file.processingFormat.sampleRate == 24_000, file.processingFormat.channelCount == 1, file.length > 0,
               file.length <= 32 * 1_024 * 1_024,
@@ -652,7 +663,7 @@ public actor GeminiArticleSpeech {
         return Data(bytes: samples, count: Int(buffer.frameLength) * 2)
     }
 
-    private static func wav(fromPCM data: Data) throws -> Data {
+    static func wav(fromPCM data: Data) throws -> Data {
         guard !data.isEmpty, data.count.isMultiple(of: 2), data.count <= 64 * 1_024 * 1_024 else { throw GeminiSpeechError.invalidAudio }
         var wav = Data("RIFF".utf8)
         func append<T: FixedWidthInteger>(_ value: T) { var little = value.littleEndian; withUnsafeBytes(of: &little) { wav.append(contentsOf: $0) } }

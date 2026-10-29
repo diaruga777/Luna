@@ -225,6 +225,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     private var articleRenderer: SpeechRendering?
     private var articleRendererPrepared = false
+    private var articleRetryPosition: ProgressiveSpeechPosition?
+    private var pendingArticleResumePosition: ProgressiveSpeechPosition?
     private var articleRetryWordIndex: Int?
     private var allowsArticleGeneration = false
     private var engineFormat: AVAudioFormat?
@@ -415,6 +417,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     public func useDeviceVoiceForCurrentArticle() {
         guard case .paused = state, !isPreparingArticleAudio else { return }
         articlePreparationError = nil
+        articleRetryPosition = nil
+        pendingArticleResumePosition = nil
         articleRenderer = nil
         articleRendererPrepared = true
         isPreparingArticleAudio = false
@@ -433,8 +437,9 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         }
         stateBeforePause = nil
         if let wordIndex = articleRetryWordIndex {
+            let position = articleRetryPosition
             articleRetryWordIndex = nil
-            restartPlayback(fromWordIndex: wordIndex)
+            restartPlayback(fromWordIndex: wordIndex, articlePosition: position)
         } else { pumpRenderingIfNeeded() }
     }
 
@@ -583,6 +588,8 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         articlePreparationProgress = 0
         articlePreparationError = nil
         articleRetryWordIndex = nil
+        articleRetryPosition = nil
+        pendingArticleResumePosition = nil
         sessionToken = UUID()
         isPumping = false
         scheduledNotYetPlayedCount = 0
@@ -662,13 +669,14 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     /// Re-renders/schedules from `wordIndex` onward without tearing down the
     /// current item (used by paragraph skip / `skip(bySeconds:)` / seek).
-    private func restartPlayback(fromWordIndex wordIndex: Int) {
+    private func restartPlayback(fromWordIndex wordIndex: Int, articlePosition: ProgressiveSpeechPosition? = nil) {
         guard let script = currentScript else { return }
         let wasPaused: Bool
         if case .paused = state { wasPaused = true } else { wasPaused = false }
 
         let clamped = max(0, min(wordIndex, max(0, script.totalWordCount - 1)))
         resetRenderSession(atWordIndex: clamped)
+        pendingArticleResumePosition = articlePosition
 
         if let engine {
             engine.resetAndSchedule(from: elapsedBaselineAtResume)
@@ -710,12 +718,17 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             let token = sessionToken
             let author = currentAuthor
             let allowGeneration = allowsArticleGeneration
+            let resumePosition = pendingArticleResumePosition
             articlePreparationTask = Task { [weak self] in
                 do {
                     let prepared = try await provider(itemID, script, author, allowGeneration)
+                    if let resumePosition, let progressive = prepared as? ProgressiveSpeechRendering {
+                        await progressive.resume(from: resumePosition)
+                    }
                     await MainActor.run {
                         guard let self, token == self.sessionToken else { return }
                         self.articlePreparationTask = nil
+                        self.pendingArticleResumePosition = nil
                         self.articleRenderer = prepared
                         self.articleRendererPrepared = true
                         self.isPumping = false
@@ -808,10 +821,15 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
                 self.isPumping = false
                 self.articleRenderer = nil; self.articleRendererPrepared = false
                 self.articlePreparationError = error.localizedDescription
-                self.pause()
-                // Resume explicitly from the audible paragraph rather than
-                // appending the whole article to stale queued stream buffers.
                 self.articleRetryWordIndex = wordIndex
+                self.pause()
+                // Capture the audible frame, not the renderer's lookahead or
+                // the generation frontier. The replacement renderer rounds it
+                // back to a confirmed sentence and clears stale queued audio.
+                let seconds = max(0, (self.engine?.currentTime ?? 0) - self.elapsedBaselineAtResume)
+                let position = await renderer.position(afterPlaying: seconds)
+                guard token == self.sessionToken else { return }
+                self.articleRetryPosition = position
                 self.notifyObservers { $0.audioPlaybackCenter(self, didFailPreparation: error.localizedDescription) }
             }
         }

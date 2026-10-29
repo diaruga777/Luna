@@ -144,17 +144,36 @@ public final class SavesIngestor: PluginLockedSaveResuming {
                        page: CapturedPage = .none,
                        allowsInteractivePrompt: Bool = true,
                        intent: IngestIntent? = nil) async -> SurfaceSupport.Decision {
-        guard item.state != .ready, let initialURL = item.url else { return .supported }
+        await performIngest(item, forceArticle: forceArticle, page: page,
+                            allowsInteractivePrompt: allowsInteractivePrompt, intent: intent).decision
+    }
+
+    /// Resolves the surviving save after wrapper/tracker deduplication. Callers
+    /// returning an object to Shortcuts must not return the discarded placeholder.
+    public func ingestAndResolve(_ item: SavedItem, allowsInteractivePrompt: Bool = false) async -> SavedItem? {
+        let result = await performIngest(item, allowsInteractivePrompt: allowsInteractivePrompt)
+        if case .unsupported = result.decision { return nil }
+        if let saved = store.item(withID: item.id) { return saved }
+        guard let url = result.resolvedURL?.absoluteString else { return nil }
+        if let saved = store.item(forURLString: url) { return saved }
+        return store.priceTracker(containingStoreURL: url).flatMap { store.item(withID: $0.0) }
+    }
+
+    private func performIngest(_ item: SavedItem, forceArticle: Bool = false,
+                       page: CapturedPage = .none,
+                       allowsInteractivePrompt: Bool = true,
+                       intent: IngestIntent? = nil) async -> (decision: SurfaceSupport.Decision, resolvedURL: URL?) {
+        guard item.state != .ready, let initialURL = item.url else { return (.supported, item.url) }
         // A queued transcription is the runner's. Re-walking it would queue a
         // second job, or hand a failed article attempt to a media plugin.
-        guard !transcriptions.hasJob(saveID: item.id) else { return .supported }
+        guard !transcriptions.hasJob(saveID: item.id) else { return (.supported, item.url) }
 
         let alreadyRunning = lock.withLock {
             let running = inFlight.contains(item.id)
             if !running { inFlight.insert(item.id) }
             return running
         }
-        guard !alreadyRunning else { return .supported }
+        guard !alreadyRunning else { return (.supported, item.url) }
         defer { lock.withLock { _ = inFlight.remove(item.id) } }
 
         let url = initialURL
@@ -190,7 +209,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
         // Do not persist the losing task's result after cancellation: the
         // pending placeholder is the durable checkpoint and the resumed run
         // will apply exactly one result.
-        guard !Task.isCancelled else { return .supported }
+        guard !Task.isCancelled else { return (.supported, result.url) }
 
         // The persist tail stays inside the binding: the media leg only learns
         // that a classified post has no downloadable asset while its handler
@@ -217,7 +236,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
                 itemID: item.id, url: result.url,
                 source: item.effectiveCaptureSource)
         }
-        return decision
+        return (decision, result.url)
     }
 
     /// Persists an `IngestResult` for `item` through the surface gate, URL

@@ -49,6 +49,7 @@ struct FindSavedItemsIntent: AppIntent {
     @Parameter(title: "Saved After") var after: Date?
     @Parameter(title: "Kind") var kind: String?
     @Parameter(title: "Include Archived", default: false) var includeArchived: Bool
+    @Parameter(title: "Unread Only", default: false) var unreadOnly: Bool
     @Parameter(title: "Limit", default: 20, inclusiveRange: (1, 500)) var limit: Int
     func perform() async throws -> some IntentResult & ReturnsValue<[SavedItemEntity]> {
         if let itemID, !itemID.isEmpty {
@@ -57,7 +58,8 @@ struct FindSavedItemsIntent: AppIntent {
             return .result(value: [SavedItemEntity(item)])
         }
         let items = SavesStore.shared.items().filter { item in
-            (includeArchived || !item.isArchived) && (after == nil || item.dateAdded > after!)
+            (includeArchived || !item.isArchived) && (!unreadOnly || item.readState != .read)
+                && (after == nil || item.dateAdded > after!)
                 && (kind == nil || kind?.isEmpty == true || (item.state == .link ? "link" : item.exportKind.rawValue) == kind)
                 && (search == nil || search?.isEmpty == true || (item.title ?? "").localizedStandardContains(search!) || item.urlString.localizedStandardContains(search!))
         }.sorted { $0.dateAdded == $1.dateAdded ? $0.id.uuidString < $1.id.uuidString : $0.dateAdded > $1.dateAdded }

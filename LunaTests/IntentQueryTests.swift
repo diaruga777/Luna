@@ -66,15 +66,16 @@ final class IntentQueryTests: XCTestCase {
         do {
             _ = try await ReaderURLSave.save(URL(string: "https://example.com/failed")!, store: store) {
                 store.markFailed($0.id)
+                return $0.id
             }
             XCTFail("A failed extraction must not return a successful saved item")
         } catch { XCTAssertEqual(error as? ReaderURLSave.Failure, .contentUnavailable) }
         do {
-            _ = try await ReaderURLSave.save(URL(string: "https://example.com/removed")!, store: store) { store.delete($0) }
+            _ = try await ReaderURLSave.save(URL(string: "https://example.com/removed")!, store: store) { store.delete($0); return nil }
             XCTFail("A removed save must not be returned")
         } catch { XCTAssertEqual(error as? ReaderURLSave.Failure, .missing) }
         let saved = try await ReaderURLSave.save(URL(string: "https://example.com/ready")!, store: store) {
-            _ = store.saveContent(ArticleContent(title: "Ready", blocks: [.init(kind: .paragraph, text: "Saved text", links: [])]), for: $0)
+            store.saveContent(ArticleContent(title: "Ready", blocks: [.init(kind: .paragraph, text: "Saved text", links: [])]), for: $0).id
         }
         XCTAssertEqual(saved.state, .ready)
         XCTAssertEqual(saved.title, "Ready")
@@ -85,10 +86,24 @@ final class IntentQueryTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = SavesStore(containerURL: directory)
         do {
-            _ = try await ReaderURLSave.save(URL(string: "file:///tmp/article")!, store: store) { _ in XCTFail("Invalid URL reached ingestion") }
+            _ = try await ReaderURLSave.save(URL(string: "file:///tmp/article")!, store: store) { _ in XCTFail("Invalid URL reached ingestion"); return nil }
             XCTFail("Expected invalid URL")
         } catch { XCTAssertEqual(error as? ReaderURLSave.Failure, .invalidURL) }
         XCTAssertTrue(store.items().isEmpty)
+    }
+
+    func testURLSaveReturnsSurvivingSaveAfterDeduplication() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SavesStore(containerURL: directory)
+        let canonical = store.add(urlString: "https://example.com/article")
+        store.markPlainLink(canonical.id)
+        let saved = try await ReaderURLSave.save(URL(string: "https://example.com/wrapper")!, store: store) { wrapper in
+            XCTAssertNil(store.updateURL(canonical.urlString, for: wrapper.id))
+            return canonical.id
+        }
+        XCTAssertEqual(saved.id, canonical.id)
+        XCTAssertEqual(store.items().count, 1)
     }
 
 }

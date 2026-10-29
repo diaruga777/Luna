@@ -18,15 +18,15 @@ public enum ReaderURLSave {
     }
 
     public static func save(_ url: URL, store: SavesStore = .shared,
-                            ingest: (SavedItem) async -> Void = {
-                                _ = await SavesIngestor.shared.ingest($0, allowsInteractivePrompt: false)
+                            ingest: (SavedItem) async -> UUID? = {
+                                await SavesIngestor.shared.ingestAndResolve($0)?.id
                             }) async throws -> SavedItem {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false else {
             throw Failure.invalidURL
         }
         let item = store.add(urlString: url.absoluteString, source: .appIntent)
-        await ingest(item)
-        let saved = store.item(withID: item.id)
+        let resolvedID = await ingest(item)
+        let saved = store.item(withID: resolvedID ?? item.id)
         switch IntentSaveVerification.failure(forState: saved?.state) {
         case .nothingSaved: throw Failure.missing
         case .contentUnavailable: throw Failure.contentUnavailable

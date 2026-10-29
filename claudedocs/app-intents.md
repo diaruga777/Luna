@@ -548,3 +548,12 @@ by the capture intents.
 > contain "apple" or Siri references, or App Store processing silently drops the
 > build. (Doc comments, `.apple` enum cases, and `itunes.apple.com` URLs in code
 > are fine — only the AppIntents metadata strings are scanned.)
+
+## Composable data actions
+
+See [composable-automation.md](composable-automation.md) for the saved-item entity,
+file-based article audio export, four-app entity/action inventory, change cursors,
+notification settings, and a Reader → Music Shortcuts recipe. Reader now publishes
+five automatic shortcuts; Music publishes ten. Other discoverable AppIntent
+actions remain available in the Shortcuts action picker without occupying an
+automatic-shortcut slot.

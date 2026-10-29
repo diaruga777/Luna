@@ -380,3 +380,9 @@ and the locked Mac prevented changing its software-keyboard UI setting. This is
 not a claim of exact system-keyboard equivalence or physical-device validation.
 
 iPad window cleanup (2026-10-24): the containing-app tryout shares the extension’s width-based board height and sits above the system keyboard/shortcut bar. Board-height changes notify the host once, keeping the preview and extension constraints in sync as windows resize. Settings rows follow readable width; theme and shortcut popovers anchor to their rows/views. The Simulator build and host-height resize regression pass.
+
+## System automation
+
+See [composable-automation.md](composable-automation.md) for the App Entity and
+App Intent surface, mutation notifications, change tokens and the Reader-to-Music
+Shortcuts workflow.

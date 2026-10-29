@@ -598,3 +598,9 @@ independently of their saves. Keys hash the connected account/mailbox and messag
 identity (Message-ID, or native ID + IMAP UIDVALIDITY). Automatic mail checks and
 Settings → Email's recent-mail scan share these receipts. Deleting a saved article
 does not delete its receipt, so a later scan cannot reimport or auto-send it.
+
+## System automation
+
+See [composable-automation.md](composable-automation.md) for the App Entity and
+App Intent surface, mutation notifications, change tokens and the Reader-to-Music
+Shortcuts workflow.

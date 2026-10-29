@@ -646,3 +646,18 @@ Verification: Writer build-for-testing succeeds; 57 command-palette controller a
 overlay tests pass with zero failures on the iOS 26.2 simulator.
 
 iPad window cleanup (2026-10-24): the standalone note editor uses the shared readable-width policy, including safe-area clearance, and recomputes text insets as its window resizes. The LunaWriter Simulator build and wide-to-compact note-editor regression pass.
+
+
+## Composable automation
+
+Sheets, notes and folders now have stable-ID App Entities and Find actions.
+New Sheet and Add Note return their created objects; Get Writer Sheet Text can
+feed file/export actions without opening an editor. Add Note rejects blank text
+or a missing/trashed explicit destination instead of silently routing elsewhere.
+
+Settings → Automations enables quiet change notifications for `document`, `note`
+and `group` mutations. Shared Get Data Changes / Dismiss Change Notifications
+use the same cursor contract as the other Luna apps. Timestamp-only writes,
+search indexes, snapshots and reading marks do not emit events. See
+[composable automation](composable-automation.md) and the
+[October 29 inventory](reviews/recent-churn-audit-2026-10-29.md).

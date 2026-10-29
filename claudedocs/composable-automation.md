@@ -1,6 +1,6 @@
 # Composable app automation
 
-Reader, Music, Vault and Keyboard expose user-owned content as App Entities and
+Reader, Music, Vault, Keyboard and Writer expose user-owned content as App Entities and
 small App Intents. The intent definitions live in each app target for metadata
 extraction. Domain operations remain in services/stores: UIKit and intents use
 the same implementations, permissions, file ownership and persistence rules.
@@ -13,8 +13,9 @@ An intent is an adapter to a domain action, rather than a second implementation.
 | Reader | Every saved item (articles, documents, products, social and media); existing readable-article entity | Find by text, original saved date, kind or stable ID; save URL; get text; export device/Gemini TTS as M4A; batch read/unread, archive/unarchive, delete; existing capture and playback actions |
 | Music | Songs, albums, artists, playlists (Apple Music and Vault); podcast shows/audio lists, episodes, stations | Find music; create/add to playlists; queue songs; existing playback controls; create audio lists; import audio; find episodes; get queue; enqueue/play-next/remove, listened/unplayed, download/remove download; follow/unfollow feed; create/update/delete station; export locally available podcast audio |
 | Vault | Mirrored files and folders, including empty folders | Find by name/path/date; import/export file; create folder; delete; keep downloaded/unpin |
-| Keyboard | Text/media shortcuts, dictionary words, stored preferences | Find/create/update/delete shortcuts; export media; find/add/remove dictionary words; get/set stored preferences |
-| All four | Data changes and a transient change-page value | Get changes with cursor and dismiss mutation notifications |
+| Keyboard | Text/media shortcuts, dictionary words, supported preferences (including defaults) | Find/create/update/delete shortcuts; import/export images; find/add/remove dictionary words; get/set supported preferences |
+| Writer | Sheets, notes and folders/projects | Find by stable ID/text/date; create/open sheets; get text; capture, find, update/delete notes; find/create folders; creation returns entities |
+| All five | Data changes and a transient change-page value | Get changes with cursor and dismiss mutation notifications |
 
 Entities expose properties for Shortcuts magic variables. Actions resolve IDs
 against current storage instead of trusting stale snapshots. Queries do not
@@ -67,6 +68,7 @@ source read when desired.
 ## Change contract
 
 Settings → Automations → Change Notifications is off by default **per app**.
+Writer now provides the same setting and change-page actions.
 Keyboard's entry is under Preferences; Vault's is in its Mac/settings screen.
 Opting in requests provisional notification permission when undetermined.
 Notifications use passive interruption level, no sound/badge/body, stable titles,
@@ -75,10 +77,10 @@ and operation in userInfo, without titles, article text, credentials or file byt
 Vault change item IDs are relative paths; resolve them with Find Vault Items → Path.
 
 Title format: `Luna.<app>.<kind>.<operation>`; app is `reader`, `music`, `vault`,
-or `keyboard`; operation is `created`, `updated`, or `deleted`. Reader kinds are
-its existing content-kind raw values, plus `link` for unextracted URLs. Music uses `song`, `playlist`, `show`,
+`keyboard`, or `writer`; operation is `created`, `updated`, or `deleted`. Reader kinds are
+`article` (including readable documents), `media`, `product`, and `link` for unextracted URLs. Music uses `song`, `playlist`, `show`,
 `episode`, `station`, `queue`; Vault uses `file`/`folder`; Keyboard uses
-`shortcut`, `word`, `preference`. A shortcut should filter the returned changes,
+`shortcut`, `word`, `preference`; Writer uses `document`, `note`, `group`. A shortcut should filter the returned changes,
 not assume every event in a page matches the notification that woke it.
 
 The journal stores the latest 10,000 events for each app, even with notifications
@@ -107,7 +109,7 @@ owning app/extension runs. No app creates or executes a user's personal automati
 
 ## Verification
 
-Build all four schemes and inspect each app's
+Build all five schemes and inspect each app's
 `Metadata.appintents/extract.actionsdata`: all actions must be present. Music's
 AppShortcutsProvider has ten shortcuts, at Apple's maximum. New regression tests
 cover journal paging/replay/reset/parallel writers, and actual audio-file copies,
@@ -122,3 +124,30 @@ Targeted iOS 26.2 simulator tests passed: 21 Reader journal/entity/store tests,
 4 podcast import tests and 90 Keyboard tests (115 total, zero failures).
 The user's notification automation still needs to be configured in Shortcuts;
 that system trigger was not exercised by these unit tests.
+
+
+## October 29 audit follow-up
+
+The complete object/action/trigger inventory, rationale and reviewed regressions
+are in [the recent churn audit](reviews/recent-churn-audit-2026-10-29.md).
+Music now exposes Find Shows/Audio Lists, Find Stations and Play Episode/Station;
+its existing automatic shortcut count remains ten. Writer exposes sheets, notes,
+folders and the shared change actions. Keyboard preference values include valid
+defaults on a fresh installation; arbitrary stored keys are not public settings.
+
+Journal batches encode once per domain commit. Vault events describe visible
+pre/post objects and include full-index removals. Writer uses connection-local
+SQL triggers to collect committed mutations, coalescing creation/attachment and
+ignoring timestamp-only writes, indexes, snapshots and reading marks. Reader URL
+saves validate the post-ingest state and resolve deduplicated survivors.
+
+Current metadata action counts are Reader 10, Music 30, Vault 8, Keyboard 11 and
+Writer 12. Private download Live Activity controls retain their types but are no
+longer discoverable as raw-job-ID Shortcut actions.
+
+
+Audit verification: 312 Reader regression checks and 25 final capture/ingest
+checks passed; Keyboard 91, Vault 9 and Writer's 24 focused service/settings
+checks passed. The selected Music set executed 32 checks with one fixture skip
+and no failures. Broader real-audio integration checks still failed or timed out
+on the simulators; see the audit report for the full results and limits.

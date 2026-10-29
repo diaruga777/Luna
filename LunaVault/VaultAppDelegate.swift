@@ -15,6 +15,9 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         if NSClassFromString("XCTestCase") == nil {
             registerBackgroundTasks()
             VaultConnectedWiring.install()
+            AutomationEntityIndex.install {
+                try await AutomationEntityIndex.replace(VaultFileEntity.self, entities: VaultFileQuery().all())
+            }
         }
         // Vault is independent from the shared link-save `saves.sqlite` store;
         // its repository and optional paired-Mac backend are built by the

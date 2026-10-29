@@ -1,3 +1,4 @@
+import LunaAppConfig
 import BackgroundTasks
 import UIKit
 import QuickLook
@@ -28,6 +29,13 @@ import LunaVaultUI
         } catch { initializationError = error }
     }
 
+    static func intentRuntime() throws -> VaultConnectedRuntime {
+        if runtime == nil { install() }
+        guard let runtime else { throw initializationError ?? VaultIntentError.unpaired }
+        return runtime
+    }
+    static func resumeIntentTransfers() { transfers?.start() }
+
     static func makeRootViewController() -> UIViewController {
         guard let runtime else {
             let controller = UIViewController(); controller.title = "Luna Vault"
@@ -57,10 +65,12 @@ import LunaVaultUI
     }
 
     private static func settingsController(runtime: VaultConnectedRuntime, prefilledCode: String? = nil) -> UIViewController {
-        LunaMacConnectionViewController(services: runtime, prefilledCode: prefilledCode) { code in
+        let controller = LunaMacConnectionViewController(services: runtime, prefilledCode: prefilledCode) { code in
             try await runtime.pair(code: code)
             await MainActor.run { transfers?.start() }
         }
+        controller.additionalSettings = [("Automations", { AutomationSettingsViewController(app: .vault) })]
+        return controller
     }
 
     static func applicationWillEnterForeground() {

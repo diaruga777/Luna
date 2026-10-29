@@ -194,6 +194,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     private func installServices() {
         KindWiring.install()
+        if NSClassFromString("XCTestCase") == nil {
+            AutomationEntityIndex.install {
+                try await AutomationEntityIndex.replace(SavedItemEntity.self, entities: SavesStore.shared.items().map(SavedItemEntity.init))
+            }
+        }
         installServiceWitnesses()
     }
 
@@ -462,7 +467,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        notification.request.identifier.hasPrefix("luna.change.") ? [.list] : [.banner, .list, .sound]
     }
 
     /// The `userInfo` key a plugin notification's deep link travels under.

@@ -9,6 +9,13 @@ import UniformTypeIdentifiers
 final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
       PremiumAccess.shared.start()
+      if NSClassFromString("XCTestCase") == nil {
+          AutomationEntityIndex.install {
+              try await AutomationEntityIndex.replace(KeyboardShortcutEntity.self, entities: KeyboardStore().allShortcuts().map(KeyboardShortcutEntity.init))
+              try await AutomationEntityIndex.replace(KeyboardPreferenceEntity.self, entities: KeyboardPreferenceQuery().suggestedEntities())
+              try await AutomationEntityIndex.replace(KeyboardWordEntity.self, entities: KeyboardStore().allDictionaryWords().map { KeyboardWordEntity(word: $0.word, language: $0.language) })
+          }
+      }
       return true
   }
 

@@ -14,6 +14,8 @@ import AppIntents
 /// excludes the variant it does not use by membership exception.
 struct LunaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: FindSavedItemsIntent(), phrases: ["Find saves in \(.applicationName)"], shortTitle: "Find Saved Items", systemImageName: "magnifyingglass")
+        AppShortcut(intent: GetArticleAudioIntent(), phrases: ["Get article audio from \(.applicationName)"], shortTitle: "Get Article Audio", systemImageName: "waveform")
         AppShortcut(
             intent: ProvideContextIntent(),
             phrases: [

@@ -7,11 +7,13 @@ import LunaIntents
 import LunaModels
 import XCTest
 
-/// All four Luna apps register the same two Action Button intents, so a press
-/// made while any Luna app owns the screen can reach any of them. Both intents
-/// stop there and report the press unhandled — see `AppNamePlatform`.
+/// Reader's capture intents stop inside every Luna app, including companions
+/// that do not use the shared app shell or LunaApp enum.
 final class SiblingLunaAppIntentGateTests: XCTestCase {
     func testEveryLunaAppInTheFamilyIsRecognized() {
+        for name in ["Luna Reader", "Luna Music", "Luna Vault", "Luna Keyboard", "Luna Writer"] {
+            XCTAssertTrue(AppNamePlatform.isLunaApp(name))
+        }
         for app in LunaApp.allCases {
             XCTAssertTrue(
                 AppNamePlatform.isLunaApp(app.displayName),
@@ -60,13 +62,16 @@ final class SiblingLunaAppIntentGateTests: XCTestCase {
             AppNamePlatform.isSiblingLunaApp("Luna", running: .reader))
         XCTAssertFalse(
             AppNamePlatform.isSiblingLunaApp("Luna Reader", running: .reader))
-        XCTAssertTrue(
+        XCTAssertFalse(
             AppNamePlatform.isSiblingLunaApp("Luna Reader", running: .luna))
+        XCTAssertTrue(AppNamePlatform.isSiblingLunaApp("Luna Music", running: .luna))
+        XCTAssertTrue(AppNamePlatform.isSiblingLunaApp("Luna Keyboard", running: .luna))
     }
 
     func testNamesAreMatchedLooselyEnoughForShortcutsFormatting() {
-        XCTAssertTrue(
+        XCTAssertFalse(
             AppNamePlatform.isSiblingLunaApp("  luna   reader ", running: .luna))
+        XCTAssertTrue(AppNamePlatform.isSiblingLunaApp("  luna   music ", running: .luna))
         XCTAssertTrue(
             AppNamePlatform.isSiblingLunaApp("LUNA VIDEO", running: .luna))
     }

@@ -24,23 +24,22 @@ public enum AppNamePlatform {
     /// The Action Button intents must not inspect a Luna app's screen: links
     /// shown there are already owned by the shared store, and the app itself
     /// is not one of the external surfaces these intents capture from.
-    /// Compared as a whole normalized name because "Luna" is a prefix of the
-    /// other three, so substring matching would fold unrelated names together.
+    /// Compare whole normalized names so similarly named unrelated apps are not
+    /// mistaken for a Luna app.
     public static func isLunaApp(_ app: String?) -> Bool {
         guard let name = normalizedName(app) else { return false }
-        return LunaApp.allCases.contains {
-            normalizedName($0.displayName) == name
-        }
+        // LunaApp enumerates shared-shell surfaces, not every companion app.
+        // Keep installed legacy app names recognizable after consolidation too.
+        let names = LunaApp.allCases.map(\.displayName)
+            + ["Luna Music", "Luna Keyboard", "Luna", "Luna Video", "Luna Price Tracker"]
+        return names.contains { normalizedName($0) == name }
     }
 
     /// Whether the frontmost app is a DIFFERENT app in the Luna family.
     ///
-    /// All four apps register the same two Action Button intents, so a press
-    /// made while a sibling owns the screen can reach any of them. Nothing good
-    /// comes of acting on it: the sibling's own UI is not a page to save, and a
-    /// link visible inside it is already in the shared store, filed under the
-    /// app that owns its kind. Both intents therefore treat this as unhandled
-    /// and stop — see `ProvideContextIntent` / `SaveIntent`.
+    /// Reader owns the capture intents. A companion's screen is not an external
+    /// capture surface, including when Shortcuts supplies an on-screen URL.
+    /// Both capture intents treat a Luna app as unhandled before inspecting it.
     ///
     /// This narrower predicate remains useful to callers that need to
     /// distinguish the running app from its siblings.
@@ -48,9 +47,7 @@ public enum AppNamePlatform {
         _ app: String?, running: LunaApp = .current
     ) -> Bool {
         guard isLunaApp(app), let name = normalizedName(app) else { return false }
-        return LunaApp.allCases.contains {
-            $0 != running && normalizedName($0.displayName) == name
-        }
+        return normalizedName(running.displayName) != name
     }
 
     private static func normalizedName(_ app: String?) -> String? {

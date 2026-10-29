@@ -97,6 +97,8 @@ enum KindWiring {
         EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
     }
 
+    @MainActor private static var didMigrateTransport = false
+
     @MainActor
     static func installAsync() async {
         await PluginPlatformComposition.installAsync(
@@ -107,7 +109,12 @@ enum KindWiring {
                     + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
                     + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
             })
-        installPluginAppWitnesses()
+        await Task.detached(priority: .utility) {
+            PluginTransportComposition.install()
+            PluginExportComposition.migrateLegacySettings()
+        }.value
+        didMigrateTransport = true
+        installPluginAppWitnesses(migrateLegacySettings: false)
         install(installPlugins: {})
     }
 
@@ -132,14 +139,15 @@ enum KindWiring {
     }
 
     @MainActor
-    private static func installPluginAppWitnesses() {
+    private static func installPluginAppWitnesses(migrateLegacySettings: Bool = true) {
         PluginUIComposition.installAppWitnesses()
         // The export tier reads the runtime the call above built, so it comes
         // after it. It also retires the Swift destinations its plugins take
         // over — `KindleDestination` is the Kindle plugin's now.
         PluginExportComposition.install(
             mediaFiles: PluginMediaFileLocator(),
-            recipientPicker: PluginMailRecipientPrompt())
+            recipientPicker: PluginMailRecipientPrompt(),
+            migrateLegacySettings: migrateLegacySettings)
     }
 
     /// The failed card's "Create Plugin…". The request starts from what this
@@ -374,6 +382,7 @@ enum KindWiring {
         LLMHandoffResume.open(itemID: itemID)
     }
 
+    @MainActor
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
@@ -384,13 +393,17 @@ enum KindWiring {
         restoreBluetooth()
     }
 
+    @MainActor
     static func restoreBluetooth() {
         // Xteink is a bundled PLUGIN in this app: `xteink.js` owns the
         // rendezvous sweep, the transfer and the settings screen, and its
         // `luna.bluetooth` center opens the standing connect a short wake
         // window needs. Luna Reader keeps the Swift path (`KindWiring+Reader`)
         // and the two exclude each other through the service lock.
-        PluginTransportComposition.install()
+        if !didMigrateTransport {
+            PluginTransportComposition.install()
+            didMigrateTransport = true
+        }
         PluginTransportComposition.appDidLaunch()
     }
 

@@ -30,9 +30,11 @@ enum TranscriptionShellWiring {
     /// for the run that resumes it.
     static func appDidLaunch() {
         Task { @MainActor in
-            TranscriptionScratchSweep.run(
-                directory: SavesStore.shared.transcriptionScratchDirectoryURL,
-                store: TranscriptionJobStore.shared)
+            _ = await Task.detached(priority: .utility) {
+                TranscriptionScratchSweep.run(
+                    directory: SavesStore.shared.transcriptionScratchDirectoryURL,
+                    store: TranscriptionJobStore.shared)
+            }.value
             TranscriptionJobRunner.shared.kick()
         }
     }

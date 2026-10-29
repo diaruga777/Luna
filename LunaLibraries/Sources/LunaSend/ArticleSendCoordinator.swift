@@ -341,6 +341,9 @@ public final class ArticleSendCoordinator {
     private var inFlight = Set<String>()
     private var receiverSweeps = Set<String>()
     private let lock = NSLock()
+    private var isRetrySweepScheduled = false
+    private var needsRetrySweep = false
+    private let retrySweepQueue = DispatchQueue(label: "com.hsanabria.luna.sendRetry", qos: .utility)
 
     /// Testing seam. `saveBecameReady`/`retryPendingSends` are synchronous
     /// entry points that fan delivery out into detached `Task`s; with nothing
@@ -502,10 +505,41 @@ public final class ArticleSendCoordinator {
         return String(describing: error).contains("low_memory")
     }
 
+    /// Lifecycle callbacks can arrive together at launch (foreground + Wi-Fi).
+    /// Coalesce their disk/Keychain scans on a worker. A request arriving during
+    /// a pass earns one more pass, so a newly saved item cannot be missed.
+    public func retryPendingSendsInBackground() {
+        let shouldSchedule = lock.withLock {
+            needsRetrySweep = true
+            guard !isRetrySweepScheduled else { return false }
+            isRetrySweepScheduled = true
+            return true
+        }
+        guard shouldSchedule else { return }
+        retrySweepQueue.async { [self] in
+            while lock.withLock({
+                guard needsRetrySweep else {
+                    isRetrySweepScheduled = false
+                    return false
+                }
+                needsRetrySweep = false
+                return true
+            }) {
+                retryPendingSends()
+            }
+        }
+    }
+
     /// Retries queued sends whose backoff has elapsed across all destinations.
     public func retryPendingSends() {
-        for item in store.items() {
-            for destination in destinations where destination.isConfigured {
+        let items = store.items()
+        guard !items.isEmpty else { return }
+        // Configuration may read plugin manifests and Keychain. Resolve it once
+        // per destination, not once per saved item. Delivery rechecks fresh state.
+        let configuredDestinations = destinations.filter(\.isConfigured)
+        guard !configuredDestinations.isEmpty else { return }
+        for item in items {
+            for destination in configuredDestinations {
                 // Share/action extensions persist article content directly and
                 // cannot install ArticleShellWiring's readiness observer. On
                 // launch/foreground the ready row is therefore the only signal

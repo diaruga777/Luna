@@ -182,3 +182,35 @@ in `PluginsSettingsScreenTests` and `SavesIngestorTranscriptionTests`; the same
 four failures were reproduced on untouched `main`. Interactive desktop input
 could not be verified with the Mac locked; no physical-phone latency measurement
 was taken.
+
+### Launch interaction work, 29 October 2026
+
+A symbolicated Simulator `sample` of a populated launch found send retries on
+main after the first frame, reached through the Wi-Fi-available callback.
+`retryPendingSends` rebuilt the destination list and reread plugin configuration
+for every saved item; a single catalog lookup enumerated all imported plugins.
+Lifecycle retries now coalesce on a utility queue, configuration is checked once
+per destination per pass, and a catalog point lookup reads only the requested
+plugin (preserving imported-over-bundled precedence). Delivery still rechecks
+configuration and the current save before sending. A trigger during a running
+sweep requests another pass.
+
+Text cards no longer construct unused RSVP and Original readers; the latter's
+WebKit view is also lazy. Mode selection retains and reuses the selected reader.
+The utility card binds its native paste control when centered, avoiding pasteboard
+IPC while opening a neighbouring article. The audio mini-player is built only
+when it has playback or a handoff preview to display. Audio-cache cleanup uses
+a debounced worker sweep; transcription scratch cleanup and foreground plugin
+credential/legacy-send migrations also run on workers. Bluetooth restoration
+keeps its required synchronous startup path.
+
+Regression tests cover configuration checks across a 100-save library, worker
+execution of lifecycle retries, lazy reader modes and their reuse, and binding
+the paste action on card selection. Initial sampling used iPhone 17 Pro / iOS
+26.2, Debug. It identifies blocking stacks, not a physical-device latency
+promise. Temporary launch timers were removed; no profiling code ships.
+
+Validation: 175 focused simulator tests pass (launch services, send coordinator,
+plugin boot/runtime, reader modes, mini-player and utility card). The utility
+card's `testAnExpiredEntryIsNoEntry` also fails with the original utility-card
+implementation; it was excluded from the final run and left unchanged.

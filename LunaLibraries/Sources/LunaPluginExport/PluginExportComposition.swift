@@ -34,15 +34,22 @@ public enum PluginExportComposition {
     public static func install(
         mediaFiles: (any PluginExportMediaFileLocating)? = nil,
         recipientPicker: (any PluginMailRecipientPicking)? = nil,
-        invoker: (any PluginHookInvoking)? = nil
+        invoker: (any PluginHookInvoking)? = nil,
+        migrateLegacySettings: Bool = true
     ) {
         PluginExportMediaFiles.locator = mediaFiles
         PluginMailRecipients.picker = recipientPicker
         PluginExportStage.shared.presenter = SystemPluginExportSharePresenter()
         PluginExportSeams.rows = PluginExportRowProvider()
+        if migrateLegacySettings { Self.migrateLegacySettings() }
+        installDestinations(invoker: invoker ?? PluginPlatformServices.invoker)
+    }
+
+    /// Disk and Keychain migration may run on a worker before UI witnesses are
+    /// published. Synchronous extension/test installation keeps the same order.
+    public static func migrateLegacySettings() {
         migrateKindleAddress()
         XteinkSendSettings.repairLegacySyncQueue()
-        installDestinations(invoker: invoker ?? PluginPlatformServices.invoker)
     }
 
     /// The capability bridges this module owns (§6.13, §6.14, §6.16).

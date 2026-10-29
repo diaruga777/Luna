@@ -36,11 +36,13 @@ public final class PluginCatalog: PluginCatalogProviding {
     }
 
     public func listing(pluginID: String) -> PluginListing? {
-        installed().first { $0.id == pluginID }.map(listing(for:))
+        // A single destination's readiness check must not enumerate and parse
+        // every imported plugin. Imported versions still shadow bundled ones.
+        (store.plugin(id: pluginID) ?? bundled.plugin(id: pluginID)).map(listing(for:))
     }
 
     public func sourceText(pluginID: String) -> String? {
-        installed().first { $0.id == pluginID }?.sourceText()
+        (store.plugin(id: pluginID) ?? bundled.plugin(id: pluginID))?.sourceText()
     }
 
     public func setEnabled(_ enabled: Bool, pluginID: String) throws {

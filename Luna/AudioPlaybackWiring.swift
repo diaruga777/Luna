@@ -25,7 +25,9 @@ import Foundation
 /// `LunaAudioPlayback` cannot know about `SavesSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {
-    private static var cacheObserver: NSObjectProtocol?
+    private static let cacheSweeper = DeletedAudioSweeper()
+    private static let cacheSweepDriver = SavesSweepDriver(
+        queueLabel: "com.hsanabria.luna.deletedArticleAudio", sweeper: cacheSweeper)
 
     static func install() {
         AudioPlaybackCenter.shared.dataSource = AppAudioPlaybackDataSource.shared
@@ -36,12 +38,6 @@ enum AudioPlaybackWiring {
         // SpeechController; the share/action extensions never install it and
         // keep the legacy path.
         ReaderAudioLauncher.center = .shared
-        if cacheObserver == nil {
-            cacheObserver = NotificationCenter.default.addObserver(forName: .savesChanged, object: nil, queue: .main) { _ in
-                removeDeletedArticleAudio()
-            }
-        }
-        removeDeletedArticleAudio()
         AudioPlaybackCenter.shared.articleRendererProvider = { itemID, script, allowGeneration in
             DiagnosticLog.shared.record("play item=\(itemID) gemini=\(AudioSettings.usesGeminiVoice) generationAllowed=\(allowGeneration)", category: "gemini-tts")
             guard AudioSettings.usesGeminiVoice else { return nil }
@@ -53,9 +49,17 @@ enum AudioPlaybackWiring {
                 }, startBeforeCompletion: true)
         }
     }
-    private static func removeDeletedArticleAudio() {
-        let ids = Set(SavesStore.shared.items().map { $0.id })
-        Task { try? await GeminiArticleSpeech.shared.removeAudio(except: ids) }
+    /// File cleanup belongs to maintenance, not the audio observer setup needed
+    /// to construct the first card. Coalesce save notifications on a worker.
+    static func startCacheMaintenance() {
+        cacheSweepDriver.install(immediateLaunchSweep: false)
+    }
+
+    private final class DeletedAudioSweeper: SavesSweeping {
+        func runSavesSweep() {
+            let ids = Set(SavesStore.shared.items().map(\.id))
+            Task { try? await GeminiArticleSpeech.shared.removeAudio(except: ids) }
+        }
     }
 }
 

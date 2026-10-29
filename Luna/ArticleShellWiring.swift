@@ -95,6 +95,7 @@ enum ArticleShellWiring {
     // MARK: - Lifecycle
 
     static func appDidLaunch() {
+        AudioPlaybackWiring.startCacheMaintenance()
         // Keeps ArticleEntity's Spotlight index in sync with the saves list,
         // so saved articles are semantically discoverable and Siri can
         // resolve "my article about …" or "from …" without the app running.
@@ -124,7 +125,7 @@ enum ArticleShellWiring {
 
     /// Ereader sends that failed for want of network or an account.
     static func retryPendingSends() {
-        ArticleSendCoordinator.shared.retryPendingSends()
+        ArticleSendCoordinator.shared.retryPendingSendsInBackground()
     }
 
     /// Link preloading left incomplete (interrupted save / new depth).

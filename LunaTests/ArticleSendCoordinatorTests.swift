@@ -40,7 +40,13 @@ private final class MockDestination: ArticleDestination {
 
     init(id: String) { self.id = id }
 
-    var isConfigured: Bool { configured }
+    var configurationChecks = 0
+    var onConfigurationCheck: (() -> Void)?
+    var isConfigured: Bool {
+        configurationChecks += 1
+        onConfigurationCheck?()
+        return configured
+    }
 
     func sendMode(for item: SavedItem) -> ArticleSendMode {
         modeForSource?(item.effectiveCaptureSource) ?? mode
@@ -133,6 +139,31 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
             retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
             now: { self.currentDate })
         coordinator.deliveryTaskObserver = self
+    }
+
+    func testRetryChecksConfigurationOncePerDestinationForTheWholeLibrary() {
+        for index in 0..<100 {
+            _ = store.add(urlString: "https://example.com/launch/\(index)")
+        }
+        kindle.configured = false
+        second.configured = false
+        coordinator.retryPendingSends()
+        XCTAssertEqual(kindle.configurationChecks, 1)
+        XCTAssertEqual(second.configurationChecks, 1)
+    }
+
+    @MainActor
+    func testLifecycleRetryChecksConfigurationOffMainThread() async {
+        _ = store.add(urlString: "https://example.com/launch")
+        kindle.configured = false
+        second.configured = false
+        let checked = expectation(description: "configuration checked on worker")
+        second.onConfigurationCheck = {
+            XCTAssertFalse(Thread.isMainThread)
+            checked.fulfill()
+        }
+        coordinator.retryPendingSendsInBackground()
+        await fulfillment(of: [checked], timeout: 2)
     }
 
     override func tearDown() {

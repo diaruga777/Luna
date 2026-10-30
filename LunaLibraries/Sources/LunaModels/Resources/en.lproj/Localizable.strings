@@ -790,8 +790,8 @@
 "Intents_save_currentAppParam_description_Luna" = "The current app, from Get Current App.";
 "Intents_save_screenshotParam_title_Luna" = "Screenshot";
 "Intents_save_screenshotParam_description_Luna" = "An optional screenshot of the current screen.";
-"Intents_save_metadataParam_title_Luna" = "Metadata";
-"Intents_save_metadataParam_description_Luna" = "Output from Provide Context.";
+"Intents_save_metadataParam_title_Luna" = "Capture Context";
+"Intents_save_metadataParam_description_Luna" = "The Metadata property returned by Provide Context. Pass it through unchanged. Leave blank when saving a screenshot on its own.";
 "Intents_save_unsupportedAppError_Luna" = "Luna can't save from this app.";
 "Intents_save_saveFailedError_Luna" = "Luna found a link on screen but couldn't save it.";
 "Intents_save_contentUnavailableError_Luna" = "Luna saved a link but couldn't fetch its content. Try again from the app.";
@@ -1410,24 +1410,24 @@
 // Luna Writer — intents (claudedocs/plans/writer-app.md §9). Metadata keys are
 // literal, already-suffixed keys; the two dialog lines resolve through L10n.
 "WriterIntents_addNote_title_Luna" = "Add Note";
-"WriterIntents_addNote_description_Luna" = "Adds a note to Luna Writer. Name a document, or let Luna file it.";
+"WriterIntents_addNote_description_Luna" = "Add a note to a sheet in Luna Writer. Leave Sheet blank to use automatic filing or the inbox.";
 "WriterIntents_addNote_textParameter_title_Luna" = "Note";
-"WriterIntents_addNote_documentParameter_title_Luna" = "Document";
+"WriterIntents_addNote_documentParameter_title_Luna" = "Sheet";
 "WriterIntents_addNote_summary_Luna" = "Add note";
 "WriterIntents_addNote_addedToSheet_Luna" = "Added to %@.";
 "WriterIntents_addNote_addedToInbox_Luna" = "Added to your Inbox.";
-"WriterIntents_createDocument_title_Luna" = "New Document";
-"WriterIntents_createDocument_description_Luna" = "Creates a document in Luna Writer and opens it.";
+"WriterIntents_createDocument_title_Luna" = "Create Sheet";
+"WriterIntents_createDocument_description_Luna" = "Create a sheet in Luna Writer and open it. Title, initial text and folder are optional.";
 "WriterIntents_createDocument_titleParameter_title_Luna" = "Title";
 "WriterIntents_createDocument_textParameter_title_Luna" = "Text";
-"WriterIntents_createDocument_summary_Luna" = "New document";
-"WriterIntents_openDocument_title_Luna" = "Open Document";
-"WriterIntents_openDocument_description_Luna" = "Opens a document in Luna Writer.";
-"WriterIntents_openDocument_documentParameter_title_Luna" = "Document";
+"WriterIntents_createDocument_summary_Luna" = "Create sheet";
+"WriterIntents_openDocument_title_Luna" = "Open Sheet";
+"WriterIntents_openDocument_description_Luna" = "Open a saved sheet in Luna Writer.";
+"WriterIntents_openDocument_documentParameter_title_Luna" = "Sheet";
 "WriterIntents_openDocument_summary_Luna" = "Open";
 "WriterIntents_documentEntity_titleProperty_title_Luna" = "Title";
 "WriterIntents_documentEntity_modifiedProperty_title_Luna" = "Modified";
-"WriterIntents_documentEntity_typeName_Luna" = "Document";
+"WriterIntents_documentEntity_typeName_Luna" = "Sheet";
 
 // Luna Writer — editor (claudedocs/plans/writer-app.md)
 "WriterEditor_paletteNewNoteNamed_Luna" = "New note “%@”";

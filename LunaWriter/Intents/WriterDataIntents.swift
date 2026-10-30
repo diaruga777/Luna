@@ -6,10 +6,19 @@ import LunaWriterStorage
 
 struct FindWriterSheetsIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Writer Sheets"
+    static var description = IntentDescription("Find sheets by title, newest edited first. Sheet ID looks up one exact sheet and ignores Search, Modified After and Maximum Results.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Sheet ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
     @Parameter(title: "Modified After") var after: Date?
-    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Writer Sheets") {
+            \.$search
+            \.$itemID
+            \.$after
+            \.$limit
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<[WriterDocumentEntity]> {
         let id = try WriterObjectID.parse(itemID).map(DocumentID.init)
         return .result(value: try WriterWiring.intentServices().findDocuments(search: search, id: id, modifiedAfter: after, limit: limit).map(WriterDocumentEntity.init(document:)))
@@ -17,7 +26,13 @@ struct FindWriterSheetsIntent: AppIntent {
 }
 struct GetWriterSheetTextIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Writer Sheet Text"
+    static var description = IntentDescription("Get a sheet’s text as plain text.")
     @Parameter(title: "Sheet") var sheet: WriterDocumentEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get Writer Sheet Text") {
+            \.$sheet
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         .result(value: try WriterWiring.intentServices().text(for: sheet.documentID))
     }
@@ -50,25 +65,47 @@ struct WriterNoteQuery: EntityStringQuery {
 }
 struct FindWriterNotesIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Writer Notes"
+    static var description = IntentDescription("Find notes by their text or attached sheet. Leave Sheet blank to include all sheets and the inbox. Note ID looks up one exact note and ignores the other filters.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Note ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
     @Parameter(title: "Sheet") var sheet: WriterDocumentEntity?
-    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Writer Notes") {
+            \.$search
+            \.$itemID
+            \.$sheet
+            \.$limit
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<[WriterNoteEntity]> {
         .result(value: try WriterWiring.intentServices().findNotes(search: search, id: WriterObjectID.parse(itemID).map(NoteID.init), document: sheet?.documentID, limit: limit).map(WriterNoteEntity.init))
     }
 }
 struct UpdateWriterNoteIntent: AppIntent {
     static var title: LocalizedStringResource = "Update Writer Note"
+    static var description = IntentDescription("Replace a saved note’s full text and return the updated note.")
     @Parameter(title: "Note") var note: WriterNoteEntity
     @Parameter(title: "Text") var text: String
+    static var parameterSummary: some ParameterSummary {
+        Summary("Update Writer Note") {
+            \.$note
+            \.$text
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<WriterNoteEntity> {
         .result(value: WriterNoteEntity(try WriterWiring.intentServices().updateNote(NoteID(note.id), text: text)))
     }
 }
 struct DeleteWriterNotesIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete Writer Notes"
+    static var description = IntentDescription("Delete saved notes after confirmation, including their attachments to sheets.")
     @Parameter(title: "Notes") var notes: [WriterNoteEntity]
+    static var parameterSummary: some ParameterSummary {
+        Summary("Delete Writer Notes") {
+            \.$notes
+        }
+    }
     func perform() async throws -> some IntentResult {
         try await requestConfirmation(result: .result(dialog: "Delete \(notes.count) notes?"))
         try WriterWiring.intentServices().deleteNotes(notes.map { NoteID($0.id) })
@@ -98,8 +135,15 @@ struct WriterGroupQuery: EntityStringQuery {
 }
 struct FindWriterFoldersIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Writer Folders"
+    static var description = IntentDescription("Find folders and projects by name, or look up one exact Folder ID.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Folder ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Writer Folders") {
+            \.$search
+            \.$itemID
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<[WriterGroupEntity]> {
         if let id = try WriterObjectID.parse(itemID) { return .result(value: try await WriterGroupQuery().entities(for: [id])) }
         return .result(value: try await WriterGroupQuery().entities(matching: search))
@@ -107,7 +151,13 @@ struct FindWriterFoldersIntent: AppIntent {
 }
 struct CreateWriterFolderIntent: AppIntent {
     static var title: LocalizedStringResource = "Create Writer Folder"
+    static var description = IntentDescription("Create a named top-level folder in Luna Writer.")
     @Parameter(title: "Name") var name: String
+    static var parameterSummary: some ParameterSummary {
+        Summary("Create Writer Folder") {
+            \.$name
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<WriterGroupEntity> {
         .result(value: WriterGroupEntity(try WriterWiring.intentServices().createGroup(name: name)))
     }

@@ -17,7 +17,8 @@ struct ToggleMusicPlaybackIntent: AudioPlaybackIntent {
 }
 
 struct NextMusicTrackIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Next Song"
+    static var title: LocalizedStringResource = "Next Track or Episode"
+    static var description = IntentDescription("Skip to the next song or podcast episode in the current Luna Music queue.")
     @MainActor func perform() async throws -> some IntentResult {
         #if LUNA_MUSIC_APP
         MediaPlaybackCoordinator.shared.skip(.forward)
@@ -27,7 +28,8 @@ struct NextMusicTrackIntent: AudioPlaybackIntent {
 }
 
 struct PreviousMusicTrackIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Previous Song"
+    static var title: LocalizedStringResource = "Previous Track or Episode"
+    static var description = IntentDescription("Go back to the previous song or podcast episode in the current Luna Music queue.")
     @MainActor func perform() async throws -> some IntentResult {
         #if LUNA_MUSIC_APP
         MediaPlaybackCoordinator.shared.skip(.backward)

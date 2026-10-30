@@ -543,6 +543,6 @@ their job IDs are internal.
 See [composable-automation.md](composable-automation.md) for the saved-item entity,
 file-based article audio export, five-app entity/action inventory, change cursors,
 notification settings, and a Reader → Music Shortcuts recipe. Reader now publishes
-five automatic shortcuts; Music publishes ten. Other discoverable AppIntent
+six automatic shortcuts; Music publishes ten. Other discoverable AppIntent
 actions remain available in the Shortcuts action picker without occupying an
 automatic-shortcut slot.

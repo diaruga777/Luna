@@ -14,7 +14,7 @@ struct LibraryMusicEntity: IndexedEntity {
     @Property(title: "Details") var detail: String
     @Property(title: "Kind") var kind: String
     @Property(title: "Saved Date") var savedDate: Date
-    @Property(title: "Duration") var duration: Double
+    @Property(title: "Duration (Seconds)") var duration: Double
     init(id: String, name: String, detail: String, savedDate: Date = .distantPast, duration: Double = 0) {
         self.id = id
         self.identifier = id
@@ -127,6 +127,7 @@ struct PlayLibraryMusicIntent: AudioPlaybackIntent {
 
 struct ResumeMusicIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Resume Music"
+    static var description = IntentDescription("Resume the music queue in Luna Music.")
     @MainActor func perform() async throws -> some IntentResult {
         let player = MusicPlaybackController.shared
         if !player.isPlaying { try await player.resume() }
@@ -135,7 +136,7 @@ struct ResumeMusicIntent: AudioPlaybackIntent {
 }
 
 struct PauseMusicIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Pause If Playing"
+    static var title: LocalizedStringResource = "Pause Playback"
     static var description = IntentDescription("Pause music or podcasts playing in Luna Music.")
     static var openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
@@ -154,11 +155,11 @@ enum MusicSeekDirection: String, AppEnum {
 }
 
 struct SeekMusicIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Seek"
+    static var title: LocalizedStringResource = "Skip Forward or Backward"
     static var description = IntentDescription("Move forward or backward in the current music or podcast.")
     static var openAppWhenRun = false
     @Parameter(title: "Direction", default: .backward) var direction: MusicSeekDirection
-    @Parameter(title: "Seconds", default: 1) var seconds: Double
+    @Parameter(title: "Seconds", description: "How far to move within the current track or episode. Enter a positive number of seconds.", default: 1, inclusiveRange: (0, 86400)) var seconds: Double
     static var parameterSummary: some ParameterSummary {
         Summary("Seek \(\.$direction) by \(\.$seconds) seconds")
     }
@@ -188,8 +189,14 @@ extension Notification.Name {
 
 struct SearchMusicLibraryIntent: AppIntent {
     static var title: LocalizedStringResource = "Search Music Library"
+    static var description = IntentDescription("Open Luna Music’s library search with the words you enter.")
     static var openAppWhenRun = true
     @Parameter(title: "Search", default: "") var query: String
+    static var parameterSummary: some ParameterSummary {
+        Summary("Search Music Library") {
+            \.$query
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         var components = URLComponents(string: "lunamusic://search")!
         components.queryItems = [URLQueryItem(name: "q", value: query)]
@@ -207,8 +214,8 @@ struct LunaMusicShortcuts: AppShortcutsProvider {
         AppShortcut(intent: PlayLibraryMusicIntent(), phrases: ["Play \(\.$music) in \(.applicationName)", "Play music in \(.applicationName)"], shortTitle: "Play Library Music", systemImageName: "music.note")
         AppShortcut(intent: SearchMusicLibraryIntent(), phrases: ["Search my library in \(.applicationName)"], shortTitle: "Search Library", systemImageName: "magnifyingglass")
         AppShortcut(intent: ResumeMusicIntent(), phrases: ["Resume \(.applicationName)"], shortTitle: "Resume Music", systemImageName: "play.fill")
-        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause If Playing", systemImageName: "pause.fill")
-        AppShortcut(intent: SeekMusicIntent(), phrases: ["Seek in \(.applicationName)"], shortTitle: "Seek", systemImageName: "gobackward")
+        AppShortcut(intent: PauseMusicIntent(), phrases: ["Pause \(.applicationName)"], shortTitle: "Pause Playback", systemImageName: "pause.fill")
+        AppShortcut(intent: SeekMusicIntent(), phrases: ["Seek in \(.applicationName)"], shortTitle: "Skip Forward or Back", systemImageName: "gobackward")
         AppShortcut(intent: NextMusicTrackIntent(), phrases: ["Next song in \(.applicationName)"], shortTitle: "Next Song", systemImageName: "forward.fill")
     }
 }
@@ -218,8 +225,14 @@ struct ResumeLastPodcastIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Resume Podcast Queue"
     static var description = IntentDescription("Pick up where you left off, then continue with unplayed episodes from the shows you follow.")
     static var openAppWhenRun = false
-    @Parameter(title: "Override Other Audio", default: true) var overrideOtherAudio: Bool
-    @Parameter(title: "Pause Immediately", default: false) var pauseImmediately: Bool
+    @Parameter(title: "Replace Other Audio", description: "Start the podcast queue even if another app is playing audio.", default: true) var overrideOtherAudio: Bool
+    @Parameter(title: "Start Paused", description: "Prepare the podcast queue without starting playback.", default: false) var pauseImmediately: Bool
+    static var parameterSummary: some ParameterSummary {
+        Summary("Resume Podcast Queue") {
+            \.$overrideOtherAudio
+            \.$pauseImmediately
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         guard overrideOtherAudio || !AVAudioSession.sharedInstance().isOtherAudioPlaying else {
             return .result()
@@ -231,6 +244,7 @@ struct ResumeLastPodcastIntent: AudioPlaybackIntent {
 }
 struct SwitchMediaQueueIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Switch Music and Podcasts"
+    static var description = IntentDescription("Switch playback between your music queue and podcast queue.")
     static var openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         MediaPlaybackCoordinator.shared.install()
@@ -239,17 +253,34 @@ struct SwitchMediaQueueIntent: AudioPlaybackIntent {
     }
 }
 
+enum LibraryMusicKind: String, AppEnum {
+    case song, album, artist, playlist
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Music Type"
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .song: "Songs", .album: "Albums", .artist: "Artists", .playlist: "Playlists"
+    ]
+}
+
 struct FindLibraryMusicIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Library Music"
+    static var description = IntentDescription("Find songs, albums, artists and playlists already in your library. Searches names and artist or album details. Allow library access in Luna Music first.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Kind") var kind: String?
-    @Parameter(title: "Item ID") var itemID: String?
-    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "Music Type", description: "Choose songs, albums, artists or playlists. Leave blank for all types.") var kind: LibraryMusicKind?
+    @Parameter(title: "Item ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Library Music") {
+            \.$search
+            \.$kind
+            \.$itemID
+            \.$limit
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[LibraryMusicEntity]> {
         await MusicLibraryController.shared.reload(refreshVault: false)
         let entities = await LibraryMusicQuery().allEntities().filter {
             (search.isEmpty || $0.name.localizedStandardContains(search) || $0.detail.localizedStandardContains(search))
-                && (kind == nil || kind?.isEmpty == true || $0.kind == kind)
+                && (kind == nil || $0.kind == kind?.rawValue)
                 && (itemID == nil || itemID?.isEmpty == true || $0.id == itemID)
         }
         return .result(value: Array(entities.prefix(max(1, min(500, limit)))))
@@ -262,9 +293,17 @@ enum MusicPlaylistSource: String, AppEnum {
 }
 struct CreateMusicPlaylistIntent: AppIntent {
     static var title: LocalizedStringResource = "Create Music Playlist"
+    static var description = IntentDescription("Create a playlist and optionally fill it with songs from Find Library Music. Songs must come from the same source. Music Source is used only when no songs are supplied.")
     @Parameter(title: "Name") var name: String
     @Parameter(title: "Songs") var songs: [LibraryMusicEntity]?
-    @Parameter(title: "Source for Empty Playlist", default: .musicLibrary) var source: MusicPlaylistSource
+    @Parameter(title: "Music Source", description: "Where to create the playlist when Songs is empty. Otherwise the songs determine its source.", default: .musicLibrary) var source: MusicPlaylistSource
+    static var parameterSummary: some ParameterSummary {
+        Summary("Create Music Playlist") {
+            \.$name
+            \.$songs
+            \.$source
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<LibraryMusicEntity> {
         let library = MusicLibraryController.shared
         await library.reload(refreshVault: false)
@@ -277,8 +316,15 @@ struct CreateMusicPlaylistIntent: AppIntent {
 }
 struct AddSongsToMusicPlaylistIntent: AppIntent {
     static var title: LocalizedStringResource = "Add Songs to Playlist"
+    static var description = IntentDescription("Add songs from Find Library Music to an existing playlist. Select Playlists as the destination’s Music Type and Songs for the tracks.")
     @Parameter(title: "Songs") var songs: [LibraryMusicEntity]
     @Parameter(title: "Playlist") var playlist: LibraryMusicEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Add Songs to Playlist") {
+            \.$songs
+            \.$playlist
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let library = MusicLibraryController.shared
         await library.reload(refreshVault: false)
@@ -292,8 +338,15 @@ struct AddSongsToMusicPlaylistIntent: AppIntent {
 }
 struct QueueLibraryMusicIntent: AppIntent {
     static var title: LocalizedStringResource = "Add Songs to Music Queue"
+    static var description = IntentDescription("Add songs to the music queue in the order supplied. Turn on Play Next to put them before the remaining queue.")
     @Parameter(title: "Songs") var songs: [LibraryMusicEntity]
     @Parameter(title: "Play Next", default: false) var next: Bool
+    static var parameterSummary: some ParameterSummary {
+        Summary("Add Songs to Music Queue") {
+            \.$songs
+            \.$next
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let library = MusicLibraryController.shared
         await library.reload(refreshVault: false)

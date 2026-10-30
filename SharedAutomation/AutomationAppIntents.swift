@@ -12,14 +12,14 @@ struct DataChangeEntity: AppEntity {
     @Property(title: "Item Type") var kind: String
     @Property(title: "Operation") var operation: String
     @Property(title: "App") var app: String
-    @Property(title: "Sequence") var sequence: Int64
+    @Property(title: "Sequence") var sequence: Int
     @Property(title: "Date") var date: Date
     @Property(title: "Notification Title") var notificationTitle: String
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(notificationTitle)", subtitle: "\(itemID)") }
     init(_ change: AutomationChange) {
         id = change.id; itemID = change.itemID; kind = change.kind; operation = change.operation
         date = change.date; notificationTitle = change.notificationTitle
-        app = change.app.rawValue; sequence = change.sequence
+        app = change.app.rawValue; sequence = Int(clamping: change.sequence)
     }
 }
 struct DataChangeQuery: EntityQuery {
@@ -43,8 +43,14 @@ struct GetDataChangesIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Data Changes"
     static var description = IntentDescription("Get item IDs changed since a saved token. Keep Next Token after processing the page. An empty token starts with retained history.")
     static var openAppWhenRun = false
-    @Parameter(title: "After Token") var token: String?
-    @Parameter(title: "Limit", default: 100, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "After Token", description: "Next Token from your previous Get Data Changes result. Leave blank to start at the beginning of retained history.") var token: String?
+    @Parameter(title: "Maximum Changes", description: "The most changes to return in one page, from 1 to 500.", default: 100, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get Data Changes") {
+            \.$token
+            \.$limit
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<DataChangePageEntity> {
         guard let app = AutomationApp.current else { throw AutomationError.unavailable }
         return .result(value: DataChangePageEntity(try AppAutomation(app: app).changes(after: token, limit: limit)))
@@ -54,6 +60,11 @@ struct DismissChangeNotificationsIntent: AppIntent {
     static var title: LocalizedStringResource = "Dismiss Change Notifications"
     static var description = IntentDescription("Dismiss this app’s change notifications. Leave Changes empty to dismiss all change notifications. History and tokens are preserved.")
     @Parameter(title: "Changes") var changes: [DataChangeEntity]?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Dismiss Change Notifications") {
+            \.$changes
+        }
+    }
     func perform() async throws -> some IntentResult {
         guard let app = AutomationApp.current else { throw AutomationError.unavailable }
         await AppAutomation(app: app).dismissNotifications(eventIDs: changes?.map(\.id) ?? [])

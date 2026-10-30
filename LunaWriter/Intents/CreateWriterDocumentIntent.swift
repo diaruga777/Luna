@@ -26,6 +26,7 @@ struct CreateWriterDocumentIntent: AppIntent {
         Summary("WriterIntents_createDocument_summary_Luna") {
             \.$sheetTitle
             \.$text
+            \.$group
         }
     }
 

@@ -12,7 +12,7 @@ struct PodcastEpisodeEntity: IndexedEntity {
     @Property(title: "Title") var title: String
     @Property(title: "Show ID") var showID: String
     @Property(title: "Published Date") var publishedDate: Date
-    @Property(title: "Duration") var duration: Double
+    @Property(title: "Duration (Seconds)") var duration: Double
     @Property(title: "Listened") var listened: Bool
     @Property(title: "Audio URL") var audioURL: URL
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(title)") }
@@ -77,7 +77,13 @@ struct PodcastStationQuery: EntityStringQuery {
 }
 struct CreatePodcastAudioListIntent: AppIntent {
     static var title: LocalizedStringResource = "Create Audio List"
+    static var description = IntentDescription("Create a named local list for imported audio files. This list does not fetch episodes from a podcast feed.")
     @Parameter(title: "Name") var name: String
+    static var parameterSummary: some ParameterSummary {
+        Summary("Create Audio List") {
+            \.$name
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<PodcastShowEntity> {
         .result(value: PodcastShowEntity(try PodcastAutomation.createAudioList(name: name)))
     }
@@ -86,11 +92,21 @@ struct ImportPodcastAudioIntent: AppIntent {
     static var title: LocalizedStringResource = "Add Audio to Podcasts"
     static var description = IntentDescription("Copy an audio file into a local podcast list and optionally add it to the queue. Reuse an Import Key to avoid duplicates when retrying a shortcut.")
     @Parameter(title: "Audio File") var file: IntentFile
-    @Parameter(title: "Title", default: "") var title: String
-    @Parameter(title: "Audio List", optionsProvider: PodcastAudioListOptions()) var list: PodcastShowEntity?
+    @Parameter(title: "Title", description: "Leave blank to use the audio file’s name.", default: "") var title: String
+    @Parameter(title: "Audio List", description: "Leave blank for Imported Audio.", optionsProvider: PodcastAudioListOptions()) var list: PodcastShowEntity?
     @Parameter(title: "Add to Queue", default: true) var enqueue: Bool
-    @Parameter(title: "Play Next", default: false) var next: Bool
-    @Parameter(title: "Import Key") var importKey: String?
+    @Parameter(title: "Play Next", description: "Put the imported episode first in the queue. Only used when Add to Queue is on.", default: false) var next: Bool
+    @Parameter(title: "Import Key", description: "Optional unique text for this audio, such as the source saved item’s ID. Reuse it with the same audio list to avoid duplicate imports.") var importKey: String?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Add Audio to Podcasts") {
+            \.$file
+            \.$title
+            \.$list
+            \.$enqueue
+            \.$next
+            \.$importKey
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<PodcastEpisodeEntity> {
         let source: URL
         var temporary: URL?
@@ -108,12 +124,23 @@ struct ImportPodcastAudioIntent: AppIntent {
 }
 struct FindPodcastEpisodesIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Podcast Episodes"
+    static var description = IntentDescription("Find saved podcast episodes by title, show or publication date, newest first. Episode ID is the ID property of an episode or data change.")
     @Parameter(title: "Search") var search: String?
-    @Parameter(title: "Episode ID") var episodeID: String?
+    @Parameter(title: "Episode ID", description: "The exact ID property from an episode or episode data change.") var episodeID: String?
     @Parameter(title: "Show or Audio List") var show: PodcastShowEntity?
     @Parameter(title: "Published After") var after: Date?
     @Parameter(title: "Unplayed Only", default: false) var unplayed: Bool
-    @Parameter(title: "Limit", default: 20, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 20, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Podcast Episodes") {
+            \.$search
+            \.$episodeID
+            \.$show
+            \.$after
+            \.$unplayed
+            \.$limit
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastEpisodeEntity]> {
         let episodes = try PodcastEpisodeQuery().all().filter {
             (episodeID == nil || $0.id == episodeID) && (show == nil || $0.showID == show?.id)
@@ -125,6 +152,7 @@ struct FindPodcastEpisodesIntent: AppIntent {
 }
 struct GetPodcastQueueIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Podcast Queue"
+    static var description = IntentDescription("Get the podcast episodes in their current queue order.")
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastEpisodeEntity]> {
         let state = try PodcastLibraryController.shared.requireStore().state
         return .result(value: state.queue.compactMap { state.episodes[$0] }.map(PodcastEpisodeEntity.init))
@@ -137,8 +165,15 @@ enum PodcastEpisodeAction: String, AppEnum {
 }
 struct UpdatePodcastEpisodesIntent: AppIntent {
     static var title: LocalizedStringResource = "Update Podcast Episodes"
+    static var description = IntentDescription("Add or remove episodes from the queue, mark them listened or unplayed, or manage their downloads. Choose the operation in Action.")
     @Parameter(title: "Episodes") var episodes: [PodcastEpisodeEntity]
     @Parameter(title: "Action") var action: PodcastEpisodeAction
+    static var parameterSummary: some ParameterSummary {
+        Summary("Update Podcast Episodes") {
+            \.$episodes
+            \.$action
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let library = PodcastLibraryController.shared, store = try library.requireStore()
         let resolved = try episodes.map { entity -> PodcastEpisode in
@@ -158,7 +193,13 @@ struct UpdatePodcastEpisodesIntent: AppIntent {
 }
 struct FollowPodcastIntent: AppIntent {
     static var title: LocalizedStringResource = "Follow Podcast Feed"
+    static var description = IntentDescription("Follow a podcast using its RSS feed URL and fetch its episodes. Use a feed URL rather than a podcast website link.")
     @Parameter(title: "Feed URL") var feedURL: URL
+    static var parameterSummary: some ParameterSummary {
+        Summary("Follow Podcast Feed") {
+            \.$feedURL
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<PodcastShowEntity> {
         let library = PodcastLibraryController.shared
         let id = try await library.addFeed(feedURL)
@@ -167,9 +208,16 @@ struct FollowPodcastIntent: AppIntent {
     }
 }
 struct SetPodcastFollowedIntent: AppIntent {
-    static var title: LocalizedStringResource = "Set Podcast Followed"
+    static var title: LocalizedStringResource = "Follow or Unfollow Podcast"
+    static var description = IntentDescription("Follow or unfollow a saved podcast show. Unfollowing stops automatic episode updates.")
     @Parameter(title: "Show") var show: PodcastShowEntity
     @Parameter(title: "Followed", default: true) var followed: Bool
+    static var parameterSummary: some ParameterSummary {
+        Summary("Follow or Unfollow Podcast") {
+            \.$show
+            \.$followed
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         guard try PodcastLibraryController.shared.requireStore().state.shows[show.id] != nil else { throw PodcastError("This show is no longer available.") }
         try PodcastLibraryController.shared.setFollowed(show.id, followed); return .result()
@@ -178,11 +226,21 @@ struct SetPodcastFollowedIntent: AppIntent {
 
 struct SavePodcastStationIntent: AppIntent {
     static var title: LocalizedStringResource = "Save Podcast Station"
+    static var description = IntentDescription("Create or replace a podcast station’s name and episode filters. Leave Existing Station blank to create one. All Shows overrides the selected Shows.")
     @Parameter(title: "Existing Station") var existing: PodcastStationEntity?
     @Parameter(title: "Name") var name: String
     @Parameter(title: "Shows") var shows: [PodcastShowEntity]?
     @Parameter(title: "All Shows", default: false) var allShows: Bool
     @Parameter(title: "Unplayed Only", default: true) var unplayedOnly: Bool
+    static var parameterSummary: some ParameterSummary {
+        Summary("Save Podcast Station") {
+            \.$existing
+            \.$name
+            \.$shows
+            \.$allShows
+            \.$unplayedOnly
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<PodcastStationEntity> {
         let library = PodcastLibraryController.shared
         var station: PodcastStation
@@ -202,7 +260,13 @@ struct SavePodcastStationIntent: AppIntent {
 }
 struct DeletePodcastStationIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete Podcast Station"
+    static var description = IntentDescription("Delete a station after confirmation. Its shows and episodes remain in your library.")
     @Parameter(title: "Station") var station: PodcastStationEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Delete Podcast Station") {
+            \.$station
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         try await requestConfirmation(result: .result(dialog: "Delete this podcast station?"))
         try PodcastLibraryController.shared.edit { state in
@@ -214,7 +278,13 @@ struct DeletePodcastStationIntent: AppIntent {
 
 struct GetPodcastAudioFileIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Podcast Audio File"
+    static var description = IntentDescription("Get an episode’s imported or downloaded audio file. Download remote episodes in Luna Music first.")
     @Parameter(title: "Episode") var episode: PodcastEpisodeEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get Podcast Audio File") {
+            \.$episode
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> {
         guard let saved = try PodcastLibraryController.shared.requireStore().state.episodes[episode.id] else { throw PodcastError("This episode is no longer available.") }
         guard let url = saved.mediaURL.isFileURL ? saved.mediaURL : PodcastDownloads.shared.localURL(saved.id),
@@ -226,11 +296,21 @@ struct GetPodcastAudioFileIntent: AppIntent {
 
 struct FindPodcastShowsIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Podcast Shows and Audio Lists"
+    static var description = IntentDescription("Find podcast shows and imported audio lists by title. Leave the filters off to include both. Item ID is the ID property of a show or data change.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Item ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
     @Parameter(title: "Followed Only", default: false) var followedOnly: Bool
     @Parameter(title: "Local Audio Lists Only", default: false) var localOnly: Bool
-    @Parameter(title: "Limit", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 50, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Podcast Shows and Audio Lists") {
+            \.$search
+            \.$itemID
+            \.$followedOnly
+            \.$localOnly
+            \.$limit
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastShowEntity]> {
         let shows = try PodcastShowQuery().all().filter {
             (search.isEmpty || $0.title.localizedStandardContains(search))
@@ -243,8 +323,15 @@ struct FindPodcastShowsIntent: AppIntent {
 
 struct FindPodcastStationsIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Podcast Stations"
+    static var description = IntentDescription("Find saved podcast stations by name, or match a station’s exact ID from a station or data change.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Item ID") var itemID: String?
+    @Parameter(title: "Item ID", description: "The exact ID property from an item or data change. Leave blank to search instead.") var itemID: String?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Podcast Stations") {
+            \.$search
+            \.$itemID
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<[PodcastStationEntity]> {
         .result(value: try PodcastStationQuery().all().filter {
             (search.isEmpty || $0.name.localizedStandardContains(search))
@@ -255,7 +342,13 @@ struct FindPodcastStationsIntent: AppIntent {
 
 struct PlayPodcastEpisodeIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Play Podcast Episode"
+    static var description = IntentDescription("Play a saved episode from its current position in Luna Music.")
     @Parameter(title: "Episode") var episode: PodcastEpisodeEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Play Podcast Episode") {
+            \.$episode
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         guard let current = try PodcastLibraryController.shared.requireStore().state.episodes[episode.id] else {
             throw PodcastError("This episode is no longer available.")
@@ -268,7 +361,13 @@ struct PlayPodcastEpisodeIntent: AudioPlaybackIntent {
 
 struct PlayPodcastStationIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Play Podcast Station"
+    static var description = IntentDescription("Play the episodes matching a station’s show and unplayed filters.")
     @Parameter(title: "Station") var station: PodcastStationEntity
+    static var parameterSummary: some ParameterSummary {
+        Summary("Play Podcast Station") {
+            \.$station
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let state = try PodcastLibraryController.shared.requireStore().state
         guard let current = state.stations.first(where: { $0.id == station.id }) else {

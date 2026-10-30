@@ -16,11 +16,12 @@ that returns a typed URL from the same Safari extension tracking used by Reader.
 It does not save or fetch content. It preserves query strings and fragments,
 uses the existing 72-hour freshness window, and errors on missing, stale or
 non-HTTP(S) values. This is the last extension-reported page, not a live active-tab
-query. With this addition, Reader defines 11 discoverable actions including the
-two shared change actions, plus two private Live Activity controls; its automatic
-shortcut provider has six entries.
+query. Reader now defines 13 discoverable actions including the two shared change
+actions, plus two private Live Activity controls; its automatic shortcut provider
+has six entries. The video and shopping-price actions are available in the action
+picker without adding automatic-shortcut entries.
 
-October 30 validation: the new action and its actual storage dependencies pass
+Earlier October 30 Safari URL validation: the new action and its actual storage dependencies pass
 an iOS 26 SDK type-check; all 11 Safari URL-store tests pass in an isolated macOS
 test harness. The full app build and a device Shortcut invocation were not run
 for this addition. Earlier build/metadata counts below describe their dated
@@ -30,9 +31,9 @@ verification runs.
 
 | App | Entities | Actions |
 | --- | --- | --- |
-| Reader | Every saved item (articles, documents, products, social and media); existing readable-article entity | Find by text, original saved date, kind or stable ID; save URL; get text; export device/Gemini TTS as M4A; batch read/unread, archive/unarchive, delete; existing capture and playback actions |
+| Reader | Every saved item (articles, documents, products, social and media); existing readable-article entity | Find by text, original saved date, kind or stable ID; save URL; get text; get downloaded video; get each tracked store’s last saved price; export device/Gemini TTS as M4A; batch read/unread, archive/unarchive, delete; existing capture and playback actions |
 | Music | Songs, albums, artists, playlists (Apple Music and Vault); podcast shows/audio lists, episodes, stations | Find music; create/add to playlists; queue songs; existing playback controls; create audio lists; import audio; find episodes; get queue; enqueue/play-next/remove, listened/unplayed, download/remove download; follow/unfollow feed; create/update/delete station; export locally available podcast audio |
-| Vault | Mirrored files and folders, including empty folders | Find by name/path/date; import/export file; create folder; delete; keep downloaded/unpin |
+| Vault | Mirrored files and folders, including empty folders | Find by name/path/date/extension/file family; import/export file; create folder; delete; keep downloaded/unpin |
 | Keyboard | Text/media shortcuts, dictionary words, supported preferences (including defaults) | Find/create/update/delete shortcuts; import/export images; find/add/remove dictionary words; get/set supported preferences |
 | Writer | Sheets, notes and folders/projects | Find by stable ID/text/date; create/open sheets; get text; capture, find, update/delete notes; find/create folders; creation returns entities |
 | All five | Data changes and a transient change-page value | Get changes with cursor and dismiss mutation notifications |
@@ -171,3 +172,74 @@ checks passed; Keyboard 91, Vault 9 and Writer's 24 focused service/settings
 checks passed. The selected Music set executed 32 checks with one fixture skip
 and no failures. Broader real-audio integration checks still failed or timed out
 on the simulators; see the audit report for the full results and limits.
+
+
+## October 30 action clarity audit
+
+Reviewed every discoverable action in Reader, Music, Vault, Keyboard and Writer,
+including the two shared change actions in each app. Each action has a description;
+parameterized data actions include summaries that expose their optional filters.
+The offline automation atlas was regenerated from the final definitions.
+
+- **Reader — Get Saved Item Video:** takes a Saved Item and returns its downloaded
+  video as a file with a readable filename and concrete file type. The service
+  resolves the current save and its media by stable ID. It reuses the existing
+  local/Photos export path; Photos still requires access. Missing saves, media
+  that is not a downloaded video, and export failures throw actionable errors.
+  This action does not start a download.
+- **Reader — Get Shopping Item Prices:** takes a Saved Item with a price tracker
+  and returns one Shopping Item Price per tracked store. Properties are Price,
+  Currency Code, Store URL and Last Checked. These are saved observations, not a
+  network refresh or a price comparison across converted currencies. Unknown
+  prices and dates remain empty, rather than becoming zero or a made-up date.
+- **Reader — Find Saved Items:** Item Type is a picker for Articles and Documents,
+  Videos, Images and Social Posts, Shopping Items, or Web Links. These map to the
+  existing `article`, `media`, `product`, `link` category codes. The labels describe
+  the stored categories without guessing an exact media format before download.
+  Item ID continues to override all filters, as described in the action.
+- **Vault — Find Vault Items and Get Vault File:** File Extension accepts one
+  extension with or without a leading dot, ignoring case and surrounding spaces.
+  File Type offers Video, Audio, Image, PDF, Text and Archive. Matching uses filename
+  extensions and system type conformance, with common additional media formats;
+  it does not inspect file bytes. Both filters together require both to match.
+  File filters exclude folders. Get Vault File still accepts a selected item;
+  when omitted, it exports the newest modified matching file, with path as the
+  tie-breaker. Selected items must also satisfy supplied filters. Export retains
+  authentication and the existing Mac download path. No match throws an error.
+- **Music:** Music Type replaces the raw string filter with Songs, Albums, Artists
+  and Playlists. Playback names describe their effect, including podcast episodes.
+  Descriptions explain playlist sources, feed URLs, audio lists, station filters,
+  downloaded-only file export and import keys. Duration properties state seconds.
+- **Keyboard:** preference entities display readable names and expose Accepted
+  Values while retaining stable keys. Preference search accepts names or keys.
+  Language Code gives examples, dictionary inclusion is Add to Dictionary, and
+  shortcut keywords and replacement behavior have explicit guidance.
+- **Writer:** Create Sheet, Open Sheet and Sheet parameters use consistent terms.
+  Searches identify Sheet ID, Note ID or Folder ID and explain ID precedence.
+  Create Sheet’s summary includes Folder. Text export, updates and deletion have
+  descriptions of their actual effects.
+- **Shared:** token input describes exactly where to obtain it and how an empty
+  token behaves. Maximum Changes states the range. The entity’s sequence is an
+  `Int` projection of the journal’s `Int64`, since the current SDK does not accept
+  `Int64` as an App Entity property; persisted journal values are unchanged.
+
+Intent identifiers and parameter identifiers are retained for existing actions.
+The Reader and Music `kind` parameters now use App Enums with the existing category
+raw values. Existing shortcuts that supplied arbitrary text should choose a valid
+picker value when edited. Other fixed-choice inputs already used enums or entities;
+free-text fields now explain their expected content instead of becoming enums
+without a useful reason.
+
+
+Validation for this audit: Xcode 27.1 beta / iOS 26.2 simulator builds succeeded
+for all five apps. Focused simulator checks passed: Reader 25, Vault 4, Keyboard 1,
+Writer 13 (43 total, zero failures). Exported metadata contains 13 Reader, 30 Music,
+8 Vault, 11 Keyboard and 12 Writer discoverable actions. All have descriptions
+and parameter titles. Reader and Music type filters export enum metadata; both
+Vault actions export the extension input and six-choice File Type picker. The
+video and shopping-price return types and optional missing-price fields are
+present. The existing action identifiers and the automatic-shortcut counts are
+preserved. This verifies compilation, metadata and focused domain behavior;
+physical-device Shortcuts, Photos permission prompts and live Mac exports were
+not exercised. Reusing the multi-app build folder caused a Keyboard linking
+failure; a fresh Keyboard build folder passed without source or link changes.

@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.web","name":"Web articles and products","version":"1.1.2","api":1,
+{"id":"app.luna.web","name":"Web articles and products","version":"1.1.3","api":1,
  "description":"Save articles, documents, and products from the web.",
  "produces":["article","product"],"match":{"any":true},"priority":-100,"capabilities":["fetch","html"]}
 */
@@ -283,6 +283,18 @@ const LunaWeb = (function () {
     const structural = new Set(['SCRIPT','STYLE','NAV','FOOTER','ASIDE','FORM','BUTTON','NOSCRIPT']);
     const blockTags = new Set(['P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','FIGURE','IMG','PRE','TABLE']);
     const containerTags = new Set(['DIV','SECTION','ARTICLE','MAIN','UL','OL']);
+    // Ghost (including 404 Media) can send a long preview without declaring
+    // isAccessibleForFree. Its access CTA means the continuation is withheld,
+    // regardless of preview length. Keep this usable in the browser detector too.
+    function hasAccessGate(doc) {
+        return Array.from(doc.querySelectorAll('.post-access-cta, .gh-post-upgrade-cta')).some(node => {
+            for(let n=node;n;n=n.parentElement) {
+                if(n.hasAttribute('hidden') || n.getAttribute('aria-hidden')==='true' ||
+                    /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(n.getAttribute('style')||''))return false;
+            }
+            return /this post is for (?:paid |paying )?(?:members|subscribers)\b|sign up for free access to this post/i.test(node.textContent);
+        });
+    }
     function isInterstitial(url) {
         const parsed=luna.parseURL(url);
         return !!parsed && parsed.pathname.toLowerCase().split('/').some(p =>
@@ -326,6 +338,7 @@ const LunaWeb = (function () {
         const parsedURL=luna.parseURL(base);
         if(isInterstitial(base) || (parsedURL && /\/(search|category|tag|topics|archive)(\/|$)/i.test(parsedURL.pathname)))return null;
         const doc=luna.html.parse(source,base), meta=htmlMeta(doc), entries=[];
+        if(hasAccessGate(doc))return null;
         const root=doc.body && articleTree(doc.body,null,entries);
         if(!root)return null;
         const linked=jsonLD(doc).find(entry=>entry && /Article|BlogPosting/.test(String(entry['@type'])));
@@ -384,7 +397,7 @@ const LunaWeb = (function () {
         return result;
     }
     return {article: article, meta: htmlMeta, jsonLD: jsonLD, price: textPrice,
-        isInterstitial: isInterstitial, date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
+        isInterstitial: isInterstitial, hasAccessGate: hasAccessGate, date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
 })();
 // END BUNDLED WEB HELPER
 // BEGIN BUNDLED NEWYORKER HELPER

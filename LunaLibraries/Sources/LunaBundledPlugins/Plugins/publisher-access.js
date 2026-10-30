@@ -1,5 +1,5 @@
 /* luna-plugin
-{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.8","api":1,
+{"id":"app.luna.publisher-access","name":"Publisher access","version":"1.0.9","api":1,
  "description":"Save articles from subscription sites and archives.",
  "produces":["article"],"match":{"any":true},"priority":-200,"capabilities":["fetch","html","browser"]}
 */
@@ -283,6 +283,18 @@ const LunaWeb = (function () {
     const structural = new Set(['SCRIPT','STYLE','NAV','FOOTER','ASIDE','FORM','BUTTON','NOSCRIPT']);
     const blockTags = new Set(['P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','FIGURE','IMG','PRE','TABLE']);
     const containerTags = new Set(['DIV','SECTION','ARTICLE','MAIN','UL','OL']);
+    // Ghost (including 404 Media) can send a long preview without declaring
+    // isAccessibleForFree. Its access CTA means the continuation is withheld,
+    // regardless of preview length. Keep this usable in the browser detector too.
+    function hasAccessGate(doc) {
+        return Array.from(doc.querySelectorAll('.post-access-cta, .gh-post-upgrade-cta')).some(node => {
+            for(let n=node;n;n=n.parentElement) {
+                if(n.hasAttribute('hidden') || n.getAttribute('aria-hidden')==='true' ||
+                    /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(n.getAttribute('style')||''))return false;
+            }
+            return /this post is for (?:paid |paying )?(?:members|subscribers)\b|sign up for free access to this post/i.test(node.textContent);
+        });
+    }
     function isInterstitial(url) {
         const parsed=luna.parseURL(url);
         return !!parsed && parsed.pathname.toLowerCase().split('/').some(p =>
@@ -326,6 +338,7 @@ const LunaWeb = (function () {
         const parsedURL=luna.parseURL(base);
         if(isInterstitial(base) || (parsedURL && /\/(search|category|tag|topics|archive)(\/|$)/i.test(parsedURL.pathname)))return null;
         const doc=luna.html.parse(source,base), meta=htmlMeta(doc), entries=[];
+        if(hasAccessGate(doc))return null;
         const root=doc.body && articleTree(doc.body,null,entries);
         if(!root)return null;
         const linked=jsonLD(doc).find(entry=>entry && /Article|BlogPosting/.test(String(entry['@type'])));
@@ -384,7 +397,7 @@ const LunaWeb = (function () {
         return result;
     }
     return {article: article, meta: htmlMeta, jsonLD: jsonLD, price: textPrice,
-        isInterstitial: isInterstitial, date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
+        isInterstitial: isInterstitial, hasAccessGate: hasAccessGate, date: textDate, clean: textClean, escape: escape, absoluteURL: absoluteURL};
 })();
 // END BUNDLED WEB HELPER
 // BEGIN BUNDLED NEWYORKER HELPER
@@ -439,7 +452,8 @@ const LunaAccess = (() => {
         if (/(^|\.)(x.com|twitter.com|youtube.com|youtu.be|reddit.com|instagram.com|tiktok.com|facebook.com|bsky.app)$/.test(host(url)))return false;
         const u=luna.parseURL(url); if(!u||u.pathname==='/'||/\.(pdf|epub|docx|mp4|mp3|zip)$/i.test(u.pathname))return false;
         if (html && /["']@type["']\s*:\s*["']Product["']/.test(html)) return false;
-        return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '');
+        return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '')
+            || !!(html && LunaWeb.hasAccessGate(luna.html.parse(html,url)));
     }
     function prepare(html,url) {
         const snapshot=luna.html.parse(html,url);
@@ -595,6 +609,7 @@ const LunaAccess = (() => {
     // snapshots often put teaser <article>s before the actual article body.
     const detect=`(() => {
         const body=document.body?document.body.innerText:'';
+        if((${LunaWeb.hasAccessGate.toString()})(document))return 'challenge';
         const roots=Array.from(document.querySelectorAll('article,[itemprop="articleBody"],[class*="article-body"],#CONTENT,main'));
         if(roots.some(n=>n.innerText.length>1200&&!/subscribe to (continue|read)|already a subscriber/i.test(n.innerText)))return 'done';
         if(document.querySelector('#g-recaptcha,.g-recaptcha,[data-sitekey],.cf-turnstile,#challenge-form,iframe[src*="captcha"],iframe[src*="challenges.cloudflare.com"]') ||
@@ -636,13 +651,13 @@ const LunaAccess = (() => {
         const declined=/haaretz|themarker|nbcnews|telegraph/.test(host(url))?[1,2,5]:host(url)==='leparisien.fr'?[0,1,2,4,5]:host(url)==='law.com'?[0,3,4]:[];
         identities.filter((_,i)=>!declined.includes(i)).slice(0,4).forEach(userAgent=>requests.push(fetchArticle(url,url,{userAgent})));
         const found=await firstReadable(requests);if(found)return found;
-        const published=html&&LunaWeb.meta(luna.html.parse(html,url)).published;
-        const recent=published&&Date.now()-Date.parse(published)<180*86400000;
         let snapshotURL=null;
         const today=archiveSnapshotURL(url).then(async value=>{
             snapshotURL=value;return value?await fetchArticle(value,url):null;
         });
-        const snapshotArticle=await firstReadable([syndicatedWSJ(url),archived(url,false),recent?Promise.resolve(null):archived(url,true),today]);
+        // Even a new article can become gated after publication. Its earliest
+        // snapshot may retain the full body while the latest has only a preview.
+        const snapshotArticle=await firstReadable([syndicatedWSJ(url),archived(url,false),archived(url,true),today]);
         if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;

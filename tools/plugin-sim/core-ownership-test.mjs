@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {parseHTML} from 'linkedom';
 import {createBridge} from './bridge.mjs';
 const root=new URL('../../',import.meta.url);
 const read=p=>readFileSync(new URL(p,root),'utf8');
@@ -146,3 +147,61 @@ const bounded=plugin('publisher-access',async req=>{
 assert.equal(await bounded.hooks.ingest({url:wsjURL,context:'app',reason:'save'}),null);
 assert.equal(candidateRequests.length,3,'syndication discovery must stay bounded');
 console.log('WSJ syndication fixtures passed: renamed headlines, canonical identity, complete continuation and bounded discovery.');
+
+// 404 Media's long public preview has neither a generic paywall class nor
+// isAccessibleForFree. Newer captures can remain previews; the first is complete.
+const mediaURL='https://www.404media.co/manifestos-fear-and-loser-thinking-inside-protons-ai-reckoning/';
+const mediaPreview=read('LunaTests/Fixtures/Plugins/404media-preview.html');
+const gateStart=mediaPreview.indexOf('<div class="post-access-cta');
+const mediaFull=mediaPreview.slice(0,gateStart)+'<p>Final reporting paragraph with an <a href="/source/">inline source</a>.</p><figure><img src="/fixture.jpg"></figure></div></article></main></body></html>';
+assert(mediaPreview.length>3500);
+for(const suppliedPage of [true,false]) {
+    const webPreview=plugin('web',async req=>({ok:true,url:req.url,text:mediaPreview}));
+    assert.equal(await webPreview.hooks.ingest({url:mediaURL,page:suppliedPage?{url:mediaURL,html:mediaPreview}:undefined}),null,'web must decline the preview so publisher recovery runs');
+    assert.equal(webPreview.hooks.classify({url:mediaURL,context:'safari',page:{url:mediaURL,html:mediaPreview}}),false);
+}
+for(const context of ['app','share','safari']) for(const suppliedPage of [true,false]) {
+    const requests=[];
+    const media=plugin('publisher-access',async req=>{
+        requests.push(req.url);
+        if(req.url.includes('/cdx/'))return {ok:true,text:JSON.stringify([['timestamp'],[req.url.includes('sort=reverse')?'20261029232824':'20261029143048']])};
+        return {ok:true,url:req.url,text:req.url.includes('/web/20261029143048id_/')?mediaFull:mediaPreview};
+    });
+    media.luna.browser={open:async()=>{throw Error('earliest complete capture must finish without a browser');}};
+    assert(media.hooks.classify({url:mediaURL,context,page:{url:mediaURL,html:mediaPreview}}));
+    // Keep the article recent independently of the machine's current date.
+    vm.runInContext('Date.now=()=>Date.parse("2026-10-31T00:00:00Z")',media.ctx);
+    const answer=await media.hooks.ingest({url:mediaURL,context,reason:'save',saveId:'404',
+        page:suppliedPage?{url:mediaURL,html:mediaPreview}:undefined});
+    assert.equal(answer?.kind,'article');
+    assert.equal(answer.title,'404 Media regression');
+    assert.equal(answer.author,'Fixture Reporter');
+    assert.equal(answer.baseURL,mediaURL);
+    assert(answer.html.includes('Preview paragraph 1.'));
+    assert(answer.html.includes('Final reporting paragraph'));
+    assert(answer.html.includes('inline source'));
+    assert(answer.html.includes('fixture.jpg'));
+    assert(!answer.html.includes('paid members only'));
+    assert(!answer.html.includes('Sign up for free access'));
+    assert(requests.some(u=>u.includes('/web/20261029143048id_/')),'recent articles must still probe the earliest capture');
+}
+const mediaShape=plugin('web',async()=>({ok:false}));
+mediaShape.ctx.html=mediaFull;
+assert(vm.runInContext('LunaWeb.article(html,"https://www.404media.co/story/")',mediaShape.ctx),'an available complete page remains readable');
+// Quoting the gate in an article or carrying a hidden template is not a lock.
+for(const notice of ['<p>This post is for paid members only</p>',
+    '<div hidden class="post-access-cta">This post is for paid members only</div>',
+    '<div style="display:none"><div class="post-access-cta">This post is for paid members only</div></div>']) {
+    mediaShape.ctx.html=mediaFull.replace('</article>',notice+'</article>');
+    assert(vm.runInContext('LunaWeb.article(html,"https://www.404media.co/story/")',mediaShape.ctx));
+}
+// A browser must surface this gate before the long preview can report `done`.
+const browserMedia=plugin('publisher-access',async()=>({ok:false}));
+let mediaDetector;
+browserMedia.luna.browser={open:async req=>{mediaDetector=req.detect;return null;}};
+await browserMedia.hooks.ingest({url:mediaURL,saveId:'404',reason:'save',page:{url:mediaURL,html:mediaPreview}});
+for(const [html,expected] of [[mediaPreview,'challenge'],[mediaFull,'done']]) {
+    const {document}=parseHTML(html);
+    assert.equal(vm.runInNewContext(mediaDetector,{document,location:{pathname:'/snapshot'}}),expected);
+}
+console.log('404 Media fixtures passed: long preview rejection, recent earliest-snapshot recovery, complete body and browser gate detection.');

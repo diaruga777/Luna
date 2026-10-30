@@ -16,7 +16,8 @@ const LunaAccess = (() => {
         if (/(^|\.)(x.com|twitter.com|youtube.com|youtu.be|reddit.com|instagram.com|tiktok.com|facebook.com|bsky.app)$/.test(host(url)))return false;
         const u=luna.parseURL(url); if(!u||u.pathname==='/'||/\.(pdf|epub|docx|mp4|mp3|zip)$/i.test(u.pathname))return false;
         if (html && /["']@type["']\s*:\s*["']Product["']/.test(html)) return false;
-        return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '');
+        return !!ruleFor(url) || /isAccessibleForFree["']?\s*:\s*false|subscribe to (read|continue)|subscription required|paywall|meteredContent|already a subscriber/i.test(html || '')
+            || !!(html && LunaWeb.hasAccessGate(luna.html.parse(html,url)));
     }
     function prepare(html,url) {
         const snapshot=luna.html.parse(html,url);
@@ -172,6 +173,7 @@ const LunaAccess = (() => {
     // snapshots often put teaser <article>s before the actual article body.
     const detect=`(() => {
         const body=document.body?document.body.innerText:'';
+        if((${LunaWeb.hasAccessGate.toString()})(document))return 'challenge';
         const roots=Array.from(document.querySelectorAll('article,[itemprop="articleBody"],[class*="article-body"],#CONTENT,main'));
         if(roots.some(n=>n.innerText.length>1200&&!/subscribe to (continue|read)|already a subscriber/i.test(n.innerText)))return 'done';
         if(document.querySelector('#g-recaptcha,.g-recaptcha,[data-sitekey],.cf-turnstile,#challenge-form,iframe[src*="captcha"],iframe[src*="challenges.cloudflare.com"]') ||
@@ -213,13 +215,13 @@ const LunaAccess = (() => {
         const declined=/haaretz|themarker|nbcnews|telegraph/.test(host(url))?[1,2,5]:host(url)==='leparisien.fr'?[0,1,2,4,5]:host(url)==='law.com'?[0,3,4]:[];
         identities.filter((_,i)=>!declined.includes(i)).slice(0,4).forEach(userAgent=>requests.push(fetchArticle(url,url,{userAgent})));
         const found=await firstReadable(requests);if(found)return found;
-        const published=html&&LunaWeb.meta(luna.html.parse(html,url)).published;
-        const recent=published&&Date.now()-Date.parse(published)<180*86400000;
         let snapshotURL=null;
         const today=archiveSnapshotURL(url).then(async value=>{
             snapshotURL=value;return value?await fetchArticle(value,url):null;
         });
-        const snapshotArticle=await firstReadable([syndicatedWSJ(url),archived(url,false),recent?Promise.resolve(null):archived(url,true),today]);
+        // Even a new article can become gated after publication. Its earliest
+        // snapshot may retain the full body while the latest has only a preview.
+        const snapshotArticle=await firstReadable([syndicatedWSJ(url),archived(url,false),archived(url,true),today]);
         if(snapshotArticle)return snapshotArticle;
         // Background price/media work and speculative reads have no browser save scope.
         if((!saveId && context!=='safari') || reason==='refresh'||reason==='compare'||reason==='reresolve')return null;

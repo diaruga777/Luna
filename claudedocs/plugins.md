@@ -131,6 +131,15 @@ browser sequence). These are ordinary removable/disableable plugin resources.
 Crawler probes and the parallel newest/oldest archive lookups accept the first
 readable article immediately; a slow sibling request cannot hold that result.
 Only when every probe declines or fails does the plugin proceed to the next strategy.
+404 Media's Ghost access notices (`post-access-cta` / `gh-post-upgrade-cta`)
+with member-only or free-signup text reject a preview regardless of its length.
+Web declines it so publisher access can recover it, including Safari captures;
+browser detection surfaces the subscription gate before declaring a long page done.
+Hidden notice templates and ordinary editorial mentions do not trigger this rule.
+Both newest and oldest archive probes run even for recent articles: a post can
+become gated shortly after publication while its first capture remains complete.
+The reported October 29 Proton article was verified against its complete earliest
+Wayback capture; later captures and the live page contain previews.
 WSJ syndication discovery ranks Mint index links using the original URL's terms
 against link text and JSON-LD ItemList headlines/summaries, so a renamed syndicated
 headline can still be found. At most three copies are probed; each must declare

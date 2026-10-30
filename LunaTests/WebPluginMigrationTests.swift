@@ -48,6 +48,38 @@ final class WebPluginMigrationTests: XCTestCase {
         XCTAssertTrue(runner.fetcher.requests.contains { $0.url.absoluteString == url+"?amp" })
     }
 
+    func test404MediaPluginWalkRecoversAndPersistsEarliestCompleteSnapshot() async throws {
+        let scope = PluginAdopterScope()
+        defer { scope.restore() }
+        PluginModelAdopters.article = ArticleModelAdopter()
+        try load("web")
+        try load("publisher-access")
+        let url = URL(string: "https://www.404media.co/manifestos-fear-and-loser-thinking-inside-protons-ai-reckoning/")!
+        let preview = try String(contentsOf: root.appendingPathComponent("LunaTests/Fixtures/Plugins/404media-preview.html"), encoding: .utf8)
+        let full = try XCTUnwrap(preview.components(separatedBy: "<div class=\"post-access-cta").first)
+            + "<p>Final reporting paragraph.</p></div></article></main></body></html>"
+        let encoded = "https%3A%2F%2Fwww.404media.co%2Fmanifestos-fear-and-loser-thinking-inside-protons-ai-reckoning%2F"
+        let query = "https://web.archive.org/cdx/search/cdx?url=\(encoded)&output=json&filter=statuscode:200&filter=mimetype:text/html&collapse=timestamp:6&limit=1"
+        runner.fetcher.respond(to: url.absoluteString, body: preview)
+        runner.fetcher.respond(to: query+"&sort=reverse", body: #"[["timestamp"],["20261029232824"]]"#)
+        runner.fetcher.respond(to: query, body: #"[["timestamp"],["20261029143048"]]"#)
+        runner.fetcher.respond(to: "https://web.archive.org/web/20261029232824id_/"+url.absoluteString, body: preview)
+        runner.fetcher.respond(to: "https://web.archive.org/web/20261029143048id_/"+url.absoluteString, body: full)
+        let stage = PluginIngestStage(invoker: runner.runtime, processKind: .app)
+        let result = await stage.run(IngestInput(url: url, source: .manual), fetcher: MockArticleFetcher())
+        guard case let .outcome(.article(content, _), owner) = result else {
+            return XCTFail("No recovered article; requests: \(runner.fetcher.requests.map { $0.url.absoluteString })")
+        }
+        XCTAssertEqual(owner, "app.luna.publisher-access", "Web must decline the preview so recovery runs")
+        let saves = SavesStore(containerURL: runner.containerURL.appendingPathComponent("404-regression"))
+        let item = saves.add(urlString: url.absoluteString)
+        _ = saves.saveContent(content, for: item)
+        let stored = try XCTUnwrap(saves.content(for: try XCTUnwrap(saves.item(withID: item.id))))
+        XCTAssertTrue(stored.blocks.first?.text.hasPrefix("Preview paragraph 1.") == true)
+        XCTAssertTrue(stored.blocks.last?.text.contains("Final reporting paragraph.") == true)
+        XCTAssertFalse(stored.blocks.contains { $0.text.contains("paid members only") || $0.text.contains("Sign up for free access") })
+    }
+
     func testReadableDailyBeastArchiveDoesNotWaitForStalledOldestLookupInJSC() async throws {
         try load("publisher-access")
         let url = "https://www.thedailybeast.com/animated-pete-hegseth-snaps-at-press-during-wild-pentagon-briefing"
@@ -318,7 +350,7 @@ final class WebPluginMigrationTests: XCTestCase {
             // remains after the real article appears. Full content must win.
             context.evaluateScript("""
                 document.body.innerText='Archived article';
-                document.querySelectorAll=()=>[{innerText:'Teaser'}, {innerText:'Full reporting. '.repeat(160)}];
+                document.querySelectorAll=s=>s.includes('#CONTENT')?[{innerText:'Teaser'}, {innerText:'Full reporting. '.repeat(160)}]:[];
                 """)
             stages.append(context.evaluateScript(request.detect)?.toString() ?? "")
             context.evaluateScript("""

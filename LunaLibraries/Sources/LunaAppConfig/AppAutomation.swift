@@ -55,6 +55,21 @@ public struct AutomationChangePage: Sendable {
     public let hasMore: Bool
 }
 
+/// The independently configurable kinds of automation change notifications.
+public enum AutomationChangeOperation: String, CaseIterable, Sendable {
+    case created, read, unread, updated, deleted
+
+    public var title: String {
+        switch self {
+        case .created: return "New Items"
+        case .read: return "Items Marked as Read"
+        case .unread: return "Items Marked as Unread"
+        case .updated: return "Updated Items"
+        case .deleted: return "Deleted Items"
+        }
+    }
+}
+
 public enum AutomationError: LocalizedError {
     case unavailable, invalidToken, expiredToken, notificationsDenied
     public var errorDescription: String? {
@@ -85,9 +100,14 @@ public final class AppAutomation: @unchecked Sendable {
                 defaults: UserDefaults = UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard) {
         self.app = app; root = directory?.appendingPathComponent("Automation", isDirectory: true); self.defaults = defaults
     }
-    private var settingKey: String { "automation.\(app.rawValue).notifications" }
-    public var notificationsEnabled: Bool { defaults.bool(forKey: settingKey) }
-    public func setNotificationsEnabled(_ enabled: Bool) async throws {
+    private var legacySettingKey: String { "automation.\(app.rawValue).notifications" }
+    private func settingKey(for operation: String) -> String { "automation.\(app.rawValue).notifications.\(operation)" }
+    public var notificationsEnabled: Bool { AutomationChangeOperation.allCases.contains { notificationsEnabled(for: $0.rawValue) } }
+    public func notificationsEnabled(for operation: String) -> Bool {
+        let key = settingKey(for: operation)
+        return defaults.object(forKey: key) == nil ? defaults.bool(forKey: legacySettingKey) : defaults.bool(forKey: key)
+    }
+    public func setNotificationsEnabled(_ enabled: Bool, for operation: AutomationChangeOperation) async throws {
         #if canImport(UserNotifications)
         if enabled {
             let center = UNUserNotificationCenter.current()
@@ -99,10 +119,13 @@ public final class AppAutomation: @unchecked Sendable {
             } else if settings.authorizationStatus == .denied { throw AutomationError.notificationsDenied }
         }
         #endif
-        defaults.set(enabled, forKey: settingKey)
+        defaults.set(enabled, forKey: settingKey(for: operation.rawValue))
         if !enabled {
-            try locked { $0.pendingNotifications = [] }
-            await dismissNotifications()
+            let matchingEvents = (try? locked(write: false) { history in
+                history.changes.filter { $0.operation == operation.rawValue }.map(\.id)
+            }) ?? []
+            try locked { history in history.pendingNotifications?.removeAll { matchingEvents.contains($0) } }
+            await dismissNotifications(eventIDs: matchingEvents)
         } else { await deliverPendingNotifications() }
     }
     @discardableResult public func record(kind: String, itemID: String, operation: String) throws -> AutomationChange {
@@ -120,9 +143,8 @@ public final class AppAutomation: @unchecked Sendable {
                     app: app, kind: mutation.kind, itemID: mutation.itemID, operation: mutation.operation)
             }
             history.changes.append(contentsOf: events)
-            if notificationsEnabled {
-                history.pendingNotifications = (history.pendingNotifications ?? []) + events.map(\.id)
-            }
+            let eligible = events.filter { notificationsEnabled(for: $0.operation) }
+            if !eligible.isEmpty { history.pendingNotifications = (history.pendingNotifications ?? []) + eligible.map(\.id) }
             if history.changes.count > 10_000 {
                 history.changes.removeFirst(history.changes.count - 10_000)
                 let retained = Set(history.changes.map(\.id))
@@ -131,7 +153,7 @@ public final class AppAutomation: @unchecked Sendable {
             return events
         }
         #if canImport(UserNotifications)
-        if notificationsEnabled, AutomationApp.current == app {
+        if events.contains(where: { notificationsEnabled(for: $0.operation) }), AutomationApp.current == app {
             Task { await deliverPendingNotifications() }
         }
         #endif
@@ -196,9 +218,9 @@ public final class AppAutomation: @unchecked Sendable {
     }
     fileprivate func flushPendingNotifications() async {
         #if canImport(UserNotifications)
-        guard notificationsEnabled, AutomationApp.current == app else { return }
+        guard AutomationApp.current == app else { return }
         do {
-            while notificationsEnabled {
+            while true {
                 let pending = try locked(write: false) { history in
                     let ids = Set(history.pendingNotifications ?? [])
                     return history.changes.filter { ids.contains($0.id) }
@@ -206,7 +228,10 @@ public final class AppAutomation: @unchecked Sendable {
                 guard !pending.isEmpty else { break }
                 var deliveredAny = false
                 for event in pending {
-                    guard notificationsEnabled else { break }
+                    guard notificationsEnabled(for: event.operation) else {
+                        try locked { $0.pendingNotifications?.removeAll { $0 == event.id } }
+                        continue
+                    }
                     if await deliver(event) {
                         try locked { $0.pendingNotifications?.removeAll { $0 == event.id } }
                         deliveredAny = true
@@ -239,20 +264,22 @@ public final class AppAutomation: @unchecked Sendable {
     }
     #if canImport(UserNotifications)
     private func deliver(_ event: AutomationChange) async -> Bool {
-        guard notificationsEnabled else { return false }
+        guard notificationsEnabled(for: event.operation) else { return false }
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
-        guard [.authorized, .provisional].contains(settings.authorizationStatus), notificationsEnabled else { return false }
+        guard [.authorized, .provisional].contains(settings.authorizationStatus), notificationsEnabled(for: event.operation) else { return false }
         // A shortcut may dismiss this event while authorization is being read.
         guard (try? locked(write: false, { ($0.pendingNotifications ?? []).contains(event.id) })) == true else { return true }
         let content = UNMutableNotificationContent()
         content.title = event.notificationTitle
         content.interruptionLevel = .passive
         content.threadIdentifier = "luna.changes"
-        content.userInfo = ["eventID": event.id, "itemID": event.itemID, "kind": event.kind, "operation": event.operation]
+        content.userInfo = ["eventID": event.id, "itemID": event.itemID, "kind": event.kind,
+                            "operation": event.operation, "app": event.app.rawValue,
+                            "sequence": event.sequence, "date": event.date.timeIntervalSince1970]
         do {
             try await center.add(UNNotificationRequest(identifier: event.notificationIdentifier, content: content, trigger: nil))
-            if !notificationsEnabled || (try? locked(write: false, { ($0.pendingNotifications ?? []).contains(event.id) })) != true { center.removeDeliveredNotifications(withIdentifiers: [event.notificationIdentifier]); center.removePendingNotificationRequests(withIdentifiers: [event.notificationIdentifier]) }
+            if !notificationsEnabled(for: event.operation) || (try? locked(write: false, { ($0.pendingNotifications ?? []).contains(event.id) })) != true { center.removeDeliveredNotifications(withIdentifiers: [event.notificationIdentifier]); center.removePendingNotificationRequests(withIdentifiers: [event.notificationIdentifier]) }
             return true
         } catch { NSLog("Luna automation notification: %@", error.localizedDescription); return false }
     }

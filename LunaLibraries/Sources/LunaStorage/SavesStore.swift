@@ -2336,7 +2336,11 @@ public final class SavesStore {
             if !wasUsable || previous?.title != item.title || previous?.contentFileName != item.contentFileName
                 || previous?.readState != item.readState || previous?.archivedAt != item.archivedAt
                 || previous?.priceTracker != item.priceTracker || previous?.bumpDate != item.bumpDate {
-                let operation = !wasUsable ? "created" : "updated"
+                let operation: String
+                if !wasUsable { operation = "created" }
+                else if previous?.readState != item.readState {
+                    operation = item.readState == .read ? "read" : "unread"
+                } else { operation = "updated" }
                 automationChanges.append((kind, item.id.uuidString, operation))
             }
         }

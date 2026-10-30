@@ -11,12 +11,15 @@ struct DataChangeEntity: AppEntity {
     @Property(title: "Item ID") var itemID: String
     @Property(title: "Item Type") var kind: String
     @Property(title: "Operation") var operation: String
+    @Property(title: "App") var app: String
+    @Property(title: "Sequence") var sequence: Int64
     @Property(title: "Date") var date: Date
     @Property(title: "Notification Title") var notificationTitle: String
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(notificationTitle)", subtitle: "\(itemID)") }
     init(_ change: AutomationChange) {
         id = change.id; itemID = change.itemID; kind = change.kind; operation = change.operation
         date = change.date; notificationTitle = change.notificationTitle
+        app = change.app.rawValue; sequence = change.sequence
     }
 }
 struct DataChangeQuery: EntityQuery {

@@ -14,10 +14,10 @@ struct VaultFileEntity: IndexedEntity {
     @Property(title: "Path") var path: String
     @Property(title: "Modified Date") var modifiedDate: Date
     @Property(title: "Added Date") var addedDate: Date
-    @Property(title: "Size") var size: Int
+    @Property(title: "Size (Bytes)") var size: Int
     @Property(title: "Folder") var folder: Bool
     @Property(title: "Downloaded") var downloaded: Bool
-    @Property(title: "Pinned") var pinned: Bool
+    @Property(title: "Keep Downloaded") var pinned: Bool
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)", subtitle: "\(path)") }
     init(_ file: VaultFileRecord, folderID: String) {
         // A path on a replacement Mac is a different entity.
@@ -71,39 +71,95 @@ struct VaultFileQuery: EntityStringQuery {
         return try store.automationItems(limit: limit).map { VaultFileEntity($0, folderID: identity) }
     }
 }
+enum VaultFileType: String, AppEnum {
+    case video, audio, image, pdf, text, archive
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "File Type"
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .video: "Video", .audio: "Audio", .image: "Image", .pdf: "PDF",
+        .text: "Text", .archive: "Archive"
+    ]
+}
+
 struct FindVaultItemsIntent: AppIntent {
     static var title: LocalizedStringResource = "Find Vault Items"
+    static var description = IntentDescription("Find Vault files and folders by name, relative path or modified date, newest modified first. File Extension and File Type narrow the results to files. Combine them to require both.")
     @Parameter(title: "Search", default: "") var search: String
-    @Parameter(title: "Path") var path: String?
+    @Parameter(title: "Path", description: "An exact path relative to Vault, such as Projects/Notes.txt. Leave blank to search all paths.") var path: String?
     @Parameter(title: "Modified After") var after: Date?
     @Parameter(title: "Folders Only", default: false) var foldersOnly: Bool
-    @Parameter(title: "Limit", default: 20, inclusiveRange: (1, 500)) var limit: Int
+    @Parameter(title: "File Extension", description: "One extension, such as .mp4 or pdf. The dot is optional and matching ignores case. Leave blank for any extension.") var fileExtension: String?
+    @Parameter(title: "File Type", description: "Match a family of file formats. When an extension is also set, files must match both. File filters exclude folders.") var fileType: VaultFileType?
+    @Parameter(title: "Maximum Results", description: "The most items to return, from 1 to 500.", default: 20, inclusiveRange: (1, 500)) var limit: Int
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find Vault Items") {
+            \.$search
+            \.$path
+            \.$after
+            \.$foldersOnly
+            \.$fileExtension
+            \.$fileType
+            \.$limit
+        }
+    }
     func perform() async throws -> some IntentResult & ReturnsValue<[VaultFileEntity]> {
-        let items = try VaultFileQuery().all().filter {
-            (path == nil || $0.path == path) && (search.isEmpty || $0.path.localizedStandardContains(search))
+        let items = try VaultFileQuery().all().sorted { $0.modifiedDate == $1.modifiedDate ? $0.path < $1.path : $0.modifiedDate > $1.modifiedDate }.filter {
+            (path == nil || path?.isEmpty == true || $0.path == path) && (search.isEmpty || $0.path.localizedStandardContains(search))
                 && (after == nil || $0.modifiedDate > after!) && (!foldersOnly || $0.folder)
+                && VaultFileFilter.matches(path: $0.path, isFolder: $0.folder, extension: fileExtension, category: fileType?.rawValue)
         }
         return .result(value: Array(items.prefix(max(1, min(limit, 500)))))
     }
 }
 struct GetVaultFileIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Vault File"
+    static var description = IntentDescription("Export a Vault file, downloading it from your Mac if needed. Choose an item, or leave it blank to get the most recently modified file matching the filters. Requires device authentication. A chosen item must also match any filters.")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-    @Parameter(title: "Item") var item: VaultFileEntity
+    @Parameter(title: "Item", description: "A file from Find Vault Items. Leave blank to find a file using the filters.") var item: VaultFileEntity?
+    @Parameter(title: "Search", description: "Words in the file’s name or path. Leave blank to include all names.", default: "") var search: String
+    @Parameter(title: "File Extension", description: "One extension, such as .mp4 or pdf. The dot is optional and matching ignores case.") var fileExtension: String?
+    @Parameter(title: "File Type", description: "A family of file formats, such as Video or Audio. When an extension is also set, files must match both.") var fileType: VaultFileType?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get Vault File") {
+            \.$item
+            \.$search
+            \.$fileExtension
+            \.$fileType
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> {
         let runtime = try VaultConnectedWiring.intentRuntime()
-        let file = try item.resolve(in: runtime.store)
+        let file: VaultFileRecord
+        if let item { file = try item.resolve(in: runtime.store) }
+        else {
+            guard let match = try runtime.store.automationItems().filter({
+                $0.type == .file && (search.isEmpty || $0.name.localizedStandardContains(search))
+                    && VaultFileFilter.matches(path: $0.name, isFolder: false, extension: fileExtension, category: fileType?.rawValue)
+            }).sorted(by: { $0.modified == $1.modified ? $0.name < $1.name : $0.modified > $1.modified }).first else { throw VaultFileFilterError.noMatch }
+            file = match
+        }
         guard file.type == .file else { throw VaultIntentError.folder }
+        guard (search.isEmpty || file.name.localizedStandardContains(search)),
+              VaultFileFilter.matches(path: file.name, isFolder: false, extension: fileExtension, category: fileType?.rawValue) else { throw VaultFileFilterError.noMatch }
         let url = try await runtime.fileURL(named: file.name)
         return .result(value: IntentFile(fileURL: url, filename: file.displayName))
     }
+}
+private enum VaultFileFilterError: LocalizedError {
+    case noMatch
+    var errorDescription: String? { "No Vault file matches these filters." }
 }
 struct ImportVaultFileIntent: AppIntent {
     static var title: LocalizedStringResource = "Save File to Vault"
     static var description = IntentDescription("Copy a file into Vault and queue it for sync to your paired Mac.")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
     @Parameter(title: "File") var file: IntentFile
-    @Parameter(title: "Path") var path: String?
+    @Parameter(title: "Path", description: "Destination path relative to Vault, including the filename, such as Projects/Notes.txt. Leave blank to keep the input file’s name.") var path: String?
+    static var parameterSummary: some ParameterSummary {
+        Summary("Save File to Vault") {
+            \.$file
+            \.$path
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<VaultFileEntity> {
         let runtime = try VaultConnectedWiring.intentRuntime()
         let name = (path?.isEmpty == false ? path! : (file.filename as NSString).lastPathComponent).precomposedStringWithCanonicalMapping
@@ -127,7 +183,13 @@ struct ImportVaultFileIntent: AppIntent {
 }
 struct CreateVaultFolderIntent: AppIntent {
     static var title: LocalizedStringResource = "Create Vault Folder"
-    @Parameter(title: "Path") var path: String
+    static var description = IntentDescription("Create a folder in Vault and queue it for sync to your paired Mac. Use a path relative to the Vault root, such as Projects/Notes.")
+    @Parameter(title: "Folder Path", description: "A path relative to Vault, such as Projects/Notes.") var path: String
+    static var parameterSummary: some ParameterSummary {
+        Summary("Create Vault Folder") {
+            \.$path
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<VaultFileEntity> {
         let runtime = try VaultConnectedWiring.intentRuntime()
         try await runtime.importDirectory(named: path)
@@ -138,8 +200,14 @@ struct CreateVaultFolderIntent: AppIntent {
 }
 struct DeleteVaultItemsIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete Vault Items"
+    static var description = IntentDescription("Delete selected files or folders from Vault and your paired Mac. Requires device authentication and asks for confirmation.")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
     @Parameter(title: "Items") var items: [VaultFileEntity]
+    static var parameterSummary: some ParameterSummary {
+        Summary("Delete Vault Items") {
+            \.$items
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let runtime = try VaultConnectedWiring.intentRuntime()
         let records = try items.map { try $0.resolve(in: runtime.store) }
@@ -150,8 +218,15 @@ struct DeleteVaultItemsIntent: AppIntent {
 }
 struct SetVaultItemPinnedIntent: AppIntent {
     static var title: LocalizedStringResource = "Keep Vault File Downloaded"
+    static var description = IntentDescription("Download a Vault file and keep a local copy. Turning Keep Downloaded off allows eviction; it does not delete the file from your Mac.")
     @Parameter(title: "Item") var item: VaultFileEntity
     @Parameter(title: "Keep Downloaded", default: true) var pinned: Bool
+    static var parameterSummary: some ParameterSummary {
+        Summary("Keep Vault File Downloaded") {
+            \.$item
+            \.$pinned
+        }
+    }
     @MainActor func perform() async throws -> some IntentResult {
         let runtime = try VaultConnectedWiring.intentRuntime()
         let file = try item.resolve(in: runtime.store)

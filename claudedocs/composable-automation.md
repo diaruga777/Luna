@@ -16,9 +16,9 @@ that returns a typed URL from the same Safari extension tracking used by Reader.
 It does not save or fetch content. It preserves query strings and fragments,
 uses the existing 72-hour freshness window, and errors on missing, stale or
 non-HTTP(S) values. This is the last extension-reported page, not a live active-tab
-query. Reader now defines 13 discoverable actions including the two shared change
+query. Reader now defines 15 discoverable actions including the two shared change
 actions, plus two private Live Activity controls; its automatic shortcut provider
-has six entries. The video and shopping-price actions are available in the action
+has eight entries. The video and shopping-price actions are available in the action
 picker without adding automatic-shortcut entries.
 
 Earlier October 30 Safari URL validation: the new action and its actual storage dependencies pass
@@ -31,7 +31,7 @@ verification runs.
 
 | App | Entities | Actions |
 | --- | --- | --- |
-| Reader | Every saved item (articles, documents, products, social and media); existing readable-article entity | Find by text, original saved date, kind or stable ID; save URL; get text; get downloaded video; get each tracked store’s last saved price; export device/Gemini TTS as M4A; batch read/unread, archive/unarchive, delete; existing capture and playback actions |
+| Reader | Every saved item (articles, documents, products, social and media); existing readable-article entity | Find by text, original saved date, kind or stable ID; save URL; get text or text chunks; schedule trigger notifications; get downloaded video; get each tracked store’s last saved price; export device/Gemini TTS as M4A; batch read/unread, archive/unarchive, delete; existing capture and playback actions |
 | Music | Songs, albums, artists, playlists (Apple Music and Vault); podcast shows/audio lists, episodes, stations | Find music; create/add to playlists; queue songs; existing playback controls; create audio lists; import audio; find episodes; get queue; enqueue/play-next/remove, listened/unplayed, download/remove download; follow/unfollow feed; create/update/delete station; export locally available podcast audio |
 | Vault | Mirrored files and folders, including empty folders | Find by name/path/date/extension/file family; import/export file; create folder; delete; keep downloaded/unpin |
 | Keyboard | Text/media shortcuts, dictionary words, supported preferences (including defaults) | Find/create/update/delete shortcuts; import/export images; find/add/remove dictionary words; get/set supported preferences |
@@ -85,6 +85,54 @@ playback. Imported lists/episodes are excluded from podcast cloud sync because
 their audio is device-local. They never trigger RSS refreshes. Imported files are
 not coupled to a Reader save's read state; a shortcut can explicitly mark the
 source read when desired.
+
+## Article chunks and scheduled triggers
+
+**Get Article Text Chunks** takes a Saved Item and Maximum Characters (default
+4,000, minimum 1). The item must be a ready article or document with saved text.
+It returns an ordered list of strings, using the same block text and double
+line-break separators as Get Saved Item Text. Each slice uses the furthest
+sentence ending that fits the limit. If no sentence ending fits, it uses the
+furthest word boundary; a word longer than the limit is split at whole Unicode
+characters. Spaces, punctuation and line breaks count toward the limit and are
+preserved exactly. Joining the list with an empty separator restores the full
+input, with no gaps or duplicated text. Sentence boundaries use NaturalLanguage
+tokenization; a final fragment without punctuation is still returned.
+
+**Schedule Trigger Notification** schedules a one-time local notification under
+Reader's identity and returns its notification ID. Delay is in seconds; 0 sends
+immediately. Title is required. Optional fields are Subtitle, Body, User Info
+(JSON object without null values), Notification ID, Thread ID, Category ID, Play
+Sound, Badge and Delivery (Quiet, Standard or Time Sensitive). Quiet/silent is
+the default; an empty Badge preserves the current badge and 0 clears it. Category
+ID refers to a category the app already registers; it does not create actions.
+Reader includes the Time Sensitive notification entitlement for that delivery
+option; the user's system settings still control whether it can interrupt.
+
+Use **Body** for data a Shortcuts notification automation needs to read, including
+JSON. Custom `userInfo` is separate notification metadata and should not be
+assumed accessible through Shortcuts' notification input. On iOS 27, configure
+the notification automation for Luna Reader and match the title/subtitle/body.
+This action schedules the notification; the user configures the automation.
+
+If permission is undetermined, scheduling requests provisional alert/sound/badge
+authorization and updates Reader's shared permission latch. Denied permission
+throws with a Settings recovery message. Invalid parameters fail before asking
+for permission. Scheduling is independent of Settings → Automations → Change
+Notifications. IDs are scoped to `luna.trigger.` so these requests cannot replace
+Reader's change/reminder notifications. Supplying the returned ID again replaces
+that pending trigger. An empty ID generates a fresh UUID. Change-notification
+dismissal does not remove scheduled triggers. Delivery follows system permission,
+Focus and summary settings; the intent does not promise an exact firing time.
+
+October 30 validation: Reader builds and 33 focused tests pass on the iOS 26.2
+simulator with Xcode 27.1 beta. Tests cover lossless/greedy chunking, oversized
+sentences/words, Unicode, saved-content retrieval/deletion, notification payloads,
+permission outcomes, scheduling failures and existing saved-item/change actions.
+Extracted App Intents metadata contains the chunk list output, all 11 notification
+parameters, the delivery enum and eight automatic shortcuts. Reader's generated
+simulator entitlements include Time Sensitive notifications. Physical-device Shortcuts
+notification automations and actual delayed delivery were not exercised.
 
 ## Change contract
 

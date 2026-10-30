@@ -13,6 +13,8 @@ struct LunaShortcuts: AppShortcutsProvider {
         AppShortcut(intent: GetCurrentSafariURLIntent(), phrases: ["Get the Safari URL with \(.applicationName)"], shortTitle: "Get Safari URL", systemImageName: "safari")
         AppShortcut(intent: FindSavedItemsIntent(), phrases: ["Find saves in \(.applicationName)"], shortTitle: "Find Saved Items", systemImageName: "magnifyingglass")
         AppShortcut(intent: GetArticleAudioIntent(), phrases: ["Get article audio from \(.applicationName)"], shortTitle: "Get Article Audio", systemImageName: "waveform")
+        AppShortcut(intent: GetArticleTextChunksIntent(), phrases: ["Get article text chunks from \(.applicationName)"], shortTitle: "Get Text Chunks", systemImageName: "text.alignleft")
+        AppShortcut(intent: ScheduleTriggerNotificationIntent(), phrases: ["Schedule a notification with \(.applicationName)"], shortTitle: "Schedule Notification", systemImageName: "bell.badge")
         AppShortcut(
             intent: ProvideContextIntent(),
             phrases: [

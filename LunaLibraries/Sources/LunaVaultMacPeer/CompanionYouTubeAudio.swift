@@ -203,7 +203,9 @@ public actor CompanionYouTubeAudio {
                 guard String(data: installed, encoding: .utf8)?.split(whereSeparator: \.isWhitespace).first == "yt-dlp" else { continue }
                 let prefixData = try await run(Command(executable: brew, arguments: ["--prefix", "yt-dlp"], bin: bin, timeout: 10))
                 guard let prefix = String(data: prefixData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), prefix.hasPrefix("/") else { continue }
-                let executable = URL(fileURLWithPath: prefix).appendingPathComponent("bin/yt-dlp").resolvingSymlinksInPath()
+                // Keep Homebrew's stable opt path: resolving into Cellar here
+                // would retry the old executable after a successful upgrade.
+                let executable = URL(fileURLWithPath: prefix).appendingPathComponent("bin/yt-dlp")
                 guard FileManager.default.isExecutableFile(atPath: executable.path) else { continue }
                 _ = try await run(Command(executable: executable, arguments: ["--ignore-config", "--version"], bin: bin, timeout: 10))
                 return Toolchain(brew: brew, ytDLP: executable, bin: bin)

@@ -230,7 +230,7 @@ public class MusicScreenViewController: UIViewController {
             }),
             UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) },
             UIAction(title: "Play Last", image: UIImage(systemName: "text.line.last.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playLater(item) }
-        ] + (item.source == .vault ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+        ] + (item.source == .vault && item.peer != VaultMusicController.importedPeer ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
             guard let self else { return }
             MusicStyle.run(from: self, errorTitle: "Download Unavailable") {
                 if VaultMusicController.shared.isCached(item) { try await VaultMusicController.shared.removeCachedSong(item) }
@@ -242,7 +242,7 @@ public class MusicScreenViewController: UIViewController {
         if items.isEmpty && source == nil {
             let chooser = UIAlertController(title: "New Playlist", message: "Choose the music source for this playlist.", preferredStyle: .alert)
             for source in [MusicSource.apple, .vault] {
-                chooser.addAction(UIAlertAction(title: source == .apple ? "Apple Music" : "Luna Vault", style: .default) { [weak self] _ in self?.newPlaylist(source: source, completion: completion) })
+                chooser.addAction(UIAlertAction(title: source == .apple ? "Apple Music" : "Audio Files", style: .default) { [weak self] _ in self?.newPlaylist(source: source, completion: completion) })
             }
             chooser.addAction(UIAlertAction(title: "Cancel", style: .cancel))
             present(chooser, animated: true); return

@@ -1,5 +1,27 @@
 # Luna Music
 
+## Shared and opened audio
+
+`LunaMusicShare` (`$(PRODUCT_BUNDLE_PREFIX).music.share`) accepts audio files,
+including MP3s. Open In uses the same screen inside Music. The segmented control
+defaults to Podcast; that page selects a local audio list and offers Add to Queue
+or Play Next. Song allows multiple file-library playlists, an optional new
+playlist, and Save. Successful terminal actions close the share sheet.
+
+The extension copies all files into an atomically published App Group inbox
+before closing. Music consumes captures on launch/activation and every two seconds
+while its process runs (including background audio); suspended apps finish imports
+on their next activation. Stable capture/file keys prevent duplicate imports on
+retry and preserve multi-file Play Next order. Playlist/audio-list choices are
+published from Music; Apple Music playlists cannot accept arbitrary audio files.
+
+Imported songs live in `Application Support/LunaMusic/ImportedSongs`, independently
+of the Mac download cache. `vault-library.json` retains their metadata under
+`importedFiles`; file playlists may combine imports with Mac files. Imports use
+the file player and remain playable after a restart, cache purge or Mac change.
+A share failure retains its durable capture and surfaces a library error.
+
+
 Mac setup, restored connections, account credentials, and adaptive companion UI are
 shared across Vault, Music, and Code. See [One Luna Mac connection](mac-connection.md).
 
@@ -17,7 +39,7 @@ playback behavior. Denying Apple access does not prevent Vault browsing/playback
 separate from Mac paths. Artist strings are matched case/diacritic-insensitively;
 albums match title plus album artist. Songs from different sources remain distinct.
 
-Playlists have exactly one source. New Playlist asks for Apple Music or Luna Vault;
+Playlists have exactly one source. New Playlist asks for Apple Music or Audio Files;
 creation from a song inherits its source. Add Music and destination menus filter
 by source, and the underlying write APIs reject mixed-source changes. Vault
 playlists, ordering, play counts and catalog metadata persist atomically in

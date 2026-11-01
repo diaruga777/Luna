@@ -18,7 +18,12 @@ public final class VaultMusicController: ObservableObject {
     private var worker: Task<Void, Never>?
     private var revision = UUID()
     private var storageError: Error?
-    public var songs: [MusicSong] { state.files.map { MusicSong(file: $0, peer: state.peer) } }
+    public static let importedPeer = "on-device-imports"
+    var importedSongsDirectory: URL { stateURL.deletingLastPathComponent().appendingPathComponent("ImportedSongs", isDirectory: true) }
+    public var songs: [MusicSong] {
+        state.files.map { MusicSong(file: $0, peer: state.peer) }
+            + (state.importedFiles ?? []).map { MusicSong(file: $0, peer: Self.importedPeer) }
+    }
     public var playlists: [MusicPlaylist] { state.playlists.map { MusicPlaylist($0, songs: songs) } }
     public var cachedSongs: [MusicSong] { songs.filter(isCached) }
     init(directory suppliedDirectory: URL? = nil) {
@@ -40,7 +45,9 @@ public final class VaultMusicController: ObservableObject {
     }
     public func localURL(_ song: MusicSong) -> URL? {
         guard let file = song.file else { return nil }
-        let url = VaultMusicCache.url(root: root, song: song)
+        let url = song.peer == Self.importedPeer
+            ? importedSongsDirectory.appendingPathComponent(file.path)
+            : VaultMusicCache.url(root: root, song: song)
         return VaultMusicCache.complete(url, size: file.size) ? url : nil
     }
     public func isCached(_ song: MusicSong) -> Bool { localURL(song) != nil }
@@ -76,9 +83,15 @@ public final class VaultMusicController: ObservableObject {
     }
     @discardableResult
     public func createPlaylist(name: String, songs: [MusicSong]) throws -> MusicPlaylist {
-        guard songs.allSatisfy({ $0.source == .vault }) else { throw MusicFileError("A playlist can contain Apple Music songs or Vault songs, but not both.") }
+        guard songs.allSatisfy({ $0.source == .vault }) else { throw MusicFileError("A playlist can contain Apple Music songs or audio files, but not both.") }
         var next = state
-        let playlist = try next.createPlaylist(name: name, songIDs: songs.map(\.persistentID))
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw MusicFileError("Enter a playlist name.") }
+        let available = Set(self.songs.map(\.persistentID))
+        guard songs.allSatisfy({ available.contains($0.persistentID) }) else { throw MusicFileError("A selected song is no longer available.") }
+        var seen = Set<MusicID>()
+        let playlist = VaultMusicPlaylist(name: trimmed, songIDs: songs.map(\.persistentID).filter { seen.insert($0).inserted })
+        next.playlists.append(playlist)
         try save(next); changed()
         return MusicPlaylist(playlist, songs: self.songs)
     }
@@ -120,6 +133,7 @@ public final class VaultMusicController: ObservableObject {
         try save(next); changed(); reconcile()
     }
     public func removeCachedSong(_ song: MusicSong) async throws {
+        guard song.peer != Self.importedPeer else { return }
         var next = state; next.manual.remove(song.persistentID); next.excluded.insert(song.persistentID)
         try save(next)
         worker?.cancel()
@@ -129,14 +143,14 @@ public final class VaultMusicController: ObservableObject {
         changed(); reconcile()
     }
     public func retryDownloads() { errorMessage = nil; reconcile() }
-    private func save(_ next: VaultMusicState) throws {
+    func save(_ next: VaultMusicState) throws {
         if let storageError { throw storageError }
         try JSONEncoder().encode(next).write(to: stateURL, options: .atomic)
         let previous = state
         state = next
         if stateURL.deletingLastPathComponent().lastPathComponent == "LunaMusic" {
-            let oldFiles = Dictionary(previous.files.map { ($0.id(peer: previous.peer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
-            let newFiles = Dictionary(next.files.map { ($0.id(peer: next.peer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
+            let oldFiles = Dictionary(previous.files.map { ($0.id(peer: previous.peer).rawValue, $0) } + (previous.importedFiles ?? []).map { ($0.id(peer: Self.importedPeer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
+            let newFiles = Dictionary(next.files.map { ($0.id(peer: next.peer).rawValue, $0) } + (next.importedFiles ?? []).map { ($0.id(peer: Self.importedPeer).rawValue, $0) }, uniquingKeysWith: { a, _ in a })
             for id in Set(oldFiles.keys).union(newFiles.keys).sorted() where oldFiles[id] != newFiles[id] {
                 AppAutomation.record(.music, kind: "song", id: "song:" + id, operation: newFiles[id] == nil ? "deleted" : oldFiles[id] == nil ? "created" : "updated")
             }
@@ -148,7 +162,10 @@ public final class VaultMusicController: ObservableObject {
             }
         }
     }
-    private func changed() { NotificationCenter.default.post(name: .lunaMusicVaultChanged, object: self) }
+    func changed() {
+        NotificationCenter.default.post(name: .lunaMusicVaultChanged, object: self)
+        MusicShareImport.publishChoices()
+    }
     private func reconcile() {
         let previous = worker
         previous?.cancel()
@@ -156,7 +173,7 @@ public final class VaultMusicController: ObservableObject {
         worker = Task { [weak self] in
             await previous?.value
             guard let self, !Task.isCancelled, let cache else { return }
-            let wanted = songs.filter { state.desiredIDs.contains($0.persistentID) }
+            let wanted = songs.filter { $0.peer != Self.importedPeer && state.desiredIDs.contains($0.persistentID) }
             do {
                 try await cache.purge(keeping: Set(wanted.map { VaultMusicCache.url(root: root, song: $0) }))
                 for (index, song) in wanted.enumerated() {

@@ -218,7 +218,7 @@ internal enum MusicResult: Sendable {
         config.directionalLayoutMargins.leading = 20; config.directionalLayoutMargins.trailing = 20
         config.imageToTextPadding = 12
         config.directionalLayoutMargins.top = 8; config.directionalLayoutMargins.bottom = 8
-        if case .playlist(let playlist) = self { config.secondaryText = playlist.source == .vault ? "Luna Vault" : "Apple Music" }
+        if case .playlist(let playlist) = self { config.secondaryText = playlist.source == .vault ? "Audio Files" : "Apple Music" }
         if case .artist = self { config.imageProperties.cornerRadius = 32; config.secondaryText = "Artist" }
         if case .album = self { config.secondaryText = songs.first?.artist }
 

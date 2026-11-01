@@ -14,6 +14,7 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         PodcastBackgroundServices.shared.start()
         MusicVaultWiring.install()
         MusicSystemIntegration.shared.start()
+        MusicShareImport.start()
         if NSClassFromString("XCTestCase") == nil {
             AutomationEntityIndex.install {
                 try await AutomationEntityIndex.replace(PodcastEpisodeEntity.self, entities: PodcastEpisodeQuery().all())

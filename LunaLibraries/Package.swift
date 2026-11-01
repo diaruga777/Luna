@@ -11,6 +11,8 @@ let package = Package(
     // a `swift build` on the Mac still compiles the Foundation-only tiers.
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
+        .library(name: "LunaCompanionShareCore", targets: ["LunaCompanionShareCore"]),
+        .library(name: "LunaCompanionSharing", targets: ["LunaCompanionSharing"]),
         .library(name: "LunaKeyboardKit", type: .dynamic, targets: ["LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig"]),
         .library(name: "LunaPodcastCore", targets: ["LunaPodcastCore"]),
         .library(name: "LunaMusicFiles", targets: ["LunaMusicFiles"]),
@@ -123,12 +125,14 @@ let package = Package(
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
     ],
     targets: [
+        .target(name: "LunaCompanionShareCore", dependencies: ["LunaAppConfig"]),
+        .target(name: "LunaCompanionSharing", dependencies: ["LunaCompanionShareCore", "LunaStorage"]),
         .target(name: "LunaPremium", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicFiles"),
         .target(name: "LunaPodcastCore"),
-        .target(name: "LunaMusicCore", dependencies: ["LunaAppConfig", "LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
+        .target(name: "LunaMusicCore", dependencies: ["LunaCompanionShareCore", "LunaAppConfig", "LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
         .target(name: "LunaMusicUI", dependencies: ["LunaAppConfig", "LunaMusicCore", "LunaPodcastCore", "LunaDesignSystem", "LunaModels"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
@@ -448,7 +452,7 @@ let package = Package(
         // UIKit from LunaWriterEditor up. See claudedocs/plans/writer-app.md §2.
         .target(name: "LunaWriterModels"),
         .target(name: "LunaWriterText", dependencies: ["LunaWriterModels"]),
-        .target(name: "LunaWriterStorage", dependencies: ["LunaWriterModels", "LunaWriterText", "LunaModels", "LunaAppConfig"]),
+        .target(name: "LunaWriterStorage", dependencies: ["LunaCompanionShareCore", "LunaWriterModels", "LunaWriterText", "LunaModels", "LunaAppConfig"]),
         .target(name: "LunaWriterVoice", dependencies: ["LunaWriterModels"]),
         .target(name: "LunaWriterEditor", dependencies: [
             "LunaWriterModels", "LunaWriterText", "LunaWriterStorage", "LunaDesignSystem", "LunaModels",

@@ -1,5 +1,8 @@
-import XCTest
+import LunaCompanionSharing
 import UIKit
+import UniformTypeIdentifiers
+import LunaCompanionShareCore
+import XCTest
 @testable import LunaMusicUI
 import AVFoundation
 @testable import LunaMusicCore
@@ -334,4 +337,114 @@ private final class YouTubeDownloadProtocol: URLProtocol, @unchecked Sendable {
         } else { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)) }
     }
     override func stopLoading() {}
+}
+
+@MainActor final class CompanionShareImportTests: XCTestCase {
+    func testExtensionlessSharedImageKeepsItsBytesAndGetsAUsableFileType() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let bytes = try XCTUnwrap(image.pngData())
+        let source = root.appendingPathComponent("image")
+        try bytes.write(to: source)
+        let provider = NSItemProvider(); provider.suggestedName = "image"
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.image.identifier, fileOptions: [], visibility: .all) { completion in
+            completion(source, false, nil); return nil
+        }
+        let staged = try await SharedInput.file(provider, conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+        XCTAssertEqual(staged.pathExtension, "png")
+        XCTAssertEqual(try Data(contentsOf: staged), bytes)
+    }
+    func testUIKitImageObjectIsStoredAsAnImageInsteadOfAKeyedArchive() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let url = try await SharedInput.file(NSItemProvider(object: image), conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        XCTAssertTrue(["png", "jpg", "jpeg", "heic"].contains(url.pathExtension))
+        XCTAssertNotNil(UIImage(contentsOfFile: url.path))
+    }
+    func testArchivedUIKitImageFromAnotherProcessBecomesAUsableImageFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let source = root.appendingPathComponent("image")
+        try NSKeyedArchiver.archivedData(withRootObject: image, requiringSecureCoding: true).write(to: source)
+        let provider = NSItemProvider(); provider.suggestedName = "image"
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.image.identifier, fileOptions: [], visibility: .all) { completion in
+            completion(source, false, nil); return nil
+        }
+        let staged = try await SharedInput.file(provider, conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+        XCTAssertEqual(staged.pathExtension, "png")
+        XCTAssertNotNil(UIImage(contentsOfFile: staged.path))
+    }
+    func testInboxCopiesBeforePublishingAndIgnoresIncompleteCaptures() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = CompanionShareInbox(root: root.appendingPathComponent("Inbox"))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("Audio.wav")
+        try Data([1, 2, 3]).write(to: source)
+        let capture = CompanionShareCapture(kind: .podcast, filenames: ["0-Audio.wav"], playNext: true)
+        try inbox.save(capture, files: [source]); try FileManager.default.removeItem(at: source)
+        XCTAssertEqual(try inbox.pending().map(\.id), [capture.id])
+        XCTAssertEqual(try Data(contentsOf: inbox.directory(for: capture).appendingPathComponent("0-Audio.wav")), Data([1, 2, 3]))
+        let invalid = CompanionShareCapture(kind: .song, filenames: ["../escape.wav"])
+        XCTAssertThrowsError(try inbox.save(invalid, files: [source]))
+        XCTAssertEqual(try inbox.pending().count, 1)
+        try inbox.remove(capture); XCTAssertTrue(try inbox.pending().isEmpty)
+    }
+    func testPodcastPlayNextPreservesSelectionOrderAndReplayDoesNotDuplicate() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = CompanionShareInbox(root: root.appendingPathComponent("Inbox"))
+        let source = try makeAudio(root)
+        let capture = CompanionShareCapture(kind: .podcast, filenames: ["0-First.wav", "1-Second.wav"], playNext: true)
+        try inbox.save(capture, files: [source, source])
+        let podcasts = PodcastLibraryController(url: root.appendingPathComponent("Podcasts/library.json"))
+        let music = VaultMusicController(directory: root.appendingPathComponent("Music"))
+        try await MusicShareImport.importCapture(capture, inbox: inbox, podcasts: podcasts, music: music)
+        try await MusicShareImport.importCapture(capture, inbox: inbox, podcasts: podcasts, music: music)
+        XCTAssertEqual(podcasts.state.episodes.count, 2)
+        XCTAssertEqual(podcasts.state.queue.compactMap { podcasts.state.episodes[$0]?.title }, ["First", "Second"])
+    }
+    func testImportedSongSurvivesRestartAndCanBelongToSeveralPlaylists() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeAudio(root)
+        let musicRoot = root.appendingPathComponent("Music")
+        let music = VaultMusicController(directory: musicRoot)
+        let first = try music.createPlaylist(name: "First", songs: [])
+        let second = try music.createPlaylist(name: "Second", songs: [])
+        for _ in 0..<2 {
+            try await music.importSong(at: source, key: "test-song", title: "Audio", playlists: [first.persistentID, second.persistentID])
+        }
+        try FileManager.default.removeItem(at: source)
+        let restored = VaultMusicController(directory: musicRoot)
+        XCTAssertEqual(restored.songs.count, 1)
+        let song = try XCTUnwrap(restored.songs.first)
+        XCTAssertNotNil(restored.localURL(song))
+        XCTAssertTrue(restored.playlists.allSatisfy { $0.items.map(\.persistentID) == [song.persistentID] })
+        try await restored.removeCachedSong(song)
+        XCTAssertNotNil(restored.localURL(song))
+    }
+    private func makeAudio(_ root: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("Original.wav")
+        let format = AVAudioFormat(standardFormatWithSampleRate: 22_050, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050)!
+        buffer.frameLength = 22_050
+        buffer.floatChannelData![0].initialize(repeating: 0, count: 22_050)
+        let audio = try AVAudioFile(forWriting: url, settings: format.settings)
+        try audio.write(from: buffer)
+        return url
+    }
 }

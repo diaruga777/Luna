@@ -16,6 +16,9 @@ import LunaVaultTailscale
             try VaultMusicController.shared.configure(peer: { (try? store.peer()?.deviceID.description) ?? "" }, request: { data in
                 try await connection.musicRequest(data)
             })
+            YouTubePodcastController.shared.configure { data in
+                try await connection.musicRequest(data)
+            }
             MusicSettings.connectionController = {
                 let settings = LunaMacConnectionViewController(services: connection, client: .music) { code in
                     try await connection.pair(code: code)
@@ -38,12 +41,14 @@ import LunaVaultTailscale
             while !Task.isCancelled {
                 await runtime?.reconnect()
                 await VaultMusicController.shared.refresh()
+                await YouTubePodcastController.shared.refreshAvailability()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
         }
     }
     static func background() {
         refreshTask?.cancel(); refreshTask = nil
+        YouTubePodcastController.shared.disconnected()
         // Keep the paired transport alive for background audio/range requests.
     }
 }

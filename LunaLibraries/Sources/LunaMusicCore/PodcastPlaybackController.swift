@@ -236,7 +236,7 @@ import LunaPodcastCore
         position = saved?.listened == true ? 0 : max(0, retainedPosition ?? saved?.position ?? 0)
         if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
-        let local = downloads.localURL(episode.id)
+        var local = downloads.localURL(episode.id)
         let removesQueuedEpisode = !preservingQueue && (library.state.queue.contains(episode.id) || library.state.continuation.contains(episode.id))
         let changesSelection = interruptedID != nil || library.state.currentEpisodeID != episode.id || removesQueuedEpisode || saved?.suppressAutomaticDownload == true ||
             (!restorePosition && saved?.listened == true)
@@ -264,6 +264,26 @@ import LunaPodcastCore
         try audio.setCategory(.playback, mode: .spokenAudio)
         try audio.setActive(true)
         if chimeWhileLoading, local == nil, !episode.mediaURL.isFileURL { startQueueDownloadChime() }
+        // A YouTube episode stores its canonical page URL, never a permanent
+        // enclosure. Wait for the owned audio instead of giving that page to AVPlayer.
+        if episode.youtubeVideoID != nil, local == nil {
+            bufferingTask?.cancel(); bufferingTask = nil
+            await downloads.download(episode)
+            let deadline = Date().addingTimeInterval(2400)
+            while local == nil {
+                guard token == generation else { throw CancellationError() }
+                try Task.checkCancellation()
+                if let record = downloads.downloads[episode.id], record.status == "failed" {
+                    throw PodcastError(record.error ?? "The audio couldn’t be downloaded. Try again.")
+                }
+                guard Date() < deadline else { throw URLError(.timedOut) }
+                guard episode.byteCount <= library.state.settings.maximumDownloadBytes,
+                      library.state.settings.maximumDownloadBytes > 0 else { throw PodcastError("The audio exceeds your download limit.") }
+                try await Task.sleep(for: .milliseconds(250))
+                local = downloads.localURL(episode.id)
+            }
+            stopQueueDownloadChime(); setBuffering(true)
+        }
         let cachedDuration = local == nil ? nil : downloads.cachedDuration(episode.id)
         let asset = installItem(episode, url: local ?? episode.mediaURL, token: token)
         publish()

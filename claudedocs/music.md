@@ -1034,3 +1034,53 @@ Live Google synthesis has not been exercised with a user credential.
 See [composable-automation.md](composable-automation.md) for the App Entity and
 App Intent surface, mutation notifications, change tokens and the Reader-to-Music
 Shortcuts workflow.
+
+## YouTube audio through Luna Mac (2026-11-01)
+
+The Podcasts root places **Add YouTube Audio** below Home, and Home offers the
+same action. It accepts pasted watch, `youtu.be` share, Shorts, live-video and
+embed links, including sharing/tracking parameters. The action is absent until
+the paired Mac advertises this capability; older companions and unavailable
+connections quietly hide it. A previously downloaded episode remains playable
+without the Mac or these tools.
+
+Luna Mac checks Homebrew's standard Apple Silicon/Intel locations and its PATH,
+queries the installed `yt-dlp` formula, and verifies that formula's executable.
+A standalone/pip installation does not enable the feature. Detection runs at Mac
+startup; **Settings → Audio → Check for YouTube Audio** checks again. Nothing is
+automatically installed, and an unavailable feature has no iOS setup/upsell UI.
+Homebrew's yt-dlp dependencies supply its JavaScript runtime through the brew
+prefix's bin directory, including when Luna Mac launches without a shell PATH.
+
+`CompanionYouTubeAudio` serves jobs over the existing authenticated Music RPC.
+It passes canonical single-video URLs to yt-dlp as arguments, never shell text,
+and disables user configuration and plugin directories. Extraction requests
+`bestaudio[ext=m4a][protocol=https]` with `--skip-download --dump-single-json`.
+Only an audio-only M4A HTTPS result is handed to iOS, with its HTTP headers and
+metadata. This selects natively playable AAC/M4A without adding ffmpeg or
+performing a lossy conversion. A video without that format fails explicitly.
+A tool failure runs `brew update`, then `brew upgrade yt-dlp`, and retries once;
+concurrent upgrades are shared and further upgrade attempts are limited to once
+per 15 minutes. Failed upgrades stop the job. Jobs are polled rather than keeping
+an RPC open through extraction, Homebrew work or downloading.
+
+The direct iOS leg uses the existing background podcast URLSession, including
+cellular-download policy and task restoration. HTTP/media rejection or an
+unplayable response asks the Mac to download the audio with yt-dlp, then reads
+bounded 512 KiB ranges over the paired connection. Offline/DNS/timeout errors,
+cancellation, denied cellular data, and local storage failures do **not** trigger
+a Mac download. TLS/connection failures are retryable as iOS download failures.
+An interrupted Mac transfer can be retried from podcast download management;
+the Mac must stay awake and reachable, and iOS may interrupt this app-owned leg
+when its background execution time expires.
+
+Successful files enter the ordinary podcast download manifest, byte budget,
+queue-priority scheduler, offline player and played-file cleanup. Failed requests
+remain retryable in **Settings → Manage Downloads**. Queue removal/preemption
+cannot install a stale result. A queued YouTube item waits for its owned audio;
+the canonical YouTube webpage is never passed to AVPlayer as a stream.
+The library stores only the stable video ID and canonical page URL. Expiring
+media URLs/headers stay out of library and download manifests; the background
+URLSession owns its pending request. These device-local episodes are excluded
+from podcast iCloud sync. Mac temporary files are released after transfer or
+failure and abandoned jobs/files expire after 24 hours.

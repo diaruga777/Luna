@@ -160,3 +160,14 @@ broker keep Apple traffic separate from Vault sync. The transport-aware Mac help
 is wired into fallback after native reachability failure. The synthetic Apple
 protocol has been checked through a real private relay and the production broker;
 physical acceptance remains pending. See the Code status report.
+
+## Optional YouTube audio
+
+The Music RPC includes an optional YouTube-audio capability and opaque, polled
+jobs for resolution, fallback download, bounded reads and release. The service
+requires a locally installed Homebrew `yt-dlp` formula and is independent of Vault
+folder permissions. It shares the existing authenticated channel and survives
+connection replacement while the companion remains running. Responses are
+rechecked against session revocation before delivery. See
+[YouTube audio through Luna Mac](music.md#youtube-audio-through-luna-mac-2026-11-01)
+for tool discovery, retry policy and iOS behavior.

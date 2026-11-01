@@ -1,4 +1,5 @@
 import UIKit
+import Combine
 import LunaPodcastCore
 import LunaMusicCore
 import LunaDesignSystem
@@ -75,6 +76,8 @@ import LunaDesignSystem
 @MainActor final class PodcastBrowserViewController: PodcastListViewController, UISearchResultsUpdating {
     weak var navigationOwner: UIViewController? { didSet { configureSearch() } }
     var mode = 0 { didSet { cancelDirectoryOpening(); cancelPrefetching(); configureSearch(); reload(); if mode == 1 { Task { await discover() } } } }
+    var youtube = YouTubePodcastController.shared
+    private var youtubeAvailability: AnyCancellable?
     private let search = LibrarySearchController(placeholder: "All Podcasts", identifier: "podcasts.search", label: "Search podcasts")
     private var searchTask: Task<Void, Never>?
     private var results: [PodcastDirectoryResult] = []
@@ -90,6 +93,9 @@ import LunaDesignSystem
         super.viewDidLoad(); search.searchResultsUpdater = self
         search.searchBar.placeholder = "All Podcasts"; search.searchBar.scopeButtonTitles = ["Shows", "Episodes", "Your Library"]
         search.searchBar.delegate = self; search.searchBar.accessibilityIdentifier = "podcasts.search"
+        youtubeAvailability = youtube.$available.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
         configureSearch(); reload()
     }
     private func configureSearch() {
@@ -117,7 +123,7 @@ import LunaDesignSystem
     }
     private func openPage(_ mode: Int, title: String) {
         view.endEditing(true)
-        let page = PodcastBrowserViewController(); page.mode = mode; page.title = title
+        let page = PodcastBrowserViewController(); page.youtube = youtube; page.mode = mode; page.title = title
         navigationController?.pushViewController(page, animated: true)
     }
     func discover(force: Bool = false) async {
@@ -146,7 +152,7 @@ import LunaDesignSystem
         table.tableFooterView = nil; table.tableHeaderView = nil
         switch showingSearch ? 3 : mode {
         case 0:
-            sections = []
+            sections = youtube.available ? [.init(title: "", rows: youtubeRows)] : []
             if let id = state.lastPlayedEpisodeID, let episode = state.episodes[id] { sections.append(.init(title: "Continue Listening", rows: [.episode(episode)])) }
             let recent = state.progress.filter { $0.value.lastPlayedAt != nil }.sorted { $0.value.lastPlayedAt! > $1.value.lastPlayedAt! }.prefix(20).compactMap { state.episodes[$0.key] }
             sections += [.init(title: "Latest Episodes", rows: latest.prefix(30).map(Row.episode)), .init(title: "Recently Played", rows: recent.map(Row.episode))]
@@ -160,7 +166,8 @@ import LunaDesignSystem
             else if let message = discoveryMessage { empty("Unable to Load Shows", detail: message, atTop: true, retry: { [weak self] in Task { await self?.discover() } }) }
         case 2, 4:
             let browsing: [Row] = mode == 4 ? [
-                .action("Home", "house") { [weak self] in self?.openPage(0, title: "Home") },
+                .action("Home", "house") { [weak self] in self?.openPage(0, title: "Home") }
+            ] + youtubeRows + [
                 .action("New", "sparkles") { [weak self] in self?.openPage(1, title: "New") }
             ] : []
             sections = [.init(title: "", rows: browsing + (ReaderPodcastsViewController.isReaderInstalled ? [
@@ -216,6 +223,25 @@ import LunaDesignSystem
                 self.results = results; isSearching = false; reload(); prefetch(Array(results.prefix(3)))
             } catch { guard !Task.isCancelled, let self, searchToken == token else { return }; message = error.localizedDescription; isSearching = false; reload() }
         }
+    }
+    private var youtubeRows: [Row] {
+        guard youtube.available else { return [] }
+        return [.action("Add YouTube Audio", "link") { [weak self] in self?.addYouTubeAudio() }]
+    }
+    private func addYouTubeAudio() {
+        let alert = UIAlertController(title: "Add YouTube Audio", message: nil, preferredStyle: .alert)
+        alert.addTextField {
+            $0.placeholder = "YouTube link"; $0.keyboardType = .URL
+            $0.autocapitalizationType = .none; $0.autocorrectionType = .no
+            $0.accessibilityIdentifier = "podcasts.youtubeURL"
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Add to Queue", style: .default) { [weak self, weak alert] _ in
+            guard let self else { return }
+            let input = alert?.textFields?.first?.text ?? ""
+            PodcastUI.run(self) { _ = try await self.youtube.enqueue(input) }
+        })
+        present(alert, animated: true)
     }
     private func openEpisodes(title: String, episodes: [PodcastEpisode] = [], shows: [PodcastShow] = []) {
         navigationController?.pushViewController(PodcastStaticListViewController(title: title, episodes: episodes, shows: shows), animated: true)

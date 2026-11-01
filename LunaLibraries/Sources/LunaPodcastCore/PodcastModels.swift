@@ -72,6 +72,8 @@ public struct PodcastEpisode: Codable, Identifiable, Equatable, Sendable {
     public var summary: String = ""
     public var publishedAt: Date
     public var mediaURL: URL
+    /// A stable source ID; expiring media URLs and request headers stay out of the library.
+    public var youtubeVideoID: String?
     public var mediaType: String = "audio/mpeg"
     public var byteCount: Int64 = 0
     public var duration: Double = 0

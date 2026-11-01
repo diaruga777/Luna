@@ -24,6 +24,12 @@ public actor CompanionMusicLibrary {
         let response: MusicFileResponse
         do {
             let request = try JSONDecoder().decode(MusicFileRequest.self, from: payload)
+            if request.operation == .youtube {
+                guard let youtube = request.youtube else { throw MusicFileError("Invalid audio request.") }
+                var result = MusicFileResponse()
+                result.youtube = await CompanionYouTubeAudio.shared.handle(youtube)
+                return (try? JSONEncoder().encode(result)) ?? Data()
+            }
             try await CompanionFileAccess.shared.checkDirectory(root.deletingLastPathComponent())
             if !loadedCache {
                 root = root.resolvingSymlinksInPath()
@@ -39,6 +45,7 @@ public actor CompanionMusicLibrary {
     }
     public func perform(_ request: MusicFileRequest) async throws -> MusicFileResponse {
         switch request.operation {
+        case .youtube: throw MusicFileError("Use the audio service for this request.")
         case .catalog:
             guard request.offset >= 0, request.offset <= Int64(Int.max) else { throw MusicFileError("Invalid music page.") }
             if request.offset == 0, Date().timeIntervalSince(scannedAt) > scanInterval { try await scan() }

@@ -501,6 +501,7 @@ public final class CompanionBEPDelegate: BEPConnectionDelegate, @unchecked Senda
             guard request.offset == 0, request.size == 0, request.hash.isEmpty, !request.fromTemporary,
                   request.name.utf8.count <= 32_768, let data = Data(base64Encoded: request.name) else { return .failure(.invalidFile) }
             let response = await music.handle(data)
+            guard transferLock.withLock({ authorized && !revoked }) else { return .failure(.noSuchFile) }
             guard response.count <= MusicFileProtocol.maximumResponseSize else { return .failure(.generic) }
             return .success(response)
         }

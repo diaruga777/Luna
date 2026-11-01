@@ -61,13 +61,14 @@ public struct MusicFile: Codable, Equatable, Sendable {
     public func id(peer: String) -> MusicID { MusicID("vault:\(peer):\(path)") }
 }
 public struct MusicFileRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case catalog, read }
+    public enum Operation: String, Codable, Sendable { case catalog, read, youtube }
     public var operation: Operation
     public var path: String = ""
     public var version: String = ""
     public var offset: Int64 = 0
     public var length: Int = 0
     public var generation: String?
+    public var youtube: YouTubeAudioRequest?
     public init(_ operation: Operation, path: String = "", version: String = "", offset: Int64 = 0,
                 length: Int = 0, generation: String? = nil) {
         self.operation = operation; self.path = path; self.version = version
@@ -80,6 +81,7 @@ public struct MusicFileResponse: Codable, Sendable {
     public var generation: String?
     public var data: Data?
     public var error: String?
+    public var youtube: YouTubeAudioResponse?
     public init(files: [MusicFile] = [], nextOffset: Int64? = nil, generation: String? = nil,
                 data: Data? = nil, error: String? = nil) {
         self.files = files; self.nextOffset = nextOffset; self.generation = generation

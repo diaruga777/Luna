@@ -20,6 +20,9 @@ struct CompanionView: View {
     var revealFolder: () -> Void
     var forgetConnection: () -> Void
     var openPrivacy: () -> Void
+    var checkYouTubeAudio: () async -> Bool
+    @State private var checkingAudio = false
+    @State private var audioCheckResult: String?
     @State private var copied = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var state: CompanionPresentation.Snapshot { model.snapshot }
@@ -81,6 +84,20 @@ struct CompanionView: View {
                             .accessibilityLabel("Open shared folder in Finder")
                         } label: { Label("Folder", systemImage: "folder") }
                         Button("Choose Folder…", action: chooseFolder)
+                    }
+                }
+                Section("Settings") {
+                    DisclosureGroup("Audio") {
+                        Button(checkingAudio ? "Checking…" : "Check for YouTube Audio") {
+                            checkingAudio = true
+                            Task { @MainActor in
+                                let available = await checkYouTubeAudio()
+                                audioCheckResult = available ? "YouTube audio is available." : "YouTube audio isn’t available."
+                                checkingAudio = false
+                            }
+                        }
+                        .disabled(checkingAudio)
+                        if let audioCheckResult { Text(audioCheckResult).foregroundStyle(.secondary) }
                     }
                 }
                 if state.paired {

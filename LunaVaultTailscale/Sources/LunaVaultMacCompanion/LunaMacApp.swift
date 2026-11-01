@@ -36,7 +36,8 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
                 NSWorkspace.shared.open(URL(fileURLWithPath: self.controller.sharedFolderPath))
             },
             forgetConnection: { [weak self] in self?.forgetConnection() },
-            openPrivacy: { [weak self] in self?.openPrivacySettings() }
+            openPrivacy: { [weak self] in self?.openPrivacySettings() },
+            checkYouTubeAudio: { await CompanionYouTubeAudio.shared.refreshCapability() }
         ))
         let appMenu = NSMenu()
         let appItem = NSMenuItem(); appMenu.addItem(appItem)
@@ -81,6 +82,7 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
             }
         }
         controller.start()
+        Task { await CompanionYouTubeAudio.shared.refreshCapability() }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showWindow(); return true

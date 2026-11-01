@@ -1084,3 +1084,15 @@ media URLs/headers stay out of library and download manifests; the background
 URLSession owns its pending request. These device-local episodes are excluded
 from podcast iCloud sync. Mac temporary files are released after transfer or
 failure and abandoned jobs/files expire after 24 hours.
+
+Validation: 12 iOS YouTube cases pass, including the conditional rendered row,
+sharing-link deduplication, request headers, direct success, media rejection,
+connectivity/local-error exclusions, bounded fallback transfer, manifest restore,
+cleanup and cancellation. The focused iOS run passes 22 cases (two generated-MP3
+fixture cases skip); all 15 Mac music/service, 13 companion and 46 Foundation
+podcast tests pass. The supplied `youtu.be` example resolved live to an audio-only
+AAC/M4A HTTPS stream; fallback/network variants use deterministic fixtures. The
+broader Music run had one existing failure in
+`PodcastLocalResumeTests.testPauseImmediatelyPrimesColdAndInterruptedPodcastAndRestoresPosition`
+(three activation callbacks instead of two), reproduced with these iOS changes
+removed. It is not changed by this feature.

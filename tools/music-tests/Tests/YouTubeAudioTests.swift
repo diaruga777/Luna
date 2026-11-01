@@ -102,6 +102,20 @@ final class YouTubeAudioTests: XCTestCase {
         let safe = try CompanionYouTubeAudio.metadata(JSONSerialization.data(withJSONObject: json), video: video)
         XCTAssertEqual(safe.headers, ["User-Agent": "Good"])
     }
+    func testCommandRunnerReturnsOutputAndStopsOnTimeoutOrCancellation() async throws {
+        let bin = URL(fileURLWithPath: "/usr/bin")
+        let output = try await CompanionYouTubeAudio.run(.init(executable: bin.appendingPathComponent("printf"), arguments: ["%s", "safe output"], bin: bin))
+        XCTAssertEqual(String(data: output, encoding: .utf8), "safe output")
+        let started = Date()
+        do {
+            _ = try await CompanionYouTubeAudio.run(.init(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["5"], bin: bin, timeout: 0.05))
+            XCTFail("Expected process timeout")
+        } catch { XCTAssertLessThan(Date().timeIntervalSince(started), 3) }
+        let task = Task { try await CompanionYouTubeAudio.run(.init(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["5"], bin: bin)) }
+        try await Task.sleep(for: .milliseconds(50)); task.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+    }
     private func service(_ root: URL, runner: MockYouTubeTools) -> CompanionYouTubeAudio {
         CompanionYouTubeAudio(cacheDirectory: root, detector: {
             .init(brew: URL(fileURLWithPath: "/fake/brew"), ytDLP: URL(fileURLWithPath: "/fake/yt-dlp"), bin: URL(fileURLWithPath: "/fake"))

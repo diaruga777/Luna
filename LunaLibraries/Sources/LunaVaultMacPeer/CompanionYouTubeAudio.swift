@@ -214,7 +214,7 @@ public actor CompanionYouTubeAudio {
         return nil
     }
     static func run(_ command: Command) async throws -> Data {
-        let worker = Task.detached(priority: .utility) { () throws -> Data in
+        let worker = Task.detached(priority: .utility) { () async throws -> Data in
             let staging = FileManager.default.temporaryDirectory.appendingPathComponent("luna-ytdlp-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: staging) }
@@ -240,11 +240,11 @@ public actor CompanionYouTubeAudio {
                 if Task.isCancelled || Date() > deadline || size > 4 * 1024 * 1024 || errorSize > 1024 * 1024 ||
                     (command.maximumBytes > 0 && Int64(audioSize) > command.maximumBytes) {
                     interrupted = true; process.terminate()
-                    Thread.sleep(forTimeInterval: 0.2)
+                    try? await Task.sleep(for: .milliseconds(200))
                     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
                     break
                 }
-                Thread.sleep(forTimeInterval: 0.1)
+                try? await Task.sleep(for: .milliseconds(100))
             }
             process.waitUntilExit(); try Task.checkCancellation()
             guard !interrupted, process.terminationStatus == 0 else {

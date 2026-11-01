@@ -4,7 +4,7 @@ import Foundation
 /// a captured note to a small number of strongly related sheets.
 public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
     public enum Source: String, Codable, Sendable, CaseIterable {
-        case typed, mention, intent, voice
+        case typed, mention, intent, voice, share
     }
 
     public var id: NoteID

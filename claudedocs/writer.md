@@ -1,5 +1,21 @@
 # Luna Writer
 
+## Share-sheet captures
+
+`LunaWriterShare` (`$(PRODUCT_BUNDLE_PREFIX).writer.share`) accepts text, text
+files and URLs. Note is selected initially and Save Note & Close is the quick
+capture action. New Document shows an optional title and saves the shared text
+as its body. Successful saves close the extension and the system share sheet.
+
+Captures are durably published into `CompanionShares/writer` in the App Group;
+Writer consumes them when its scene becomes active. Its existing private database
+and Files-visible library keep their locations. Notes arrive whole in the Inbox
+with source `share`; documents receive their own sheet. Capture UUIDs become
+note/document IDs, so replay after a process exit cannot duplicate them. A capture
+is removed only after storage succeeds; failures remain available to retry and
+are shown when Writer is active.
+
+
 ## Library navigation refinement (September 30, 2026)
 
 The library uses native grouped destinations on iPhone and an outline sidebar

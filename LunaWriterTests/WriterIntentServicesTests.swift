@@ -1,3 +1,4 @@
+import LunaCompanionShareCore
 //
 //  WriterIntentServicesTests.swift
 //  LunaWriterTests
@@ -10,6 +11,26 @@ import LunaWriterModels
 import LunaAppConfig
 
 final class WriterIntentServicesTests: XCTestCase {
+
+    func testSharedNoteAndDocumentReplayKeepsOneOfEach() throws {
+        let stack = try makeWriterStack()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = CompanionShareInbox(root: root)
+        let note = CompanionShareCapture(kind: .note, text: "https://example.com/a")
+        let document = CompanionShareCapture(kind: .document, text: "Shared body", title: "A title")
+        for _ in 0..<2 {
+            try inbox.save(note); try inbox.save(document)
+            try stack.importSharedCaptures(from: inbox)
+            XCTAssertTrue(try inbox.pending().isEmpty)
+        }
+        XCTAssertEqual(try stack.library.note(NoteID(note.id))?.text, "https://example.com/a")
+        XCTAssertEqual(try stack.library.note(NoteID(note.id))?.source, .share)
+        XCTAssertEqual(try stack.library.unattachedNotes().count, 1)
+        let sheet = try XCTUnwrap(try stack.library.document(DocumentID(document.id)))
+        XCTAssertEqual(try stack.textStore.loadText(sheet), "# A title\n\nShared body")
+        XCTAssertEqual(try stack.intents.findDocuments().filter { $0.id == sheet.id }.count, 1)
+    }
 
     func testANoteAddressedToASheetGoesThereWhole() throws {
         let stack = try makeWriterStack(embedding: ScriptedEmbedding(fallback: [1, 0]))

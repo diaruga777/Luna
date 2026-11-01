@@ -151,6 +151,10 @@ extension SQLiteWriterLibrary {
     // MARK: - Writing
 
     public func createDocument(in group: GroupID, title: String?) throws -> WriterDocument {
+        try createDocument(in: group, title: title, id: DocumentID())
+    }
+
+    public func createDocument(in group: GroupID, title: String?, id: DocumentID) throws -> WriterDocument {
         let now = Date()
         let resolved = title.flatMap { $0.isEmpty ? nil : $0 }
             ?? L10nWriterStorage.untitledDocumentTitle
@@ -162,7 +166,7 @@ extension SQLiteWriterLibrary {
             }
         }) ?? 0)
         let document = WriterDocument(
-            groupID: group, title: resolved, snippet: "", sortIndex: nextIndex,
+            id: id, groupID: group, title: resolved, snippet: "", sortIndex: nextIndex,
             createdAt: now, updatedAt: now)
         try database.transaction { db in
             try db.run(

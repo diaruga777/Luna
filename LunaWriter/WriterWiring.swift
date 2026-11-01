@@ -1,4 +1,5 @@
 import UIKit
+import LunaCompanionShareCore
 import LunaDesignSystem
 import LunaGaze
 import LunaWriterEditor
@@ -51,6 +52,16 @@ import LunaWriterVoice
         try MainActor.assumeIsolatedIfNeeded { try storageStack().intents }
     }
 
+    private static func importSharedCaptures() {
+        do { try storageStack().importSharedCaptures(from: .production("writer")) }
+        catch {
+            guard let root, root.presentedViewController == nil else { return }
+            let alert = UIAlertController(title: "Couldn’t import shared text", message: error.localizedDescription, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            root.present(alert, animated: true)
+        }
+    }
+
     static func applicationDidEnterBackground() {
         openSessions.flushAll()
     }
@@ -67,6 +78,7 @@ import LunaWriterVoice
     /// on the way back to the foreground picks it up immediately instead of
     /// waiting for the next unrelated write.
     static func sceneWillEnterForeground() {
+        importSharedCaptures()
         storage?.watcher.scanNow()
         // Before the scene's first foreground frame, so the keyboard is in
         // it rather than sliding up once the app is active.
@@ -75,6 +87,7 @@ import LunaWriterVoice
 
     /// The writer left with the keyboard up and comes back to it up.
     static func sceneDidBecomeActive() {
+        importSharedCaptures()
         root?.resumeRecording()
         root?.refocusEditorIfNeeded()
     }

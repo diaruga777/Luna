@@ -259,7 +259,7 @@ final class VaultVisualFlowTests: XCTestCase {
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
             client: .vault, pairingHandler: { _ in })
         try await host(controller)
-        try await waitUntil { controller.tableView.numberOfSections == 3 && controller.tableView.numberOfRows(inSection: 1) == 3 }
+        try await waitUntil { controller.tableView.numberOfSections == 6 && controller.tableView.numberOfRows(inSection: 1) == 3 }
         for row in 0..<2 {
             let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: row, section: 1))
             XCTAssertTrue(cell.contentView.subviews.contains { $0.accessibilityIdentifier == "luna.mac.storage.volume" })

@@ -154,23 +154,19 @@ final class VaultConnectedPairingTests: XCTestCase {
         streams.0.close(); streams.1.close()
     }
 
-    func testCodeRequestsRequireSharedPairingAndStopAfterDisconnect() async throws {
+    func testRetiredCodeServiceIsRejectedEvenForApprovedPeers() async throws {
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("index.sqlite"))
-        let payload = Data("code request".utf8)
-        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault", codeHandler: { $0 })
+        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault")
         let streams = PipeByteStream.pair()
+        defer { streams.0.close(); streams.1.close() }
         let connection = BEPConnection(stream: streams.0, peerDevice: phone,
             localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
-        let request = BEPRequest(id: 1, folder: "luna-code-v1", name: payload.base64EncodedString(), offset: 0, size: 0, hash: Data())
-        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran before pairing approval") }
+        let request = BEPRequest(id: 1, folder: "luna-code-v1", name: Data().base64EncodedString(), offset: 0, size: 0, hash: Data())
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code request before approval") }
         delegate.startServing(connection)
-        let result = await delegate.connection(connection, serve: request)
-        switch result { case .success(let bytes): XCTAssertEqual(bytes, payload); case .failure: XCTFail("Approved Code request failed") }
-        await delegate.connection(connection, didCloseWith: nil)
-        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran after disconnect") }
-        streams.0.close(); streams.1.close()
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Retired Code service accepted request") }
     }
 
     func testInvalidBlockLayoutsFailBeforeRequestOrWrite() async throws {
@@ -1091,11 +1087,11 @@ final class UnifiedMacConnectionTests: XCTestCase {
         let secondStatus = await second.connectionStatus()
         XCTAssertEqual(secondStatus, .connected)
         XCTAssertEqual(clients.clients, [.vault, .music])
-        let code = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
-        await code.reconnect()
+        let sharedVault = try LunaMacConnection.makeRuntime(client: .vault, store: secondStore, credentials: credentials)
+        await sharedVault.reconnect()
         XCTAssertEqual(clients.clients, Set(LunaMacClient.allCases))
         // A different iCloud Keychain cannot replace the approved identity.
-        let outsider = try LunaMacConnection.makeRuntime(client: .code,
+        let outsider = try LunaMacConnection.makeRuntime(client: .vault,
             store: VaultFolderStore(rootURL: root.appendingPathComponent("OtherAccount")), credentials: MemoryMacCredentials())
         do { try await outsider.pair(code: mac.code.text); XCTFail("Allowed a second account") } catch { }
         XCTAssertEqual(account.trustedDevice?.description, firstSnapshot.localDeviceID)
@@ -1104,18 +1100,18 @@ final class UnifiedMacConnectionTests: XCTestCase {
         XCTAssertFalse(disconnected.isPaired)
         XCTAssertNil(try secondStore.peer())
         XCTAssertNil(try credentials.load()?.pairing)
-        // Code shares this iPad's SQLite store with Music but still has its
+        // Vault shares this iPad's SQLite store with Music but still has its
         // own live session: the missing row must revoke that session too.
-        do { _ = try await code.codeRequest(Data()); XCTFail("Code retained access after shared disconnect") } catch { }
-        let codeStatus = await code.connectionStatus()
-        XCTAssertEqual(codeStatus, .notPaired)
-        await first.stop(); await second.stop(); await code.stop(); await outsider.stop()
+        do { _ = try await sharedVault.macStorage(); XCTFail("Vault retained access after shared disconnect") } catch { }
+        let vaultStatus = await sharedVault.connectionStatus()
+        XCTAssertEqual(vaultStatus, .notPaired)
+        await first.stop(); await second.stop(); await sharedVault.stop(); await outsider.stop()
     }
 
     func testCredentialsArrivingWhileAppIsOpenRestoreWithoutResettingLocalCursors() async throws {
         let credentials = MemoryMacCredentials()
         let secondStore = try VaultFolderStore(rootURL: root.appendingPathComponent("Second"))
-        let second = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
+        let second = try LunaMacConnection.makeRuntime(client: .vault, store: secondStore, credentials: credentials)
         let original = try await second.pairingSnapshot()
         XCTAssertFalse(original.isPaired)
         let source = root.appendingPathComponent("SourceIdentity")
@@ -1168,7 +1164,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
         defer { streams.0.close(); streams.1.close() }
         let connection = BEPConnection(stream: streams.0, peerDevice: phone,
             localHello: BEPHello(deviceName: "Mac", clientName: "Luna Mac", clientVersion: "1"), delegate: delegate)
-        let startup = try JSONEncoder().encode(LunaMacClientStartup(client: .code))
+        let startup = try JSONEncoder().encode(LunaMacClientStartup(client: .vault))
         let request = BEPRequest(id: 1, folder: LunaMacClientStartup.folder,
             name: startup.base64EncodedString(), offset: 0, size: 0, hash: Data())
         if case .success = await delegate.connection(connection, serve: request) { XCTFail("Startup before approval") }
@@ -1179,7 +1175,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
         if case .success = await delegate.connection(connection, serve: unknown) { XCTFail("Accepted unsupported protocol") }
         XCTAssertTrue(clients.clients.isEmpty)
         if case .failure = await delegate.connection(connection, serve: request) { XCTFail("Approved startup failed") }
-        XCTAssertEqual(clients.clients, [.code])
+        XCTAssertEqual(clients.clients, [.vault])
         delegate.revoke()
         delegate.startServing(connection)
         if case .success = await delegate.connection(connection, serve: request) { XCTFail("Revoked delegate reauthorized") }
@@ -1220,7 +1216,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
             let connection = try XCTUnwrap(navigation.topViewController as? LunaMacConnectionViewController)
             connection.loadViewIfNeeded(); connection.beginAppearanceTransition(true, animated: false); connection.endAppearanceTransition()
             for _ in 0..<100 where connection.tableView.numberOfSections == 0 { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertEqual(connection.tableView.numberOfSections, client == .vault ? 5 : 2)
+            XCTAssertEqual(connection.tableView.numberOfSections, client == .vault ? 6 : 3)
             XCTAssertEqual(connection.title, "Luna Mac")
             XCTAssertTrue(allLabels(connection.tableView.tableHeaderView).contains("Already connected"))
             connection.onContinue?()

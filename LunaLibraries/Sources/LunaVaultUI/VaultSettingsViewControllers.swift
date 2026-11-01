@@ -276,11 +276,11 @@ public final class VaultCacheSettingsViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad(); title = "Cache"; view.backgroundColor = .systemBackground
         let text = UILabel()
-        text.text = "Free up space by removing downloaded copies. Pinned files are kept."
+        text.text = "Free up space by removing local copies. Pinned files are kept."
         text.numberOfLines = 0
-        button.setTitle("Remove Unpinned Downloads", for: .normal)
+        button.setTitle("Remove Unpinned Copies", for: .normal)
         button.accessibilityIdentifier = "vault.cache.clear"
-        button.accessibilityLabel = "Remove unpinned Vault downloads"
+        button.accessibilityLabel = "Remove unpinned local Vault files"
         button.addTarget(self, action: #selector(clearCache), for: .touchUpInside)
         status.numberOfLines = 0; status.textColor = .secondaryLabel
         status.accessibilityIdentifier = "vault.cache.status"
@@ -289,11 +289,11 @@ public final class VaultCacheSettingsViewController: UIViewController {
 
     @objc private func clearCache() {
         guard let onClearCache else { status.text = "Cache clearing is unavailable."; return }
-        button.isEnabled = false; status.text = "Removing downloads…"
+        button.isEnabled = false; status.text = "Removing local copies…"
         Task { [weak self] in
             do {
                 try await onClearCache()
-                await MainActor.run { self?.status.text = "Downloads removed. Pinned files were kept." }
+                await MainActor.run { self?.status.text = "Local copies removed. Pinned files were kept." }
             } catch {
                 await MainActor.run { self?.status.text = "Cache could not be cleared: \(error)." }
             }
@@ -363,18 +363,18 @@ public final class VaultUploadSettingsViewController: UIViewController {
         view.backgroundColor = .systemBackground
 
         let heading = UILabel()
-        heading.text = "Upload queued files only on Wi-Fi"
+        heading.text = "Transfer queued files to Mac only on Wi-Fi"
         heading.font = .preferredFont(forTextStyle: .headline)
         heading.numberOfLines = 0
 
         let explanation = UILabel()
-        explanation.text = "Downloads and other syncing can still use mobile data."
+        explanation.text = "Transfers from your Mac and other syncing can still use mobile data."
         explanation.font = .preferredFont(forTextStyle: .body)
         explanation.textColor = .secondaryLabel
         explanation.numberOfLines = 0
 
         wifiOnlySwitch.accessibilityIdentifier = "vault.uploads.wifi-only"
-        wifiOnlySwitch.accessibilityLabel = "Upload queued files only on Wi-Fi"
+        wifiOnlySwitch.accessibilityLabel = "Transfer queued files to Mac only on Wi-Fi"
         wifiOnlySwitch.addTarget(self, action: #selector(valueChanged), for: .valueChanged)
 
         let row = UIStackView(arrangedSubviews: [heading, wifiOnlySwitch])

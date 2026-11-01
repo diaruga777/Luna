@@ -87,7 +87,7 @@ import LunaVaultUI
     }
     static func applicationDidEnterBackground() {
         foregroundTask?.cancel(); foregroundTask = nil
-        if transfers?.isRunning != true, let runtime { Task { await runtime.stop() } }
+        if transfers?.isRunning != true, presenter?.isReceiving != true, let runtime { Task { await runtime.stop() } }
     }
     static func handleSyncBackgroundTask(_ task: BGTask) {
         guard let transfers else { task.setTaskCompleted(success: false); return }
@@ -110,6 +110,11 @@ import LunaVaultUI
     private let photos = VaultPhotoSelectionCoordinator()
     weak var presenter: VaultSyncthingHomeViewController?
     private var previewURL: URL?
+    private weak var transferProgress: VaultTransferProgressViewController?
+    private(set) var isReceiving = false
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var previousIdleTimerDisabled = false
+    private var receiveExpired = false
     private var work: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
     private weak var progress: UIViewController?
@@ -220,8 +225,22 @@ import LunaVaultUI
     }
     func open(_ name: String, macFile: Bool = false) {
         guard work == nil else { return }
-        showProgress(title: "Opening File", filename: (name as NSString).lastPathComponent)
+        isReceiving = true
+        receiveExpired = false
+        previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Vault file transfer") { [weak self] in
+            guard let self else { return }
+            receiveExpired = true
+            work?.cancel()
+            endReceiving()
+        }
+        showProgress(title: "Transferring", filename: (name as NSString).lastPathComponent)
         work = Task {
+            defer { endReceiving() }
+            let report: VaultTransferProgressHandler = { [weak self] value in
+                await self?.updateProgress(value)
+            }
             var prepared: URL?
             do {
                 if VaultVideoEpisodes.isVideo(name) {
@@ -237,7 +256,7 @@ import LunaVaultUI
                     return
                 }
                 if macFile {
-                    let target = try await runtime.macFileURL(path: name)
+                    let target = try await runtime.macFileURL(path: name, progress: report)
                     prepared = target
                     try Task.checkCancellation()
                     await hideProgress()
@@ -248,7 +267,7 @@ import LunaVaultUI
                     work = nil
                     return
                 }
-                let source = try await runtime.fileURL(named: name)
+                let source = try await runtime.fileURL(named: name, progress: report)
                 try Task.checkCancellation()
                 // Quick Look needs the original extension; the durable cache uses
                 // hashed filenames. A hard link preserves the complete downloaded
@@ -279,37 +298,49 @@ import LunaVaultUI
             } catch {
                 if let prepared { try? FileManager.default.removeItem(at: prepared.deletingLastPathComponent()) }
                 await hideProgress()
-                if !Task.isCancelled { show(error, title: "Couldn’t Open File") }
+                if receiveExpired {
+                    show(VaultMacBrowseError("The transfer was interrupted while Vault was in the background. Keep Vault open and try again."), title: "Transfer Interrupted")
+                } else if !Task.isCancelled { show(error, title: "Couldn’t Open File") }
             }
             work = nil
         }
     }
     private func showProgress(title: String, filename: String) {
+        let controller = VaultTransferProgressViewController(filename: filename, transferring: title == "Transferring")
+        transferProgress = controller
+        controller.onCancel = { [weak self] in self?.work?.cancel() }
         progressTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
-            let controller = UIViewController()
-            controller.title = title
-            controller.view.backgroundColor = .systemBackground
-            var loading = UIContentUnavailableConfiguration.loading()
-            loading.text = filename
-            loading.secondaryText = title == "Opening File" ? "Downloading from your Mac…" : "Preparing files for sync to your Mac."
-            controller.contentUnavailableConfiguration = loading
-            controller.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Cancel", primaryAction: UIAction { [weak self] _ in
-                self?.work?.cancel()
-                self?.progress?.dismiss(animated: true)
-                self?.progress = nil
-                self?.presenter?.refresh()
-            })
             let navigation = UINavigationController(rootViewController: controller)
             navigation.isModalInPresentation = true
-            navigation.sheetPresentationController?.detents = [.medium()]
+            navigation.sheetPresentationController?.detents = [.medium(), .large()]
+            if visiblePresenter?.traitCollection.preferredContentSizeCategory.isAccessibilityCategory == true {
+                navigation.sheetPresentationController?.selectedDetentIdentifier = .large
+            }
             progress = navigation
             visiblePresenter?.present(navigation, animated: true)
         }
     }
+    private func updateProgress(_ value: VaultTransferProgress) {
+        transferProgress?.update(value)
+    }
+    private func endReceiving() {
+        guard isReceiving else { return }
+        isReceiving = false
+        presenter?.refresh()
+        UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+        if UIApplication.shared.applicationState == .background, !transfers.isRunning {
+            Task { [runtime] in await runtime.stop() }
+        }
+    }
     private func hideProgress() async {
         progressTask?.cancel(); progressTask = nil
+        transferProgress = nil
         guard let progress, progress.presentingViewController != nil else { return }
         await withCheckedContinuation { continuation in progress.dismiss(animated: true) { continuation.resume() } }
         self.progress = nil

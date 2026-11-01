@@ -16,8 +16,8 @@ struct VaultFileEntity: IndexedEntity {
     @Property(title: "Added Date") var addedDate: Date
     @Property(title: "Size (Bytes)") var size: Int
     @Property(title: "Folder") var folder: Bool
-    @Property(title: "Downloaded") var downloaded: Bool
-    @Property(title: "Keep Downloaded") var pinned: Bool
+    @Property(title: "On This iPhone") var downloaded: Bool
+    @Property(title: "Keep on iPhone") var pinned: Bool
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)", subtitle: "\(path)") }
     init(_ file: VaultFileRecord, folderID: String) {
         // A path on a replacement Mac is a different entity.
@@ -112,7 +112,7 @@ struct FindVaultItemsIntent: AppIntent {
 }
 struct GetVaultFileIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Vault File"
-    static var description = IntentDescription("Export a Vault file, downloading it from your Mac if needed. Choose an item, or leave it blank to get the most recently modified file matching the filters. Requires device authentication. A chosen item must also match any filters.")
+    static var description = IntentDescription("Export a Vault file, transferring it from your Mac if needed. Choose an item, or leave it blank to get the most recently modified file matching the filters. Requires device authentication. A chosen item must also match any filters.")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
     @Parameter(title: "Item", description: "A file from Find Vault Items. Leave blank to find a file using the filters.") var item: VaultFileEntity?
     @Parameter(title: "Search", description: "Words in the file’s name or path. Leave blank to include all names.", default: "") var search: String
@@ -217,12 +217,12 @@ struct DeleteVaultItemsIntent: AppIntent {
     }
 }
 struct SetVaultItemPinnedIntent: AppIntent {
-    static var title: LocalizedStringResource = "Keep Vault File Downloaded"
-    static var description = IntentDescription("Download a Vault file and keep a local copy. Turning Keep Downloaded off allows eviction; it does not delete the file from your Mac.")
+    static var title: LocalizedStringResource = "Keep Vault File on iPhone"
+    static var description = IntentDescription("Transfer a Vault file and keep a local copy. Turning Keep on iPhone off allows eviction; it does not delete the file from your Mac.")
     @Parameter(title: "Item") var item: VaultFileEntity
-    @Parameter(title: "Keep Downloaded", default: true) var pinned: Bool
+    @Parameter(title: "Keep on iPhone", default: true) var pinned: Bool
     static var parameterSummary: some ParameterSummary {
-        Summary("Keep Vault File Downloaded") {
+        Summary("Keep Vault File on iPhone") {
             \.$item
             \.$pinned
         }

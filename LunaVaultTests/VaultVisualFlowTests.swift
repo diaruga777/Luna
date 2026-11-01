@@ -146,6 +146,43 @@ final class VaultVisualFlowTests: XCTestCase {
         root.tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: false)
         try await capture("10-pending-transfer-large-text")
     }
+    func testReceivingSheetSwitchesToBytesAndReportsAStalledPeer() async throws {
+        var now = Date()
+        let root = UIViewController()
+        try await host(root)
+        window?.overrideUserInterfaceStyle = .light
+        let progress = VaultTransferProgressViewController(filename: "Archive.zip", clock: { now })
+        let navigation = UINavigationController(rootViewController: progress)
+        navigation.sheetPresentationController?.detents = [.medium(), .large()]
+        root.present(navigation, animated: false)
+        progress.loadViewIfNeeded()
+        XCTAssertFalse(progress.spinner.isHidden)
+        XCTAssertTrue(progress.progressView.isHidden)
+        // Even before the Mac returns metadata, a long transfer shows zero
+        // bytes and a bar instead of an indefinite activity indicator.
+        now = now.addingTimeInterval(2)
+        try await waitUntil { !progress.progressView.isHidden }
+        XCTAssertTrue(progress.spinner.isHidden)
+        XCTAssertFalse(progress.spinner.isAnimating)
+        XCTAssertEqual(progress.progressView.progress, 0)
+        XCTAssertEqual(progress.byteLabel.text, "Zero KB transferred")
+        progress.update(VaultTransferProgress(completedBytes: 194_000_000, totalBytes: 388_000_000))
+        XCTAssertEqual(progress.progressView.progress, 0.5)
+        XCTAssertTrue(progress.byteLabel.text?.contains("388") == true)
+        XCTAssertEqual(progress.title, "Transferring")
+        try await capture("transfer-receiving-halfway")
+        now = now.addingTimeInterval(16)
+        try await waitUntil { progress.statusLabel.text == "Waiting for your Mac…" }
+        XCTAssertEqual(progress.progressView.progress, 0.5)
+        window?.overrideUserInterfaceStyle = .dark
+        progress.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        navigation.sheetPresentationController?.selectedDetentIdentifier = .large
+        try await capture("transfer-waiting-dark-large-text")
+        progress.update(VaultTransferProgress(completedBytes: 388_000_000, totalBytes: 388_000_000))
+        XCTAssertEqual(progress.progressView.progress, 1)
+        XCTAssertEqual(progress.statusLabel.text, "Finishing transfer…")
+    }
+
     func testDownloadsAreAccessibleOfflineAndExplainEmptyState() async throws {
         let downloaded = VaultPresentedFile(id: "notes.txt", name: "notes.txt", path: "notes.txt",
             modifiedAt: Date(), byteCount: 512, isDownloaded: true)
@@ -154,12 +191,12 @@ final class VaultVisualFlowTests: XCTestCase {
         try await host(controller)
         try await waitUntil { controller.tableView.numberOfRows(inSection: 0) == 1 }
         let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
-        XCTAssertTrue((cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText?.contains("Downloaded") == true)
-        XCTAssertEqual(cell.accessibilityHint, "Open downloaded file")
+        XCTAssertTrue((cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText?.contains("On This iPhone") == true)
+        XCTAssertEqual(cell.accessibilityHint, "Open local file")
         try await capture("13-downloads-offline")
         let empty = VaultBrowseViewController(runtime: VaultPresentationServices(), path: "", downloadsOnly: true)
         try await host(empty)
-        try await waitUntil { empty.emptyStateConfiguration?.text == "No Downloads Yet" }
+        try await waitUntil { empty.emptyStateConfiguration?.text == "No Local Files Yet" }
         try await capture("14-downloads-empty")
     }
 

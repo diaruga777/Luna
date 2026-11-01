@@ -61,7 +61,7 @@ public final class VaultTransfersViewController: UITableViewController {
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { items.isEmpty ? nil : "To Vault on your Mac" }
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         guard !connected, !items.isEmpty || queued > 0 else { return nil }
-        return "Waiting for your Mac. Files will resume uploading when it reconnects."
+        return "Waiting for your Mac. Files will resume transferring when it reconnects."
     }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         errorMessage != nil ? 1 : max(1, items.count + (queued > 0 ? 1 : 0))

@@ -126,8 +126,8 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         if let remoteIdentity {
             if let backend {
                 switch backend.currentAvailability {
-                case .downloading: return VaultPreviewPlan(availability: .downloading, message: "Downloading from Vault…")
-                case .needsDownload: return VaultPreviewPlan(availability: .needsDownload, message: "Download this file to preview it.")
+                case .downloading: return VaultPreviewPlan(availability: .downloading, message: "Transferring from Vault…")
+                case .needsDownload: return VaultPreviewPlan(availability: .needsDownload, message: "Transfer this file to preview it.")
                 case .unavailable: return VaultPreviewPlan(availability: .unavailable, message: "Vault storage is unavailable.")
                 case .failed: return VaultPreviewPlan(availability: .failed, message: "Vault storage reported an error.")
                 case .available, .evicting:
@@ -137,9 +137,9 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                     break
                 }
             }
-            return VaultPreviewPlan(availability: .needsDownload, message: "Download this file to preview it.")
+            return VaultPreviewPlan(availability: .needsDownload, message: "Transfer this file to preview it.")
         }
-        return VaultPreviewPlan(availability: .unavailable, message: "This file is not downloaded on this device.")
+        return VaultPreviewPlan(availability: .unavailable, message: "This file is not on this device.")
     }
 
     /// Requests a complete authenticated download. The requester is injected

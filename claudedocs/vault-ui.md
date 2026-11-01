@@ -10,7 +10,7 @@ setup screens are not the active app and were not redesigned in this pass.
   iOS chooses the search bar placement. No custom glass backgrounds or animations.
 - First launch offers **Connect Mac**, with no empty Recent/Results sections or
   import action that cannot succeed before pairing.
-- Connected/offline libraries show the Mac connection, Mac Files, Vault Folder, Downloads, a Transfers activity row, and
+- Connected/offline libraries show the Mac connection, Mac Files, Vault Folder, On This iPhone, a Transfers activity row, and
   reusable file rows with type symbols, dates, and sizes. Offline wording makes
   clear that downloaded files remain available.
 - Search is debounced and cancellable. Late responses cannot replace a newer
@@ -44,10 +44,23 @@ folder. Large preview copies run off the main actor, and temporary plaintext
 preview copies are removed when Quick Look closes. The add menu offers separate
 file, folder, Photos, and album pickers. Folder import retains nested paths and empty folders.
 Opening waits for the Mac's current index before requesting blocks and retries
-once on a stale or failed block connection. The sheet labels the transfer as a
-download from the Mac and Cancel stops the in-flight request. Quick Look uses a
-hard link to the downloaded cache when possible, avoiding another full copy of
-large files.
+once on a stale or failed block connection. The sheet says “Transferring” and
+switches from its short preparation spinner to a progress bar after one second,
+showing bytes written out of the file size for both Vault-folder blocks and Mac
+Files ranges. It shows zero bytes while waiting for metadata, “Waiting for your
+Mac…” after 15 seconds without byte progress, and “Finishing transfer…” while
+checking the completed file. Cancel stops outstanding requests and removes
+partial preview files. Quick Look uses a hard link to the local cache when
+possible, avoiding another full copy of large files.
+
+Mac Files keeps up to eight 1-MiB range requests in flight, writes each response
+at its own offset, and checks the original file version on every request and
+again at completion. Every range uses the same authenticated connection; a
+reconnect fails the transfer instead of silently switching sessions. Active
+receives temporarily prevent auto-lock and hold a bounded UIKit background task.
+Backgrounding no longer closes a receive-only session immediately. If background
+time expires, Vault cancels the receive and explains that it needs to stay open;
+this does not promise unlimited background execution.
 The import sheet covers local preparation, then closes so the dedicated Transfers screen can show each
 pending file with bytes sent,
 total bytes, and a progress bar; reaching the byte total means Vault is waiting
@@ -119,9 +132,9 @@ are not implied by these automated checks.
   and per-file transfer cancellation. System navigation and search retain their
   standard appearance. Transfer buttons have 44-point touch targets and separate
   VoiceOver labels; progress text supports Dynamic Type.
-- Downloads opens a local-only list without waiting for the Mac. File rows show
-  Downloaded or On Mac. Downloads has no destructive Mac-file swipe action;
-  Remove Downloads remains in Settings.
+- On This iPhone opens a local-only list without waiting for the Mac. File rows
+  show On This iPhone or On Mac. Local files have no destructive Mac-file swipe
+  action; Remove Local Copies remains in Settings.
 - Byte-only progress changes update visible transfer cells in place. They retain
   the import menu, scroll position, and focus. Recent files use SQLite's limit;
   searches scan cancellable 256-record pages instead of loading every record.
@@ -146,7 +159,7 @@ Mac Files has Home, Desktop, Documents, Downloads, Macintosh HD (`/`), and Volum
 Folder screens show their path, date/size rows, name/date sorting, paging,
 pull-to-refresh, Show Hidden Files, and Go to Folder. These screens have no
 upload or delete action, including when navigating into the Vault via Mac Files.
-Open downloads a temporary file for Quick Look and sharing. The existing Vault
+Open transfers a temporary file for Quick Look and sharing. The existing Vault
 Folder surface retains indexing, durable downloads, imports, and deletion.
 Search explicitly says “Search Vault files and contents.”
 
@@ -158,7 +171,7 @@ iPad window cleanup (2026-10-24): Browse, Mac Files and Transfers use UIKit’s 
 
 ## Video playback
 
-The connected app routes video files from Vault Folder, Downloads, search, and
+The connected app routes video files from Vault Folder, On This iPhone, search, and
 Mac Files into `VaultVideoPlayerViewController`. Other files retain Quick Look.
 `VaultConnectedRuntime.videoSource` reuses an existing current download or opens
 a seekable remote source. `VaultVideoResourceLoader` serves AVFoundation ranges

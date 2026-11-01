@@ -104,6 +104,52 @@ public final class BundledPluginCatalog {
         return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// Debug builds expose bundled plugins without changing the persisted
+    /// release preference. Tests can exercise both policies in the same build.
+    public static var includesUnrevealedPlugins: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// Only management surfaces use this view; runtime loading stays complete.
+    public func managementPlugins(
+        shadowedBy installed: [InstalledPlugin],
+        includeUnrevealed: Bool = BundledPluginCatalog.includesUnrevealedPlugins
+    ) -> [InstalledPlugin] {
+        guard includeUnrevealed || store.bundledPluginsRevealed else { return [] }
+        return plugins(shadowedBy: installed)
+    }
+
+    public func revealForDiagnostics() throws {
+        try store.revealBundledPlugins()
+    }
+
+    /// Called only after a successful import/activation, never for a preview
+    /// or rejected candidate. Host coverage is the runtime's URL prefilter;
+    /// classify is arbitrary JS and cannot be predicted during installation.
+    public func revealIfCompeting(with imported: PluginManifest) throws {
+        guard !store.bundledPluginsRevealed else { return }
+        let competes = plugins().contains { plugin in
+            if plugin.id == imported.id { return true }
+            let shipped = plugin.manifest
+            guard shipped.isIngestPlugin, imported.isIngestPlugin else { return false }
+            if shipped.matchesAnyHost || imported.matchesAnyHost { return true }
+            let shippedSummary = shipped.summary(hooks: [], isBundled: true)
+            let importedSummary = imported.summary(hooks: [], isBundled: false)
+            // Stripping a wildcard gives a representative host. Checking in
+            // both directions covers exact hosts and nested wildcard suffixes.
+            return shipped.hosts.contains {
+                importedSummary.matches(host: $0.hasPrefix("*.") ? String($0.dropFirst(2)) : $0)
+            } || imported.hosts.contains {
+                shippedSummary.matches(host: $0.hasPrefix("*.") ? String($0.dropFirst(2)) : $0)
+            }
+        }
+        if competes { try store.revealBundledPlugins() }
+    }
+
     /// Bundled plugins that no imported plugin shadows.
     ///
     /// An imported plugin with a bundled id REPLACES it while installed, so the

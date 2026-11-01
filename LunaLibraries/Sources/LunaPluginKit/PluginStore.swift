@@ -146,6 +146,25 @@ public final class PluginStore {
     }
     public var scratchRootURL: URL { rootURL.appendingPathComponent("scratch", isDirectory: true) }
 
+    /// A one-way, App-Group-backed preference, independent of any plugin's
+    /// enabled state or lifetime. Removing the competing import never hides
+    /// the bundled plugins again.
+    public var bundledPluginsRevealed: Bool {
+        guard storageAvailable else { return false }
+        return fileManager.fileExists(atPath: bundledVisibilityURL.path)
+    }
+
+    public func revealBundledPlugins() throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
+        if bundledPluginsRevealed { return }
+        try Data().write(to: bundledVisibilityURL, options: .atomic)
+        markChanged()
+    }
+
+    private var bundledVisibilityURL: URL {
+        rootURL.appendingPathComponent("bundled-plugins-revealed")
+    }
+
     // MARK: - The change token
 
     /// A marker file whose contents change on every install and delete. The

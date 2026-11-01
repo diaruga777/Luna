@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaPluginKit
 import LunaStorage
 import LunaDesignSystem
 import LunaSocial
@@ -44,6 +45,17 @@ final class DiagnosticsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        do {
+            if let catalog = PluginPlatformServices.catalog {
+                try catalog.revealBundledPlugins()
+            } else {
+                // Diagnostics can open before background launch services have
+                // installed the catalog. Remember that first visit anyway.
+                try PluginStore.shared.revealBundledPlugins()
+            }
+        } catch {
+            SharedDiagnosticLog.record("Could not reveal bundled plugins: \(error)", category: "plugins")
+        }
         view.backgroundColor = LunaColors.background
 
         textView.isEditable = false

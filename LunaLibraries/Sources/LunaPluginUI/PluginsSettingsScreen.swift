@@ -77,7 +77,7 @@ public final class PluginsSettingsScreen: NavHeaderTableController {
     }
 
     private func reload() {
-        listings = catalog.listings()
+        listings = catalog.managementListings()
         tableView.reloadData()
     }
 

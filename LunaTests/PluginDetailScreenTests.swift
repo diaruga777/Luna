@@ -22,6 +22,8 @@ final class PluginDetailScreenTests: XCTestCase {
         private(set) var deleteCalls: [String] = []
         private(set) var enabledCalls: [(pluginID: String, enabled: Bool)] = []
         var deleteError: Error?
+        var allowsManagement = true
+        func canManage(pluginID: String) -> Bool { allowsManagement }
         private(set) var autoPlayerCalls: [(pluginID: String, enabled: Bool)] = []
 
         init(_ listings: [PluginListing]) { storedListings = listings }
@@ -143,6 +145,24 @@ final class PluginDetailScreenTests: XCTestCase {
             }
         }
         return texts
+    }
+
+    func testHiddenBundledDestinationKeepsSetupFieldsWithoutManagementControls() {
+        let listing = PluginListing(
+            summary: summary(isBundled: true, export: destinationExport(), produces: []),
+            description: nil, status: .enabled, capabilities: [], runsInBackground: false,
+            settings: [field(key: "Address", type: .text)])
+        let catalog = FakeCatalog([listing])
+        catalog.allowsManagement = false
+        let screen = PluginDetailScreen(
+            listing: listing, catalog: catalog, settingsStore: FakePluginSettingsStore(), invoker: nil)
+        screen.loadViewIfNeeded()
+        XCTAssertEqual(screen.numberOfSections(in: screen.tableView), 1)
+        let texts = allRowTexts(screen)
+        XCTAssertTrue(texts.contains("Address"))
+        XCTAssertTrue(texts.allSatisfy {
+            $0 == "Address" || $0 == L10n.string("Plugins_autoSendRow")
+        })
     }
 
     func testAutoPlayerToggleIsOnlyOfferedForMediaAndPersistsAcrossScreens() throws {

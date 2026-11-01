@@ -16,6 +16,24 @@ history — it records the design decisions and each wave's departures from
 plan; where the two disagree, this document and the code win. Read the plan
 once for the "why"; read this for the "what, exactly."
 
+## Bundled plugin visibility
+
+In non-Debug builds, Settings → Plugins and bundle export hide the bundled
+plugins until the user first opens Diagnostics or successfully imports a plugin
+that competes with a bundled plugin's URL coverage. Competition means overlapping
+manifest host patterns between ingest plugins (including `match.any`); importing
+a replacement with a bundled ID also qualifies. Previewing or rejecting an import
+does not reveal anything. Existing competing imports are checked when the catalog
+is created after an app update.
+
+The reveal marker lives under `Plugins/bundled-plugins-revealed` in the App Group.
+It reveals all bundled plugins permanently, including after a competing import is
+disabled or deleted and across app relaunches. Debug builds always show them,
+without setting the marker merely by displaying the list. Runtime loading and
+feature availability always include the bundled plugins. Destination setup such
+as Kindle's address remains available, but source and enable controls stay hidden
+until reveal; the catalog also rejects hidden-plugin enable changes.
+
 ## One-time media installation (TestFlight build 132)
 
 TestFlight 0.1 (132), source commit `b0b7cc41d`, temporarily packaged

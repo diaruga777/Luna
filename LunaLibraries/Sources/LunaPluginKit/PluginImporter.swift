@@ -58,23 +58,25 @@ public final class PluginImporter: PluginImporting {
 
     public func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {
         let staged = try stage(preview, origin: origin)
-        guard let runtime else { return }
-        do {
-            try runtime.activate(pluginID: staged.manifest.id)
-        } catch {
-            // The old source remains available as a value even though the new
-            // version is currently staged in the store. Restore it before
-            // rebuilding the runtime, so a failed update never leaves a
-            // working installation disabled.
+        if let runtime {
             do {
-                try restore(staged)
                 try runtime.activate(pluginID: staged.manifest.id)
-            } catch let rollbackError {
-                throw PluginStoreError.fileSystem(
-                    detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+            } catch {
+                // The old source remains available as a value even though the new
+                // version is currently staged in the store. Restore it before
+                // rebuilding the runtime, so a failed update never leaves a
+                // working installation disabled.
+                do {
+                    try restore(staged)
+                    try runtime.activate(pluginID: staged.manifest.id)
+                } catch let rollbackError {
+                    throw PluginStoreError.fileSystem(
+                        detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+                }
+                throw error
             }
-            throw error
         }
+        try bundled.revealIfCompeting(with: staged.manifest)
     }
 
     /// Transactional, nonblocking installation for UI callers. All runtime
@@ -84,19 +86,21 @@ public final class PluginImporter: PluginImporting {
         _ preview: PluginImportPreview, origin: PluginImportOrigin
     ) async throws {
         let staged = try stage(preview, origin: origin)
-        guard let runtime else { return }
-        do {
-            try await runtime.activateAsync(pluginID: staged.manifest.id)
-        } catch {
+        if let runtime {
             do {
-                try restore(staged)
                 try await runtime.activateAsync(pluginID: staged.manifest.id)
-            } catch let rollbackError {
-                throw PluginStoreError.fileSystem(
-                    detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+            } catch {
+                do {
+                    try restore(staged)
+                    try await runtime.activateAsync(pluginID: staged.manifest.id)
+                } catch let rollbackError {
+                    throw PluginStoreError.fileSystem(
+                        detail: "activation failed (\(error)); rollback failed (\(rollbackError))")
+                }
+                throw error
             }
-            throw error
         }
+        try bundled.revealIfCompeting(with: staged.manifest)
     }
 
     private func stage(

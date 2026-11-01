@@ -18,7 +18,7 @@ enum PluginsSettingsCategory {
             title: L10n.string("Common_plugins"),
             symbol: "puzzlepiece.extension",
             detail: {
-                let count = (PluginPlatformServices.catalog ?? NullPluginCatalog()).listings().count
+                let count = (PluginPlatformServices.catalog ?? NullPluginCatalog()).managementListings().count
                 return count == 0 ? nil : L10n.string("Plugins_countDetail", count)
             },
             requiresLaunchServices: true

@@ -75,31 +75,36 @@ public final class PluginDetailScreen: NavHeaderTableController {
     private func rebuildSections() {
         var result: [RowSection] = []
 
-        var statusRows: [Row] = [.enable]
-        if case .stopped = listing.status { statusRows.append(.reenable) }
-        result.append(
-            RowSection(
-                header: nil, footer: PluginCapabilityCopy.sentence(for: listing.status),
-                rows: statusRows))
-
-        var aboutRows: [Row] = []
-        if let description = listing.description, !description.isEmpty {
-            aboutRows.append(.description(description))
-        }
-        if listing.runsInBackground { aboutRows.append(.runsInBackground) }
-        if !aboutRows.isEmpty {
-            result.append(RowSection(header: L10n.string("Plugins_aboutSectionHeader"), footer: nil, rows: aboutRows))
-        }
-
-        if !listing.capabilities.isEmpty {
+        // Destination setup (for example Kindle's address) remains available
+        // while the bundled plugin's management controls stay hidden.
+        let canManage = catalog.canManage(pluginID: listing.summary.id)
+        if canManage {
+            var statusRows: [Row] = [.enable]
+            if case .stopped = listing.status { statusRows.append(.reenable) }
             result.append(
                 RowSection(
-                    header: L10n.string("Plugins_consentCapabilitiesHeader"), footer: nil,
-                    rows: listing.capabilities.map { .capability($0) }))
+                    header: nil, footer: PluginCapabilityCopy.sentence(for: listing.status),
+                    rows: statusRows))
+
+            var aboutRows: [Row] = []
+            if let description = listing.description, !description.isEmpty {
+                aboutRows.append(.description(description))
+            }
+            if listing.runsInBackground { aboutRows.append(.runsInBackground) }
+            if !aboutRows.isEmpty {
+                result.append(RowSection(header: L10n.string("Plugins_aboutSectionHeader"), footer: nil, rows: aboutRows))
+            }
+
+            if !listing.capabilities.isEmpty {
+                result.append(
+                    RowSection(
+                        header: L10n.string("Plugins_consentCapabilitiesHeader"), footer: nil,
+                        rows: listing.capabilities.map { .capability($0) }))
+            }
         }
 
         var settingsRows: [Row] = listing.settings.map { .field($0) }
-        if listing.summary.produces.contains(.media) { settingsRows.append(.autoShowSafariPlayer) }
+        if canManage, listing.summary.produces.contains(.media) { settingsRows.append(.autoShowSafariPlayer) }
         // A destination decides which capture sources auto-send to it, the
         // same question the two Swift destinations answer. The row appears
         // only where an app installed the screen that answers it.
@@ -113,7 +118,9 @@ public final class PluginDetailScreen: NavHeaderTableController {
                     rows: settingsRows))
         }
 
-        result.append(RowSection(header: nil, footer: nil, rows: [.showSource]))
+        if canManage {
+            result.append(RowSection(header: nil, footer: nil, rows: [.showSource]))
+        }
 
         if !listing.summary.isBundled {
             result.append(RowSection(header: nil, footer: nil, rows: [.delete]))

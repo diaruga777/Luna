@@ -257,7 +257,12 @@ public struct PluginListing: Equatable, Sendable {
 }
 
 public protocol PluginCatalogProviding: AnyObject {
+    /// Complete catalog for feature availability and runtime configuration.
     func listings() -> [PluginListing]
+    /// User-manageable plugins, excluding unrevealed bundled defaults.
+    func managementListings() -> [PluginListing]
+    func canManage(pluginID: String) -> Bool
+    func revealBundledPlugins() throws
     func listing(pluginID: String) -> PluginListing?
     /// The installed file's text, for the read-only source view.
     func sourceText(pluginID: String) -> String?
@@ -265,6 +270,12 @@ public protocol PluginCatalogProviding: AnyObject {
     func setAutoShowSafariPlayer(_ enabled: Bool, pluginID: String) throws
     /// Removes an imported plugin. A bundled plugin cannot be deleted; this throws.
     func delete(pluginID: String) throws
+}
+
+public extension PluginCatalogProviding {
+    func managementListings() -> [PluginListing] { listings() }
+    func canManage(pluginID: String) -> Bool { true }
+    func revealBundledPlugins() throws {}
 }
 
 /// What the consent screen shows before anything is written (§15).

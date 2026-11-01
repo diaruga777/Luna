@@ -10,7 +10,7 @@ final class PluginBundleExportViewController: UITableViewController {
 
     init(catalog: PluginCatalogProviding) {
         self.catalog = catalog
-        listings = catalog.listings()
+        listings = catalog.managementListings()
         selected = Set(listings.map { $0.summary.id })
         super.init(style: .insetGrouped)
         title = L10n.string("PluginBundles_exportTitle")

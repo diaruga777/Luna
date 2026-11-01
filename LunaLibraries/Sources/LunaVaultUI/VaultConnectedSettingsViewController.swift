@@ -231,7 +231,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         case 5:
             guard let storage else { return nil }
             return "Updated \(storage.measuredAt.formatted(date: .omitted, time: .shortened)). Storage sizes are estimates."
-        case 1: return "Removing downloads frees space on this iPhone. Files on your Mac and pending uploads are kept."
+        case 1: return "Removing local copies frees space on this iPhone. Files on your Mac and pending transfers are kept."
         case 2: return "Missing files in search results? Try rebuilding search."
         case 3: return "Original keeps photos and videos in their existing format."
         default: return nil
@@ -279,11 +279,11 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             case (0, 1): content.text = "Reconnect"; content.image = UIImage(systemName: "arrow.clockwise")
             case (0, 2): content.text = "Update Connection"; content.image = UIImage(systemName: "link"); cell.accessoryType = .disclosureIndicator
             case (1, 0):
-                content.text = "Downloaded Files"
+                content.text = "Local Files"
                 content.secondaryText = cache.map { "\($0.fileCount) files · \(ByteCountFormatter.string(fromByteCount: $0.usedBytes, countStyle: .file))" }
                 content.image = UIImage(systemName: "internaldrive")
                 cell.selectionStyle = .none
-            case (1, 1): content.text = "Remove Downloads"; content.image = UIImage(systemName: "arrow.down.circle")
+            case (1, 1): content.text = "Remove Local Copies"; content.image = UIImage(systemName: "arrow.down.circle")
             case (2, _): content.text = "Rebuild Search Index"; content.image = UIImage(systemName: "magnifyingglass")
             case (3, 0):
                 content.text = "Images"; content.secondaryText = imageFormat.title
@@ -393,9 +393,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             navigationController?.pushViewController(LunaMacConnectionViewController(
                 services: runtime, prefilledCode: "", client: client, pairingHandler: pairingHandler), animated: true)
         case (1, 1):
-            confirm(title: "Remove Downloaded Files?", message: "Files on your Mac and pending uploads will be kept. You’ll need a connection to download other files again.", action: "Remove Downloads") { [weak self] in
+            confirm(title: "Remove Local Files?", message: "Files on your Mac and pending transfers will be kept. You’ll need a connection to transfer other files again.", action: "Remove Local Copies") { [weak self] in
                 guard let self else { return }
-                run(message: "Removing downloads…") { [runtime] in try await runtime.clearCache(); return "Downloads removed." }
+                run(message: "Removing local copies…") { [runtime] in try await runtime.clearCache(); return "Local copies removed." }
             }
         case (2, _): run(message: "Rebuilding search index…") { [runtime] in try await runtime.rebuildIndex(); return "Search index is up to date." }
         case (3, 0): chooseImageFormat(from: indexPath)

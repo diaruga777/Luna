@@ -379,7 +379,7 @@ public enum BEPRequestError: Error, Equatable, LocalizedError {
         switch self {
         case .peerCode(.noSuchFile): return "The Mac no longer has this version of the file. Refresh Vault and try again."
         case .peerCode: return "The Mac couldn’t send this file. Keep Luna Vault open on the Mac and try again."
-        case .hashMismatch: return "The file changed while downloading. Refresh Vault and try again."
+        case .hashMismatch: return "The file changed during transfer. Refresh Vault and try again."
         }
     }
 }

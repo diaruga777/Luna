@@ -74,11 +74,11 @@ public struct CompanionMacBrowser: Sendable {
             var info = Darwin.stat()
             guard fstat(descriptor, &info) == 0 else { throw accessError() }
             guard (info.st_mode & S_IFMT) == S_IFREG else {
-                throw VaultMacBrowseError("Only regular files can be downloaded. Open folders to browse their contents.")
+                throw VaultMacBrowseError("Only regular files can be transferred. Open folders to browse their contents.")
             }
             let version = signature(info)
             if request.operation == .stat { return VaultMacBrowseResponse(entries: [entry(url, info)]) }
-            guard request.version == version else { throw VaultMacBrowseError("This file changed on your Mac. Open it again to download the latest copy.") }
+            guard request.version == version else { throw VaultMacBrowseError("This file changed on your Mac. Open it again to transfer the latest copy.") }
             guard request.offset >= 0, request.length > 0, request.length <= VaultMacBrowseProtocol.chunkSize,
                   request.offset <= info.st_size, Int64(request.length) <= info.st_size - request.offset else {
                 throw VaultMacBrowseError("Invalid file range.")
@@ -88,7 +88,7 @@ public struct CompanionMacBrowser: Sendable {
             guard count == request.length else { throw VaultMacBrowseError("The Mac couldn’t read the complete file. Try again.") }
             var after = Darwin.stat()
             guard fstat(descriptor, &after) == 0, signature(after) == version else {
-                throw VaultMacBrowseError("This file changed during download. Open it again.")
+                throw VaultMacBrowseError("This file changed during transfer. Open it again.")
             }
             return VaultMacBrowseResponse(data: bytes)
         }

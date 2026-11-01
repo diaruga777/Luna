@@ -100,6 +100,79 @@ final class VaultConnectedPairingTests: XCTestCase {
         await runtime.stop()
     }
 
+    func test388MBMacTransferReportsWrittenBytesAndMatchesSource() async throws {
+        let folder = directory.appendingPathComponent("Shared")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("Large archive.bin")
+        FileManager.default.createFile(atPath: source.path, contents: nil)
+        let writer = try FileHandle(forWritingTo: source)
+        let total: Int64 = 388_000_000
+        var remaining = total
+        var index = 0
+        while remaining > 0 {
+            let count = Int(min(remaining, 1_048_576))
+            try writer.write(contentsOf: Data(repeating: UInt8(index % 251), count: count))
+            remaining -= Int64(count); index += 1
+        }
+        try writer.close()
+        let server = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
+        defer { server.close() }
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil, localID: transport.identity())
+        try await runtime.pair(code: server.code.text)
+        let progress = TransferProgressRecorder()
+        let start = Date()
+        let url = try await runtime.macFileURL(path: source.path) { await progress.record($0) }
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        print("388 MB encrypted Mac transfer: \(Date().timeIntervalSince(start))s")
+        XCTAssertEqual(try SHA256Digest.hash(fileAt: url), try SHA256Digest.hash(fileAt: source))
+        let values = await progress.values
+        XCTAssertEqual(values.first, VaultTransferProgress(completedBytes: 0, totalBytes: total))
+        XCTAssertEqual(values.last, VaultTransferProgress(completedBytes: total, totalBytes: total))
+        XCTAssertGreaterThan(values.count, 300)
+        XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0.completedBytes < $1.completedBytes })
+        XCTAssertTrue(values.allSatisfy { $0.totalBytes == total })
+        await runtime.stop()
+    }
+
+    func testMacRangeTransferRefillsWindowAndReportsOutOfOrderWrites() async throws {
+        let probe = MacRangeProbe()
+        let progress = TransferProgressRecorder()
+        let url = try await VaultMacFileTransfer.receive(path: "/test.bin", progress: { await progress.record($0) }) {
+            try await probe.request($0)
+        }
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        for index in 0..<12 {
+            let bytes = try file.read(upToCount: VaultMacBrowseProtocol.chunkSize)
+            XCTAssertEqual(bytes, Data(repeating: UInt8(index), count: VaultMacBrowseProtocol.chunkSize))
+        }
+        let peak = await probe.peak
+        let refilled = await probe.refilledBeforeFirst
+        XCTAssertEqual(peak, VaultMacFileTransfer.maximumOutstandingRequests)
+        XCTAssertTrue(refilled)
+        let values = await progress.values
+        XCTAssertEqual(values.last?.completedBytes, Int64(12 * VaultMacBrowseProtocol.chunkSize))
+    }
+
+    func testMacRangeTransferRejectsChangedFileAndCancelsPendingReads() async throws {
+        let changed = MacRangeProbe(changeVersion: true)
+        do {
+            _ = try await VaultMacFileTransfer.receive(path: "/test.bin") { try await changed.request($0) }
+            XCTFail("Accepted a file changed during transfer")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("changed during transfer")) }
+        let probe = MacRangeProbe()
+        let task = Task { try await VaultMacFileTransfer.receive(path: "/test.bin") { try await probe.request($0) } }
+        while await probe.peak == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled transfer succeeded") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let active = await probe.active
+        XCTAssertEqual(active, 0)
+    }
+
     func testMacBrowserPaginationHiddenFilesSymlinksAndChangedFile() throws {
         let browser = CompanionMacBrowser(homeURL: directory)
         for index in 0..<260 { try Data([1, 2, 3]).write(to: directory.appendingPathComponent(String(format: "%03d.txt", index))) }
@@ -154,23 +227,19 @@ final class VaultConnectedPairingTests: XCTestCase {
         streams.0.close(); streams.1.close()
     }
 
-    func testCodeRequestsRequireSharedPairingAndStopAfterDisconnect() async throws {
+    func testRetiredCodeServiceIsRejectedEvenForApprovedPeers() async throws {
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let index = try CompanionIndex(databaseURL: directory.appendingPathComponent("index.sqlite"))
-        let payload = Data("code request".utf8)
-        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault", codeHandler: { $0 })
+        let delegate = CompanionBEPDelegate(rootURL: directory, index: index, localDevice: mac, folderID: "vault")
         let streams = PipeByteStream.pair()
+        defer { streams.0.close(); streams.1.close() }
         let connection = BEPConnection(stream: streams.0, peerDevice: phone,
             localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
-        let request = BEPRequest(id: 1, folder: "luna-code-v1", name: payload.base64EncodedString(), offset: 0, size: 0, hash: Data())
-        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran before pairing approval") }
+        let request = BEPRequest(id: 1, folder: "luna-code-v1", name: Data().base64EncodedString(), offset: 0, size: 0, hash: Data())
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code request before approval") }
         delegate.startServing(connection)
-        let result = await delegate.connection(connection, serve: request)
-        switch result { case .success(let bytes): XCTAssertEqual(bytes, payload); case .failure: XCTFail("Approved Code request failed") }
-        await delegate.connection(connection, didCloseWith: nil)
-        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Code ran after disconnect") }
-        streams.0.close(); streams.1.close()
+        if case .success = await delegate.connection(connection, serve: request) { XCTFail("Retired Code service accepted request") }
     }
 
     func testInvalidBlockLayoutsFailBeforeRequestOrWrite() async throws {
@@ -370,7 +439,7 @@ final class VaultConnectedPairingTests: XCTestCase {
             try await runtime.pair(code: VaultPairingCode(deviceID: replacement, addresses: []).text)
             XCTFail("Pending uploads must prevent changing Mac")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("uploads finish"))
+            XCTAssertTrue(error.localizedDescription.contains("transfers finish"))
         }
         XCTAssertEqual(try store.peer()?.deviceID, peer.deviceID)
         XCTAssertEqual(try store.pendingLocalChanges().count, 1)
@@ -486,7 +555,12 @@ final class VaultConnectedPairingTests: XCTestCase {
         let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil,
             localID: try transport.identity())
         try await runtime.pair(code: server.code.text)
-        let pulled = try await runtime.fileURL(named: "From Mac.bin")
+        let progress = TransferProgressRecorder()
+        let pulled = try await runtime.fileURL(named: "From Mac.bin") { await progress.record($0) }
+        let values = await progress.values
+        XCTAssertEqual(values.first?.completedBytes, 0)
+        XCTAssertEqual(values.last?.completedBytes, Int64(expected.count))
+        XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0.completedBytes < $1.completedBytes })
         XCTAssertEqual(try Data(contentsOf: pulled), expected)
         await runtime.stop()
     }
@@ -1091,11 +1165,11 @@ final class UnifiedMacConnectionTests: XCTestCase {
         let secondStatus = await second.connectionStatus()
         XCTAssertEqual(secondStatus, .connected)
         XCTAssertEqual(clients.clients, [.vault, .music])
-        let code = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
-        await code.reconnect()
+        let sharedVault = try LunaMacConnection.makeRuntime(client: .vault, store: secondStore, credentials: credentials)
+        await sharedVault.reconnect()
         XCTAssertEqual(clients.clients, Set(LunaMacClient.allCases))
         // A different iCloud Keychain cannot replace the approved identity.
-        let outsider = try LunaMacConnection.makeRuntime(client: .code,
+        let outsider = try LunaMacConnection.makeRuntime(client: .vault,
             store: VaultFolderStore(rootURL: root.appendingPathComponent("OtherAccount")), credentials: MemoryMacCredentials())
         do { try await outsider.pair(code: mac.code.text); XCTFail("Allowed a second account") } catch { }
         XCTAssertEqual(account.trustedDevice?.description, firstSnapshot.localDeviceID)
@@ -1104,18 +1178,18 @@ final class UnifiedMacConnectionTests: XCTestCase {
         XCTAssertFalse(disconnected.isPaired)
         XCTAssertNil(try secondStore.peer())
         XCTAssertNil(try credentials.load()?.pairing)
-        // Code shares this iPad's SQLite store with Music but still has its
+        // Vault shares this iPad's SQLite store with Music but still has its
         // own live session: the missing row must revoke that session too.
-        do { _ = try await code.codeRequest(Data()); XCTFail("Code retained access after shared disconnect") } catch { }
-        let codeStatus = await code.connectionStatus()
-        XCTAssertEqual(codeStatus, .notPaired)
-        await first.stop(); await second.stop(); await code.stop(); await outsider.stop()
+        do { _ = try await sharedVault.macStorage(); XCTFail("Vault retained access after shared disconnect") } catch { }
+        let vaultStatus = await sharedVault.connectionStatus()
+        XCTAssertEqual(vaultStatus, .notPaired)
+        await first.stop(); await second.stop(); await sharedVault.stop(); await outsider.stop()
     }
 
     func testCredentialsArrivingWhileAppIsOpenRestoreWithoutResettingLocalCursors() async throws {
         let credentials = MemoryMacCredentials()
         let secondStore = try VaultFolderStore(rootURL: root.appendingPathComponent("Second"))
-        let second = try LunaMacConnection.makeRuntime(client: .code, store: secondStore, credentials: credentials)
+        let second = try LunaMacConnection.makeRuntime(client: .vault, store: secondStore, credentials: credentials)
         let original = try await second.pairingSnapshot()
         XCTAssertFalse(original.isPaired)
         let source = root.appendingPathComponent("SourceIdentity")
@@ -1168,7 +1242,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
         defer { streams.0.close(); streams.1.close() }
         let connection = BEPConnection(stream: streams.0, peerDevice: phone,
             localHello: BEPHello(deviceName: "Mac", clientName: "Luna Mac", clientVersion: "1"), delegate: delegate)
-        let startup = try JSONEncoder().encode(LunaMacClientStartup(client: .code))
+        let startup = try JSONEncoder().encode(LunaMacClientStartup(client: .vault))
         let request = BEPRequest(id: 1, folder: LunaMacClientStartup.folder,
             name: startup.base64EncodedString(), offset: 0, size: 0, hash: Data())
         if case .success = await delegate.connection(connection, serve: request) { XCTFail("Startup before approval") }
@@ -1179,7 +1253,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
         if case .success = await delegate.connection(connection, serve: unknown) { XCTFail("Accepted unsupported protocol") }
         XCTAssertTrue(clients.clients.isEmpty)
         if case .failure = await delegate.connection(connection, serve: request) { XCTFail("Approved startup failed") }
-        XCTAssertEqual(clients.clients, [.code])
+        XCTAssertEqual(clients.clients, [.vault])
         delegate.revoke()
         delegate.startServing(connection)
         if case .success = await delegate.connection(connection, serve: request) { XCTFail("Revoked delegate reauthorized") }
@@ -1220,7 +1294,7 @@ final class UnifiedMacConnectionTests: XCTestCase {
             let connection = try XCTUnwrap(navigation.topViewController as? LunaMacConnectionViewController)
             connection.loadViewIfNeeded(); connection.beginAppearanceTransition(true, animated: false); connection.endAppearanceTransition()
             for _ in 0..<100 where connection.tableView.numberOfSections == 0 { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertEqual(connection.tableView.numberOfSections, client == .vault ? 5 : 2)
+            XCTAssertEqual(connection.tableView.numberOfSections, client == .vault ? 6 : 3)
             XCTAssertEqual(connection.title, "Luna Mac")
             XCTAssertTrue(allLabels(connection.tableView.tableHeaderView).contains("Already connected"))
             connection.onContinue?()
@@ -1231,5 +1305,35 @@ final class UnifiedMacConnectionTests: XCTestCase {
     @MainActor private func allLabels(_ view: UIView?) -> [String] {
         guard let view else { return [] }
         return (view as? UILabel).flatMap(\.text).map { [$0] } ?? view.subviews.flatMap { allLabels($0) }
+    }
+}
+
+private actor TransferProgressRecorder {
+    var values: [VaultTransferProgress] = []
+    func record(_ value: VaultTransferProgress) { values.append(value) }
+}
+
+private actor MacRangeProbe {
+    var active = 0
+    var peak = 0
+    var firstCompleted = false
+    var refilledBeforeFirst = false
+    var stats = 0
+    let changeVersion: Bool
+    init(changeVersion: Bool = false) { self.changeVersion = changeVersion }
+    func request(_ request: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
+        if request.operation == .stat {
+            stats += 1
+            return VaultMacBrowseResponse(entries: [VaultMacBrowseEntry(path: "/test.bin", name: "test.bin",
+                isDirectory: false, size: Int64(12 * VaultMacBrowseProtocol.chunkSize), modifiedAt: .distantPast,
+                version: changeVersion && stats > 1 ? "changed" : "v1")])
+        }
+        let index = Int(request.offset) / VaultMacBrowseProtocol.chunkSize
+        active += 1; peak = max(active, peak)
+        defer { active -= 1 }
+        if index >= VaultMacFileTransfer.maximumOutstandingRequests && !firstCompleted { refilledBeforeFirst = true }
+        try await Task.sleep(for: .milliseconds(index == 0 ? 150 : 5))
+        if index == 0 { firstCompleted = true }
+        return VaultMacBrowseResponse(data: Data(repeating: UInt8(index), count: request.length))
     }
 }

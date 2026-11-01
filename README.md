@@ -93,6 +93,24 @@ selection into the project file, so keep personal signing changes uncommitted.
 Never commit certificates, `.p12`/`.p8` files, provisioning profiles, API
 private keys, or account passwords.
 
+Music, Keyboard and Writer embed their own Share extensions. Each extension needs
+an explicit App ID (`$(PRODUCT_BUNDLE_PREFIX).music.share`, `.keyboard.share`,
+or `.writer.share`) and its own development profile with the shared App Group
+enabled. A wildcard profile cannot supply App Groups. After adding a target,
+open the project in Xcode with automatic signing and your team selected for the
+app and extensions; let Xcode register the IDs and update their profiles before
+retrying Orbit. If an account appears signed in but build tools cannot load its
+session, unlock the Mac and check Xcode's account/team state before reauthenticating.
+
+Share-signing verification (2026-11-02): Xcode registered the three missing Share
+App IDs and generated development profiles using the existing signed-in team.
+Committed detached builds of LunaMusic, LunaKeyboard and LunaWriter passed.
+Strict app signatures and every embedded extension's App Group, exact App ID,
+registered-phone eligibility and provisioning lifetime were verified. No source
+entitlement was removed and no credential or signing identity was changed.
+No physical phone access, installation, renewal, App Store submission or marketplace
+acceptance was performed by this verification.
+
 ## Orbit and Luna Mac
 
 Luna Code and its Mac build/install services moved to the standalone open source

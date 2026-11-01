@@ -11,6 +11,7 @@
 		00F83CC26403EC44DE773845 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		02F0FD5D52D891634476A588 /* MusicVaultWiring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7A6C9554683B8C243EA9E3 /* MusicVaultWiring.swift */; };
 		0416287065E309772B901905 /* LunaPremium in Frameworks */ = {isa = PBXBuildFile; productRef = 3EC2A3CF4A6B73BEFCD569FD /* LunaPremium */; };
+		06191802BAC145A47F633876 /* LunaCompanionSharing in Frameworks */ = {isa = PBXBuildFile; productRef = 1B8D0AF0F18F3EDA46C99B52 /* LunaCompanionSharing */; };
 		0645922E28A16B4A101EB49D /* ShareEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374CB1BF309818C8310B8D2 /* ShareEntry.swift */; };
 		079AD17D832E449279BB89AA /* LunaCompanionSharing in Frameworks */ = {isa = PBXBuildFile; productRef = EB583F5D613AF02A4C1ACFDA /* LunaCompanionSharing */; };
 		09AAEDDBCBA24888AE40F160 /* AutomationAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */; };
@@ -693,6 +694,7 @@
 				09AAEDDBCBA24888AE40F173 /* LunaDesignSystem in Frameworks */,
 				427AFF7133679C5D90475470 /* LunaMusicKit in Frameworks */,
 				15E718910D83F6E5979E1F6D /* LunaCompanionShareCore in Frameworks */,
+				06191802BAC145A47F633876 /* LunaCompanionSharing in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1536,6 +1538,7 @@
 				5C5700000000000000000019 /* LunaDesignSystem */,
 				1D3B744686E24603C334E243 /* LunaMusicKit */,
 				813839B8CD480272406D1B0B /* LunaCompanionShareCore */,
+				1B8D0AF0F18F3EDA46C99B52 /* LunaCompanionSharing */,
 			);
 			productName = LunaMusicTests;
 			productReference = 558A27BF87F234F8DF5CAB1A /* LunaMusicTests.xctest */;
@@ -4143,6 +4146,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaKit;
+		};
+		1B8D0AF0F18F3EDA46C99B52 /* LunaCompanionSharing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaCompanionSharing;
 		};
 		1D3B744686E24603C334E243 /* LunaMusicKit */ = {
 			isa = XCSwiftPackageProductDependency;

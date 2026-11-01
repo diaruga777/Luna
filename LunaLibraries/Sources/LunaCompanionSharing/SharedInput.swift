@@ -1,4 +1,5 @@
 import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 
 public enum SharedInput {
@@ -48,13 +49,35 @@ public enum SharedInput {
     }
     /// Copy inside the provider callback: its URL expires as soon as it returns.
     public static func file(_ provider: NSItemProvider, conformingTo expected: UTType) async throws -> URL {
-        if let type = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: expected) == true }) {
+        let types = provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: expected) == true }
+        let concrete = types.first { UTType($0)?.preferredFilenameExtension != nil }
+        // UIKit's private image representation is a keyed archive, not an
+        // encoded image file. Use the typed object for still images; preserve
+        // the original file representation whenever GIF is offered.
+        if expected == .image, !types.contains(where: { UTType($0)?.conforms(to: .gif) == true }), provider.canLoadObject(ofClass: UIImage.self) {
+            let image: UIImage = try await withCheckedThrowingContinuation { continuation in
+                provider.loadObject(ofClass: UIImage.self) { object, error in
+                    if let error { continuation.resume(throwing: error) }
+                    else if let image = object as? UIImage { continuation.resume(returning: image) }
+                    else { continuation.resume(throwing: CocoaError(.fileReadCorruptFile)) }
+                }
+            }
+            guard let data = image.pngData() else { throw CocoaError(.fileReadCorruptFile) }
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let url = directory.appendingPathComponent("Shared image.png")
+                try data.write(to: url); return url
+            } catch { try? FileManager.default.removeItem(at: directory); throw error }
+        }
+        if let type = concrete ?? types.first {
+            let suggestedName = provider.suggestedName
             return try await withCheckedThrowingContinuation { continuation in
                 provider.loadFileRepresentation(forTypeIdentifier: type) { url, error in
                     do {
                         if let error { throw error }
                         guard let url else { throw CocoaError(.fileNoSuchFile) }
-                        continuation.resume(returning: try stage(url, name: provider.suggestedName, type: UTType(type)!))
+                        continuation.resume(returning: try stage(url, name: suggestedName, type: UTType(type)!))
                     } catch { continuation.resume(throwing: error) }
                 }
             }
@@ -71,10 +94,23 @@ public enum SharedInput {
         let directory = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         do {
+            // Some hosts advertise only public.image and supply an extensionless
+            // temporary URL. Detect its encoded format without decoding the bitmap.
+            var resolvedType = type
+            if type.conforms(to: .image), let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let identifier = CGImageSourceGetType(source), let detected = UTType(identifier as String) {
+                resolvedType = detected
+            }
+            if type.conforms(to: .image), CGImageSourceCreateWithURL(url as CFURL, nil).flatMap({ CGImageSourceGetType($0) }) == nil,
+               let image = try? NSKeyedUnarchiver.unarchivedObject(ofClass: UIImage.self, from: Data(contentsOf: url)),
+               let data = image.pngData() {
+                let destination = directory.appendingPathComponent("Shared image.png")
+                try data.write(to: destination); return destination
+            }
             var filename = ((name ?? url.lastPathComponent) as NSString).lastPathComponent
             if filename.isEmpty || filename == "." || filename == ".." { filename = "Shared file" }
-            if UTType(filenameExtension: (filename as NSString).pathExtension)?.conforms(to: type) != true,
-               let ext = type.preferredFilenameExtension { filename += "." + ext }
+            if UTType(filenameExtension: (filename as NSString).pathExtension)?.conforms(to: resolvedType) != true,
+               let ext = resolvedType.preferredFilenameExtension { filename += "." + ext }
             let destination = directory.appendingPathComponent(filename)
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }

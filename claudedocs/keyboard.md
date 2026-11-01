@@ -5,8 +5,8 @@
 `LunaKeyboardShare` (`$(PRODUCT_BUNDLE_PREFIX).keyboard.share`) accepts text,
 links, images and GIFs from the system share sheet. It asks for a keyword,
 previews the input and saves through `KeyboardStore` into the same App Group
-store used by Save Keyboard Shortcut. Image previews are downsampled; the
-original image/GIF bytes are preserved. Save completes the extension request.
+store used by Save Keyboard Shortcut. Image previews are downsampled. Original GIF files are preserved; UIKit image
+objects are stored as PNG. Save completes the extension request.
 
 
 Luna Keyboard is the revived standalone keyboard from `~/Desktop/clack-1`

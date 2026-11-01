@@ -56,5 +56,6 @@ end
   app.build_phases.delete(signing); app.build_phases << signing
 end
 link(project, project.targets.find { |t| t.name == 'LunaMusic' }, package, 'LunaCompanionSharing')
+link(project, project.targets.find { |t| t.name == 'LunaMusicTests' }, package, 'LunaCompanionSharing')
 %w[LunaWriter LunaMusicTests LunaWriterTests].each { |name| link(project, project.targets.find { |t| t.name == name }, package, 'LunaCompanionShareCore') }
 project.save

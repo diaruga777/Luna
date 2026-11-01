@@ -1,3 +1,6 @@
+import LunaCompanionSharing
+import UIKit
+import UniformTypeIdentifiers
 import LunaCompanionShareCore
 import XCTest
 import AVFoundation
@@ -80,6 +83,52 @@ import LunaPodcastCore
 }
 
 @MainActor final class CompanionShareImportTests: XCTestCase {
+    func testExtensionlessSharedImageKeepsItsBytesAndGetsAUsableFileType() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let bytes = try XCTUnwrap(image.pngData())
+        let source = root.appendingPathComponent("image")
+        try bytes.write(to: source)
+        let provider = NSItemProvider(); provider.suggestedName = "image"
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.image.identifier, fileOptions: [], visibility: .all) { completion in
+            completion(source, false, nil); return nil
+        }
+        let staged = try await SharedInput.file(provider, conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+        XCTAssertEqual(staged.pathExtension, "png")
+        XCTAssertEqual(try Data(contentsOf: staged), bytes)
+    }
+    func testUIKitImageObjectIsStoredAsAnImageInsteadOfAKeyedArchive() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let url = try await SharedInput.file(NSItemProvider(object: image), conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        XCTAssertTrue(["png", "jpg", "jpeg", "heic"].contains(url.pathExtension))
+        XCTAssertNotNil(UIImage(contentsOfFile: url.path))
+    }
+    func testArchivedUIKitImageFromAnotherProcessBecomesAUsableImageFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { context in
+            UIColor.systemPink.setFill(); context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let source = root.appendingPathComponent("image")
+        try NSKeyedArchiver.archivedData(withRootObject: image, requiringSecureCoding: true).write(to: source)
+        let provider = NSItemProvider(); provider.suggestedName = "image"
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.image.identifier, fileOptions: [], visibility: .all) { completion in
+            completion(source, false, nil); return nil
+        }
+        let staged = try await SharedInput.file(provider, conformingTo: .image)
+        defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+        XCTAssertEqual(staged.pathExtension, "png")
+        XCTAssertNotNil(UIImage(contentsOfFile: staged.path))
+    }
     func testInboxCopiesBeforePublishingAndIgnoresIncompleteCaptures() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

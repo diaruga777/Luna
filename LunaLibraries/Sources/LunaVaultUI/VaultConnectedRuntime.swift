@@ -57,7 +57,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         let changesMac = existing?.deviceID != shared.peer?.deviceID
         let changesSessionPeer = connectionPeerID != shared.peer?.deviceID
         guard try !(changesMac || changesSessionPeer) || store.pendingLocalChanges().isEmpty else {
-            throw VaultTransportError.internalError("Finish uploads to your current Mac before using the connection from iCloud.")
+            throw VaultTransportError.internalError("Finish transfers to your current Mac before using the connection from iCloud.")
         }
         let changesIdentity = shared.localID != localID
         if changesIdentity || changesMac || changesSessionPeer || shared.peer == nil {
@@ -101,7 +101,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         defer { busy = false }
         let id = try DeviceID(string: draft.remoteDeviceID)
         if let existing = try store.peer(), existing.deviceID != id, try !store.pendingLocalChanges().isEmpty {
-            throw VaultTransportError.internalError("Some files haven’t reached your current Mac yet. Let uploads finish before connecting a different Mac.")
+            throw VaultTransportError.internalError("Some files haven’t reached your current Mac yet. Let transfers finish before connecting a different Mac.")
         }
         guard id != localID else { throw VaultTransportError.internalError("Enter the Mac's code, not this iPhone's code.") }
         let addresses = try draft.manualAddresses.map { value -> VaultPeerAddress in
@@ -144,7 +144,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
     public func removePairing() async throws {
         guard !busy else { throw VaultTransportError.internalError("Wait for pairing to finish before removing the Mac.") }
         guard try store.pendingLocalChanges().isEmpty else {
-            throw VaultTransportError.internalError("Some files haven’t reached your Mac yet. Connect and let uploads finish before disconnecting.")
+            throw VaultTransportError.internalError("Some files haven’t reached your Mac yet. Connect and let transfers finish before disconnecting.")
         }
         try persistShared?(nil, localID)
         await session.stop(reason: "Unpaired")
@@ -241,9 +241,9 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         } while true
     }
 
-    public func macFileURL(path: String) async throws -> URL {
+    public func macFileURL(path: String, progress: VaultTransferProgressHandler? = nil) async throws -> URL {
         try await prepareConnection(); try await session.announce(client: client)
-        return try await session.downloadMacFile(path: path)
+        return try await session.downloadMacFile(path: path, progress: progress)
     }
 
     public func children(of path: String) async throws -> [VaultPresentedFile] {
@@ -268,22 +268,22 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         } while true
     }
 
-    public func fileURL(named name: String) async throws -> URL {
+    public func fileURL(named name: String, progress: VaultTransferProgressHandler? = nil) async throws -> URL {
         if let url = try cache.cachedURL(for: name) { return url }
         if !(await session.isConnected) { try await session.start() }
         // A socket is usable before the Mac's first index has arrived. A tap
         // during that gap must wait for current block metadata and permission.
         try await session.waitForInitialIndex()
-        do { return try await session.fetchFile(named: name) }
+        do { return try await session.fetchFile(named: name, progress: progress) }
         catch {
             guard !Task.isCancelled, error is BEPRequestError || error is BEPStreamError else { throw error }
             // The Mac can replace a file between index and block request, or
             // a half-open socket can fail its first transfer. One fresh index
             // and connection gives the tap a useful retry without a loop.
-            await session.stop(reason: "Retrying file download")
+            await session.stop(reason: "Retrying file transfer")
             try await session.start(forceLookup: true)
             try await session.waitForInitialIndex()
-            return try await session.fetchFile(named: name)
+            return try await session.fetchFile(named: name, progress: progress)
         }
     }
 

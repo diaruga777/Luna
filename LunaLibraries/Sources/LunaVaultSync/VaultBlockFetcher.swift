@@ -41,7 +41,8 @@ public final class VaultBlockFetcher: @unchecked Sendable {
     public func fetch(_ file: VaultFileRecord, folderID: String,
                       from requester: any VaultBlockRequesting,
                       to destination: VaultBlockDestination = .cache(pinned: false),
-                      now: Date = Date()) async throws -> URL {
+                      now: Date = Date(),
+                      progress: VaultTransferProgressHandler? = nil) async throws -> URL {
         guard file.type == .file, !file.deleted, !file.invalid,
               !file.blocks.isEmpty else { throw VaultBlockFetchError.invalidFile }
         try Task.checkCancellation()
@@ -69,6 +70,7 @@ public final class VaultBlockFetcher: @unchecked Sendable {
         let output = try FileHandle(forWritingTo: temporary)
         defer { try? output.close() }
 
+        await progress?(VaultTransferProgress(completedBytes: 0, totalBytes: file.size))
         try await BEPBlockTransfer.receive(blocks: file.blocks,
             request: { index, block in
                 try await requester.request(folder: folderID, name: file.name,
@@ -76,6 +78,8 @@ public final class VaultBlockFetcher: @unchecked Sendable {
             }, write: { _, block, bytes in
                 try output.seek(toOffset: UInt64(block.offset))
                 try output.write(contentsOf: bytes)
+            }, progress: { completed in
+                await progress?(VaultTransferProgress(completedBytes: completed, totalBytes: file.size))
             })
         try Task.checkCancellation()
         try output.synchronize()

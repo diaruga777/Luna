@@ -100,6 +100,79 @@ final class VaultConnectedPairingTests: XCTestCase {
         await runtime.stop()
     }
 
+    func test388MBMacTransferReportsWrittenBytesAndMatchesSource() async throws {
+        let folder = directory.appendingPathComponent("Shared")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("Large archive.bin")
+        FileManager.default.createFile(atPath: source.path, contents: nil)
+        let writer = try FileHandle(forWritingTo: source)
+        let total: Int64 = 388_000_000
+        var remaining = total
+        var index = 0
+        while remaining > 0 {
+            let count = Int(min(remaining, 1_048_576))
+            try writer.write(contentsOf: Data(repeating: UInt8(index % 251), count: count))
+            remaining -= Int64(count); index += 1
+        }
+        try writer.close()
+        let server = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
+        defer { server.close() }
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: store.identityDirectory))
+        let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil, localID: transport.identity())
+        try await runtime.pair(code: server.code.text)
+        let progress = TransferProgressRecorder()
+        let start = Date()
+        let url = try await runtime.macFileURL(path: source.path) { await progress.record($0) }
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        print("388 MB encrypted Mac transfer: \(Date().timeIntervalSince(start))s")
+        XCTAssertEqual(try SHA256Digest.hash(fileAt: url), try SHA256Digest.hash(fileAt: source))
+        let values = await progress.values
+        XCTAssertEqual(values.first, VaultTransferProgress(completedBytes: 0, totalBytes: total))
+        XCTAssertEqual(values.last, VaultTransferProgress(completedBytes: total, totalBytes: total))
+        XCTAssertGreaterThan(values.count, 300)
+        XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0.completedBytes < $1.completedBytes })
+        XCTAssertTrue(values.allSatisfy { $0.totalBytes == total })
+        await runtime.stop()
+    }
+
+    func testMacRangeTransferRefillsWindowAndReportsOutOfOrderWrites() async throws {
+        let probe = MacRangeProbe()
+        let progress = TransferProgressRecorder()
+        let url = try await VaultMacFileTransfer.receive(path: "/test.bin", progress: { await progress.record($0) }) {
+            try await probe.request($0)
+        }
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        for index in 0..<12 {
+            let bytes = try file.read(upToCount: VaultMacBrowseProtocol.chunkSize)
+            XCTAssertEqual(bytes, Data(repeating: UInt8(index), count: VaultMacBrowseProtocol.chunkSize))
+        }
+        let peak = await probe.peak
+        let refilled = await probe.refilledBeforeFirst
+        XCTAssertEqual(peak, VaultMacFileTransfer.maximumOutstandingRequests)
+        XCTAssertTrue(refilled)
+        let values = await progress.values
+        XCTAssertEqual(values.last?.completedBytes, Int64(12 * VaultMacBrowseProtocol.chunkSize))
+    }
+
+    func testMacRangeTransferRejectsChangedFileAndCancelsPendingReads() async throws {
+        let changed = MacRangeProbe(changeVersion: true)
+        do {
+            _ = try await VaultMacFileTransfer.receive(path: "/test.bin") { try await changed.request($0) }
+            XCTFail("Accepted a file changed during transfer")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("changed during transfer")) }
+        let probe = MacRangeProbe()
+        let task = Task { try await VaultMacFileTransfer.receive(path: "/test.bin") { try await probe.request($0) } }
+        while await probe.peak == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled transfer succeeded") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let active = await probe.active
+        XCTAssertEqual(active, 0)
+    }
+
     func testMacBrowserPaginationHiddenFilesSymlinksAndChangedFile() throws {
         let browser = CompanionMacBrowser(homeURL: directory)
         for index in 0..<260 { try Data([1, 2, 3]).write(to: directory.appendingPathComponent(String(format: "%03d.txt", index))) }
@@ -366,7 +439,7 @@ final class VaultConnectedPairingTests: XCTestCase {
             try await runtime.pair(code: VaultPairingCode(deviceID: replacement, addresses: []).text)
             XCTFail("Pending uploads must prevent changing Mac")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("uploads finish"))
+            XCTAssertTrue(error.localizedDescription.contains("transfers finish"))
         }
         XCTAssertEqual(try store.peer()?.deviceID, peer.deviceID)
         XCTAssertEqual(try store.pendingLocalChanges().count, 1)
@@ -482,7 +555,12 @@ final class VaultConnectedPairingTests: XCTestCase {
         let runtime = try VaultConnectedRuntime(store: store, dialer: transport, lookup: nil,
             localID: try transport.identity())
         try await runtime.pair(code: server.code.text)
-        let pulled = try await runtime.fileURL(named: "From Mac.bin")
+        let progress = TransferProgressRecorder()
+        let pulled = try await runtime.fileURL(named: "From Mac.bin") { await progress.record($0) }
+        let values = await progress.values
+        XCTAssertEqual(values.first?.completedBytes, 0)
+        XCTAssertEqual(values.last?.completedBytes, Int64(expected.count))
+        XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0.completedBytes < $1.completedBytes })
         XCTAssertEqual(try Data(contentsOf: pulled), expected)
         await runtime.stop()
     }
@@ -1227,5 +1305,35 @@ final class UnifiedMacConnectionTests: XCTestCase {
     @MainActor private func allLabels(_ view: UIView?) -> [String] {
         guard let view else { return [] }
         return (view as? UILabel).flatMap(\.text).map { [$0] } ?? view.subviews.flatMap { allLabels($0) }
+    }
+}
+
+private actor TransferProgressRecorder {
+    var values: [VaultTransferProgress] = []
+    func record(_ value: VaultTransferProgress) { values.append(value) }
+}
+
+private actor MacRangeProbe {
+    var active = 0
+    var peak = 0
+    var firstCompleted = false
+    var refilledBeforeFirst = false
+    var stats = 0
+    let changeVersion: Bool
+    init(changeVersion: Bool = false) { self.changeVersion = changeVersion }
+    func request(_ request: VaultMacBrowseRequest) async throws -> VaultMacBrowseResponse {
+        if request.operation == .stat {
+            stats += 1
+            return VaultMacBrowseResponse(entries: [VaultMacBrowseEntry(path: "/test.bin", name: "test.bin",
+                isDirectory: false, size: Int64(12 * VaultMacBrowseProtocol.chunkSize), modifiedAt: .distantPast,
+                version: changeVersion && stats > 1 ? "changed" : "v1")])
+        }
+        let index = Int(request.offset) / VaultMacBrowseProtocol.chunkSize
+        active += 1; peak = max(active, peak)
+        defer { active -= 1 }
+        if index >= VaultMacFileTransfer.maximumOutstandingRequests && !firstCompleted { refilledBeforeFirst = true }
+        try await Task.sleep(for: .milliseconds(index == 0 ? 150 : 5))
+        if index == 0 { firstCompleted = true }
+        return VaultMacBrowseResponse(data: Data(repeating: UInt8(index), count: request.length))
     }
 }

@@ -133,3 +133,17 @@ Verified on iOS 26.2: 33 connection tests and 11 UI tests, zero failures.
 also passes. This covers the production companion file helper and encrypted
 loopback connection; it does not claim live macOS permission-prompt testing or
 physical-device throughput measurements.
+
+
+## Large Mac transfer progress (1 November 2026)
+
+Connection regressions include a 388,000,000-byte file outside the Vault folder
+transferred over production loopback Go TLS, with streaming SHA-256 comparison
+and monotonic byte callbacks from zero to the file size. Both the indexed block
+path and the live Mac browser path report bytes after writing them. Fake range
+requests check out-of-order writes, immediate window refill while the first
+range is slow, the eight-request bound, cancellation, and final-version changes.
+UI regressions exercise the one-second switch to a progress bar before metadata
+arrives, halfway byte progress, the waiting state, completion, dark mode, and
+accessibility text size. Loopback timing is not a physical-device or network
+throughput measurement.

@@ -63,3 +63,18 @@ public struct VaultMacBrowseError: Error, LocalizedError, Sendable {
     public init(_ message: String) { self.message = message }
     public var errorDescription: String? { message }
 }
+
+/// Bytes written and verified by a receiver, excluding wire encoding overhead.
+public struct VaultTransferProgress: Equatable, Sendable {
+    public let completedBytes: Int64
+    public let totalBytes: Int64
+    public init(completedBytes: Int64, totalBytes: Int64) {
+        self.totalBytes = max(0, totalBytes)
+        self.completedBytes = min(max(0, completedBytes), self.totalBytes)
+    }
+    public var fractionCompleted: Double {
+        totalBytes == 0 ? 1 : Double(completedBytes) / Double(totalBytes)
+    }
+}
+
+public typealias VaultTransferProgressHandler = @Sendable (VaultTransferProgress) async -> Void

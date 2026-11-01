@@ -9,7 +9,8 @@ public enum BEPBlockTransfer {
     public static func receive(
         blocks: [BlockInfo], startingAt start: Int = 0,
         request: @escaping @Sendable (Int, BlockInfo) async throws -> Data,
-        write: (Int, BlockInfo, Data) throws -> Void
+        write: (Int, BlockInfo, Data) throws -> Void,
+        progress: (@Sendable (Int64) async -> Void)? = nil
     ) async throws {
         try Task.checkCancellation()
         try BlockLayout.validate(blocks)
@@ -31,6 +32,7 @@ public enum BEPBlockTransfer {
                     return (index, bytes)
                 }
             }
+            var completed: Int64 = 0
             var next = start
             for _ in 0..<min(window, blocks.count - start) {
                 enqueue(next)
@@ -39,6 +41,8 @@ public enum BEPBlockTransfer {
             while let (index, bytes) = try await group.next() {
                 try Task.checkCancellation()
                 try write(index, blocks[index], bytes)
+                completed += Int64(bytes.count)
+                await progress?(completed)
                 if next < blocks.count {
                     enqueue(next)
                     next += 1

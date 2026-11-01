@@ -1,5 +1,14 @@
 # Luna Keyboard
 
+## Sharing shortcuts
+
+`LunaKeyboardShare` (`$(PRODUCT_BUNDLE_PREFIX).keyboard.share`) accepts text,
+links, images and GIFs from the system share sheet. It asks for a keyword,
+previews the input and saves through `KeyboardStore` into the same App Group
+store used by Save Keyboard Shortcut. Image previews are downsampled; the
+original image/GIF bytes are preserved. Save completes the extension request.
+
+
 Luna Keyboard is the revived standalone keyboard from `~/Desktop/clack-1`
 (commit `145a00a`, including the local top-row number work). The older
 `~/projects/Clack` checkout and the dependency-only `~/Desktop/Clack` folder are

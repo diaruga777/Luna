@@ -242,7 +242,7 @@ public class MusicScreenViewController: UIViewController {
         if items.isEmpty && source == nil {
             let chooser = UIAlertController(title: "New Playlist", message: "Choose the music source for this playlist.", preferredStyle: .alert)
             for source in [MusicSource.apple, .vault] {
-                chooser.addAction(UIAlertAction(title: source == .apple ? "Apple Music" : "Luna Vault", style: .default) { [weak self] _ in self?.newPlaylist(source: source, completion: completion) })
+                chooser.addAction(UIAlertAction(title: source == .apple ? "Apple Music" : "Audio Files", style: .default) { [weak self] _ in self?.newPlaylist(source: source, completion: completion) })
             }
             chooser.addAction(UIAlertAction(title: "Cancel", style: .cancel))
             present(chooser, animated: true); return

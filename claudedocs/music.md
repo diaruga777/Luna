@@ -39,7 +39,7 @@ playback behavior. Denying Apple access does not prevent Vault browsing/playback
 separate from Mac paths. Artist strings are matched case/diacritic-insensitively;
 albums match title plus album artist. Songs from different sources remain distinct.
 
-Playlists have exactly one source. New Playlist asks for Apple Music or Luna Vault;
+Playlists have exactly one source. New Playlist asks for Apple Music or Audio Files;
 creation from a song inherits its source. Add Music and destination menus filter
 by source, and the underlying write APIs reject mixed-source changes. Vault
 playlists, ordering, play counts and catalog metadata persist atomically in

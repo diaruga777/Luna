@@ -83,7 +83,7 @@ public final class VaultMusicController: ObservableObject {
     }
     @discardableResult
     public func createPlaylist(name: String, songs: [MusicSong]) throws -> MusicPlaylist {
-        guard songs.allSatisfy({ $0.source == .vault }) else { throw MusicFileError("A playlist can contain Apple Music songs or Vault songs, but not both.") }
+        guard songs.allSatisfy({ $0.source == .vault }) else { throw MusicFileError("A playlist can contain Apple Music songs or audio files, but not both.") }
         var next = state
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MusicFileError("Enter a playlist name.") }

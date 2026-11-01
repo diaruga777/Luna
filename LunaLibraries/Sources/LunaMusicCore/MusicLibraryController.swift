@@ -134,7 +134,7 @@ public final class MusicLibraryController: ObservableObject {
     @discardableResult
     public func createPlaylist(name: String, items: [MusicSong] = [], source: MusicSource = .apple) async throws -> MusicPlaylist {
         let source = items.first?.source ?? source
-        guard items.allSatisfy({ $0.source == source }) else { throw MusicFileError("A playlist can contain Apple Music songs or Vault songs, but not both.") }
+        guard items.allSatisfy({ $0.source == source }) else { throw MusicFileError("A playlist can contain Apple Music songs or audio files, but not both.") }
         if source == .vault { return try VaultMusicController.shared.createPlaylist(name: name, songs: items) }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw MusicLibraryError.missingPlaylistName }

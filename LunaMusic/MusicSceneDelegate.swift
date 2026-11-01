@@ -1,4 +1,5 @@
 import UIKit
+import LunaCompanionSharing
 import LunaMusicCore
 import LunaMusicUI
 import LunaPodcastCore
@@ -37,7 +38,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let id = MusicIntentRoute.pendingPodcastEpisodeID { openPodcastEpisode(id) }
         let initialURL = options.urlContexts.map(\.url).first ?? MusicIntentRoute.pendingURL
         MusicIntentRoute.pendingURL = nil
-        if let initialURL { capture(initialURL) }
+        if let initialURL { if initialURL.isFileURL { openAudio([initialURL]) } else { capture(initialURL) } }
         for (name, route) in [(Notification.Name.lunaMusicOpenQueue, MusicLaunchRoute.queue), (.lunaMusicOpenSearch, .search)] {
             routeObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
                 let url = notification.userInfo?["url"] as? URL
@@ -59,6 +60,7 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        Task { await MusicShareImport.consume() }
         // Permission dialogs and Control Center do not constitute a new foreground.
         guard enteredBackground || pendingRoute != nil else { return }
         PodcastBackgroundServices.shared.foreground()
@@ -75,9 +77,24 @@ final class MusicSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func scene(_ scene: UIScene, openURLContexts contexts: Set<UIOpenURLContext>) {
+        let files = contexts.map(\.url).filter(\.isFileURL)
+        if !files.isEmpty { openAudio(files); return }
         guard let url = contexts.map(\.url).first, let route = MusicLaunchRoute(url: url) else { return }
         capture(url)
         navigate(route)
+    }
+
+    private func openAudio(_ urls: [URL]) {
+        let sheet = MusicAudioShareViewController()
+        sheet.sourceURLs = urls
+        sheet.onComplete = { [weak sheet] in
+            sheet?.dismiss(animated: true)
+            Task { await MusicShareImport.consume() }
+        }
+        guard let root = window?.rootViewController else { return }
+        var presenter = root
+        while let presented = presenter.presentedViewController { presenter = presented }
+        presenter.present(sheet, animated: true)
     }
 
     private var isShowingLibrary: Bool {

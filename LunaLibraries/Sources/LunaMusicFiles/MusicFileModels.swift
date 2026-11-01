@@ -105,6 +105,8 @@ public struct VaultMusicPlaylist: Codable, Equatable, Sendable {
 public struct VaultMusicState: Codable, Sendable {
     public var peer = ""
     public var files: [MusicFile] = []
+    /// On-device imports are independent of a paired Mac and its cache.
+    public var importedFiles: [MusicFile]?
     public var playlists: [VaultMusicPlaylist] = []
     public var manual: Set<MusicID> = []
     public var excluded: Set<MusicID> = []

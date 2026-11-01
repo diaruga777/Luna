@@ -54,7 +54,7 @@ import LunaPodcastCore
         return store
     }
     public func edit(_ edit: (inout PodcastLibraryState) throws -> Void) throws { try requireStore().update(edit); reloadState() }
-    public func reloadState() { if let store { state = store.state } }
+    public func reloadState() { if let store { state = store.state }; MusicShareImport.publishChoices() }
     public func report(_ error: Error) { if !(error is CancellationError) { errorMessage = error.localizedDescription } }
     public func clearError() { errorMessage = nil }
     public func episodes(for showID: String, applySettings: Bool = true) -> [PodcastEpisode] {

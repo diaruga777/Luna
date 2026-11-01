@@ -364,7 +364,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
                     }
                 }),
                 UIAction(title: "Play Next", image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")) { _ in MusicPlaybackController.shared.playNext(item) }
-            ] + (item.source == .vault ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+            ] + (item.source == .vault && item.peer != VaultMusicController.importedPeer ? [UIAction(title: VaultMusicController.shared.isCached(item) ? "Remove Download" : "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
                 guard let self else { return }
                 MusicStyle.run(from: self, errorTitle: "Download Unavailable") {
                     if VaultMusicController.shared.isCached(item) { try await VaultMusicController.shared.removeCachedSong(item) }

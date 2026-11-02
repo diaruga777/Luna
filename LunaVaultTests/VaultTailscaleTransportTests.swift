@@ -4,6 +4,9 @@ import LunaVaultBackend
 import LunaVaultTailscale
 import TailscaleKit
 import XCTest
+import LunaAppConfig
+import LunaVaultBEP
+import LunaVaultStore
 
 /// The embedded-Tailscale transport without a tailnet: the frame channel is
 /// exercised over a socketpair (the same shape tsnet hands out — a connected
@@ -233,4 +236,67 @@ final class VaultTailscaleTransportTests: XCTestCase {
         }
         XCTAssertTrue(lan.endpoints.isEmpty)
     }
+}
+
+/// Explicitly opted-in, read-only measurement against the user's paired Mac.
+/// Runs in the Vault host on a device; never starts WebDriverAgent or a tailnet.
+final class VaultLiveTransferTests: XCTestCase {
+    func testPairedMacDownload() async throws {
+        guard let path = ProcessInfo.processInfo.environment["LUNA_VAULT_LIVE_TRANSFER_PATH"], !path.isEmpty else {
+            throw XCTSkip("Set LUNA_VAULT_LIVE_TRANSFER_PATH to opt into a paired-Mac read.")
+        }
+        let store = try VaultFolderStore.production()
+        let credentials = LunaMacKeychain(accessGroup: AppConfig.macConnectionKeychainAccessGroup)
+        let restored = try XCTUnwrap(LunaMacIdentityStore(root: store.rootURL, credentials: credentials).restore())
+        let peer = try XCTUnwrap(restored.0.pairing).peer()
+        let address = try XCTUnwrap(peer.manualAddresses.first)
+        print("VAULT LIVE address=\(address)")
+        let stream = try await restored.1.dial(address, expecting: peer.deviceID)
+        defer { stream.close() }
+        let delegate = LiveTransferDelegate()
+        let connection = BEPConnection(stream: stream, peerDevice: peer.deviceID,
+            localHello: BEPHello(deviceName: "Vault transfer measurement", clientName: "Luna Vault", clientVersion: "1"), delegate: delegate)
+        _ = try await connection.start()
+        try await connection.send(clusterConfig: BEPClusterConfig(folders: []))
+        try await connection.announce(client: .vault)
+        let metadataStart = Date()
+        let response = try await connection.browseMac(VaultMacBrowseRequest(.stat, path: path))
+        let file = try XCTUnwrap(response.entries.first)
+        print("VAULT LIVE statSeconds=\(Date().timeIntervalSince(metadataStart)) size=\(file.size)")
+        let total = min(file.size, 16 * 1_024 * 1_024)
+        let start = Date()
+        try await withThrowingTaskGroup(of: Int.self) { group in
+            var nextOffset: Int64 = 0
+            var received = 0
+            func enqueue() {
+                let offset = nextOffset
+                let length = Int(min(Int64(VaultMacBrowseProtocol.chunkSize), total - offset))
+                nextOffset += Int64(length)
+                group.addTask {
+                    let began = Date()
+                    let result = try await connection.browseMac(VaultMacBrowseRequest(.read, path: path,
+                        offset: offset, length: length, version: file.version))
+                    let data = try XCTUnwrap(result.data)
+                    XCTAssertEqual(data.count, length)
+                    print("VAULT LIVE chunkOffset=\(offset) bytes=\(data.count) seconds=\(Date().timeIntervalSince(began))")
+                    return data.count
+                }
+            }
+            for _ in 0..<8 where nextOffset < total { enqueue() }
+            while let count = try await group.next() {
+                received += count
+                if nextOffset < total { enqueue() }
+            }
+            XCTAssertEqual(Int64(received), total)
+            print("VAULT LIVE received=\(received) seconds=\(Date().timeIntervalSince(start)) MiBps=\(Double(received) / 1_048_576 / Date().timeIntervalSince(start))")
+        }
+        await connection.close(reason: "Measurement complete")
+    }
+}
+
+private final class LiveTransferDelegate: BEPConnectionDelegate, @unchecked Sendable {
+    func connection(_ connection: BEPConnection, didReceive clusterConfig: BEPClusterConfig) async {}
+    func connection(_ connection: BEPConnection, didReceive index: BEPIndex) async {}
+    func connection(_ connection: BEPConnection, serve request: BEPRequest) async -> Result<Data, BEPErrorCode> { .failure(.noSuchFile) }
+    func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {}
 }

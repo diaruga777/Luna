@@ -100,3 +100,20 @@ may require approving folder access once for the new identity. Future builds
 with a compatible signing identity should retain those grants. Permissions
 remain managed by macOS; repeated folder reads do not themselves reset them.
 The five-second folder checks remain enabled.
+
+## Transfer priority and App Nap
+
+An approved peer session holds a
+`ProcessInfo.userInitiatedAllowingIdleSystemSleep` activity until that session
+closes or is replaced. The menu-bar companion usually has no visible window;
+without an activity, macOS can demote its sockets to background traffic and
+LEDBAT while the phone is actively downloading. A live inspection on 2 November
+2026 showed `BG+R` traffic management and `ledbat` on the LAN peer socket.
+The activity spans disk reads, asynchronous response writes, and the Go TLS
+bridge drain. It is released on every session exit, and permits idle system
+sleep. It does not change pairing, encryption, or the transfer window.
+
+For an installed client, set `LUNA_MAC_APP_BUNDLE` to its existing `.app` path
+when using `script/build_and_run.sh`, in addition to the matching
+`LUNA_MAC_SIGNING_IDENTITY`. This lets worktree builds update the same bundle
+location instead of creating a second persistent client.

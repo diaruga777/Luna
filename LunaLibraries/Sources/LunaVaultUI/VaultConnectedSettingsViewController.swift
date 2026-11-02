@@ -111,7 +111,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         let previousSnapshot = snapshot, previousConnection = connection
         let previousMessage = message
         do {
-            snapshot = try await runtime.pairingSnapshot()
+            let currentSnapshot = try await runtime.pairingSnapshot()
+            guard !Task.isCancelled else { return }
+            snapshot = currentSnapshot
             if storagePeerID != snapshot?.remoteDeviceID {
                 storageTask?.cancel(); storageTask = nil; storageLoading = false
                 storage = nil; storageMessage = nil; storageAttemptAt = .distantPast
@@ -128,6 +130,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             cache = try await runtime.cachePresentation()
             (imageFormat, videoFormat) = try await runtime.photoExportFormats()
         } catch { message = error.localizedDescription; messageIsError = true }
+        guard !Task.isCancelled else { return }
         let wasLoading = loading
         loading = false
         if connection == .offline || connection == .notPaired {

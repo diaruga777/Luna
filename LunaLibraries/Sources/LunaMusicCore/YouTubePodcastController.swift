@@ -33,7 +33,6 @@ struct YouTubeDownloadedAudio: Sendable {
     private let capabilityKey = "LunaMusic.youtubeAvailability"
     private struct Capability: Codable { var peer: String; var available: Bool }
 
-
     init(library: PodcastLibraryController? = nil, defaults: UserDefaults = .standard, startDownload: ((PodcastEpisode) async -> Void)? = nil,
          directDownload: @escaping @Sendable (URLRequest, Int64, @escaping @Sendable (Double) -> Void) async throws -> URL = { try await YouTubePodcastController.downloadDirect($0, maximumBytes: $1, progress: $2) },
          validate: @escaping @Sendable (URL) async throws -> Double = { try await YouTubePodcastController.validateAudio($0) }) {
@@ -62,7 +61,9 @@ struct YouTubeDownloadedAudio: Sendable {
         let peer = peerID?()
         guard peer == nil || peer?.isEmpty == false else { return }
         let generation = UUID(); capabilityGeneration = generation
-        guard let result = try? await rpc(.init(.availability)), let value = result.available,
+        let result = try? await rpc(.init(.availability))
+        restoreAvailability()
+        guard let value = result?.available,
               !Task.isCancelled, capabilityGeneration == generation, peerID?() == peer else { return }
         available = value
         if let peer, let data = try? JSONEncoder().encode(Capability(peer: peer, available: value)) {

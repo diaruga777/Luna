@@ -194,6 +194,27 @@ import LunaMusicFiles
         first.configure(peer: { peer }) { _ in throw URLError(.timedOut) }
         XCTAssertFalse(first.available)
     }
+    func testLateCapabilityReplyCannotDisplayAnotherMacsAvailability() async throws {
+        let suite = "YouTubeCapabilityTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var peer = "mac-a"
+        let controller = YouTubePodcastController(library: library(), defaults: defaults)
+        controller.configure(peer: { peer }) { _ in
+            var response = MusicFileResponse(); response.youtube = .init(available: true)
+            return try JSONEncoder().encode(response)
+        }
+        await controller.refreshAvailability(); XCTAssertTrue(controller.available)
+        controller.configure(peer: { peer }) { _ in
+            peer = "mac-b"
+            var response = MusicFileResponse(); response.youtube = .init(available: true)
+            return try JSONEncoder().encode(response)
+        }
+        XCTAssertTrue(controller.available)
+        await controller.refreshAvailability(); XCTAssertFalse(controller.available)
+        // The late reply must not replace the cache of the original Mac.
+        peer = "mac-a"; controller.restoreAvailability(); XCTAssertTrue(controller.available)
+    }
     func testDownloadedYouTubeAudioUsesPodcastManifestCapAndCleanup() async throws {
         let library = library(), episode = episode()
         try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episode.id]; $0.settings.downloadByteLimit = 100 }

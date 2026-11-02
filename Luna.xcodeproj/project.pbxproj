@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EFA010000000000000000001 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = EFA010000000000000000002 /* LunaVaultTailscale */; };
 		00937C0F654B935EC99EC7F2 /* LunaWriterLibraryUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000018 /* LunaWriterLibraryUI */; };
 		00F83CC26403EC44DE773845 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		02F0FD5D52D891634476A588 /* MusicVaultWiring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7A6C9554683B8C243EA9E3 /* MusicVaultWiring.swift */; };
@@ -786,6 +787,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D50996F00EF8EAF1B0DE814C /* LunaCompanionSharing in Frameworks */,
+				EFA010000000000000000001 /* LunaVaultTailscale in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1265,6 +1267,7 @@
 			name = LunaMusicShare;
 			packageProductDependencies = (
 				10ABCF350087831437D2DDD3 /* LunaCompanionSharing */,
+				EFA010000000000000000002 /* LunaVaultTailscale */,
 			);
 			productName = LunaMusicShare;
 			productReference = 88F37926B392867E472DB4B2 /* LunaMusicShare.appex */;
@@ -4127,6 +4130,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		EFA010000000000000000002 /* LunaVaultTailscale */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
+			productName = LunaVaultTailscale;
+		};
 		09AAEDDBCBA24888AE40F181 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;

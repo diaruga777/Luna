@@ -4,6 +4,8 @@ import Combine
 import UIKit
 import LunaPodcastCore
 import LunaMusicFiles
+import LunaCompanionShareCore
+import LunaMusicSharing
 
 public struct PodcastDownload: Codable, Equatable {
     public var episodeID: String
@@ -188,6 +190,52 @@ public struct PodcastDownload: Codable, Equatable {
         downloads[episode.id] = PodcastDownload(episodeID: episode.id, sourceURL: episode.mediaURL, manual: manual)
         guard persist() else { return }
         await reconcile()
+    }
+    /// Adopt an extension-owned background transfer into the ordinary manifest.
+    /// Library mutation stays in this process; inbox replay is keyed by video ID.
+    func importSharedYouTube(_ capture: CompanionShareCapture, inbox: CompanionShareInbox) async throws {
+        guard capture.kind == .podcast, let metadata = capture.youtube else { throw MusicYouTubeShare.unsupported() }
+        let result = try MusicYouTubeShare.result(for: capture, inbox: inbox)
+        if case .pending = result { return }
+        await start()
+        let id = PodcastIdentity.episode(showID: YouTubePodcastController.showID, guid: metadata.videoID)
+        var audio: (URL, Double, Int64)?
+        var failure: (String, Bool)?
+        if localURL(id) == nil {
+            switch result {
+            case .downloaded(let url):
+                do {
+                    let duration = try await YouTubePodcastController.validateAudio(url)
+                    let bytes = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+                    guard bytes > 0, bytes <= metadata.maximumBytes, totalBytes <= library.state.settings.maximumDownloadBytes - bytes else { throw PodcastError("The audio exceeds your download limit.") }
+                    audio = (url, duration, bytes)
+                } catch { failure = (error.localizedDescription, YouTubeAudioFailurePolicy.shouldUseMac(error)) }
+            case .failed(let message, let mediaRejected): failure = (message, mediaRejected)
+            case .pending: return
+            }
+        }
+        let controller = youtubeController ?? YouTubePodcastController(library: library)
+        let episode = try controller.enqueueResolved(video: metadata.videoID, title: capture.title, author: metadata.author,
+                                                    duration: metadata.duration, next: capture.playNext)
+        if localURL(id) != nil { downloads[id]?.manual = true; guard persist() else { throw PodcastError(errorMessage ?? "The download couldn’t be saved.") }; return }
+        // An explicit in-app request may already be downloading this same video.
+        if tasks[id] != nil || externalTasks[id] != nil { return }
+        var record = PodcastDownload(episodeID: id, sourceURL: episode.mediaURL, manual: true)
+        if let (url, duration, bytes) = audio {
+            let name = PodcastIdentity.hash(id + episode.mediaURL.absoluteString) + ".m4a"
+            let target = directory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+            // Keep the inbox original until the manifest commits, allowing replay.
+            try FileManager.default.copyItem(at: url, to: target)
+            record.filename = name; record.bytes = bytes; record.status = "downloaded"
+            record.preparationVersion = 1; record.preparedDuration = duration
+        } else {
+            record.status = "failed"; record.error = failure?.0 ?? "The download was interrupted. Try again."
+        }
+        downloads[id] = record
+        guard persist() else { throw PodcastError(errorMessage ?? "The download couldn’t be saved.") }
+        if failure?.1 == true { beginYouTube(episode, manual: true, macOnly: true) }
+        NotificationCenter.default.post(name: .lunaPodcastsChanged, object: nil)
     }
     private func begin(_ episode: PodcastEpisode, manual: Bool) {
         if episode.youtubeVideoID != nil { beginYouTube(episode, manual: manual); return }

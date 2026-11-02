@@ -1,4 +1,5 @@
 import LunaPremium
+import LunaCompanionSharing
 import UIKit
 import CarPlay
 import BackgroundTasks
@@ -32,7 +33,11 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         } else if identifier == PodcastDownloads.hlsSessionIdentifier {
             PodcastDownloads.shared.hlsBackgroundCompletion = completionHandler
             Task { await PodcastDownloads.shared.start() }
-        } else { completionHandler() }
+        } else {
+            do {
+                if try !MusicYouTubeShare.handleEvents(identifier, completion: completionHandler) { completionHandler() }
+            } catch { completionHandler() }
+        }
     }
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {

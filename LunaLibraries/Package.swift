@@ -126,13 +126,14 @@ let package = Package(
     ],
     targets: [
         .target(name: "LunaCompanionShareCore", dependencies: ["LunaAppConfig"]),
-        .target(name: "LunaCompanionSharing", dependencies: ["LunaCompanionShareCore", "LunaStorage"]),
+        .target(name: "LunaCompanionSharing", dependencies: ["LunaCompanionShareCore", "LunaMusicSharing", "LunaStorage"]),
         .target(name: "LunaPremium", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaKeyboardCore", dependencies: ["LunaStorage"], resources: [.process("Resources")]),
         .target(name: "LunaKeyboardUI", dependencies: ["LunaKeyboardCore", "LunaStorage"]),
         .target(name: "LunaMusicFiles"),
+        .target(name: "LunaMusicSharing", dependencies: ["LunaMusicFiles", "LunaCompanionShareCore", "LunaAppConfig"]),
         .target(name: "LunaPodcastCore"),
-        .target(name: "LunaMusicCore", dependencies: ["LunaCompanionShareCore", "LunaAppConfig", "LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
+        .target(name: "LunaMusicCore", dependencies: ["LunaMusicSharing", "LunaCompanionShareCore", "LunaAppConfig", "LunaMusicFiles", "LunaPodcastCore", "LunaAudioPlayback", "LunaModels", "LunaStorage"], resources: [.copy("Resources/PodcastDownloadWait.caf")]),
         .target(name: "LunaMusicUI", dependencies: ["LunaAppConfig", "LunaMusicCore", "LunaPodcastCore", "LunaDesignSystem", "LunaModels"]),
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).

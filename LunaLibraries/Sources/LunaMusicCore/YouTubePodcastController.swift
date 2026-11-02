@@ -56,16 +56,10 @@ struct YouTubeDownloadedAudio: Sendable {
             }
             let (ticket, metadata) = try await resolve(video)
             resolved[video] = (ticket, metadata)
-            var show = PodcastShow(feedURL: URL(string: "lunamusic://youtube")!, title: "YouTube", author: metadata.author, id: Self.showID)
-            show.followed = true; show.settings.automaticDownloadLimit = 0; show.settings.notifications = false
-            var episode = PodcastEpisode(showID: Self.showID, guid: video, title: metadata.title, publishedAt: Date(), mediaURL: YouTubeAudioURL.canonical(video))
-            episode.youtubeVideoID = video; episode.duration = metadata.duration; episode.mediaType = "audio/mp4"; episode.websiteURL = episode.mediaURL
+            let episode: PodcastEpisode
             do {
-                try library.edit { state in
-                    state.shows[show.id] = state.shows[show.id] ?? show
-                    state.episodes[episode.id] = episode
-                }
-                try library.requireStore().enqueue(episode.id, next: false); library.reloadState()
+                episode = try enqueueResolved(video: video, title: metadata.title, author: metadata.author,
+                                              duration: metadata.duration, next: false)
             } catch {
                 resolved[video] = nil; _ = try? await rpc(.init(.release, id: ticket)); throw error
             }
@@ -75,6 +69,26 @@ struct YouTubeDownloadedAudio: Sendable {
         adding[video] = task
         defer { adding[video] = nil }
         return try await task.value
+    }
+    /// Shared transfers supply stable metadata without persisting their stream request.
+    func enqueueResolved(video: String, title: String, author: String, duration: Double, next: Bool) throws -> PodcastEpisode {
+        guard YouTubeAudioURL.videoID(YouTubeAudioURL.canonical(video).absoluteString) == video else { throw PodcastError("This YouTube link is invalid.") }
+        let id = PodcastIdentity.episode(showID: Self.showID, guid: video)
+        let episode: PodcastEpisode
+        if let existing = library.state.episodes[id] { episode = existing }
+        else {
+            var show = PodcastShow(feedURL: URL(string: "lunamusic://youtube")!, title: "YouTube", author: author, id: Self.showID)
+            show.followed = true; show.settings.automaticDownloadLimit = 0; show.settings.notifications = false
+            var value = PodcastEpisode(showID: Self.showID, guid: video, title: title, publishedAt: Date(), mediaURL: YouTubeAudioURL.canonical(video))
+            value.youtubeVideoID = video; value.duration = duration; value.mediaType = "audio/mp4"; value.websiteURL = value.mediaURL
+            try library.edit { state in
+                state.shows[show.id] = state.shows[show.id] ?? show
+                state.episodes[value.id] = value
+            }
+            episode = value
+        }
+        try library.requireStore().enqueue(episode.id, next: next); library.reloadState()
+        return episode
     }
     func download(_ episode: PodcastEpisode, maximumBytes: Int64,
                   progress: @escaping @Sendable (Double) -> Void, directDownload: YouTubeDirectDownload? = nil) async throws -> YouTubeDownloadedAudio {
@@ -147,7 +161,7 @@ struct YouTubeDownloadedAudio: Sendable {
             let result = try await poll(ticket, until: .resolved)
             guard let metadata = result.metadata, metadata.videoID == video,
                   metadata.downloadURL.scheme == "https", metadata.downloadURL.host != nil,
-                  metadata.headers.allSatisfy({ !$0.key.contains("\r") && !$0.key.contains("\n") && !$0.value.contains("\r") && !$0.value.contains("\n") }) else {
+                  metadata.headers.allSatisfy({ $0.key.rangeOfCharacter(from: .newlines) == nil && $0.value.rangeOfCharacter(from: .newlines) == nil }) else {
                 throw PodcastError("The Mac didn’t return a valid audio stream.")
             }
             return (ticket, metadata)

@@ -8,6 +8,7 @@ import AVFoundation
 @testable import LunaMusicCore
 import LunaPodcastCore
 import LunaMusicFiles
+@testable import LunaMusicSharing
 
 @MainActor final class PodcastAutomationTests: XCTestCase {
     private var directory: URL!
@@ -447,4 +448,207 @@ private final class YouTubeDownloadProtocol: URLProtocol, @unchecked Sendable {
         try audio.write(from: buffer)
         return url
     }
+}
+
+@MainActor final class YouTubeShareTests: XCTestCase {
+    private var root: URL!
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("YouTubeShareTests-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws { try FileManager.default.removeItem(at: root) }
+    func testShareResolvesCanonicalVideoWithLiveCapabilityCheckAndReleasesTicket() async throws {
+        let transport = YouTubeTestTransport()
+        let result = try await MusicYouTubeShare.resolve("https://youtu.be/cwAkcsg7NCg?si=tracking") { try await transport.respond($0) }
+        XCTAssertEqual(result.metadata.videoID, "cwAkcsg7NCg")
+        let actions = await transport.actions
+        XCTAssertEqual(actions, [.availability, .resolve, .status, .release])
+    }
+    func testUnavailableAndIncompatibleLinksUseIdenticalGenericError() async throws {
+        let transport = YouTubeTestTransport(); await transport.setAvailable(false)
+        for input in ["https://example.com/article", "https://youtu.be/cwAkcsg7NCg"] {
+            do {
+                _ = try await MusicYouTubeShare.resolve(input) { try await transport.respond($0) }
+                XCTFail("Expected rejection")
+            } catch { XCTAssertEqual(error.localizedDescription, MusicYouTubeShare.unsupportedMessage) }
+        }
+        let actions = await transport.actions
+        XCTAssertFalse(actions.contains(.resolve))
+    }
+    func testTransportErrorsDoNotExposeIntegrationDetails() async {
+        do {
+            _ = try await MusicYouTubeShare.resolve("https://youtu.be/cwAkcsg7NCg") { _ in throw PodcastError("yt-dlp is not installed") }
+            XCTFail("Expected rejection")
+        } catch { XCTAssertEqual(error.localizedDescription, MusicYouTubeShare.unsupportedMessage) }
+    }
+    func testUnsafeResolvedHeadersAreRejected() async throws {
+        let transport = YouTubeTestTransport()
+        do {
+            _ = try await MusicYouTubeShare.resolve("https://youtu.be/cwAkcsg7NCg") { data in
+                var response = try JSONDecoder().decode(MusicFileResponse.self, from: await transport.respond(data))
+                response.youtube?.metadata?.headers["Injected"] = "value\r\nOther: header"
+                return try JSONEncoder().encode(response)
+            }
+            XCTFail("Expected rejection")
+        } catch { XCTAssertEqual(error.localizedDescription, MusicYouTubeShare.unsupportedMessage) }
+    }
+    func testOldCapturesAndChoicesStillDecode() throws {
+        let original = CompanionShareCapture(kind: .podcast, filenames: ["0-Test.wav"])
+        let decoded = try JSONDecoder().decode(CompanionShareCapture.self, from: JSONEncoder().encode(original))
+        XCTAssertNil(decoded.youtube)
+        let choices = try JSONDecoder().decode(CompanionShareChoices.self, from: Data("{\"playlists\":[],\"audioLists\":[]}".utf8))
+        XCTAssertNil(choices.cellularDownloads); XCTAssertNil(choices.downloadBytesAvailable)
+    }
+    func testCompletedShareInstallsOwnedDownloadAndReplayDoesNotDuplicateQueue() async throws {
+        let (capture, inbox, library, downloads) = try fixture()
+        defer { downloads.stop() }
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        let id = try XCTUnwrap(library.state.queue.first)
+        XCTAssertEqual(library.state.episodes[id]?.youtubeVideoID, "cwAkcsg7NCg")
+        XCTAssertEqual(library.state.episodes[id]?.mediaURL.absoluteString, "https://www.youtube.com/watch?v=cwAkcsg7NCg")
+        XCTAssertEqual(downloads.downloads[id]?.status, "downloaded")
+        XCTAssertNotNil(downloads.localURL(id))
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        XCTAssertEqual(library.state.queue, [id]); XCTAssertEqual(library.state.episodes.count, 1)
+        try inbox.remove(capture)
+        XCTAssertNotNil(downloads.localURL(id))
+        let manifest = try String(contentsOf: root.appendingPathComponent("Downloads/downloads.json"), encoding: .utf8)
+        XCTAssertFalse(manifest.contains("googlevideo")); XCTAssertFalse(manifest.contains("Authorization"))
+    }
+    func testPlayNextUsesExistingPodcastQueue() async throws {
+        let (capture, inbox, library, downloads) = try fixture(next: true)
+        defer { downloads.stop() }
+        let existing = try YouTubePodcastController(library: library).enqueueResolved(video: "abcdefghijk", title: "Existing", author: "", duration: 1, next: false)
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        XCTAssertEqual(library.state.queue.count, 2)
+        XCTAssertEqual(library.state.queue.last, existing.id)
+        XCTAssertEqual(library.state.episodes[library.state.queue[0]]?.youtubeVideoID, "cwAkcsg7NCg")
+    }
+    func testPendingShareDoesNotCreateAnUnownedDownload() async throws {
+        let (capture, inbox, library, downloads) = try fixture()
+        defer { downloads.stop() }
+        try FileManager.default.removeItem(at: inbox.directory(for: capture).appendingPathComponent("transfer.json"))
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        XCTAssertTrue(library.state.queue.isEmpty); XCTAssertTrue(downloads.downloads.isEmpty)
+        XCTAssertEqual(try inbox.pending().count, 1)
+    }
+    func testChangedByteLimitRetainsRetryableQueueItemWithoutInstallingAudio() async throws {
+        let (capture, inbox, library, downloads) = try fixture()
+        defer { downloads.stop() }
+        try library.edit { $0.settings.downloadByteLimit = 10 }
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        let id = try XCTUnwrap(library.state.queue.first)
+        XCTAssertNil(downloads.localURL(id)); XCTAssertEqual(downloads.downloads[id]?.status, "failed")
+    }
+    func testNetworkFailureDoesNotRequestMacFallback() async throws {
+        let (capture, inbox, library, downloads) = try fixture()
+        defer { downloads.stop() }
+        downloads.youtubeDownload = { _, _, _ in XCTFail("Network failure must not retry through the Mac"); throw CancellationError() }
+        try outcome(["error": "The Internet connection appears to be offline.", "mediaRejected": false], capture: capture, inbox: inbox)
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        let id = try XCTUnwrap(library.state.queue.first)
+        XCTAssertEqual(downloads.downloads[id]?.status, "failed")
+        XCTAssertEqual(downloads.downloads[id]?.error, "The Internet connection appears to be offline.")
+    }
+    func testMediaRejectionStartsFallbackAndInstallsAudio() async throws {
+        let (capture, inbox, library, downloads) = try fixture()
+        defer { downloads.stop() }
+        let file = inbox.directory(for: capture).appendingPathComponent("audio.m4a")
+        var calls = 0
+        downloads.youtubeDownload = { _, _, _ in calls += 1; return .init(url: file, duration: 1) }
+        try outcome(["error": "Rejected media", "mediaRejected": true], capture: capture, inbox: inbox)
+        try await downloads.importSharedYouTube(capture, inbox: inbox)
+        let id = try XCTUnwrap(library.state.queue.first)
+        for _ in 0..<100 where downloads.localURL(id) == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(calls, 1); XCTAssertNotNil(downloads.localURL(id))
+    }
+    func testExtensionSessionStagesDownloadBeforePublishingCompletion() async throws {
+        let (capture, inbox, _, downloads) = try fixture()
+        defer { downloads.stop() }
+        let directory = inbox.directory(for: capture)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("transfer.json"))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("audio.m4a"))
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [YouTubeShareProtocol.self]
+        let transfer = MusicYouTubeShare(capture: capture, inbox: inbox, identifier: UUID().uuidString, configuration: config)
+        transfer.begin(URLRequest(url: URL(string: "https://audio.example.com/file")!))
+        for _ in 0..<100 {
+            if case .downloaded(let file) = try MusicYouTubeShare.result(for: capture, inbox: inbox) {
+                XCTAssertEqual(try Data(contentsOf: file), Data([1, 2, 3]))
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Expected a durable completed transfer")
+    }
+    func testShareSheetOffersPodcastActionsForSharedTextLink() async throws {
+        let controller = MusicShareTestController()
+        controller.context.items = [shareItem(NSItemProvider(object: "A video title\nhttps://youtu.be/cwAkcsg7NCg?si=tracking" as NSString))]
+        let transport = YouTubeTestTransport()
+        controller.resolveYouTube = { try await MusicYouTubeShare.resolve($0) { try await transport.respond($0) } }
+        controller.loadViewIfNeeded()
+        for _ in 0..<100 where controller.status.text != "Title" { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(controller.status.text, "Title")
+        XCTAssertTrue(controller.stack.arrangedSubviews.compactMap { $0 as? UISegmentedControl }.allSatisfy(\.isHidden))
+        let buttons = controller.stack.arrangedSubviews.compactMap { $0 as? UIButton }
+        for title in ["Add to Queue", "Play Next"] {
+            let button = try XCTUnwrap(buttons.first { $0.configuration?.title == title })
+            XCTAssertTrue(button.isEnabled); XCTAssertFalse(button.isHidden)
+        }
+    }
+    func testShareSheetShowsSameGenericErrorForUnsupportedAndUnavailableLinks() async throws {
+        for input in ["https://example.com/article", "https://youtu.be/cwAkcsg7NCg"] {
+            let controller = MusicShareTestController()
+            controller.context.items = [shareItem(NSItemProvider(object: URL(string: input)! as NSURL))]
+            let transport = YouTubeTestTransport(); await transport.setAvailable(false)
+            controller.resolveYouTube = { try await MusicYouTubeShare.resolve($0) { try await transport.respond($0) } }
+            controller.loadViewIfNeeded()
+            for _ in 0..<100 where controller.status.text != MusicYouTubeShare.unsupportedMessage { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(controller.status.text, MusicYouTubeShare.unsupportedMessage)
+            XCTAssertTrue(controller.stack.arrangedSubviews.compactMap { $0 as? UIButton }.filter { ["Add to Queue", "Play Next"].contains($0.configuration?.title ?? "") }.allSatisfy { !$0.isEnabled })
+        }
+    }
+    private func shareItem(_ provider: NSItemProvider) -> NSExtensionItem {
+        let item = NSExtensionItem(); item.attachments = [provider]; return item
+    }
+    private func outcome(_ json: [String: Any], capture: CompanionShareCapture, inbox: CompanionShareInbox) throws {
+        try JSONSerialization.data(withJSONObject: json).write(to: inbox.directory(for: capture).appendingPathComponent("transfer.json"), options: .atomic)
+    }
+    private func fixture(next: Bool = false) throws -> (CompanionShareCapture, CompanionShareInbox, PodcastLibraryController, PodcastDownloads) {
+        let inbox = CompanionShareInbox(root: root.appendingPathComponent("Inbox"))
+        let capture = CompanionShareCapture(kind: .podcast, text: "https://www.youtube.com/watch?v=cwAkcsg7NCg", title: "Shared Video", playNext: next,
+            youtube: .init(videoID: "cwAkcsg7NCg", author: "Creator", duration: 1, maximumBytes: 1_000_000))
+        try inbox.save(capture)
+        let url = inbox.directory(for: capture).appendingPathComponent("audio.m4a")
+        let format = AVAudioFormat(standardFormatWithSampleRate: 22_050, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050)!
+        buffer.frameLength = 22_050
+        for index in 0..<22_050 { buffer.floatChannelData![0][index] = 0 }
+        let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 22_050, AVNumberOfChannelsKey: 1])
+        try file.write(from: buffer)
+        try outcome(["mediaRejected": false], capture: capture, inbox: inbox)
+        let library = PodcastLibraryController(url: root.appendingPathComponent("Library/library.json"))
+        let downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
+        return (capture, inbox, library, downloads)
+    }
+}
+
+private final class MusicShareTestContext: NSExtensionContext {
+    var items: [NSExtensionItem] = []
+    override var inputItems: [Any] { items }
+}
+private final class MusicShareTestController: MusicAudioShareViewController {
+    let context = MusicShareTestContext()
+    override var extensionContext: NSExtensionContext? { context }
+}
+private final class YouTubeShareProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "audio/mp4"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data([1, 2, 3]))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

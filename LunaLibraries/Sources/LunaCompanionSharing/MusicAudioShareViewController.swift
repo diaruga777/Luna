@@ -1,10 +1,14 @@
 import UIKit
 import UniformTypeIdentifiers
 import AVFoundation
+@_exported import LunaMusicSharing
 
 open class MusicAudioShareViewController: CompanionShareViewController {
     /// Containing app supplies security-scoped URLs for Open In; extensions use providers.
     public var sourceURLs: [URL] = []
+    public var resolveYouTube: ((String) async throws -> MusicYouTubeShare.Resolved)?
+    private var youtube: MusicYouTubeShare.Resolved?
+    private var isLink = false
     private let mode = UISegmentedControl(items: ["Song", "Podcast"])
     private let destinations = UIStackView()
     private var titleField: UITextField!
@@ -30,7 +34,22 @@ open class MusicAudioShareViewController: CompanionShareViewController {
             do {
                 choices = try CompanionShareInbox.production("music").choices(); updateMode()
                 if sourceURLs.isEmpty {
-                    for provider in SharedInput.providers(in: extensionContext) {
+                    let providers = SharedInput.providers(in: extensionContext)
+                    if !providers.isEmpty, providers.allSatisfy({
+                        $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+                    }), !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.audio.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) {
+                        isLink = true; mode.selectedSegmentIndex = 1; updateMode()
+                        let text = try await SharedInput.text(in: extensionContext)
+                        let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+                        let links = detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.url)
+                        guard links.count == 1, let input = links.first, let resolveYouTube else { throw MusicYouTubeShare.unsupported() }
+                        status.text = "Checking link…"
+                        youtube = try await resolveYouTube(input.absoluteString)
+                        status.text = youtube?.metadata.title
+                        actions.forEach { $0.isEnabled = true }
+                        return
+                    }
+                    for provider in providers {
                         let file = try await SharedInput.file(provider, conformingTo: .audio)
                         files.append(file); temporary.append(file.deletingLastPathComponent())
                     }
@@ -45,13 +64,15 @@ open class MusicAudioShareViewController: CompanionShareViewController {
                 }
                 status.text = files.map(\.lastPathComponent).joined(separator: "\n")
                 actions.forEach { $0.isEnabled = true }
-            } catch { status.text = error.localizedDescription }
+            } catch { status.text = isLink ? MusicYouTubeShare.unsupportedMessage : error.localizedDescription }
         }
         updateMode()
     }
     private func updateMode() {
         let podcast = mode.selectedSegmentIndex == 1
-        playlistField.isHidden = podcast
+        mode.isHidden = isLink
+        destinations.isHidden = isLink
+        playlistField.isHidden = podcast || isLink
         actions.enumerated().forEach { $0.element.isHidden = podcast ? $0.offset == 0 : $0.offset != 0 }
         for view in destinations.arrangedSubviews { view.removeFromSuperview() }
         if podcast { addChoice(id: "", title: "Imported Audio", checked: audioList == nil) }
@@ -72,6 +93,13 @@ open class MusicAudioShareViewController: CompanionShareViewController {
         destinations.addArrangedSubview(button)
     }
     private func saveAudio(next: Bool) {
+        if let youtube {
+            performSave { [self] in
+                try MusicYouTubeShare.start(youtube, title: titleField.text ?? "", next: next, choices: choices,
+                                            inbox: CompanionShareInbox.production("music"))
+            }
+            return
+        }
         let podcast = mode.selectedSegmentIndex == 1
         let names = files.enumerated().map { "\($0.offset)-" + $0.element.lastPathComponent }
         let capture = CompanionShareCapture(kind: podcast ? .podcast : .song, title: titleField.text ?? "",

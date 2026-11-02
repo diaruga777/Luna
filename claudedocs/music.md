@@ -3,10 +3,31 @@
 ## Shared and opened audio
 
 `LunaMusicShare` (`$(PRODUCT_BUNDLE_PREFIX).music.share`) accepts audio files,
-including MP3s. Open In uses the same screen inside Music. The segmented control
+including MP3s, and single YouTube video URLs (also embedded in shared text).
+Open In uses the same screen inside Music. The segmented control
 defaults to Podcast; that page selects a local audio list and offers Add to Queue
 or Play Next. Song allows multiple file-library playlists, an optional new
 playlist, and Save. Successful terminal actions close the share sheet.
+
+For a YouTube link, the extension checks the paired Mac's current capability and
+resolves the audio over the shared authenticated connection. The sheet offers
+Add to Queue or Play Next and an optional title; song and local-list choices are
+hidden. Unsupported URLs, missing/uninstalled tools, old companions and connection
+failures all show the same generic “This item can’t be added to Luna Music.” error.
+No setup or tool names appear in the sheet.
+
+Saving starts an extension-owned background URLSession with the shared App Group
+container and a unique identifier per capture. The sheet closes once iOS owns the
+request; Music need not be foregrounded for the audio to download. Music handles
+background-session events, validates completed audio and imports it into the normal
+YouTube podcast queue and download manifest. Stable video IDs prevent duplicate
+episodes on replay; Play Next uses the existing queue. Captures persist only stable
+metadata and policy, never expiring media URLs or headers. The last published
+cellular setting and available byte budget constrain the transfer, and the current
+budget is checked again at import. Media rejection uses the existing Mac fallback;
+network/policy/storage failures remain retryable without starting a Mac download.
+Each session is claimed by Music only when iOS delivers its background events,
+so foreground inbox polling cannot take ownership from a live extension.
 
 The extension copies all files into an atomically published App Group inbox
 before closing. Music consumes captures on launch/activation and every two seconds

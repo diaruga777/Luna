@@ -2,14 +2,16 @@ import Foundation
 import AVFoundation
 import LunaCompanionShareCore
 import LunaMusicFiles
+import LunaMusicSharing
 
 @MainActor public enum MusicShareImport {
-    private static var importing = false
+    private static var importTask: Task<Void, Never>?
     private static var timer: Timer?
     public static func start() {
         // Audio keeps the app alive in the background. Poll only while that
         // process is running so Play Next can reach the current podcast queue.
         guard timer == nil else { return }
+        MusicYouTubeShare.consume = { await consume() }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
             Task { @MainActor in await consume() }
         }
@@ -22,16 +24,24 @@ import LunaMusicFiles
             choices.audioLists = PodcastLibraryController.shared.state.shows.values.filter {
                 $0.feedURL.scheme == "lunamusic" && $0.feedURL.host == "audio-list" && $0.id != "external-audio"
             }.sorted { $0.title < $1.title }.map { .init(id: $0.id, title: $0.title) }
+            choices.downloadBytesAvailable = max(0, PodcastLibraryController.shared.state.settings.maximumDownloadBytes - PodcastDownloads.shared.totalBytes)
+            choices.cellularDownloads = PodcastLibraryController.shared.state.settings.cellularDownloads
             try CompanionShareInbox.production("music").publish(choices)
         } catch { NSLog("Music share choices: %@", error.localizedDescription) }
     }
     public static func consume() async {
-        guard !importing else { return }; importing = true
-        defer { importing = false }
+        if let importTask { await importTask.value; return }
+        let task = Task { await consumePending() }
+        importTask = task
+        await task.value
+        importTask = nil
+    }
+    private static func consumePending() async {
         do {
             let inbox = try CompanionShareInbox.production("music")
             for capture in try inbox.pending() {
                 do {
+                    if capture.youtube != nil, case .pending = try MusicYouTubeShare.result(for: capture, inbox: inbox) { continue }
                     try await importCapture(capture, inbox: inbox)
                     try inbox.remove(capture)
                 } catch { PodcastLibraryController.shared.report(error); break }
@@ -41,7 +51,12 @@ import LunaMusicFiles
     }
     public static func importCapture(_ capture: CompanionShareCapture, inbox: CompanionShareInbox,
                                      podcasts: PodcastLibraryController = .shared,
-                                     music: VaultMusicController = .shared) async throws {
+                                     music: VaultMusicController = .shared,
+                                     downloads: PodcastDownloads? = nil) async throws {
+        if capture.youtube != nil {
+            try await (downloads ?? .shared).importSharedYouTube(capture, inbox: inbox)
+            return
+        }
         let directory = inbox.directory(for: capture)
         let entries = Array(capture.filenames.enumerated())
         for (index, filename) in capture.playNext && capture.kind == .podcast ? Array(entries.reversed()) : entries {

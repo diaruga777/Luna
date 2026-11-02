@@ -4,12 +4,20 @@
 <dict>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
+	<key>LunaMacKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).mac.connection</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Luna Music connects to your paired Mac to add audio.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>NSExtensionActivationRule</key>
 			<dict>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
 				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
 				<integer>20</integer>
 			</dict>

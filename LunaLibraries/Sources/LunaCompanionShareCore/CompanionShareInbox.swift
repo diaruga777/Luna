@@ -14,11 +14,22 @@ public struct CompanionShareCapture: Codable, Sendable {
     public let destinations: [String]
     public let newPlaylist: String
     public let playNext: Bool
+    /// Stable metadata only. Signed stream URLs/headers belong to URLSession.
+    public struct YouTube: Codable, Sendable {
+        public let videoID: String
+        public let author: String
+        public let duration: Double
+        public let maximumBytes: Int64
+        public init(videoID: String, author: String, duration: Double, maximumBytes: Int64) {
+            self.videoID = videoID; self.author = author; self.duration = duration; self.maximumBytes = maximumBytes
+        }
+    }
+    public let youtube: YouTube?
     public init(kind: Kind, text: String = "", title: String = "", filenames: [String] = [],
-                destinations: [String] = [], newPlaylist: String = "", playNext: Bool = false) {
+                destinations: [String] = [], newPlaylist: String = "", playNext: Bool = false, youtube: YouTube? = nil) {
         id = UUID(); createdAt = Date(); self.kind = kind; self.text = text; self.title = title
         self.filenames = filenames; self.destinations = destinations
-        self.newPlaylist = newPlaylist; self.playNext = playNext
+        self.newPlaylist = newPlaylist; self.playNext = playNext; self.youtube = youtube
     }
 }
 
@@ -30,10 +41,12 @@ public struct CompanionShareChoices: Codable, Sendable {
     }
     public var playlists: [Choice] = []
     public var audioLists: [Choice] = []
+    public var downloadBytesAvailable: Int64?
+    public var cellularDownloads: Bool?
     public init() {}
 }
 
-public struct CompanionShareInbox {
+public struct CompanionShareInbox: Sendable {
     public let root: URL
     public init(root: URL) { self.root = root }
     public static func production(_ app: String) throws -> Self {

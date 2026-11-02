@@ -182,7 +182,7 @@ public final class VaultPreviewRouter: @unchecked Sendable {
               capability.localURL == url,
               (try? repository.validateLocalContentCapability(capability)) == true,
               let kind = plan.kind else {
-            return VaultPreviewStatusViewController(plan: plan)
+            return statusController(for: plan)
         }
         let child: UIViewController
         switch kind {
@@ -194,7 +194,7 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         case .quickLook: child = VaultQuickLookPreviewViewController(url: url)
         }
         guard let lease = try? beginPreview(capability) else {
-            return VaultPreviewStatusViewController(plan: VaultPreviewPlan(
+            return statusController(for: VaultPreviewPlan(
                 availability: .failed, kind: kind,
                 message: "This preview is no longer available."))
         }
@@ -202,6 +202,16 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                                                        repository: repository,
                                                        lease: lease,
                                                        capability: capability)
+    }
+
+    private func statusController(for plan: VaultPreviewPlan) -> UIViewController {
+        let status = VaultPreviewStatusViewController(plan: plan)
+        let navigation = UINavigationController(rootViewController: status)
+        status.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .done, primaryAction: UIAction { [weak navigation] _ in
+                navigation?.dismiss(animated: true)
+            })
+        return navigation
     }
 
     /// `makeViewController` is the only caller: it begins this lease and
@@ -243,7 +253,7 @@ public final class VaultPreviewRouter: @unchecked Sendable {
 /// Owns the repository lease for the entire presented viewer lifecycle. The
 /// lease is renewed while visible and ended as soon as the viewer disappears,
 /// allowing iCloud eviction and cache maintenance to proceed safely.
-public final class VaultPreviewLeaseHostingViewController: UIViewController {
+public final class VaultPreviewLeaseHostingViewController: UINavigationController {
     private let content: UIViewController
     private let repository: VaultRepository
     private let capability: VaultLocalContentCapability
@@ -257,20 +267,15 @@ public final class VaultPreviewLeaseHostingViewController: UIViewController {
         self.repository = repository
         self.capability = capability
         self.lease = lease
-        super.init(nibName: nil, bundle: nil)
+        super.init(rootViewController: content)
+        content.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .done, target: self, action: #selector(closePreview))
     }
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    public override func viewDidLoad() {
-        super.viewDidLoad()
-        addChild(content)
-        content.view.frame = view.bounds
-        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(content.view)
-        content.didMove(toParent: self)
-    }
+    @objc private func closePreview() { dismiss(animated: true) }
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)

@@ -43,6 +43,28 @@ import MediaPlayer
 
 @MainActor
 final class MusicLayoutTests: XCTestCase {
+    func testFullScreenPlayersHaveVisibleReachableCloseButtons() throws {
+        for controller in [MusicPlayerViewController(), PodcastPlayerViewController()] as [UIViewController] {
+            show(controller)
+            let close = try XCTUnwrap(descendants(controller.view, of: UIButton.self).first {
+                $0.accessibilityLabel == "Close Now Playing"
+            })
+            XCTAssertNotNil(close.image(for: .normal))
+            for size in [CGSize(width: 393, height: 852), CGSize(width: 852, height: 393)] {
+                window.frame.size = size
+                controller.view.frame = window.bounds
+                controller.view.setNeedsLayout()
+                controller.view.layoutIfNeeded()
+                let frame = close.convert(close.bounds, to: controller.view)
+                XCTAssertTrue(controller.view.safeAreaLayoutGuide.layoutFrame.contains(frame))
+                XCTAssertGreaterThanOrEqual(frame.width, 44)
+                XCTAssertGreaterThanOrEqual(frame.height, 44)
+                let hit = controller.view.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil)
+                XCTAssertTrue(hit?.isDescendant(of: close) == true)
+            }
+            window.isHidden = true
+        }
+    }
     private var window: UIWindow!
 
     override func tearDown() {

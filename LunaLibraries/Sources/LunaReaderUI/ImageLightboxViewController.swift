@@ -66,8 +66,16 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
 
         closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark", padding: 12)
         closeButton.alpha = 0
+        closeButton.accessibilityLabel = L10n.string("Common_close_Luna")
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeButton)
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+        ])
 
         let outsideTap = UITapGestureRecognizer(target: self, action: #selector(outsideTapped(_:)))
         outsideTap.delegate = self
@@ -76,15 +84,29 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        restingFrame = fittedFrame(in: view.bounds.inset(by: UIEdgeInsets(top: 56, left: 16, bottom: 40, right: 16)))
+        restingFrame = fittedFrame(in: imageBounds)
         let applyOpenState = {
             self.dimmingView.alpha = 1
             self.scrollView.frame = self.restingFrame
             self.imageView.frame = self.scrollView.bounds
-            self.closeButton.frame = CGRect(x: self.restingFrame.minX - 6, y: self.restingFrame.minY - 46, width: 44, height: 44)
             self.closeButton.alpha = 1
         }
         UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut], animations: applyOpenState)
+    }
+
+    private var imageBounds: CGRect {
+        view.safeAreaLayoutGuide.layoutFrame.inset(by: UIEdgeInsets(top: 60, left: 16, bottom: 16, right: 16))
+    }
+
+    public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: { _ in
+            self.view.layoutIfNeeded()
+            self.scrollView.setZoomScale(1, animated: false)
+            self.restingFrame = self.fittedFrame(in: self.imageBounds)
+            self.scrollView.frame = self.restingFrame
+            self.imageView.frame = self.scrollView.bounds
+        })
     }
 
     public func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
@@ -184,7 +206,7 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
 
 extension ImageLightboxViewController: UIGestureRecognizerDelegate {
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        touch.view !== closeButton
+        !(touch.view?.isDescendant(of: closeButton) ?? false)
     }
 
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

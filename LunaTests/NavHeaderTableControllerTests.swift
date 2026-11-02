@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaPluginUI
 import UIKit
 import XCTest
 
@@ -14,6 +15,43 @@ import XCTest
 /// real nav bar takes UIKit's left-edge pop gesture with it.
 @MainActor
 final class NavHeaderTableControllerTests: XCTestCase {
+
+    func testPluginSourceRestoresSystemBackButtonAndReturningRestoresCustomHeader() async throws {
+        let settings = LongScreen(style: .insetGrouped)
+        let nav = UINavigationController(rootViewController: settings)
+        let window = UITestSupport.host(nav)
+        XCTAssertTrue(nav.isNavigationBarHidden)
+
+        let source = PluginSourceViewController(pluginName: "Plugin", sourceText: "// source")
+        nav.pushViewController(source, animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        nav.view.layoutIfNeeded()
+        XCTAssertFalse(nav.isNavigationBarHidden, "Show source must expose UIKit's Back button")
+        XCTAssertFalse(source.navigationItem.hidesBackButton)
+        XCTAssertTrue(nav.navigationBar.topItem === source.navigationItem)
+
+        nav.popViewController(animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        nav.view.layoutIfNeeded()
+        XCTAssertTrue(nav.isNavigationBarHidden)
+        let point = backButtonPoint(in: settings)
+        XCTAssertTrue(settings.tableView.hitTest(point, with: nil) is UIControl)
+        _ = window
+    }
+
+    func testCustomHeaderDestinationDoesNotShowASecondNavigationBar() async throws {
+        let root = LongScreen(style: .insetGrouped)
+        let nav = UINavigationController(rootViewController: root)
+        let window = UITestSupport.host(nav)
+        let child = LongScreen(style: .insetGrouped)
+        nav.pushViewController(child, animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(nav.isNavigationBarHidden)
+        nav.popViewController(animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(nav.isNavigationBarHidden)
+        _ = window
+    }
 
     /// A settings-shaped screen with enough rows to scroll well past the header.
     private final class LongScreen: NavHeaderTableController {

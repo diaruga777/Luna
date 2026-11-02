@@ -3,7 +3,7 @@ set -euo pipefail
 MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="LunaVaultMacCompanion"
-BUNDLE="$ROOT_DIR/.build-vault-mac/Luna Mac.app"
+BUNDLE="${LUNA_MAC_APP_BUNDLE:-$ROOT_DIR/.build-vault-mac/Luna Mac.app}"
 # When supplied, keep macOS privacy grants tied to a certificate-backed app
 # identity across rebuilds. Resolve only valid identities; expired certificates
 # can share a name.

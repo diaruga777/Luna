@@ -214,6 +214,7 @@ public actor CompanionYouTubeAudio {
         return nil
     }
     static func run(_ command: Command) async throws -> Data {
+        #if os(macOS)
         let worker = Task.detached(priority: .utility) { () async throws -> Data in
             let staging = FileManager.default.temporaryDirectory.appendingPathComponent("luna-ytdlp-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -255,5 +256,8 @@ public actor CompanionYouTubeAudio {
             return try Data(contentsOf: output)
         }
         return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+        #else
+        throw MusicFileError("YouTube audio is unavailable on this device.")
+        #endif
     }
 }

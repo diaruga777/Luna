@@ -136,6 +136,16 @@ final class CompanionController: @unchecked Sendable {
                 return (true, active.insert((connection, delegate), for: connectionID))
             }
             guard registration.0 else { await connection.close(reason: "Connection changed"); return }
+            // A menu-bar app has no visible window during phone transfers.
+            // Without this activity macOS can nap the process and demote its
+            // TCP sockets to background/LEDBAT, even while serving file bytes.
+            // Keep the assertion through the async writes and Go TLS drain,
+            // rather than ending it as soon as a disk read finishes. Idle
+            // system sleep remains allowed, and closed/replaced peers release it.
+            let activity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep,
+                reason: "Serving a paired Luna app")
+            defer { ProcessInfo.processInfo.endActivity(activity) }
             if let retired = registration.1 {
                 // A trusted reconnect must make progress even if half-open
                 // sessions from the previous network have filled the limit.

@@ -147,3 +147,25 @@ UI regressions exercise the one-second switch to a progress bar before metadata
 arrives, halfway byte progress, the waiting state, completion, dark mode, and
 accessibility text size. Loopback timing is not a physical-device or network
 throughput measurement.
+
+## Opt-in physical-device transfer measurement
+
+`VaultLiveTransferTests.testPairedMacDownload` runs in the `LunaVault` test
+host, using the existing shared pairing and the production Go TLS/BEP browser
+path. It reads at most 16 MiB from an explicitly supplied absolute Mac path
+with the production eight-request window, and reports the route, metadata
+latency, per-chunk latency, and aggregate payload MiB/s. It does not publish
+credentials, write to the Mac, or launch WebDriverAgent. Without the environment
+variable it skips; a skip is not a throughput measurement.
+
+```sh
+TEST_RUNNER_LUNA_VAULT_LIVE_TRANSFER_PATH='<absolute-path-on-Mac>' \
+xcodebuild test -scheme LunaVault \
+  -destination 'platform=iOS,id=<unlocked-device-UDID>' \
+  -only-testing:LunaVaultTests/VaultLiveTransferTests/testPairedMacDownload
+```
+
+Inspect the companion's peer socket during the read with
+`nettop -n -L 1 -p <companion-pid>`. Record its `tc_mgt`, `cc_algo`, byte counters,
+and retransmissions alongside the device result; localhost-only benchmarks do
+not exercise macOS background traffic policy on the real network socket.

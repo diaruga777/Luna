@@ -13,8 +13,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
     private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
     private let shade = UIView()
     private let stage = UIView()
-    private let grabber = UIView()
-    private let close = UIButton(type: .custom)
+    private let close = UIButton(type: .system)
     private let volumeLow = UIImageView(image: UIImage(systemName: "speaker.fill"))
     private let volumeHigh = UIImageView(image: UIImage(systemName: "speaker.wave.3.fill"))
     private let art = MusicStyle.artwork(corner: 10)
@@ -65,11 +64,11 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         backdrop.alpha = 0.15
         backdrop.clipsToBounds = true
         shade.backgroundColor = UIColor.black.withAlphaComponent(0.25)
-        [backdrop, blur, shade, stage, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, route, grabber, close].forEach(view.addSubview)
+        [backdrop, blur, shade, stage, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, route, close].forEach(view.addSubview)
         [art, names, more, options, sourceLabel, table].forEach(stage.addSubview)
         stage.clipsToBounds = true
-        grabber.backgroundColor = UIColor.white.withAlphaComponent(0.4)
-        grabber.layer.cornerRadius = 2
+        close.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        close.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold), forImageIn: .normal)
         close.accessibilityLabel = "Close Now Playing"
         close.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
         for image in [volumeLow, volumeHigh] {
@@ -199,7 +198,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         let landscape = view.bounds.width > view.bounds.height
         let width = min(560, landscape ? view.bounds.width * 0.44 : view.bounds.width - 64)
         let left = landscape ? view.bounds.width - width - max(safe.right, 32) : (view.bounds.width - width) / 2
-        let top = max(safe.top + 24, 40)
+        let top = max(safe.top + 56, 80)
         let bottom = view.bounds.height - max(safe.bottom, 12)
         let height = bottom - top
         // Reserve a fixed lower region; the artwork absorbs changes in height.
@@ -208,8 +207,7 @@ internal final class MusicPlayerViewController: UIViewController, UITableViewDat
         stage.frame = landscape
             ? CGRect(x: max(safe.left, 32), y: top, width: view.bounds.width * 0.4 - 32, height: max(0, height))
             : CGRect(x: left, y: top, width: width, height: max(0, timelineY - top - 12))
-        grabber.frame = CGRect(x: view.bounds.midX - 30, y: max(12, safe.top + 8), width: 60, height: 4)
-        close.frame = CGRect(x: view.bounds.midX - 50, y: max(0, safe.top - 12), width: 100, height: 44)
+        close.frame = CGRect(x: view.bounds.midX - 22, y: safe.top + 4, width: 44, height: 44)
         slider.frame = CGRect(x: left, y: timelineY, width: width, height: 24)
         elapsed.frame = CGRect(x: left, y: timelineY + 25, width: width / 2, height: 20)
         remaining.frame = CGRect(x: left + width / 2, y: timelineY + 25, width: width / 2, height: 20)

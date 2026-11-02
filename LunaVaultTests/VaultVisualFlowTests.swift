@@ -2,9 +2,42 @@ import XCTest
 import UIKit
 import LunaVaultUI
 import LunaVaultBEP
+import QuickLook
 
 @MainActor
 final class VaultVisualFlowTests: XCTestCase {
+    func testSystemImagePreviewHasReachableDoneAndCleansUpAfterDismissal() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("preview-\(UUID()).png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 300)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 30, height: 300))
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let root = UIViewController()
+        try await host(root)
+        var dismissals = 0
+        let viewer = VaultFilePreviewViewController(url: url) { dismissals += 1 }
+        root.present(viewer, animated: false)
+        try await capture("system-image-preview")
+        viewer.view.layoutIfNeeded()
+        let preview = try XCTUnwrap(viewer.topViewController as? QLPreviewController)
+        XCTAssertEqual(viewer.numberOfPreviewItems(in: preview), 1)
+        XCTAssertEqual(viewer.previewController(preview, previewItemAt: 0) as? URL, url)
+        XCTAssertFalse(viewer.isNavigationBarHidden)
+        let done = try XCTUnwrap(preview.navigationItem.leftBarButtonItem)
+        let button = try XCTUnwrap(views(in: viewer.navigationBar).compactMap { $0 as? UIControl }.first { $0.bounds.width > 0 && !$0.isHidden })
+        let frame = button.convert(button.bounds, to: viewer.view)
+        XCTAssertGreaterThanOrEqual(frame.minY, viewer.view.safeAreaInsets.top)
+        let hit = viewer.view.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil)
+        XCTAssertTrue(hit?.isDescendant(of: button) == true)
+        let action = try XCTUnwrap(done.action)
+        UIApplication.shared.sendAction(action, to: done.target, from: done, for: nil)
+        try await waitUntil { root.presentedViewController == nil && dismissals == 1 }
+        XCTAssertEqual(dismissals, 1)
+    }
+
+    private func views(in view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + views(in: $0) } }
     private var window: UIWindow?
     private let defaults = UserDefaults(suiteName: "VaultVisualFlowTests")!
     override func setUp() { super.setUp(); defaults.removePersistentDomain(forName: "VaultVisualFlowTests") }

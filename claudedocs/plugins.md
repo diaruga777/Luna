@@ -85,6 +85,9 @@ Single `.js`, pasted source and existing `.luna` handoffs still work.
 
 Creating a new plugin from Settings, a failed save or a handoff uses the shared
 premium gate in `PluginCreateViewController`; see [premium.md](premium.md).
+Creation always exposes the system navigation bar: pushed screens use Back,
+and modal roots offer Cancel. Show Source uses the system Back button too;
+custom settings headers restore the navigation bar before opening it.
 
 ## Core URL ownership migration (2026-10-04)
 

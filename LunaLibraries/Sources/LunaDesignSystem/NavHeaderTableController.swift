@@ -49,12 +49,17 @@ open class NavHeaderTableController: UITableViewController {
     /// screen would otherwise only be dismissable by the back chevron.
     open override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // UIKit can restore the outgoing system bar's state at the end of a pop.
+        navigationController?.setNavigationBarHidden(true, animated: false)
         popGestureClaim.claim(in: navigationController)
     }
 
     open override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         popGestureClaim.release()
+        // Standard destinations (plugin source, plugin creation, automations)
+        // rely on UIKit's Back button. Do not leave our hidden-bar state behind.
+        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
 
     open override func viewSafeAreaInsetsDidChange() {

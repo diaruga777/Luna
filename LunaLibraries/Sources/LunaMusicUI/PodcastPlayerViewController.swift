@@ -23,8 +23,7 @@ extension MusicScreenViewController {
     private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
     private let shade = CAGradientLayer()
     private let stage = UIView()
-    private let grabber = UIView()
-    private let close = UIButton(type: .custom)
+    private let close = UIButton(type: .system)
     private let artwork = UIImageView()
     private let names = UIView()
     private let titleLabel = PodcastPlayerTitleView()
@@ -75,13 +74,14 @@ extension MusicScreenViewController {
         shade.colors = [UIColor.black.withAlphaComponent(0.1).cgColor, UIColor.black.withAlphaComponent(0.55).cgColor]
         [backdrop, blur].forEach(view.addSubview)
         view.layer.addSublayer(shade)
-        [stage, grabber, close, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, options].forEach(view.addSubview)
+        [stage, close, slider, elapsed, remaining, transport, volume, volumeLow, volumeHigh, options].forEach(view.addSubview)
         stage.clipsToBounds = true
         [artwork, names, more].forEach(stage.addSubview)
         artwork.layer.cornerRadius = 10; artwork.clipsToBounds = true; artwork.backgroundColor = .secondarySystemBackground
         artwork.isUserInteractionEnabled = true
         artwork.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openVideo)))
-        grabber.backgroundColor = UIColor.white.withAlphaComponent(0.5); grabber.layer.cornerRadius = 2
+        close.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        close.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold), forImageIn: .normal)
         close.accessibilityLabel = "Close Now Playing"
         close.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
         close.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panDismiss(_:))))
@@ -192,7 +192,7 @@ extension MusicScreenViewController {
         let landscape = view.bounds.width > view.bounds.height
         let width = min(560, landscape ? view.bounds.width * 0.46 : view.bounds.width - 64)
         let left = landscape ? view.bounds.width - width - max(24, safe.right) : (view.bounds.width - width) / 2
-        let top = max(safe.top + 32, 80)
+        let top = max(safe.top + 56, 80)
         let bottom = view.bounds.height - max(safe.bottom, 12) - 12
         let height = bottom - top
         let controlsHeight = landscape ? height : min(270, height * 0.42)
@@ -200,8 +200,7 @@ extension MusicScreenViewController {
         stage.frame = landscape
             ? CGRect(x: max(24, safe.left), y: top, width: max(0, view.bounds.width * 0.44 - max(24, safe.left)), height: max(0, height))
             : CGRect(x: left, y: top, width: width, height: max(0, timelineY - top - 12))
-        grabber.frame = CGRect(x: view.bounds.midX - 29, y: max(12, safe.top + 8), width: 58, height: 4)
-        close.frame = CGRect(x: view.bounds.midX - 60, y: max(0, safe.top - 12), width: 120, height: 44)
+        close.frame = CGRect(x: view.bounds.midX - 22, y: safe.top + 4, width: 44, height: 44)
         slider.frame = CGRect(x: left, y: timelineY - 10, width: width, height: 44)
         elapsed.frame = CGRect(x: left, y: timelineY + 25, width: width / 2, height: max(22, elapsed.font.lineHeight))
         remaining.frame = CGRect(x: left + width / 2, y: elapsed.frame.minY, width: width / 2, height: elapsed.bounds.height)

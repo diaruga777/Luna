@@ -16,6 +16,50 @@ import XCTest
 
 @MainActor
 final class PluginCreateScreenTests: XCTestCase {
+    func testModalCreationHasAnExplicitCancelAndCanBeDismissed() async throws {
+        let root = UIViewController()
+        let window = try await hostExitFlow(root)
+        defer { window.isHidden = true }
+        let screen = PluginCreateViewController(prefill: "Save recipes", handoffStore: temporaryHandoffStore(),
+            launcher: RecordingCreateLauncher(), premiumState: unlockedState())
+        let navigation = UINavigationController(rootViewController: screen)
+        root.present(navigation, animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        let cancel = try XCTUnwrap(screen.navigationItem.leftBarButtonItem)
+        XCTAssertFalse(navigation.isNavigationBarHidden)
+        UIApplication.shared.sendAction(try XCTUnwrap(cancel.action), to: cancel.target, from: cancel, for: nil)
+        for _ in 0..<100 {
+            if root.presentedViewController == nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(root.presentedViewController)
+    }
+
+    func testPushedCreationRestoresTheNavigationBarFromAHiddenBarHost() async throws {
+        let navigation = UINavigationController(rootViewController: UIViewController())
+        let window = try await hostExitFlow(navigation)
+        defer { window.isHidden = true }
+        navigation.setNavigationBarHidden(true, animated: false)
+        let screen = PluginCreateViewController(prefill: "Save recipes", handoffStore: temporaryHandoffStore(),
+            launcher: RecordingCreateLauncher(), premiumState: unlockedState())
+        navigation.pushViewController(screen, animated: false)
+        for _ in 0..<100 {
+            if !navigation.isNavigationBarHidden { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(navigation.isNavigationBarHidden)
+        XCTAssertNil(screen.navigationItem.leftBarButtonItem, "Pushed creation uses the system Back button")
+    }
+
+    private func hostExitFlow(_ controller: UIViewController) async throws -> UIWindow {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        return window
+    }
     private func unlockedState() -> PremiumAccessState {
         let defaults = UserDefaults(suiteName: "test.premium.\(UUID().uuidString)")!
         let state = PremiumAccessState(defaults: defaults)

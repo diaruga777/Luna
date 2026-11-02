@@ -40,7 +40,13 @@ upload, because removing/replacing the peer clears the mirror's local-change row
 
 File opening presents delayed, cancellable progress for slow preparation; cached
 files avoid a flashing progress sheet. Quick Look is presented from the visible
-folder. Large preview copies run off the main actor, and temporary plaintext
+folder, inside a full-screen system navigation controller with a Done button.
+This lets UIKit place the image/file viewer's controls below the status bar and
+handle image zooming, rotation, sharing, and the preview toolbar. Closing the
+navigation controller also removes the temporary preview directory. The legacy
+protected-object preview router gives every preview and unavailable state a
+system Done button too, while retaining its repository lease lifecycle.
+Large preview copies run off the main actor, and temporary plaintext
 preview copies are removed when Quick Look closes. The add menu offers separate
 file, folder, Photos, and album pickers. Folder import retains nested paths and empty folders.
 Opening waits for the Mac's current index before requesting blocks and retries

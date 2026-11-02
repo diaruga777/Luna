@@ -21,6 +21,38 @@ final class VaultStage5IntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testProtectedPreviewHasDoneAndReleasesItsLeaseWhenClosed() async throws {
+        let directory = try VaultTemporaryDirectory(name: "preview-close")
+        defer { try? directory.cleanUp() }
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory.url, protectionApplier: protection)
+        let url = directory.url.appendingPathComponent("note.txt")
+        try Data("private text".utf8).write(to: url)
+        let importer = try VaultImportCoordinator(repository: repository, protectionApplier: protection)
+        let result = try importer.importFile(VaultImportSource(fileURL: url, contentType: "text/plain"))
+        let router = VaultPreviewRouter(repository: repository, protectionApplier: protection)
+        let plan = try await router.plan(objectID: result.objectID)
+        let navigation = try XCTUnwrap(router.makeViewController(for: plan) as? UINavigationController)
+        XCTAssertTrue(try repository.isPreviewActive(result.objectID))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let root = UIViewController()
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        root.present(navigation, animated: false)
+        let done = try XCTUnwrap(navigation.topViewController?.navigationItem.leftBarButtonItem)
+        XCTAssertFalse(navigation.isNavigationBarHidden)
+        UIApplication.shared.sendAction(try XCTUnwrap(done.action), to: done.target, from: done, for: nil)
+        for _ in 0..<100 {
+            if root.presentedViewController == nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(root.presentedViewController)
+        XCTAssertFalse(try repository.isPreviewActive(result.objectID))
+    }
+
+    @MainActor
     func testImportButtonReachesProtectedImportCoordinator() throws {
         let directory = try VaultTemporaryDirectory(name: "stage5-import-seam")
         defer { try? directory.cleanUp() }

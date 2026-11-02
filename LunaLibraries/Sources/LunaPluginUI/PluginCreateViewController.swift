@@ -54,8 +54,20 @@ public final class PluginCreateViewController: UIViewController {
         updatePlaceholder()
     }
 
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
+        if navigationController?.viewControllers.first === self {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .cancel, target: self, action: #selector(closeCreation))
+        }
+    }
+
+    @objc private func closeCreation() { dismiss(animated: true) }
+
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: false)
         guard premiumState.hasAccess else {
             requestPremiumAccess()
             return

@@ -1,7 +1,6 @@
 import LunaAppConfig
 import BackgroundTasks
 import UIKit
-import QuickLook
 import UniformTypeIdentifiers
 import LunaVaultBEP
 import LunaVaultStore
@@ -103,7 +102,7 @@ import LunaVaultUI
     }
 }
 
-@MainActor private final class VaultConnectedFilePresenter: NSObject, UIDocumentPickerDelegate, QLPreviewControllerDataSource, @preconcurrency QLPreviewControllerDelegate {
+@MainActor private final class VaultConnectedFilePresenter: NSObject, UIDocumentPickerDelegate {
     let runtime: VaultConnectedRuntime
     let queue: VaultIncomingQueue
     let transfers: VaultTransferController
@@ -262,7 +261,7 @@ import LunaVaultUI
                     await hideProgress()
                     try Task.checkCancellation()
                     removePreview(); previewURL = target
-                    let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
+                    let preview = VaultFilePreviewViewController(url: target) { [weak self] in self?.removePreview() }
                     visiblePresenter?.present(preview, animated: true)
                     work = nil
                     return
@@ -293,7 +292,7 @@ import LunaVaultUI
                 try Task.checkCancellation()
                 removePreview()
                 previewURL = target
-                let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
+                let preview = VaultFilePreviewViewController(url: target) { [weak self] in self?.removePreview() }
                 visiblePresenter?.present(preview, animated: true)
             } catch {
                 if let prepared { try? FileManager.default.removeItem(at: prepared.deletingLastPathComponent()) }
@@ -349,9 +348,6 @@ import LunaVaultUI
         if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
         previewURL = nil
     }
-    func previewControllerDidDismiss(_ controller: QLPreviewController) { removePreview() }
-    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { previewURL == nil ? 0 : 1 }
-    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> any QLPreviewItem { previewURL! as NSURL }
     private func show(_ error: Error, title: String) {
         let alert = UIAlertController(title: title, message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))

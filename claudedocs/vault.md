@@ -151,3 +151,10 @@ cannot reuse it. File browsing already starts from the durable local mirror.
 checks reopening, refresh failure and peer isolation using private fixture defaults.
 `YouTubePodcastTests` checks capability restoration, explicit false results,
 backgrounding, refresh failure and peer changes without a live Mac.
+
+Cache validation (2026-11-02): all 17 `VaultVisualFlowTests` passed on the final
+committed detached revision, including saved measurements surviving controller
+recreation and failed reads, and isolation from a different Mac. Vault and Music
+Simulator clients built successfully; the disk-usage screenshot was inspected.
+No physical phone access, Apple sign-in, live Mac pairing, physical acceptance,
+public distribution or marketplace readiness was established by these fixtures.

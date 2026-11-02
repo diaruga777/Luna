@@ -1128,3 +1128,12 @@ reads. Backgrounding and failed/malformed checks retain the previous capability;
 an explicit false reply replaces it. Changing/removing the paired Mac hides the
 old capability. Cached availability only controls the entry point; adding audio
 still needs an authenticated live RPC. No media URLs or credentials are cached.
+
+Cache validation (2026-11-02): the Music Simulator client built from committed
+detached source. All 14 YouTube tests and three library-navigation tests passed
+on the final code, including peer changes during an in-flight reply. A broader
+Music run was interrupted after overlapping Simulator runners; two audio-resume
+checks also failed when isolated. The unchanged main revision reproduced
+`testCancelledPrimingAfterAudioStartsRestoresOriginalPosition`'s local-resume
+timeout, while the immediate-pause check passed there. These extra audio checks
+are not counted as passing cache validation. No audio-playback code was changed.

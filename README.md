@@ -134,3 +134,7 @@ is now supplied through `LUNA_MAC_SIGNING_IDENTITY` when needed. Apple credentia
 
 Repository-specific agent instructions are in [`AGENTS.md`](AGENTS.md).
 Feature notes and manual workflows are in [`claudedocs/`](claudedocs/).
+
+Vault and Music keep last-known Mac disk usage, and Music keeps YouTube audio
+availability. Pages show saved data while refreshing and keep it if the Mac is
+offline. These display caches are scoped to the paired Mac.

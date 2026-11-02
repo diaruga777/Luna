@@ -27,23 +27,56 @@ struct YouTubeDownloadedAudio: Sendable {
     private var resolved: [String: (String, YouTubeAudioMetadata)] = [:]
     private var adding: [String: Task<PodcastEpisode, Error>] = [:]
     private var capabilityGeneration = UUID()
+    private var peerID: (() -> String)?
+    private var capabilityPeer: String?
+    private let defaults: UserDefaults
+    private let capabilityKey = "LunaMusic.youtubeAvailability"
+    private struct Capability: Codable { var peer: String; var available: Bool }
 
-    init(library: PodcastLibraryController? = nil, startDownload: ((PodcastEpisode) async -> Void)? = nil,
+    init(library: PodcastLibraryController? = nil, defaults: UserDefaults = .standard, startDownload: ((PodcastEpisode) async -> Void)? = nil,
          directDownload: @escaping @Sendable (URLRequest, Int64, @escaping @Sendable (Double) -> Void) async throws -> URL = { try await YouTubePodcastController.downloadDirect($0, maximumBytes: $1, progress: $2) },
          validate: @escaping @Sendable (URL) async throws -> Double = { try await YouTubePodcastController.validateAudio($0) }) {
+        self.defaults = defaults
         self.startDownload = startDownload ?? { await PodcastDownloads.shared.download($0) }
         self.library = library ?? .shared; self.directDownload = directDownload; self.validate = validate
     }
-    public func configure(request: @escaping (Data) async throws -> Data) { self.request = request }
+    public func configure(peer: (() -> String)? = nil, request: @escaping (Data) async throws -> Data) {
+        capabilityGeneration = UUID(); peerID = peer; self.request = request
+        capabilityPeer = nil; available = false; restoreAvailability()
+    }
+    /// Display the last successful capability for this Mac while a fresh read runs.
+    public func restoreAvailability() {
+        guard let peerID else { return }
+        let peer = peerID()
+        guard capabilityPeer != peer else { return }
+        capabilityGeneration = UUID(); capabilityPeer = peer
+        available = false
+        if !peer.isEmpty, let data = defaults.data(forKey: capabilityKey),
+           let cached = try? JSONDecoder().decode(Capability.self, from: data), cached.peer == peer {
+            available = cached.available
+        }
+    }
     public func refreshAvailability() async {
+        restoreAvailability()
+        let peer = peerID?()
+        guard peer == nil || peer?.isEmpty == false else { return }
         let generation = UUID(); capabilityGeneration = generation
         let result = try? await rpc(.init(.availability))
-        guard capabilityGeneration == generation else { return }
-        available = result?.available == true
+        restoreAvailability()
+        guard let value = result?.available,
+              !Task.isCancelled, capabilityGeneration == generation, peerID?() == peer else { return }
+        available = value
+        if let peer, let data = try? JSONEncoder().encode(Capability(peer: peer, available: value)) {
+            defaults.set(data, forKey: capabilityKey)
+        }
     }
-    public func disconnected() { capabilityGeneration = UUID(); available = false }
+    public func disconnected() {
+        capabilityGeneration = UUID()
+        restoreAvailability()
+    }
 
     @discardableResult public func enqueue(_ input: String) async throws -> PodcastEpisode {
+        restoreAvailability()
         guard available else { throw PodcastError("Connect to Luna Mac and try again.") }
         guard let video = YouTubeAudioURL.videoID(input) else { throw PodcastError("Enter a YouTube video link.") }
         if let task = adding[video] { return try await task.value }

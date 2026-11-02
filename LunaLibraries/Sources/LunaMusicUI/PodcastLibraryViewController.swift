@@ -98,6 +98,11 @@ import LunaDesignSystem
         }
         configureSearch(); reload()
     }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        youtube.restoreAvailability(); reload()
+        Task { await youtube.refreshAvailability() }
+    }
     private func configureSearch() {
         if mode == 3 || mode == 4 { search.install(on: navigationOwner ?? self) }
     }
@@ -141,9 +146,11 @@ import LunaDesignSystem
         } catch { discoveryMessage = error.localizedDescription }
     }
     override func refreshContent() async {
+        async let availability: Void = youtube.refreshAvailability()
         if mode == 1 { charts = []; await discover(force: true) }
         else if showingSearch { updateSearchResults(for: search); await searchTask?.value }
         else { await super.refreshContent() }
+        await availability
     }
     override func reload() {
         let state = podcasts.state

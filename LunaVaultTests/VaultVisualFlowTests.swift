@@ -6,6 +6,8 @@ import LunaVaultBEP
 @MainActor
 final class VaultVisualFlowTests: XCTestCase {
     private var window: UIWindow?
+    private let defaults = UserDefaults(suiteName: "VaultVisualFlowTests")!
+    override func setUp() { super.setUp(); defaults.removePersistentDomain(forName: "VaultVisualFlowTests") }
     private let files = [
         VaultPresentedFile(id: "Travel/Autumn itinerary.pdf", name: "Autumn itinerary.pdf", path: "Travel/Autumn itinerary.pdf", modifiedAt: Date(), byteCount: 245_760),
         VaultPresentedFile(id: "Home renovation notes.txt", name: "Home renovation notes.txt", path: "Home renovation notes.txt", modifiedAt: Date().addingTimeInterval(-86_400), byteCount: 8_192, isDownloaded: true),
@@ -264,7 +266,7 @@ final class VaultVisualFlowTests: XCTestCase {
                 macStorage: { _ in LunaMacStorageSnapshot(volumes: [volume]) },
                 connectionStatus: { .connected },
                 pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
-                client: client, pairingHandler: { _ in })
+                client: client, defaults: defaults, pairingHandler: { _ in })
             try await host(controller)
             try await waitUntil {
                 guard controller.tableView.numberOfSections > 1 else { return false }
@@ -294,7 +296,7 @@ final class VaultVisualFlowTests: XCTestCase {
             macStorage: { _ in LunaMacStorageSnapshot(volumes: volumes) },
             connectionStatus: { .connected },
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
-            client: .vault, pairingHandler: { _ in })
+            client: .vault, defaults: defaults, pairingHandler: { _ in })
         try await host(controller)
         try await waitUntil { controller.tableView.numberOfSections == 6 && controller.tableView.numberOfRows(inSection: 1) == 3 }
         for row in 0..<2 {
@@ -303,12 +305,40 @@ final class VaultVisualFlowTests: XCTestCase {
         }
     }
 
+    func testMacStorageCacheSurvivesReopenAndFailureButDoesNotCrossPeers() async throws {
+        let volume = LunaMacStorageVolume(id: "disk", name: "Cached Disk", totalBytes: 1_000_000, freeBytes: 400_000, categories: [.music: 1_000])
+        func settings(peer: String, fail: Bool) -> LunaMacConnectionViewController {
+            LunaMacConnectionViewController(services: VaultPresentationServices(
+                macStorage: { _ in
+                    if fail { throw VaultMacBrowseError("Fixture offline") }
+                    return LunaMacStorageSnapshot(volumes: [volume])
+                }, connectionStatus: { .connected },
+                pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: peer) }),
+                client: .music, defaults: defaults, pairingHandler: { _ in })
+        }
+        func hasVolume(_ controller: LunaMacConnectionViewController) -> Bool {
+            guard controller.tableView.numberOfSections > 1 else { return false }
+            return controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+                .contentView.subviews.contains { $0.accessibilityIdentifier == "luna.mac.storage.volume" }
+        }
+        let first = settings(peer: "mac-a", fail: false)
+        try await host(first); try await waitUntil { hasVolume(first) }
+        let reopened = settings(peer: "mac-a", fail: true)
+        try await host(reopened); try await waitUntil {
+            reopened.tableView(reopened.tableView, titleForFooterInSection: 1)?.contains("Fixture offline") == true
+        }
+        XCTAssertTrue(hasVolume(reopened))
+        let other = settings(peer: "mac-b", fail: true)
+        try await host(other); try await waitUntil { other.tableView.numberOfSections == 3 }
+        XCTAssertFalse(hasVolume(other))
+    }
+
     func testOfflineMacStorageDoesNotInventZeroUsage() async throws {
         let controller = LunaMacConnectionViewController(services: VaultPresentationServices(
             macStorage: { _ in XCTFail("Offline settings must not start a storage request"); throw TestError.failed },
             connectionStatus: { .offline },
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
-            client: .vault, pairingHandler: { _ in })
+            client: .vault, defaults: defaults, pairingHandler: { _ in })
         try await host(controller)
         try await waitUntil { controller.tableView.numberOfSections == 6 }
         let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
@@ -320,7 +350,7 @@ final class VaultVisualFlowTests: XCTestCase {
             macStorage: { _ in throw VaultMacBrowseError("Update Luna Mac to see disk usage.") },
             connectionStatus: { .connected },
             pairingSnapshot: { VaultPairingSnapshot(localDeviceID: "local", remoteDeviceID: "remote") }),
-            client: .music, pairingHandler: { _ in })
+            client: .music, defaults: defaults, pairingHandler: { _ in })
         try await host(controller)
         try await waitUntil {
             guard controller.tableView.numberOfSections == 3 else { return false }

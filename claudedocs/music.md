@@ -1118,3 +1118,13 @@ broader Music run had one existing failure in
 `PodcastLocalResumeTests.testPauseImmediatelyPrimesColdAndInterruptedPodcastAndRestoresPosition`
 (three activation callbacks instead of two), reproduced with these iOS changes
 removed. It is not changed by this feature.
+
+## Last-known Mac capabilities
+
+YouTube audio availability restores from a private, peer-scoped successful
+snapshot at configuration/page appearance. The Podcasts page rechecks on every
+appearance and pull-to-refresh; foreground checks run alongside music catalog
+reads. Backgrounding and failed/malformed checks retain the previous capability;
+an explicit false reply replaces it. Changing/removing the paired Mac hides the
+old capability. Cached availability only controls the entry point; adding audio
+still needs an authenticated live RPC. No media URLs or credentials are cached.

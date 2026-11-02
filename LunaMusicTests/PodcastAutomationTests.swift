@@ -157,14 +157,42 @@ import LunaMusicFiles
         XCTAssertFalse(FileManager.default.fileExists(atPath: direct.path))
         let actions = await transport.actions; XCTAssertTrue(actions.contains(.download))
     }
-    func testCapabilityDefaultsHiddenAndDisconnectHidesIt() async {
+    func testCapabilityDefaultsHiddenAndDisconnectPreservesIt() async {
         let controller = YouTubePodcastController(library: library())
         XCTAssertFalse(controller.available)
         let transport = YouTubeTestTransport(); attach(transport, to: controller)
         await controller.refreshAvailability(); XCTAssertTrue(controller.available)
-        controller.disconnected(); XCTAssertFalse(controller.available)
+        controller.disconnected(); XCTAssertTrue(controller.available)
         await transport.setAvailable(false)
         await controller.refreshAvailability(); XCTAssertFalse(controller.available)
+    }
+    func testCapabilityCacheSurvivesRelaunchFailureAndPeerChanges() async throws {
+        let suite = "YouTubeCapabilityTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var peer = "mac-a"
+        let first = YouTubePodcastController(library: library(), defaults: defaults)
+        first.configure(peer: { peer }) { _ in
+            var response = MusicFileResponse(); response.youtube = .init(available: true)
+            return try JSONEncoder().encode(response)
+        }
+        await first.refreshAvailability(); XCTAssertTrue(first.available)
+        let restored = YouTubePodcastController(library: library(), defaults: defaults)
+        restored.configure(peer: { peer }) { _ in throw URLError(.notConnectedToInternet) }
+        XCTAssertTrue(restored.available)
+        await restored.refreshAvailability(); XCTAssertTrue(restored.available)
+        restored.disconnected(); XCTAssertTrue(restored.available)
+        peer = "mac-b"; restored.restoreAvailability(); XCTAssertFalse(restored.available)
+        peer = ""; restored.restoreAvailability(); XCTAssertFalse(restored.available)
+        peer = "mac-a"
+        restored.configure(peer: { peer }) { _ in
+            var response = MusicFileResponse(); response.youtube = .init(available: false)
+            return try JSONEncoder().encode(response)
+        }
+        XCTAssertTrue(restored.available)
+        await restored.refreshAvailability(); XCTAssertFalse(restored.available)
+        first.configure(peer: { peer }) { _ in throw URLError(.timedOut) }
+        XCTAssertFalse(first.available)
     }
     func testDownloadedYouTubeAudioUsesPodcastManifestCapAndCleanup() async throws {
         let library = library(), episode = episode()

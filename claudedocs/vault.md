@@ -138,3 +138,16 @@ Settings refreshes while visible every 30 seconds, with a matching companion
 cache and one in-flight scan per connection. **Refresh Disk Usage** bypasses that
 cache. Storage work is independent of the connection status poll, with explicit
 loading/error states and accessible text values alongside the charts.
+
+## Last-known connection page data
+
+Vault and Music connection settings restore the last successful Mac disk
+measurement after resolving the locally verified pairing, then refresh on every
+page appearance. Offline/failed refreshes keep the measurement and its date;
+errors remain visible beside cached measurements. A different or removed peer
+cannot reuse it. File browsing already starts from the durable local mirror.
+
+`VaultVisualFlowTests.testMacStorageCacheSurvivesReopenAndFailureButDoesNotCrossPeers`
+checks reopening, refresh failure and peer isolation using private fixture defaults.
+`YouTubePodcastTests` checks capability restoration, explicit false results,
+backgrounding, refresh failure and peer changes without a live Mac.

@@ -16,6 +16,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     private let connectButton = UIButton(type: .system)
     private var snapshot: VaultPairingSnapshot?
     private var connection: VaultConnectionStatus = .notPaired
+    private let defaults: UserDefaults
+    private let storageKey = "LunaMac.storageSnapshot"
+    private struct StoredStorage: Codable { var peer: String; var snapshot: LunaMacStorageSnapshot }
     private var storage: LunaMacStorageSnapshot?
     private var storageMessage: String?
     private var storageLoading = false
@@ -37,9 +40,9 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     public convenience init(runtime: VaultConnectedRuntime, prefilledCode: String? = nil, client: LunaMacClient = .vault) {
         self.init(services: runtime, prefilledCode: prefilledCode, client: client, pairingHandler: { try await runtime.pair(code: $0) })
     }
-    public init(services: any VaultPresentationProviding, prefilledCode: String? = nil, client: LunaMacClient = .vault,
+    public init(services: any VaultPresentationProviding, prefilledCode: String? = nil, client: LunaMacClient = .vault, defaults: UserDefaults = .standard,
                 pairingHandler: @escaping (String) async throws -> Void) {
-        self.client = client
+        self.client = client; self.defaults = defaults
         self.runtime = services
         self.pairingHandler = pairingHandler
         super.init(style: .insetGrouped)
@@ -79,6 +82,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         statusTask?.cancel()
+        storageAttemptAt = .distantPast
         statusTask = Task { [weak self] in
             await self?.loadStatus()
             while !Task.isCancelled {
@@ -108,16 +112,27 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         let previousMessage = message
         do {
             snapshot = try await runtime.pairingSnapshot()
+            if storagePeerID != snapshot?.remoteDeviceID {
+                storageTask?.cancel(); storageTask = nil; storageLoading = false
+                storage = nil; storageMessage = nil; storageAttemptAt = .distantPast
+                storagePeerID = snapshot?.remoteDeviceID
+                if let peer = storagePeerID, let data = defaults.data(forKey: storageKey),
+                   let stored = try? JSONDecoder().decode(StoredStorage.self, from: data), stored.peer == peer,
+                   (try? stored.snapshot.validate()) != nil {
+                    storage = stored.snapshot
+                }
+            }
+            // Pairing and cached measurements are local; show them before live work.
+            if loading { loading = false; render() }
             connection = await runtime.connectionStatus()
             cache = try await runtime.cachePresentation()
             (imageFormat, videoFormat) = try await runtime.photoExportFormats()
         } catch { message = error.localizedDescription; messageIsError = true }
         let wasLoading = loading
         loading = false
-        if storagePeerID != snapshot?.remoteDeviceID || connection == .offline || connection == .notPaired {
+        if connection == .offline || connection == .notPaired {
             storageTask?.cancel(); storageTask = nil; storageLoading = false
-            storage = nil; storageMessage = nil; storageAttemptAt = .distantPast
-            storagePeerID = snapshot?.remoteDeviceID
+            storageAttemptAt = .distantPast
         }
         if !onlyIfChanged || wasLoading || snapshot != previousSnapshot || connection != previousConnection || message != previousMessage { render() }
         if isPaired, connection == .connected || connection == .syncing { loadStorage() }
@@ -134,8 +149,12 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
             guard !Task.isCancelled, let self, self.snapshot?.remoteDeviceID == peerID else { return }
             self.storageLoading = false; self.storageTask = nil
             switch result {
-            case .success(let value): self.storage = value
-            case .failure(let error): self.storage = nil; self.storageMessage = error.localizedDescription
+            case .success(let value):
+                self.storage = value
+                if let peerID, let data = try? JSONEncoder().encode(StoredStorage(peer: peerID, snapshot: value)) {
+                    self.defaults.set(data, forKey: self.storageKey)
+                }
+            case .failure(let error): self.storageMessage = error.localizedDescription
             }
             self.render()
         }
@@ -230,7 +249,8 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         case 0: return message ?? (connection == .offline ? "Open Luna Mac and check your network." : "Use iCloud Passwords & Keychain to connect your other devices.")
         case 5:
             guard let storage else { return nil }
-            return "Updated \(storage.measuredAt.formatted(date: .omitted, time: .shortened)). Storage sizes are estimates."
+            let updated = "Updated \(storage.measuredAt.formatted(date: .abbreviated, time: .shortened)). Storage sizes are estimates."
+            return [updated, storageMessage].compactMap { $0 }.joined(separator: "\n")
         case 1: return "Removing local copies frees space on this iPhone. Files on your Mac and pending transfers are kept."
         case 2: return "Missing files in search results? Try rebuilding search."
         case 3: return "Original keeps photos and videos in their existing format."

@@ -1,65 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 MODE="${1:-run}"
+case "$MODE" in
+  run|--build-only|--verify|verify|--debug|debug|--logs|logs|--telemetry|telemetry) ;;
+  *) echo "usage: $0 [run|--build-only|--verify|--debug|--logs|--telemetry]" >&2; exit 2 ;;
+esac
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUNDLE="${LUNA_MAC_APP_BUNDLE:-/Applications/Luna Vault.app}"
 APP_NAME="LunaVaultMacCompanion"
-BUNDLE="${LUNA_MAC_APP_BUNDLE:-$ROOT_DIR/.build-vault-mac/Luna Mac.app}"
-# When supplied, keep macOS privacy grants tied to a certificate-backed app
-# identity across rebuilds. Resolve only valid identities; expired certificates
-# can share a name.
-SIGNING_IDENTITY="${LUNA_MAC_SIGNING_IDENTITY:--}"
-if [[ "$SIGNING_IDENTITY" != "-" ]]; then
-  SIGNING_MATCHES="$(security find-identity -v -p codesigning | awk -F '"' -v requested="$SIGNING_IDENTITY" '
-    { split($1, fields, " "); if (fields[2] == requested || $2 == requested) print fields[2] }
-  ')"
-  if [[ -z "$SIGNING_MATCHES" || "$SIGNING_MATCHES" == *$'\n'* ]]; then
-    echo "No unique valid signing identity matches: $SIGNING_IDENTITY" >&2
-    echo "Set LUNA_MAC_SIGNING_IDENTITY to an exact certificate name or SHA-1 from: security find-identity -v -p codesigning" >&2
-    exit 1
-  fi
-  SIGNING_IDENTITY="$SIGNING_MATCHES"
+# Pin the installed client's exact certificate, including worktree builds.
+SIGNING_IDENTITY="${LUNA_MAC_SIGNING_IDENTITY:-$("$ROOT_DIR/script/install_vault_mac.py" "$BUNDLE" --identity)}"
+if [[ -z "${DEVELOPER_DIR:-}" && ! -x "$(xcode-select -p)/usr/bin/xcodebuild" ]]; then
+  XCODE_APP="$(mdfind 'kMDItemCFBundleIdentifier == "com.apple.dt.Xcode"' | head -1)"
+  [[ -z "$XCODE_APP" ]] || export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
 fi
-cd "$ROOT_DIR/LunaVaultTailscale"
-swift build --product "$APP_NAME"
-BUILD_DIR="$(swift build --show-bin-path)"
-mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
-# Stop only after the replacement binary has built successfully.
-if [[ "$MODE" != "--build-only" ]]; then pkill -x "$APP_NAME" >/dev/null 2>&1 || true; fi
-cp "$BUILD_DIR/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
-# Code moved to Orbit. Rebuilding an existing bundle must also remove its
-# retired nested helper and resource bundles, which ditto/cp would otherwise keep.
-rm -f "$BUNDLE/Contents/Helpers/luna-code-apple-adapter"
-rm -rf "$BUNDLE/Contents/Resources/AppleAdapterNotices"
-for retired in "$BUNDLE/Contents/Resources"/LunaCodeKit_*.bundle; do
-  [[ ! -d "$retired" ]] || rm -rf "$retired"
-done
-for resource in "$BUILD_DIR"/*.bundle; do
-  [[ "$resource" != */LunaCodeKit_*.bundle ]] || continue
-  [[ -d "$resource" ]] && cp -R "$resource" "$BUNDLE/Contents/Resources/"
-done
-cat > "$BUNDLE/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleExecutable</key><string>LunaVaultMacCompanion</string>
-<key>CFBundleIdentifier</key><string>${LUNA_MAC_BUNDLE_ID:-com.hsanabria.luna.vault.mac}</string>
-<key>CFBundleName</key><string>Luna Mac</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>LSMinimumSystemVersion</key><string>15.0</string>
-<key>NSPrincipalClass</key><string>NSApplication</string>
-<key>NSLocalNetworkUsageDescription</key><string>Luna Mac connects to Luna Vault and Luna Music on your paired iPhone.</string>
-</dict></plist>
-PLIST
-codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$BUNDLE"
-codesign --verify --deep --strict "$BUNDLE"
+DERIVED_DATA="${LUNA_MAC_DERIVED_DATA:-$ROOT_DIR/.build-vault-mac/DerivedData}"
+ARGS=(-project "$ROOT_DIR/Luna.xcodeproj" -scheme LunaVaultMac -configuration Debug
+  -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA"
+  "CODE_SIGN_IDENTITY=$SIGNING_IDENTITY")
+if [[ -n "${LUNA_MAC_BUNDLE_ID:-}" ]]; then ARGS+=("PRODUCT_BUNDLE_IDENTIFIER=$LUNA_MAC_BUNDLE_ID"); fi
+xcodebuild "${ARGS[@]}" build
+"$ROOT_DIR/script/install_vault_mac.py" "$DERIVED_DATA/Build/Products/Debug/Luna Vault.app" "$BUNDLE"
+codesign -dv --verbose=2 "$BUNDLE"
 case "$MODE" in
   --build-only) exit 0 ;;
-  run) open -n "$BUNDLE" ;;
-  --verify|verify) open -n "$BUNDLE"; sleep 2; pgrep -x "$APP_NAME" >/dev/null ;;
+  run) open "$BUNDLE" ;;
+  --verify|verify) open "$BUNDLE"; sleep 2; pgrep -x "$APP_NAME" >/dev/null ;;
   --debug|debug) lldb -- "$BUNDLE/Contents/MacOS/$APP_NAME" ;;
   --logs|logs|--telemetry|telemetry)
-    open -n "$BUNDLE"
+    open "$BUNDLE"
     /usr/bin/log stream --info --style compact --predicate 'process == "LunaVaultMacCompanion"'
     ;;
-  *) echo "usage: $0 [run|--build-only|--verify|--debug|--logs|--telemetry]" >&2; exit 2 ;;
 esac

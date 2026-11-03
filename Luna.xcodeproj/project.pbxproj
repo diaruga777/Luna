@@ -155,6 +155,15 @@
 		F87CA3D2CEE13AD893C48665 /* MusicControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED88FFD5482D03E424F7D149 /* MusicControlIntents.swift */; };
 		F93AB620C2214228B585BCF9 /* LunaWriterReadAlong in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000017 /* LunaWriterReadAlong */; };
 		FB950E259D3BCCE8086784D0 /* KeyboardShortcutsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9902E4E5BD4291F7145229C2 /* KeyboardShortcutsController.swift */; };
+		FA88FCCD56494F558A0E73CA /* CompanionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C0B597EA884658B6B5D613; };
+		5E7F81A3935F4B328D4705B3 /* CompanionInitialExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5F315CA7BA4411AFE18048; };
+		AEBF40728E054F8DAF9A3984 /* CompanionSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1D29675F1E44E6894AA4F2; };
+		81E67350D08E4C448E908D1E /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A4F88DF8094257B5813999; };
+		F7AAB89C6B3848289FA19227 /* LunaMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A48B0E563D455DB012ECD4; };
+		A801AD4D85AE4E65A42D3A1E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4BDF57B83BDA44D58F3799C0; };
+		83056FB08386417EA631017D /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 854D32D4591943F5B51064D3; };
+		190A3964E1414FC78F416FF3 /* LunaVaultBEP in Frameworks */ = {isa = PBXBuildFile; productRef = AADB04AA62594C0ABE0BDF9B; };
+		DC4E6ECD9F4545D38FFF9CF1 /* LunaVaultMacPeer in Frameworks */ = {isa = PBXBuildFile; productRef = 9398C347F8654900A4F1A286; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -463,6 +472,13 @@
 		FB9905F9A0D497FECE90F903 /* LunaKeyboardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaKeyboardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF703AF04B63ED294953F60F /* LunaVault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		QZ00000000000000000001 /* Luna.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Luna.xcconfig; path = Config/Luna.xcconfig; sourceTree = "<group>"; };
+		121723456019445BBED73936 /* Luna Vault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Luna Vault.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BDF57B83BDA44D58F3799C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		98C0B597EA884658B6B5D613 /* CompanionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionController.swift; sourceTree = "<group>"; };
+		CE5F315CA7BA4411AFE18048 /* CompanionInitialExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionInitialExchange.swift; sourceTree = "<group>"; };
+		FD1D29675F1E44E6894AA4F2 /* CompanionSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSessions.swift; sourceTree = "<group>"; };
+		02A4F88DF8094257B5813999 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
+		46A48B0E563D455DB012ECD4 /* LunaMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LunaMacApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -866,6 +882,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9B347099FBD04FB5A7F64A43 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (83056FB08386417EA631017D, 190A3964E1414FC78F416FF3, DC4E6ECD9F4545D38FFF9CF1,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -981,6 +998,8 @@
 		AA0900000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				32F1DC638E614E74B72FBDF0 /* LunaVaultMac */,
+				91CD02EBC7504DC9B26F8DCD /* Mac companion sources */,
 				D8972CA95750FAF66BB210CE /* AutomationAppIntents.swift */,
 				7CEA7B245CE58CB10B0DFCEB /* PodcastAppIntents.swift */,
 				FA88C65970E66C5F9D4673A6 /* KeyboardAppIntents.swift */,
@@ -1027,6 +1046,7 @@
 		AA0900000000000000000002 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				121723456019445BBED73936 /* Luna Vault.app */,
 				AA0200000000000000000003 /* LunaTests.xctest */,
 				5C57000000000000000000BA /* LunaWriterUITests.xctest */,
 				321A524CE357583A60D01100 /* LunaShare.appex */,
@@ -1135,6 +1155,8 @@
 			path = LunaVaultShare;
 			sourceTree = "<group>";
 		};
+		32F1DC638E614E74B72FBDF0 /* LunaVaultMac */ = {isa = PBXGroup; children = (4BDF57B83BDA44D58F3799C0,); path = LunaVaultMac; sourceTree = "<group>"; };
+		91CD02EBC7504DC9B26F8DCD /* Mac companion sources */ = {isa = PBXGroup; children = (98C0B597EA884658B6B5D613, CE5F315CA7BA4411AFE18048, FD1D29675F1E44E6894AA4F2, 02A4F88DF8094257B5813999, 46A48B0E563D455DB012ECD4,); name = "Mac companion sources"; path = LunaVaultTailscale/Sources/LunaVaultMacCompanion; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1742,6 +1764,7 @@
 			productReference = A57870A0D223D2CB75BC7281 /* LunaReader.app */;
 			productType = "com.apple.product-type.application";
 		};
+		281AB9544BFB4E5B8D3B64E6 /* LunaVaultMac */ = {isa = PBXNativeTarget; buildConfigurationList = D2FD3AC20C9741F08EF77C9B; buildPhases = (5C09EBEFB5C64789807176E7, 9B347099FBD04FB5A7F64A43, F2B2E0D9DC8A47CCB1714D87,); buildRules = (); dependencies = (); name = LunaVaultMac; packageProductDependencies = (854D32D4591943F5B51064D3, AADB04AA62594C0ABE0BDF9B, 9398C347F8654900A4F1A286,); productName = "Luna Vault"; productReference = 121723456019445BBED73936; productType = "com.apple.product-type.application"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1791,6 +1814,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				281AB9544BFB4E5B8D3B64E6 /* LunaVaultMac */,
 				AAE200000000000000000000 /* LunaTests */,
 				5E393E646C6A24066F73EE08 /* LunaShare */,
 				892513B3F00DED1B930AD2AE /* LunaAction */,
@@ -2002,6 +2026,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F2B2E0D9DC8A47CCB1714D87 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A801AD4D85AE4E65A42D3A1E,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -2407,6 +2432,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5C09EBEFB5C64789807176E7 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (FA88FCCD56494F558A0E73CA, 5E7F81A3935F4B328D4705B3, AEBF40728E054F8DAF9A3984, 81E67350D08E4C448E908D1E, F7AAB89C6B3848289FA19227,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -3877,6 +3903,50 @@
 			};
 			name = Release;
 		};
+		FF713E0C88014F4D806CB803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVaultMac;
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "$(LUNA_MAC_SIGNING_IDENTITY)";
+				PRODUCT_NAME = "Luna Vault";
+				EXECUTABLE_NAME = LunaVaultMacCompanion;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.mac";
+				INFOPLIST_FILE = LunaVaultMac/Info.plist;
+				GENERATE_INFOPLIST_FILE = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SDKROOT = macosx;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SWIFT_VERSION = 5.0;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",);
+				LUNA_MAC_APP_BUNDLE = "/Applications/Luna Vault.app";
+			};
+			name = Debug;
+		};
+		E13D58E1D50B47BC82F401A3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVaultMac;
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "$(LUNA_MAC_SIGNING_IDENTITY)";
+				PRODUCT_NAME = "Luna Vault";
+				EXECUTABLE_NAME = LunaVaultMacCompanion;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.mac";
+				INFOPLIST_FILE = LunaVaultMac/Info.plist;
+				GENERATE_INFOPLIST_FILE = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SDKROOT = macosx;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SWIFT_VERSION = 5.0;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",);
+				LUNA_MAC_APP_BUNDLE = "/Applications/Luna Vault.app";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -4105,6 +4175,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		D2FD3AC20C9741F08EF77C9B = {isa = XCConfigurationList; buildConfigurations = (FF713E0C88014F4D806CB803, E13D58E1D50B47BC82F401A3,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -4365,6 +4436,9 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaPremium;
 		};
+		854D32D4591943F5B51064D3 /* LunaVaultTailscale */ = {isa = XCSwiftPackageProductDependency; package = 7A70000000000000000000A1; productName = LunaVaultTailscale; };
+		AADB04AA62594C0ABE0BDF9B /* LunaVaultBEP */ = {isa = XCSwiftPackageProductDependency; package = C100000000000000000000001; productName = LunaVaultBEP; };
+		9398C347F8654900A4F1A286 /* LunaVaultMacPeer */ = {isa = XCSwiftPackageProductDependency; package = C100000000000000000000001; productName = LunaVaultMacPeer; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AAA000000000000000000000 /* Project object */;

@@ -54,6 +54,10 @@ MTLLINKER_FLAGS = -fcikernel
 // the Swift importer through the CoreImage headers.
 GCC_PREPROCESSOR_DEFINITIONS = $(inherited) CI_SILENCE_GL_DEPRECATION=1
 
+// The Mac app uses certificate signing. Pin the installed certificate by exact
+// name or SHA-1 in ignored Local.xcconfig when several identities are available.
+LUNA_MAC_SIGNING_IDENTITY = Apple Development
+
 // Per-checkout signing overrides (for example DEVELOPMENT_TEAM) stay out of
 // version control. Create Config/Local.xcconfig on this Mac; .gitignore
 // excludes it. Consumers without one use Xcode's simulator signing defaults.

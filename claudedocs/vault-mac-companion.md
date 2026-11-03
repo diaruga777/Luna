@@ -1,7 +1,9 @@
 # Luna Vault Mac companion
 
 The companion is the Mac-side BEP peer and a small menu-bar accessory built
-from the existing SwiftPM executable. It has no Xcode application target.
+from the shared companion sources. `Luna.xcodeproj` has a native macOS app target
+and shared scheme named `LunaVaultMac`; the SwiftPM executable remains available
+for focused package tests.
 
 The companion chooses one shared folder and stores its index in
 `companion.sqlite`. On an authenticated reconnect it sends the saved snapshot
@@ -87,19 +89,36 @@ folder-specific snapshot reuse, and Code requests before the Vault rescan.
 
 ## Local signing and folder permissions
 
-`script/build_and_run.sh` signs the staged app ad hoc by default. To keep macOS
-folder permissions stable across rebuilds, set `LUNA_MAC_SIGNING_IDENTITY` to
-an exact valid Apple Development certificate name or SHA-1 from that Mac's
-Keychain. The script verifies a supplied identity before signing and verifies
-the completed bundle before launch.
+Select **LunaVaultMac → My Mac** in Xcode. Run and Profile install the successfully
+built app at `/Applications/Luna Vault.app`, then launch that exact bundle. The
+bundle ID derives from `Config/Luna.xcconfig` as
+`$(PRODUCT_BUNDLE_PREFIX).vault.mac` (currently `com.hsanabria.luna.vault.mac`).
+Ordinary Build produces a signed app in DerivedData without installing it, so
+Orbit can build in isolation and own its installation transaction.
 
-Keep the bundle identifier and installed app location consistent. Certificate
-signing gives rebuilds a stable designated requirement instead of the
-binary-specific hash used by ad hoc signing. Moving from the old ad hoc build
-may require approving folder access once for the new identity. Future builds
-with a compatible signing identity should retain those grants. Permissions
-remain managed by macOS; repeated folder reads do not themselves reset them.
-The five-second folder checks remain enabled.
+`script/build_and_run.sh` uses the same native target and installer. Its default
+is the canonical installed path; `LUNA_MAC_APP_BUNDLE` can select another existing
+installation. It resolves the installed app's exact valid Apple Development
+certificate, or accepts `LUNA_MAC_SIGNING_IDENTITY`. Ad-hoc signing is rejected.
+Keep this Mac's team in ignored `Config/Local.xcconfig`; select the existing
+certificate through `LUNA_MAC_SIGNING_IDENTITY` in that ignored file if multiple
+certificates are available.
+`LUNA_MAC_DERIVED_DATA` optionally selects a build-cache location.
+
+`script/install_vault_mac.py` validates the new bundle's signature, bundle ID,
+exact leaf certificate and existing designated requirement before stopping the
+installed copy. It stages the replacement beside the destination and restores
+the old bundle if replacement validation fails. Run/Profile call this installer
+as a launch pre-action; their executable path is the canonical installed app.
+Permissions remain managed by macOS; pairing and folder-access identity stay
+with that same bundle and certificate.
+
+The Mac icon comes from `Design/IconComposer/Luna Vault.icon`, rendered for macOS
+with transparent corners into `LunaVaultMac/Assets.xcassets/AppIconVaultMac.appiconset`.
+Regenerate with `DEVELOPER_DIR=<Xcode>/Contents/Developer
+scripts/export_vault_mac_icon.sh`. Xcode compiles the asset catalog and declares
+`CFBundleIconFile = AppIconVaultMac`, with a matching ICNS in Resources. Orbit
+reads the installed bundle icon into its shared Mac/iOS catalog thumbnail.
 
 ## Transfer priority and App Nap
 
@@ -113,7 +132,10 @@ The activity spans disk reads, asynchronous response writes, and the Go TLS
 bridge drain. It is released on every session exit, and permits idle system
 sleep. It does not change pairing, encryption, or the transfer window.
 
-For an installed client, set `LUNA_MAC_APP_BUNDLE` to its existing `.app` path
-when using `script/build_and_run.sh`, in addition to the matching
-`LUNA_MAC_SIGNING_IDENTITY`. This lets worktree builds update the same bundle
-location instead of creating a second persistent client.
+The build script and Xcode Run use the same installed path on this Mac, including
+when invoked from a worktree. They do not create a second persistent client.
+
+Validation: the native Debug app builds with Xcode 27.1 beta, installs and launches
+from `/Applications/Luna Vault.app`, and passes strict signature verification
+with the existing certificate. The three installer regressions cover bundle-ID
+and certificate changes plus rollback after failed replacement validation.

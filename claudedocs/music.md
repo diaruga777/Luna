@@ -335,6 +335,23 @@ Play Next run the episode menu's persisted enqueue operation in the background,
 without opening a page or starting playback. Foreground alerts show banners too.
 Outbox and check-attempt times stay local when iCloud settings merge.
 
+Queue actions preserve the playing item, position and Now Playing session. The
+player distinguishes an explicit native Pause from AVPlayer stopping for an audio
+session interruption. Interruption handling retains the pending resume across
+repeated begin events, and cancels it if a later transport action supersedes it.
+An allowed system resume uses the same background execution protection as remote
+Play, through audio startup and session activation. Already-paused playback and
+interruptions without a resume recommendation stay paused.
+
+Validation (2026-11-03): Xcode 27.1 beta / iPhone 17 Pro / iOS 26.2. All 46 focused
+notification, transport and local-resume tests passed with both local fixture
+servers enabled, with no skips. Coverage includes both queue actions while playing
+and during repeated interruptions, item/session/position preservation, subsequent
+remote Play, explicit Pause overriding automatic resume, native Pause delivered
+from either thread, and streaming handoff/chime cleanup. The regression fails on
+the original playback controller. Physical-device notification actions and audio
+output have not been measured.
+
 Validation (2026-10-23): all 41 Foundation podcast tests passed. Eight focused
 hosted Music tests passed on iPhone 17 Pro / iOS 26.2, including actual local
 notification delivery with a downloaded image attachment, exact copy, category

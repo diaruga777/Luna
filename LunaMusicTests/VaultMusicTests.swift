@@ -1545,6 +1545,85 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.player.currentTime().seconds, 45, accuracy: 2)
         XCTAssertFalse(library.state.progress[episodes[0].id]?.listened == true)
     }
+    func testNotificationQueueActionsPreservePlayingItemAndSystemTransport() async throws {
+        try await startQueue()
+        let item = try XCTUnwrap(playback.player.currentItem)
+        let session = playback.session
+        for next in [false, true] {
+            let before = playback.player.currentTime().seconds
+            try PodcastEpisodeNotifications.shared.enqueue(episodes[2].id, next: next, in: library)
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertTrue(playback.player.currentItem === item)
+            XCTAssertTrue(playback.session === session)
+            XCTAssertTrue(playback.session.isActive)
+            XCTAssertTrue(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+            XCTAssertGreaterThan(playback.player.currentTime().seconds, before)
+            XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
+            XCTAssertEqual(item.nowPlayingInfo?[MPMediaItemPropertyTitle] as? String, episodes[0].title)
+            XCTAssertEqual(library.state.queue, next ? [episodes[2].id, episodes[1].id] : [episodes[1].id, episodes[2].id])
+        }
+        playback.pause()
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+        XCTAssertTrue(playback.player.currentItem === item)
+    }
+    private func interruption(_ type: AVAudioSession.InterruptionType, shouldResume: Bool = false) {
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), userInfo: [
+            AVAudioSessionInterruptionTypeKey: type.rawValue,
+            AVAudioSessionInterruptionOptionKey: shouldResume ? AVAudioSession.InterruptionOptions.shouldResume.rawValue : 0
+        ])
+    }
+    func testQueueActionsDuringRepeatedInterruptionResumeSameEpisodeAndRemoteControls() async throws {
+        for next in [false, true] {
+            try await startQueue()
+            let item = try XCTUnwrap(playback.player.currentItem)
+            let position = playback.position
+            interruption(.began)
+            try await waitFor { !playback.isPlaying && playback.player.rate == 0 }
+            try PodcastEpisodeNotifications.shared.enqueue(episodes[2].id, next: next, in: library)
+            interruption(.began)
+            await Task.yield()
+            interruption(.ended, shouldResume: true)
+            try await waitFor { playback.isPlaying && playback.session.isActive }
+            XCTAssertTrue(playback.player.currentItem === item)
+            XCTAssertEqual(playback.currentEpisode?.id, episodes[0].id)
+            XCTAssertGreaterThanOrEqual(playback.position, position)
+            XCTAssertEqual(library.state.queue, next ? [episodes[2].id, episodes[1].id] : [episodes[1].id, episodes[2].id])
+            playback.pause()
+            XCTAssertEqual(playback.handleRemotePlay(), .success)
+            try await waitFor { playback.isPlaying }
+        }
+    }
+    func testInterruptionWithoutResumePermissionLeavesQueueActionPaused() async throws {
+        try await startQueue()
+        interruption(.began)
+        try PodcastEpisodeNotifications.shared.enqueue(episodes[2].id, next: true, in: library)
+        interruption(.ended)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
+    }
+    func testUserPauseDuringInterruptionPreventsAutomaticResume() async throws {
+        try await startQueue()
+        interruption(.began)
+        try await waitFor { !playback.isPlaying && playback.player.rate == 0 }
+        playback.pause()
+        try PodcastEpisodeNotifications.shared.enqueue(episodes[2].id, next: false, in: library)
+        interruption(.ended, shouldResume: true)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(playback.isPlaying); XCTAssertFalse(playback.isBuffering)
+        XCTAssertEqual(playback.player.rate, 0)
+    }
+    func testInterruptionDoesNotStartAnAlreadyPausedPodcast() async throws {
+        try await startQueue(); playback.pause()
+        interruption(.began)
+        try PodcastEpisodeNotifications.shared.enqueue(episodes[2].id, next: false, in: library)
+        interruption(.ended, shouldResume: true)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.player.rate, 0)
+    }
     func testNativePlayerPauseCannotBeUndoneBySeek() async throws {
         try await startQueue(); playback.player.pause()
         try await waitFor { !playback.isPlaying && !playback.isBuffering }
@@ -1555,6 +1634,17 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await waitFor { playback.isPlaying }
         playback.toggle()
         XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.player.rate, 0)
+    }
+    func testNativePauseDeliveredOffMainCannotBeUndoneBySeek() async throws {
+        try await startQueue()
+        let nativePlayer = playback.player
+        await Task.detached { nativePlayer.pause() }.value
+        try await waitFor { !playback.isPlaying && !playback.isBuffering }
+        playback.seek(to: 60)
+        try await waitFor { abs(playback.player.currentTime().seconds - 60) < 0.2 }
+        XCTAssertEqual(playback.player.rate, 0)
+        XCTAssertEqual(playback.handleRemotePlay(), .success)
+        try await waitFor { playback.isPlaying }
     }
     func testPausedSeekToEndPreparesNextWithoutStartingAudio() async throws {
         try await startQueue(); playback.pause()

@@ -55,7 +55,7 @@ import LunaPodcastCore
     private var isCompleting = false
     private var lastPersistedAt = Date.distantPast
     private var positionSaveTask: Task<Void, Never>?
-    private var interruptedPlayback = false
+    private var interruptedPlaybackRevision: UUID?
     private var artwork: UIImage?
     private var extrasTask: Task<Void, Never>?
     private var extrasTimeoutTask: Task<Void, Never>?
@@ -120,18 +120,37 @@ import LunaPodcastCore
                 self.fail((note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error) ?? PodcastError("The episode stopped before it finished. Try resuming playback."))
             }
         })
+        observers.append(NotificationCenter.default.addObserver(forName: AVPlayer.rateDidChangeNotification, object: player, queue: .main) { [weak self] note in
+            // timeControlStatus cannot distinguish a native Pause from an audio
+            // interruption. Only an explicit rate change may cancel Play intent.
+            MainActor.assumeIsolated {
+                guard let self, let raw = note.userInfo?[AVPlayer.rateDidChangeReasonKey] as? String else { return }
+                self.receivePlayerRateChange(reason: AVPlayer.RateDidChangeReason(rawValue: raw), rate: self.player.rate)
+            }
+        })
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 guard let self, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
                 if raw == AVAudioSession.InterruptionType.began.rawValue {
+                    self.logState("interruption.began")
+                    // The first begin already paused this request.
+                    if !self.requestedPlayback, self.interruptedPlaybackRevision == self.playbackRevision { return }
+                    let resume = self.requestedPlayback
                     self.relinquishPlaybackSession()
-                    self.interruptedPlayback = self.requestedPlayback; self.pause()
-                }
-                else {
-                    defer { self.interruptedPlayback = false }
-                    if self.interruptedPlayback, let raw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
-                       AVAudioSession.InterruptionOptions(rawValue: raw).contains(.shouldResume) {
-                        do { try await self.resume() } catch { self.fail(error) }
+                    self.pause()
+                    // A repeated begin must not replace a pending resume with
+                    // the paused state established by the first interruption.
+                    self.interruptedPlaybackRevision = resume ? self.playbackRevision : nil
+                } else if raw == AVAudioSession.InterruptionType.ended.rawValue {
+                    self.logState("interruption.ended")
+                    let resume = self.interruptedPlaybackRevision == self.playbackRevision
+                    self.interruptedPlaybackRevision = nil
+                    if resume, let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
+                       AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
+                        // The interruption can end while a notification action
+                        // is finishing in the background. Keep execution through
+                        // session activation and actual audio startup.
+                        _ = self.handleRemotePlay()
                     }
                 }
             }
@@ -628,6 +647,19 @@ import LunaPodcastCore
         }
         if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPositionInBackground(); publish() }
     }
+    private func receivePlayerRateChange(reason: AVPlayer.RateDidChangeReason, rate: Float) {
+        guard reason == .setRateCalled, rate == 0, requestedPlayback, actualStartRecorded,
+              !isSelecting, !needsPreparation, pendingSeek == nil, !isAtEnd, playbackStartTime == nil else { return }
+        // AVPlayerViewController can pause directly, bypassing our commands.
+        // System interruption rate changes must retain the request until the
+        // audio session tells us whether playback should resume.
+        interruptedPlaybackRevision = nil
+        requestedPlayback = false
+        sessionActivation.cancel(); clearPlaybackStart()
+        setBuffering(false)
+        updatePlayback(); persistPosition()
+        logState("native.pause")
+    }
     private func updatePlayback() {
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
             let time = player.currentTime().seconds
@@ -637,13 +669,6 @@ import LunaPodcastCore
         if player.timeControlStatus == .playing, !requestedPlayback, !isSelecting, !needsPreparation {
             // AVPlayerViewController's video Play button bypasses our transport.
             requestedPlayback = true; willPlay?()
-        }
-        // System/native video controls can pause AVPlayer directly. Do not
-        // leave a pending Play intent that can restart it after a later seek.
-        if requestedPlayback, actualStartRecorded, !isSelecting, pendingSeek == nil,
-           player.timeControlStatus == .paused, !isAtEnd, !isBuffering {
-            requestedPlayback = false
-            persistPosition()
         }
         if let start = playbackStartTime, !isSelecting, pendingSeek == nil,
            player.timeControlStatus == .playing, player.currentTime().seconds > start + 0.001 {

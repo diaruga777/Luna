@@ -282,11 +282,22 @@ final class PluginModelDrainTests: XCTestCase {
         XCTAssertTrue(opener.opened.isEmpty)
     }
 
+    func testOpeningInLunaKeepsTheUserInTheAppEvenWithAFreshReturnMarker() async {
+        let opener = RecordingReturnOpener()
+        PluginModelDrain.returnOpener = opener
+        defer { PluginModelDrain.returnOpener = nil }
+
+        await drainOneRow(
+            returnToSourceUntil: Date().addingTimeInterval(30), opener: opener,
+            returningToSource: false)
+        XCTAssertTrue(opener.opened.isEmpty)
+    }
+
     /// Drains one media row with `ret=safari` set, and waits for the media
     /// handler to have run — the drain's last step is the bounce, so the
     /// opener has been called or skipped by then.
     private func drainOneRow(
-        returnToSourceUntil: Date?, opener: RecordingReturnOpener
+        returnToSourceUntil: Date?, opener: RecordingReturnOpener, returningToSource: Bool = true
     ) async {
         PluginModelAdopters.media = FakeMediaAdopter()
         let media = FakeIngestorMediaHandling()
@@ -299,7 +310,7 @@ final class PluginModelDrainTests: XCTestCase {
             pluginID: "app.luna.test", returnToSourceUntil: returnToSourceUntil))
 
         PluginModelDrain.run(
-            returningToSource: true, productInfoBuilder: productInfoBuilder,
+            returningToSource: returningToSource, productInfoBuilder: productInfoBuilder,
             pendingStore: pending, store: store, ingestor: ingestor)
 
         let deadline = Date().addingTimeInterval(5)

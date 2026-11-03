@@ -112,6 +112,18 @@ final class SafariMediaPillTests: XCTestCase {
 
     // MARK: - Playback requires the menu action
 
+    func testOpenInLunaKeepsEveryMediaPageInTheAppWithoutPlaying() {
+        for page in Self.mediaPages {
+            offer(at: page)
+            let opened = js.awaitAppSchemeNavigation {
+                self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
+            } ?? ""
+            XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), page)
+            XCTAssertFalse(opened.contains("ret=safari"), page)
+            XCTAssertFalse(overlayExists(), page)
+        }
+    }
+
     func testEveryMediaPageWaitsForPlayVideoInThePillMenu() {
         for page in Self.mediaPages {
             offer(at: page)
@@ -248,6 +260,7 @@ final class SafariMediaPillTests: XCTestCase {
         XCTAssertFalse(waitForOverlay(within: 0.5), "reddit must not enter the overlay path")
         let opened = js.awaitAppSchemeNavigation { self.tapPill() } ?? ""
         XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
+        XCTAssertFalse(opened.contains("ret=safari"), "got \(opened)")
     }
 
     func testRedditTextAndPhotoPostsNeverOpenWithPluginsEnabled() {
@@ -369,14 +382,13 @@ final class SafariMediaPillTests: XCTestCase {
             waitForOverlay(within: 0.5), "the player opened on a page with it switched off")
     }
 
-    /// And the pill goes back to being what it was before the player existed:
-    /// still offered, still the media hand-off, still bouncing back to Safari.
+    /// Opening the saved card stays in the app even with playback disabled.
     func testTheDisabledPlayersPillHandsTheLinkToTheApp() {
         offerWithPlayerDisabled(at: Self.mediaPages[0])
         XCTAssertTrue(pillExists(), "turning the player off must not cost the page its pill")
         let opened = js.awaitAppSchemeNavigation { self.tapPill() } ?? ""
         XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
-        XCTAssertTrue(opened.hasSuffix("&ret=safari"), "got \(opened)")
+        XCTAssertFalse(opened.contains("ret=safari"), "got \(opened)")
         XCTAssertFalse(overlayExists(), "a tap must not open the player either")
     }
 }

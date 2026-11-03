@@ -16,7 +16,12 @@ video and Play in Safari is enabled), **Open in Luna**, and **Hide**. Play opens
 the existing system-controls video popup. Matching a URL, resolving its video,
 opening the menu, or navigating to another post never opens the player
 automatically. Open invokes the target's save/model
-handoff separately from playback. Hide removes the floating controls and cancels
+handoff separately from playback and stays in Luna Reader for all content kinds,
+even when Play in Safari is disabled. The plugin queue message defaults
+`returningToSource` to false: it stamps no return marker and answers a plain
+`pluginmodel` link. These opens reveal the app normally without holding its
+launch splash. The in-page player's download action explicitly sets the flag
+to true and keeps its return to Safari. Hide removes the floating controls and cancels
 pending playback for the whole document, including SPA navigation; refreshing
 restores them. The menu supports keyboard activation, arrow navigation, Escape,
 and outside-tap dismissal, and stays within the visual viewport. Its blurred,
@@ -632,7 +637,7 @@ Downloader-platform flow:
    the host app handles media (Downloader / central Luna). The **in-page video player**
    (below) opens only after the user taps the pill and selects Play Video.
    The menu also keeps Open in Luna available independently of playback.
-   The deep link `<ownScheme>://read?url=...&ret=safari`
+   The deep link `<ownScheme>://read?url=...`
    remains Reddit's pill action. An unplayable resolve leaves other pages alone.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
    those URLs if the user adds/saves them manually, but the Safari extension only shows
@@ -716,7 +721,7 @@ appex reads that key by its own literal name — the app shell that writes it is
 not package code either appex compiles — and answers
 `videoPlayer` on the `buttonContext` reply, and `videoOverlayTargetFor` returns
 the plain hand-off target when the answer is `false` — so the circular menu omits Play Video and keeps Open in Luna with its
-`?ret=safari` deep link and nothing opens over the page. **An absent key means
+plain deep link that stays in the app, and nothing opens over the page. **An absent key means
 ON**: the player is the shipped behavior and a user who has never opened
 Settings has written nothing, so no default is ever written anywhere.
 `SafariMediaPillTests` covers both halves of the off state and
@@ -1150,9 +1155,11 @@ is already on the page. One lookup per page, its flag set before any DOM work.
 `ProductHistoryPillRenderTests` drives all of it through the shared
 `SafariJSTestHarness` web view.
 
-### Bounce back to Safari after a media save
+### Return to Safari for in-page video downloads
 
-Only a Downloader media pill carries `&ret=safari` on its deep link. Once
+The pill menu's Open in Luna action stays in Luna for every kind. Only the
+in-page player's resolved download requests `ret=safari`. Legacy media `read`
+links carrying the flag remain supported. Once
 `SavesIngestor.handleSavePress` returns and the download has started, the Live
 Activity is up, and `SceneDelegate` decides via the pure
 `SafariReturnPolicy.shouldReturn` (LunaURLClassification) whether to reopen the original https page —

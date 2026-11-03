@@ -477,16 +477,21 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
               let model = try? JSONDecoder().decode(PluginModel.self, from: data),
               plugin.manifest.produces.contains(model.kind)
         else { return ["error": "malformed-model"] }
+        // Opening the pill's saved card stays in Luna. Only the player's
+        // download action requests a return after starting its transfer.
+        let returningToSource = message?["returningToSource"] as? Bool == true
         PendingPluginModelStore.shared.put(PendingPluginModel(
             urlString: urlString, modelJSON: modelJSON, pluginID: id, createdAt: Date(),
-            returnToSourceUntil: Date().addingTimeInterval(Self.returnHandoffLifetime),
+            returnToSourceUntil: returningToSource
+                ? Date().addingTimeInterval(Self.returnHandoffLifetime) : nil,
             originalURLString: (message?["originalURL"] as? String).flatMap { raw in
                 guard let original = URL(string: raw),
                       ["http", "https"].contains(original.scheme?.lowercased() ?? ""),
                       original.host?.isEmpty == false else { return nil }
                 return raw
             }))
-        return ["deepLink": "\(hostScheme)://pluginmodel?ret=safari"]
+        let returnQuery = returningToSource ? "?ret=safari" : ""
+        return ["deepLink": "\(hostScheme)://pluginmodel\(returnQuery)"]
     }
 
     /// Stores the bounded evidence from a page whose plugin walk exhausted all

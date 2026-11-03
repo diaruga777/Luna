@@ -629,7 +629,7 @@
 
     function queueModelAndNavigate(pluginId, modelJSON, resp, resolvedURL) {
         return browser.runtime.sendMessage(
-            { type: "plugins.queueModel", id: pluginId, url: resolvedURL || location.href, originalURL: location.href, model: modelJSON }
+            { type: "plugins.queueModel", id: pluginId, url: resolvedURL || location.href, originalURL: location.href, model: modelJSON, returningToSource: false }
         ).then(function (qr) {
             window.location.href = (qr && qr.deepLink) || pluginSaveDeepLink(resp);
         }, function () {
@@ -711,9 +711,8 @@
             label: localizedMessage("downloadInLuna"),
             tint: KIND_TINTS.media,
             captureContent: false,
-            url: function () { return pluginSaveDeepLink(resp) + "&ret=safari"; }
+            url: function () { return pluginSaveDeepLink(resp); }
         };
-        if (resp && resp.videoPlayer === false) { return handoff; }
         var pendingModelJSON = null;
         // The walk may carry on past the claiming plugin when its `ingest`
         // declines, so the Model is queued against whichever plugin produced
@@ -743,7 +742,7 @@
             if (!pendingModelJSON) { return Promise.resolve(null); }
             return browser.runtime.sendMessage({
                 type: "plugins.queueModel", id: pendingModelPluginId, url: pendingModelURL,
-                model: pendingModelJSON
+                model: pendingModelJSON, returningToSource: true
             }).then(function (qr) { return (qr && qr.deepLink) || null; }, function () { return null; });
         };
         return {
@@ -751,9 +750,9 @@
             tint: handoff.tint,
             captureContent: false,
             url: handoff.url,
-            canPlay: !walk.resolvedOutcome || (walk.resolvedOutcome.model.assets || []).some(function (asset) {
+            canPlay: !(resp && resp.videoPlayer === false) && (!walk.resolvedOutcome || (walk.resolvedOutcome.model.assets || []).some(function (asset) {
                 return asset && asset.url && (asset.type === "video" || asset.type === "gif");
-            }),
+            })),
             openLuna: function () {
                 runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
                     if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp, outcome.url); }
@@ -3714,19 +3713,15 @@
         };
     }
 
-    // Only media pill taps bounce the user back to Safari once the app has
-    // started the background download: its Live Activity keeps progress visible
-    // there. Article and product cards are the hand-off destination, so neither
-    // carries `&ret=safari`. The flag rides the deep link rather than a separate
-    // message so it survives when `saveContent` isn't sent (downloadTargetFor
-    // never captures content).
+    // Open in Luna stays in the app for every kind. Only the in-page player's
+    // resolved download asks to return to Safari after starting the transfer.
     function downloadTargetFor(context) {
         if (!(context && context.supportsMedia)) { return null; }
         return {
             label: localizedMessage("downloadInLuna"),
             tint: KIND_TINTS.media,
             captureContent: false,
-            url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
+            url: function () { return ownSchemeTarget(context, location.href); }
         };
     }
 

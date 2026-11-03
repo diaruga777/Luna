@@ -194,7 +194,7 @@ final class SafariXEligibilityTests: XCTestCase {
                     if (window.__deferred) return new Promise(function (resolve) { window.__finishFetch = function () { resolve(response); }; });
                     return Promise.resolve(response);
                 }
-                if (m.type === 'plugins.queueModel') { window.__queued = m; return Promise.resolve({deepLink:'luna://pluginmodel?ret=safari'}); }
+                if (m.type === 'plugins.queueModel') { window.__queued = m; return Promise.resolve({deepLink:'luna://pluginmodel' + (m.returningToSource === true ? '?ret=safari' : '')}); }
                 return Promise.resolve({});
             }}, storage:{local:{get:function(){return Promise.resolve(window.__catalogCache);},set:function(value){window.__catalogCache=value;return Promise.resolve();}}}};
             window.__lunaStartPillDecision({scheme:'luna',supportsPlugins:true,supportsMedia:true,supportsArticles:true \(context)});
@@ -309,11 +309,34 @@ final class SafariXEligibilityTests: XCTestCase {
         let link = js.awaitAppSchemeNavigation {
             self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
         }
-        XCTAssertTrue(link == "luna://pluginmodel?ret=safari")
+        XCTAssertEqual(link, "luna://pluginmodel")
+        XCTAssertFalse(js.bool("window.__queued.returningToSource"))
         XCTAssertFalse(player)
         XCTAssertEqual(js.number("window.__fetchCalls"), 1, "Open should reuse the resolved Model")
         XCTAssertEqual(js.string("window.__queued.id"), "app.luna.x")
         XCTAssertTrue(js.string("window.__queued.model")?.contains("movie.mp4") == true)
+    }
+
+    func testCoreOpenInLunaStaysInTheAppWithSafariPlaybackDisabled() {
+        offerCore(coreVideoPayload, context: ", videoPlayer: false")
+        let link = js.awaitAppSchemeNavigation {
+            self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
+        }
+        XCTAssertEqual(link, "luna://pluginmodel")
+        XCTAssertFalse(js.bool("window.__queued.returningToSource"))
+        XCTAssertEqual(js.number("window.__fetchCalls"), 1)
+        XCTAssertFalse(player)
+    }
+
+    func testCorePlayerDownloadStillRequestsReturnToSafari() {
+        offerCore(coreVideoPayload)
+        playFromMenu()
+        XCTAssertTrue(player)
+        let link = js.awaitAppSchemeNavigation {
+            self.js.evaluate("var buttons = document.getElementById(window.__lunaVideoOverlayID).querySelectorAll('[role=button]'); buttons[buttons.length - 1].click(); void 0")
+        }
+        XCTAssertEqual(link, "luna://pluginmodel?ret=safari")
+        XCTAssertTrue(js.bool("window.__queued.returningToSource"))
     }
 
     func testReportedPostOpensCorePlayerUsingItsResolvedVideo() {
@@ -337,6 +360,11 @@ final class SafariXEligibilityTests: XCTestCase {
         js.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true})); void 0")
         XCTAssertFalse(js.bool("!!document.getElementById('luna-action-menu')"))
         XCTAssertEqual(js.string("document.getElementById(window.__lunaPillID).getAttribute('aria-expanded')"), "false")
+        let link = js.awaitAppSchemeNavigation {
+            self.js.evaluate("document.getElementById(window.__lunaPillID).click(); document.querySelector('[data-luna-action=openInLuna]').click(); void 0")
+        }
+        XCTAssertEqual(link, "luna://pluginmodel")
+        XCTAssertFalse(js.bool("window.__queued.returningToSource"))
     }
 
     func testCoreRecoversFromAStalledSourceRequestWithoutRefreshing() {

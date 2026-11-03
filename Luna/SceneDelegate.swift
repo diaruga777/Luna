@@ -81,7 +81,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
         mainNavigationController?.installLunarEclipseTransition()
         if let url = connectionOptions.urlContexts.first?.url,
-           LunaDeepLink.isResolvedMediaLink(url) || LunaDeepLink.isPluginModelLink(url) {
+           LunaDeepLink.isResolvedMediaLink(url) || LunaDeepLink.isPluginModelLink(url),
+           LunaDeepLink.requestsReturnToSource(url) {
             AppLaunchTransition.holdForHandoff()
         }
         AppLaunchTransition.install(in: window)
@@ -164,7 +165,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // Safari's plugin walk already ran `ingest` and wrote the Model to
             // the App Group; this link carries no payload, it just says
             // "drain" (`claudedocs/plans/plugin-platform.md` §13.1).
-            AppLaunchTransition.holdForHandoff()
+            if LunaDeepLink.requestsReturnToSource(url) {
+                AppLaunchTransition.holdForHandoff()
+            }
             mainNavigationController?.popToRootViewController(animated: false)
             KindWiring.drainPendingPluginModels(
                 returningToSource: LunaDeepLink.requestsReturnToSource(url))

@@ -1,5 +1,8 @@
 # Cold-launch measurement
 
+For populated-library, mixed-video and long-article results, see
+[the November scaling investigation](launch-scaling.md).
+
 `scripts/measure_launch.sh` reports how long an app takes to launch on the
 physical iPhone 11. Use it to hold a refactor to a launch-time budget — move
 shared code into a dynamic framework, measure again, compare.

@@ -23,6 +23,17 @@ public enum DownsampledImageLoader {
         "\(path)#\(Int(maxPixelSize.rounded()))" as NSString
     }
 
+    /// For local artwork needed in the first visible frame. Offscreen/grid
+    /// consumers keep using `load`; both paths share the same decoded cache.
+    public static func loadImmediately(path: String, pointSize: CGSize, scale: CGFloat) -> UIImage? {
+        let maxPixel = maxPixelSize(for: pointSize, scale: scale)
+        let key = cacheKey(path: path, maxPixelSize: maxPixel)
+        if let cached = cache.object(forKey: key) { return cached }
+        let image = ImageDownsampling.decode(path: path, scale: scale, maxPixelSize: maxPixel)
+        if let image { cache.setObject(image, forKey: key) }
+        return image
+    }
+
     /// Loads a thumbnail for `path`, downsampled to `pointSize` at `scale` (see
     /// `ImageDownsampling.decode`), and delivers it on the main thread. A cache hit
     /// delivers synchronously and skips the staleness check (there's nothing stale

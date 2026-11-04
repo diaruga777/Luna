@@ -49,6 +49,29 @@ public extension NSAttributedString.Key {
 /// inlining downloaded article images as text attachments.
 public enum ArticleTextRenderer {
 
+    /// Attachments clamp to their actual TextKit column. Keep the decode/layout
+    /// cap identical across the prefix and full render so a later swap cannot
+    /// resize an image that is already visible.
+    static let maximumImageWidth: CGFloat = 660
+
+    /// Fix image geometry for this reader session before its first layout. Old
+    /// saves and failed downloads may have no dimensions; they still need a box.
+    /// The fallback is presentation state, never written back to the saved article.
+    static func reservingImageLayout(in content: ArticleContent) -> ArticleContent {
+        var reserved = content
+        for index in reserved.blocks.indices where reserved.blocks[index].kind == .image {
+            let block = reserved.blocks[index]
+            // Existing local pixels supply their source dimensions at render
+            // time. Only unavailable images need a fixed fallback before fetch.
+            guard block.imageFileName == nil, layoutImageSize(for: block) == nil else { continue }
+            let size = fallbackImageSize
+            reserved.blocks[index].imageSize = .init(width: Int(size.width), height: Int(size.height))
+        }
+        return reserved
+    }
+
+    private static let fallbackImageSize = CGSize(width: 1200, height: 800)
+
     /// Builds the full attributed string for the article.
     public static func render(
         _ content: ArticleContent, includesTitle: Bool = true
@@ -78,7 +101,7 @@ public enum ArticleTextRenderer {
         includesTitle: Bool = true
     ) -> RenderedArticle {
         render(content, characterBudget: characterBudget, includesTitle: includesTitle,
-               maximumImageWidth: min(UIScreen.main.bounds.width - 100, 660))
+               maximumImageWidth: maximumImageWidth)
     }
 
     struct PreparedContent {
@@ -157,6 +180,7 @@ public enum ArticleTextRenderer {
                 if let fileName = block.imageFileName,
                    let imageString = attributedImage(
                        at: imagesDirectory.appendingPathComponent(fileName),
+                       block: block,
                        maxWidth: maxImageWidth) {
                     let attachmentRange = NSRange(location: result.length, length: 1)
                     result.append(imageString)
@@ -225,13 +249,21 @@ public enum ArticleTextRenderer {
         }
     }
 
-    private static func attributedImage(at fileURL: URL, maxWidth: CGFloat) -> NSAttributedString? {
-        guard let image = downsampledImage(at: fileURL, maxWidth: maxWidth),
+    private static func attributedImage(
+        at fileURL: URL, block: ArticleContent.Block, maxWidth: CGFloat
+    ) -> NSAttributedString? {
+        let sourceSize = sourceImageSize(at: fileURL)
+        guard let image = downsampledImage(at: fileURL, maxWidth: maxWidth, sourceSize: sourceSize),
               image.size.width > 0, image.size.height > 0 else { return nil }
+        // A decoded bitmap's point size depends on device scale and ImageIO's
+        // longest-edge limit. It must not decide document geometry: a tall image
+        // would otherwise shrink when its placeholder is replaced by pixels.
+        let size = layoutImageSize(for: block) ?? sourceSize
+            ?? image.size
         let attachment = ScalingImageAttachment(
-            image: image,
-            maxDisplayWidth: min(maxWidth, image.size.width),
-            aspectRatio: image.size.height / image.size.width)
+            image: fittedImage(image, sourceSize: sourceSize ?? image.size, layoutSize: size, maxWidth: maxWidth),
+            maxDisplayWidth: min(maxWidth, size.width),
+            aspectRatio: size.height / size.width)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 14
@@ -249,13 +281,14 @@ public enum ArticleTextRenderer {
     private static func attributedImagePlaceholder(
         for block: ArticleContent.Block, maxWidth: CGFloat
     ) -> NSAttributedString? {
-        guard let size = block.imageSize, size.width > 0, size.height > 0 else { return nil }
-        let displayWidth = min(maxWidth, CGFloat(size.width))
-        let displayHeight = max(44, displayWidth / CGFloat(size.width) * CGFloat(size.height))
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: displayWidth, height: displayHeight))
+        let size = layoutImageSize(for: block) ?? fallbackImageSize
+        let displayWidth = min(maxWidth, size.width)
+        let displayHeight = displayWidth / size.width * size.height
+        // A solid pixel scales without allocating a full portrait-sized bitmap.
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
         let image = renderer.image { context in
             LunaColors.secondaryFill.setFill()
-            context.fill(CGRect(origin: .zero, size: CGSize(width: displayWidth, height: displayHeight)))
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         let attachment = ScalingImageAttachment(
             image: image,
@@ -275,6 +308,41 @@ public enum ArticleTextRenderer {
         return result
     }
 
+    /// A guessed or inaccurate publisher ratio must never stretch the photograph.
+    /// Letterbox inside the reserved box without changing surrounding text layout.
+    private static func fittedImage(
+        _ image: UIImage, sourceSize: CGSize, layoutSize: CGSize, maxWidth: CGFloat
+    ) -> UIImage {
+        guard abs(sourceSize.height / sourceSize.width - layoutSize.height / layoutSize.width) > 0.01
+        else { return image }
+        let width = min(maxWidth, layoutSize.width)
+        let box = CGSize(width: width, height: width * layoutSize.height / layoutSize.width)
+        let ratio = min(box.width / image.size.width, box.height / image.size.height)
+        let size = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        return UIGraphicsImageRenderer(size: box).image { _ in
+            image.draw(in: CGRect(x: (box.width - size.width) / 2,
+                                  y: (box.height - size.height) / 2,
+                                  width: size.width, height: size.height))
+        }
+    }
+
+    private static func layoutImageSize(for block: ArticleContent.Block) -> CGSize? {
+        guard let size = block.imageSize, size.width > 0, size.height > 0 else { return nil }
+        return CGSize(width: CGFloat(size.width), height: CGFloat(size.height))
+    }
+
+    private static func sourceImageSize(at url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        return [5, 6, 7, 8].contains(orientation)
+            ? CGSize(width: CGFloat(height), height: CGFloat(width))
+            : CGSize(width: CGFloat(width), height: CGFloat(height))
+    }
+
     /// In-memory cache of already-decoded, downsampled images. The bytes are on
     /// disk (downloaded once at ingest), but decoding them is a synchronous, costly
     /// main-thread operation — re-decoding on every reader open is the visible pause.
@@ -284,22 +352,29 @@ public enum ArticleTextRenderer {
         // Bound the cache so a long reading session can't accumulate decoded bitmaps
         // unboundedly (NSCache also evicts under memory pressure).
         cache.countLimit = 24
+        cache.totalCostLimit = 48 * 1024 * 1024
         return cache
     }()
 
     /// Decodes the image already scaled down — never holds the full-size bitmap.
     /// Cached so navigating back into an article (or reopening it) is instant.
-    private static func downsampledImage(at fileURL: URL, maxWidth: CGFloat) -> UIImage? {
+    private static func downsampledImage(
+        at fileURL: URL, maxWidth: CGFloat, sourceSize: CGSize?
+    ) -> UIImage? {
         let key = "\(fileURL.path)|\(Int(maxWidth.rounded()))" as NSString
         if let cached = decodedCache.object(forKey: key) { return cached }
 
         let scale = UIScreen.main.scale
+        // ImageIO's cap is the LONGEST edge, while this renderer limits WIDTH.
+        // A portrait must retain enough pixels across the visible text column.
+        let longestEdgeRatio = sourceSize.map { max(1, $0.height / $0.width) } ?? 1
         guard let image = ImageDownsampling.decode(
-            path: fileURL.path, scale: scale, maxPixelSize: maxWidth * scale)
+            path: fileURL.path, scale: scale, maxPixelSize: min(4096, maxWidth * scale * longestEdgeRatio))
         else {
             return nil
         }
-        decodedCache.setObject(image, forKey: key)
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        decodedCache.setObject(image, forKey: key, cost: cost)
         return image
     }
 

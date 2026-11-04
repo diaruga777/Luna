@@ -77,4 +77,18 @@ final class DownsampledImageLoaderTests: XCTestCase {
         }
         await fulfillment(of: [notCalled], timeout: 1)
     }
+
+    func testVisibleArtworkIsDecodedImmediatelyAndSharedWithAsyncCache() throws {
+        let path = writeLargePNG(named: "visible.png")
+        let size = CGSize(width: 50, height: 50)
+        let image = try XCTUnwrap(DownsampledImageLoader.loadImmediately(
+            path: path, pointSize: size, scale: 2))
+        XCTAssertLessThanOrEqual(image.size.width * image.scale, 120)
+        var delivered = false
+        DownsampledImageLoader.load(path: path, pointSize: size, scale: 2, isStale: { false }) {
+            XCTAssertTrue($0 === image)
+            delivered = true
+        }
+        XCTAssertTrue(delivered, "visible artwork must already be in the shared decoded cache")
+    }
 }

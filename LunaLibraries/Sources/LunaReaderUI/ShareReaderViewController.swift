@@ -116,11 +116,9 @@ public final class ShareReaderViewController: UIViewController {
             completionDelegate: completionDelegate)
     }
 
-    /// Resolves the images already on disk, then downloads the ones the page gave
-    /// no dimensions for — those are exactly the images with no placeholder to
-    /// land in, so they are the ones whose late arrival shoves the text around.
-    /// Images with declared sizes keep their reserved space and are left to load
-    /// in behind it.
+    /// Settles visible images before showing text, even when their dimensions
+    /// are known. Unknown-size images also retain the extension's stable-layout
+    /// guarantee; offscreen known-size images may load later.
     ///
     /// On timeout the local resolve runs again, so files that did arrive before
     /// the deadline are still baked into the first render.
@@ -128,10 +126,11 @@ public final class ShareReaderViewController: UIViewController {
         for content: ArticleContent, item: SavedItem, url: URL, store: SavesStore
     ) async -> ArticleContent {
         let local = ArticleImageDownloader.resolveLocalImages(content, store: store)
-        let needsSettling = local.blocks.contains { block in
-            block.kind == .image && block.imageFileName == nil
-                && block.imageSize == nil
-        }
+        let needsSettling = ArticleImageDownloader.needsInitialLayoutImages(local)
+            || local.blocks.contains { block in
+                block.kind == .image && block.imageFileName == nil
+                    && block.imageSize == nil
+            }
         guard needsSettling else { return local }
 
         let itemID = item.id
@@ -142,8 +141,10 @@ public final class ShareReaderViewController: UIViewController {
         ) { group in
             group.addTask {
                 if let settle { return await settle(local, itemID, url, store) }
-                return await ArticleImageDownloader.downloadUnknownSizeImages(
+                let initial = await ArticleImageDownloader.downloadInitialLayoutImages(
                     local, itemID: itemID, store: store, refererURL: url)
+                return await ArticleImageDownloader.downloadUnknownSizeImages(
+                    initial, itemID: itemID, store: store, refererURL: url)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -151,7 +152,10 @@ public final class ShareReaderViewController: UIViewController {
             }
             let first = await group.next() ?? nil
             group.cancelAll()
-            return first
+            if let first { return first }
+            // The timeout may have interrupted offscreen work after visible
+            // images finished. Keep those completed local filenames.
+            return await group.next() ?? nil
         }
         return downloaded ?? ArticleImageDownloader.resolveLocalImages(local, store: store)
     }

@@ -105,8 +105,9 @@ fault — a PNG/JPEG/HEIC/GIF block does embed. They trusted
 already on disk (or fetchable):
 
 - `ArticleIngestHandler.persistArticle` flips an item `.ready` after fetching
-  only unknown-size images near the top; the rest download in a detached task
-  and re-save **afterwards**. A double-save export (7 s window) always beat it.
+  images near the top, including those with declared dimensions; the rest
+  download in a detached task and re-save **afterwards**. An immediate export
+  can still beat those later downloads.
 - `ShareSurfaceDriver.persistArticle` (a share/action-extension save that never
   opens the reader), `saveNewWithContent` (paste), and `IncomingMailImporter`
   download no images at all.

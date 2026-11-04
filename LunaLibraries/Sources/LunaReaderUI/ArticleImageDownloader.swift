@@ -29,23 +29,36 @@ public enum ArticleImageDownloader {
     private static let maxStoredPixelSize = 2048
 
     public static func download(
-        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL
+        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL,
+        onImageReady: ((ArticleContent) async -> Void)? = nil
     ) async -> ArticleContent {
-        await download(content, itemID: itemID, store: store, refererURL: refererURL) { _, _ in true }
+        await download(content, itemID: itemID, store: store, refererURL: refererURL,
+                       onImageReady: onImageReady) { _, _ in true }
     }
 
-    /// Downloads only unknown-size images that appear near the top of the article.
-    /// Images with declared dimensions already have stable placeholders, so they do
-    /// not need to block the row becoming readable.
+    /// Fetches initial-screen images before readability, including images whose
+    /// dimensions are known. A correctly sized empty box is not a loaded image.
+    /// Later article images can finish after the first visible content is ready.
     public static func downloadInitialLayoutImages(
-        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL
+        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL,
+        onImageReady: ((ArticleContent) async -> Void)? = nil
     ) async -> ArticleContent {
-        let initialTextBudget = 3_200
-        return await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, textBeforeBlock in
-            guard block.kind == .image else { return false }
-            if block.imageSize != nil { return false }
-            return textBeforeBlock <= initialTextBudget
+        return await download(content, itemID: itemID, store: store, refererURL: refererURL,
+                              onImageReady: onImageReady) { block, textBeforeBlock in
+            block.kind == .image && textBeforeBlock <= initialTextBudget
         }
+    }
+
+    private static let initialTextBudget = 3_200
+
+    static func needsInitialLayoutImages(_ content: ArticleContent) -> Bool {
+        var textBeforeBlock = 0
+        for block in content.blocks {
+            if block.kind == .image {
+                if textBeforeBlock <= initialTextBudget && block.imageFileName == nil { return true }
+            } else { textBeforeBlock += block.text.count }
+        }
+        return false
     }
 
     /// Downloads every image whose dimensions the page didn't declare, wherever it
@@ -68,6 +81,7 @@ public enum ArticleImageDownloader {
         itemID: UUID,
         store: SavesStore,
         refererURL: URL,
+        onImageReady: ((ArticleContent) async -> Void)? = nil,
         shouldDownload: (ArticleContent.Block, Int) -> Bool
     ) async -> ArticleContent {
         var downloaded = 0
@@ -75,7 +89,12 @@ public enum ArticleImageDownloader {
         var blocks: [ArticleContent.Block] = []
         var textBeforeBlock = 0
 
-        for var block in content.blocks {
+        for (index, originalBlock) in content.blocks.enumerated() {
+            guard !Task.isCancelled else {
+                blocks.append(contentsOf: content.blocks[index...])
+                break
+            }
+            var block = originalBlock
             guard block.kind == .image else {
                 blocks.append(block)
                 textBeforeBlock += block.text.count
@@ -111,6 +130,8 @@ public enum ArticleImageDownloader {
             ) {
                 block.imageFileName = existing
                 blocks.append(block)
+                await publishImages(blocks, remaining: content.blocks.dropFirst(index + 1),
+                                    content: content, onImageReady: onImageReady)
                 continue
             }
             guard downloaded < maxImages, storedBytes < maxStoredBytesPerArticle,
@@ -134,6 +155,8 @@ public enum ArticleImageDownloader {
                 downloaded += 1
                 storedBytes += image.data.count
                 SharedDiagnosticLog.record("image downloaded: \(imageURL.absoluteString)", category: "images")
+                await publishImages(blocks, remaining: content.blocks.dropFirst(index + 1),
+                                    content: content, onImageReady: onImageReady)
             } catch {
                 blocks.append(block)
                 continue
@@ -143,6 +166,18 @@ public enum ArticleImageDownloader {
         var updated = content
         updated.blocks = blocks
         return updated
+    }
+
+    /// Publish each completed image immediately. A slow later request must not
+    /// hold already available visible pixels behind the whole download batch.
+    private static func publishImages(
+        _ blocks: [ArticleContent.Block], remaining: ArraySlice<ArticleContent.Block>,
+        content: ArticleContent, onImageReady: ((ArticleContent) async -> Void)?
+    ) async {
+        guard let onImageReady, !Task.isCancelled else { return }
+        var updated = content
+        updated.blocks = blocks + remaining
+        await onImageReady(updated)
     }
 
     /// Clears stale recorded names synchronously. Finding and claiming another

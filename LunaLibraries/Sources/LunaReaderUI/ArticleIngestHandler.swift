@@ -51,8 +51,8 @@ public final class ArticleIngestHandler {
         // Persist reader content and flip the row to `.ready` FIRST — the reader is the
         // primary artifact and must not wait on non-visible remote image downloads,
         // row thumbnail fetches, or the (up-to-20s) web-archive capture. Only
-        // unknown-size images near the top are fetched before readiness; known-size
-        // images get stable placeholders and load later.
+        // initial-screen images are fetched before readiness, even when their
+        // dimensions are known. Offscreen images can finish afterward.
         let updated = store.saveContent(initialContent, for: item)
         if updated.state == .ready {
             SaveReadiness.observer?.saveBecameReady(updated)

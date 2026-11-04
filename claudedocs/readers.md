@@ -635,6 +635,24 @@ the screen. Tests: `ExtensionScrollGeometryTests`.
 
 Extractor emits `.image` blocks (`imageURLString`) for article `<img>`s — token-exact junk filter (ad/tracking/logo/etc; substring matching would reject WordPress `/uploads/` URLs) and skips declared-tiny (<140 px) raster art plus SVG, while retaining GIFs. Open Graph/Twitter/JSON-LD lead art is promoted to block zero — but ONLY when the body has no image of its own within roughly two screen heights of content (`leadImageProseBudget`, 1400 chars of block text; an image block short-circuits the count). A cover stacked directly above, or a few lines from, the article's own opening photo reads as a rendering glitch, whether it's the same picture or a different one, so in that case the body is left exactly as extracted. When the lead art only appears further down it is MOVED to block zero rather than shown twice, so an animated GIF can be the reader's lead/header image. `ArticleImageDownloader` downloads up to 30 images (≤12 MB raw each, ≤40 MB stored per article) into the Articles dir (`imageFileName`). Static images are downsampled and transcoded for fast decoding; animated GIF/APNG files retain every frame. `.gif` URLs use an animation-safe `Accept` header because WordPress image CDNs otherwise negotiate animated WebP, which the old static transcode flattened to frame zero; if a CDN still returns animated WebP, ImageIO converts the sequence to GIF. Reopening an older save automatically unlinks/refetches a legacy frame-zero JPEG for a `.gif` source. `ArticleTextRenderer` keeps a downsampled first-frame `NSTextAttachment` for stable TextKit layout and snapshots; `ScrollReaderViewController` overlays an `AnimatedArticleImageView` driven one frame at a time by ImageIO, enabling playback only near the visible viewport to bound memory/CPU. RSVP ignores image blocks (no tokens). Tests: `AnimatedArticleImageTests`, `ArticleExtractorTests.testRetainsGIFBodyImageAndCanPromoteGIFToLeadImage`.
 
+Visible images are part of the initial reader frame. The local prefix grows to
+cover the actual viewport before display, and cached mastheads decode immediately
+through the shared thumbnail cache. Prefix and full renders use the same image
+width cap and source/declared aspect ratio; downsampled bitmap point dimensions
+never change attachment geometry. Missing dimensions reserve a session-only 3:2
+box before the first render; incoming pixels fit inside it without stretching or
+moving text. Local files supply their actual oriented dimensions when available.
+The visible-frame regression compares screenshots as well as attachment and
+paragraph geometry.
+Portrait decoding preserves column resolution with a 4096-pixel longest-edge
+cap, and the decoded cache is bounded to 48 MB. Ingest and extension preparation fetch
+initial images even when their dimensions are known, while later known-size
+images may remain deferred. Reader recovery starts that initial pass before full
+article preparation, publishes each available image immediately (without waiting
+for later requests in the batch), and cancels stale render results. Extension timeouts retain filenames from completed initial work.
+Tests: `ReaderVisibleImagesTests`, `DownsampledImageLoaderTests`,
+`ExtensionReaderPreparationTests`.
+
 ## Chapter marks (the page's own table of contents)
 
 A long blog entry often opens with a table of contents: a list of `#fragment`
@@ -1118,7 +1136,7 @@ The scroll reader's first-open cost was laying out an ENORMOUS attributed string
 - **Phase 2 (after entry animation)**: `prepareFullContent()` builds the FULL attributed string off the main actor, then on main swaps it in inside `UIView.performWithoutAnimation`, restoring the captured `contentOffset`. Because the prefix is a STRICT prefix, the leading layout is identical, so the swap is seamless (a `WordMap`-anchored fallback re-positions in the rare case the user was at the bottom of the short prefix). Attribute construction, image decoding and `WordMap` construction run on the
 worker using a captured trait collection and image-width budget. Reuse cancels
 the pending request, and a canceled worker result cannot overwrite the next
-article. Only the final live TextKit update runs on main. The share footer, inline-image fetch, and resume highlight are all deferred until then (they need the full word map). `updateReadPullPrompt` is gated on full-content load so a short prefix isn't mistaken for the whole article.
+article. Only the final live TextKit update runs on main. The share footer and resume highlight wait for the full word map; inline-image recovery starts immediately, independently of Phase 2. `updateReadPullPrompt` is gated on full-content load so a short prefix isn't mistaken for the whole article.
 
 **Entry-animation hooks** (each calls `prepareFullContent()`, which is idempotent): the standard `ReaderViewController` push (via `ScrollReaderViewController.viewDidAppear`'s transition coordinator — the reader self-triggers regardless of host as a backstop); the split inline reader (`SplitWebOverlayViewController.animateOpen` completion → `InlineReaderPageViewController.entryAnimationDidFinish()`); and the RabbitHole stacked reader (`RabbitHoleReaderViewController` root via `viewDidAppear`, dives via the `runTransition` completion → `RabbitHoleLayerViewController.entryAnimationDidFinish()`). **Phase 2 is SKIPPED** when the prefix already covers a short article, and the FULL render is done up front (no prefix) for read-aloud (audio reads the whole article from the top) and for opens that restore a saved/carried position beyond the prefix (`openPositionLikelyBeyondPrefix`). Tests: `ArticleTextRendererProgressiveTests`.
 

@@ -73,6 +73,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var wordMap: WordMap
     private let includesArticleTitle: Bool
     private var imageDownloadTask: Task<Void, Never>?
+    private var imageDownloadGeneration = UUID()
     private var fullContentTask: Task<Void, Never>?
     /// Live animation views laid over TextKit's first-frame attachments. TextKit 1
     /// draws attachments as static bitmaps, so a real image view is required for GIF
@@ -118,6 +119,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// A few hundred characters comfortably fills a screen of serif body text while
     /// keeping the initial `UITextView` layout cheap.
     private static let prefixCharacterBudget = 700
+    private var currentPrefixCharacterBudget = ScrollReaderViewController.prefixCharacterBudget
 
     /// The progressive-load state: `.pending` until Phase 2 is kicked off,
     /// `.inFlight` while it's building, `.done` once the FULL article has been
@@ -142,6 +144,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public var renderedTextLengthForTesting: Int { rendered.text.length }
     public var wordCountForTesting: Int { wordMap.wordCount }
     public var animatedImageViewCountForTesting: Int { animatedImageViews.count }
+    var loadedImageCountForTesting: Int { rendered.imageRanges.count }
     public var viewportReflowGlyphCountForTesting: Int {
         viewportReflowTransition?.glyphCount ?? 0
     }
@@ -231,7 +234,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // first render, so they appear in the same frame as the text instead of
         // popping in later via the async downloader. Cheap (hash + fileExists); only
         // genuinely-uncached images fall through to `fetchMissingImagesIfNeeded`.
-        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared)
+        let resolved = ArticleTextRenderer.reservingImageLayout(in:
+            ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared))
         self.content = resolved
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
@@ -304,6 +308,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textViewportWidthConstraint.isActive = true
         }
         imageDownloadTask?.cancel()
+        imageDownloadTask = nil
+        imageDownloadGeneration = UUID()
         removeAnimatedImageViews()
         speech?.stop()
         speech = nil
@@ -314,6 +320,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         pullIsArmed = false
         didRestoreScroll = false
         fullContentLoad = .pending
+        currentPrefixCharacterBudget = Self.prefixCharacterBudget
         didStartPlayback = false
         // An unconsumed jump must never survive into the next article.
         pendingAnchorBlockIndex = nil
@@ -338,7 +345,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         resumeWordIndex: Int?,
         fullRenderUpFront: Bool
     ) {
-        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared)
+        let resolved = ArticleTextRenderer.reservingImageLayout(in:
+            ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared))
         self.item = item
         self.content = resolved
         self.audioEnabled = audioEnabled
@@ -365,6 +373,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.layoutIfNeeded()
             textView.layoutManager.ensureLayout(for: textView.textContainer)
             if textView.bounds.width > 0 {
+                fillInitialViewportIfNeeded()
                 applyInitialScrollPosition()
                 didRestoreScroll = true
             } else {
@@ -374,8 +383,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             footer.isHidden = true
         }
         installAnimatedImageViews()
+        fetchMissingImagesIfNeeded()
         if fullContentLoad == .done {
-            fetchMissingImagesIfNeeded()
             installPositionDependentFeatures()
         }
         view.setNeedsLayout()
@@ -721,7 +730,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Images cached on disk are baked into the prefix already; only genuinely
         // uncached ones (action/share surface) fall through here. Once the full
         // content lands this re-runs against it (see `prepareFullContent`).
-        if fullContentLoad == .done { fetchMissingImagesIfNeeded() }
+        fetchMissingImagesIfNeeded()
 
         addSimulatorSplitHooksIfNeeded()
 
@@ -794,6 +803,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.textContainerInset = UIEdgeInsets(
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
         }
+        fillInitialViewportIfNeeded()
         layoutCompletionArea()
         if widthChanged, viewportReflowTransition == nil, let resizeAnchor {
             ScrollPresentationState.setSuppressed(true, for: textView)
@@ -813,6 +823,36 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             didRestoreScroll = true
             applyInitialScrollPosition()
             revealContent()
+        }
+    }
+
+    /// A character count is only a first estimate: wide windows and small text
+    /// can show past it. Extend the local prefix before the first frame so an
+    /// on-screen image never waits for whole-article background preparation.
+    private func fillInitialViewportIfNeeded() {
+        guard fullContentLoad != .done, !rendered.isComplete,
+              !didRestoreScroll, textView.bounds.width > 0, textView.bounds.height > 0
+        else { return }
+        let visibleHeight = textView.bounds.height - textView.adjustedContentInset.top
+            - textView.adjustedContentInset.bottom + textView.textContainerInset.bottom
+        while !rendered.isComplete && articleContentBottom < visibleHeight {
+            let previousBlockCount = rendered.blockTextRanges.count
+            currentPrefixCharacterBudget *= 2
+            let expanded = ArticleTextRenderer.render(
+                content, characterBudget: currentPrefixCharacterBudget,
+                includesTitle: includesArticleTitle)
+            guard expanded.blockTextRanges.count > previousBlockCount else { continue }
+            rendered = expanded
+            wordMap = WordMap(content: content, rendered: expanded)
+            textView.attributedText = expanded.text
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+        }
+        installAnimatedImageViews()
+        if rendered.isComplete {
+            fullContentTask?.cancel()
+            fullContentTask = nil
+            fullContentLoad = .done
+            installPositionDependentFeatures()
         }
     }
 
@@ -837,7 +877,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let content = self.content
         let includesTitle = includesArticleTitle
         let traits = traitCollection
-        let imageWidth = view.bounds.width > 100 ? min(view.bounds.width - 100, 660) : 660
+        let imageWidth = ArticleTextRenderer.maximumImageWidth
         fullContentTask = Task { @MainActor [weak self] in
             guard !Task.isCancelled else { return }
             let prepared = await ArticleTextRenderer.prepareFullContent(
@@ -925,39 +965,91 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     // MARK: - Inline images
 
-    /// The main ingestor normally downloads every extracted image before the reader
-    /// opens. The action/share surface can present a reader immediately after parsing,
-    /// though, so finish that same local-cache step here and redraw once it lands.
+    /// The main ingestor prepares initial-screen images before the reader opens.
+    /// Other save paths can present after parsing, so start their visible-image
+    /// recovery immediately and finish offscreen work afterward.
     private func fetchMissingImagesIfNeeded() {
-        guard content.blocks.contains(where: { $0.kind == .image && $0.imageFileName == nil }) else { return }
+        guard imageDownloadTask == nil,
+              content.blocks.contains(where: { $0.kind == .image && $0.imageFileName == nil }) else { return }
         guard let refererURL = item.url ?? URL(string: item.urlString) else {
             SharedDiagnosticLog.record("reader: skipped inline image download without a valid source URL", category: "images")
             return
         }
         let source = content
+        let generation = imageDownloadGeneration
+        let itemID = item.id
+        let imageStore = store
         imageDownloadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+            defer {
+                if let self, self.imageDownloadGeneration == generation { self.imageDownloadTask = nil }
+            }
+            // Visible images must not wait for Phase 2 or a slow image at the
+            // end of the article. Publish the initial pass before that work.
+            let initial = await ArticleImageDownloader.downloadInitialLayoutImages(
+                source, itemID: itemID, store: imageStore,
+                refererURL: refererURL, onImageReady: { [weak self] updated in
+                    guard !Task.isCancelled, self?.imageDownloadGeneration == generation else { return }
+                    await self?.applyDownloadedImages(updated)
+                })
+            guard !Task.isCancelled, self?.imageDownloadGeneration == generation else { return }
+            await self?.applyDownloadedImages(initial)
             let updated = await ArticleImageDownloader.download(
-                source, itemID: self.item.id, store: self.store,
-                refererURL: refererURL)
-            guard !Task.isCancelled,
-                  updated.blocks.contains(where: { $0.imageFileName != nil }),
-                  updated != self.content
-            else { return }
-            self.content = updated
-            self.rendered = ArticleTextRenderer.render(
-                updated, includesTitle: self.includesArticleTitle)
-            self.wordMap = WordMap(content: updated, rendered: self.rendered)
-            let offset = self.textView.contentOffset
-            self.textView.attributedText = self.rendered.text
-            self.textView.setContentOffset(offset, animated: false)
-            self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
-            self.textView.layoutIfNeeded()
-            self.installAnimatedImageViews()
-            self.layoutCompletionArea()
-            self.updateReadPullPrompt()
-            SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
+                initial, itemID: itemID, store: imageStore, refererURL: refererURL,
+                onImageReady: { [weak self] updated in
+                    guard !Task.isCancelled, self?.imageDownloadGeneration == generation else { return }
+                    await self?.applyDownloadedImages(updated)
+                })
+            guard !Task.isCancelled, self?.imageDownloadGeneration == generation else { return }
+            await self?.applyDownloadedImages(updated)
         }
+    }
+
+    private func applyDownloadedImages(_ updated: ArticleContent) async {
+        guard updated != content else { return }
+        let generation = imageDownloadGeneration
+        let changesRenderedImages = zip(updated.blocks.prefix(rendered.blockTextRanges.count), content.blocks)
+            .contains { $0.imageFileName != $1.imageFileName }
+        let wasPreparingFullContent = fullContentLoad == .inFlight
+        let wasComplete = fullContentLoad == .done
+        // An older worker must not put stale placeholders back over new pixels.
+        fullContentTask?.cancel()
+        fullContentTask = nil
+        content = updated
+        if !wasComplete && !changesRenderedImages {
+            // Offscreen downloads do not rebuild the visible prefix. Restart an
+            // in-flight full render with the new files so it cannot install stale art.
+            fullContentLoad = .pending
+            if wasPreparingFullContent { prepareFullContent() }
+            return
+        }
+        if wasComplete {
+            let prepared = await ArticleTextRenderer.prepareFullContent(
+                updated, includesTitle: includesArticleTitle, traits: traitCollection,
+                maximumImageWidth: ArticleTextRenderer.maximumImageWidth)
+            guard !Task.isCancelled, generation == imageDownloadGeneration else { return }
+            rendered = prepared.rendered
+            wordMap = prepared.wordMap
+        } else {
+            rendered = ArticleTextRenderer.render(
+                updated, characterBudget: currentPrefixCharacterBudget,
+                includesTitle: includesArticleTitle)
+            wordMap = WordMap(content: updated, rendered: rendered)
+        }
+        fullContentLoad = rendered.isComplete ? .done : .pending
+        let offset = textView.contentOffset
+        ScrollPresentationState.setSuppressed(true, for: textView)
+        UIView.performWithoutAnimation {
+            textView.attributedText = rendered.text
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            textView.layoutIfNeeded()
+            textView.setContentOffset(offset, animated: false)
+        }
+        ScrollPresentationState.setSuppressed(false, for: textView)
+        installAnimatedImageViews()
+        layoutCompletionArea()
+        updateReadPullPrompt()
+        if wasPreparingFullContent { prepareFullContent() }
+        SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
     }
 
     /// Hit-tests `point` against the rendered image ranges — glyph geometry only, no
@@ -1227,6 +1319,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func activateVisibleReader(deferFullContentUntilHostCompletion: Bool = false) {
         // Fallback if layout hasn't run yet (shouldn't normally happen).
         if !didRestoreScroll {
+            fillInitialViewportIfNeeded()
             didRestoreScroll = true
             applyInitialScrollPosition()
         }

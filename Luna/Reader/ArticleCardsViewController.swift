@@ -1465,13 +1465,11 @@ final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private func loadHeaderBanner(_ url: URL) {
-        DownsampledImageLoader.load(
+        let image = DownsampledImageLoader.loadImmediately(
             path: url.path, pointSize: CGSize(width: 600, height: 200),
-            scale: view.traitCollection.displayScale, isStale: { [weak self] in self == nil }
-        ) { [weak self] image in
-            self?.titleHeader.setBanner(image)
-            self?.scrollTitleHeader.setBanner(image)
-        }
+            scale: view.traitCollection.displayScale)
+        titleHeader.setBanner(image)
+        scrollTitleHeader.setBanner(image)
     }
 
     private func mountTitleHeader() {

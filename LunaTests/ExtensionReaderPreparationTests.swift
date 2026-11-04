@@ -79,10 +79,8 @@ final class ExtensionReaderPreparationTests: XCTestCase {
         XCTAssertTrue(settled, "an unknown-size image must be settled before display")
     }
 
-    /// Images WITH declared dimensions already have correctly-sized placeholders,
-    /// so nothing moves when they arrive — the surface must not hold the spinner
-    /// for them.
-    func testSettlingSkipsImagesThatAlreadyHaveDeclaredSizes() async {
+    /// Declared dimensions reserve space; visible pixels must also be ready.
+    func testSettlingIncludesVisibleImagesThatAlreadyHaveDeclaredSizes() async {
         let article = content([
             .init(kind: .paragraph, text: "body", links: []),
             imageBlock(url: "https://example.com/sized.jpg", width: 800, height: 600),
@@ -96,7 +94,21 @@ final class ExtensionReaderPreparationTests: XCTestCase {
         }
         _ = await ShareReaderViewController.settledImageLayout(
             for: article, item: item, url: URL(string: "https://example.com/story")!, store: store)
-        XCTAssertFalse(settled, "a sized image loads in behind its placeholder instead")
+        XCTAssertTrue(settled, "an on-screen image must be prepared before revealing the reader")
+    }
+
+    func testSettlingDefersKnownSizeImagesFarBelowTheInitialViewport() async {
+        let article = content([
+            .init(kind: .paragraph, text: String(repeating: "word ", count: 800), links: []),
+            imageBlock(url: "https://example.com/offscreen.jpg", width: 800, height: 600),
+        ])
+        let item = store.add(urlString: "https://example.com/story")
+        ShareReaderViewController.settleImagesOverride = { content, _, _, _ in
+            XCTFail("offscreen known-size images should remain deferred")
+            return content
+        }
+        _ = await ShareReaderViewController.settledImageLayout(
+            for: article, item: item, url: URL(string: item.urlString)!, store: store)
     }
 
     /// A text-only article never waits on the image step at all.
@@ -135,6 +147,27 @@ final class ExtensionReaderPreparationTests: XCTestCase {
             ShareReaderViewController.imagePreparationTimeout + 5,
             "the wait must be bounded")
         XCTAssertEqual(result.blocks.count, 1)
+    }
+
+    func testTimeoutKeepsVisibleImagesCompletedBeforeOffscreenWorkWasCancelled() async throws {
+        let article = content([imageBlock(url: "https://example.com/visible.jpg", width: 800, height: 600)])
+        let item = store.add(urlString: "https://example.com/story")
+        ShareReaderViewController.imagePreparationTimeout = 0.01
+        let name = "completed-visible.png"
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        try XCTUnwrap(image.pngData()).write(to: store.articlesDirectory.appendingPathComponent(name))
+        ShareReaderViewController.settleImagesOverride = { content, _, _, _ in
+            var completed = content
+            completed.blocks[0].imageFileName = name
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            return completed
+        }
+        let settled = await ShareReaderViewController.settledImageLayout(
+            for: article, item: item, url: URL(string: item.urlString)!, store: store)
+        XCTAssertEqual(settled.blocks[0].imageFileName, name)
     }
 
     /// The prepared hand-off IS the reader — the surface goes straight from its

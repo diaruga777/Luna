@@ -873,8 +873,22 @@ public final class SavesStore {
     /// Moves every reader-completed item into Archive in one transaction.
     /// Called by the Reader app on background and once during cold launch.
     public func archivePendingFinishedItems() {
+        guard let database = database() else { return }
+        do {
+            // Most launches have nothing to archive. A WAL read must not wait
+            // for an extension's writer just to discover that this is a no-op.
+            guard try database.perform({ db in
+                try db.scalarInt(
+                    "SELECT 1 FROM saves WHERE pending_archive_at IS NOT NULL LIMIT 1") != nil
+            }) else { return }
+        } catch {
+            record(error, "read pending archives")
+            return
+        }
         var archivedIDs: [UUID] = []
         write { db in
+            // Re-read under the write lock: another process may have changed
+            // pending rows since the inexpensive preflight above.
             let pending = try SavesReader.itemsWithPendingArchive(in: db)
             guard !pending.isEmpty else { return }
             for var stored in pending {

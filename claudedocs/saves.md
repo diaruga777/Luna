@@ -52,6 +52,13 @@ is the test seam that waits for them.
 
 ## The schema
 
+Schema 20 certifies the complete layout previously checked on every open.
+Current and newer databases need only a `user_version` read; they skip the writer
+lock, DDL, column probes and historical search-title backfill. Older databases
+run the existing repairs once, rechecking the version after acquiring the write
+lock in case another process migrated first. All future schema changes,
+including indexes, triggers and backfills, must bump the version.
+
 Schema 19 adds the shared, local library index: `library_documents`, FTS5
 `library_fts`, normalized Float32 chunk embeddings in `library_vectors`, and
 `library_index_state` for warming vectors only when the index changes. Save-row
@@ -78,12 +85,12 @@ personal dictionary. Shortcut media uses the same ownership edges and reaper;
 see [keyboard.md](keyboard.md).
 
 `LunaStorage/SavesSchema.swift` holds every table, index and trigger, created
-idempotently at open and stamped into `PRAGMA user_version`. **Every field is a
+idempotently during migration and stamped into `PRAGMA user_version`. **Every field is a
 typed column — there is no payload blob**, so a reader never has to understand a
 writer's version of a struct to read a column it does know.
 
 Schema 11 also repairs an ambiguous schema-6 rollout: two shipped builds used the
-same version stamp for different `preload_pages` layouts. Open therefore inspects
+same version stamp for different `preload_pages` layouts. Migration therefore inspects
 that table's columns rather than trusting `user_version`; only the obsolete
 two-column layout is released and rebuilt, while a complete layout (including one
 with additive columns from a newer sibling) is preserved. Rebuilding releases its

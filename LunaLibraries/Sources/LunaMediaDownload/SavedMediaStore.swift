@@ -570,18 +570,16 @@ public final class SavedMediaStore {
     /// pre-unwrap source URL, so that check would silently delete freshly-saved
     /// media whenever the app's ingest unwraps or normalizes a URL.
     public func purgeExpired(now: Date = Date()) {
+        // "Keep forever" has no expired rows. In particular, deck construction
+        // must not read/rewrite the library or run the file reaper in this case.
+        guard let days = MediaRetentionSettings.retentionDays else { return }
+        let cutoff = now.addingTimeInterval(-TimeInterval(days) * 24 * 60 * 60)
         lock.lock()
         let updatedRows = try? mutateUnlocked { items -> [SavedMediaItem] in
-            let ageExpired: [SavedMediaItem]
-            if let days = MediaRetentionSettings.retentionDays {
-                let cutoff = now.addingTimeInterval(-TimeInterval(days) * 24 * 60 * 60)
-                ageExpired = items.filter { item in
-                    guard item.dateSaved < cutoff else { return false }
-                    if case .localFile = item.storageState { return true }
-                    return false
-                }
-            } else {
-                ageExpired = []
+            let ageExpired = items.filter { item in
+                guard item.dateSaved < cutoff else { return false }
+                if case .localFile = item.storageState { return true }
+                return false
             }
             guard !ageExpired.isEmpty else { return [] }
             let expiredIDs = Set(ageExpired.map(\.id))

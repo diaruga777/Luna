@@ -47,6 +47,18 @@ final class SavedMediaStoreTests: XCTestCase {
         saves.reserveSaveAttempt(urlString: urlString, at: Date()).item.id
     }
 
+    func testKeepForeverRetentionDoesNotOpenTheDatabase() {
+        let previousOption = MediaRetentionSettings.option
+        defer { MediaRetentionSettings.option = previousOption }
+        MediaRetentionSettings.option = .never
+
+        store.purgeExpired()
+
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("saves.sqlite").path),
+            "Disabled retention must not acquire a writer lock or scan the library at launch")
+    }
+
     func testUndownloadedLocalAndPhotosTransitionsRoundTrip() async throws {
         let urlString = "https://x.com/example/status/1"
         let id = makeSave(urlString)

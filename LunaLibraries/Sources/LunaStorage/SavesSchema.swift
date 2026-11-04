@@ -31,14 +31,15 @@ import Foundation
 /// `SavedFileOwnership` for the writes and `PendingDeleteReaper` for the unlink.
 enum SavesSchema {
 
-    /// Creates the tables and indexes if they are absent, and stamps the schema
-    /// revision. Idempotent: every process runs it at open, and the first one to
-    /// reach a brand-new file is the one that builds it.
+    /// Migrates older databases once. A current database needs only a version
+    /// read: opening the library must not acquire the writer lock, repeat DDL,
+    /// or scan every save for search-index backfill before the first frame.
     ///
     /// A file already stamped NEWER than this binary is left at its own version —
     /// a sibling app that has been updated first owns that stamp, and every table
     /// this binary needs is there (they only ever gain columns).
     static func create(in database: SavesDatabase) throws {
+        guard try userVersion(in: database) < SavesDatabase.schemaVersion else { return }
         // Every process runs this at open, so on a fresh file they all run it at
         // once — the loser of that race is made to wait rather than left with no
         // database (see `SavesDatabase.retryingWhileBusy`).
@@ -46,13 +47,19 @@ enum SavesSchema {
             try database.execute("BEGIN IMMEDIATE")
             do {
                 let existing = try userVersion(in: database)
+                // Another process may have finished the migration while this
+                // connection waited for the write lock.
+                guard existing < SavesDatabase.schemaVersion else {
+                    try database.execute("COMMIT")
+                    return
+                }
                 // The first build stamped schema 6 when it added `media_saves`;
                 // a later build used the same stamp while adding the columns that
                 // moved `preloads.json` into `preload_pages`. A database opened by
                 // the first build therefore says 6 but still has the old two-column
                 // page table. A version test cannot distinguish those layouts, so
-                // inspect the table itself on every open. This is also safe for a
-                // newer sibling's schema: extra columns are left alone.
+                // inspect the table itself when upgrading that legacy schema.
+                // Version 20 certifies that this repair has already run.
                 if try preloadPagesNeedRebuild(in: database) {
                     try rebuildPreloadPages(in: database)
                 }

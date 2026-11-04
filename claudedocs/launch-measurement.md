@@ -150,6 +150,13 @@ Bundled plugin manifests remain cached per catalog, and speech synthesis still
 starts only when audio is requested. Audio observers remain installed before
 reader construction so populated decks retain their read-aloud behavior.
 
+Current saves databases (schema 20+) open without taking the schema writer lock
+or repeating schema/search-index setup. Legacy layouts migrate once before using
+that fast path. With media retention set to keep forever (the default), the deck
+also skips the retention transaction and its file-reaper pass entirely.
+The finished-article archive pass first checks its partial index with a WAL read;
+only actual pending completions take the write lock, then re-read under that lock.
+
 Validation: 62 focused tests pass (startup ordering/idempotence, plugin boot,
 audio playback, speed controls and launch geometry). A broader selection also
 found existing central-app policy mismatches: two kind-pack tests still demand

@@ -77,6 +77,68 @@ final class SavesDatabaseTests: XCTestCase {
         }
     }
 
+    func testCurrentSchemaSetupNeedsOnlyReadAccess() throws {
+        let database = try openDatabase()
+        try database.perform { db in
+            try db.execute("PRAGMA query_only = ON")
+            defer { try? db.execute("PRAGMA query_only = OFF") }
+            // Fails if an ordinary launch takes BEGIN IMMEDIATE, reruns DDL,
+            // or performs the search-index INSERT ... SELECT backfill.
+            try SavesSchema.create(in: db)
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
+        }
+    }
+
+    func testCurrentDatabaseOpensWhileAnotherProcessHoldsTheWriteLock() throws {
+        let writer = try openDatabase()
+        try writer.transaction { _ in
+            // WAL readers can open immediately while an extension is saving.
+            // Schema setup must not turn that read into a competing writer.
+            let reader = try openDatabase()
+            try reader.perform { db in
+                XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
+                XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM saves"), 0)
+            }
+        }
+    }
+
+    func testLaunchWithNoPendingArchivesDoesNotWaitForAnotherWriter() throws {
+        let store = makeStore()
+        _ = store.items()
+        let writer = try openDatabase()
+        let finished = DispatchSemaphore(value: 0)
+        let worker = DispatchGroup()
+        try writer.transaction { _ in
+            worker.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { worker.leave() }
+                store.archivePendingFinishedItems()
+                finished.signal()
+            }
+            XCTAssertEqual(finished.wait(timeout: .now() + 2), .success,
+                "An empty launch archive pass must remain a WAL read")
+        }
+        worker.wait()
+    }
+
+    func testVersionNineteenCompletesSearchBackfillBeforeEnablingFastOpen() throws {
+        let item = makeStore().add(urlString: "https://example.com/legacy-search")
+        try autoreleasepool {
+            let database = try openDatabase()
+            try database.perform { db in
+                try db.execute("DELETE FROM library_documents")
+                try db.execute("PRAGMA user_version = 19")
+            }
+        }
+        let reopened = try openDatabase()
+        try reopened.perform { db in
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
+            XCTAssertEqual(try db.scalarInt(
+                "SELECT COUNT(*) FROM library_documents WHERE save_id = ?",
+                { try $0.bind(1, uuid: item.id) }), 1)
+        }
+    }
+
     func testMediaDownloadJobRoundTripsOwningBackgroundSession() {
         let store = makeStore()
         let job = LiveMediaDownloadJob(

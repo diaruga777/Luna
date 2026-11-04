@@ -42,8 +42,10 @@ struct SavesDatabaseError: Error, CustomStringConvertible {
 final class SavesDatabase {
 
     /// Schema revision written to `PRAGMA user_version`. Bump it when the tables
-    /// change and add the migration next to `SavesSchema.create`.
-    static let schemaVersion: Int32 = 19
+    /// change (including indexes, triggers and backfills) and add the migration
+    /// next to `SavesSchema.create`. Current databases skip schema setup on open.
+    /// Version 20 certifies the complete layout previously repaired on every open.
+    static let schemaVersion: Int32 = 20
 
     /// The database file. Its `-wal` / `-shm` siblings live beside it — the
     /// standard cross-process arrangement, and the reason the App Group

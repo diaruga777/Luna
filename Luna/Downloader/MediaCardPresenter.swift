@@ -33,8 +33,19 @@ import UIKit
 @MainActor
 final class MediaCardPresenter: CardKindPresenting {
 
-    private let store = SavedMediaStore.shared
+    private let store: SavedMediaStore
+    private let saves: SavesStore
     private let photoSaver = PhotoLibrarySaver()
+    /// One coherent media read for the synchronous deck reload. Per-card
+    /// queries otherwise multiply with every archived/active video in a library.
+    private var snapshotItems: [SavedMediaItem]?
+    private var snapshotByID: [UUID: SavedMediaItem] = [:]
+    private var snapshotByURL: [String: SavedMediaItem] = [:]
+
+    init(store: SavedMediaStore = .shared, saves: SavesStore = .shared) {
+        self.store = store
+        self.saves = saves
+    }
 
     /// The player behind the currently-presented fullscreen video, held weakly
     /// so it can be paused while a share sheet is up (the player VC owns it).
@@ -72,16 +83,18 @@ final class MediaCardPresenter: CardKindPresenting {
     /// owning save id is authoritative; exact URL equality is only a fallback
     /// for old/inconsistent data.
     private func media(for item: SavedItem) -> SavedMediaItem? {
-        store.item(withID: item.id) ?? store.item(forURLString: item.urlString)
+        if snapshotItems != nil {
+            return snapshotByID[item.id] ?? snapshotByURL[item.urlString]
+        }
+        return store.item(withID: item.id) ?? store.item(forURLString: item.urlString)
     }
 
     /// Defensive recovery for a media row whose owning save cannot be read.
     /// Valid databases should produce none because `media_saves.save_id` is a
     /// cascading foreign key to `saves.id`.
     func unbackedItems() -> [SavedItem] {
-        let saves = SavesStore.shared.items()
-        let backed = Set(saves.map(\.id))
-        return store.items()
+        let backed = Set(saves.items().map(\.id))
+        return (snapshotItems ?? store.items())
             .filter { !backed.contains($0.id) }
             .map { media in
                 // The stand-in carries the media row's owning save id, so every
@@ -154,7 +167,14 @@ final class MediaCardPresenter: CardKindPresenting {
     /// left the archive takes its tray bar with it.
     func prepareSnapshotSideEffects() {
         store.purgeExpired()
-        let archived = Set(store.items().filter(\.isArchived).map(slotID(for:)))
+        let items = store.items()
+        snapshotItems = items
+        snapshotByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        snapshotByURL = [:]
+        for item in items where snapshotByURL[item.sourceURLString] == nil {
+            snapshotByURL[item.sourceURLString] = item
+        }
+        let archived = Set(items.filter(\.isArchived).map(slotID(for:)))
         archiveDownloadProgress = archiveDownloadProgress.filter { archived.contains($0.key) }
     }
 
@@ -168,6 +188,11 @@ final class MediaCardPresenter: CardKindPresenting {
     /// behind Luna's back needs noticing, which is why this runs on the
     /// settle path rather than the apply path.
     func didSettleReload(host: CardPresenterHost) {
+        defer {
+            snapshotItems = nil
+            snapshotByID = [:]
+            snapshotByURL = [:]
+        }
         reconcilePhotosReferencesIfAuthorized(host: host)
     }
 
@@ -685,7 +710,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// has full read permission. Without permission, an empty fetch is not
     /// evidence of deletion.
     private func reconcilePhotosReferencesIfAuthorized(host: CardPresenterHost) {
-        let all = store.items()
+        let all = snapshotItems ?? store.items()
         guard !isReconcilingPhotos,
               all.contains(where: { $0.photosLocalIdentifier != nil })
         else { return }

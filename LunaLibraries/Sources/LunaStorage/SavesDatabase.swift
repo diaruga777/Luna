@@ -58,6 +58,9 @@ final class SavesDatabase {
     /// paths (a point read of one save, a resume-position update) re-prepare
     /// nothing.
     private var statements: [String: OpaquePointer] = [:]
+    #if DEBUG
+    private(set) var queryCountForTesting = 0
+    #endif
 
     /// Opens (creating if needed) the database at `fileURL` and applies the
     /// cross-process configuration. Throws when the file cannot be opened at
@@ -254,6 +257,9 @@ final class SavesDatabase {
         _ sql: String, _ bind: (SavesStatement) throws -> Void = { _ in },
         row: (SavesStatement) throws -> Void
     ) throws {
+        #if DEBUG
+        queryCountForTesting += 1
+        #endif
         let statement = try prepare(sql)
         defer { statement.reset() }
         try bind(statement)

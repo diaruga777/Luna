@@ -151,16 +151,20 @@ public enum ArticleImageDownloader {
     public static func resolveLocalImages(
         _ content: ArticleContent, store: SavesStore
     ) -> ArticleContent {
+        guard content.blocks.contains(where: { $0.kind == .image && $0.imageFileName != nil })
+        else { return content }
+        // This getter creates the directory and applies backup policy. An
+        // image-heavy article must not repeat that work for every image.
+        let directory = store.articlesDirectory
         guard content.blocks.contains(where: { block in
             guard block.kind == .image, let name = block.imageFileName else { return false }
             let missing = !FileManager.default.fileExists(
-                atPath: store.articlesDirectory.appendingPathComponent(name).path)
+                atPath: directory.appendingPathComponent(name).path)
             let needsGIFRepair = block.imageURLString.flatMap(URL.init(string:))
                 .map(expectsGIFAnimation) == true && !name.lowercased().hasSuffix(".gif")
             return missing || needsGIFRepair
         })
         else { return content }
-        let directory = store.articlesDirectory
         var blocks: [ArticleContent.Block] = []
         blocks.reserveCapacity(content.blocks.count)
         for var block in content.blocks {

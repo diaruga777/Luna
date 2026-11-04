@@ -1269,6 +1269,12 @@ public final class SavesStore {
     public var writtenRowCountForTesting: Int {
         database()?.totalChanges ?? 0
     }
+
+    /// Counts actual read statements, including cached prepared statements.
+    /// Used to catch per-card query growth in large-library reloads.
+    public var readStatementCountForTesting: Int {
+        (try? database()?.perform { $0.queryCountForTesting }) ?? 0
+    }
     #endif
 
     public func content(for item: SavedItem) -> ArticleContent? {

@@ -69,7 +69,7 @@ final class KindDeckProvider: CardDeckProviding {
 
     private let configuration: CardDeckConfiguration
     private unowned let host: CardCarouselHostViewController
-    private let store = SavesStore.shared
+    private let store: SavesStore
 
     private var items: [SavedItem] = []
     private var archivedItems: [SavedItem] = []
@@ -83,9 +83,11 @@ final class KindDeckProvider: CardDeckProviding {
     private var unbackedOwners: [UUID: CardKindPresenting] = [:]
     private var preparedUnbackedOwners: [UUID: CardKindPresenting] = [:]
 
-    init(host: CardCarouselHostViewController, configuration: CardDeckConfiguration) {
+    init(host: CardCarouselHostViewController, configuration: CardDeckConfiguration,
+         store: SavesStore = .shared) {
         self.host = host
         self.configuration = configuration
+        self.store = store
     }
 
     /// The kind that owns a save. A stand-in for an unbacked row goes straight

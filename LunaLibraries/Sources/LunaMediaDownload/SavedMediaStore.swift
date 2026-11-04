@@ -626,9 +626,14 @@ public final class SavedMediaStore {
     /// half-finished state left to find.
     private func recoverInterruptedTransitionsUnlocked(_ items: inout [SavedMediaItem]) -> Bool {
         var changed = false
+        var resolvedMediaDirectory: URL?
         for index in items.indices {
-            guard case .localFile(let fileName) = items[index].storageState,
-                  !fm.fileExists(atPath: mediaDirectory.appendingPathComponent(fileName).path)
+            guard case .localFile(let fileName) = items[index].storageState else { continue }
+            // Resolving this directory creates it and applies backup policy.
+            // Do that once per sweep, not once for every downloaded video.
+            let directory = resolvedMediaDirectory ?? mediaDirectory
+            resolvedMediaDirectory = directory
+            guard !fm.fileExists(atPath: directory.appendingPathComponent(fileName).path)
             else { continue }
             items[index].storageState = .undownloaded
             items[index].thumbnailFileName = nil

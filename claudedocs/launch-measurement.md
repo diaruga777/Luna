@@ -180,6 +180,27 @@ correction to background-launch detection was compile/regression checked. They
 are simulator measurements, not an iPhone launch-time guarantee. Sampling also
 showed substantial Simulator dynamic-loader time before application code runs.
 
+### Database launch checks, 4 November 2026
+
+On iPhone 17 Pro / iOS 26.2 with 14 saved rows, the final Release run measured
+915 ms to first frame and 965 ms to responsiveness (ten iterations each;
+relative standard deviations 3.9% and 2.8%). This final build used
+`ONLY_ACTIVE_ARCH=YES`; the initial universal-build baseline was 952 / 1,007 ms,
+so these are not a controlled percentage-speedup claim. The earlier universal
+schema/retention-only build measured 943 / 994 ms, within ordinary launch noise.
+Three separate one-second launch samples also showed substantial pre-main
+Simulator loader work. No physical iPhone was available, so these figures do not
+establish an instant launch on a phone.
+
+The deterministic regression checks prove current-schema setup is read-only,
+a connection opens while another writer holds the WAL write lock, an empty
+finished-article archive pass returns under the same contention, schema 19 still
+backfills historical search titles, and disabled retention never opens the DB.
+The broader selection ran 116 tests: 109 passed. All seven failing tests
+reproduced on unchanged `main` at `0c813b27f`: six media URL-identity tests still
+expect the Swift recognizer disabled by `pluginsOnly`, and the minimal schema-6
+preload fixture lacks the `title` column required by schema 19's search backfill.
+
 ### Interaction regression checks, 23 October 2026
 
 109 focused simulator tests pass across startup, plugin boot, reader chrome,

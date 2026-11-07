@@ -139,3 +139,10 @@ Validation: the native Debug app builds with Xcode 27.1 beta, installs and launc
 from `/Applications/Luna Vault.app`, and passes strict signature verification
 with the existing certificate. The three installer regressions cover bundle-ID
 and certificate changes plus rollback after failed replacement validation.
+
+## Menu bar icon
+
+The menu bar uses a monochrome template drawing of the app icon’s moon, curved
+foreground and lock, without the tile, glass or color. It replaces the Luna Mac
+text label and follows the system menu bar appearance. The tooltip and
+accessibility label retain the app name; menu actions are unchanged.

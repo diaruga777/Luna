@@ -58,7 +58,10 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = appMenu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "Luna Mac"
+        statusItem.button?.image = LunaMenuBarIcon.image
+        statusItem.button?.imagePosition = .imageOnly
+        statusItem.button?.toolTip = "Luna Mac"
+        statusItem.button?.setAccessibilityLabel("Luna Mac")
         let menu = NSMenu()
         for (title, selector) in [("Open Luna Mac", #selector(showWindow)),
                                    ("Copy Connection Code", #selector(copyCode)),
@@ -119,3 +122,51 @@ final class LunaVaultCompanionApp: NSObject, NSApplicationDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
 }
 
+
+// The app icon's moon, curved foreground and lock without glass or color.
+private enum LunaMenuBarIcon {
+    static let image: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.setFill()
+            NSColor.black.setStroke()
+
+            let moon = NSBezierPath(ovalIn: NSRect(x: 3, y: 5, width: 13, height: 13))
+            moon.windingRule = .evenOdd
+            moon.appendOval(in: NSRect(x: 5, y: 12, width: 3, height: 2.5))
+            moon.appendOval(in: NSRect(x: 10.5, y: 14.5, width: 2, height: 2))
+            moon.fill()
+
+            let wave = NSBezierPath()
+            wave.move(to: NSPoint(x: 1, y: 7))
+            wave.curve(to: NSPoint(x: 17, y: 9),
+                       controlPoint1: NSPoint(x: 6, y: 9.5), controlPoint2: NSPoint(x: 13, y: 10))
+            wave.line(to: NSPoint(x: 17, y: 2))
+            wave.curve(to: NSPoint(x: 15, y: 0.5),
+                       controlPoint1: NSPoint(x: 17, y: 1), controlPoint2: NSPoint(x: 16, y: 0.5))
+            wave.line(to: NSPoint(x: 3, y: 0.5))
+            wave.curve(to: NSPoint(x: 1, y: 2),
+                       controlPoint1: NSPoint(x: 2, y: 0.5), controlPoint2: NSPoint(x: 1, y: 1))
+            wave.close()
+            wave.fill()
+
+            // Knock the small lock out of the foreground for a crisp template.
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(roundedRect: NSRect(x: 6.5, y: 2, width: 5, height: 4),
+                         xRadius: 0.7, yRadius: 0.7).fill()
+            let shackle = NSBezierPath()
+            shackle.move(to: NSPoint(x: 7.5, y: 6))
+            shackle.line(to: NSPoint(x: 7.5, y: 7))
+            shackle.curve(to: NSPoint(x: 10.5, y: 7),
+                          controlPoint1: NSPoint(x: 7.5, y: 9), controlPoint2: NSPoint(x: 10.5, y: 9))
+            shackle.line(to: NSPoint(x: 10.5, y: 6))
+            shackle.lineWidth = 1.2
+            shackle.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Luna Mac"
+        return image
+    }()
+}

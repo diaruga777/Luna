@@ -20,6 +20,29 @@ final class MusicLaunchRouteTests: XCTestCase {
             XCTAssertEqual(MusicLaunchRoute(url: URL(string: "lunamusic://\(path)")!), .search)
         }
     }
+    @MainActor func testMusicSettingsOpensPodcastCellularPreference() throws {
+        let music = MusicSettingsViewController()
+        let navigation = UINavigationController(rootViewController: music)
+        music.loadViewIfNeeded()
+        let section = try XCTUnwrap((0..<music.numberOfSections(in: music.tableView)).first {
+            music.tableView(music.tableView, titleForHeaderInSection: $0) == "Podcasts"
+        })
+        music.tableView(music.tableView, didSelectRowAt: IndexPath(row: 0, section: section))
+        let settings = try XCTUnwrap(navigation.topViewController as? PodcastSettingsViewController)
+        settings.beginAppearanceTransition(true, animated: false)
+        settings.endAppearanceTransition()
+        let downloads = try XCTUnwrap((0..<settings.numberOfSections(in: settings.tableView)).first {
+            settings.tableView(settings.tableView, titleForHeaderInSection: $0) == "Downloads"
+        })
+        let cells = (0..<settings.tableView(settings.tableView, numberOfRowsInSection: downloads)).map {
+            settings.tableView(settings.tableView, cellForRowAt: IndexPath(row: $0, section: downloads))
+        }
+        let toggle = try XCTUnwrap(cells.compactMap { $0.accessoryView as? UISwitch }.first {
+            $0.accessibilityLabel == "Download over Cellular"
+        })
+        XCTAssertEqual(toggle.isOn, PodcastLibraryController.shared.state.settings.cellularDownloads)
+    }
+
     func testUnrelatedURLsAreIgnored() {
         XCTAssertNil(MusicLaunchRoute(url: URL(string: "https://queue")!))
         XCTAssertNil(MusicLaunchRoute(url: URL(string: "lunamusic://invalid")!))

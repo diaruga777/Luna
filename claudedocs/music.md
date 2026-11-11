@@ -24,7 +24,8 @@ YouTube podcast queue and download manifest. Stable video IDs prevent duplicate
 episodes on replay; Play Next uses the existing queue. Captures persist only stable
 metadata and policy, never expiring media URLs or headers. The last published
 cellular setting and available byte budget constrain the transfer, and the current
-budget is checked again at import. Media rejection uses the existing Mac fallback;
+budget is checked again at import. Each subsequent range reads the latest published
+cellular setting. Media rejection uses the existing Mac fallback;
 network/policy/storage failures remain retryable without starting a Mac download.
 Each session is claimed by Music only when iOS delivers its background events,
 so foreground inbox polling cannot take ownership from a live extension.
@@ -1124,10 +1125,26 @@ concurrent upgrades are shared and further upgrade attempts are limited to once
 per 15 minutes. Failed upgrades stop the job. Jobs are polled rather than keeping
 an RPC open through extraction, Homebrew work or downloading.
 
-The direct iOS leg uses the existing background podcast URLSession, including
-cellular-download policy and task restoration. HTTP/media rejection or an
-unplayable response asks the Mac to download the audio with yt-dlp, then reads
-bounded 512 KiB ranges over the paired connection. Offline/DNS/timeout errors,
+Luna Music uses 8 MiB HTTP ranges for direct Google Video audio in both the
+podcast and share-extension background sessions. Each response must match the
+requested range and the storage budget before its bytes enter the partial file.
+The OS owns the pending request and the app can continue from the staged audio
+after a session handoff. The in-app session also upgrades pending full-file
+requests. YouTube can throttle full-file requests. In a live comparison on the
+same 10½-minute, 30.8 MB M4A, a full-file request averaged 94 KB/s over 20 seconds.
+The Swift range implementation downloaded and assembled the full file in 3.7
+seconds, and Core Audio identified one AAC track with a 634.58-second duration.
+
+**Music Settings → Podcast Settings → Downloads → Download over Cellular** is
+off by default. It also appears in the Podcasts settings menu. Changing it
+updates active in-app requests and publishes the preference to the share sheet.
+Episode rows, the playback queue, Now Playing and Manage Downloads show download
+status separately from episode metadata. Manage Downloads offers Retry for failures.
+
+HTTP/media rejection or an unplayable response asks the Mac to download the
+audio with yt-dlp, then reads bounded 512 KiB ranges over the paired connection.
+Luna Music checks the current network before starting and during that fallback
+when cellular downloads are disabled. Offline/DNS/timeout errors,
 cancellation, denied cellular data, and local storage failures do **not** trigger
 a Mac download. TLS/connection failures are retryable as iOS download failures.
 An interrupted Mac transfer can be retried from podcast download management;

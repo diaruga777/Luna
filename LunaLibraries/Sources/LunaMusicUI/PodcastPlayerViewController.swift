@@ -169,6 +169,9 @@ extension MusicScreenViewController {
         queuePan.delegate = self; stage.addGestureRecognizer(queuePan)
         stage.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Show Queue", actionHandler: { [weak self] _ in self?.setQueue(true); return true }), UIAccessibilityCustomAction(name: "Show Artwork", actionHandler: { [weak self] _ in self?.setQueue(false); return true })]
         player.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }.store(in: &subscriptions)
+        PodcastDownloads.shared.objectWillChange.throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true).sink { [weak self] in
+            DispatchQueue.main.async { self?.refreshDownloadStatus() }
+        }.store(in: &subscriptions)
         library.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: UIAccessibility.reduceMotionStatusDidChangeNotification).sink { [weak self] _ in self?.titleLabel.setNeedsLayout() }.store(in: &subscriptions)
         refresh(); updateQueueAccessibility()
@@ -238,7 +241,7 @@ extension MusicScreenViewController {
         let titleY = (dateHeight + 4) * (1 - queueProgress)
         titleLabel.frame = CGRect(x: 0, y: titleY, width: names.bounds.width, height: titleHeight)
         showLabel.frame = CGRect(x: 0, y: titleY + titleHeight + 2, width: names.bounds.width, height: showHeight)
-        more.frame = CGRect(x: width - 36, y: names.frame.minY + titleY + titleHeight / 2 - 22, width: 44, height: 44)
+        more.frame = CGRect(x: max(0, width - 44), y: names.frame.minY + titleY + titleHeight / 2 - 22, width: 44, height: 44)
         let queueY = compactSide + 20 + (1 - queueProgress) * 160
         queue.view.frame = CGRect(x: 0, y: queueY, width: width, height: max(0, height - queueY))
         queue.view.alpha = queueProgress; queue.view.isUserInteractionEnabled = showsQueue; queue.view.accessibilityElementsHidden = !showsQueue
@@ -303,13 +306,21 @@ extension MusicScreenViewController {
         slider.accessibilityValue = PodcastUI.time(position)
         elapsed.text = PodcastUI.time(position); remaining.text = "−" + PodcastUI.time(max(0, player.duration - position))
     }
+    private func refreshDownloadStatus() {
+        let episode = player.currentEpisode
+        let status = episode.flatMap { $0.youtubeVideoID == nil ? nil : PodcastUI.downloadStatus($0.id) }
+        showLabel.text = status ?? player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? library.state.shows[episode?.showID ?? ""]?.title
+        showLabel.textColor = player.errorMessage == nil ? UIColor.white.withAlphaComponent(0.5) : .systemRed
+        play.configuration?.showsActivityIndicator = player.isBuffering && status == nil
+        play.accessibilityValue = status ?? (player.isBuffering ? "Loading Audio" : nil)
+    }
+
     private func refresh() {
         guard isViewLoaded else { return }
         let episode = player.currentEpisode
         titleLabel.text = episode?.title ?? "Not Playing"
         dateLabel.text = episode.flatMap { $0.publishedAt == .distantPast ? nil : $0.publishedAt.formatted(.dateTime.month(.wide).day()) }
-        showLabel.text = player.errorMessage ?? (player.isBuffering ? "Loading Audio…" : nil) ?? library.state.shows[episode?.showID ?? ""]?.title
-        showLabel.textColor = player.errorMessage == nil ? UIColor.white.withAlphaComponent(0.5) : .systemRed
+        refreshDownloadStatus()
         let url = episode?.artworkURL ?? library.state.shows[episode?.showID ?? ""]?.artworkURL
         let isReader = episode?.showID == ReaderPodcastSource.showID
         let identity = isReader ? ReaderPodcastSource.showID : url?.absoluteString
@@ -337,8 +348,6 @@ extension MusicScreenViewController {
         }
         if !slider.isTracking { slider.maximumValue = Float(max(1, player.duration)); slider.value = Float(player.position); updateScrubbingTime() }
         play.configuration?.image = UIImage(systemName: player.isPlaying || player.isBuffering ? "pause.fill" : "play.fill")
-        play.configuration?.showsActivityIndicator = player.isBuffering
-        play.accessibilityValue = player.isBuffering ? "Loading Audio" : nil
         play.accessibilityLabel = player.isPlaying || player.isBuffering ? "Pause" : "Play"
         speed.configuration?.title = "\(player.rate.formatted())×"
         speed.accessibilityValue = "\(player.rate.formatted()) times"

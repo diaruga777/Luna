@@ -117,6 +117,58 @@ import LunaMusicFiles
         let actions = await transport.actions
         XCTAssertFalse(actions.contains(.download)); XCTAssertFalse(actions.contains(.read)); XCTAssertEqual(actions.last, .release)
     }
+    func testRangedDownloadAssemblesAndInstallsWithoutMacFallback() async throws {
+        let library = library(), episode = episode()
+        XCTAssertFalse(library.state.settings.cellularDownloads)
+        try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episode.id] }
+        let controller = YouTubePodcastController(library: library, validate: { _ in 10 })
+        let transport = YouTubeTestTransport()
+        attach(transport, to: controller)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [YouTubeRangeTestProtocol.self]
+        let downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: configuration)
+        defer { downloads.stop() }
+        downloads.youtubeController = controller
+        try await downloads.setCellularDownloads(true)
+        XCTAssertTrue(library.state.settings.cellularDownloads)
+        await downloads.download(episode)
+        for _ in 0..<500 {
+            if ["failed", "downloaded"].contains(downloads.downloads[episode.id]?.status ?? "") { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let file = try XCTUnwrap(downloads.localURL(episode.id), downloads.downloads[episode.id]?.error ?? "Missing audio")
+        XCTAssertEqual(try Data(contentsOf: file), YouTubeRangeTestProtocol.audio)
+        let actions = await transport.actions
+        XCTAssertFalse(actions.contains(.download))
+    }
+
+    func testDownloadStatusFitsBelowMetadataAtCompactWidth() async throws {
+        let library = library(), episode = episode()
+        try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episode.id] }
+        let downloads = PodcastDownloads(directory: root.appendingPathComponent("Downloads"), library: library, sessionConfiguration: .ephemeral)
+        defer { downloads.stop() }
+        downloads.youtubeDownload = { _, _, _ in throw URLError(.notConnectedToInternet) }
+        await downloads.download(episode)
+        for _ in 0..<100 where downloads.downloads[episode.id]?.status != "failed" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let owner = UIViewController()
+        let cell = PodcastEpisodeCell(style: .default, reuseIdentifier: nil)
+        cell.configure(episode, owner: owner, downloads: downloads)
+        let width: CGFloat = 320
+        let height = cell.contentView.systemLayoutSizeFitting(CGSize(width: width, height: 0),
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+        cell.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        cell.layoutIfNeeded()
+        let status = cell.downloadStatus
+        XCTAssertEqual(status.text, "Download Failed")
+        let frame = status.convert(status.bounds, to: cell.contentView)
+        let titleFrame = cell.heading.convert(cell.heading.bounds, to: cell.contentView)
+        XCTAssertGreaterThanOrEqual(frame.minY, titleFrame.maxY)
+        XCTAssertTrue(cell.contentView.bounds.contains(frame))
+        XCTAssertGreaterThanOrEqual(status.bounds.height, status.font.lineHeight - 1)
+    }
+
     func testMediaRejectionDownloadsOnMacThenTransfersEveryByte() async throws {
         let controller = YouTubePodcastController(library: library(), directDownload: { _, _, _ in throw YouTubeMediaRejection() }, validate: { _ in 10 })
         let bytes = Data(repeating: 42, count: MusicFileProtocol.chunkSize * 2 + 19)
@@ -630,6 +682,26 @@ private final class YouTubeDownloadProtocol: URLProtocol, @unchecked Sendable {
         }
         XCTFail("Expected a durable completed transfer")
     }
+    func testExtensionSessionKeepsDownloadingAfterFirstRange() async throws {
+        let inbox = CompanionShareInbox(root: root.appendingPathComponent("Inbox"))
+        let capture = CompanionShareCapture(kind: .podcast, title: "Shared Video", youtube: .init(
+            videoID: "cwAkcsg7NCg", author: "Creator", duration: 1, maximumBytes: 10_000_000))
+        try inbox.save(capture)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [YouTubeRangeTestProtocol.self]
+        let transfer = MusicYouTubeShare(capture: capture, inbox: inbox, identifier: UUID().uuidString, configuration: config)
+        let request = URLRequest(url: URL(string: "https://audio.googlevideo.com/file")!)
+        transfer.begin(YouTubeAudioTransfer.bounded(request))
+        for _ in 0..<500 {
+            if case .downloaded(let file) = try MusicYouTubeShare.result(for: capture, inbox: inbox) {
+                XCTAssertEqual(try Data(contentsOf: file), YouTubeRangeTestProtocol.audio)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Expected both ranges to be staged")
+    }
+
     func testShareSheetOffersPodcastActionsForSharedTextLink() async throws {
         let controller = MusicShareTestController()
         controller.context.items = [shareItem(NSItemProvider(object: "A video title\nhttps://youtu.be/cwAkcsg7NCg?si=tracking" as NSString))]
@@ -697,6 +769,37 @@ private final class YouTubeShareProtocol: URLProtocol, @unchecked Sendable {
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "audio/mp4"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data([1, 2, 3]))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+
+private final class YouTubeRangeTestProtocol: URLProtocol, @unchecked Sendable {
+    private static let first = Data(repeating: 0x33, count: 8 * 1024 * 1024)
+    private static let last = Data([1, 2, 3])
+    static let audio = first + last
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let bytes: Data
+        let range: String
+        switch request.value(forHTTPHeaderField: "Range") {
+        case "bytes=0-8388607":
+            bytes = Self.first
+            range = "bytes 0-8388607/8388611"
+        case "bytes=8388608-16777215":
+            bytes = Self.last
+            range = "bytes 8388608-8388610/8388611"
+        default:
+            XCTFail("Unexpected or unbounded request")
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "audio/mp4", "Content-Range": range, "Content-Length": String(bytes.count)])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: bytes)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

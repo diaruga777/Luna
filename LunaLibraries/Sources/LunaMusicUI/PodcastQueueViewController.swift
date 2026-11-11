@@ -37,7 +37,18 @@ import LunaMusicCore
         table.accessibilityLabel = "Upcoming Episodes"
         [heading, clear, table, empty].forEach(view.addSubview)
         library.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }.store(in: &subscriptions)
+        PodcastDownloads.shared.objectWillChange.throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true).sink { [weak self] in
+            DispatchQueue.main.async { self?.refreshDownloadStatuses() }
+        }.store(in: &subscriptions)
         reload()
+    }
+    private func refreshDownloadStatuses() {
+        var changedHeight = false
+        for path in table.indexPathsForVisibleRows ?? [] {
+            guard episodes.indices.contains(path.row), let cell = table.cellForRow(at: path) as? PodcastPlayerQueueCell else { continue }
+            if cell.showDownloadStatus(for: episodes[path.row]) { changedHeight = true }
+        }
+        if changedHeight { UIView.performWithoutAnimation { table.performBatchUpdates(nil) } }
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -60,6 +71,7 @@ import LunaMusicCore
         let episode = episodes[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "episode", for: indexPath) as! PodcastPlayerQueueCell
         cell.configure(episode, progress: library.state.progress[episode.id], artworkURL: episode.artworkURL ?? library.state.shows[episode.showID]?.artworkURL)
+        cell.showDownloadStatus(for: episode)
         cell.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Remove from Queue", actionHandler: { [weak self] _ in
             self?.edit { $0.queue.removeAll { $0 == episode.id } }; return true
         })]
@@ -94,6 +106,7 @@ import LunaMusicCore
     let artwork = UIImageView()
     let heading = PodcastPlayerTitleView()
     let detail = UILabel()
+    let downloadStatus = UILabel()
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear; contentView.backgroundColor = .clear
@@ -104,7 +117,11 @@ import LunaMusicCore
         heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.numberOfLines = 1; detail.lineBreakMode = .byTruncatingTail; detail.adjustsFontForContentSizeCategory = true
         detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let labels = UIStackView(arrangedSubviews: [heading, detail]); labels.axis = .vertical; labels.spacing = 4
+        downloadStatus.font = .preferredFont(forTextStyle: .caption1)
+        downloadStatus.textColor = detail.textColor
+        downloadStatus.numberOfLines = 0
+        downloadStatus.adjustsFontForContentSizeCategory = true
+        let labels = UIStackView(arrangedSubviews: [heading, detail, downloadStatus]); labels.axis = .vertical; labels.spacing = 4
         labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let stack = UIStackView(arrangedSubviews: [artwork, labels]); stack.alignment = .center; stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(stack)
@@ -115,6 +132,13 @@ import LunaMusicCore
         ])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @discardableResult func showDownloadStatus(for episode: PodcastEpisode) -> Bool {
+        let wasHidden = downloadStatus.isHidden
+        downloadStatus.text = episode.youtubeVideoID == nil ? nil : PodcastUI.downloadStatus(episode.id)
+        downloadStatus.isHidden = downloadStatus.text == nil
+        return wasHidden != downloadStatus.isHidden
+    }
+
     func configure(_ episode: PodcastEpisode, progress: PodcastEpisodeState?, artworkURL: URL?) {
         heading.text = episode.title
         let sameYear = Calendar.current.isDate(episode.publishedAt, equalTo: Date(), toGranularity: .year)

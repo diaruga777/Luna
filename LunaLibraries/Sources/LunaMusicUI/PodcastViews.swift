@@ -82,6 +82,24 @@ import LunaDesignSystem
             do { try await action() } catch { showError(error, from: controller) }
         }
     }
+    static func downloadStatus(_ id: String, downloads: PodcastDownloads? = nil) -> String? {
+        let downloads = downloads ?? .shared
+        switch downloads.downloads[id]?.status {
+        case "waiting": return "Queued for Download"
+        case "failed": return "Download Failed"
+        case "downloading":
+            if downloads.waitsForWiFi(id) { return "Waiting for Wi-Fi" }
+            if downloads.youtubePhase[id] == .resolving { return "Getting YouTube Audio…" }
+            if let fraction = downloads.progress[id], fraction > 0 {
+                if fraction >= 1 { return "Finishing Download…" }
+                return "Downloading · \(fraction.formatted(.percent.precision(.fractionLength(0))))"
+            }
+            if downloads.youtubePhase[id] == .fetchingOnMac { return "Downloading on Mac…" }
+            return "Downloading…"
+        default: return nil
+        }
+    }
+
     static func episodeMenu(_ episode: PodcastEpisode, from controller: UIViewController) -> UIMenu {
         let library = PodcastLibraryController.shared
         let state = library.state.progress[episode.id] ?? PodcastEpisodeState()
@@ -120,7 +138,7 @@ import LunaDesignSystem
 @MainActor final class PodcastEpisodeCell: UITableViewCell {
     let artwork = UIImageView()
     let heading = PodcastPlayerTitleView()
-    let detail = UILabel(), summary = UILabel()
+    let detail = UILabel(), summary = UILabel(), downloadStatus = UILabel()
     let more = UIButton(type: .system)
     private var episode: PodcastEpisode?
     private var date = ""
@@ -135,8 +153,12 @@ import LunaDesignSystem
         summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.font = .preferredFont(forTextStyle: .caption1); detail.textColor = .secondaryLabel; detail.numberOfLines = 2
         summary.font = .preferredFont(forTextStyle: .subheadline); summary.textColor = .secondaryLabel; summary.numberOfLines = 2
-        [detail, summary].forEach { $0.adjustsFontForContentSizeCategory = true }
-        let labels = UIStackView(arrangedSubviews: [detail, heading, summary]); labels.axis = .vertical; labels.spacing = 4
+        downloadStatus.font = .preferredFont(forTextStyle: .caption1)
+        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.numberOfLines = 0
+        downloadStatus.accessibilityIdentifier = "podcasts.episodeDownloadStatus"
+        [detail, summary, downloadStatus].forEach { $0.adjustsFontForContentSizeCategory = true }
+        let labels = UIStackView(arrangedSubviews: [detail, heading, summary, downloadStatus]); labels.axis = .vertical; labels.spacing = 4
         summary.isUserInteractionEnabled = true
         summary.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openDetails)))
         labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -152,7 +174,8 @@ import LunaDesignSystem
         guard let episode, let owner else { return }
         owner.navigationController?.pushViewController(PodcastEpisodeViewController(episode: episode), animated: true)
     }
-    func configure(_ episode: PodcastEpisode, owner: UIViewController) {
+    func configure(_ episode: PodcastEpisode, owner: UIViewController, downloads: PodcastDownloads? = nil) {
+        let downloads = downloads ?? .shared
         self.owner = owner
         let library = PodcastLibraryController.shared; let state = library.state.progress[episode.id]
         if self.episode != episode {
@@ -160,6 +183,7 @@ import LunaDesignSystem
             heading.text = episode.title
             // Summaries show two lines; don't ask TextKit to lay out entire show notes.
             summary.text = String(PodcastUI.text(episode.summary).prefix(500))
+            summary.isHidden = summary.text?.isEmpty != false
             date = episode.publishedAt == .distantPast ? "" : episode.publishedAt.formatted(date: .abbreviated, time: .omitted)
             more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak owner] completion in
                 guard let owner else { completion([]); return }
@@ -172,14 +196,11 @@ import LunaDesignSystem
             PodcastUI.artwork(episode, show: library.state.shows[episode.showID], into: artwork)
         }
         let time = state?.listened == true ? "Played" : (state?.position ?? 0) > 0 ? "\(PodcastUI.time(max(0, episode.duration - (state?.position ?? 0)))) left" : PodcastUI.time(episode.duration)
-        detail.text = [date, time, episode.explicit ? "Explicit" : nil, PodcastDownloads.shared.localURL(episode.id) != nil ? "Downloaded" : nil].compactMap { $0 }.joined(separator: " · ")
-        let download = PodcastDownloads.shared.downloads[episode.id]
-        if download?.status == "downloading" {
-            let progress = PodcastDownloads.shared.progress[episode.id] ?? 0
-            detail.text = (detail.text ?? "") + (progress > 0 ? " · Downloading \(Int(progress * 100))%" : " · Waiting to Download")
-        } else if download?.status == "failed" { detail.text = (detail.text ?? "") + " · Download Failed — Retry in Episode Actions" }
+        detail.text = [date, time, episode.explicit ? "Explicit" : nil, downloads.localURL(episode.id) != nil ? "Downloaded" : nil].compactMap { $0 }.joined(separator: " · ")
+        downloadStatus.text = PodcastUI.downloadStatus(episode.id, downloads: downloads)
+        downloadStatus.isHidden = downloadStatus.text == nil
         let player = PodcastPlaybackController.shared
-        let buffering = player.currentEpisode?.id == episode.id && player.isBuffering
+        let buffering = episode.youtubeVideoID == nil && player.currentEpisode?.id == episode.id && player.isBuffering
         if buffering {
             let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating()
             spinner.accessibilityLabel = "Loading Audio"; spinner.accessibilityIdentifier = "podcasts.episodeLoading"
@@ -282,10 +303,14 @@ import LunaDesignSystem
         }
     }
     private func refreshVisibleEpisodes() {
+        var changedHeight = false
         for path in table.indexPathsForVisibleRows ?? [] {
             guard sections.indices.contains(path.section), sections[path.section].rows.indices.contains(path.row), case .episode(let episode) = sections[path.section].rows[path.row], let cell = table.cellForRow(at: path) as? PodcastEpisodeCell else { continue }
+            let wasHidden = cell.downloadStatus.isHidden
             cell.configure(episode, owner: self)
+            changedHeight = changedHeight || wasHidden != cell.downloadStatus.isHidden
         }
+        if changedHeight { UIView.performWithoutAnimation { table.performBatchUpdates(nil) } }
     }
     func refreshContent() async { await podcasts.refresh(force: true) }
     func reload() { table.reloadData() }

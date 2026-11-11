@@ -24,12 +24,22 @@ open class MusicAudioShareViewController: CompanionShareViewController {
         mode.selectedSegmentIndex = 1; stack.addArrangedSubview(mode)
         mode.addAction(UIAction { [weak self] _ in self?.updateMode() }, for: .valueChanged)
         titleField = field("Title (optional)")
+        titleField.returnKeyType = .done
+        titleField.addAction(UIAction { [weak self] _ in self?.titleField.resignFirstResponder() }, for: .editingDidEndOnExit)
         destinations.axis = .vertical; destinations.spacing = 8; stack.addArrangedSubview(destinations)
         playlistField = field("New playlist (optional)")
         actions = [button("Save") { [weak self] in self?.saveAudio(next: false) },
                    button("Add to Queue") { [weak self] in self?.saveAudio(next: false) },
                    button("Play Next") { [weak self] in self?.saveAudio(next: true) }]
-        actions.forEach { $0.isEnabled = false }; stack.addArrangedSubview(status); cancelButton()
+        for action in actions {
+            action.isEnabled = false
+            let minimumHeight = action.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            minimumHeight.priority = .defaultHigh
+            minimumHeight.isActive = true
+        }
+        status.font = .preferredFont(forTextStyle: .body)
+        status.adjustsFontForContentSizeCategory = true
+        stack.addArrangedSubview(status); cancelButton()
         Task { @MainActor in
             do {
                 choices = try CompanionShareInbox.production("music").choices(); updateMode()
@@ -39,6 +49,8 @@ open class MusicAudioShareViewController: CompanionShareViewController {
                         $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
                     }), !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.audio.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) {
                         isLink = true; mode.selectedSegmentIndex = 1; updateMode()
+                        stack.removeArrangedSubview(status)
+                        stack.insertArrangedSubview(status, at: 1)
                         let text = try await SharedInput.text(in: extensionContext)
                         let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
                         let links = detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.url)

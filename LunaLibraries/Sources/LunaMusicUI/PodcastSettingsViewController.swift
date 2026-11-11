@@ -11,7 +11,11 @@ import LunaMusicCore
     private enum Setting { case toggle(String, Bool, (Bool) async throws -> Void), choice(String, String, [(String, () async throws -> Void)]), action(String, () async throws -> Void) }
     init(showID: String? = nil) { self.showID = showID; super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func viewDidLoad() { super.viewDidLoad(); title = showID == nil ? "Podcast Settings" : "Show Settings"; view.tintColor = .systemPurple; reload() }
+    override func viewDidLoad() { super.viewDidLoad(); title = showID == nil ? "Podcast Settings" : "Show Settings"; view.tintColor = .systemPurple }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reload()
+    }
     private func reload() {
         let state = library.state
         if let id = showID, let show = state.shows[id] {
@@ -33,7 +37,10 @@ import LunaMusicCore
                 .choice("Download Size Limit", ByteCountFormatter.string(fromByteCount: state.settings.maximumDownloadBytes, countStyle: .file), [Int64(500_000_000), 1_000_000_000, 2_000_000_000, 5_000_000_000, 10_000_000_000].map { bytes in
                     (ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file), { [self] in try library.edit { $0.settings.downloadByteLimit = bytes }; await PodcastDownloads.shared.reconcile() })
                 }),
-                .toggle("Download over Cellular", state.settings.cellularDownloads) { [self] value in try library.edit { $0.settings.cellularDownloads = value } },
+                .toggle("Download over Cellular", state.settings.cellularDownloads) { value in
+                    try await PodcastDownloads.shared.setCellularDownloads(value)
+                    MusicShareImport.publishChoices()
+                },
                 .toggle("Remove Played Downloads", state.settings.removePlayedDownloads) { [self] value in try library.edit { $0.settings.removePlayedDownloads = value }; await PodcastDownloads.shared.reconcile() },
                 .choice("Remove Played After", "\(Int(state.settings.playedRetentionHours)) hours", [0, 24, 48, 168].map { value in (value == 0 ? "Immediately" : "\(value) hours", { [self] in try library.edit { $0.settings.playedRetentionHours = Double(value) }; await PodcastDownloads.shared.reconcile() }) }),
                 .action("Manage Downloads · \(ByteCountFormatter.string(fromByteCount: PodcastDownloads.shared.totalBytes, countStyle: .file))") { [self] in navigationController?.pushViewController(PodcastDownloadSettingsViewController(), animated: true) }
@@ -96,24 +103,49 @@ import LunaMusicCore
 }
 @MainActor final class PodcastDownloadSettingsViewController: UITableViewController {
     private var subscriptions = Set<AnyCancellable>()
-    private var ids: [String] { PodcastDownloads.shared.downloads.keys.sorted() }
+    private var ids: [String] = []
     override func viewDidLoad() {
         super.viewDidLoad(); title = "Downloads"; tableView.rowHeight = UITableView.automaticDimension
-        PodcastDownloads.shared.objectWillChange.debounce(for: .milliseconds(200), scheduler: DispatchQueue.main).sink { [weak self] in self?.tableView.reloadData() }.store(in: &subscriptions)
+        PodcastDownloads.shared.objectWillChange.throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true).sink { [weak self] in
+            DispatchQueue.main.async { self?.reload() }
+        }.store(in: &subscriptions)
+        reload()
+    }
+    private func reload() {
+        let downloads = PodcastDownloads.shared.downloads
+        ids = downloads.values.sorted { $0.createdAt > $1.createdAt }.map(\.episodeID)
+        tableView.reloadData()
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { ids.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let id = ids[indexPath.row], record = PodcastDownloads.shared.downloads[id]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration(); content.text = PodcastLibraryController.shared.state.episodes[id]?.title ?? "Episode"; content.textProperties.numberOfLines = 2
-        content.secondaryText = record?.error ?? "\(record?.status.capitalized ?? "") · \(ByteCountFormatter.string(fromByteCount: record?.bytes ?? 0, countStyle: .file))"
-        content.secondaryTextProperties.numberOfLines = 0; cell.contentConfiguration = content; return cell
+        if record?.status == "downloaded" {
+            content.secondaryText = ByteCountFormatter.string(fromByteCount: record?.bytes ?? 0, countStyle: .file)
+        } else {
+            content.secondaryText = record?.error ?? PodcastUI.downloadStatus(id)
+        }
+        if record?.status == "failed" {
+            var configuration = UIButton.Configuration.tinted()
+            configuration.title = "Retry"
+            let retry = UIButton(configuration: configuration, primaryAction: UIAction { [weak self] _ in self?.retry(id) })
+            retry.sizeToFit()
+            cell.accessoryView = retry
+        }
+        cell.selectionStyle = .none
+        content.secondaryTextProperties.numberOfLines = 0
+        cell.contentConfiguration = content
+        return cell
     }
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let id = ids[indexPath.row]
-        if let episode = PodcastLibraryController.shared.state.episodes[id] { Task { await PodcastDownloads.shared.download(episode); tableView.reloadData() } }
+    private func retry(_ id: String) {
+        guard let episode = PodcastLibraryController.shared.state.episodes[id] else { return }
+        Task { await PodcastDownloads.shared.download(episode); reload() }
     }
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) { PodcastDownloads.shared.remove(ids[indexPath.row]); tableView.reloadData() }
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        PodcastDownloads.shared.remove(ids[indexPath.row])
+        reload()
+    }
 }
 @MainActor final class PodcastStationSettingsViewController: UITableViewController {
     let id: String

@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import UIKit
+import Network
 import LunaPodcastCore
 import LunaMusicFiles
 import LunaCompanionShareCore
@@ -26,6 +27,13 @@ public struct PodcastDownload: Codable, Equatable {
     @Published public private(set) var downloads: [String: PodcastDownload] = [:]
     @Published public private(set) var progress: [String: Double] = [:]
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var youtubePhase: [String: YouTubePhase] = [:]
+    public enum YouTubePhase { case resolving, transferring, fetchingOnMac }
+    @Published private var onCellular = false
+    private let network = NWPathMonitor()
+    public func waitsForWiFi(_ id: String) -> Bool {
+        youtubePhase[id] == .transferring && onCellular && !library.state.settings.cellularDownloads
+    }
     public var backgroundCompletion: (() -> Void)?
     public var hlsBackgroundCompletion: (() -> Void)?
     public static let hlsSessionIdentifier = sessionIdentifier + ".hls"
@@ -36,7 +44,6 @@ public struct PodcastDownload: Codable, Equatable {
     var youtubeDownload: ((PodcastEpisode, Int64, @escaping @Sendable (Double) -> Void) async throws -> YouTubeDownloadedAudio)?
     private var youtubeDirectResults: [String: CheckedContinuation<URL, Error>] = [:]
     private var youtubeDirectBudgets: [String: Int64] = [:]
-    private var youtubeDirectProgress: [String: @Sendable (Double) -> Void] = [:]
     private var youtubeBackgroundTasks: [UUID: UIBackgroundTaskIdentifier] = [:]
     private var transferBudgets: [String: Int64] = [:]
     private var preparationTasks: [String: Task<PodcastAudioPreparation.Result, Error>] = [:]
@@ -73,6 +80,13 @@ public struct PodcastDownload: Codable, Equatable {
         self.directory = directory; self.library = library; self.sessionConfiguration = sessionConfiguration
         self.activeEpisodeID = activeEpisodeID; self.prepareAudio = prepareAudio
         super.init()
+        network.pathUpdateHandler = { [weak self] path in
+            let cellular = path.usesInterfaceType(.cellular)
+            Task { @MainActor [weak self] in
+                if let self, onCellular != cellular { onCellular = cellular }
+            }
+        }
+        network.start(queue: DispatchQueue(label: "LunaMusic.downloads.network"))
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             var url = directory; var values = URLResourceValues(); values.isExcludedFromBackup = true; try url.setResourceValues(values)
@@ -83,7 +97,10 @@ public struct PodcastDownload: Codable, Equatable {
             Task { @MainActor in await self?.reconcile() }
         }
     }
-    deinit { if let libraryObserver { NotificationCenter.default.removeObserver(libraryObserver) } }
+    deinit {
+        network.cancel()
+        if let libraryObserver { NotificationCenter.default.removeObserver(libraryObserver) }
+    }
     public func start() async {
         guard !isStopped else { return }
         if let restoring { await restoring.value; return }
@@ -91,15 +108,27 @@ public struct PodcastDownload: Codable, Equatable {
             guard let self else { return }
             let ordinary = await session.allTasks
             let hls = sessionConfiguration.identifier == nil ? [] : await hlsSession.allTasks
-            for task in ordinary + hls {
-                guard let id = task.taskDescription, downloads[id] != nil else { task.cancel(); continue }
+            // A preference change may leave a cancelled request and its
+            // replacement in the session when the process is terminated.
+            for task in (ordinary + hls).sorted(by: { $0.taskIdentifier > $1.taskIdentifier }) {
+                guard let id = task.taskDescription, downloads[id]?.status == "downloading",
+                      task.state != .canceling, tasks[id] == nil else { task.cancel(); continue }
                 tasks[id] = task
+                if library.state.episodes[id]?.youtubeVideoID != nil, let request = task.originalRequest {
+                    let bounded = YouTubeAudioTransfer.bounded(request)
+                    youtubePhase[id] = .transferring
+                    if bounded != request, task.state != .completed {
+                        task.cancel()
+                        beginYouTubeRange(id, request: bounded)
+                    }
+                }
             }
             for id in Array(downloads.keys) {
                 if downloads[id]?.status == "downloaded", localURL(id) == nil {
                     discardFile(id); downloads[id]?.status = "waiting"; downloads[id]?.error = nil
                 }
                 if downloads[id]?.status == "downloading", tasks[id] == nil {
+                    clearYouTubeTransfer(id)
                     downloads[id]?.status = "waiting"; downloads[id]?.error = nil
                 }
             }
@@ -264,6 +293,7 @@ public struct PodcastDownload: Codable, Equatable {
     public func remove(_ id: String, suppress: Bool = true) {
         preparationTasks.removeValue(forKey: id)?.cancel()
         cancelYouTubeDirect(id)
+        clearYouTubeTransfer(id)
         externalVersions[id] = nil; externalTasks.removeValue(forKey: id)?.cancel()
         tasks.removeValue(forKey: id)?.cancel(); progress[id] = nil
         if let name = downloads[id]?.filename {
@@ -327,6 +357,7 @@ public struct PodcastDownload: Codable, Equatable {
         guard tasks[id] != nil || externalTasks[id] != nil || downloads[id]?.filename != nil || downloads[id]?.status == "downloading" else { return }
         preparationTasks.removeValue(forKey: id)?.cancel()
         cancelYouTubeDirect(id)
+        clearYouTubeTransfer(id)
         externalVersions[id] = nil; externalTasks.removeValue(forKey: id)?.cancel()
         tasks.removeValue(forKey: id)?.cancel(); progress[id] = nil
         guard var record = downloads[id] else { return }
@@ -347,6 +378,7 @@ public struct PodcastDownload: Codable, Equatable {
         return bytes > 0 && plan.episodeIDs.contains(id) && totalBytes <= library.state.settings.maximumDownloadBytes - bytes
     }
     private func completed(_ id: String) async {
+        clearYouTubeTransfer(id)
         tasks[id] = nil; externalTasks[id] = nil; externalVersions[id] = nil; progress[id] = nil; persist()
         finishPreparationEvents()
         NotificationCenter.default.post(name: .lunaPodcastsChanged, object: nil)
@@ -364,6 +396,7 @@ public struct PodcastDownload: Codable, Equatable {
         downloads[id] = PodcastDownload(episodeID: id, sourceURL: episode.mediaURL, manual: manual, status: "downloading")
         guard persist() else { return }
         externalVersions[id] = version
+        youtubePhase[id] = macOnly ? .fetchingOnMac : .resolving
         let job = Task { [self] in
             do {
                 let report: @Sendable (Double) -> Void = { [weak self] value in
@@ -376,10 +409,15 @@ public struct PodcastDownload: Codable, Equatable {
                 if let youtubeDownload { audio = try await youtubeDownload(episode, budget, report) }
                 else {
                     audio = try await (youtubeController ?? .shared).download(episode, maximumBytes: budget, progress: report,
-                        directDownload: { [weak self] request, maximumBytes, report in
+                        onMacDownload: { [weak self] in
+                            guard let self, self.externalVersions[id] == version else { return }
+                            self.youtubePhase[id] = .fetchingOnMac
+                            self.progress[id] = nil
+                        },
+                        directDownload: { [weak self] request, maximumBytes, _ in
                             guard let self else { throw CancellationError() }
                             if macOnly { throw YouTubeMediaRejection() }
-                            return try await self.downloadYouTubeDirect(id, request: request, budget: maximumBytes, progress: report)
+                            return try await self.downloadYouTubeDirect(id, request: request, budget: maximumBytes)
                         })
                 }
                 defer { try? FileManager.default.removeItem(at: audio.url) }
@@ -414,14 +452,14 @@ public struct PodcastDownload: Codable, Equatable {
     /// The direct leg uses the same background session as RSS downloads. A
     /// terminated app restores the task normally; successful audio can install
     /// without a continuation, and media rejection starts a fresh Mac job.
-    private func downloadYouTubeDirect(_ id: String, request: URLRequest, budget: Int64,
-        progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    private func downloadYouTubeDirect(_ id: String, request: URLRequest, budget: Int64) async throws -> URL {
         try Task.checkCancellation()
         let version = externalVersions[id]
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                youtubeDirectResults[id] = continuation; youtubeDirectBudgets[id] = budget; youtubeDirectProgress[id] = progress
-                let task = session.downloadTask(with: request); task.taskDescription = id; tasks[id] = task; task.resume()
+                youtubeDirectResults[id] = continuation
+                youtubeDirectBudgets[id] = budget
+                beginYouTubeRange(id, request: request)
             }
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -430,14 +468,50 @@ public struct PodcastDownload: Codable, Equatable {
             }
         }
     }
+    private func beginYouTubeRange(_ id: String, request: URLRequest) {
+        let task = session.downloadTask(with: request)
+        task.taskDescription = id
+        tasks[id] = task
+        if youtubePhase[id] != .transferring { youtubePhase[id] = .transferring }
+        task.resume()
+        finishPreparationEvents()
+    }
+    private func youtubePartial(_ id: String) -> URL {
+        directory.appendingPathComponent(PodcastIdentity.hash(id) + ".youtube-part.m4a")
+    }
+    private func clearYouTubeTransfer(_ id: String) {
+        let wasYouTube = youtubePhase.removeValue(forKey: id) != nil || library.state.episodes[id]?.youtubeVideoID != nil
+        if wasYouTube {
+            try? FileManager.default.removeItem(at: youtubePartial(id))
+        }
+    }
+    public func setCellularDownloads(_ allowed: Bool) async throws {
+        guard allowed != library.state.settings.cellularDownloads else { return }
+        try library.edit { $0.settings.cellularDownloads = allowed }
+        // Existing tasks keep the policy they were created with. Reissue them
+        // so enabling cellular also unblocks a transfer already waiting for Wi-Fi.
+        await start()
+        for id in Array(tasks.keys) {
+            guard let task = tasks[id], task.state != .completed,
+                  var request = task.originalRequest, request.allowsCellularAccess != allowed else { continue }
+            if library.state.episodes[id]?.youtubeVideoID != nil {
+                request.allowsCellularAccess = allowed
+                beginYouTubeRange(id, request: request)
+                task.cancel()
+            } else {
+                discardFile(id)
+            }
+        }
+        await reconcile()
+    }
     private func cancelYouTubeDirect(_ id: String) {
         guard let continuation = youtubeDirectResults.removeValue(forKey: id) else { return }
-        youtubeDirectBudgets[id] = nil; youtubeDirectProgress[id] = nil
+        youtubeDirectBudgets[id] = nil
         tasks.removeValue(forKey: id)?.cancel(); continuation.resume(throwing: CancellationError())
     }
     private func finishYouTubeDirect(_ id: String, task: URLSessionTask, result: Result<URL, Error>) -> Bool {
         guard tasks[id] === task, let continuation = youtubeDirectResults.removeValue(forKey: id) else { return false }
-        tasks[id] = nil; youtubeDirectBudgets[id] = nil; youtubeDirectProgress[id] = nil
+        tasks[id] = nil; youtubeDirectBudgets[id] = nil
         if let version = externalVersions[id] { beginYouTubeBackgroundTask(id, version: version) }
         continuation.resume(with: result)
         return true
@@ -454,10 +528,12 @@ public struct PodcastDownload: Codable, Equatable {
     private func fallbackToMac(_ id: String, task: URLSessionTask) async {
         guard tasks[id] === task, let episode = library.state.episodes[id], episode.youtubeVideoID != nil else { return }
         tasks[id] = nil; task.cancel()
+        clearYouTubeTransfer(id)
         beginYouTube(episode, manual: downloads[id]?.manual ?? false, macOnly: true)
     }
     private func finishPreparationEvents() {
-        guard preparingBackgroundEvents, preparationTasks.isEmpty, externalTasks.isEmpty else { return }
+        guard preparingBackgroundEvents, preparationTasks.isEmpty,
+              externalTasks.keys.allSatisfy({ tasks[$0]?.state == .running }) else { return }
         preparingBackgroundEvents = false
         let completion = backgroundCompletion; backgroundCompletion = nil; completion?()
     }
@@ -490,22 +566,55 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
             await self.failed(id, task: downloadTask, message: error.localizedDescription)
         }; return }
         Task { @MainActor in
-            if self.finishYouTubeDirect(id, task: downloadTask, result: .success(staged)) { return }
-            defer { try? FileManager.default.removeItem(at: staged) }
+            var audio = staged
+            var handedOff = false
+            defer {
+                if !handedOff || audio != staged { try? FileManager.default.removeItem(at: staged) }
+                if !handedOff, audio != staged { try? FileManager.default.removeItem(at: audio) }
+            }
             guard self.tasks[id] === downloadTask, var record = self.downloads[id] else { return }
             do {
-                let bytes = (try FileManager.default.attributesOfItem(atPath: staged.path)[.size] as? NSNumber)?.int64Value ?? 0
                 if self.library.state.episodes[id]?.youtubeVideoID != nil {
-                    do { _ = try await YouTubePodcastController.validateAudio(staged) }
-                    catch { await self.fallbackToMac(id, task: downloadTask); return }
+                    do {
+                        let budget = self.youtubeDirectBudgets[id] ?? max(0, self.library.state.settings.maximumDownloadBytes - self.totalBytes)
+                        switch try YouTubeAudioTransfer.receive(staged, response: http, request: downloadTask.originalRequest,
+                                                               partial: self.youtubePartial(id), maximumBytes: budget) {
+                        case .next(var request, let fraction):
+                            request.allowsCellularAccess = self.library.state.settings.cellularDownloads
+                            self.progress[id] = fraction
+                            self.beginYouTubeRange(id, request: request)
+                            return
+                        case .complete(let file): audio = file
+                        }
+                    } catch {
+                        if self.finishYouTubeDirect(id, task: downloadTask, result: .failure(error)) { return }
+                        if YouTubeAudioFailurePolicy.shouldUseMac(error) { await self.fallbackToMac(id, task: downloadTask); return }
+                        throw error
+                    }
+                    if audio != staged {
+                        // A new attempt can reuse the partial path while the old job validates.
+                        let assembled = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+                        try FileManager.default.moveItem(at: audio, to: assembled)
+                        audio = assembled
+                    }
+                    handedOff = self.finishYouTubeDirect(id, task: downloadTask, result: .success(audio))
+                    if handedOff { return }
+                    do { _ = try await YouTubePodcastController.validateAudio(audio) }
+                    catch {
+                        if (error as NSError).domain == NSCocoaErrorDomain { throw error }
+                        await self.fallbackToMac(id, task: downloadTask)
+                        return
+                    }
                 }
+                let bytes = (try FileManager.default.attributesOfItem(atPath: audio.path)[.size] as? NSNumber)?.int64Value ?? 0
                 guard bytes > 0 else { throw PodcastError("The downloaded file is empty.") }
                 guard self.accepts(id, bytes: bytes) else {
                     self.discardFile(id); await self.completed(id); return
                 }
                 let prepareAudio = self.prepareAudio
+                let source = audio
                 let preparation = Task.detached(priority: .utility) {
-                    try await prepareAudio(staged, type, suffix)
+                    try await prepareAudio(source, type, suffix)
                 }
                 self.preparationTasks[id] = preparation
                 let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Podcast Download") {
@@ -521,22 +630,22 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                 catch {
                     // Expiration/cancellation of optional indexing must not lose
                     // a completed transfer. Explicit Remove still wins below.
-                    prepared = .init(url: staged, duration: nil, chapters: [])
+                    prepared = .init(url: audio, duration: nil, chapters: [])
                 }
-                defer { if prepared.url != staged { try? FileManager.default.removeItem(at: prepared.url) } }
+                defer { if prepared.url != audio { try? FileManager.default.removeItem(at: prepared.url) } }
                 guard !self.isStopped, self.tasks[id] === downloadTask, let latest = self.downloads[id] else { return }
                 record = latest
                 var ready = prepared.url
                 var installedBytes = (try FileManager.default.attributesOfItem(atPath: ready.path)[.size] as? NSNumber)?.int64Value ?? 0
-                if ready != staged, !self.accepts(id, bytes: installedBytes) {
+                if ready != audio, !self.accepts(id, bytes: installedBytes) {
                     // Container overhead must not discard an otherwise fitting
                     // episode or exceed the user's storage cap.
-                    ready = staged; installedBytes = bytes
+                    ready = audio; installedBytes = bytes
                 }
                 guard self.accepts(id, bytes: installedBytes) else {
                     self.discardFile(id); await self.completed(id); return
                 }
-                let ext = self.library.state.episodes[id]?.youtubeVideoID != nil ? "m4a" : ready != staged ? "mov" : (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
+                let ext = self.library.state.episodes[id]?.youtubeVideoID != nil ? "m4a" : ready != audio ? "mov" : (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
                 let name = PodcastIdentity.hash(id + record.sourceURL.absoluteString) + "." + ext
                 let target = self.directory.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
@@ -544,18 +653,32 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                 record.filename = name; record.bytes = installedBytes; record.status = "downloaded"; record.error = nil
                 record.preparationVersion = prepared.duration == nil ? nil : 1; record.preparedDuration = prepared.duration; record.preparedChapters = prepared.chapters
                 self.downloads[id] = record; await self.completed(id)
-            } catch { await self.failed(id, task: downloadTask, message: error.localizedDescription) }
+            } catch {
+                if self.finishYouTubeDirect(id, task: downloadTask, result: .failure(error)) { return }
+                await self.failed(id, task: downloadTask, message: error.localizedDescription)
+            }
         }
     }
     nonisolated public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let id = downloadTask.taskDescription else { return }
         Task { @MainActor in
             guard self.tasks[id] === downloadTask else { return }
-            if let budget = self.youtubeDirectBudgets[id] {
-                if max(totalBytesWritten, totalBytesExpectedToWrite) > budget {
+            if self.library.state.episodes[id]?.youtubeVideoID != nil {
+                let budget = self.youtubeDirectBudgets[id] ?? max(0, self.library.state.settings.maximumDownloadBytes - self.totalBytes)
+                do {
+                    if let fraction = try YouTubeAudioTransfer.progress(response: downloadTask.response, request: downloadTask.originalRequest,
+                        written: totalBytesWritten, expected: totalBytesExpectedToWrite, maximumBytes: budget) {
+                        self.progress[id] = fraction
+                    }
+                } catch {
                     downloadTask.cancel()
-                    _ = self.finishYouTubeDirect(id, task: downloadTask, result: .failure(PodcastError("The audio exceeds your download limit.")))
-                } else { self.youtubeDirectProgress[id]?(totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0) }
+                    if self.finishYouTubeDirect(id, task: downloadTask, result: .failure(error)) { return }
+                    if YouTubeAudioFailurePolicy.shouldUseMac(error) {
+                        await self.fallbackToMac(id, task: downloadTask)
+                    } else {
+                        await self.failed(id, task: downloadTask, message: error.localizedDescription)
+                    }
+                }
                 return
             }
             self.progress[id] = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0

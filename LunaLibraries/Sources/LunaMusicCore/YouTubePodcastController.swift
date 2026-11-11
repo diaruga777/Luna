@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import LunaMusicFiles
 import LunaPodcastCore
+import Network
 
 typealias YouTubeDirectDownload = @Sendable (URLRequest, Int64, @escaping @Sendable (Double) -> Void) async throws -> URL
 
@@ -19,6 +20,7 @@ struct YouTubeDownloadedAudio: Sendable {
     public static let shared = YouTubePodcastController()
     public static let showID = "youtube-audio"
     @Published public private(set) var available = false
+    private let network = NWPathMonitor()
     private var request: ((Data) async throws -> Data)?
     private let library: PodcastLibraryController
     private let startDownload: (PodcastEpisode) async -> Void
@@ -36,10 +38,13 @@ struct YouTubeDownloadedAudio: Sendable {
     init(library: PodcastLibraryController? = nil, defaults: UserDefaults = .standard, startDownload: ((PodcastEpisode) async -> Void)? = nil,
          directDownload: @escaping @Sendable (URLRequest, Int64, @escaping @Sendable (Double) -> Void) async throws -> URL = { try await YouTubePodcastController.downloadDirect($0, maximumBytes: $1, progress: $2) },
          validate: @escaping @Sendable (URL) async throws -> Double = { try await YouTubePodcastController.validateAudio($0) }) {
+        network.start(queue: DispatchQueue(label: "LunaMusic.youtube.network"))
         self.defaults = defaults
         self.startDownload = startDownload ?? { await PodcastDownloads.shared.download($0) }
         self.library = library ?? .shared; self.directDownload = directDownload; self.validate = validate
     }
+    deinit { network.cancel() }
+
     public func configure(peer: (() -> String)? = nil, request: @escaping (Data) async throws -> Data) {
         capabilityGeneration = UUID(); peerID = peer; self.request = request
         capabilityPeer = nil; available = false; restoreAvailability()
@@ -124,7 +129,7 @@ struct YouTubeDownloadedAudio: Sendable {
         return episode
     }
     func download(_ episode: PodcastEpisode, maximumBytes: Int64,
-                  progress: @escaping @Sendable (Double) -> Void, directDownload: YouTubeDirectDownload? = nil) async throws -> YouTubeDownloadedAudio {
+                  progress: @escaping @Sendable (Double) -> Void, onMacDownload: () -> Void = {}, directDownload: YouTubeDirectDownload? = nil) async throws -> YouTubeDownloadedAudio {
         guard let video = episode.youtubeVideoID, YouTubeAudioURL.videoID(YouTubeAudioURL.canonical(video).absoluteString) == video else {
             throw PodcastError("This YouTube link is invalid.")
         }
@@ -132,7 +137,8 @@ struct YouTubeDownloadedAudio: Sendable {
         if let cached = resolved.removeValue(forKey: video) { (ticket, metadata) = cached }
         else { (ticket, metadata) = try await resolve(video) }
         do {
-            let audio = try await download(ticket: ticket, metadata: metadata, maximumBytes: maximumBytes, progress: progress, directDownload: directDownload ?? self.directDownload)
+            let audio = try await download(ticket: ticket, metadata: metadata, maximumBytes: maximumBytes, progress: progress,
+                                           onMacDownload: onMacDownload, directDownload: directDownload ?? self.directDownload)
             _ = try? await rpc(.init(.release, id: ticket))
             return audio
         } catch {
@@ -141,11 +147,8 @@ struct YouTubeDownloadedAudio: Sendable {
         }
     }
     private func download(ticket: String, metadata: YouTubeAudioMetadata, maximumBytes: Int64,
-                          progress: @escaping @Sendable (Double) -> Void, directDownload: YouTubeDirectDownload) async throws -> YouTubeDownloadedAudio {
-        var request = URLRequest(url: metadata.downloadURL)
-        request.allHTTPHeaderFields = metadata.headers
-        request.allowsCellularAccess = library.state.settings.cellularDownloads
-        request.allowsExpensiveNetworkAccess = request.allowsCellularAccess
+                          progress: @escaping @Sendable (Double) -> Void, onMacDownload: () -> Void, directDownload: YouTubeDirectDownload) async throws -> YouTubeDownloadedAudio {
+        let request = YouTubeAudioTransfer.request(for: metadata, allowsCellular: library.state.settings.cellularDownloads)
         do {
             let url = try await directDownload(request, maximumBytes, progress)
             do {
@@ -164,6 +167,8 @@ struct YouTubeDownloadedAudio: Sendable {
             try Task.checkCancellation()
             guard YouTubeAudioFailurePolicy.shouldUseMac(error) else { throw error }
         }
+        try checkTransferNetwork()
+        onMacDownload()
         progress(0)
         _ = try await rpc(.init(.download, id: ticket, maximumBytes: maximumBytes))
         let response = try await poll(ticket, until: .ready)
@@ -175,6 +180,7 @@ struct YouTubeDownloadedAudio: Sendable {
             var offset: Int64 = 0
             while offset < size {
                 try Task.checkCancellation()
+                try checkTransferNetwork()
                 let length = Int(min(Int64(MusicFileProtocol.chunkSize), size - offset))
                 let part = try await rpc(.init(.read, id: ticket, offset: offset, length: length))
                 guard part.state == .ready, part.size == size, let bytes = part.data, bytes.count == length else { throw PodcastError("The audio transfer was incomplete. Try again.") }
@@ -206,12 +212,18 @@ struct YouTubeDownloadedAudio: Sendable {
         let deadline = Date().addingTimeInterval(2400)
         while Date() < deadline {
             try Task.checkCancellation()
+            if target == .ready { try checkTransferNetwork() }
             let response = try await rpc(.init(.status, id: ticket))
             if response.state == target { return response }
             guard response.state == .resolving || response.state == .downloading else { throw PodcastError("This audio request expired. Try again.") }
             try await Task.sleep(for: .seconds(1))
         }
         throw URLError(.timedOut)
+    }
+    private func checkTransferNetwork() throws {
+        if !library.state.settings.cellularDownloads, network.currentPath.usesInterfaceType(.cellular) {
+            throw PodcastError("Connect to Wi-Fi or allow cellular downloads in Podcast Settings.")
+        }
     }
     private func rpc(_ request: YouTubeAudioRequest) async throws -> YouTubeAudioResponse {
         guard let send = self.request else { throw PodcastError("Connect to Luna Mac and try again.") }
@@ -239,21 +251,24 @@ struct YouTubeDownloadedAudio: Sendable {
         let delegate = YouTubeDirectDownloadDelegate(maximumBytes: maximumBytes, progress: progress)
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
-        let location: URL, response: URLResponse
-        do { (location, response) = try await session.download(for: request, delegate: delegate) }
-        catch {
-            if delegate.exceededLimit { throw PodcastError("The audio exceeds your download limit.") }
-            throw error
-        }
-        defer { try? FileManager.default.removeItem(at: location) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              !["html", "json", "xml"].contains(where: { (http.mimeType ?? "").contains($0) }) else { throw YouTubeMediaRejection() }
-        let size = (try FileManager.default.attributesOfItem(atPath: location.path)[.size] as? NSNumber)?.int64Value ?? 0
-        guard size <= maximumBytes else { throw PodcastError("The audio exceeds your download limit.") }
-        guard size > 0 else { throw YouTubeMediaRejection() }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("youtube-" + UUID().uuidString).appendingPathExtension("m4a")
-        try FileManager.default.moveItem(at: location, to: file)
-        return file
+        let partial = file.appendingPathExtension("partial")
+        defer { try? FileManager.default.removeItem(at: partial) }
+        var request = request
+        while true {
+            let location: URL, response: URLResponse
+            do { (location, response) = try await session.download(for: request, delegate: delegate) }
+            catch { throw delegate.transferError ?? error }
+            defer { try? FileManager.default.removeItem(at: location) }
+            switch try YouTubeAudioTransfer.receive(location, response: response, request: request, partial: partial, maximumBytes: maximumBytes) {
+            case .complete(let audio):
+                try FileManager.default.moveItem(at: audio, to: file)
+                return file
+            case .next(let next, let fraction):
+                progress(fraction)
+                request = next
+            }
+        }
     }
 }
 
@@ -261,13 +276,19 @@ private final class YouTubeDirectDownloadDelegate: NSObject, URLSessionDownloadD
     private let maximumBytes: Int64
     private let progress: @Sendable (Double) -> Void
     private let lock = NSLock()
-    private var exceeded = false
-    var exceededLimit: Bool { lock.lock(); defer { lock.unlock() }; return exceeded }
+    private var error: Error?
+    var transferError: Error? { lock.lock(); defer { lock.unlock() }; return error }
     init(maximumBytes: Int64, progress: @escaping @Sendable (Double) -> Void) { self.maximumBytes = maximumBytes; self.progress = progress }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        if max(totalBytesWritten, totalBytesExpectedToWrite) > maximumBytes {
-            lock.lock(); exceeded = true; lock.unlock(); downloadTask.cancel()
-        } else { progress(totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0) }
+        do {
+            if let fraction = try YouTubeAudioTransfer.progress(response: downloadTask.response, request: downloadTask.originalRequest,
+                written: totalBytesWritten, expected: totalBytesExpectedToWrite, maximumBytes: maximumBytes) {
+                progress(fraction)
+            }
+        } catch {
+            lock.lock(); self.error = error; lock.unlock()
+            downloadTask.cancel()
+        }
     }
 }

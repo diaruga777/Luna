@@ -77,11 +77,7 @@ import LunaMusicFiles
         // Publish before resume, so even immediate completion can be recovered.
         try inbox.save(capture)
         let transfer = MusicYouTubeShare(capture: capture, inbox: inbox)
-        var request = URLRequest(url: metadata.downloadURL)
-        request.allHTTPHeaderFields = metadata.headers
-        request.allowsCellularAccess = choices.cellularDownloads ?? false
-        request.allowsExpensiveNetworkAccess = request.allowsCellularAccess
-        transfer.begin(request)
+        transfer.begin(YouTubeAudioTransfer.request(for: metadata, allowsCellular: choices.cellularDownloads ?? false))
     }
     public static func result(for capture: CompanionShareCapture, inbox: CompanionShareInbox) throws -> Result {
         let directory = inbox.directory(for: capture)
@@ -128,42 +124,67 @@ extension MusicYouTubeShare: URLSessionDownloadDelegate {
         guard let capture else { return }
         let directory = inbox.directory(for: capture)
         do {
-            guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
-                  !["html", "json", "xml"].contains(where: { (response.mimeType ?? "").contains($0) }) else { throw YouTubeMediaRejection() }
-            let bytes = (try FileManager.default.attributesOfItem(atPath: location.path)[.size] as? NSNumber)?.int64Value ?? 0
-            guard bytes > 0 else { throw YouTubeMediaRejection() }
-            guard bytes <= (capture.youtube?.maximumBytes ?? 0) else { throw CocoaError(.fileReadTooLarge) }
-            let target = directory.appendingPathComponent("audio.m4a")
-            try? FileManager.default.removeItem(at: target)
-            try FileManager.default.moveItem(at: location, to: target)
-            try Self.write(Outcome(), directory: directory)
+            let partial = directory.appendingPathComponent("audio.partial")
+            switch try YouTubeAudioTransfer.receive(location, response: downloadTask.response, request: downloadTask.originalRequest,
+                                                   partial: partial, maximumBytes: capture.youtube?.maximumBytes ?? 0) {
+            case .next(var request, _):
+                if let choices = try? inbox.choices(), let allowed = choices.cellularDownloads {
+                    request.allowsCellularAccess = allowed
+                }
+                session.downloadTask(with: request).resume()
+            case .complete(let file):
+                let target = directory.appendingPathComponent("audio.m4a")
+                try? FileManager.default.removeItem(at: target)
+                try FileManager.default.moveItem(at: file, to: target)
+                try Self.write(Outcome(), directory: directory)
+            }
         } catch {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("audio.partial"))
             try? Self.write(Outcome(error: error.localizedDescription, mediaRejected: YouTubeAudioFailurePolicy.shouldUseMac(error)), directory: directory)
         }
     }
+
     nonisolated public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error, let capture,
-           !FileManager.default.fileExists(atPath: inbox.directory(for: capture).appendingPathComponent("transfer.json").path) {
-            try? Self.write(Outcome(error: error.localizedDescription, mediaRejected: YouTubeAudioFailurePolicy.shouldUseMac(error)), directory: inbox.directory(for: capture))
+        let directory = capture.map { inbox.directory(for: $0) }
+        if let error, let directory,
+           !FileManager.default.fileExists(atPath: directory.appendingPathComponent("transfer.json").path) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("audio.partial"))
+            try? Self.write(Outcome(error: error.localizedDescription, mediaRejected: YouTubeAudioFailurePolicy.shouldUseMac(error)), directory: directory)
         }
+        guard let directory, FileManager.default.fileExists(atPath: directory.appendingPathComponent("transfer.json").path) else { return }
         Task { @MainActor in
             await Self.consume?()
-            // Keep delivery of background events alive through durable import.
             if completion == nil { session.finishTasksAndInvalidate() }
         }
     }
+
     nonisolated public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let capture else { downloadTask.cancel(); return }
-        if max(totalBytesWritten, totalBytesExpectedToWrite) > (capture.youtube?.maximumBytes ?? 0) {
-            try? Self.write(Outcome(error: "The audio exceeds your download limit."), directory: inbox.directory(for: capture))
+        do {
+            _ = try YouTubeAudioTransfer.progress(response: downloadTask.response, request: downloadTask.originalRequest,
+                written: totalBytesWritten, expected: totalBytesExpectedToWrite, maximumBytes: capture.youtube?.maximumBytes ?? 0)
+        } catch {
+            let directory = inbox.directory(for: capture)
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("audio.partial"))
+            try? Self.write(Outcome(error: error.localizedDescription, mediaRejected: YouTubeAudioFailurePolicy.shouldUseMac(error)), directory: directory)
             downloadTask.cancel()
         }
     }
     nonisolated public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in
+            let finished = await session.allTasks.isEmpty
+            if finished, let capture {
+                let directory = inbox.directory(for: capture)
+                let outcome = directory.appendingPathComponent("transfer.json")
+                if FileManager.default.fileExists(atPath: directory.path), !FileManager.default.fileExists(atPath: outcome.path) {
+                    try? FileManager.default.removeItem(at: directory.appendingPathComponent("audio.partial"))
+                    try? Self.write(Outcome(error: "The download was interrupted. Try again."), directory: directory)
+                }
+            }
             await Self.consume?()
             let finish = completion; completion = nil
-            finish?(); session.finishTasksAndInvalidate()
+            finish?()
+            if finished { session.finishTasksAndInvalidate() }
         }
     }
     nonisolated public func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {

@@ -260,6 +260,15 @@ and directional scrolling were also checked in the simulator.
 
 ## Scroll reader (+ split-web link handling)
 
+HTML article saves preserve explicit line breaks within paragraphs and quotes. A
+standalone horizontal rule becomes a short divider in Scroll mode, and an explicit
+blank line between blocks adds space. Scroll also renders bold markup and explicit
+relative text enlargement using the selected reader font. The converter reads
+markup and supported inline font declarations. Publisher stylesheet margins and
+pseudo-elements such as `::first-letter` require the Original view when available.
+The formatting is stored with the extracted blocks, so older saves need fresh
+extraction to pick it up.
+
 - `LunaReaderUI/ScrollReaderViewController.swift` — full-screen `UITextView`, serif type, attributed text from `ArticleTextRenderer`. Link taps intercepted via `textView(_:primaryActionFor:defaultAction:)` → opens the split instead of Safari. Bolt button → RSVP.
 - `LunaReaderUI/ArticleTextRenderer.swift` — blocks → `NSAttributedString` (title, headings, quotes, bullets, `.link` attributes from stored UTF-16 ranges).
 - `LunaReaderUI/SplitWebOverlayViewController.swift` is the nested reader card.

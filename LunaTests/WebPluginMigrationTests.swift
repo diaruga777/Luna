@@ -7,6 +7,7 @@ import LunaPluginKit
 import LunaPluginIngest
 import LunaIngest
 import LunaReaderUI
+import UIKit
 
 final class WebPluginMigrationTests: XCTestCase {
     private var runner: PluginJSFixtureRunner!
@@ -16,6 +17,62 @@ final class WebPluginMigrationTests: XCTestCase {
     private func load(_ name:String) throws {
         try runner.load(String(contentsOf:root.appendingPathComponent("LunaLibraries/Sources/LunaBundledPlugins/Plugins/\(name).js"),encoding:.utf8))
     }
+    @MainActor
+    func testWebArticleFormattingSurvivesSaveAndScrollRendering() async throws {
+        let scope = PluginAdopterScope()
+        defer { scope.restore() }
+        PluginModelAdopters.article = ArticleModelAdopter()
+        try load("web")
+        let url = try XCTUnwrap(URL(string: "https://example.com/report"))
+        let html = """
+        <article>
+        <p>\(String(repeating: "Opening paragraph has enough prose for the web plugin. ", count: 7))</p>
+        <div><hr></div>
+        <p><span style="font-size: 150%"><strong>🌙 New section</strong></span> has started.<br>
+        <a href="/source"><span style="font-weight: 700">See the source</span></a><br><br>And keep reading.</p>
+        <p><br></p><p>Closing paragraph.</p>
+        </article>
+        """
+        runner.fetcher.respond(to: url.absoluteString, body: html)
+        let stage = PluginIngestStage(invoker: runner.runtime, processKind: .app)
+        let result = await stage.run(IngestInput(url: url, source: .manual), fetcher: MockArticleFetcher())
+        guard case let .outcome(.article(content, _), owner) = result else {
+            return XCTFail("The web plugin did not extract an article")
+        }
+        XCTAssertEqual(owner, "app.luna.web")
+        let saves = SavesStore(containerURL: runner.containerURL.appendingPathComponent("formatting"))
+        let item = saves.add(urlString: url.absoluteString)
+        _ = saves.saveContent(content, for: item)
+        let saved = try XCTUnwrap(saves.content(for: try XCTUnwrap(saves.item(withID: item.id))))
+        XCTAssertEqual(saved, content)
+        XCTAssertEqual(saved.blocks.map(\.sectionBreakBefore), [nil, .rule, .space])
+
+        let rendered = ArticleTextRenderer.render(saved, includesTitle: false)
+        let section = try XCTUnwrap(rendered.blockTextRanges[1])
+        let displayed = rendered.text.string as NSString
+        XCTAssertEqual(displayed.substring(with: section),
+                       "🌙 New section has started.\u{2028}See the source\u{2028}\u{2028}And keep reading.")
+        let rule = try XCTUnwrap(rendered.text.attribute(.attachment, at: section.location - 2,
+                                                        effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(rule.bounds.height, 1)
+        let closing = try XCTUnwrap(rendered.blockTextRanges[2])
+        XCTAssertEqual(displayed.substring(with: NSRange(location: closing.location - 2, length: 2)), "\n\n")
+
+        let heading = displayed.range(of: "🌙 New section")
+        let body = displayed.range(of: "has started.")
+        let headingFont = try XCTUnwrap(rendered.text.attribute(.font, at: heading.location,
+                                                               effectiveRange: nil) as? UIFont)
+        let bodyFont = try XCTUnwrap(rendered.text.attribute(.font, at: body.location,
+                                                            effectiveRange: nil) as? UIFont)
+        XCTAssertGreaterThan(headingFont.pointSize, bodyFont.pointSize)
+        let link = displayed.range(of: "See the source")
+        XCTAssertNotEqual(rendered.text.attribute(.font, at: link.location, effectiveRange: nil) as? UIFont, bodyFont)
+        XCTAssertEqual(rendered.text.attribute(.link, at: link.location, effectiveRange: nil) as? URL,
+                       URL(string: "https://example.com/source"))
+        let words = WordMap(content: saved, rendered: rendered).wordRanges.map { displayed.substring(with: $0) }
+        XCTAssertEqual(words, saved.wholeText.split(whereSeparator: \.isWhitespace).map(String.init))
+    }
+
     func testRetailAndShoppingFixturesUseTheShippingPluginInJSC() async throws {
         try load("web")
         for (fixture,url,expected,currency) in [

@@ -364,14 +364,17 @@ const LunaWeb = (function () {
         const selected=[];
         function collect(n) {
             if(n.skip)return;
-            if(blockTags.has(n.tag)) { selected.push(n);return; }
+            if(blockTags.has(n.tag) || n.tag==='HR' || n.tag==='BR') { selected.push(n);return; }
             if(['DIV','SECTION'].includes(n.tag) && !n.children.some(c=>containerTags.has(c.tag)||blockTags.has(c.tag)) && n.text.trim()) {
                 selected.push(n);return;
             }
             n.children.forEach(collect);
         }
         if(winner && best>=300)collect(winner);
-        let html=selected.map(n=>['DIV','SECTION'].includes(n.tag)?'<p>'+n.node.innerHTML+'</p>':n.node.outerHTML).join('\n');
+        // Keep a div containing a rule intact: wrapping it in <p> would cause
+        // the HTML parser to close the paragraph at the rule and lose bare text.
+        let html=selected.map(n=>['DIV','SECTION'].includes(n.tag) && !n.children.some(c=>c.tag==='HR')
+            ?'<p>'+n.node.innerHTML+'</p>':n.node.outerHTML).join('\n');
         let body=selected.map(n=>n.text).join('\n').trim();
         if(linked && typeof linked.articleBody==='string' && linked.articleBody.length>2*body.length){
             body=linked.articleBody;

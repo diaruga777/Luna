@@ -43,6 +43,10 @@ public struct ArticleContent: Codable, Equatable, Sendable {
         public var kind: Kind
         public var text: String
         public var links: [Link]
+        /// A visual boundary before this block. Keeping it with the following
+        /// block preserves the block and word indices used by reading modes.
+        public var sectionBreakBefore: SectionBreak?
+        public var inlineStyles: [InlineStyle]?
         /// The HTML `id`/`name` this block's element carried, when some in-page
         /// link on the page pointed at it — i.e. the block is a jump destination.
         /// Nil for the overwhelming majority of blocks; only referenced anchors
@@ -61,7 +65,9 @@ public struct ArticleContent: Codable, Equatable, Sendable {
         public init(kind: Kind, text: String, links: [Link],
                     imageURLString: String? = nil, imageFileName: String? = nil,
                     imageSize: BlockImageSize? = nil,
-                    anchorID: String? = nil) {
+                    anchorID: String? = nil,
+                    sectionBreakBefore: SectionBreak? = nil,
+                    inlineStyles: [InlineStyle]? = nil) {
             self.kind = kind
             self.text = text
             self.links = links
@@ -69,6 +75,8 @@ public struct ArticleContent: Codable, Equatable, Sendable {
             self.imageFileName = imageFileName
             self.imageSize = imageSize
             self.anchorID = anchorID
+            self.sectionBreakBefore = sectionBreakBefore
+            self.inlineStyles = inlineStyles
         }
 
         /// Whether this block belongs to the article's word stream — the ONE
@@ -81,6 +89,7 @@ public struct ArticleContent: Codable, Equatable, Sendable {
 
         private enum CodingKeys: String, CodingKey {
             case kind, text, links, anchorID, imageURLString, imageFileName, imageSize
+            case sectionBreakBefore, inlineStyles
             // Old on-disk keys, from before width and height merged into `imageSize`.
             // Decoding still falls back to them for saves made before the merge.
             case imageWidth, imageHeight
@@ -91,6 +100,8 @@ public struct ArticleContent: Codable, Equatable, Sendable {
             kind = try container.decode(Kind.self, forKey: .kind)
             text = try container.decode(String.self, forKey: .text)
             links = try container.decode([Link].self, forKey: .links)
+            sectionBreakBefore = try container.decodeIfPresent(SectionBreak.self, forKey: .sectionBreakBefore)
+            inlineStyles = try container.decodeIfPresent([InlineStyle].self, forKey: .inlineStyles)
             anchorID = try container.decodeIfPresent(String.self, forKey: .anchorID)
             imageURLString = try container.decodeIfPresent(String.self, forKey: .imageURLString)
             imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
@@ -109,10 +120,32 @@ public struct ArticleContent: Codable, Equatable, Sendable {
             try container.encode(kind, forKey: .kind)
             try container.encode(text, forKey: .text)
             try container.encode(links, forKey: .links)
+            try container.encodeIfPresent(sectionBreakBefore, forKey: .sectionBreakBefore)
+            try container.encodeIfPresent(inlineStyles, forKey: .inlineStyles)
             try container.encodeIfPresent(anchorID, forKey: .anchorID)
             try container.encodeIfPresent(imageURLString, forKey: .imageURLString)
             try container.encodeIfPresent(imageFileName, forKey: .imageFileName)
             try container.encodeIfPresent(imageSize, forKey: .imageSize)
+        }
+    }
+
+    public enum SectionBreak: String, Codable, Equatable, Sendable {
+        case space
+        case rule
+    }
+
+    /// A run of typographic emphasis, using UTF-16 offsets into the block text.
+    public struct InlineStyle: Codable, Equatable, Sendable {
+        public var start: Int
+        public var length: Int
+        public let isBold: Bool
+        public let isLarger: Bool
+
+        public init(start: Int, length: Int, isBold: Bool, isLarger: Bool) {
+            self.start = start
+            self.length = length
+            self.isBold = isBold
+            self.isLarger = isLarger
         }
     }
 

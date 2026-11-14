@@ -168,6 +168,7 @@ public enum ArticleTextRenderer {
         // so the budget is expressed in the same units the article reports.
         var includedTextCount = 0
         var truncated = false
+        var rule: NSAttributedString?
 
         for (index, block) in content.blocks.enumerated() {
             // Stop once the budget is exceeded — but only AFTER at least one body
@@ -175,6 +176,18 @@ public enum ArticleTextRenderer {
             if let budget = characterBudget, includedTextCount > budget {
                 truncated = true
                 break
+            }
+            if index > 0, let sectionBreak = block.sectionBreakBefore {
+                switch sectionBreak {
+                case .space:
+                    result.append(NSAttributedString(string: "\n", attributes: [
+                        .font: bodyFont(size: 10, weight: .regular),
+                    ]))
+                case .rule:
+                    let divider = rule ?? sectionRule()
+                    rule = divider
+                    result.append(divider)
+                }
             }
             if block.kind == .image {
                 if let fileName = block.imageFileName,
@@ -206,6 +219,26 @@ public enum ArticleTextRenderer {
         return RenderedArticle(
             text: result, blockTextRanges: blockTextRanges, imageRanges: imageRanges,
             isComplete: !truncated)
+    }
+
+    private static func sectionRule() -> NSAttributedString {
+        let size = CGSize(width: 96, height: 1)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            LunaColors.separator.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(origin: .zero, size: size)
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.paragraphSpacing = 14
+        let line = NSMutableAttributedString(attachment: attachment)
+        line.append(NSAttributedString(string: "\n"))
+        line.addAttributes([.paragraphStyle: paragraph, .font: UIFont.systemFont(ofSize: 8)],
+                           range: NSRange(location: 0, length: line.length))
+        return line
     }
 
     // MARK: - Images
@@ -435,8 +468,29 @@ public enum ArticleTextRenderer {
             }
         }
 
-        let text = NSMutableAttributedString(string: prefix + block.text + "\n", attributes: attributes)
+        // A line separator wraps without the paragraph margin and occupies the
+        // same UTF-16 space as the saved newline, so links and word ranges align.
+        let lines = block.text.replacingOccurrences(of: "\n", with: "\u{2028}")
+        let text = NSMutableAttributedString(string: prefix + lines + "\n", attributes: attributes)
         let prefixLength = (prefix as NSString).length
+        let blockLength = (block.text as NSString).length
+        if let baseFont = attributes[.font] as? UIFont, let styles = block.inlineStyles {
+            for style in styles {
+                guard style.start >= 0, style.start < blockLength, style.length > 0,
+                      style.length <= blockLength - style.start else { continue }
+                let size = style.isLarger ? baseFont.pointSize * 1.25 : baseFont.pointSize
+                let font: UIFont
+                if style.isBold {
+                    font = block.kind == .quote
+                        ? ReaderSettings.font.italicFont(size: size, weight: .bold)
+                        : ReaderSettings.font.font(size: size, weight: .bold)
+                } else {
+                    font = baseFont.withSize(size)
+                }
+                text.addAttribute(.font, value: font, range: NSRange(
+                    location: prefixLength + style.start, length: style.length))
+            }
+        }
         for link in block.links {
             guard let url = URL(string: link.urlString) else { continue }
             let range = NSRange(location: link.start + prefixLength, length: link.length)

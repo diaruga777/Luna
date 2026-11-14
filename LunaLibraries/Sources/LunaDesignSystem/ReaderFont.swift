@@ -44,8 +44,8 @@ public enum ReaderFont: String, CaseIterable {
         resolved(size: size, weight: weight, italic: false)
     }
 
-    public func italicFont(size: CGFloat) -> UIFont {
-        resolved(size: size, weight: .regular, italic: true)
+    public func italicFont(size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        resolved(size: size, weight: weight, italic: true)
     }
 
     private func resolved(size: CGFloat, weight: UIFont.Weight, italic: Bool) -> UIFont {
@@ -72,7 +72,9 @@ public enum ReaderFont: String, CaseIterable {
         if self != .system, let serif = descriptor.withDesign(.serif) {
             descriptor = serif
         }
-        if italic, let italicDescriptor = descriptor.withSymbolicTraits(.traitItalic) {
+        if italic, let italicDescriptor = descriptor.withSymbolicTraits(
+            descriptor.symbolicTraits.union(.traitItalic)
+        ) {
             descriptor = italicDescriptor
         }
         return UIFont(descriptor: descriptor, size: size)

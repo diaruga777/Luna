@@ -945,16 +945,11 @@ public struct ArticleExtractor {
         "figure", "figcaption", "form", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
     ]
 
-    /// Tags that END the line they appear on, so the text on either side of them is
-    /// never visually adjacent. A block's walk concatenates the text nodes it finds,
-    /// and markup routinely puts no whitespace character around these — Paris Review
-    /// separates the paragraphs of a quoted passage with `…his feeling.<br><br>The
-    /// discipline…`, and a `<p>` nested in a `<blockquote>` is walked as part of that
-    /// one quote block — so without a synthesized boundary the reader showed
-    /// "feeling.The discipline". `img` is here because images are lifted out into
-    /// their own blocks, which leaves the text that surrounded them adjacent.
+    /// Boundaries that need a word separator when nested inside a text block.
+    /// Explicit breaks and nested paragraphs get their own treatment in the walk.
+    /// Images are lifted out into their own blocks, leaving their surrounding text adjacent.
     private static let lineBreakingTags: Set<String> = [
-        "br", "hr", "img", "p", "div", "section", "article", "aside", "header",
+        "img", "div", "section", "article", "aside", "header",
         "footer", "nav", "main", "figure", "figcaption", "blockquote", "pre",
         "ul", "ol", "li", "dl", "dt", "dd", "table", "thead", "tbody", "tfoot",
         "tr", "td", "th", "caption", "h1", "h2", "h3", "h4", "h5", "h6",
@@ -965,27 +960,53 @@ public struct ArticleExtractor {
         from container: Element, baseURL: URL, anchors: Set<String> = []
     ) throws -> [ArticleContent.Block] {
         var blocks: [ArticleContent.Block] = []
+        var pendingBreak: ArticleContent.SectionBreak?
+        func append(_ block: ArticleContent.Block) {
+            var block = block
+            if !blocks.isEmpty { block.sectionBreakBefore = pendingBreak }
+            pendingBreak = nil
+            blocks.append(block)
+        }
+
         /// Destination ids are handed out once, so a `<section id="intro">`'s
         /// anchor lands on its heading instead of on every paragraph inside it.
         var claimedAnchors = Set<String>()
+        // The selection walks in document order, so a paragraph-like wrapper
+        // has already been seen when we reach its inline breaks.
+        var inlineTextContainers = Set<ObjectIdentifier>()
         let selector = blockTags.joined(separator: ", ")
-            + ", div, section, img, [\(InPageAnchors.marker)]"
+            + ", div, section, img, hr, br, [\(InPageAnchors.marker)]"
         for element in try container.select(selector) {
             // The page's own chapter marks, emitted one row per jump straight from
             // the anchors — the generic walk below would collapse a two-level ToC
             // into a single bullet, because a nested <li> has a block ancestor.
             if InPageAnchors.isTableOfContentsRoot(element) {
-                blocks.append(contentsOf: InPageAnchors.blocks(
-                    forTableOfContentsRoot: element, baseURL: baseURL, resolvable: anchors))
+                for block in InPageAnchors.blocks(
+                    forTableOfContentsRoot: element, baseURL: baseURL, resolvable: anchors
+                ) {
+                    append(block)
+                }
                 continue
             }
             if InPageAnchors.isInsideTableOfContents(element) { continue }
-            if element.tagName() == "img" {
+            let tag = element.tagName()
+            if tag == "hr" || tag == "br" {
+                guard !hasBlockAncestor(element, within: container, textContainers: inlineTextContainers),
+                      isVisibleBreak(element, within: container) else { continue }
+                if tag == "hr" {
+                    pendingBreak = .rule
+                } else if let parent = element.parent(),
+                          ["body", "article", "main", "section", "div"].contains(parent.tagName()) {
+                    pendingBreak = pendingBreak ?? .space
+                }
+                continue
+            }
+            if tag == "img" {
                 // Standalone images (inside divs/figures); images nested in a
                 // paragraph are collected by that paragraph's walk below.
                 if hasBlockAncestor(element, within: container) { continue }
                 if let imageBlock = makeImageBlock(from: element, baseURL: baseURL) {
-                    blocks.append(imageBlock)
+                    append(imageBlock)
                 }
                 continue
             }
@@ -996,9 +1017,11 @@ public struct ArticleExtractor {
             // gate matches the scoring threshold: a bare text <div> that short is
             // UI chrome (a timecode, "Up Next", a label), not article prose —
             // explicit <p>/heading/list/quote tags keep their any-length behavior.
-            if element.tagName() == "div" || element.tagName() == "section" {
-                guard isParagraphLikeContainer(element),
-                      ((try? element.text().count) ?? 0) > 20 else { continue }
+            if tag == "div" || tag == "section" {
+                guard isParagraphLikeContainer(element) else { continue }
+                let length = (try? element.text().count) ?? 0
+                if length > 0 { inlineTextContainers.insert(ObjectIdentifier(element)) }
+                guard length > 20 else { continue }
             }
             // Skip elements nested inside another matched block (e.g. p inside
             // blockquote) so the same text isn't emitted twice.
@@ -1010,11 +1033,43 @@ public struct ArticleExtractor {
                     resolvable: anchors, claimed: &claimedAnchors)
             }
             if let block {
-                blocks.append(block)
+                append(block)
+            } else if tag == "p", nestedImages.isEmpty,
+                      isVisibleBreak(element, within: container),
+                      isBlankLineParagraph(element, within: container) {
+                pendingBreak = pendingBreak ?? .space
             }
-            blocks.append(contentsOf: nestedImages)
+            for image in nestedImages {
+                append(image)
+            }
         }
         return blocks
+    }
+
+    private func isBlankLineParagraph(_ element: Element, within container: Element) -> Bool {
+        guard let text = try? element.text(trimAndNormaliseWhitespace: false),
+              text.allSatisfy(\.isWhitespace) else { return false }
+        return text.contains("\u{00A0}") || (try? element.select("br").array().contains {
+            isVisibleBreak($0, within: container)
+        }) == true
+    }
+
+    private func isVisibleBreak(_ element: Element, within container: Element) -> Bool {
+        var ancestor: Element? = element
+        while let current = ancestor {
+            if current.hasAttr("hidden") || (try? current.attr("aria-hidden")) == "true" {
+                return false
+            }
+            let style = (try? current.attr("style")) ?? ""
+            if !style.isEmpty,
+               style.range(of: #"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b"#,
+                           options: [.regularExpression, .caseInsensitive]) != nil {
+                return false
+            }
+            if current === container { break }
+            ancestor = current.parent()
+        }
+        return true
     }
 
     // MARK: - Images
@@ -1251,9 +1306,13 @@ public struct ArticleExtractor {
         return components?.url?.absoluteString
     }
 
-    private func hasBlockAncestor(_ element: Element, within container: Element) -> Bool {
+    private func hasBlockAncestor(
+        _ element: Element, within container: Element, textContainers: Set<ObjectIdentifier> = []
+    ) -> Bool {
         var parent = element.parent()
-        while let current = parent, current !== container {
+        while let current = parent {
+            if textContainers.contains(ObjectIdentifier(current)) { return true }
+            if current === container { break }
             if blockTags.contains(current.tagName()) { return true }
             parent = current.parent()
         }
@@ -1268,6 +1327,7 @@ public struct ArticleExtractor {
     ) -> (ArticleContent.Block?, [ArticleContent.Block]) {
         var text = ""
         var links: [ArticleContent.Link] = []
+        var inlineStyles: [ArticleContent.InlineStyle] = []
         var nestedImages: [ArticleContent.Block] = []
         /// In-page destination per link URL, for the anchors this block links to.
         /// A footnote marker in prose is the same mechanism as a ToC row, and gets
@@ -1276,7 +1336,7 @@ public struct ArticleExtractor {
 
         func appendCollapsed(_ raw: String) -> (start: Int, length: Int) {
             var addition = ""
-            var lastWasSpace = text.isEmpty || text.hasSuffix(" ")
+            var lastWasSpace = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n")
             for character in raw {
                 if character.isWhitespace {
                     if !lastWasSpace {
@@ -1293,19 +1353,33 @@ public struct ArticleExtractor {
             return (start, addition.utf16.count)
         }
 
-        /// Stands in for a line break the markup expressed structurally rather than
-        /// with a whitespace character. Collapses against what's already there, so
-        /// real whitespace on either side of the break still yields ONE space, and
-        /// it never leads the block. Appended between text nodes, so it shifts no
-        /// already-recorded link range.
-        func appendLineBreak() {
-            guard !text.isEmpty, !text.hasSuffix(" ") else { return }
+        func appendWordSeparator() {
+            guard !text.isEmpty, !text.hasSuffix(" "), !text.hasSuffix("\n") else { return }
             text += " "
         }
 
-        func walk(_ node: Node, linkURL: String?) {
+        func appendExplicitBreak(paragraph: Bool = false) {
+            guard !text.isEmpty, !text.hasSuffix("\n\n") else { return }
+            // Replace a collapsed source space with a newline at the same UTF-16
+            // offset so ranges recorded before the break stay valid.
+            if text.hasSuffix(" ") { text.removeLast() }
+            if paragraph && !text.hasSuffix("\n") { text += "\n" }
+            text += "\n"
+        }
+
+        func walk(_ node: Node, linkURL: String?, emphasis: InlineEmphasis) {
             if let textNode = node as? TextNode {
                 let range = appendCollapsed(textNode.getWholeText())
+                if range.length > 0 && (emphasis.isBold || emphasis.isLarger) {
+                    if var last = inlineStyles.last, last.start + last.length == range.start,
+                       last.isBold == emphasis.isBold, last.isLarger == emphasis.isLarger {
+                        last.length += range.length
+                        inlineStyles[inlineStyles.count - 1] = last
+                    } else {
+                        inlineStyles.append(.init(start: range.start, length: range.length,
+                                                  isBold: emphasis.isBold, isLarger: emphasis.isLarger))
+                    }
+                }
                 if let linkURL, range.length > 0 {
                     // Extend an adjacent run of the same link instead of fragmenting.
                     if var last = links.last, last.urlString == linkURL,
@@ -1320,16 +1394,22 @@ public struct ArticleExtractor {
                 return
             }
             guard let child = node as? Element else { return }
-            let breaksLine = Self.lineBreakingTags.contains(child.tagName())
-            if breaksLine { appendLineBreak() }
-            if child.tagName() == "img" {
+            let tag = child.tagName()
+            if tag == "br" || tag == "hr" {
+                if isVisibleBreak(child, within: element) { appendExplicitBreak(paragraph: tag == "hr") }
+                return
+            }
+            let separatesWords = Self.lineBreakingTags.contains(tag)
+            if separatesWords { appendWordSeparator() }
+            if tag == "p" { appendExplicitBreak(paragraph: true) }
+            if tag == "img" {
                 if let imageBlock = makeImageBlock(from: child, baseURL: baseURL) {
                     nestedImages.append(imageBlock)
                 }
                 return
             }
             var childLink = linkURL
-            if child.tagName() == "a",
+            if tag == "a",
                let href = try? child.attr("abs:href"), href.hasPrefix("http") {
                 childLink = href
                 if let fragment = InPageAnchors.fragment(ofLink: child, baseURL: baseURL),
@@ -1337,14 +1417,16 @@ public struct ArticleExtractor {
                     anchorIDsByURL[href] = fragment
                 }
             }
+            let childEmphasis = emphasis.applying(child)
             for grandchild in child.getChildNodes() {
-                walk(grandchild, linkURL: childLink)
+                walk(grandchild, linkURL: childLink, emphasis: childEmphasis)
             }
-            if breaksLine { appendLineBreak() }
+            if separatesWords { appendWordSeparator() }
+            if tag == "p" { appendExplicitBreak(paragraph: true) }
         }
 
         for node in element.getChildNodes() {
-            walk(node, linkURL: nil)
+            walk(node, linkURL: nil, emphasis: InlineEmphasis())
         }
 
         // Only trailing whitespace can exist (leading is collapsed away), so
@@ -1359,6 +1441,12 @@ public struct ArticleExtractor {
             clamped.anchorID = anchorIDsByURL[link.urlString]
             return clamped.length > 0 ? clamped : nil
         }
+        inlineStyles = inlineStyles.compactMap { style in
+            guard style.start < limit else { return nil }
+            var clamped = style
+            clamped.length = min(style.length, limit - style.start)
+            return clamped
+        }
 
         let kind: ArticleContent.Block.Kind
         switch element.tagName() {
@@ -1371,6 +1459,48 @@ public struct ArticleExtractor {
         // rather than a `<figcaption>`. Structural, so there is no wording to guess.
         default: kind = isInsideFigure(element) ? .caption : .paragraph
         }
-        return (ArticleContent.Block(kind: kind, text: text, links: links), nestedImages)
+        return (ArticleContent.Block(kind: kind, text: text, links: links,
+                                     inlineStyles: inlineStyles.isEmpty ? nil : inlineStyles), nestedImages)
+    }
+
+    private struct InlineEmphasis {
+        var isBold = false
+        var isLarger = false
+
+        func applying(_ element: Element) -> Self {
+            var result = self
+            let tag = element.tagName()
+            if tag == "strong" || tag == "b" { result.isBold = true }
+            if tag == "big" { result.isLarger = true }
+            guard element.hasAttr("style"), let style = try? element.attr("style") else { return result }
+
+            // Preserve explicit emphasis while keeping the reader's base font
+            // and size. Absolute sizes, stylesheet rules and class names carry
+            // no reliable comparison to the paragraph's computed font here.
+            for declaration in style.lowercased().split(separator: ";") {
+                let parts = declaration.split(separator: ":", maxSplits: 1)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                guard parts.count == 2 else { continue }
+                let value = parts[1]
+                switch parts[0] {
+                case "font-weight":
+                    if value == "bold" { result.isBold = true }
+                    if value == "normal" { result.isBold = false }
+                    if let weight = Int(value), (1...1000).contains(weight) {
+                        result.isBold = weight >= 700
+                    }
+                case "font-size":
+                    if value == "larger" {
+                        result.isLarger = true
+                    } else if value.hasSuffix("em"), let scale = Double(value.dropLast(2)) {
+                        result.isLarger = isLarger || (scale.isFinite && scale > 1)
+                    } else if value.hasSuffix("%"), let scale = Double(value.dropLast()) {
+                        result.isLarger = isLarger || (scale.isFinite && scale > 100)
+                    }
+                default: break
+                }
+            }
+            return result
+        }
     }
 }

@@ -62,7 +62,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// inline reader is a screen-level eclipse overlay that keeps its own
     /// self-installed indicator, so the host one steps aside for it.
     private let cardScrollIndicator = HorizonScrollIndicator.makeHosted()
-    private let readingProgressEdge = ReadingProgressEdgeView()
     private var chromeModes: [SavedItem.ReaderMode] = []
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
@@ -122,9 +121,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     override func deckWillMountBottomControls() {
         cardScrollIndicator.isHidden = true
         view.addSubview(cardScrollIndicator)
-
-        readingProgressEdge.alpha = 0
-        view.addSubview(readingProgressEdge)
 
         // Immersion extends the reader below its resting card edge. Keep that
         // extra content from entering the footer controls' safe area: the veil
@@ -360,10 +356,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// Places the reader's scroll indicator at the centered card's trailing edge,
     /// sliding it out to the screen edge while the card is immersed. Only the
     /// indicator moves — the reader keeps its inset, so nothing relayouts.
-    /// Hidden when the centered card has no scrollable reader (no article yet,
-    /// or RSVP, whose word display has nothing to scroll).
+    /// During immersion it stays visible along the expanded reading viewport.
     private func layoutCardScrollIndicator(animated: Bool) {
-        layoutReadingProgressEdge(animated: animated)
         // Only the root card reader is host-tracked; a link-opened inline reader
         // (an over-screen eclipse overlay) keeps its own self-installed indicator.
         guard let reader = readerForChrome as? RabbitHoleReaderViewController,
@@ -372,19 +366,19 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         else {
             cardScrollIndicator.isHidden = true
             cardScrollIndicator.track(nil)
+            cardScrollIndicator.keepsVisible = false
             return
         }
-        cardScrollIndicator.isHidden = carousel.isImmersed && reader.focusedScrollReader != nil
+        cardScrollIndicator.isHidden = false
         cardScrollIndicator.track(scrollView)
 
         let width = HorizonScrollIndicator.bloomDiameter
         let immersed = carousel.isImmersed
-        // Trailing edge: the card's at rest, the screen's while immersed. The
-        // bar keeps its card-mode height and vertical position in both modes —
-        // immersion only slides it horizontally to the screen edge.
-        let rightEdge = immersed ? view.bounds.maxX : resting.maxX
-        let top = resting.minY
-        let bottom = resting.maxY
+        let safeFrame = view.safeAreaLayoutGuide.layoutFrame
+        let viewport = scrollView.convert(scrollView.bounds, to: view)
+        let rightEdge = immersed ? safeFrame.maxX : resting.maxX
+        let top = immersed ? max(viewport.minY, safeFrame.minY) : resting.minY
+        let bottom = immersed ? min(viewport.maxY, settingsButton.frame.minY) : resting.maxY
         let frame = CGRect(
             x: rightEdge - width, y: top, width: width, height: max(bottom - top, 0))
         // Keep the dot inside the card's top/bottom edge dissolves.
@@ -393,49 +387,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
 
         let apply = {
             self.cardScrollIndicator.frame = frame
+            self.cardScrollIndicator.keepsVisible = immersed
             self.cardScrollIndicator.layoutIfNeeded()
         }
-        if animated {
+        if animated, !UIAccessibility.isReduceMotionEnabled {
             isIndicatorSliding = true
             UIView.animate(
-                withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
-                animations: apply, completion: { [weak self] _ in self?.isIndicatorSliding = false })
-        } else {
-            apply()
-        }
-    }
-
-    /// Reading progress belongs to extracted text with dismissed card chrome.
-    /// Host it outside the card mask so its soft glow can reach the leading edge.
-    private func layoutReadingProgressEdge(animated: Bool) {
-        guard let reader = readerForChrome as? RabbitHoleReaderViewController,
-              reader.focusedScrollReader != nil,
-              let scrollView = reader.focusedContentScrollView,
-              inlineColumn == nil
-        else {
-            readingProgressEdge.isHidden = true
-            readingProgressEdge.alpha = 0
-            readingProgressEdge.track(nil)
-            return
-        }
-        readingProgressEdge.isHidden = false
-        readingProgressEdge.track(scrollView)
-        let viewport = scrollView.convert(scrollView.bounds, to: view)
-        let top = viewport.minY + Self.contentEdgeFade
-        let bottom = settingsButton.frame.minY - Self.contentEdgeFade
-        let apply = {
-            self.readingProgressEdge.frame = CGRect(
-                x: viewport.minX + 4 - ReadingProgressEdgeView.glowWidth / 2,
-                y: top, width: ReadingProgressEdgeView.glowWidth,
-                height: max(bottom - top, 0))
-            self.readingProgressEdge.alpha = self.carousel.isImmersed ? 1 : 0
-            self.readingProgressEdge.layoutIfNeeded()
-        }
-        if animated {
-            UIView.animate(
-                withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.32, delay: 0,
+                withDuration: 0.32, delay: 0,
                 options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
-                animations: apply)
+                animations: apply, completion: { [weak self] _ in self?.isIndicatorSliding = false })
         } else {
             apply()
         }

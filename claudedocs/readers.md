@@ -352,12 +352,12 @@ and directional scrolling were also checked in the simulator.
   Scroll and Original/Web pages use a host-managed horizon-point indicator at the
   inline card's trailing edge; the root card host retakes its indicator from the
   presentation controller's completed-dismissal callback (not the short-lived animator).
-  Extracted text in the root card uses `ReadingProgressEdgeView` while card chrome
-  is dismissed: a roughly 2pt, softly glowing Luna-tinted fill grows down the left
-  edge from zero at the top to full at the bottom. It persists while reading stops,
-  tracks restored positions and live reflow, and fades out when chrome returns.
-  The trailing horizon indicator steps aside during this state. RSVP, Original,
-  web, inline overlays, and content that fits without scrolling do not show the fill.
+  The root card's horizon indicator moves to the screen's safe trailing edge when
+  card chrome is dismissed and stays visible between scrolls. The portion above
+  the dot uses a slightly wider, stronger Luna tint to show reading progress,
+  including restored positions and live reflow. Returning to card chrome restores
+  the scroll-triggered fade. RSVP and content that fits without scrolling have
+  no indicator.
   `InlineReaderEclipseScene.sceneFrame` clips both directions to the card content edge,
   never the tabs. Inline scrolling has normal rubber-banding and never dismisses a reader.
 - The old split snapshots/peek views are no longer created. The outgoing live reader

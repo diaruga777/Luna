@@ -579,9 +579,11 @@ final class XteinkPluginMigrationTests: XCTestCase {
     private var kv: PluginKVStore!
     private var previousSettings: (any PluginSettingsStoring)?
     private let pluginID = "app.luna.xteink"
+    private var previousLegacyEnabled = false
 
     override func setUp() {
         super.setUp()
+        previousLegacyEnabled = XteinkSendSettings.isEnabled
         containerURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("xteink-migration-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(
@@ -595,6 +597,7 @@ final class XteinkPluginMigrationTests: XCTestCase {
         PluginPlatformServices.settings = previousSettings
         PluginSecretsStore.shared.removeSecret(pluginID: pluginID, key: "pairingSecret")
         XteinkSendSettings.pairedPeripheralID = nil
+        XteinkSendSettings.isEnabled = previousLegacyEnabled
         try? FileManager.default.removeItem(at: containerURL)
         // The key/value store holds this process's connection to a database
         // that has just been unlinked. Releasing it closes the descriptors.
@@ -655,6 +658,43 @@ final class XteinkPluginMigrationTests: XCTestCase {
 
         XCTAssertEqual(
             secrets.secret(pluginID: pluginID, key: "pairingSecret"), "legacy-secret")
+    }
+
+    func testRepairsDeviceAndEnabledStateAfterAnEarlierPartialMigration() throws {
+        let identifier = "CAFEBABE-0000-1111-2222-333344445555"
+        XteinkSendSettings.pairedPeripheralID = identifier
+        XteinkSendSettings.isEnabled = true
+        try kv.setValueJSON("true", pluginID: pluginID, key: "_migratedFromSwift")
+        PluginSecretsStore.shared.setSecret(
+            "legacy-secret", pluginID: pluginID, key: "pairingSecret")
+        let devices = PluginPairedDeviceStore(store: kv)
+
+        PluginTransportComposition.install(
+            keyValueStore: kv,
+            pairingStore: InMemoryPairingStore(["luna-ios": "legacy-secret"]),
+            pairedDevices: devices)
+
+        XCTAssertEqual(devices.devices(pluginID: pluginID).map(\.id), [identifier])
+        XCTAssertEqual(kv.valueJSON(pluginID: pluginID, key: "device"), "\"\(identifier)\"")
+        XCTAssertEqual(kv.valueJSON(pluginID: pluginID, key: "enabled"), "true")
+    }
+
+    func testExplicitUnpairDoesNotReactivateLegacyPairing() throws {
+        XteinkSendSettings.pairedPeripheralID = "CAFEBABE-0000-1111-2222-333344445555"
+        XteinkSendSettings.isEnabled = true
+        try kv.setValueJSON("true", pluginID: pluginID, key: "_migratedFromSwift")
+        try kv.setValueJSON("false", pluginID: pluginID, key: "enabled")
+        let devices = PluginPairedDeviceStore(store: kv)
+
+        PluginTransportComposition.install(
+            keyValueStore: kv,
+            pairingStore: InMemoryPairingStore(["luna-ios": "legacy-secret"]),
+            pairedDevices: devices)
+
+        XCTAssertTrue(devices.devices(pluginID: pluginID).isEmpty)
+        XCTAssertNil(kv.valueJSON(pluginID: pluginID, key: "device"))
+        XCTAssertEqual(kv.valueJSON(pluginID: pluginID, key: "enabled"), "false")
+        XCTAssertNil(PluginSecretsStore.shared.secret(pluginID: pluginID, key: "pairingSecret"))
     }
 
     func testFreshPluginPairingIsNotReplacedByLegacyMigration() {

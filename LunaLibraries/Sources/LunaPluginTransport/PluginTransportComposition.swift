@@ -75,48 +75,58 @@ public enum PluginTransportComposition {
         pairingStore: any XteinkPairingStoring = XteinkKeychainPairingStore(),
         pairedDevices: PluginPairedDeviceStore = PluginPairedDeviceStore()
     ) {
+        guard let settings = PluginPlatformServices.settings else { return }
+
         let migratedKey = "_migratedFromSwift"
         let migrationFinished = keyValueStore.valueJSON(
             pluginID: xteinkPluginID, key: migratedKey) != nil
-        let pairingSecretKey = XteinkPluginMigration.pairingSecretKey
+        let secretKey = XteinkPluginMigration.pairingSecretKey
+        let deviceKey = XteinkPluginMigration.deviceSettingKey
+        let enabledKey = XteinkPluginMigration.enabledSettingKey
+        let devices = pairedDevices.devices(pluginID: xteinkPluginID)
+        let enabled = settings.valueJSON(pluginID: xteinkPluginID, key: enabledKey)
+        let storedSecret = secrets.secret(pluginID: xteinkPluginID, key: secretKey)
 
-        // A plugin pairing is authoritative. This also lets a fresh install
-        // finish migration after its first plugin-owned pairing without
-        // replacing that secret with stale Swift state on a later launch.
-        if secrets.secret(pluginID: xteinkPluginID, key: pairingSecretKey) != nil {
+        // Unpairing removes the device and explicitly disables the plugin.
+        // Older migrators could resurrect the secret alone on the next launch.
+        if devices.isEmpty && enabled == "false" { return }
+
+        let legacySecret = pairingStore.credential(for: XteinkPluginMigration.hostID)
+        if let storedSecret, storedSecret != legacySecret {
+            // A newer plugin pairing owns its device and credential.
             if !migrationFinished {
                 _ = keyValueStore.setValueJSON(
                     "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
             }
             return
         }
-
-        // Retry this copy even when the old migration marker exists. Earlier
-        // builds wrote the marker before reading Keychain, so a temporarily
-        // unavailable legacy credential could leave the plugin permanently
-        // unpaired while Luna's Swift settings still showed it as paired.
-        guard let secret = pairingStore.credential(for: XteinkPluginMigration.hostID)
-        else { return }
-        secrets.setSecret(secret, pluginID: xteinkPluginID, key: pairingSecretKey)
-        guard secrets.secret(pluginID: xteinkPluginID, key: pairingSecretKey) == secret
-        else { return }
-
-        guard !migrationFinished else { return }
-        if let identifier = XteinkSendSettings.pairedPeripheralID {
-            pairedDevices.add(
-                PluginBluetoothDevice(
-                    id: identifier, name: nil,
-                    serviceUUIDs: [XteinkSyncProtocol.service.uuidString]),
-                pluginID: xteinkPluginID,
-                settingKey: XteinkPluginMigration.deviceSettingKey)
+        guard let legacySecret else { return }
+        if storedSecret == nil {
+            secrets.setSecret(legacySecret, pluginID: xteinkPluginID, key: secretKey)
+            guard secrets.secret(pluginID: xteinkPluginID, key: secretKey) == legacySecret
+            else { return }
         }
-        if XteinkSendSettings.isEnabled {
-            try? PluginPlatformServices.settings?.setValueJSON(
-                "true", pluginID: xteinkPluginID,
-                key: XteinkPluginMigration.enabledSettingKey)
+
+        // The old marker could be written before the shared pairing settings
+        // were committed. Verify both device records even when it exists.
+        if settings.valueJSON(pluginID: xteinkPluginID, key: deviceKey) == nil || devices.isEmpty {
+            if let device = devices.first {
+                pairedDevices.add(device, pluginID: xteinkPluginID, settingKey: deviceKey)
+            } else if let identifier = XteinkSendSettings.pairedPeripheralID {
+                pairedDevices.add(
+                    PluginBluetoothDevice(
+                        id: identifier, name: nil,
+                        serviceUUIDs: [XteinkSyncProtocol.service.uuidString]),
+                    pluginID: xteinkPluginID, settingKey: deviceKey)
+            }
         }
-        _ = keyValueStore.setValueJSON(
-            "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
+        if enabled == nil && XteinkSendSettings.isEnabled {
+            try? settings.setValueJSON("true", pluginID: xteinkPluginID, key: enabledKey)
+        }
+        if !migrationFinished {
+            _ = keyValueStore.setValueJSON(
+                "true", pluginID: xteinkPluginID, key: migratedKey, now: Date())
+        }
     }
 
     /// Opens every set-up plugin's standing connect and scan. A device

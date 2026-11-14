@@ -29,3 +29,11 @@ to the Music tests:
 LUNA_PODCAST_LONG_MP3_FIXTURE=/tmp/luna-two-hour-podcast.mp3 python3 tools/podcast-tests/fixture_server.py
 TEST_RUNNER_LUNA_PODCAST_DOWNLOAD_FIXTURE_URL=http://127.0.0.1:19265 TEST_RUNNER_LUNA_PODCAST_LONG_MP3_FIXTURE=/tmp/luna-two-hour-podcast.mp3 xcodebuild test -scheme LunaMusic -destination 'platform=iOS Simulator,id=<UDID>' -only-testing:LunaMusicTests/PodcastQueueDownloadTests
 ```
+
+
+## YouTube audio duration
+
+`overlong-audio.m4a` contains a generated one-second 440 Hz AAC tone. It was
+encoded with FFmpeg at 16 kHz and 12 kb/s. The version-0 duration fields in
+`mvhd` and `tkhd` and the first segment duration in `elst` were doubled,
+leaving the AAC packet table unchanged.

@@ -117,6 +117,55 @@ import LunaMusicFiles
         let actions = await transport.actions
         XCTAssertFalse(actions.contains(.download)); XCTAssertFalse(actions.contains(.read)); XCTAssertEqual(actions.last, .release)
     }
+    // The fixture is one second of AAC with a two-second M4A edit.
+    private func overlongAudio() throws -> URL {
+        try XCTUnwrap(Bundle(for: Self.self).url(forResource: "overlong-audio", withExtension: "m4a"))
+    }
+    func testDownloadUsesAudioEndInsteadOfOverlongContainerDuration() async throws {
+        let file = try overlongAudio()
+        let containerDuration = try await AVURLAsset(url: file).load(.duration).seconds
+        XCTAssertGreaterThan(containerDuration, 1.8)
+        let controller = YouTubePodcastController(library: library(), directDownload: { _, _, _ in file })
+        let transport = YouTubeTestTransport()
+        attach(transport, to: controller)
+        let audio = try await controller.download(episode(), maximumBytes: 1_000_000, progress: { _ in })
+        XCTAssertEqual(audio.duration, 1, accuracy: 0.1)
+        let actions = await transport.actions
+        XCTAssertFalse(actions.contains(.download))
+    }
+    func testExistingYouTubeDownloadStopsAtAudioEndAndCompletesEpisode() async throws {
+        let file = try overlongAudio()
+        let episode = episode()
+        let library = library()
+        let show = PodcastShow(feedURL: URL(string: "lunamusic://youtube")!, title: "YouTube", id: episode.showID)
+        try library.edit {
+            $0.shows[show.id] = show
+            $0.episodes[episode.id] = episode
+        }
+        let directory = root.appendingPathComponent("Downloads")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let filename = file.lastPathComponent
+        try FileManager.default.copyItem(at: file, to: directory.appendingPathComponent(filename))
+        var record = PodcastDownload(episodeID: episode.id, sourceURL: episode.mediaURL, filename: filename,
+                                     bytes: Int64(try Data(contentsOf: file).count), manual: true, status: "downloaded")
+        record.preparationVersion = 1
+        record.preparedDuration = 2
+        try JSONEncoder().encode([episode.id: record]).write(to: directory.appendingPathComponent("downloads.json"))
+        let downloads = PodcastDownloads(directory: directory, library: library, sessionConfiguration: .ephemeral)
+        let playback = PodcastPlaybackController(library: library, downloads: downloads)
+        defer { playback.pause(); downloads.stop() }
+
+        try await playback.play(episode)
+        let item = try XCTUnwrap(playback.player.currentItem)
+        XCTAssertEqual(item.forwardPlaybackEndTime.seconds, 1, accuracy: 0.1)
+        XCTAssertEqual(playback.duration, 1, accuracy: 0.1)
+        XCTAssertEqual(try XCTUnwrap(downloads.cachedDuration(episode.id)), 1, accuracy: 0.1)
+        for _ in 0..<80 where library.state.progress[episode.id]?.listened != true {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(library.state.progress[episode.id]?.listened, true)
+        XCTAssertEqual(playback.duration, 1, accuracy: 0.1)
+    }
     func testRangedDownloadAssemblesAndInstallsWithoutMacFallback() async throws {
         let library = library(), episode = episode()
         XCTAssertFalse(library.state.settings.cellularDownloads)

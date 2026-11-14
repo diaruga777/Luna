@@ -236,11 +236,38 @@ struct YouTubeDownloadedAudio: Sendable {
         return response
     }
     nonisolated static func validateAudio(_ url: URL) async throws -> Double {
-        let asset = AVURLAsset(url: url)
-        guard try await asset.load(.isPlayable), !(try await asset.loadTracks(withMediaType: .audio)).isEmpty else { throw YouTubeMediaRejection() }
-        let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0 else { throw YouTubeMediaRejection() }
-        return duration
+        do {
+            let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard try await asset.load(.isPlayable) else { throw YouTubeMediaRejection() }
+            let tracks = try await asset.loadTracks(withMediaType: .audio)
+            let duration = try await asset.load(.duration)
+            guard !tracks.isEmpty, duration.isNumeric, duration > .zero else { throw YouTubeMediaRejection() }
+
+            // An M4A edit can extend beyond the last AAC packet. Map the
+            // packet endpoint into the playback timeline to honor real edits,
+            // including leading offsets and encoder priming.
+            var audioEnd = CMTime.zero
+            for track in tracks {
+                guard try await track.load(.canProvideSampleCursors) else { return duration.seconds }
+                guard let last = track.makeSampleCursorAtLastSampleInDecodeOrder() else { continue }
+                let packetEnd = last.presentationTimeStamp + last.currentSampleDuration
+                guard packetEnd.isNumeric else { return duration.seconds }
+                let segments = try await track.load(.segments)
+                for segment in segments where !segment.isEmpty {
+                    let mapping = segment.timeMapping
+                    let sourceEnd = min(mapping.source.end, packetEnd)
+                    guard sourceEnd > mapping.source.start else { continue }
+                    let end = CMTimeMapTimeFromRangeToRange(sourceEnd, fromRange: mapping.source, toRange: mapping.target)
+                    if end.isNumeric { audioEnd = max(audioEnd, end) }
+                }
+            }
+            guard audioEnd > .zero else { throw YouTubeMediaRejection() }
+            return min(duration, audioEnd).seconds
+        } catch {
+            try Task.checkCancellation()
+            if (error as NSError).domain == NSCocoaErrorDomain { throw error }
+            throw YouTubeMediaRejection()
+        }
     }
     nonisolated private static func downloadDirect(_ request: URLRequest, maximumBytes: Int64,
         progress: @escaping @Sendable (Double) -> Void) async throws -> URL {

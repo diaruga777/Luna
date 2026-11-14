@@ -170,13 +170,16 @@ import LunaPodcastCore
         extrasTask?.cancel(); extrasTimeoutTask?.cancel(); sleepTask?.cancel(); bufferingTask?.cancel()
         queueDownloadChime?.stop()
     }
-    private func installItem(_ episode: PodcastEpisode, url: URL, token: UUID) -> AVURLAsset {
+    private func installItem(url: URL, token: UUID, playbackEnd: Double?) -> AVURLAsset {
         let asset = AVURLAsset(url: url, options: [
             AVURLAssetPreferPreciseDurationAndTimingKey: false,
             AVURLAssetAllowsCellularAccessKey: library.state.settings.cellularStreaming
         ])
         // Duration/chapters are not prerequisites for decoding the first audio.
         let item = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: [.tracks])
+        if let playbackEnd {
+            item.forwardPlaybackEndTime = CMTime(seconds: playbackEnd, preferredTimescale: 60_000)
+        }
         item.audioTimePitchAlgorithm = .timeDomain
         item.preferredForwardBufferDuration = url.isFileURL ? 0 : 3
         player.automaticallyWaitsToMinimizeStalling = !url.isFileURL
@@ -303,13 +306,24 @@ import LunaPodcastCore
             }
             stopQueueDownloadChime(); setBuffering(true)
         }
+        var playbackEnd: Double?
+        if episode.youtubeVideoID != nil, let local {
+            let audioEnd = try await downloads.youtubePlaybackDuration(episode.id, url: local)
+            guard token == generation, downloads.localURL(episode.id) == local else { throw CancellationError() }
+            playbackEnd = audioEnd
+            duration = audioEnd
+            if !restorePosition, isAtEnd {
+                position = 0
+                if pendingSeek != nil { pendingSeek = 0 }
+            }
+        }
         let cachedDuration = local == nil ? nil : downloads.cachedDuration(episode.id)
-        let asset = installItem(episode, url: local ?? episode.mediaURL, token: token)
+        let asset = installItem(url: local ?? episode.mediaURL, token: token, playbackEnd: playbackEnd)
         publish()
         // RSS durations can be missing or inaccurate. Resolve the actual end
         // before restoring a saved seek so an EOF position cannot stall startup.
         if restorePosition, position > 0 {
-            if let cachedDuration { duration = cachedDuration }
+            if let knownDuration = playbackEnd ?? cachedDuration { duration = knownDuration }
             else {
                 let length = try? await asset.load(.duration)
                 guard token == generation else { throw CancellationError() }
@@ -329,7 +343,7 @@ import LunaPodcastCore
         // target may win; periodic callbacks must not overwrite it in the meantime.
         repeat {
             let revision = seekGeneration
-            let target = pendingSeek ?? position
+            let target = min(pendingSeek ?? position, playbackEnd ?? .infinity)
             var finished = true
             if target > 0 || pendingSeek != nil { finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
             guard token == generation else { throw CancellationError() }
@@ -640,12 +654,17 @@ import LunaPodcastCore
         let currentTime = player.currentTime().seconds
         if currentTime.isFinite { position = max(0, currentTime) }
         if requestedPlayback, playbackStartTime != nil { updatePlayback() }
-        if let length = player.currentItem?.duration.seconds, length.isFinite { duration = max(0, length) }
+        updateItemDuration()
         if requestedPlayback, actualStartRecorded, isAtEnd {
             let token = generation
             Task { if self.generation == token { await self.ended() } }; return
         }
         if requestedPlayback, Date().timeIntervalSince(lastPersistedAt) >= 5 { persistPositionInBackground(); publish() }
+    }
+    private func updateItemDuration() {
+        guard let item = player.currentItem else { return }
+        let length = (item.forwardPlaybackEndTime.isNumeric ? item.forwardPlaybackEndTime : item.duration).seconds
+        if length.isFinite, length > 0 { duration = length }
     }
     private func receivePlayerRateChange(reason: AVPlayer.RateDidChangeReason, rate: Float) {
         guard reason == .setRateCalled, rate == 0, requestedPlayback, actualStartRecorded,
@@ -664,7 +683,7 @@ import LunaPodcastCore
         if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
             let time = player.currentTime().seconds
             if time.isFinite { position = max(0, time) }
-            if let length = player.currentItem?.duration.seconds, length.isFinite, length > 0 { duration = length }
+            updateItemDuration()
         }
         if player.timeControlStatus == .playing, !requestedPlayback, !isSelecting, !needsPreparation {
             // AVPlayerViewController's video Play button bypasses our transport.

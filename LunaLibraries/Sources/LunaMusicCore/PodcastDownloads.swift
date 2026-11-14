@@ -23,6 +23,7 @@ public struct PodcastDownload: Codable, Equatable {
 }
 @MainActor public final class PodcastDownloads: NSObject, ObservableObject {
     public static let shared = PodcastDownloads()
+    private static let youtubePreparationVersion = 2
     public static let sessionIdentifier = (Bundle.main.bundleIdentifier ?? "LunaMusic") + ".podcast-downloads"
     @Published public private(set) var downloads: [String: PodcastDownload] = [:]
     @Published public private(set) var progress: [String: Double] = [:]
@@ -151,6 +152,19 @@ public struct PodcastDownload: Codable, Equatable {
         guard downloads[id]?.status == "downloaded", let value = downloads[id]?.preparedDuration, value.isFinite, value > 0 else { return nil }
         return value
     }
+    func youtubePlaybackDuration(_ id: String, url: URL) async throws -> Double {
+        if downloads[id]?.preparationVersion == Self.youtubePreparationVersion, let duration = cachedDuration(id) {
+            return duration
+        }
+        let original = downloads[id]
+        let duration = try await YouTubePodcastController.validateAudio(url)
+        try Task.checkCancellation()
+        if downloads[id] == original, localURL(id) == url {
+            downloads[id]?.preparationVersion = Self.youtubePreparationVersion
+            cacheDuration(duration, for: id)
+        }
+        return duration
+    }
     func cachedChapters(_ id: String) -> [PodcastChapter] { downloads[id]?.preparedChapters ?? [] }
     func cacheDuration(_ duration: Double, for id: String) {
         guard duration.isFinite, duration > 0, downloads[id]?.status == "downloaded" else { return }
@@ -257,7 +271,7 @@ public struct PodcastDownload: Codable, Equatable {
             // Keep the inbox original until the manifest commits, allowing replay.
             try FileManager.default.copyItem(at: url, to: target)
             record.filename = name; record.bytes = bytes; record.status = "downloaded"
-            record.preparationVersion = 1; record.preparedDuration = duration
+            record.preparationVersion = Self.youtubePreparationVersion; record.preparedDuration = duration
         } else {
             record.status = "failed"; record.error = failure?.0 ?? "The download was interrupted. Try again."
         }
@@ -430,7 +444,7 @@ public struct PodcastDownload: Codable, Equatable {
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
                 try FileManager.default.moveItem(at: audio.url, to: target)
                 record.filename = name; record.bytes = bytes; record.status = "downloaded"; record.error = nil
-                record.preparationVersion = 1; record.preparedDuration = audio.duration
+                record.preparationVersion = Self.youtubePreparationVersion; record.preparedDuration = audio.duration
                 downloads[id] = record
                 await completed(id)
             } catch {
@@ -574,7 +588,9 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
             }
             guard self.tasks[id] === downloadTask, var record = self.downloads[id] else { return }
             do {
-                if self.library.state.episodes[id]?.youtubeVideoID != nil {
+                let isYouTube = self.library.state.episodes[id]?.youtubeVideoID != nil
+                var youtubeDuration: Double?
+                if isYouTube {
                     do {
                         let budget = self.youtubeDirectBudgets[id] ?? max(0, self.library.state.settings.maximumDownloadBytes - self.totalBytes)
                         switch try YouTubeAudioTransfer.receive(staged, response: http, request: downloadTask.originalRequest,
@@ -599,12 +615,13 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                     }
                     handedOff = self.finishYouTubeDirect(id, task: downloadTask, result: .success(audio))
                     if handedOff { return }
-                    do { _ = try await YouTubePodcastController.validateAudio(audio) }
+                    do { youtubeDuration = try await YouTubePodcastController.validateAudio(audio) }
                     catch {
-                        if (error as NSError).domain == NSCocoaErrorDomain { throw error }
+                        guard YouTubeAudioFailurePolicy.shouldUseMac(error) else { throw error }
                         await self.fallbackToMac(id, task: downloadTask)
                         return
                     }
+                    guard !self.isStopped, self.tasks[id] === downloadTask else { return }
                 }
                 let bytes = (try FileManager.default.attributesOfItem(atPath: audio.path)[.size] as? NSNumber)?.int64Value ?? 0
                 guard bytes > 0 else { throw PodcastError("The downloaded file is empty.") }
@@ -613,8 +630,12 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                 }
                 let prepareAudio = self.prepareAudio
                 let source = audio
+                let verifiedDuration = youtubeDuration
                 let preparation = Task.detached(priority: .utility) {
-                    try await prepareAudio(source, type, suffix)
+                    if let verifiedDuration {
+                        return PodcastAudioPreparation.Result(url: source, duration: verifiedDuration, chapters: [])
+                    }
+                    return try await prepareAudio(source, type, suffix)
                 }
                 self.preparationTasks[id] = preparation
                 let background = UIApplication.shared.beginBackgroundTask(withName: "Prepare Podcast Download") {
@@ -645,13 +666,14 @@ extension PodcastDownloads: URLSessionDownloadDelegate {
                 guard self.accepts(id, bytes: installedBytes) else {
                     self.discardFile(id); await self.completed(id); return
                 }
-                let ext = self.library.state.episodes[id]?.youtubeVideoID != nil ? "m4a" : ready != audio ? "mov" : (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
+                let ext = isYouTube ? "m4a" : ready != audio ? "mov" : (["mp3", "mp4", "m4a", "m4v", "aac", "ogg", "wav"].contains(suffix) ? suffix : "mp3")
                 let name = PodcastIdentity.hash(id + record.sourceURL.absoluteString) + "." + ext
                 let target = self.directory.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
                 try FileManager.default.moveItem(at: ready, to: target)
                 record.filename = name; record.bytes = installedBytes; record.status = "downloaded"; record.error = nil
-                record.preparationVersion = prepared.duration == nil ? nil : 1; record.preparedDuration = prepared.duration; record.preparedChapters = prepared.chapters
+                record.preparationVersion = isYouTube ? Self.youtubePreparationVersion : prepared.duration == nil ? nil : 1
+                record.preparedDuration = prepared.duration; record.preparedChapters = prepared.chapters
                 self.downloads[id] = record; await self.completed(id)
             } catch {
                 if self.finishYouTubeDirect(id, task: downloadTask, result: .failure(error)) { return }

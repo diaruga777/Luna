@@ -1151,6 +1151,12 @@ An interrupted Mac transfer can be retried from podcast download management;
 the Mac must stay awake and reachable, and iOS may interrupt this app-owned leg
 when its background execution time expires.
 
+YouTube audio uses the last AAC packet mapped through the M4A track edits to
+bound playback. Some containers advertise a longer timeline than their packets
+cover. Luna caches the playable duration and uses it for seeking and queue
+completion. Previously downloaded YouTube episodes recheck the file the next
+time they play.
+
 Successful files enter the ordinary podcast download manifest, byte budget,
 queue-priority scheduler, offline player and played-file cleanup. Failed requests
 remain retryable in **Settings → Manage Downloads**. Queue removal/preemption

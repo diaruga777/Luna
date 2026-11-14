@@ -21,6 +21,7 @@
 		09AAEDDBCBA24888AE40F172 /* LunaAppConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 09AAEDDBCBA24888AE40F182 /* LunaAppConfig */; };
 		09AAEDDBCBA24888AE40F173 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 5C5700000000000000000019 /* LunaDesignSystem */; };
 		0AF3B4DBF93F94F22A70018D /* streaming.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 75FE42BE0F1D02815923EBEE /* streaming.mp4 */; };
+		2F90749AB04F7B8F94D7DA22 /* overlong-audio.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 2F90749AB04F7B8F94D7DA23 /* overlong-audio.m4a */; };
 		0E364F037900DFE8EE05D301 /* MusicForegroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EC366961D0DDCA274FF600 /* MusicForegroundTests.swift */; };
 		1035975DE5BA12AD4041AB68 /* LunaVaultMacPeer in Frameworks */ = {isa = PBXBuildFile; productRef = 2AE6B0FB3D19E5D48DF97533 /* LunaVaultMacPeer */; };
 		1090D4F7EBA5D174EF0AB0E9 /* LaunchPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB76A6ED9BF11562981FC803 /* LaunchPerformanceTests.swift */; };
@@ -429,6 +430,7 @@
 		74B0259E128466C14EF8AA28 /* MusicAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MusicAppIntents.swift; path = Integrations/MusicAppIntents.swift; sourceTree = "<group>"; };
 		74CD6EE98F165406B6FB1A7D /* MusicQueueSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicQueueSnapshotTests.swift; sourceTree = "<group>"; };
 		75FE42BE0F1D02815923EBEE /* streaming.mp4 */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; name = streaming.mp4; path = LunaMusicTests/Fixtures/streaming.mp4; sourceTree = "<group>"; };
+		2F90749AB04F7B8F94D7DA23 /* overlong-audio.m4a */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; name = overlong-audio.m4a; path = LunaMusicTests/Fixtures/overlong-audio.m4a; sourceTree = "<group>"; };
 		779796B9295EA073B753939F /* LunaKeyboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaKeyboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		792607BC9C838F5A24AFF73A /* LunaKeyboardExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaKeyboardExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
@@ -1037,6 +1039,7 @@
 				B292E99EC6F65ABE0EFE72A6 /* LunaKeyboardTests */,
 				4DBDC5123246D26C00187E9A /* Assets.xcassets */,
 				75FE42BE0F1D02815923EBEE /* streaming.mp4 */,
+				2F90749AB04F7B8F94D7DA23 /* overlong-audio.m4a */,
 				A572F228E4E07AE97C781EA9 /* LunaKeyboardShare */,
 				04C249079D314D19EB926468 /* LunaMusicShare */,
 				E0CCC6325402977A1BE6F437 /* LunaWriterShare */,
@@ -1926,6 +1929,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0AF3B4DBF93F94F22A70018D /* streaming.mp4 in Resources */,
+				2F90749AB04F7B8F94D7DA22 /* overlong-audio.m4a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

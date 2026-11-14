@@ -87,8 +87,10 @@ import LunaPodcastCore
             currentEpisode = episode; position = library.state.progress[id]?.position ?? 0; duration = downloads.cachedDuration(episode.id) ?? episode.duration
             rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         }
-        // Recover a completed saved item without taking audio ownership on launch.
-        if let episode = currentEpisode, isAtEnd || library.state.progress[episode.id]?.listened == true,
+        // Recover confirmed completion without opening the media at launch.
+        // RSS estimates can be shorter than the actual episode.
+        if let episode = currentEpisode,
+           hasReachedEnd(of: downloads.cachedDuration(episode.id)) || library.state.progress[episode.id]?.listened == true,
            let next = library.state.queue.compactMap({ library.state.episodes[$0] }).first {
             do {
                 try library.edit {
@@ -231,19 +233,14 @@ import LunaPodcastCore
     private func select(_ episode: PodcastEpisode, restorePosition: Bool = false, queueInterruptedEpisode: Bool = false,
                         preservingQueue: Bool = false, chimeWhileLoading: Bool = false) async throws {
         stopQueueDownloadChime()
-        // Capture the outgoing clock before replacing its item. A pending seek
-        // already owns `position` and must not be overwritten by the old clock.
-        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
-            let time = player.currentTime().seconds
-            if time.isFinite { position = max(0, time) }
-        }
+        updatePositionFromPlayer()
         var interruptedID: String?
         if queueInterruptedEpisode, let currentEpisode, currentEpisode.id != episode.id,
-           !isAtEnd, library.state.progress[currentEpisode.id]?.listened != true {
+           !isAtMediaEnd, library.state.progress[currentEpisode.id]?.listened != true {
             interruptedID = currentEpisode.id
         }
         let retainedPosition = restorePosition && currentEpisode?.id == episode.id ? position : nil
-        persistPosition()
+        savePosition()
         willPlay?()
         let token = UUID(); generation = token; isSelecting = true
         bufferingTask?.cancel(); bufferingTask = nil
@@ -256,7 +253,6 @@ import LunaPodcastCore
         currentEpisode = episode; duration = downloads.cachedDuration(episode.id) ?? episode.duration
         let saved = library.state.progress[episode.id]
         position = saved?.listened == true ? 0 : max(0, retainedPosition ?? saved?.position ?? 0)
-        if isAtEnd { position = 0 }
         rate = library.state.shows[episode.showID]?.settings.playbackRate ?? 1
         var local = downloads.localURL(episode.id)
         let removesQueuedEpisode = !preservingQueue && (library.state.queue.contains(episode.id) || library.state.continuation.contains(episode.id))
@@ -312,28 +308,25 @@ import LunaPodcastCore
             guard token == generation, downloads.localURL(episode.id) == local else { throw CancellationError() }
             playbackEnd = audioEnd
             duration = audioEnd
-            if !restorePosition, isAtEnd {
-                position = 0
-                if pendingSeek != nil { pendingSeek = 0 }
-            }
         }
         let cachedDuration = local == nil ? nil : downloads.cachedDuration(episode.id)
         let asset = installItem(url: local ?? episode.mediaURL, token: token, playbackEnd: playbackEnd)
         publish()
         // RSS durations can be missing or inaccurate. Resolve the actual end
         // before restoring a saved seek so an EOF position cannot stall startup.
-        if restorePosition, position > 0 {
-            if let knownDuration = playbackEnd ?? cachedDuration { duration = knownDuration }
-            else {
+        if position > 0, restorePosition || hasReachedEnd(of: duration) {
+            var mediaDuration = playbackEnd ?? cachedDuration
+            if mediaDuration == nil {
                 let length = try? await asset.load(.duration)
                 guard token == generation else { throw CancellationError() }
                 if let seconds = length?.seconds, seconds.isFinite, seconds > 0 {
-                    duration = seconds
+                    mediaDuration = seconds
                     if local != nil { downloads.cacheDuration(seconds, for: episode.id) }
                 }
             }
-            if isAtEnd {
-                if !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
+            if let mediaDuration { duration = mediaDuration }
+            if pendingSeek == nil, hasReachedEnd(of: mediaDuration) {
+                if restorePosition, !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
                     try await advanceCompleted(autoplay: requestedPlayback, natural: false); return
                 }
                 position = 0; pendingSeek = 0
@@ -361,7 +354,9 @@ import LunaPodcastCore
     }
     private func resume(preservingQueue: Bool) async throws {
         guard let episode = currentEpisode ?? library.state.queue.compactMap({ library.state.episodes[$0] }).first else { return }
-        if isAtEnd {
+        let completedWithoutItem = player.currentItem == nil && currentEpisode?.id == episode.id &&
+            library.state.progress[episode.id]?.listened == true
+        if isAtMediaEnd || completedWithoutItem {
             if !preservingQueue, library.state.queue.contains(where: { library.state.episodes[$0] != nil }) {
                 try await advanceCompleted(autoplay: true, natural: false); return
             }
@@ -376,7 +371,7 @@ import LunaPodcastCore
         // the complete local asset so reconnecting never requires publisher I/O.
         let local = downloads.localURL(episode.id)
         let switchToLocal = local != nil && (player.currentItem?.asset as? AVURLAsset)?.url != local
-        guard !isAtEnd, player.currentItem != nil, player.currentItem?.status != .failed,
+        guard !isAtMediaEnd, player.currentItem != nil, player.currentItem?.status != .failed,
               !isSelecting, !needsPreparation, !switchToLocal else { return false }
         willPlay?()
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
@@ -392,7 +387,7 @@ import LunaPodcastCore
     public func resumeLastPodcast(pauseImmediately: Bool = false) async throws {
         logState(pauseImmediately ? "intent.prime" : "intent.resume")
         try Task.checkCancellation()
-        if pauseImmediately, retainsPlaybackSession, session.isActive, !isAtEnd,
+        if pauseImmediately, retainsPlaybackSession, session.isActive, !isAtMediaEnd,
            currentEpisode.map({ library.state.progress[$0.id]?.listened != true }) == true,
            player.currentItem != nil, player.currentItem?.status != .failed,
            !isSelecting, !needsPreparation,
@@ -526,10 +521,6 @@ import LunaPodcastCore
     public func pause() {
         remotePlaybackTask?.cancel()
         playbackRevision = UUID()
-        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
-            let time = player.currentTime().seconds
-            if time.isFinite { position = max(0, time) }
-        }
         sessionActivation.cancel(); clearPlaybackStart()
         requestedPlayback = false; player.pause(); isPlaying = false; setBuffering(false)
         if isSelecting { generation = UUID(); seekGeneration = UUID(); pendingSeek = nil; finishSeek(false); isSelecting = false; needsPreparation = true; player.currentItem?.cancelPendingSeeks(); extrasTask?.cancel(); extrasTask = nil; extrasTimeoutTask?.cancel(); isLoadingTranscript = false; isLoadingChapters = false }
@@ -579,7 +570,14 @@ import LunaPodcastCore
         }
         return .success
     }
-    private var isAtEnd: Bool { duration.isFinite && duration > 0 && position >= duration - 0.05 }
+    private func hasReachedEnd(of length: Double?) -> Bool {
+        guard let length, length.isFinite, length > 0 else { return false }
+        return position >= length - 0.05
+    }
+    private var isAtMediaEnd: Bool {
+        if !needsPreparation, let item = player.currentItem { return hasReachedEnd(of: itemPlaybackEnd(item)) }
+        return hasReachedEnd(of: currentEpisode.flatMap { downloads.cachedDuration($0.id) })
+    }
     public func seek(to seconds: Double, completion: ((Bool) -> Void)? = nil) {
         guard seconds.isFinite, let episode = currentEpisode else { completion?(false); return }
         playbackRevision = UUID()
@@ -592,15 +590,16 @@ import LunaPodcastCore
             try library.edit { state in
                 var progress = state.progress[episode.id] ?? PodcastEpisodeState()
                 progress.position = target; progress.updatedAt = Date()
-                if !isAtEnd { progress.listened = false; progress.completedAt = nil }
+                if !hasReachedEnd(of: duration) { progress.listened = false; progress.completedAt = nil }
                 state.progress[episode.id] = progress
                 state.currentEpisodeID = episode.id
             }
         }
         catch { errorMessage = error.localizedDescription }
         publish()
-        if isAtEnd {
-            pendingSeek = nil; finishSeek(false)
+        if hasReachedEnd(of: duration) {
+            // Keep this target until the queued completion handles it.
+            finishSeek(false)
             let autoplay = requestedPlayback
             let token = generation
             Task {
@@ -647,15 +646,18 @@ import LunaPodcastCore
             }
         }
     }
+    @discardableResult private func updatePositionFromPlayer() -> Bool {
+        guard !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil else { return false }
+        // Sample the current clock. A queued observer can carry an obsolete time.
+        let time = player.currentTime().seconds
+        if time.isFinite { position = max(0, time) }
+        return true
+    }
     private func tick() {
-        guard !isSelecting, !needsPreparation, !isCompleting, pendingSeek == nil, player.currentItem != nil else { return }
-        // Read the current item now: a queued periodic callback can belong to an
-        // earlier seek/item and carry an obsolete time.
-        let currentTime = player.currentTime().seconds
-        if currentTime.isFinite { position = max(0, currentTime) }
+        guard !isCompleting, updatePositionFromPlayer() else { return }
         if requestedPlayback, playbackStartTime != nil { updatePlayback() }
         updateItemDuration()
-        if requestedPlayback, actualStartRecorded, isAtEnd {
+        if requestedPlayback, actualStartRecorded, isAtMediaEnd {
             let token = generation
             Task { if self.generation == token { await self.ended() } }; return
         }
@@ -663,12 +665,15 @@ import LunaPodcastCore
     }
     private func updateItemDuration() {
         guard let item = player.currentItem else { return }
-        let length = (item.forwardPlaybackEndTime.isNumeric ? item.forwardPlaybackEndTime : item.duration).seconds
+        let length = itemPlaybackEnd(item)
         if length.isFinite, length > 0 { duration = length }
+    }
+    private func itemPlaybackEnd(_ item: AVPlayerItem) -> Double {
+        (item.forwardPlaybackEndTime.isNumeric ? item.forwardPlaybackEndTime : item.duration).seconds
     }
     private func receivePlayerRateChange(reason: AVPlayer.RateDidChangeReason, rate: Float) {
         guard reason == .setRateCalled, rate == 0, requestedPlayback, actualStartRecorded,
-              !isSelecting, !needsPreparation, pendingSeek == nil, !isAtEnd, playbackStartTime == nil else { return }
+              !isSelecting, !needsPreparation, pendingSeek == nil, !isAtMediaEnd, playbackStartTime == nil else { return }
         // AVPlayerViewController can pause directly, bypassing our commands.
         // System interruption rate changes must retain the request until the
         // audio session tells us whether playback should resume.
@@ -676,13 +681,11 @@ import LunaPodcastCore
         requestedPlayback = false
         sessionActivation.cancel(); clearPlaybackStart()
         setBuffering(false)
-        updatePlayback(); persistPosition()
+        updatePlayback(); savePosition()
         logState("native.pause")
     }
     private func updatePlayback() {
-        if !isSelecting, !needsPreparation, pendingSeek == nil, player.currentItem != nil {
-            let time = player.currentTime().seconds
-            if time.isFinite { position = max(0, time) }
+        if updatePositionFromPlayer() {
             updateItemDuration()
         }
         if player.timeControlStatus == .playing, !requestedPlayback, !isSelecting, !needsPreparation {
@@ -739,7 +742,7 @@ import LunaPodcastCore
         let sleepAtEnd = sleepAtEpisodeEnd
         let shouldPlay = autoplay && !sleepAtEnd
         clearPlaybackStart()
-        persistPosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
+        savePosition(); requestedPlayback = false; isPlaying = false; setBuffering(false)
         player.pause(); player.replaceCurrentItem(with: nil); needsPreparation = true
         actualStartRecorded = false
         let store = try library.requireStore()
@@ -794,6 +797,10 @@ import LunaPodcastCore
         }
     }
     public func persistPosition() {
+        updatePositionFromPlayer()
+        savePosition()
+    }
+    private func savePosition() {
         positionSaveTask?.cancel()
         guard let id = currentEpisode?.id, actualStartRecorded else { return }
         do { try library.requireStore().recordPosition(id, position: position); library.reloadState(); lastPersistedAt = Date() }

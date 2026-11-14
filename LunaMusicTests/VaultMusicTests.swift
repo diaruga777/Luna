@@ -1391,6 +1391,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
     func testResumeIntentKeepsRestoredNextEpisodeAfterCompletedLastPlayed() async throws {
         try library.requireStore().recordPlaybackStarted(episodes[0].id)
         try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        try library.requireStore().markListened(episodes[0].id, true)
         try library.edit { $0.queue = [episodes[1].id, episodes[2].id] }
         playback = PodcastPlaybackController(library: library, downloads: downloads)
         XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
@@ -1445,6 +1446,7 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
     func testPlayingAnotherEpisodeDoesNotRequeueCompletedEpisode() async throws {
         try library.requireStore().recordPlaybackStarted(episodes[0].id)
         try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        try library.requireStore().markListened(episodes[0].id, true)
         library.reloadState()
         playback = PodcastPlaybackController(library: library, downloads: downloads)
         try await playback.play(episodes[1])
@@ -1526,6 +1528,33 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try await playback.resume(); try await waitFor { playback.isPlaying }
         XCTAssertLessThan(playback.position, 2)
     }
+    func testBackgroundCheckpointSavesLiveClock() async throws {
+        try await startQueue()
+        try await waitFor { playback.player.currentTime().seconds - playback.position > 0.15 }
+        let livePosition = playback.player.currentTime().seconds
+        playback.persistPosition()
+
+        let reopened = try PodcastStore(url: library.requireStore().url)
+        XCTAssertEqual(reopened.state.progress[episodes[0].id]?.position ?? -1, livePosition, accuracy: 0.05)
+    }
+
+    func testColdResumeKeepsPositionBeyondUnderreportedFeedDuration() async throws {
+        var episode = episodes[0]; episode.duration = 60
+        try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episodes[1].id] }
+        try library.requireStore().recordPlaybackStarted(episode.id)
+        try library.requireStore().recordPosition(episode.id, position: 80)
+        library.reloadState()
+
+        playback = PodcastPlaybackController(library: library, downloads: downloads)
+        XCTAssertEqual(playback.currentEpisode?.id, episode.id)
+        XCTAssertEqual(library.state.queue, [episodes[1].id])
+        try await playback.resume(); try await waitFor { playback.isPlaying }
+        XCTAssertEqual(playback.currentEpisode?.id, episode.id)
+        XCTAssertEqual(playback.player.currentTime().seconds, 80, accuracy: 1)
+        XCTAssertFalse(library.state.progress[episode.id]?.listened == true)
+        XCTAssertEqual(library.state.queue, [episodes[1].id])
+    }
+
     func testMissingFeedDurationRecoversSavedEOFIntoQueuedEpisode() async throws {
         var episode = episodes[0]; episode.duration = 0
         try library.edit { $0.episodes[episode.id] = episode; $0.queue = [episodes[1].id] }
@@ -1669,9 +1698,10 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)
         XCTAssertFalse(playback.isPlaying); XCTAssertEqual(library.state.queue, [episodes[2].id])
     }
-    func testRestorationRecoversTerminalPositionAndPendingNextPaused() throws {
+    func testRestorationRecoversCompletedEpisodeAndPendingNextPaused() throws {
         try library.requireStore().recordPlaybackStarted(episodes[0].id)
         try library.requireStore().recordPosition(episodes[0].id, position: 180)
+        try library.requireStore().markListened(episodes[0].id, true)
         try library.edit { $0.queue = [episodes[1].id, episodes[2].id] }
         playback = PodcastPlaybackController(library: library, downloads: downloads)
         XCTAssertEqual(playback.currentEpisode?.id, episodes[1].id)

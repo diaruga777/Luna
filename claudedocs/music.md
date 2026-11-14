@@ -780,6 +780,18 @@ actions and queue editing. Player artwork/queue layouts were inspected. These
 checks establish simulator behavior; the reported physical-device session,
 headphones and AirPlay have not been reproduced by this change.
 
+### Podcast position checkpoints and resume
+
+Pause and background checkpoints read the live player clock when the current
+item is ready. An in-flight seek keeps its requested position until the player
+finishes the seek. The regular five-second checkpoint still covers playback
+between those events.
+
+Cold restore can recover a completed episode from its completion marker or
+cached download timing. When only an RSS duration is available, Luna checks
+the media when playback is requested before treating a saved position as the
+end. This preserves the queue when a feed underreports the episode length.
+
 ### Local podcast cold-start resume (2026-10-14)
 
 Launch restores only the saved episode identity, position and cached duration from

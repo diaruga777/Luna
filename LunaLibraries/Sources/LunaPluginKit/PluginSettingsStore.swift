@@ -3,6 +3,9 @@ import Foundation
 /// Schema-aware settings storage. Secret fields use the same bare Keychain key
 /// as `luna.secrets.get(key)`; the ordinary database contains only a set marker.
 public final class PluginSettingsStore: PluginSettingsStoring {
+    /// The object is the plugin ID. The notification carries the key only.
+    public static let settingDidChange = Notification.Name("luna.plugin.settingDidChange")
+
     private let values: PluginKVStore
     private let secrets: PluginSecretsStore
     private let fields: (String) -> [PluginSettingField]
@@ -39,6 +42,8 @@ public final class PluginSettingsStore: PluginSettingsStoring {
     public func setValueJSON(_ json: String?, pluginID: String, key: String) throws {
         guard isSecret(pluginID: pluginID, key: key) else {
             try values.setValueJSON(json, pluginID: pluginID, key: key)
+            NotificationCenter.default.post(
+                name: Self.settingDidChange, object: pluginID, userInfo: ["key": key])
             return
         }
         let secret: String?

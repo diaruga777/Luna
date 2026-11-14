@@ -182,7 +182,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         isStarted = true
         lock.unlock()
         let radio = radio()
-        guard radio.state == .poweredOn else { return }
+        guard radio.state == .poweredOn, liveSession?.isLive != true else { return }
         if declaration.standingConnect {
             for device in pairedDevices.devices(pluginID: pluginID) {
                 radio.connect(deviceID: device.id)
@@ -191,6 +191,23 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         radio.startScan(services: declaration.services)
     }
 
+    func refreshConfiguration() {
+        if isPermittedToStart {
+            start()
+            return
+        }
+        lock.lock()
+        let wasStarted = isStarted
+        isStarted = false
+        lock.unlock()
+        guard wasStarted, let radio = existingRadio else { return }
+
+        radio.stopScan()
+        var deviceIDs = Set(pairedDevices.devices(pluginID: pluginID).map(\.id))
+        if let liveSession { deviceIDs.insert(liveSession.device.id) }
+        for id in deviceIDs { radio.cancelConnection(deviceID: id) }
+        closeSession(reason: .disconnected)
+    }
 
     // MARK: - Pairing
 
@@ -234,7 +251,8 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
                     pairedDevices.add(
                         device, pluginID: pluginID, settingKey: pairedDeviceSettingKey)
                     dispatch(.paired(device))
-                    radio.connect(deviceID: device.id)
+                    // The plugin's explicit connect installs its waiter before
+                    // the reader can connect and start an authenticated sweep.
                     completion(.success(device))
                 }
             }
@@ -288,7 +306,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         lock.lock()
         let started = isStarted
         lock.unlock()
-        if state == .poweredOn, started { start() }
+        if state == .poweredOn, started { refreshConfiguration() }
     }
 
     public func bluetoothTransportDidConnect(
@@ -323,7 +341,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         lock.unlock()
         waiter?(.failure(.disconnected))
         dispatch(.disconnected(device, error: error))
-        if started { start() }
+        if started { refreshConfiguration() }
     }
 
     public func bluetoothTransport(

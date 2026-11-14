@@ -1,15 +1,17 @@
 # Send to Xteink
 
-**Two implementations, one reader.** Luna Reader runs the Swift path this
-document describes. **Central Luna runs it as a bundled PLUGIN**,
-`LunaBundledPlugins/Plugins/xteink.js`, over `luna.bluetooth` / `luna.wifi`
-(`LunaPluginTransport`, `claudedocs/plans/plugin-platform.md` §10): the
-plugin owns the rendezvous sweep, the transfer and its own settings screen,
-and `KindWiring+Luna` installs no `XteinkBLECentral`. Both processes take one
-`BluetoothServiceLock` keyed by the CrossPoint service UUID, so only one of
-them ever talks to a given window. Every wire behaviour below is shared, and
-`XteinkPluginTests` pins the plugin against the same protocol — a fix to one
-side that is not mirrored is a fix that only half the apps get.
+Luna Reader uses the bundled `LunaBundledPlugins/Plugins/xteink.js` plugin over
+`luna.bluetooth` and `luna.wifi`. The plugin owns the sweep, transfers and
+settings. The Swift transport described here remains a reference implementation
+of the same wire protocol. Both implementations use a `BluetoothServiceLock`
+keyed by the CrossPoint service UUID, and `XteinkPluginTests` tests the plugin
+against the protocol.
+
+On launch, the plugin can recover the legacy pairing secret, device record and
+enabled preference even if an earlier migration recorded completion before all
+three were saved. An explicit Unpair or disabled preference takes precedence.
+Changing **Send to Xteink** in the plugin settings starts or stops Bluetooth
+listening immediately. Pairing enables it once the reader accepts the handshake.
 
 Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
 email is involved. Luna builds a compressed EPUB with one small monochrome banner and

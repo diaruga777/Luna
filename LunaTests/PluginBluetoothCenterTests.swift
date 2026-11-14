@@ -245,6 +245,34 @@ final class PluginBluetoothCenterTests: XCTestCase {
         XCTAssertTrue(center.isPermittedToStart)
     }
 
+    func testTogglingSyncStartsAndStopsListeningWithoutForegrounding() throws {
+        let fields = [
+            PluginSettingField(key: "enabled", type: .toggle, label: "On"),
+            PluginSettingField(key: "device", type: .pairedDevice, label: "Reader", isRequired: true)
+        ]
+        let settings = PluginSettingsStore(values: kv) { _ in fields }
+        PluginPlatformServices.settings = settings
+        let paired = PluginPairedDeviceStore(store: kv)
+        paired.add(device, pluginID: pluginID, settingKey: "device")
+        let centers = PluginBluetoothCenterStore(makers: maker, pairedDevices: paired, invoker: invoker)
+        centers.center(
+            pluginID: pluginID,
+            declaration: PluginBluetoothDeclaration(
+                services: [serviceUUID], pairing: .accessorySetupKit, standingConnect: true),
+            pairedDeviceSettingKey: "device", settingFields: fields)
+        centers.startAll()
+        XCTAssertTrue(maker.transport.calls.isEmpty)
+
+        try settings.setValueJSON("true", pluginID: pluginID, key: "enabled")
+        XCTAssertEqual(maker.transport.calls, ["connect(\(device.id))", "startScan(\(serviceUUID))"])
+
+        try settings.setValueJSON("false", pluginID: pluginID, key: "enabled")
+        XCTAssertEqual(Array(maker.transport.calls.suffix(2)), ["stopScan", "cancel(\(device.id))"])
+
+        maker.transport.fireDisconnect(device)
+        XCTAssertEqual(maker.transport.calls.last, "cancel(\(device.id))")
+    }
+
     /// The standing connect is what saves a short wake window: CoreBluetooth
     /// keeps a pending connect open and completes it the instant the device
     /// advertises, so no scan-discovery race can lose the window.

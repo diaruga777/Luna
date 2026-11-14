@@ -124,6 +124,7 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
                 parkedConnects.insert(deviceID)
                 return
             }
+            parkedConnects.remove(deviceID)
             adopt(match)
             standing[deviceID] = match
             manager.connect(match)
@@ -132,6 +133,7 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
 
     public func cancelConnection(deviceID: String) {
         queue.async { [self] in
+            parkedConnects.remove(deviceID)
             if let peripheral = peripherals[deviceID] {
                 manager?.cancelPeripheralConnection(peripheral)
             }
@@ -301,12 +303,10 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
 extension CoreBluetoothPluginTransport: CBCentralManagerDelegate {
 
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        let parked = parkedConnects
-        parkedConnects = []
         if central.state == .poweredOn { resumeRestoredPeripherals(central) }
         transportDelegate?.bluetoothTransportDidChangeState(state)
         guard central.state == .poweredOn else { return }
-        for deviceID in parked { connect(deviceID: deviceID) }
+        for deviceID in parkedConnects { connect(deviceID: deviceID) }
     }
 
     public func centralManager(

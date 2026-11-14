@@ -32,6 +32,7 @@ public final class PluginBluetoothCenterStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private var centers: [String: PluginBluetoothCenter] = [:]
+    private var settingsObserver: NSObjectProtocol?
 
     public init(
         makers: any PluginTransportMaking,
@@ -41,6 +42,10 @@ public final class PluginBluetoothCenterStore: @unchecked Sendable {
         self.makers = makers
         self.pairedDevices = pairedDevices
         self.invoker = invoker
+    }
+
+    deinit {
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
     }
 
     /// The center for `pluginID`, built on first ask.
@@ -80,6 +85,19 @@ public final class PluginBluetoothCenterStore: @unchecked Sendable {
     /// up. A plugin nobody paired opens no scan, so it triggers no Bluetooth
     /// permission prompt.
     public func startAll() {
-        for center in all where center.isPermittedToStart { center.start() }
+        lock.lock()
+        if settingsObserver == nil {
+            settingsObserver = NotificationCenter.default.addObserver(
+                forName: PluginSettingsStore.settingDidChange, object: nil, queue: nil
+            ) { [weak self] notification in
+                guard notification.userInfo?["key"] as? String == "enabled",
+                      let pluginID = notification.object as? String
+                else { return }
+                self?.existingCenter(pluginID: pluginID)?.refreshConfiguration()
+            }
+        }
+        lock.unlock()
+
+        for center in all { center.refreshConfiguration() }
     }
 }

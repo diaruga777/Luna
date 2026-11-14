@@ -1147,6 +1147,65 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
     }
 
+    func testImmersedArticleKeepsItsScrollIndicatorAtTheSafeTrailingEdge() throws {
+        let controller = makeArticleController(
+            seed: "immersed-scroll-indicator", title: "Immersed Scroll Indicator")
+        let indicator = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? HorizonScrollIndicator }.first)
+        let restingFrame = indicator.frame
+        XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        XCTAssertTrue(controller.carousel.isImmersed)
+        XCTAssertFalse(indicator.isHidden)
+        XCTAssertEqual(indicator.alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(indicator.frame.maxX,
+                       controller.view.safeAreaLayoutGuide.layoutFrame.maxX, accuracy: 0.5)
+        XCTAssertGreaterThan(indicator.frame.maxX, restingFrame.maxX)
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        XCTAssertEqual(indicator.frame.maxX, restingFrame.maxX, accuracy: 0.5)
+        XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
+    }
+
+    func testHorizonIndicatorFillsTheTrackAboveTheCurrentPosition() throws {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        scrollView.contentSize = CGSize(width: 320, height: 1_200)
+        scrollView.contentInset = UIEdgeInsets(top: 20, left: 0, bottom: 20, right: 0)
+        let indicator = HorizonScrollIndicator.makeHosted()
+        indicator.frame = scrollView.bounds
+        indicator.trackInsets = .zero
+        indicator.keepsVisible = true
+        indicator.track(scrollView)
+        let strokes = try XCTUnwrap(indicator.layer.sublayers).compactMap { $0 as? CAShapeLayer }
+        let track = try XCTUnwrap(strokes.first)
+        let progress = try XCTUnwrap(strokes.last)
+        XCTAssertGreaterThan(progress.lineWidth, track.lineWidth)
+        XCTAssertGreaterThan(try XCTUnwrap(progress.strokeColor).alpha,
+                             try XCTUnwrap(track.strokeColor).alpha)
+
+        scrollView.contentOffset.y = -40
+        indicator.layoutIfNeeded()
+        XCTAssertNil(progress.path)
+
+        scrollView.contentOffset.y = 360
+        indicator.layoutIfNeeded()
+        XCTAssertEqual(try XCTUnwrap(progress.path).boundingBox.height, 240, accuracy: 0.5)
+        XCTAssertEqual(indicator.alpha, 1, accuracy: 0.001)
+
+        scrollView.contentOffset.y = 800
+        indicator.layoutIfNeeded()
+        XCTAssertEqual(try XCTUnwrap(progress.path).boundingBox.height, 480, accuracy: 0.5)
+    }
+
     func testArchiveArcFadesWithCardChromeDuringImmersion() throws {
         let controller = makeArticleController(seed: "archive-arc-chrome", title: "Arc Chrome")
         let tray = try XCTUnwrap(controller.archiveTray)

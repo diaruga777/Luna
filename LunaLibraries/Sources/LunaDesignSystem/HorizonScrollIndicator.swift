@@ -41,15 +41,15 @@ public enum ScrollPresentationState {
 
 /// A custom vertical scroll indicator drawn in the "moon horizon" visual
 /// language of `MoonHorizonProgressBar`, rotated upright: a thin, faint tinted
-/// line for the full scroll track and one brilliant point of light — the sun
-/// core with its radial bloom — riding it at the current scroll position.
+/// line for the full scroll track, a stronger tint for the distance read, and
+/// a point of light at the current scroll position.
 ///
 /// Unlike the system indicator (which lives inside the scroll view and so sits
 /// at the scroll view's own trailing edge), this overlay is pinned to the
 /// trailing edge of whatever container it's installed in, so it hugs the edge
 /// of the screen even when the scrolled content is inset from it. It hides the
-/// scroll view's native indicator and mirrors its behaviour: it flashes in as
-/// you scroll and fades out once you stop.
+/// scroll view's native indicator. By default it flashes while you scroll,
+/// then fades when you stop. A host can keep it visible while reading.
 ///
 /// Two ways to use it:
 /// - `install(on:in:)` — the self-installed overlay above: pinned by Auto Layout
@@ -74,11 +74,15 @@ public final class HorizonScrollIndicator: UIView {
     /// The faint track evokes the progress bar's lit line but unlit: same app
     /// hue, low alpha, so the bright point clearly reads as the head.
     private static let trackAlpha: CGFloat = 0.22
+    private static let progressAlpha: CGFloat = 0.55
+    private static let progressWidth: CGFloat = 2
     private static let idleFadeDelay: TimeInterval = 1.1
 
     private weak var scrollView: UIScrollView?
     private var offsetObservation: NSKeyValueObservation?
     private var sizeObservation: NSKeyValueObservation?
+    private var boundsObservation: NSKeyValueObservation?
+    private var insetObservation: NSKeyValueObservation?
     private var hideWorkItem: DispatchWorkItem?
     /// Host-managed indicators are placed and sized by their owner and never
     /// self-remove; self-installed ones retreat when trapped inside a card.
@@ -89,11 +93,24 @@ public final class HorizonScrollIndicator: UIView {
     /// (self-installed mode) the track mirrors the scroll view's own content
     /// insets, since the overlay is pinned to the scroll view's extent.
     public var trackInsets: UIEdgeInsets? {
-        didSet { setNeedsLayout() }
+        didSet {
+            if trackInsets != oldValue { setNeedsLayout() }
+        }
+    }
+
+    /// Keeps the indicator visible whenever its tracked content can scroll.
+    public var keepsVisible = false {
+        didSet {
+            guard keepsVisible != oldValue else { return }
+            hideWorkItem?.cancel()
+            hideWorkItem = nil
+            alpha = keepsVisible && scrollView != nil ? 1 : 0
+        }
     }
 
     /// The faint per-app-tinted track line spanning the scrollable range.
     private let trackLayer = CAShapeLayer()
+    private let progressLayer = CAShapeLayer()
     /// The sun's steep radial bloom around the point.
     private let bloomLayer = CAGradientLayer()
     /// The white-hot core point itself.
@@ -149,6 +166,11 @@ public final class HorizonScrollIndicator: UIView {
         trackLayer.lineWidth = Self.lineWidth
         layer.addSublayer(trackLayer)
 
+        progressLayer.fillColor = nil
+        progressLayer.lineCap = .round
+        progressLayer.lineWidth = Self.progressWidth
+        layer.addSublayer(progressLayer)
+
         bloomLayer.type = .radial
         bloomLayer.bounds = CGRect(
             x: 0, y: 0, width: Self.bloomDiameter, height: Self.bloomDiameter)
@@ -166,7 +188,7 @@ public final class HorizonScrollIndicator: UIView {
         layer.addSublayer(coreLayer)
 
         updateColors()
-        registerForTraitChanges([LunaSkyTrait.self]) {
+        registerForTraitChanges([LunaSkyTrait.self, UITraitUserInterfaceStyle.self]) {
             (self: Self, _: UITraitCollection) in self.updateColors()
         }
     }
@@ -181,14 +203,16 @@ public final class HorizonScrollIndicator: UIView {
     public func track(_ scrollView: UIScrollView?) {
         guard scrollView !== self.scrollView else { return }
         // A newly-centered carousel card must not inherit the outgoing card's
-        // in-flight flash/fade presentation. Retargeting is structural, not a
-        // scroll gesture, so always begin the new surface fully quiet.
+        // in-flight flash/fade presentation. The host's visibility policy
+        // determines whether the new surface starts visible.
         hideWorkItem?.cancel()
         hideWorkItem = nil
         layer.removeAllAnimations()
-        alpha = 0
+        alpha = keepsVisible && scrollView != nil ? 1 : 0
         offsetObservation = nil
         sizeObservation = nil
+        boundsObservation = nil
+        insetObservation = nil
         self.scrollView = scrollView
         guard let scrollView else {
             setNeedsLayout()
@@ -199,6 +223,13 @@ public final class HorizonScrollIndicator: UIView {
             [weak self] _, _ in self?.scrollChanged()
         }
         sizeObservation = scrollView.observe(\.contentSize) {
+            [weak self] _, _ in self?.setNeedsLayout()
+        }
+        boundsObservation = scrollView.observe(\.bounds, options: [.old, .new]) {
+            [weak self] _, change in
+            if change.oldValue?.size != change.newValue?.size { self?.setNeedsLayout() }
+        }
+        insetObservation = scrollView.observe(\.adjustedContentInset) {
             [weak self] _, _ in self?.setNeedsLayout()
         }
         setNeedsLayout()
@@ -232,9 +263,7 @@ public final class HorizonScrollIndicator: UIView {
     public override func layoutSubviews() {
         super.layoutSubviews()
         guard let scrollView else {
-            trackLayer.isHidden = true
-            bloomLayer.isHidden = true
-            coreLayer.isHidden = true
+            setDrawingHidden(true)
             return
         }
 
@@ -244,17 +273,6 @@ public final class HorizonScrollIndicator: UIView {
         let visibleHeight = scrollView.bounds.height - scrollInsetTop - scrollInsetBottom
         let range = max(scrollView.contentSize.height - visibleHeight, 0)
 
-        // Nothing to scroll → nothing to show.
-        guard range > 0.5, visibleHeight > 0 else {
-            trackLayer.isHidden = true
-            bloomLayer.isHidden = true
-            coreLayer.isHidden = true
-            return
-        }
-        trackLayer.isHidden = false
-        bloomLayer.isHidden = false
-        coreLayer.isHidden = false
-
         // …while the track's on-screen extent comes from THIS view's bounds:
         // self-installed, it's pinned to the scroll view so mirroring the scroll
         // insets lines up; host-managed, the owner supplies the insets.
@@ -262,22 +280,39 @@ public final class HorizonScrollIndicator: UIView {
             ?? UIEdgeInsets(top: scrollInsetTop, left: 0, bottom: scrollInsetBottom, right: 0)
         let trackTop = insets.top
         let trackBottom = bounds.height - insets.bottom
+        guard range > 0.5, visibleHeight > 0, trackBottom > trackTop, bounds.width > 0 else {
+            setDrawingHidden(true)
+            return
+        }
         let lineX = bounds.width - Self.trailingMargin
+        let start = CGPoint(x: lineX, y: trackTop)
 
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: lineX, y: trackTop))
+        path.move(to: start)
         path.addLine(to: CGPoint(x: lineX, y: trackBottom))
 
         let fraction = min(1, max(0, (scrollView.contentOffset.y + scrollInsetTop) / range))
         let pointY = trackTop + fraction * (trackBottom - trackTop)
         let head = CGPoint(x: lineX, y: pointY)
+        let progress = CGMutablePath()
+        progress.move(to: start)
+        progress.addLine(to: head)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        setDrawingHidden(false)
         trackLayer.path = path
+        progressLayer.path = fraction > 0 ? progress : nil
         bloomLayer.position = head
         coreLayer.position = head
         CATransaction.commit()
+    }
+
+    private func setDrawingHidden(_ hidden: Bool) {
+        trackLayer.isHidden = hidden
+        progressLayer.isHidden = hidden
+        bloomLayer.isHidden = hidden
+        coreLayer.isHidden = hidden
     }
 
     // MARK: - Colours
@@ -286,6 +321,7 @@ public final class HorizonScrollIndicator: UIView {
         let sunlight = MoonHorizonStyle.sunlight.resolvedColor(with: traitCollection)
         let sunCore = MoonHorizonStyle.sunCore.resolvedColor(with: traitCollection)
         trackLayer.strokeColor = sunlight.withAlphaComponent(Self.trackAlpha).cgColor
+        progressLayer.strokeColor = sunlight.withAlphaComponent(Self.progressAlpha).cgColor
         bloomLayer.colors = [
             sunCore.cgColor,
             sunCore.withAlphaComponent(MoonHorizonStyle.headBloomInnerAlpha).cgColor,
@@ -305,7 +341,7 @@ public final class HorizonScrollIndicator: UIView {
         // Those internal updates should move the indicator head but must not
         // flash it as though the reader dragged the page. This also keeps a
         // deferred full-article swap after card paging visually silent.
-        guard let scrollView,
+        guard !keepsVisible, let scrollView,
               scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
         else { return }
         flash()

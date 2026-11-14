@@ -476,11 +476,8 @@ final class ArticleExtractorTests: XCTestCase {
 
     // MARK: - Structural line breaks inside one block
 
-    /// Paris Review regression: the paragraphs of a quoted passage are separated by
-    /// `<br><br>` with NO whitespace character around them, and `<br>` contributed
-    /// nothing to the walk — so the quote read "…the best of his feeling.The
-    /// discipline of the written word…". A structural break must become a space.
-    func testBRBetweenSentencesBecomesASpace() throws {
+    /// Paris Review separates quoted paragraphs with adjacent `<br>` tags.
+    func testRepeatedBRInQuotePreservesBlankLine() throws {
         let html = """
         <html><body><article>
         <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
@@ -492,14 +489,14 @@ final class ArticleExtractorTests: XCTestCase {
         let quote = try XCTUnwrap(content.blocks.first { $0.kind == .quote })
         XCTAssertEqual(
             quote.text,
-            "A man who writes a story is forced to put into it the best of his feeling. "
+            "A man who writes a story is forced to put into it the best of his feeling.\n\n"
             + "The discipline of the written word punishes both stupidity and dishonesty.")
     }
 
     /// The same loss through the other route: a `<p>` nested in a `<blockquote>` is
     /// skipped as its own block (it has a block ancestor) and walked as part of the
     /// one quote, so the two paragraphs' text nodes met with nothing between them.
-    func testNestedParagraphsInAQuoteAreSpaceSeparated() throws {
+    func testNestedParagraphsInAQuotePreserveParagraphBreak() throws {
         let html = """
         <html><body><article>
         <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
@@ -510,7 +507,7 @@ final class ArticleExtractorTests: XCTestCase {
         let content = try extractor.extract(html: html, baseURL: baseURL)
         let quote = try XCTUnwrap(content.blocks.first { $0.kind == .quote })
         XCTAssertEqual(
-            quote.text, "First quoted sentence ends here. Second quoted sentence starts here.")
+            quote.text, "First quoted sentence ends here.\n\nSecond quoted sentence starts here.")
     }
 
     /// The synthesized break collapses against real whitespace (never a double space,
@@ -520,13 +517,14 @@ final class ArticleExtractorTests: XCTestCase {
         let html = """
         <html><body><article>
         <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
-        <p><br>Read <a href="https://example.com/a">the first source</a>.<br> <a href="https://example.com/b">the second source</a> continues here.</p>
+        <p><br>Read <a href="https://example.com/a">the first source</a>. <br>
+            <a href="https://example.com/b">the second source</a><br hidden> continues here.<br></p>
         <p>Closing paragraph with plenty of words to keep the article container scoring dominant.</p>
         </article></body></html>
         """
         let content = try extractor.extract(html: html, baseURL: baseURL)
         let block = try XCTUnwrap(content.blocks.first { $0.text.hasPrefix("Read ") })
-        XCTAssertEqual(block.text, "Read the first source. the second source continues here.")
+        XCTAssertEqual(block.text, "Read the first source.\nthe second source continues here.")
         XCTAssertFalse(block.text.contains("  "))
         let text = block.text as NSString
         XCTAssertEqual(block.links.count, 2)
@@ -534,6 +532,37 @@ final class ArticleExtractorTests: XCTestCase {
             let slice = text.substring(with: NSRange(location: link.start, length: link.length))
             XCTAssertEqual(slice, link.urlString.hasSuffix("/a") ? "the first source" : "the second source")
         }
+    }
+
+    func testSectionBreaksOnlyDecorateFollowingBlocks() throws {
+        let html = """
+        <article>
+        <hr><p>Opening with enough ordinary prose for the containing article to be recognized.</p>
+        <hr hidden><div style="display: none"><hr></div><p></p><p>Another ordinary paragraph.</p>
+        <div><hr></div><br><p>After one rule.</p>
+        <p><br></p><p>After a blank paragraph.</p>
+        <p>&nbsp;</p><p>After a nonbreaking space.</p>
+        <br><p>After a standalone break.</p><hr>
+        </article>
+        """
+        let article = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertEqual(article.blocks.count, 6)
+        XCTAssertEqual(article.blocks.map(\.sectionBreakBefore), [nil, nil, .rule, .space, .space, .space])
+    }
+
+    func testBreakInsideParagraphLikeDivKeepsBothSides() throws {
+        let article = try extractor.convertTrusted(
+            fragmentHTML: """
+            <p>Opening paragraph.</p><div>First line of the story.<br>
+            Second line of the story.<hr>Continuation of the story.</div><p>Closing paragraph.</p>
+            """,
+            baseURL: baseURL, title: "Article", author: nil)
+        XCTAssertEqual(article.blocks.map(\.text), [
+            "Opening paragraph.",
+            "First line of the story.\nSecond line of the story.\n\nContinuation of the story.",
+            "Closing paragraph.",
+        ])
+        XCTAssertTrue(article.blocks.allSatisfy { $0.sectionBreakBefore == nil })
     }
 
     /// Inline markup must NOT gain a space — `<em>`/`<strong>`/`<a>` render on the

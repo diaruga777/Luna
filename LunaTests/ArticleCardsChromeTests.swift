@@ -549,6 +549,94 @@ final class ArticleCardsChromeTests: XCTestCase {
     }
 
     @MainActor
+    func testScrollDismissalCommitsOnceTransitionalLinesLeaveTheViewport() async throws {
+        let content = UITestState.tableOfContents.fixture.contents.values.first
+        let controller = makeArticleController(
+            seed: "commit-scroll-dismissal", title: "Scroll dismissal", content: content)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let reader = try XCTUnwrap(card.rabbitHoleReader?.focusedScrollReader)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+
+        reader.prepareFullContent()
+        await reader.fullContentTaskForTesting?.value
+        controller.view.layoutIfNeeded()
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        let tracker = ScrollDirectionImmersionTracker()
+
+        controller.toggleImmersion(for: card)
+        XCTAssertFalse(card.canReverseScrollDismissal(tracker, in: text),
+                       "A tap starts in fullscreen without arming scroll reversal")
+        controller.toggleImmersion(for: card)
+
+        text.contentOffset.y = 0
+        let initial = text.contentOffset.y
+        card.immersionTracker(tracker, didChangeImmersion: true, extendsCard: true)
+        XCTAssertTrue(card.canReverseScrollDismissal(tracker, in: text))
+        XCTAssertTrue(reader.hasVisibleLinesOutsideDestinationColumn)
+        XCTAssertGreaterThan(text.contentSize.height - text.bounds.height - text.contentOffset.y, 800)
+        card.immersionTracker(tracker, didChangeImmersion: false, extendsCard: true)
+        XCTAssertFalse(controller.carousel.isImmersed)
+        controller.view.layoutIfNeeded()
+        card.view.layoutIfNeeded()
+        reader.view.layoutIfNeeded()
+        XCTAssertEqual(text.bounds.width, card.view.bounds.width, accuracy: 0.5)
+        XCTAssertFalse(reader.hasVisibleLinesOutsideDestinationColumn)
+
+        card.immersionTracker(tracker, didChangeImmersion: true, extendsCard: true)
+        text.contentOffset.y += text.bounds.height + 200
+        XCTAssertFalse(reader.hasVisibleLinesOutsideDestinationColumn)
+        XCTAssertFalse(card.canReverseScrollDismissal(tracker, in: text))
+        text.contentOffset.y = initial
+        XCTAssertTrue(reader.hasVisibleLinesOutsideDestinationColumn)
+        XCTAssertFalse(card.canReverseScrollDismissal(tracker, in: text),
+                       "Revisiting the retained lines must not reopen a completed transition")
+        XCTAssertTrue(controller.carousel.isImmersed)
+    }
+
+    @MainActor
+    func testScrollDismissalCanReverseWhileChromeIsStillAnimating() async throws {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let content = UITestState.tableOfContents.fixture.contents.values.first
+        let controller = makeArticleController(
+            seed: "reverse-animating-dismissal", title: "Scroll dismissal", content: content)
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let reader = try XCTUnwrap(card.rabbitHoleReader?.focusedScrollReader)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: card.view))
+        reader.prepareFullContent()
+        await reader.fullContentTaskForTesting?.value
+        controller.view.layoutIfNeeded()
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+        let tracker = ScrollDirectionImmersionTracker()
+        text.contentOffset.y = 0
+        card.immersionTracker(tracker, didChangeImmersion: true, extendsCard: true)
+        let titlePresentation = try XCTUnwrap(allSubviews(in: card.view).first {
+            $0.accessibilityIdentifier == "reader.header.reflow"
+        })
+        text.contentOffset.y += text.bounds.height + 200
+        XCTAssertFalse(reader.hasVisibleLinesOutsideDestinationColumn)
+        XCTAssertTrue(card.canReverseScrollDismissal(tracker, in: text))
+
+        let oldCanvasWidth = text.bounds.width
+        card.immersionTracker(tracker, didChangeImmersion: false, extendsCard: true)
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(text.bounds.width, oldCanvasWidth, accuracy: 0.5)
+        XCTAssertTrue(titlePresentation.isDescendant(of: card.view),
+                      "Reverse the same title presentation from its current frame")
+
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(text.bounds.width, card.view.bounds.width, accuracy: 0.5)
+        XCTAssertFalse(titlePresentation.isDescendant(of: card.view))
+    }
+
+    @MainActor
     func testScrollExpansionWidensSeveralIncomingLinesWithoutMovingThemOnScroll() throws {
         let container = ScrollStableTextContainer(size: .zero)
         let manager = ScrollStableLayoutManager()
@@ -587,6 +675,12 @@ final class ArticleCardsChromeTests: XCTestCase {
             XCTAssertLessThan(pair.1.1.minX, pair.0.1.minX)
         }
         container.finishLinePresentation(in: text)
+        let lastRampLine = try XCTUnwrap(ramp.last?.1)
+        text.contentOffset.y = lastRampLine.maxY + text.textContainerInset.top - 1
+        XCTAssertTrue(container.hasVisibleLinesOutsideDestinationColumn(in: text))
+        text.contentOffset.y += 1
+        XCTAssertFalse(container.hasVisibleLinesOutsideDestinationColumn(in: text),
+                       "The transition ends when the final partial-width line clears the edge")
         text.contentOffset.y = 800
         manager.ensureLayout(for: container)
         for (range, rect) in fragments {
@@ -1395,7 +1489,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         seed: String,
         title: String,
         senderName: String? = nil,
-        size: CGSize = CGSize(width: 402, height: 874)
+        size: CGSize = CGSize(width: 402, height: 874),
+        content: ArticleContent? = nil
     ) -> ArticleCardsViewController {
         var item = SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: title,
@@ -1405,8 +1500,8 @@ final class ArticleCardsChromeTests: XCTestCase {
             item.senderName = senderName
             item.incomingSenderEmail = "sender@example.com"
         }
-        let content = UITestFixtures.sampleArticleContent(title: title)
-        SavesStore.shared.seedForTesting(items: [item], contents: [item.id: content])
+        let article = content ?? UITestFixtures.sampleArticleContent(title: title)
+        SavesStore.shared.seedForTesting(items: [item], contents: [item.id: article])
         let controller = ArticleCardsViewController()
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(origin: .zero, size: size)

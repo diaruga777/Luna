@@ -14,7 +14,7 @@
 //  - Going fullscreen fades the peeking side cards and bottom scrub strip, and
 //    expands Scroll into the safe width. Wide windows browse a continuous two-row preview grid;
 //    tapping or vertically scrolling a visible card expands it for reading.
-//    Portrait phones keep directional scroll chrome (down hides, up restores).
+//    Portrait phones dismiss chrome while scrolling down and can reverse an unfinished dismissal.
 //    In RSVP, playing fades them out and pausing fades them back. Scroll
 //    mastheads join the content while chrome is dismissed; RSVP's stays fixed.
 //  - Long-pressing a card exposes its archive action through a context menu.
@@ -348,7 +348,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         }
         isAudioToggleSliding = true
         UIView.animate(
-            withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
+            withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
             animations: { self.readerAudioButton.transform = target },
             completion: { [weak self] _ in self?.isAudioToggleSliding = false })
     }
@@ -911,7 +911,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         updateBottomModeSwitcher(immersed: immersed, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
-            options: [.curveEaseInOut, .allowUserInteraction]
+            options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState]
         ) {
             self.footerContentFade.alpha = immersed && extendsCard ? 1 : 0
         }
@@ -1250,6 +1250,9 @@ final class ReaderCardContentViewController: CardContentViewController,
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private var scrollDrivenViewportTransition = false
+    private weak var reversibleScrollView: UIScrollView?
+    private var isAnimatingScrollDismissal = false
+    private var isReversingScrollDismissal = false
     private var preservedScrollTitleSize: CGSize?
     private var preparedViewportWidth: CGFloat?
     private var baseTopContentInset: CGFloat = 0
@@ -1304,17 +1307,30 @@ final class ReaderCardContentViewController: CardContentViewController,
         // reaching the article's end owes the content a compensating slide.
         let restoringAtArticleEnd = !immersed && extendsCard && isFocusedContentAtEnd
         let extensionBeforeRestore = immersionBottomExtension
-        // The card's 0.32s immersion animation changes viewport height and can
-        // adjust contentOffset while the original pan is still decelerating. Ignore
-        // those synthetic offsets so they cannot reverse this transition and
-        // start an endless sequence of width animations.
-        tracker.suppressScrollDrivenImmersion(for: 0.45)
-        scrollDrivenViewportTransition = true
-        defer { scrollDrivenViewportTransition = false }
+        scrollDrivenViewportTransition = extendsCard
+        isReversingScrollDismissal = !immersed && extendsCard && !restoringAtArticleEnd
+            && reversibleScrollView != nil
+        defer {
+            scrollDrivenViewportTransition = false
+            isReversingScrollDismissal = false
+        }
         delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
         if restoringAtArticleEnd {
             keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
         }
+    }
+
+    func canReverseScrollDismissal(
+        _ tracker: ScrollDirectionImmersionTracker, in scrollView: UIScrollView
+    ) -> Bool {
+        guard scrollView === reversibleScrollView, scrollView === titleScrollView else { return false }
+        if isAnimatingScrollDismissal
+            || rabbitHoleReader?.focusedScrollReader?.hasVisibleLinesOutsideDestinationColumn == true {
+            return true
+        }
+        // Once fullscreen is reached, revisiting narrower lines cannot reopen it.
+        reversibleScrollView = nil
+        return false
     }
 
     func immersionBottomExtension(for tracker: ScrollDirectionImmersionTracker) -> CGFloat {
@@ -1705,11 +1721,14 @@ final class ReaderCardContentViewController: CardContentViewController,
     /// RSVP has no scroll surface and keeps its title fixed.
     func setCardChromeVisible(_ visible: Bool, animated: Bool) {
         cardChromeVisible = visible
+        if visible { reversibleScrollView = nil }
         updatePinnedTitleVisibility(animated: animated)
     }
 
     override func prepareForCardViewportTransition(to size: CGSize, originDelta: CGPoint = .zero) {
-        viewportTitlePresentation?.finish()
+        let reversingTitle = isReversingScrollDismissal && isAnimatingScrollDismissal
+            ? viewportTitlePresentation : nil
+        if reversingTitle == nil { viewportTitlePresentation?.finish() }
         viewportTitlePresentation = nil
         titleHeader.isHidden = false
         scrollTitleHeader.isHidden = false
@@ -1721,6 +1740,8 @@ final class ReaderCardContentViewController: CardContentViewController,
         if let carousel = parent as? CardCarouselViewController {
             cardChromeVisible = !carousel.isImmersed
         }
+        isAnimatingScrollDismissal = scrollDrivenViewportTransition && !cardChromeVisible
+        reversibleScrollView = isAnimatingScrollDismissal ? titleScrollView : nil
         if scrollDrivenViewportTransition {
             preservedScrollTitleSize = preservedScrollTitleSize ?? scrollTitleHeader.bounds.size
             preparedViewportWidth = size.width
@@ -1738,7 +1759,8 @@ final class ReaderCardContentViewController: CardContentViewController,
             viewportTransitionScrollReader = scrollReader
             scrollReader.prepareForCardViewportTransition(
                 to: size, destinationTopChromeInset: contentTitleHeight,
-                preservingVisibleLines: scrollDrivenViewportTransition, originDelta: originDelta)
+                preservingVisibleLines: scrollDrivenViewportTransition, originDelta: originDelta,
+                restoringUniformColumnOnCompletion: isReversingScrollDismissal)
         }
         let destinationFrame: CGRect
         if cardChromeVisible || titleScrollView == nil {
@@ -1753,8 +1775,9 @@ final class ReaderCardContentViewController: CardContentViewController,
         }
         // One presentation moves from pinned to scrolling (or back). Crossfading
         // two copies produces doubled glyphs even a few points below the top.
-        viewportTitlePresentation = source.prepareReflow(
+        viewportTitlePresentation = reversingTitle ?? source.prepareReflow(
             to: destinationFrame, viewportWidth: size.width, in: view)
+        reversingTitle?.returnToSource = true
         if scrollDrivenViewportTransition, !cardChromeVisible {
             viewportTitleScrollOffset = titleScrollView?.contentOffset.y
         }
@@ -1776,6 +1799,10 @@ final class ReaderCardContentViewController: CardContentViewController,
         viewportTitleScrollOffset = nil
         titleHeader.isHidden = false
         scrollTitleHeader.isHidden = false
+        isAnimatingScrollDismissal = false
+        if let reversibleScrollView {
+            _ = canReverseScrollDismissal(immersionTracker, in: reversibleScrollView)
+        }
         synchronizeScrollableTitleHeader()
     }
 
@@ -1786,6 +1813,7 @@ final class ReaderCardContentViewController: CardContentViewController,
     private func synchronizeScrollableTitleHeader() {
         let focused = rabbitHoleReader?.focusedContentScrollView
         if focused !== titleScrollView {
+            reversibleScrollView = nil
             preservedScrollTitleSize = nil
             pendingProgrammaticTitleUpdate?.cancel()
             pendingProgrammaticTitleUpdate = nil
@@ -2147,14 +2175,20 @@ private final class ReaderCardTitleHeaderView: UIView {
         let destination: CGRect
         let destinationIcon: CGRect
         let canvasSize: CGSize
+        private let sourceFrame: CGRect
+        private let sourceIconFrame: CGRect
+        var returnToSource = false
 
         init(source: ReaderCardTitleHeaderView, destination: ReaderCardTitleHeaderView, in host: UIView) {
-            let sourceFrame = source.bannerCrop.convert(source.bannerCrop.bounds, to: host)
+            let sourceCrop = source.bannerCrop.convert(source.bannerCrop.bounds, to: host)
             let destinationFrame = destination.bannerCrop.convert(destination.bannerCrop.bounds, to: host)
             // Fully offscreen headers can start/end just beyond the clip. A
             // deep reading offset must not make the title race thousands of
             // points or arrive only in the last frame of a chrome restore.
-            let sourceShift = max(0, -sourceFrame.height - sourceFrame.minY)
+            let sourceShift = max(0, -sourceCrop.height - sourceCrop.minY)
+            sourceFrame = sourceCrop.offsetBy(dx: 0, dy: sourceShift)
+            sourceIconFrame = source.iconView.convert(source.iconView.bounds, to: host)
+                .offsetBy(dx: 0, dy: sourceShift)
             let destinationShift = max(0, -destinationFrame.height - destinationFrame.minY)
             self.destination = destinationFrame.offsetBy(dx: 0, dy: destinationShift)
             canvasSize = source.bannerView.bounds.size
@@ -2165,7 +2199,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             surface.alpha = source.alpha
             surface.accessibilityIdentifier = "reader.header.reflow"
             host.addSubview(surface)
-            crop = UIView(frame: sourceFrame.offsetBy(dx: 0, dy: sourceShift))
+            crop = UIView(frame: sourceFrame)
             crop.clipsToBounds = true
             crop.backgroundColor = source.backgroundColor
             surface.addSubview(crop)
@@ -2184,8 +2218,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             icon.contentMode = .scaleAspectFit
             icon.layer.cornerRadius = source.iconView.layer.cornerRadius
             icon.clipsToBounds = true
-            icon.frame = source.iconView.convert(source.iconView.bounds, to: host)
-                .offsetBy(dx: 0, dy: sourceShift)
+            icon.frame = sourceIconFrame
             destinationIcon = destination.iconView.convert(destination.iconView.bounds, to: host)
                 .offsetBy(dx: 0, dy: destinationShift)
             surface.addSubview(icon)
@@ -2200,11 +2233,13 @@ private final class ReaderCardTitleHeaderView: UIView {
         }
 
         func animate() {
-            crop.frame = destination
-            canvas.frame.origin.x = (destination.width - canvasSize.width) / 2
+            let frame = returnToSource ? sourceFrame : destination
+            surface.transform = .identity
+            crop.frame = frame
+            canvas.frame.origin.x = (frame.width - canvasSize.width) / 2
             treatment.frame = crop.bounds
-            icon.frame = destinationIcon
-            glyphs.animate()
+            icon.frame = returnToSource ? sourceIconFrame : destinationIcon
+            glyphs.animate(returnToSource: returnToSource)
         }
 
         func finish() { surface.removeFromSuperview() }

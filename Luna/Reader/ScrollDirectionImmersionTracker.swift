@@ -32,6 +32,11 @@ protocol ReaderImmersionTrackerDelegate: AnyObject {
         _ tracker: ScrollDirectionImmersionTracker,
         didChangeImmersion immersed: Bool, extendsCard: Bool)
 
+    /// Whether this scroll view's dismissal can still run in reverse.
+    func canReverseScrollDismissal(
+        _ tracker: ScrollDirectionImmersionTracker, in scrollView: UIScrollView
+    ) -> Bool
+
     /// How much taller the live, immersed card is than its resting footprint —
     /// i.e. how far the card's bottom edge travels back UP when the chrome
     /// returns. It does not gate the bottom restore (the article's end can never
@@ -73,22 +78,14 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
     }
 
     private var scrollObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
-    /// A card resize changes the reader's TextKit layout and content offset.
-    /// Those programmatic offsets arrive while UIKit still reports the user's
-    /// pan/deceleration as active, so they must not be counted as another
-    /// direction change during the card's reflow animation.
-    private var ignoreScrollOffsetsUntil: TimeInterval = 0
+    /// Ignore synchronous TextKit and UIKit offset writes during a card resize.
+    private var applyingScrollImmersion = false
     /// Per scroll view: the last seen offset and the directional run since the
     /// last direction flip (positive = scrolling down the article).
     private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
 
-    /// Downward travel (pt) before the chrome fades away…
+    /// Downward travel (pt) before the chrome fades away.
     private static let fadeOutTravel: CGFloat = 100
-    /// …and the upward travel that deliberately signals surfacing. Kept close
-    /// to `fadeOutTravel` rather than well under it: a value much smaller let a
-    /// brief correction scroll while reading on — or a decelerating scroll's
-    /// natural rebound — bring the chrome back unintentionally.
-    private static let fadeInTravel: CGFloat = 90
     /// A downward reading gesture this close to the bottom must not dismiss
     /// chrome. The position-driven bottom restore is about to take ownership,
     /// and letting the directional rule fire in the same region makes the two
@@ -144,85 +141,65 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
         }
     }
 
-    /// Ignores transient content-offset changes caused by a host layout
-    /// transition. The next real scroll seeds a fresh directional baseline.
-    func suppressScrollDrivenImmersion(for duration: TimeInterval) {
-        ignoreScrollOffsetsUntil = max(
-            ignoreScrollOffsetsUntil, ProcessInfo.processInfo.systemUptime + max(0, duration))
-        scrollRuns = [:]
-    }
-
-    /// Direction-driven, not position-driven: scrolling down (reading on)
-    /// fades the carousel chrome away; scrolling up — from anywhere in the
-    /// article — fades it back in. Travel accumulates per direction and
-    /// resets on a flip, so line-height jitter can't toggle the state, and
-    /// `isDragging`/`isDecelerating` keeps restore-position and
-    /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
+        guard isActive, allowsScrollDrivenImmersion, !applyingScrollImmersion,
+              !ScrollPresentationState.isSuppressed(for: scrollView) else { return }
         let key = ObjectIdentifier(scrollView)
-        guard !ScrollPresentationState.isSuppressed(for: scrollView) else { return }
-        guard ProcessInfo.processInfo.systemUptime >= ignoreScrollOffsetsUntil else {
-            scrollRuns[key] = nil
-            return
-        }
-        guard isActive, allowsScrollDrivenImmersion,
-              scrollView.isDragging || scrollView.isDecelerating
-        else {
+        // Sample eligibility on every offset so the host can commit fullscreen
+        // when the last transitional line leaves, even during a fling or a jump.
+        let canReverse = delegate?.canReverseScrollDismissal(self, in: scrollView) ?? false
+        guard scrollView.isDragging || scrollView.isDecelerating else {
             scrollRuns[key] = nil
             return
         }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        let travelPosition = position - ScrollPresentationState.offsetAdjustment(for: scrollView)
         let maximumPosition = max(
             0,
             scrollView.contentSize.height + scrollView.adjustedContentInset.top
                 + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
+        let travelPosition = min(max(0, position), maximumPosition)
+            - ScrollPresentationState.offsetAdjustment(for: scrollView)
+        let previous = scrollRuns[key]
+        let delta = travelPosition - (previous?.last ?? travelPosition)
         let remainingToBottom = max(0, maximumPosition - position)
         let bottomExtension = max(0, delegate?.immersionBottomExtension(for: self) ?? 0)
-        let dismissalDeadZoneStart = Self.dismissalDeadZoneStart(
-            viewportHeight: scrollView.bounds.height,
-            scrollableRange: maximumPosition,
-            bottomExtension: bottomExtension)
-        let reachedArticleEnd = remainingToBottom <= Self.bottomRestoreTolerance
 
-        // Position exceptions do not need a directional run. At the top the
-        // chrome always returns immediately; at the bottom it returns as the end
-        // of the content lands on the viewport's bottom edge — the host then
-        // slides the content up by the extension so that end stays put under the
-        // returning card edge.
-        let previous = scrollRuns[key]
-        if (previous != nil && (position <= 0 || reachedArticleEnd))
-            || (bottomExtension > 0 && reachedArticleEnd) {
-            scrollRuns = [:]
-            delegate?.immersionTracker(self, didChangeImmersion: false, extendsCard: true)
+        if delta < 0, canReverse, scrollView.isDragging {
+            changeScrollImmersion(false, in: scrollView)
             return
         }
-        guard let previous else {
-            scrollRuns[key] = (travelPosition, 0)
+        if bottomExtension > 0 {
+            if delta > 0, remainingToBottom <= Self.bottomRestoreTolerance {
+                changeScrollImmersion(false, in: scrollView)
+            } else {
+                scrollRuns[key] = (travelPosition, 0)
+            }
             return
         }
-        let delta = travelPosition - previous.last
-        if delta >= 0, remainingToBottom <= dismissalDeadZoneStart {
-            // Keep a fresh baseline so travel accumulated above the dead zone
-            // cannot fire on a later layout/clamping offset near the bottom.
-            scrollRuns[key] = (travelPosition, 0)
-            return
-        }
-        let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
+        let dismissalDeadZoneStart = Self.dismissalDeadZoneStart(
+            viewportHeight: scrollView.bounds.height, scrollableRange: maximumPosition,
+            bottomExtension: bottomExtension)
+        let run = delta < 0 || remainingToBottom <= dismissalDeadZoneStart
+            ? 0 : (previous?.run ?? 0) + delta
         scrollRuns[key] = (travelPosition, run)
-        // Re-seed the runs BEFORE firing: the fade's card-bottom extension
-        // resizes the scroll view synchronously, and at the article's end
-        // that clamps the offset — a synthetic ~90pt "scroll up" delivered
-        // re-entrantly that would immediately fade the chrome back in. With
-        // the runs cleared first, that event just seeds a fresh baseline.
-        if run <= -Self.fadeInTravel {
-            scrollRuns = [:]
-            delegate?.immersionTracker(self, didChangeImmersion: false, extendsCard: true)
-        } else if run >= Self.fadeOutTravel, position > 0 {
-            scrollRuns = [:]
-            delegate?.immersionTracker(self, didChangeImmersion: true, extendsCard: true)
+        if run >= Self.fadeOutTravel, position > 0 {
+            changeScrollImmersion(true, in: scrollView)
         }
+    }
+
+    private func changeScrollImmersion(_ immersed: Bool, in scrollView: UIScrollView) {
+        scrollRuns = [:]
+        applyingScrollImmersion = true
+        defer { applyingScrollImmersion = false }
+        delegate?.immersionTracker(self, didChangeImmersion: immersed, extendsCard: true)
+        // Seed from the resized card so the next user offset can reverse it.
+        let insets = scrollView.adjustedContentInset
+        let maximum = max(0, scrollView.contentSize.height + insets.top + insets.bottom
+            - scrollView.bounds.height)
+        let position = min(max(0, scrollView.contentOffset.y + insets.top), maximum)
+        scrollRuns[ObjectIdentifier(scrollView)] = (
+            position - ScrollPresentationState.offsetAdjustment(for: scrollView), 0)
     }
 
     /// RSVP immerses without the card-bottom extension: its layout is fixed, so

@@ -34,6 +34,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     private final class ImmersionHost: ReaderImmersionTrackerDelegate {
         var events: [(immersed: Bool, extendsCard: Bool)] = []
         var bottomExtension: CGFloat = 0
+        var canReverse = false
         weak var clampsOnFirstEvent: UIScrollView?
         private var hasFired = false
 
@@ -46,6 +47,10 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
             hasFired = true
             scrollView.contentOffset = CGPoint(x: 0, y: 40)
         }
+
+        func canReverseScrollDismissal(
+            _ tracker: ScrollDirectionImmersionTracker, in scrollView: UIScrollView
+        ) -> Bool { canReverse }
 
         func immersionBottomExtension(
             for tracker: ScrollDirectionImmersionTracker
@@ -90,18 +95,19 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDelayedUserNotificationStillCountsTravelAfterLayoutCompensation() {
+        host.canReverse = true
+        host.bottomExtension = 100
         drag(to: 600)
         ScrollPresentationState.setSuppressed(true, for: scrollView)
-        // A 60pt upward drag plus a 300pt reflow correction is delivered by
-        // UIKit as one outer notification after the reader delegate returns.
-        drag(to: 240)
+        // UIKit can coalesce a layout correction and a downward drag into one
+        // outer notification. Only the real motion should decide the direction.
+        drag(to: 360)
         ScrollPresentationState.recordOffsetAdjustment(-300, for: scrollView)
         ScrollPresentationState.setSuppressed(false, for: scrollView)
-        drag(to: 240)
+        drag(to: 360)
         XCTAssertTrue(events.isEmpty)
-        drag(to: 200)
-        XCTAssertEqual(events.count, 1)
-        XCTAssertFalse(events[0].immersed)
+        drag(to: 350)
+        XCTAssertEqual(events.map(\.immersed), [false])
     }
 
     private func drag(to y: CGFloat) {
@@ -133,14 +139,6 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertEqual(events.first?.extendsCard, true, "the scroll reader extends the card on immersion")
     }
 
-    func testOffsetsDuringHostViewportTransitionDoNotStartAnotherImmersion() {
-        tracker.suppressScrollDrivenImmersion(for: 60)
-        drag(to: 40)
-        drag(to: 90)
-        drag(to: 150)
-        XCTAssertTrue(events.isEmpty)
-    }
-
     func testTravelAccumulatesAcrossMultipleSmallDeltasNotJustTheLastOne() {
         drag(to: 0)
         drag(to: 30)  // run 30
@@ -161,33 +159,40 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
-    // MARK: - Fade-in threshold (scrolling up), shorter than fade-out
+    // MARK: - Reversing an unfinished dismissal
 
-    func testUpwardTravelPastThresholdFiresImmersedFalse() {
-        drag(to: 600)
-        drag(to: 570)  // run -30, below the 90pt fade-in threshold
-        drag(to: 511)  // run -89, still below the threshold
-        XCTAssertTrue(events.isEmpty)
-        drag(to: 509)  // run -91, beyond the threshold
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.immersed, false)
-        XCTAssertEqual(events.first?.extendsCard, true)
+    func testUpwardMovementImmediatelyReversesAnUnfinishedDismissal() {
+        drag(to: 30)
+        drag(to: 140)
+        host.bottomExtension = 100
+        host.canReverse = true
+        drag(to: 139)
+        XCTAssertEqual(events.map(\.immersed), [true, false])
     }
 
-    func testTinyUpwardCorrectionDoesNotRestoreChrome() {
+    func testCompletedImmersionIgnoresUpwardTravelIncludingAtTheTop() {
+        host.bottomExtension = 100
         drag(to: 600)
-        drag(to: 584)
-        drag(to: 568)
-        XCTAssertTrue(events.isEmpty)
-    }
-
-    func testReachingTheTopAlwaysFiresImmersedFalseRegardlessOfRun() {
-        // A single small upward step to position 0 doesn't cross fadeInTravel on
-        // its own, but "at the top" is its own unconditional trigger.
+        drag(to: 509)
         drag(to: 5)
         drag(to: 0)
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.immersed, false)
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testElasticReboundCannotReverseAnUnfinishedDismissal() {
+        host.bottomExtension = 100
+        host.canReverse = true
+        scrollView.fakeIsDecelerating = true
+        scrollView.contentOffset.y = 200
+        scrollView.contentOffset.y = 196
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testScrollingUpFromTheBottomDoesNotRestoreChrome() {
+        host.bottomExtension = 100
+        drag(to: 3200)
+        drag(to: 3195)
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testArticleBottomRestoresOnlyOnceTheEndOfTheContentArrives() {
@@ -206,7 +211,6 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDownwardDismissalIsIgnoredWithinHalfAViewportOfBottomRestore() {
-        host.bottomExtension = 100
         // With an 800pt viewport, the directional dismissal dead zone begins
         // 400pt from the maximum position (half a viewport).
         scrollView.fakeIsDragging = false
@@ -218,7 +222,6 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDownwardDismissalStillAppliesJustOutsideBottomDeadZone() {
-        host.bottomExtension = 100
         scrollView.fakeIsDragging = false
         scrollView.contentOffset = CGPoint(x: 0, y: 2600)
         drag(to: 2680) // seed with 520pt remaining

@@ -99,6 +99,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// width. The live text view stays masked but hidden until its final TextKit
     /// layout and anchored content offset are ready.
     private var viewportReflowTransition: TextViewportReflowTransition?
+    private var restoringUniformColumnOnCompletion = false
     private var lastTextViewportWidth: CGFloat = 0
     private var resizeWasAtTop = true
     private var resizeAnchor: TextViewportReflowTransition.AnchorGeometry?
@@ -502,12 +503,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         to size: CGSize,
         destinationTopChromeInset: CGFloat? = nil,
         preservingVisibleLines: Bool = false,
-        originDelta: CGPoint = .zero
+        originDelta: CGPoint = .zero,
+        restoringUniformColumnOnCompletion: Bool = false
     ) -> Bool {
         viewportReflowTransition?.finish()
         viewportReflowTransition = nil
         guard isViewLoaded, textView.bounds.width > 0, size.width > 0 else { return false }
         preservingViewportTransition = false
+        self.restoringUniformColumnOnCompletion = restoringUniformColumnOnCompletion
         if preservingVisibleLines {
             captureResizeAnchor()
             // TextKit may clamp a deep offset as soon as layout is invalidated.
@@ -553,6 +556,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return viewportReflowTransition != nil
     }
 
+    /// Whether any displayed body line still uses a transitional column width.
+    public var hasVisibleLinesOutsideDestinationColumn: Bool {
+        isViewLoaded && readerTextContainer.hasVisibleLinesOutsideDestinationColumn(in: textView)
+    }
+
     /// Called inside the card's own 0.32-second ease-in-out transaction.
     public func animatePreparedCardViewportTransition() {
         viewportReflowTransition?.animate()
@@ -570,6 +578,21 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func finishCardViewportTransition(completed: Bool) {
         preservingViewportTransition = false
         readerTextContainer.finishLinePresentation(in: textView)
+        if restoringUniformColumnOnCompletion {
+            restoringUniformColumnOnCompletion = false
+            captureResizeAnchor()
+            let offset = textView.contentOffset.y
+            ScrollPresentationState.setSuppressed(true, for: textView)
+            readerTextContainer.reset(in: textView)
+            preservedTextViewportWidth = nil
+            preparedCardWidth = nil
+            preservedTextWidthConstraint.isActive = false
+            textViewportWidthConstraint.isActive = true
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            ScrollPresentationState.recordOffsetAdjustment(textView.contentOffset.y - offset, for: textView)
+            ScrollPresentationState.setSuppressed(false, for: textView)
+        }
         guard let transition = viewportReflowTransition else {
             captureResizeAnchor()
             return
@@ -810,11 +833,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         fillInitialViewportIfNeeded()
         layoutCompletionArea()
         if widthChanged, viewportReflowTransition == nil, let resizeAnchor {
+            let wasSuppressed = ScrollPresentationState.isSuppressed(for: textView)
             ScrollPresentationState.setSuppressed(true, for: textView)
             textView.layoutManager.ensureLayout(for: textView.textContainer)
             textView.contentOffset.y = resizeWasAtTop ? -textView.adjustedContentInset.top
                 : clampedContentOffsetY(TextViewportReflowTransition.restoredOffset(for: resizeAnchor, in: textView))
-            ScrollPresentationState.setSuppressed(false, for: textView)
+            ScrollPresentationState.setSuppressed(wasSuppressed, for: textView)
         }
         readerTextContainer.layoutPreservedLines(in: textView)
         lastTextViewportWidth = textView.bounds.width

@@ -837,7 +837,7 @@ public final class CardCarouselViewController: UIViewController {
         let content = slots[currentIndex]?.content
         // Prepare the anchor even for an immediate / Reduce Motion resize.
         prepareCenteredContentForImmersionLayout()
-        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+        guard animated, UIView.areAnimationsEnabled, !UIAccessibility.isReduceMotionEnabled else {
             applyImmersionLayout()
             content?.finishCardViewportTransition(completed: true)
             return

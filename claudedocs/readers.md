@@ -92,21 +92,16 @@ Fullscreen, share-extension, and non-carousel readers keep the original inline t
 
 Reader and Downloader carousel cards share the same restrained glass rim: a 1.5pt
 effect ring with a 0.5pt low-contrast highlight. On a portrait phone-shaped host,
-Reader scroll chrome dismisses after 100pt of downward travel and returns after 50pt
-upward, enough to ignore tiny jitter without making the reader reverse a large part of
-the page. Two positions override the directional rule outright
-(`ScrollDirectionImmersionTracker`): at the very top the chrome always returns, and it
-returns again as the end of the content lands on the viewport's bottom edge. Because
-that bottom restore is about to take ownership, a downward gesture near the end must
-NOT dismiss — the last half-viewport is a dead zone.
-**That zone is capped at a quarter of the whole scroll range**, because it is a
-fraction of the VIEWPORT measured from the end of the CONTENT: on an article only a
-little longer than one screen the uncapped zone covered the entire scroll range, so no
-downward gesture anywhere in the article could dismiss the chrome at all — every card
-read as permanently surfaced. A long article is unaffected (the cap sits far above half
-a viewport). Offsets produced by the 0.32s card-resize/TextKit reflow are ignored
-briefly after an immersion change; UIKit can still report the initiating pan as
-decelerating while those layout offsets arrive. Tests: `ScrollDirectionImmersionTrackerTests`.
+Reader scroll chrome starts dismissing after 100pt of downward travel. An upward
+drag can reverse that dismissal while the chrome is still fading or a transitional
+body line remains visible. Fullscreen commits once both have cleared, and scrolling
+back through the same passage or to the top keeps chrome dismissed. Tapping can
+still bring it back. Scrolling down to the end brings chrome back as the last of
+the content reaches the bottom edge. The last half-viewport, capped at a quarter
+of the scroll range, is reserved for this bottom restore so short articles still
+have room to dismiss their chrome. The tracker excludes offsets written during
+the resize and accounts for compensated layout changes when measuring travel.
+Tests: `ScrollDirectionImmersionTrackerTests`.
 
 **Wide Scroll can open from a tap or a vertical reading gesture on a rail card.**
 Once expanded, iPad and wider-than-tall hosts keep chrome dismissed while scrolling;
@@ -120,8 +115,9 @@ cards also take the unused space above their previews. Restoring chrome returns
 the selected article to the rail or the compact deck. Scroll-driven changes preserve the character ranges and column widths of lines
 already in view, together with the prefix above them. The following four lines
 ease toward the destination's readable width. These fragment widths
-are fixed until the next viewport transition: scrolling never retires and
-re-typesets visible lines. New lines enter at their final horizontal position.
+are fixed while scrolling. Reversing a dismissal keeps the displayed lines at
+their current widths until card chrome is back, then returns to the card column.
+New lines enter at their final horizontal position.
 `ScrollStableTextContainer` uses a binary lookup over the captured prefix, so deep
 reading positions do not require a linear scan for each new line. Short-lived
 line views preserve existing text through the card's animation, then drawing

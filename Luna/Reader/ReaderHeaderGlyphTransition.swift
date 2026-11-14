@@ -13,8 +13,10 @@ final class ReaderHeaderGlyphTransition {
 
     private struct Move {
         let view: UIImageView
-        let frame: CGRect
-        let alpha: CGFloat
+        let sourceFrame: CGRect
+        let sourceAlpha: CGFloat
+        let destinationFrame: CGRect
+        let destinationAlpha: CGFloat
     }
     private var moves: [Move] = []
     var glyphViews: [UIImageView] { moves.map(\.view) }
@@ -30,7 +32,8 @@ final class ReaderHeaderGlyphTransition {
             image.contentMode = .scaleAspectFit
             image.frame = glyph.frame
             host.addSubview(image)
-            moves.append(Move(view: image, frame: target?.frame ?? glyph.frame, alpha: target == nil ? 0 : 1))
+            moves.append(Move(view: image, sourceFrame: glyph.frame, sourceAlpha: 1,
+                              destinationFrame: target?.frame ?? glyph.frame, destinationAlpha: target == nil ? 0 : 1))
         }
         for glyph in destination where !sources.contains(glyph.key) {
             let image = UIImageView(image: glyph.image)
@@ -38,14 +41,15 @@ final class ReaderHeaderGlyphTransition {
             image.frame = glyph.frame
             image.alpha = 0
             host.addSubview(image)
-            moves.append(Move(view: image, frame: glyph.frame, alpha: 1))
+            moves.append(Move(view: image, sourceFrame: glyph.frame, sourceAlpha: 0,
+                              destinationFrame: glyph.frame, destinationAlpha: 1))
         }
     }
 
-    func animate() {
+    func animate(returnToSource: Bool = false) {
         for move in moves {
-            move.view.frame = move.frame
-            move.view.alpha = move.alpha
+            move.view.frame = returnToSource ? move.sourceFrame : move.destinationFrame
+            move.view.alpha = returnToSource ? move.sourceAlpha : move.destinationAlpha
         }
     }
 

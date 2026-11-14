@@ -28,13 +28,38 @@ final class ScrollStableTextContainer: NSTextContainer {
 
     var hasPreservedLines: Bool { !lines.isEmpty }
 
+    /// Compare the configured column, including the four-line width ramp.
+    /// A short line or an indented quote can already belong to the full column.
+    func hasVisibleLinesOutsideDestinationColumn(in textView: UITextView) -> Bool {
+        guard let columnWidth else { return false }
+        let visible = visibleTextRect(in: textView)
+        guard !visible.isEmpty else { return false }
+        let manager = textView.layoutManager
+        let glyphs = manager.glyphRange(forBoundingRect: visible, in: self)
+        var found = false
+        manager.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, glyphs, stop in
+            guard rect.intersects(visible) else { return }
+            let character = manager.characterIndexForGlyph(at: glyphs.location)
+            let width = self.resolvedColumnWidths[character] ?? self.size.width
+            if abs(width - columnWidth) > 0.5 {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
+    private func visibleTextRect(in textView: UITextView) -> CGRect {
+        let viewport = textView.superview.map { $0.convert($0.bounds, to: textView) } ?? textView.bounds
+        return viewport.offsetBy(
+            dx: -textView.textContainerInset.left, dy: -textView.textContainerInset.top)
+    }
+
     @discardableResult
     func preserveVisibleLines(in textView: UITextView, presentingLines: Bool = true) -> Bool {
         let manager = textView.layoutManager
         manager.ensureLayout(for: self)
-        let viewport = textView.superview.map { $0.convert($0.bounds, to: textView) } ?? textView.bounds
-        let visible = viewport.offsetBy(
-            dx: -textView.textContainerInset.left, dy: -textView.textContainerInset.top)
+        let visible = visibleTextRect(in: textView)
         var captured: [Line] = []
         manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) {
             rect, _, _, glyphs, stop in

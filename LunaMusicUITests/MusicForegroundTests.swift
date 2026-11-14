@@ -262,10 +262,10 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap(); field.typeText(feedURL + "?cold-start=" + UUID().uuidString)
         app.alerts.buttons["Follow"].tap()
-        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["Fixture Episode Two"].waitForExistence(timeout: 15))
         let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
         XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
-        app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch.buttons["Episode Actions"].tap()
+        app.cells.containing(.button, identifier: "Fixture Episode Two").firstMatch.buttons["Episode Actions"].tap()
         app.collectionViews.buttons["Play"].tap()
         app.buttons["Open Now Playing"].tap()
         let elapsed = app.staticTexts["podcasts.playback.elapsed"]

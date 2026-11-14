@@ -464,6 +464,28 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(textView.alpha, 1)
     }
 
+    func testInProgressScrollReaderUsesSavedWordWhenReflowedOffsetWouldJumpToEnd() throws {
+        let content = longScrollArticleContent()
+        let rendered = ArticleTextRenderer.render(content)
+        let map = WordMap(content: content, rendered: rendered)
+        let savedWord = map.wordCount / 2
+        var inProgress = item
+        inProgress.readState = .opened
+        inProgress.lastScrollOffset = 50_000
+        inProgress.lastWordIndex = savedWord
+        let reader = ScrollReaderViewController(item: inProgress, content: content)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
+        reader.view.layoutIfNeeded()
+
+        let text = try XCTUnwrap(findTextView(in: reader.view))
+        let range = try XCTUnwrap(map.attributedRange(forWord: savedWord))
+        let glyphs = text.layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        let rect = text.layoutManager.boundingRect(forGlyphRange: glyphs, in: text.textContainer)
+        XCTAssertEqual(rect.minY + text.textContainerInset.top - text.contentOffset.y,
+                       text.bounds.height / 4, accuracy: 1)
+        XCTAssertLessThan(text.contentOffset.y + text.bounds.height, text.contentSize.height)
+    }
+
     func testInProgressScrollReaderRestoresPersistedZeroToVisualTop() {
         var inProgress = item
         inProgress.readState = .opened

@@ -58,8 +58,8 @@ Embedded RabbitHole layers fill that host viewport without adding another window
 safe-area frame inset; standalone readers retain their own safe-area layout.
 Scroll-driven changes keep the text and title column fixed for the displayed passage, then widen incoming lines gradually;
 tap-driven changes may wrap the wider title to a different height.
-The tap's TextKit transition resolves that destination inset up front and anchors
-the same reading glyph, so the title-height change cannot jump the passage. Both copies'
+The tap's TextKit transition resolves that destination inset up front and aligns
+the passage near the viewport center. Both copies'
 backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.
 The host applies that stable inset when each card controller is constructed, including
@@ -118,8 +118,8 @@ Dismissing Scroll chrome expands the card to the safe width, with a 16pt outer
 inset on wide windows and no extra outer inset on compact windows. Wide rail
 cards also take the unused space above their previews. Restoring chrome returns
 the selected article to the rail or the compact deck. Scroll-driven changes preserve the character ranges and column widths of lines
-already in view, together with the prefix above them. The following eight lines
-widen gradually toward the destination's readable width. These fragment widths
+already in view, together with the prefix above them. The following four lines
+ease toward the destination's readable width. These fragment widths
 are fixed until the next viewport transition: scrolling never retires and
 re-typesets visible lines. New lines enter at their final horizontal position.
 `ScrollStableTextContainer` uses a binary lookup over the captured prefix, so deep
@@ -143,8 +143,9 @@ Header glyph presentations inherit their source visibility, so an invisible
 fixed header cannot reappear during viewport preparation.
 Taps release the preserved lines and use `TextViewportReflowTransition`, which
 builds a second TextKit layout for the destination width before the 0.32s transition,
-anchors the glyph around the upper quarter of the viewport, and temporarily replaces
-the live jumping layout with per-glyph images. A retained canvas also reflows when
+chooses the offset that minimizes vertical glyph travel with extra weight near
+the viewport center, and temporarily animates per-glyph images. The offset
+accounts for the card's movement on screen. A retained canvas also reflows when
 its width already matches the destination but its line policy differs. Every glyph
 whose old→new path intersects the viewport translates to its real destination;
 clipping follows the card's rounded viewport. Reduce Motion skips the glyph overlays.
@@ -1122,7 +1123,11 @@ The card is a single scrollable+navigable `WKWebView` (WebJunkBlocker strips jun
 
 ## Position memory
 
-`lastScrollOffset` restored on open. Read-aloud persists `lastSpokenWordIndex` on close; first-ever audio playback and first-ever RSVP entry start from the first fully-visible word when there's no saved position.
+The scroll reader restores `lastScrollOffset` when the saved word is still visible
+there in the current layout. If rewrapping moved the passage offscreen, it uses
+`lastWordIndex` to bring the passage back into view. The centered card checkpoints
+its position before an incoming save rebuilds the deck and when the app backgrounds.
+Read-aloud persists `lastSpokenWordIndex` on close; first-ever audio playback and first-ever RSVP entry start from the first fully-visible word when there's no saved position.
 
 ## TextKit note
 

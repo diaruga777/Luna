@@ -276,6 +276,46 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     @MainActor
+    func testTapReflowKeepsCenterTextNearItsScreenPositionInBothDirections() throws {
+        let article = ArticleContent(title: "Center reflow", blocks: [paragraph(String(
+            repeating: "The same passage should stay close to the reader's eyes when the layout changes. ",
+            count: 160))])
+        var item = SavedItem(urlString: "https://example.com/center-reflow")
+        item.lastScrollOffset = 4_000
+        let reader = ScrollReaderViewController(item: item, content: article, includesArticleTitle: false)
+        reader.view.frame = CGRect(x: 0, y: 120, width: 350, height: 600)
+        reader.view.layoutIfNeeded()
+        let text = try XCTUnwrap(firstTextView(in: reader.view))
+
+        for frame in [CGRect(x: 0, y: 0, width: 650, height: 800),
+                      CGRect(x: 0, y: 120, width: 350, height: 600)] {
+            let source = reader.view.frame
+            let manager = text.layoutManager
+            let container = text.textContainer
+            let center = CGPoint(x: text.bounds.midX - text.textContainerInset.left,
+                                 y: text.bounds.midY - text.textContainerInset.top)
+            let glyph = manager.glyphIndex(for: center, in: container)
+            let characters = manager.characterRange(forGlyphRange: NSRange(location: glyph, length: 1),
+                                                     actualGlyphRange: nil)
+            func screenY() -> CGFloat {
+                let range = manager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
+                return reader.view.frame.minY + manager.boundingRect(forGlyphRange: range, in: container).midY
+                    + text.textContainerInset.top - text.contentOffset.y
+            }
+
+            let before = screenY()
+            XCTAssertTrue(reader.prepareForCardViewportTransition(
+                to: frame.size, originDelta: CGPoint(x: 0, y: frame.minY - source.minY)))
+            reader.animatePreparedCardViewportTransition()
+            reader.view.frame = frame
+            reader.view.layoutIfNeeded()
+            reader.finishCardViewportTransition(completed: true)
+            XCTAssertEqual(screenY(), before, accuracy: 45,
+                           "The passage at the screen center should move less than two lines")
+        }
+    }
+
+    @MainActor
     func testInteractiveWidthChangesPreserveVisibleLinesAndReflowIncomingLines() throws {
         var item = SavedItem(urlString: "https://example.com/stable-lines")
         item.state = .ready

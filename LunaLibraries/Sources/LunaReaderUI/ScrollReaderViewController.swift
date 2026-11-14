@@ -372,7 +372,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.attributedText = rendered.text
             textView.layoutIfNeeded()
             textView.layoutManager.ensureLayout(for: textView.textContainer)
-            if textView.bounds.width > 0 {
+            if textView.bounds.width > 0, textView.bounds.height > 0 {
                 fillInitialViewportIfNeeded()
                 applyInitialScrollPosition()
                 didRestoreScroll = true
@@ -404,14 +404,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             return true
         }
         // The word we'll actually resume from on open: a carried-in mode-switch index
-        // wins; otherwise the shared persisted word, but only when there's no exact
-        // offset to restore from instead (the hybrid rule in `applyInitialScrollPosition`).
+        // wins; otherwise include the persisted word, which also validates a
+        // saved offset against the new layout.
         let resumeWord: Int?
         if audioEnabled {
             resumeWord = nil
         } else if let carried = resumeWordIndex {
             resumeWord = carried
-        } else if item.readState != .read, item.lastScrollOffset == nil {
+        } else if item.readState != .read, item.lastScrollOffset != 0 {
             resumeWord = item.lastWordIndex
         } else {
             resumeWord = nil
@@ -424,7 +424,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             for block in content.blocks {
                 if chars > budget { break }
                 if block.kind == .image { continue }
-                words += block.text.split(whereSeparator: { $0.isWhitespace }).count
+                if block.isReadableProse {
+                    words += WordTokenizer.tokens(in: block.text).count
+                }
                 chars += block.text.count
             }
             if resumeWord >= words { return true }
@@ -499,7 +501,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func prepareForCardViewportTransition(
         to size: CGSize,
         destinationTopChromeInset: CGFloat? = nil,
-        preservingVisibleLines: Bool = false
+        preservingVisibleLines: Bool = false,
+        originDelta: CGPoint = .zero
     ) -> Bool {
         viewportReflowTransition?.finish()
         viewportReflowTransition = nil
@@ -540,6 +543,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             destinationSize: size,
             destinationTextInsets: insets,
             destinationAdjustedTopInset: destinationAdjustedTopInset,
+            originDelta: originDelta,
             requiresReflow: readerTextContainer.columnWidth != nil)
         readerTextContainer.reset(in: textView)
         preservedTextViewportWidth = nil
@@ -819,7 +823,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
         // Restore the scroll position as soon as we have real bounds — BEFORE
         // the view is on screen — then reveal, so there's no top-flash + jump.
-        if !didRestoreScroll, textView.bounds.width > 0 {
+        if !didRestoreScroll, textView.bounds.width > 0, textView.bounds.height > 0 {
             didRestoreScroll = true
             applyInitialScrollPosition()
             revealContent()
@@ -1270,8 +1274,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func applyInitialScrollPosition() {
         // Restore the reading position under the hybrid shared-position rule:
         //  • a word carried in from another mode this session wins outright (25% down);
-        //  • else, when the scroll reader still owns the position, its exact pixels
-        //    (`lastScrollOffset`) restore precisely;
+        //  • else, when the scroll reader still owns the position, reuse the
+        //    exact pixels if they still show the saved word;
         //  • else the RSVP reader last moved the shared position (it cleared the exact
         //    offset), so resume from the shared word (`lastWordIndex`) at 25% down.
         // Audio mode starts playback at the carried word and follow-scroll centers it.
@@ -1281,7 +1285,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         } else if item.readState != .read, let saved = item.lastScrollOffset {
             let restored = ReaderScrollPosition.contentOffsetForRestoration(
                 saved, adjustedTopInset: Double(textView.adjustedContentInset.top))
-            restoreScroll(to: CGFloat(restored))
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            textView.layoutIfNeeded()
+            let target = clampedContentOffsetY(CGFloat(restored))
+            // Scroll-driven immersion preserves earlier line breaks. A fresh
+            // layout can wrap those lines differently and put the same offset
+            // pages away, or clamp it to the end.
+            if saved != 0, let word = item.lastWordIndex, let rect = wordRect(for: word),
+               rect.maxY <= target || rect.minY >= target + textView.bounds.height {
+                textView.contentOffset.y = clampedContentOffsetY(rect.minY - textView.bounds.height / 4)
+            } else {
+                textView.contentOffset.y = target
+            }
         } else if item.readState != .read, let word = item.lastWordIndex,
                   wordMap.attributedRange(forWord: word) != nil {
             scrollWord(word, toFractionFromTop: 0.25)
@@ -1318,12 +1333,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// later without another UIKit appearance callback.
     public func activateVisibleReader(deferFullContentUntilHostCompletion: Bool = false) {
         // Fallback if layout hasn't run yet (shouldn't normally happen).
-        if !didRestoreScroll {
+        if !didRestoreScroll, textView.bounds.width > 0, textView.bounds.height > 0 {
             fillInitialViewportIfNeeded()
             didRestoreScroll = true
             applyInitialScrollPosition()
         }
-        revealContent()
+        if didRestoreScroll { revealContent() }
         // Even an article that fits on one screen requires a deliberate bottom pull.
         updateReadPullPrompt()
 
@@ -1355,8 +1370,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
+    var canPersistScrollPosition: Bool {
+        didRestoreScroll && !defersAutomaticFullContentLoad
+    }
+
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        guard canPersistScrollPosition else { return }
         // Progress is only meaningful against the FULL layout: during the
         // Phase-1 prefix render the content is ~one screen tall, so the ratio
         // would read ~100% and permanently mark a barely-opened article as
@@ -1444,6 +1464,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func firstFullyVisibleWordIndex() -> Int? {
         let layoutManager = textView.layoutManager
         let container = textView.textContainer
+        guard layoutManager.numberOfGlyphs > 0 else { return nil }
         // Visible top expressed in text-container coordinates (text is offset by
         // the container inset within the text view).
         let visibleTop = textView.contentOffset.y - textView.textContainerInset.top
@@ -1459,6 +1480,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
         let charIndex = layoutManager.characterIndexForGlyph(at: firstGlyph)
         return wordMap.wordIndex(nearCharacterIndex: charIndex)
+    }
+
+    private func wordRect(for index: Int) -> CGRect? {
+        guard let range = wordMap.attributedRange(forWord: index) else { return nil }
+        let manager = textView.layoutManager
+        let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer)
+            .offsetBy(dx: 0, dy: textView.textContainerInset.top)
     }
 
     /// Scrolls so the given word sits `fraction` of the screen height down from

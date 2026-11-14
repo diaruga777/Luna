@@ -111,7 +111,7 @@ open class CardContentViewController: UIViewController {
     /// a transition tailored to its rendering model. The Reader uses this to
     /// animate TextKit glyphs between their old and newly reflowed locations
     /// while the card itself expands. Other card kinds keep the no-op default.
-    open func prepareForCardViewportTransition(to size: CGSize) {}
+    open func prepareForCardViewportTransition(to size: CGSize, originDelta: CGPoint = .zero) {}
 
     /// Commits the prepared viewport transition inside the carousel's animation
     /// block. Implementations should only change animatable presentation state

@@ -660,6 +660,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// is still something to send it back to.
     override func deckWillApplyReload() {
         if let inlineColumn { closeInlineColumn(inlineColumn) }
+        let card = carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController
+        card?.rabbitHoleReader?.checkpointReadingPosition()
     }
 
     override func deckDidApplyReload() {
@@ -1706,7 +1708,7 @@ final class ReaderCardContentViewController: CardContentViewController,
         updatePinnedTitleVisibility(animated: animated)
     }
 
-    override func prepareForCardViewportTransition(to size: CGSize) {
+    override func prepareForCardViewportTransition(to size: CGSize, originDelta: CGPoint = .zero) {
         viewportTitlePresentation?.finish()
         viewportTitlePresentation = nil
         titleHeader.isHidden = false
@@ -1736,7 +1738,7 @@ final class ReaderCardContentViewController: CardContentViewController,
             viewportTransitionScrollReader = scrollReader
             scrollReader.prepareForCardViewportTransition(
                 to: size, destinationTopChromeInset: contentTitleHeight,
-                preservingVisibleLines: scrollDrivenViewportTransition)
+                preservingVisibleLines: scrollDrivenViewportTransition, originDelta: originDelta)
         }
         let destinationFrame: CGRect
         if cardChromeVisible || titleScrollView == nil {

@@ -67,6 +67,54 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(committed.rabbitHoleReader?.focusedScrollReader).defersAutomaticFullContentLoad)
     }
 
+    @MainActor
+    func testIncomingEmailCheckpointsTheOutgoingArticlesReadingPosition() throws {
+        let item = SavedItem(seed: "reading-before-email",
+                             urlString: "https://example.com/reading-before-email",
+                             title: "Reading before email", dateAdded: Date(), state: .ready,
+                             wordCount: 6_000)
+        let content = ArticleContent(title: item.title!, blocks: [.init(
+            kind: .paragraph, text: String(repeating: "An article with a place worth keeping. ", count: 1_000),
+            links: [])])
+        SavesStore.shared.seedForTesting(items: [item], contents: [item.id: content])
+        let deck = ArticleCardsViewController()
+        deck.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        deck.beginAppearanceTransition(true, animated: false)
+        deck.endAppearanceTransition()
+        deck.view.layoutIfNeeded()
+        let card = try XCTUnwrap(deck.carousel.contentController(at: deck.carousel.currentIndex)
+            as? ReaderCardContentViewController)
+        XCTAssertTrue(card.isCentered)
+        let reader = try XCTUnwrap(card.rabbitHoleReader?.focusedScrollReader)
+        let text = try XCTUnwrap(firstSubview(of: UITextView.self, in: reader.view))
+        text.contentOffset.y = 2_000
+        let word = try XCTUnwrap(reader.currentReadingWordIndex)
+        XCTAssertGreaterThan(word, 100)
+
+        var email = SavedItem(urlString: "https://example.com/new-email")
+        email.captureSource = .email
+        SavesStore.shared.upsertForTesting([email])
+        _ = SavesStore.shared.saveContent(UITestFixtures.sampleArticleContent(title: "New mail"), for: email)
+        deck.reload()
+        XCTAssertEqual(deck.slots[deck.carousel.currentIndex - deck.cardOffset].id, email.id)
+
+        let persisted = try XCTUnwrap(SavesStore.shared.item(withID: item.id))
+        XCTAssertEqual(persisted.lastWordIndex, word)
+        XCTAssertEqual(persisted.lastScrollOffset ?? 0, 2_000, accuracy: 1)
+
+        XCTAssertTrue(deck.centerCard(onItemID: item.id))
+        deck.view.layoutIfNeeded()
+        let reopenedCard = try XCTUnwrap(deck.carousel.contentController(
+            at: deck.carousel.currentIndex) as? ReaderCardContentViewController)
+        let reopened = try XCTUnwrap(reopenedCard.rabbitHoleReader?.focusedScrollReader)
+        reopenedCard.view.layoutIfNeeded()
+        reopened.view.layoutIfNeeded()
+        let reopenedText = try XCTUnwrap(firstSubview(of: UITextView.self, in: reopened.view))
+        XCTAssertGreaterThan(reopenedText.bounds.height, 100)
+        XCTAssertEqual(reopenedText.contentOffset.y, 2_000, accuracy: 1)
+        XCTAssertEqual(reopened.currentReadingWordIndex, word)
+    }
+
     func testModeSwitcherReplacesMiniCarouselOnlyDuringImmersion() throws {
         let item = SavedItem(
             seed: "bottom-mode-switcher",
@@ -532,7 +580,7 @@ final class ArticleCardsChromeTests: XCTestCase {
             rect, _, _, range, _ in fragments.append((range, rect))
         }
         let ramp = fragments.filter { $0.1.width > oldFirst.width + 0.5 && $0.1.width < 319.5 }
-        XCTAssertGreaterThanOrEqual(ramp.count, 5, "Incoming lines must widen gradually across the seam")
+        XCTAssertEqual(ramp.count, 3, "The fourth incoming line should reach full width")
         XCTAssertEqual(fragments.last?.1.width ?? 0, 320, accuracy: 0.5)
         for pair in zip(ramp, ramp.dropFirst()) {
             XCTAssertGreaterThan(pair.1.1.width, pair.0.1.width)

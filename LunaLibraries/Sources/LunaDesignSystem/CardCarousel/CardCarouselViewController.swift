@@ -1003,7 +1003,11 @@ public final class CardCarouselViewController: UIViewController {
             let target = view.convert(view.bounds, to: cardArea)
             frame.size.height = max(target.maxY - frame.minY, frame.height)
         }
-        slot.content.prepareForCardViewportTransition(to: frame.size)
+        let destinationOrigin = usesReaderGrid && !isImmersed
+            ? readerGrid.convert(frame.origin, to: cardArea) : frame.origin
+        let sourceOrigin = slot.card.convert(slot.card.bounds.origin, to: cardArea)
+        slot.content.prepareForCardViewportTransition(to: frame.size, originDelta: CGPoint(
+            x: destinationOrigin.x - sourceOrigin.x, y: destinationOrigin.y - sourceOrigin.y))
     }
 
     /// Pages by `step` cards. Single steps run the eclipse transition (unless

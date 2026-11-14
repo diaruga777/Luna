@@ -793,7 +793,7 @@ private final class ViewportTransitionSpyContent: CardContentViewController {
     private(set) var animateCount = 0
     private(set) var completions: [Bool] = []
 
-    override func prepareForCardViewportTransition(to size: CGSize) {
+    override func prepareForCardViewportTransition(to size: CGSize, originDelta: CGPoint) {
         preparedSizes.append(size)
     }
 

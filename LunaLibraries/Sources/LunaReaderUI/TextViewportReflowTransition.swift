@@ -52,12 +52,14 @@ final class TextViewportReflowTransition {
         destinationSize: CGSize,
         destinationTextInsets: UIEdgeInsets,
         destinationAdjustedTopInset: CGFloat,
+        originDelta: CGPoint = .zero,
         requiresReflow: Bool = false
     ) -> TextViewportReflowTransition? {
         guard textView.attributedText.length > 0,
               textView.bounds.width > 0,
               destinationSize.width > 0,
-              requiresReflow || abs(destinationSize.width - textView.bounds.width) > 0.5,
+              requiresReflow || abs(destinationSize.width - textView.bounds.width) > 0.5
+                  || abs(originDelta.y) > 0.5,
               textView.alpha > 0
         else { return nil }
 
@@ -83,15 +85,20 @@ final class TextViewportReflowTransition {
         destinationManager.addTextContainer(destinationContainer)
         destinationManager.ensureLayout(for: destinationContainer)
 
-        let anchor = anchorGeometry(in: textView, layoutManager: sourceManager)
-        let destinationOffset = destinationOffsetY(
+        let sourceOrigin = textView.convert(textView.bounds.origin, to: hostView)
+        let desiredOffset = centerAlignedOffset(
+            textView: textView, in: hostView, sourceOrigin: sourceOrigin,
+            destinationManager: destinationManager, destinationContainer: destinationContainer,
+            destinationSize: destinationSize, destinationInsets: destinationTextInsets,
+            originDelta: originDelta)
+        let destinationOffset = clampedOffsetY(
             textView: textView,
             destinationManager: destinationManager,
             destinationContainer: destinationContainer,
             destinationInsets: destinationTextInsets,
             destinationAdjustedTopInset: destinationAdjustedTopInset,
             destinationHeight: destinationSize.height,
-            anchor: anchor)
+            desiredOffset: desiredOffset)
 
         let overlay = UIView(frame: hostView.bounds)
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -106,15 +113,33 @@ final class TextViewportReflowTransition {
         }
 
         let sourceOffset = textView.contentOffset.y
-        let sourceOrigin = textView.convert(textView.bounds.origin, to: hostView)
-        let viewportHeight = max(textView.bounds.height, destinationSize.height)
-        let visibleSweep = CGRect(
-            x: -32, y: -64,
-            width: max(textView.bounds.width, destinationSize.width) + 64,
-            height: viewportHeight + 128)
+        let destinationViewport = CGRect(origin: originDelta, size: destinationSize)
+        let visibleSweep = hostView.bounds.union(destinationViewport).insetBy(dx: -32, dy: -64)
+        let sourceVisibleGlyphs = sourceManager.glyphRange(
+            forBoundingRect: visibleSweep.offsetBy(
+                dx: -sourceOrigin.x - textView.textContainerInset.left,
+                dy: sourceOffset - sourceOrigin.y - textView.textContainerInset.top),
+            in: textView.textContainer)
+        let destinationVisibleGlyphs = destinationManager.glyphRange(
+            forBoundingRect: visibleSweep.offsetBy(
+                dx: -originDelta.x - destinationTextInsets.left,
+                dy: destinationOffset - originDelta.y - destinationTextInsets.top),
+            in: destinationContainer)
+        let destinationCharacters = destinationManager.characterRange(
+            forGlyphRange: destinationVisibleGlyphs, actualGlyphRange: nil)
+        let destinationInSource = sourceManager.glyphRange(
+            forCharacterRange: destinationCharacters, actualCharacterRange: nil)
+        let sweptGlyphs: NSRange
+        if sourceVisibleGlyphs.length == 0 {
+            sweptGlyphs = destinationInSource
+        } else if destinationInSource.length == 0 {
+            sweptGlyphs = sourceVisibleGlyphs
+        } else {
+            sweptGlyphs = NSUnionRange(sourceVisibleGlyphs, destinationInSource)
+        }
         var moves: [GlyphMove] = []
-        var sourceGlyph = 0
-        while sourceGlyph < sourceManager.numberOfGlyphs {
+        var sourceGlyph = sweptGlyphs.location
+        while sourceGlyph < NSMaxRange(sweptGlyphs) {
             var sourceGlyphRange = NSRange(location: sourceGlyph, length: 1)
             let characterRange = sourceManager.characterRange(
                 forGlyphRange: sourceGlyphRange, actualGlyphRange: &sourceGlyphRange)
@@ -146,7 +171,8 @@ final class TextViewportReflowTransition {
             let destinationFrame = destinationGlyphRect.offsetBy(
                 dx: destinationTextInsets.left,
                 dy: destinationTextInsets.top - destinationOffset)
-            let sweptFrame = sourceFrame.union(destinationFrame)
+            let sweptFrame = sourceFrame.union(
+                destinationFrame.offsetBy(dx: originDelta.x, dy: originDelta.y))
             guard sweptFrame.intersects(visibleSweep) else { continue }
 
             guard let image = glyphImage(
@@ -164,10 +190,11 @@ final class TextViewportReflowTransition {
                 destinationFrame: destinationFrame.insetBy(dx: -padding, dy: -padding)))
         }
 
-        guard !moves.isEmpty else { return nil }
         let originalTextAlpha = textView.alpha
-        hostView.insertSubview(overlay, aboveSubview: textView)
-        textView.alpha = 0
+        if !moves.isEmpty {
+            hostView.insertSubview(overlay, aboveSubview: textView)
+            textView.alpha = 0
+        }
         return TextViewportReflowTransition(
             textView: textView,
             overlay: overlay,
@@ -220,23 +247,91 @@ final class TextViewportReflowTransition {
             sourceIsAtTop: sourceIsAtTop)
     }
 
+    /// The only adjustable part of the destination layout is its vertical
+    /// scroll offset. A weighted mean minimizes squared vertical travel, giving
+    /// glyphs near the center more influence than those at the viewport edges.
+    private static func centerAlignedOffset(
+        textView: UITextView,
+        in hostView: UIView,
+        sourceOrigin: CGPoint,
+        destinationManager: NSLayoutManager,
+        destinationContainer: NSTextContainer,
+        destinationSize: CGSize,
+        destinationInsets: UIEdgeInsets,
+        originDelta: CGPoint
+    ) -> CGFloat? {
+        guard textView.contentOffset.y > -textView.adjustedContentInset.top + 1 else { return nil }
+
+        let sourceManager = textView.layoutManager
+        let sourceInsets = textView.textContainerInset
+        let sourceTextOrigin = CGPoint(
+            x: sourceOrigin.x + sourceInsets.left,
+            y: sourceOrigin.y + sourceInsets.top - textView.contentOffset.y)
+        let viewport = hostView.bounds
+        let center = CGPoint(x: viewport.midX, y: viewport.midY)
+        let radiusX = max(1, min(viewport.width, destinationSize.width) / 2)
+        let radiusY = max(1, min(viewport.height, destinationSize.height) / 3)
+        let centerBand = CGRect(
+            x: center.x - radiusX, y: center.y - radiusY, width: 2 * radiusX, height: 2 * radiusY)
+        let glyphs = sourceManager.glyphRange(
+            forBoundingRect: centerBand.offsetBy(dx: -sourceTextOrigin.x, dy: -sourceTextOrigin.y),
+            in: textView.textContainer)
+
+        var weightedOffset: CGFloat = 0
+        var totalWeight: CGFloat = 0
+        for glyph in glyphs.location..<NSMaxRange(glyphs) {
+            let sourceRange = NSRange(location: glyph, length: 1)
+            let characters = sourceManager.characterRange(forGlyphRange: sourceRange, actualGlyphRange: nil)
+            guard characters.length > 0, !sourceManager.propertyForGlyph(at: glyph).contains(.controlCharacter)
+            else { continue }
+            let source = sourceManager.boundingRect(forGlyphRange: sourceRange, in: textView.textContainer)
+                .offsetBy(dx: sourceTextOrigin.x, dy: sourceTextOrigin.y)
+            guard !source.isEmpty, centerBand.intersects(source) else { continue }
+            let distanceX = (source.midX - center.x) / radiusX
+            let distanceY = (source.midY - center.y) / radiusY
+            let weight = 1 / (1 + 4 * (distanceX * distanceX + distanceY * distanceY))
+            let destinationRange = destinationManager.glyphRange(
+                forCharacterRange: characters, actualCharacterRange: nil)
+            let destination = destinationManager.boundingRect(
+                forGlyphRange: destinationRange, in: destinationContainer)
+            guard !destination.isEmpty else { continue }
+            weightedOffset += weight * (destination.midY + destinationInsets.top + originDelta.y - source.midY)
+            totalWeight += weight
+        }
+        if totalWeight > 0 { return weightedOffset / totalWeight }
+        // Image gaps or an empty center band still need a passage anchor.
+        guard let anchor = anchorGeometry(in: textView, layoutManager: sourceManager) else { return nil }
+        return offsetForAnchor(anchor, manager: destinationManager, container: destinationContainer,
+                               topInset: destinationInsets.top) + originDelta.y
+    }
+
     static func restoredOffset(for anchor: AnchorGeometry, in textView: UITextView) -> CGFloat {
-        destinationOffsetY(
+        let desired = anchor.sourceIsAtTop ? nil : offsetForAnchor(
+            anchor, manager: textView.layoutManager, container: textView.textContainer,
+            topInset: textView.textContainerInset.top)
+        return clampedOffsetY(
             textView: textView, destinationManager: textView.layoutManager,
             destinationContainer: textView.textContainer,
             destinationInsets: textView.textContainerInset,
             destinationAdjustedTopInset: textView.adjustedContentInset.top,
-            destinationHeight: textView.bounds.height, anchor: anchor)
+            destinationHeight: textView.bounds.height, desiredOffset: desired)
     }
 
-    private static func destinationOffsetY(
+    private static func offsetForAnchor(
+        _ anchor: AnchorGeometry, manager: NSLayoutManager, container: NSTextContainer, topInset: CGFloat
+    ) -> CGFloat {
+        let glyphs = manager.glyphRange(forCharacterRange: anchor.characterRange, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyphs, in: container).minY + topInset - anchor.screenY
+    }
+
+    private static func clampedOffsetY(
         textView: UITextView,
         destinationManager: NSLayoutManager,
         destinationContainer: NSTextContainer,
         destinationInsets: UIEdgeInsets,
         destinationAdjustedTopInset: CGFloat,
         destinationHeight: CGFloat,
-        anchor: AnchorGeometry?
+        desiredOffset: CGFloat?
     ) -> CGFloat {
         let minimum = -destinationAdjustedTopInset
         let usedBottom = destinationManager.usedRect(for: destinationContainer).maxY
@@ -244,13 +339,7 @@ final class TextViewportReflowTransition {
         let maximum = max(
             minimum,
             usedBottom + textView.adjustedContentInset.bottom - destinationHeight)
-        guard let anchor, !anchor.sourceIsAtTop else { return minimum }
-        let glyphRange = destinationManager.glyphRange(
-            forCharacterRange: anchor.characterRange, actualCharacterRange: nil)
-        let rect = destinationManager.boundingRect(
-            forGlyphRange: glyphRange, in: destinationContainer)
-        let desired = rect.minY + destinationInsets.top - anchor.screenY
-        return min(max(minimum, desired), maximum)
+        return min(max(minimum, desiredOffset ?? minimum), maximum)
     }
 
     private static func glyphImage(

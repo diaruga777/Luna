@@ -1,6 +1,6 @@
 import UIKit
 
-/// Freeze the passage already on screen, then widen the following eight lines
+/// Freeze the passage already on screen, then transition the following four lines
 /// toward the new column. This geometry is fixed for the life of the transition:
 /// scrolling reveals lines at their final x, without recentering/reflowing them.
 /// TextKit still owns selection, links, attachments and reading positions.
@@ -18,7 +18,7 @@ final class ScrollStableTextContainer: NSTextContainer {
     private var rampSourceWidth: CGFloat = 0
     private var rampStartY: CGFloat = 0
     private var rampHeight: CGFloat = 1
-    private static let rampLineCount: CGFloat = 8
+    private static let rampLineCount: CGFloat = 4
 
     /// The destination's readable width, inside a canvas wide enough to hold
     /// old lines without making UITextView shift its drawing origin.

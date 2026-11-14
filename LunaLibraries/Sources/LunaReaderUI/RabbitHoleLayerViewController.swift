@@ -876,7 +876,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             descriptor.scrollOffset = nil
         } else if readerMode == .original {
             descriptor.originalScrollOffset = originalReader.currentScrollOffset
-        } else {
+        } else if scrollReader.canPersistScrollPosition {
             descriptor.wordIndex = scrollReader.currentReadingWordIndex
             descriptor.scrollOffset = Double(scrollReader.currentReadingScrollOffsetY)
         }

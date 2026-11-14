@@ -124,7 +124,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         edgePopPan = edge
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(persistForBackground),
+            self, selector: #selector(checkpointReadingPosition),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
 
         addSimulatorDiveHooksIfNeeded()
@@ -224,12 +224,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     private func rootDescriptor() -> RabbitHoleLayerDescriptor {
-        RabbitHoleLayerDescriptor(
+        // A deck reload can rebuild the card from a snapshot taken before
+        // the outgoing reader checkpointed its position.
+        let item = store.item(withID: rootItem.id) ?? rootItem
+        return RabbitHoleLayerDescriptor(
             urlString: rootItem.urlString,
-            wordIndex: rootItem.lastWordIndex,
-            scrollOffset: rootItem.lastScrollOffset,
-            originalScrollOffset: rootItem.lastOriginalScrollOffset ?? 0,
-            readerMode: rootItem.lastReaderMode ?? .scroll,
+            wordIndex: item.lastWordIndex,
+            scrollOffset: item.lastScrollOffset,
+            originalScrollOffset: item.lastOriginalScrollOffset ?? 0,
+            readerMode: item.lastReaderMode ?? .scroll,
             title: rootItem.title ?? rootContent.title,
             bottomLipText: nil)
     }
@@ -539,34 +542,35 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     // MARK: - Persistence
 
-    /// Backgrounding can be followed immediately by a force-quit. Drain the
-    /// store's fire-and-forget position write before iOS suspends this process,
-    /// otherwise the next cold launch can see the previous reading position.
-    @objc private func persistForBackground() {
-        persist()
+    /// Make the live reading position durable before suspension or a deck
+    /// rebuild that can immediately open another copy of this reader.
+    @objc public func checkpointReadingPosition() {
+        guard persist() else { return }
         store.flushPendingUpdates()
     }
 
-    @objc private func persist() {
-        guard !layers.isEmpty else { return }
+    @discardableResult
+    private func persist() -> Bool {
+        guard let root = layers.first,
+              !defersFullContentUntilPrimary || hasActivatedPrimaryContent
+        else { return false }
         for layer in layers { layer.syncReadingPosition() }
         stackStore.save(RabbitHoleStack(layers: layers.map { $0.descriptor }), forRootID: rootItem.id)
-        if let root = layers.first {
-            // Mirror the root layer's shared reading position (word + exact pixels, the
-            // pixels cleared when RSVP owns it) and its disjoint archive offset onto the
-            // durable item, so a plain reopen restores both consistently.
-            let d = root.descriptor
-            store.saveReaderExitPosition(
-                scrollOffset: d.scrollOffset.map(SavesStore.ScrollOffsetEdit.set) ?? .clear,
-                lastWordIndex: d.wordIndex,
-                lastOriginalScrollOffset: d.originalScrollOffset,
-                for: rootItem.id)
-            // Persist the root's reader mode onto the durable item too. The stack file
-            // isn't enough: `RabbitHoleStackStore.save` DELETES a single-layer (undived)
-            // trail, so a plain read that only switched mode would lose it. Writing it to
-            // the item makes `rootDescriptor()` (rootItem.lastReaderMode) restore it.
-            store.setReaderMode(root.descriptor.readerMode, for: rootItem.id)
-        }
+        // Mirror the root layer's shared reading position (word + exact pixels, the
+        // pixels cleared when RSVP owns it) and its disjoint archive offset onto the
+        // durable item, so a plain reopen restores both consistently.
+        let d = root.descriptor
+        store.saveReaderExitPosition(
+            scrollOffset: d.scrollOffset.map(SavesStore.ScrollOffsetEdit.set) ?? .clear,
+            lastWordIndex: d.wordIndex,
+            lastOriginalScrollOffset: d.originalScrollOffset,
+            for: rootItem.id)
+        // Persist the root's reader mode onto the durable item too. The stack file
+        // isn't enough: `RabbitHoleStackStore.save` DELETES a single-layer (undived)
+        // trail, so a plain read that only switched mode would lose it. Writing it to
+        // the item makes `rootDescriptor()` (item.lastReaderMode) restore it.
+        store.setReaderMode(root.descriptor.readerMode, for: rootItem.id)
+        return true
     }
 
     private func markOpenedIfNeeded() {

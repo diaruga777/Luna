@@ -28,10 +28,12 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
 
     private let configuration: Configuration
     private let api: LunaVaultGoAPI
+    private let iroh: VaultIrohTransport
 
     public init(configuration: Configuration, api: LunaVaultGoAPI = .load()) {
         self.configuration = configuration
         self.api = api
+        iroh = VaultIrohTransport(directory: configuration.stateDirectory)
     }
 
     public func identity() throws -> DeviceID {
@@ -54,13 +56,23 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
     }
 
     public func dial(_ address: VaultPeerAddress, expecting expected: DeviceID) async throws -> any BEPByteStream {
-        if configuration.requestLocalNetworkAccess, case .tcp(let host, let port) = address {
-            try await VaultLocalNetworkAccess(host: host, port: port).check()
+        if case let .iroh(endpoint) = address {
+            return try await iroh.dial(endpoint, tls: self, expecting: expected)
+        }
+        return try await dialTCP(address, expecting: expected, localProbe: configuration.requestLocalNetworkAccess)
+    }
+
+    func dialTCP(_ address: VaultPeerAddress, expecting expected: DeviceID, localProbe: Bool) async throws -> any BEPByteStream {
+        if localProbe, case .tcp(let host, let port) = address {
+            try await VaultLocalNetworkAccess(host: host, port: port).check(timeout: 2)
         }
         let handle = try await configuration.tailnetHandle?() ?? 0
+        let socketAddress: VaultPeerAddress
+        if case let .tailscale(host, port) = address { socketAddress = .tcp(host: host, port: port) }
+        else { socketAddress = address }
         var descriptor: Int32 = -1
         let result = configuration.stateDirectory.path.withCString { directory in
-            address.description.withCString { address in
+            socketAddress.description.withCString { address in
                 expected.description.withCString { peer in
                     api.dial(directory, address, peer, handle, &descriptor)
                 }

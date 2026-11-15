@@ -33,7 +33,8 @@ public actor VaultAddressResolver {
     }
 
     public func addresses(for peer: VaultPeerRecord, forceRefresh: Bool = false) async throws -> [VaultPeerAddress] {
-        var result = Self.unique(peer.manualAddresses)
+        var result = Self.unique(peer.manualAddresses.map(\.classifyingTailscaleIP))
+            .sorted { $0.dialPriority < $1.dialPriority }
         guard peer.networkMode == .syncthingPublic, result.isEmpty else {
             guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
             return result

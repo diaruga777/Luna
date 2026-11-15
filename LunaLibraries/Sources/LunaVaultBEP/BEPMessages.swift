@@ -81,14 +81,17 @@ public struct BEPHello: Equatable, Sendable {
     public var clientVersion: String
     public var numConnections: Int32
     public var timestamp: Int64
+    public var connectionAddresses: [String]
 
     public init(deviceName: String, clientName: String, clientVersion: String,
-                numConnections: Int32 = 1, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1_000_000_000)) {
+                numConnections: Int32 = 1, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1_000_000_000),
+                connectionAddresses: [String] = []) {
         self.deviceName = deviceName
         self.clientName = clientName
         self.clientVersion = clientVersion
         self.numConnections = numConnections
         self.timestamp = timestamp
+        self.connectionAddresses = connectionAddresses
     }
 
     public func encoded() -> Data {
@@ -98,6 +101,7 @@ public struct BEPHello: Equatable, Sendable {
         writer.writeString(3, clientVersion)
         writer.writeInt32(4, numConnections)
         writer.writeInt64(5, timestamp)
+        for address in connectionAddresses.prefix(16) { writer.writeString(60, address) }
         return writer.data
     }
 
@@ -111,6 +115,9 @@ public struct BEPHello: Equatable, Sendable {
             case (3, .lengthDelimited): hello.clientVersion = try reader.readString()
             case (4, .varint): hello.numConnections = try reader.readInt32()
             case (5, .varint): hello.timestamp = try reader.readInt64()
+            case (60, .lengthDelimited):
+                let address = try reader.readString()
+                if address.utf8.count <= 256, hello.connectionAddresses.count < 16 { hello.connectionAddresses.append(address) }
             default: try reader.skip(tag.type)
             }
         }

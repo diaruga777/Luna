@@ -6,6 +6,7 @@ import Foundation
 /// manual entry. `.tailscale` names a host on the embedded tailnet and is
 /// dialed through the tsnet node rather than the system stack.
 public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertible {
+    case iroh(endpoint: String)
     case tcp(host: String, port: UInt16)
     case relay(url: URL)
     case tailscale(host: String, port: UInt16)
@@ -15,6 +16,15 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
     public init?(syncthingURL string: String) {
         guard let url = URL(string: string), let scheme = url.scheme?.lowercased() else { return nil }
         switch scheme {
+        case "iroh":
+            guard let id = url.host, id.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                  url.port == nil, url.path.isEmpty, url.query == nil, url.fragment == nil,
+                  url.user == nil, url.password == nil else { return nil }
+            self = .iroh(endpoint: id)
+        case "tailscale":
+            guard let host = url.host, !host.isEmpty,
+                  let port = UInt16(exactly: url.port ?? 49200), port > 0 else { return nil }
+            self = .tailscale(host: host, port: port)
         case "tcp", "tcp4", "tcp6":
             guard let host = url.host, !host.isEmpty,
                   let port = UInt16(exactly: url.port ?? 22000), port > 0 else { return nil }
@@ -29,6 +39,7 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
 
     public var description: String {
         switch self {
+        case .iroh(let endpoint): return "iroh://" + endpoint
         case .tcp(let host, let port):
             return host.contains(":") ? "tcp://[\(host)]:\(port)" : "tcp://\(host):\(port)"
         case .relay(let url):
@@ -42,9 +53,19 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
     public var dialPriority: Int {
         switch self {
         case .tcp(let host, _): return VaultPeerAddress.isPrivateHost(host) ? 0 : 1
-        case .tailscale: return 0
-        case .relay: return 2
+        case .iroh: return 2
+        case .tailscale: return 3
+        case .relay: return 4
         }
+    }
+
+    public var classifyingTailscaleIP: Self {
+        guard case let .tcp(host, port) = self else { return self }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard host.lowercased().hasPrefix("fd7a:115c:a1e0:") ||
+                (parts.count == 4 && parts.first == "100" && parts.allSatisfy { UInt8($0) != nil } &&
+                 UInt8(parts[1]).map { (64...127).contains($0) } == true) else { return self }
+        return .tailscale(host: host, port: port)
     }
 
     static func isPrivateHost(_ host: String) -> Bool {

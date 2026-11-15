@@ -42,10 +42,34 @@ Before the Go TLS dial, production iPhone TCP connections use a bounded
 Network.framework check. This participates in iOS Local Network consent,
 waits for the user to allow access, and reports `localNetworkDenied` distinctly
 instead of reducing it to BSD's “no route to host”. Settings presents a link
-to iPhone Settings for permission failures. Permission denial stops the attempt; it does
-not erase the previous pairing. Other unreachable routes still receive a
-clear Wi-Fi/Tailscale diagnostic. The pinned TLS handshake remains mandatory
+to iPhone Settings for permission failures. Permission denial preserves the previous pairing and still allows an
+available remote route to be tried. Unreachable routes receive a Wi-Fi and
+Tailscale diagnostic. The pinned TLS handshake remains mandatory
 after this reachability check.
+
+## Direct Iroh and Tailscale
+
+The authenticated Mac greeting advertises updated addresses to a trusted phone.
+The phone caches them under the same Mac certificate pin. Public Iroh relays
+carry QUIC setup and hole-punch coordination. The source-built Iroh transport
+omits application bytes from relayed QUIC packets, including retransmissions.
+Losing a direct path closes the transfer until the phone reconnects. With
+Tailscale installed and connected on both devices, the Mac advertises its
+Tailscale IP for fallback. Tailscale manages its own direct and relayed paths.
+
+Source builds require Rust with the Apple targets. Run this once per checkout
+before opening the Vault or Music schemes in Xcode:
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+scripts/iroh/build_iroh_direct.sh "$PWD/LunaVaultTailscale/Vendor/IrohDirect"
+```
+
+The companion build script also prepares the ignored native package. Set
+`IROH_DIRECT_TEST=1` for the private-relay test, which disables IP paths and
+checks that setup succeeds while no application bytes cross a relay in either
+direction. The macOS Swift tests exercise a direct Iroh tunnel and the existing
+Vault certificate pin with loopback sockets.
 
 ## Files and reconnect
 
@@ -88,6 +112,11 @@ and bounded Hello timeout.
 xcodebuild test -project Luna.xcodeproj -scheme LunaVaultConnectionTests \
   -destination 'platform=iOS Simulator,id=<simulator UDID>'
 ```
+
+Verification (2026-11-16): 14 Mac package tests and 46 iPhone Simulator
+connection tests passed. The Mac and iOS Simulator apps built. The direct Iroh
+loopback transferred bytes through the existing pinned Vault TLS connection and
+rejected a wrong certificate. Live cellular and Tailscale acceptance is separate.
 
 The active UI flows and icon sources are documented in [vault-ui.md](vault-ui.md).
 

@@ -13,6 +13,7 @@ final class CompanionController: @unchecked Sendable {
     private var status = "Starting…"
     private var code: String?
     private var pairingUntil = Date.distantPast
+    private var irohAddress: VaultPeerAddress?
     private var listener: LunaVaultGoListener?
     private var active = CompanionSessions()
     private let account: CompanionAccountGate
@@ -76,12 +77,24 @@ final class CompanionController: @unchecked Sendable {
                     // available system-assigned port remains fully usable.
                     listener = try await transport.listen(bindAddress: "0.0.0.0:0")
                 }
-                let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
+                let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:)).map(\.classifyingTailscaleIP)
                 lock.withLock {
                     self.listener = listener
                     code = VaultPairingCode(deviceID: localID, addresses: addresses).text
                     status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
                     pairingUntil = Date().addingTimeInterval(300)
+                }
+                if let port = addresses.compactMap({ address -> UInt16? in
+                    if case let .tcp(_, port) = address { return port }; return nil
+                }).first {
+                    Task {
+                        let direct = VaultIrohTransport(directory: stateURL.appendingPathComponent("Identity"))
+                        guard let address = try? await direct.listen(port: port) else { return }
+                        lock.withLock {
+                            irohAddress = address
+                            code = VaultPairingCode(deviceID: localID, addresses: addresses + [address]).text
+                        }
+                    }
                 }
                 while !Task.isCancelled {
                     let accepted = try await listener.accept()
@@ -103,8 +116,15 @@ final class CompanionController: @unchecked Sendable {
             let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: localID, folderID: "vault", stateURL: stateURL, clientStarted: { [weak self] client in
                 self?.clientStarted(client, device: accepted.device, generation: generation)
             })
+            let advertised: [String]
+            if account.trustedDevice == accepted.device {
+                let (activeListener, directAddress) = lock.withLock { (listener, irohAddress) }
+                let tcp = await activeListener?.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:)) ?? []
+                let routes = tcp.map(\.classifyingTailscaleIP) + [directAddress].compactMap { $0 }
+                advertised = VaultPairingCode(deviceID: localID, addresses: routes).addresses.map(\.description)
+            } else { advertised = [] }
             let connection = BEPConnection(stream: accepted.stream, peerDevice: accepted.device,
-                localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Mac", clientVersion: "1.0"),
+                localHello: BEPHello(deviceName: Host.current().localizedName ?? "Luna Mac", clientName: "Luna Mac", clientVersion: "1.0", connectionAddresses: advertised),
                 delegate: delegate)
             openedConnection = connection
             let hello = try await connection.start()

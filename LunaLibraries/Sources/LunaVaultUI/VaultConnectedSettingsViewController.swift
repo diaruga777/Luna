@@ -410,7 +410,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         case (5, _): loadStorage(force: true)
         case (0, 1): run(message: "Connecting…") { [runtime] in
             await runtime.refresh()
-            return await runtime.connectionStatus() == .connected ? "Your Mac is connected." : "Your Mac is still offline. Keep Luna Mac open on your Mac and check your network."
+            return await runtime.connectionStatus() == .connected ? "Your Mac is connected." : "Your Mac is still offline. Keep Luna Mac open. If you’re away from home, connect both devices to Tailscale."
         }
         case (0, 2):
             navigationController?.pushViewController(LunaMacConnectionViewController(

@@ -33,3 +33,5 @@ LunaVaultTailscale/.build/
 # Pinned dependency prepared by scripts/bootstrap_code_refresh.py
 LunaCodeRefreshKit/Vendor/DeviceGateway/IDevice.xcframework/
 **/__pycache__/
+
+LunaVaultTailscale/Vendor/IrohDirect/

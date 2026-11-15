@@ -67,7 +67,9 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             // Do not copy another device’s index sequence or replace our cursor.
             if changesMac { try store.savePeer(peer) }
             else if var local = existing {
-                local.manualAddresses = peer.manualAddresses
+                var known = Set<VaultPeerAddress>()
+                local.manualAddresses = (local.manualAddresses + peer.manualAddresses)
+                    .filter { known.insert($0).inserted }
                 local.name = peer.name
                 local.networkMode = peer.networkMode
                 local.lastConnectedAt = local.lastConnectedAt ?? peer.lastConnectedAt

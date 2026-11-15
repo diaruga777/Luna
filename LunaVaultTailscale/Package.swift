@@ -17,6 +17,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../LunaLibraries"),
+        .package(path: "Vendor/IrohDirect"),
     ],
     targets: [
         // The Go tsnet core, prebuilt as static archives. Go's darwin runtime
@@ -31,6 +32,7 @@ let package = Package(
                 ]),
         .target(name: "LunaVaultTailscale", dependencies: [
             "TailscaleKit",
+            .product(name: "IrohLib", package: "IrohDirect"),
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),
             .product(name: "LunaAppConfig", package: "LunaLibraries"),

@@ -144,7 +144,16 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 announcedClients.removeAll()
                 connection = candidate
                 await setState(peer.isFolderAccepted ? .syncing : .awaitingFolder)
-                _ = try await candidate.start()
+                let hello = try await candidate.start()
+                // This hello arrives after the normal BEP certificate pin check.
+                // Keep user-entered routes and learn current routes for that Mac.
+                let routes = hello.connectionAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
+                if !routes.isEmpty, var current = try store.peer(), current.deviceID == peer.deviceID {
+                    var seen = Set<VaultPeerAddress>()
+                    let manual = current.manualAddresses.filter { if case .iroh = $0 { return false }; return true }
+                    current.manualAddresses = (routes + manual).filter { seen.insert($0).inserted }.prefix(24).map { $0 }
+                    try store.savePeer(current)
+                }
                 let entries = try store.announcedIndexEntries()
                 try await candidate.send(clusterConfig: clusterConfig(peer: peer, entries: entries))
                 if peer.isFolderAccepted {
@@ -156,7 +165,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 // The first accepted index below establishes connection readiness.
                 return
             } catch {
-                if let transportError = error as? VaultTransportError, transportError == .localNetworkDenied {
+                if let transportError = error as? VaultTransportError, transportError == .localNetworkDenied, addresses.count == 1 {
                     await setState(.offline(transportError.localizedDescription))
                     throw transportError
                 }

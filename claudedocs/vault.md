@@ -66,11 +66,13 @@ The companion is a SwiftPM app with a window and menu-bar item. Copy its
 pairing code into iPhone Settings, then Accept on the Mac. The code includes
 the Mac's certificate identity and direct addresses. The iPhone reports
 success only after authentication and a real initial-index exchange. Both
-home and Settings use the same durable peer. A separately installed Tailscale
-client can provide routing; the active runtime does not start embedded tsnet.
-Public discovery/relay publication and the legacy share extension are not
-wired into this runtime. See [the pairing repair](vault-pairing-repair.md) for
-current behavior, test commands, and remaining boundaries.
+home and Settings use the same durable peer. Vault tries LAN, then direct Iroh,
+then the Mac’s Tailscale address. Public Iroh infrastructure handles discovery
+and QUIC setup. Iroh application frames require a direct path, including during
+migration. The Iroh tunnel carries the existing certificate-pinned Vault
+protocol. Install the separate Tailscale app on both devices to use fallback.
+Open Vault on the same Wi-Fi after updating to learn the Mac’s current routes.
+See [the pairing repair](vault-pairing-repair.md) for test commands.
 
 ## Module boundaries
 

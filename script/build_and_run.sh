@@ -14,6 +14,7 @@ if [[ -z "${DEVELOPER_DIR:-}" && ! -x "$(xcode-select -p)/usr/bin/xcodebuild" ]]
   XCODE_APP="$(mdfind 'kMDItemCFBundleIdentifier == "com.apple.dt.Xcode"' | head -1)"
   [[ -z "$XCODE_APP" ]] || export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
 fi
+"$ROOT_DIR/scripts/iroh/build_iroh_direct.sh" "$ROOT_DIR/LunaVaultTailscale/Vendor/IrohDirect"
 DERIVED_DATA="${LUNA_MAC_DERIVED_DATA:-$ROOT_DIR/.build-vault-mac/DerivedData}"
 ARGS=(-project "$ROOT_DIR/Luna.xcodeproj" -scheme LunaVaultMac -configuration Debug
   -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA"

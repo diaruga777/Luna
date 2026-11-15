@@ -1,5 +1,10 @@
 # Luna Vault Mac companion (v1 foundation)
 
+The current connected Vault uses the certificate-pinned BEP path described in
+[the pairing repair](vault-pairing-repair.md). The encrypted backend below
+covers legacy credentials created by an earlier Vault connection screen.
+
+
 The Mac storage option is a companion process owned and installed by the user.
 Luna has no hosted relay or cloud bucket. Since 2026-08 the Vault app and the
 companion EMBED Tailscale (tsnet, via the `LunaVaultTailscale` package —

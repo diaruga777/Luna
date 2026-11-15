@@ -18,7 +18,14 @@ public struct LunaMacCredentials: Codable, Sendable {
         public init(peer: VaultPeerRecord) throws {
             guard let verified = peer.lastConnectedAt else { throw LunaMacCredentialError.unverified }
             deviceID = peer.deviceID; name = peer.name; network = peer.networkMode
-            addresses = peer.manualAddresses.map(\.description)
+            addresses = peer.manualAddresses.compactMap { address in
+                // Preserve Keychain compatibility with Luna builds that predate Iroh.
+                switch address {
+                case .iroh: return nil
+                case let .tailscale(host, port): return VaultPeerAddress.tcp(host: host, port: port).description
+                default: return address.description
+                }
+            }
             folderID = peer.folderID; folderLabel = peer.folderLabel; verifiedAt = verified
         }
         public func peer() throws -> VaultPeerRecord {

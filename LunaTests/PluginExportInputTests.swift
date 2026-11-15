@@ -134,6 +134,9 @@ final class PluginExportInputTests: XCTestCase {
         let shared = try XCTUnwrap(ZipArchiveReader(data: Data(contentsOf: sharedURL)))
         XCTAssertEqual(shared.data(at: "OEBPS/images/banner.png"), archive.data(at: "OEBPS/images/banner.png"))
         XCTAssertEqual(shared.text(at: "OEBPS/chapter.xhtml"), archive.text(at: "OEBPS/chapter.xhtml"))
+        let inputData = try Data(json(of: standard).utf8)
+        let encodedInput = try XCTUnwrap(JSONSerialization.jsonObject(with: inputData) as? [String: Any])
+        XCTAssertEqual(encodedInput["dateAdded"] as? Double, item.dateAdded.timeIntervalSince1970)
         XCTAssertEqual(standard.file?.mime, "application/epub+zip")
         XCTAssertTrue(standard.file?.name.hasSuffix(".epub") == true)
     }

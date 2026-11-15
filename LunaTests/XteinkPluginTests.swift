@@ -121,7 +121,7 @@ final class XteinkPluginTests: XCTestCase {
             file: .init(
                 id: descriptor.id, name: descriptor.name, size: descriptor.size,
                 mime: "application/epub+zip"),
-            queuedRemaining: queuedRemaining))
+            queuedRemaining: queuedRemaining, dateAdded: 1_763_000_123.75))
         return data
     }
 
@@ -251,18 +251,19 @@ final class XteinkPluginTests: XCTestCase {
         XCTAssertTrue(exports.sentRemoteNames.allSatisfy { $0.utf8.count <= 96 })
     }
 
-    func testStartPutCarriesTheArticleIDAndTheRemainingQueue() throws {
+    func testStartPutCarriesTheArticleIDSaveDateAndRemainingQueue() throws {
         let saveID = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
         try queueSend(bytes: 4096, saveID: saveID, queuedRemaining: 2)
         runRendezvous()
         let startPut = try XCTUnwrap(maker.transport.operation("start_put"))
         XCTAssertEqual(startPut["article_id"] as? String, saveID.lowercased())
+        XCTAssertEqual(startPut["saved_at"] as? Int, 1_763_000_123)
         XCTAssertEqual(startPut["queue_remaining"] as? Int, 2)
         XCTAssertEqual(startPut["resume"] as? Bool, true)
         XCTAssertEqual(startPut["chunk_size"] as? Int, chunkSize)
     }
 
-    /// The reader refuses to overwrite a file already in /Books, so the book
+    /// The reader refuses to overwrite a file already on the reader, so the book
     /// IS on the device: a retry could only fail the same way.
     func testStartPutAnsweredWithExistsCountsAsDelivered() throws {
         maker.transport.startPutError = "exists"
@@ -287,7 +288,11 @@ final class XteinkPluginTests: XCTestCase {
 
         XCTAssertEqual(exports.results, ["sent"])
         XCTAssertTrue(maker.transport.assembled.isEmpty, "no book goes over BLE")
-        XCTAssertEqual(maker.transport.operation("wifi_request")?["prefer_ap"] as? Bool, true)
+        let wifiRequest = try XCTUnwrap(maker.transport.operation("wifi_request"))
+        XCTAssertEqual(wifiRequest["prefer_ap"] as? Bool, true)
+        XCTAssertEqual(wifiRequest["article_id"] as? String, "3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+        XCTAssertEqual(wifiRequest["saved_at"] as? Int, 1_763_000_123)
+        XCTAssertEqual(wifiRequest["name"] as? String, "Article-3f2504e0-4f89-11d3-9a0c-0305e82c3301.epub")
         XCTAssertEqual(joiner.joined.first?.ssid, "CrossPoint-X3")
         XCTAssertEqual(joiner.joined.first?.passphrase, "sekrit")
         XCTAssertEqual(
@@ -382,7 +387,7 @@ final class XteinkPluginTests: XCTestCase {
             file: .init(
                 id: descriptor.id, name: descriptor.name, size: descriptor.size,
                 mime: "application/epub+zip"),
-            queuedRemaining: 0)
+            queuedRemaining: 0, dateAdded: nil)
         let answer = await runner.invoke(
             .export, pluginID: pluginID, argument: send, timeout: 10,
             as: FakePluginExportsBridge.ExportAnswer?.self)

@@ -107,7 +107,8 @@ public struct PluginExportInputProducer {
         return PluginExportInput(
             kind: kind, saveID: item.id, url: item.urlString, title: title, format: format,
             file: file, text: text, json: json, auto: auto,
-            source: item.effectiveCaptureSource.rawValue, queuedRemaining: queuedRemaining)
+            source: item.effectiveCaptureSource.rawValue, queuedRemaining: queuedRemaining,
+            dateAdded: item.dateAdded)
     }
 
     /// Checked after payload preparation, immediately before invoking a destination.

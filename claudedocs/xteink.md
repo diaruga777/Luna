@@ -122,7 +122,7 @@ first continuation — callers are serialized through
 alike), so the refusal is a backstop that turns a residual race into a
 visible failure instead of a task hung forever. A `start_put` answered with
 `exists` counts as DELIVERED: the reader refuses to overwrite a file already
-in /Books, so the book is on the device and a retry could only fail the same
+in its sync folder, so the book is on the device and a retry could only fail the same
 way. A missing pairing secret defers (item stays queued, no retry cost) the
 same way a missing rendezvous does — pairing is setup, not a failed send. `start_put` supplies `chunk_size`, `resume: true`, and
 — new — optional `article_id` (the save's lowercase UUID string) and
@@ -161,8 +161,13 @@ strand a travelling phone. STA offers remain protocol-compatible and upload
 directly, while an AP offer is joined immediately with `NEHotspotConfiguration`
 in the foreground and removed after transfer. Background AP offers cause a
 local open-Luna notification.
-CrossPoint upload is multipart `POST /upload?path=/Books`; Luna treats a 2xx
-response as authoritative and the custom X3 firmware rejects zero-byte files.
+CrossPoint upload is multipart `POST /upload?path=/Books`. The Luna X3 firmware
+routes the request to `/Luna` inside its dedicated Wi-Fi sync window. Regular
+uploads to `/Books` still go to `/Books`. The plugin sends the original save
+time (`saved_at`, Unix seconds) over BLE with `start_put` and with the article
+ID and filename on `wifi_request`. The reader stores it as the SD file’s
+creation timestamp for its **Date Added** sort. Older transfers may have only
+the SD card’s original timestamp.
 
 ## Rendezvous-ready sweep
 

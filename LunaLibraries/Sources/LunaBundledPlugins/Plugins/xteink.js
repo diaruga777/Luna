@@ -263,13 +263,19 @@ async function awaitCheckpoint(session, link) {
     throw new luna.LunaError("timed-out", "no reader checkpoint arrived");
 }
 
-async function sendOverBLE(session, link, bytes, fileName, articleID, queuedRemaining) {
+function articleMetadata(input) {
+    const metadata = {};
+    if (input.saveId) { metadata.article_id = String(input.saveId).toLowerCase(); }
+    if (Number.isFinite(input.dateAdded)) { metadata.saved_at = Math.floor(input.dateAdded); }
+    return metadata;
+}
+
+async function sendOverBLE(session, link, bytes, fileName, input) {
     const digest = hexOfBase64(await luna.crypto.sha256({ base64: luna.bytes.toBase64(bytes) }));
     const chunk = Math.max(1, Math.min(session.mtu, 244) - 4);
     const start = { kind: "book", name: fileName, size: bytes.length, sha256: digest,
-                    resume: true, chunk_size: chunk };
-    if (articleID) { start.article_id = String(articleID).toLowerCase(); }
-    if (typeof queuedRemaining === "number") { start.queue_remaining = queuedRemaining; }
+                    resume: true, chunk_size: chunk, ...articleMetadata(input) };
+    if (typeof input.queuedRemaining === "number") { start.queue_remaining = input.queuedRemaining; }
     await control(session, link, "start_put", start);
 
     let offset = Math.min(link.confirmed, bytes.length);
@@ -295,8 +301,10 @@ async function sendOverBLE(session, link, bytes, fileName, articleID, queuedRema
 /// station offer uploads directly; an access-point offer is joined for the
 /// transfer and dropped afterwards. iOS joins a network only in the
 /// foreground, which `luna.wifi.join` reports as code `background`.
-async function sendOverWiFi(session, link, file, fileName, title) {
-    await control(session, link, "wifi_request", { prefer_ap: true });
+async function sendOverWiFi(session, link, fileName, input) {
+    await control(session, link, "wifi_request", {
+        prefer_ap: true, name: fileName, ...articleMetadata(input),
+    });
     if (!link.wifi || typeof link.wifi.ip !== "string") {
         throw new luna.LunaError("no-offer", "the reader offered no network");
     }
@@ -309,7 +317,7 @@ async function sendOverWiFi(session, link, file, fileName, title) {
             if (error && error.code === "background") {
                 await luna.notifications.post({
                     title: "Xteink is ready",
-                    body: "Open Luna to send " + title + " over the reader’s Wi‑Fi.",
+                    body: "Open Luna to send " + input.title + " over the reader’s Wi‑Fi.",
                     identifier: "xteink-wifi-transfer",
                 });
                 throw new luna.LunaError("background", "the join needs Luna in the foreground");
@@ -318,7 +326,7 @@ async function sendOverWiFi(session, link, file, fileName, title) {
         }
     }
     try {
-        await uploadOnce(joined, offer.ip, fileName, file);
+        await uploadOnce(joined, offer.ip, fileName, input.file);
     } finally {
         if (joined) { await luna.wifi.forget(offer.ssid); }
     }
@@ -454,10 +462,9 @@ luna.register({
             if (input.file.size <= BLE_MAX_BYTES) {
                 const base64 = await luna.files.read(input.file, "base64");
                 const bytes = luna.bytes.fromBase64(base64);
-                await sendOverBLE(
-                    session, link, bytes, fileName, input.saveId, input.queuedRemaining);
+                await sendOverBLE(session, link, bytes, fileName, input);
             } else {
-                await sendOverWiFi(session, link, input.file, fileName, input.title);
+                await sendOverWiFi(session, link, fileName, input);
             }
             return { status: "sent", remoteName: fileName };
         } catch (error) {
@@ -530,7 +537,7 @@ async function concludeWindow(session, link, remaining) {
 }
 
 /// A `start_put` answered with `exists` counts as delivered: the reader
-/// refuses to overwrite a file already in /Books, so the book IS on the device
+/// refuses to overwrite a file already in its sync folder, so the book IS on the device
 /// and a retry could only fail the same way. A missing pairing secret defers
 /// instead — pairing is setup, not a failed send.
 function exportFailure(error, fileName) {

@@ -32,12 +32,14 @@ public struct PluginExportInput: Encodable, Equatable {
     public let source: String?
     /// Other saves still queued for this destination.
     public let queuedRemaining: Int?
+    /// When Luna originally saved the item. Encoded as Unix time in seconds.
+    public let dateAdded: Date?
 
     public init(
         kind: PluginModelKind, saveID: UUID, url: String, title: String,
         format: PluginExportInputFormat, file: PluginExportFileHandle? = nil,
         text: String? = nil, json: PluginExportJSON? = nil, auto: Bool,
-        source: String? = nil, queuedRemaining: Int? = nil
+        source: String? = nil, queuedRemaining: Int? = nil, dateAdded: Date? = nil
     ) {
         self.kind = kind
         self.saveID = saveID
@@ -50,10 +52,11 @@ public struct PluginExportInput: Encodable, Equatable {
         self.auto = auto
         self.source = source
         self.queuedRemaining = queuedRemaining
+        self.dateAdded = dateAdded
     }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, saveId, url, title, format, file, text, json, auto, source, queuedRemaining
+        case kind, saveId, url, title, format, file, text, json, auto, source, queuedRemaining, dateAdded
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -69,6 +72,7 @@ public struct PluginExportInput: Encodable, Equatable {
         try container.encode(auto, forKey: .auto)
         try container.encodeIfPresent(source, forKey: .source)
         try container.encodeIfPresent(queuedRemaining, forKey: .queuedRemaining)
+        try container.encodeIfPresent(dateAdded?.timeIntervalSince1970, forKey: .dateAdded)
     }
 }
 

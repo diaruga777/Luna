@@ -300,6 +300,7 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
         let file: FileHandleJSON
         let auto = true
         let queuedRemaining: Int
+        let dateAdded: Double?
 
         struct FileHandleJSON: Encodable {
             let id: String

@@ -870,6 +870,7 @@ interface ExportInput {
   auto: boolean;               // true when the coordinator is delivering a queued send
   source?: string;             // CaptureSource raw value
   queuedRemaining?: number;
+  dateAdded?: number;       // Original save time in Unix seconds
 }
 type ExportResult =
   | null                                                     // handled by the plugin (sent itself, or nothing to do)

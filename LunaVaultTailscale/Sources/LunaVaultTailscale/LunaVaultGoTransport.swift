@@ -1,5 +1,6 @@
 import Foundation
 import LunaVaultBEP
+import LibTailscale
 
 #if canImport(Darwin)
 import Darwin
@@ -7,11 +8,8 @@ import Darwin
 
 public typealias LunaVaultNet = LunaVaultGoTransport
 
-/// The small C ABI exported by the `lunabep` Go package.  The functions are
-/// looked up at runtime so the Swift package remains buildable with the
-/// checked-in archive; `scripts/build_libtailscale.sh` adds the symbols to a
-/// rebuilt archive.  This also makes the transport straightforward to fake in
-/// unit tests without opening a socket.
+/// Implements peer operations with the bundled Go library. Tests inject the
+/// same C function table without opening a socket.
 public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, VaultPeerAnnouncing, @unchecked Sendable {
     public struct Configuration: Sendable {
         public let stateDirectory: URL
@@ -220,7 +218,7 @@ public final class LunaVaultGoListener: VaultPeerListening, @unchecked Sendable 
 }
 
 /// A C-call-compatible function table. Tests can inject a table; production
-/// uses `dlsym` against the libtailscale image that contains lunabep.
+/// references the C entry points directly so Release linking retains them.
 public struct LunaVaultGoAPI: @unchecked Sendable {
     public typealias Errmsg = @convention(c) (UnsafeMutablePointer<CChar>?, Int) -> Int32
     public typealias Identity = @convention(c) (UnsafePointer<CChar>?, UnsafeMutablePointer<CChar>?, Int) -> Int32
@@ -258,31 +256,11 @@ public struct LunaVaultGoAPI: @unchecked Sendable {
     }
 
     public static func load() -> LunaVaultGoAPI {
-        func symbol<T>(_ name: String, as: T.Type) -> T? {
-            #if canImport(Darwin)
-            guard let pointer = dlsym(UnsafeMutableRawPointer(bitPattern: -2), name) else { return nil }
-            return unsafeBitCast(pointer, to: T.self)
-            #else
-            return nil
-            #endif
-        }
-        guard let errmsg: Errmsg = symbol("lunabep_errmsg", as: Errmsg.self),
-              let identity: Identity = symbol("lunabep_identity", as: Identity.self),
-              let dial: Dial = symbol("lunabep_dial", as: Dial.self),
-              let lookup: Lookup = symbol("lunabep_lookup", as: Lookup.self),
-              let announce: Announce = symbol("lunabep_announce", as: Announce.self),
-              let listen: Listen = symbol("lunabep_listen", as: Listen.self),
-              let relayJoin: RelayJoin = symbol("lunabep_relay_join", as: RelayJoin.self),
-              let relayPick: RelayPick = symbol("lunabep_relay_pick", as: RelayPick.self),
-              let accept: Accept = symbol("lunabep_accept", as: Accept.self),
-              let listenerAddresses: ListenerAddresses = symbol("lunabep_listener_addresses", as: ListenerAddresses.self),
-              let closeListener: CloseListener = symbol("lunabep_close_listener", as: CloseListener.self) else {
-            return .unavailable
-        }
-        return LunaVaultGoAPI(errmsg: errmsg, identity: identity, dial: dial, lookup: lookup,
-                              announce: announce, listen: listen, relayJoin: relayJoin,
-                              relayPick: relayPick, accept: accept,
-                              listenerAddresses: listenerAddresses, closeListener: closeListener)
+        LunaVaultGoAPI(errmsg: lunabep_errmsg, identity: lunabep_identity, dial: lunabep_dial,
+                       lookup: lunabep_lookup, announce: lunabep_announce, listen: lunabep_listen,
+                       relayJoin: lunabep_relay_join, relayPick: lunabep_relay_pick,
+                       accept: lunabep_accept, listenerAddresses: lunabep_listener_addresses,
+                       closeListener: lunabep_close_listener)
     }
 
     public static let unavailable = LunaVaultGoAPI(

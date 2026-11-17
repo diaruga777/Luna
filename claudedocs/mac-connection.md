@@ -1,6 +1,6 @@
 # One Luna Mac connection
 
-Vault, Music, and Code use `LunaMacConnection.makeRuntime` as their sole production
+Vault and Music use `LunaMacConnection.makeRuntime` as their sole production
 composition point. They share the Luna Mac companion, the authenticated TLS/BEP
 protocol, the App Group pairing store, and one account identity. A Mac trusts one
 certificate identity at a time; simultaneous sessions from multiple apps and
@@ -10,13 +10,16 @@ on the Mac revokes live sessions and clears the configured app list before anoth
 identity can pair. Existing Mac identity, trusted-device preference, and folder paths
 are preserved on upgrade.
 
+The Swift transport references the C entry points in LibTailscale directly so
+the Release linker retains the code used to create an identity and start pairing.
+
 ## iPhone and iPad UX
 
 `LunaMacConnectionViewController` owns setup, connection status, reconnect, update,
-and disconnect for all three apps. Its app descriptor (`LunaMacClient`) supplies
+and disconnect for both apps. Its app descriptor (`LunaMacClient`) supplies
 the containing app’s name for Continue. Setup uses one connection-code instruction;
 connected settings show status without repeating onboarding. Vault adds its download, search,
-and Photos export settings; Music and Code do not display those controls.
+and Photos export settings; Music has its own library settings.
 `VaultConnectedSettingsViewController` remains a compatibility alias.
 
 `LunaMacLaunchViewController` gives each app a first-launch flow, including an

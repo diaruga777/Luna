@@ -32,6 +32,7 @@ let package = Package(
                 ]),
         .target(name: "LunaVaultTailscale", dependencies: [
             "TailscaleKit",
+            "LibTailscale",
             .product(name: "IrohLib", package: "IrohDirect"),
             .product(name: "LunaVaultBEP", package: "LunaLibraries"),
             .product(name: "LunaVaultBackend", package: "LunaLibraries"),

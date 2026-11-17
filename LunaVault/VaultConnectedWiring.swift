@@ -20,8 +20,9 @@ import LunaVaultUI
         do {
             let store = try VaultFolderStore.production()
             let connectedRuntime = try LunaMacConnection.makeRuntime(client: .vault, store: store)
-            runtime = connectedRuntime
             let queue = try VaultIncomingQueue.production()
+            runtime = connectedRuntime
+            initializationError = nil
             incomingQueue = queue
             transfers = VaultTransferController(runtime: connectedRuntime, queue: queue,
                 bundleID: Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault")
@@ -36,16 +37,21 @@ import LunaVaultUI
     static func resumeIntentTransfers() { transfers?.start() }
 
     static func makeRootViewController() -> UIViewController {
-        guard let runtime else {
+        guard let runtime, let transfers, let incomingQueue else {
             let controller = UIViewController(); controller.title = "Luna Vault"
             controller.view.backgroundColor = .systemBackground
-            let label = UILabel(); label.numberOfLines = 0
-            label.text = "Vault could not open its local storage.\n\n\(initializationError.map(String.init(describing:)) ?? "Unknown error")"
-            label.frame = CGRect(x: 24, y: 120, width: 320, height: 300)
-            controller.view.addSubview(label)
+            var unavailable = UIContentUnavailableConfiguration.empty()
+            unavailable.image = UIImage(systemName: "externaldrive.badge.exclamationmark")
+            unavailable.text = "Couldn’t Open Vault"
+            unavailable.button.title = "Try Again"
+            unavailable.buttonProperties.primaryAction = UIAction { [weak controller] _ in
+                guard let window = controller?.view.window else { return }
+                install()
+                window.rootViewController = makeRootViewController()
+            }
+            controller.contentUnavailableConfiguration = unavailable
             return controller
         }
-        guard let transfers, let incomingQueue else { return UIViewController() }
         let files = VaultConnectedFilePresenter(runtime: runtime, queue: incomingQueue, transfers: transfers)
         let root = VaultSyncthingHomeViewController(runtime: runtime,
             importHandler: { files.importFile() }, importFolderHandler: { files.importFolder() },

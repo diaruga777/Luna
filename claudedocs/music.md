@@ -333,7 +333,10 @@ already delivered notifications avoid duplicates during interrupted delivery.
 Muted/unfollowed/permission-denied alerts are discarded without a later backlog.
 Tapping an alert uses the existing cold/warm episode-page route. Add to Queue and
 Play Next run the episode menu's persisted enqueue operation in the background,
-without opening a page or starting playback. Foreground alerts show banners too.
+without opening a page or starting playback. The delegate calls the system's
+response completion on the main thread after the queue write. UIKit can snapshot
+the scene during completion and will terminate the process if that runs off the
+main thread. Foreground alerts show banners too.
 Outbox and check-attempt times stay local when iCloud settings merge.
 
 Queue actions preserve the playing item, position and Now Playing session. The
@@ -343,6 +346,11 @@ repeated begin events, and cancels it if a later transport action supersedes it.
 An allowed system resume uses the same background execution protection as remote
 Play, through audio startup and session activation. Already-paused playback and
 interruptions without a resume recommendation stay paused.
+
+Validation (2026-11-17): On the iOS 27 simulator, tapping Add to Queue in a
+system banner previously terminated Luna Music during UIKit snapshotting.
+With the completion on the main thread, playback time continued to advance
+and the new episode was persisted after the existing queued episode.
 
 Validation (2026-11-03): Xcode 27.1 beta / iPhone 17 Pro / iOS 26.2. All 46 focused
 notification, transport and local-resume tests passed with both local fixture

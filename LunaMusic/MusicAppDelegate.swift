@@ -98,17 +98,24 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
         let request = BGAppRefreshTaskRequest(identifier: identifier); request.earliestBeginDate = Date().addingTimeInterval(PodcastPolicies.refreshInterval)
         do { try BGTaskScheduler.shared.submit(request) } catch { /* Foreground polling remains available if background refresh is disabled. */ }
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let id = response.notification.request.content.userInfo["podcastEpisodeID"] as? String else { return }
-        await MainActor.run {
-            switch PodcastEpisodeNotifications.action(for: response.actionIdentifier) {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let episodeID = response.notification.request.content.userInfo["podcastEpisodeID"] as? String
+        let identifier = response.actionIdentifier
+        Task { @MainActor in
+            // UIKit may snapshot the scene as soon as the response completes.
+            // The async delegate bridge can invoke that completion off the main thread.
+            defer { completionHandler() }
+            guard let episodeID else { return }
+            let action = PodcastEpisodeNotifications.action(for: identifier)
+            switch action {
             case .open:
-                MusicIntentRoute.pendingPodcastEpisodeID = id
-                NotificationCenter.default.post(name: .lunaPodcastOpenEpisode, object: nil, userInfo: ["id": id])
+                MusicIntentRoute.pendingPodcastEpisodeID = episodeID
+                NotificationCenter.default.post(name: .lunaPodcastOpenEpisode, object: nil, userInfo: ["id": episodeID])
             case .addToQueue, .playNext:
                 let library = PodcastLibraryController.shared
                 do {
-                    try PodcastEpisodeNotifications.shared.enqueue(id, next: response.actionIdentifier == PodcastEpisodeNotifications.playNextID, in: library)
+                    try PodcastEpisodeNotifications.shared.enqueue(episodeID, next: action == .playNext, in: library)
                 } catch { library.report(error) }
             case .ignore: break
             }

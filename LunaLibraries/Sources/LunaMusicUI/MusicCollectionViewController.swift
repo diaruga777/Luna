@@ -156,7 +156,7 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
         if filteredResults.isEmpty {
             var config = searching ? UIContentUnavailableConfiguration.search() : UIContentUnavailableConfiguration.empty()
             config.text = downloadedOnly && !searching ? "No Downloaded Music" : searching ? "No Results" : collection?.playlist != nil ? "No Songs" : "No \(title ?? "Music")"
-            config.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : searching ? "Try another title or artist." : collection?.playlist != nil ? "Add music from your library to this playlist." : "Music in your library will appear here."
+            config.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : searching ? "Try another title or artist." : collection?.playlist != nil ? "Add music from your library to this playlist." : nil
             let empty = UIContentUnavailableView(configuration: config)
             empty.frame = CGRect(x: 0, y: 0, width: table.bounds.width, height: 160)
             table.tableFooterView = empty
@@ -169,6 +169,15 @@ internal final class MusicCollectionViewController: MusicScreenViewController, U
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        if let empty = table.tableFooterView as? UIContentUnavailableView {
+            let size = empty.systemLayoutSizeFitting(CGSize(width: table.bounds.width, height: 0),
+                withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+            let height = max(160, ceil(size.height))
+            if empty.frame.width != table.bounds.width || abs(empty.frame.height - height) > 1 {
+                empty.frame.size = CGSize(width: table.bounds.width, height: height)
+                table.tableFooterView = empty
+            }
+        }
         guard let header = table.tableHeaderView else { return }
         let height = header.systemLayoutSizeFitting(CGSize(width: table.bounds.width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         if header.frame.width != table.bounds.width || abs(header.frame.height - height) > 1 { header.frame.size = CGSize(width: table.bounds.width, height: height); table.tableHeaderView = header }

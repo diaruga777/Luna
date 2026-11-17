@@ -64,7 +64,7 @@ internal final class MusicPlaylistSongPicker: UITableViewController, UISearchRes
         if filtered.isEmpty {
             var empty = UIContentUnavailableConfiguration.search()
             empty.text = downloadedOnly ? "No Downloaded Music" : songs.isEmpty ? "Your Library Is Empty" : "No Results"
-            empty.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : songs.isEmpty ? "Add songs to your music library, then select them here." : "Try another song, album, or artist."
+            empty.secondaryText = downloadedOnly ? "Download music or turn off the Downloaded filter." : songs.isEmpty ? "Add songs to your music library first." : "Try another song, album, or artist."
             tableView.backgroundView = UIContentUnavailableView(configuration: empty)
         } else { tableView.backgroundView = nil }
     }

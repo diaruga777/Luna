@@ -269,7 +269,7 @@ extension PodcastBrowserViewController: UISearchBarDelegate {
     override func viewDidLoad() { super.viewDidLoad(); reload() }
     override func reload() {
         sections = [.init(title: "", rows: showIDs.compactMap { podcasts.state.shows[$0] }.map(Row.show) + ids.compactMap { podcasts.state.episodes[$0] }.map(Row.episode))]
-        if sections[0].rows.isEmpty { empty("No Episodes", detail: "No episodes yet.") }
+        if sections[0].rows.isEmpty { empty("No Episodes") }
         super.reload()
     }
 }

@@ -64,7 +64,8 @@ import LunaMusicCore
         table.tableFooterView = nil
         if podcasts.refreshingShowIDs.contains(showID) { loading("Updating Episodes") }
         else if let error = show.refreshError { empty("Unable to Update Episodes", detail: error, retry: { [weak self] in Task { await self?.refreshContent() } }) }
-        else if episodes.isEmpty { empty("No Episodes", detail: "No episodes match this filter.") }
+        else if episodes.isEmpty { empty(query.isEmpty ? "No Episodes" : "No Results",
+            detail: filter.selectedSegmentIndex == 0 ? nil : "Switch to All to see more episodes.") }
         super.reload()
     }
     private func buildHeader(_ show: PodcastShow) {

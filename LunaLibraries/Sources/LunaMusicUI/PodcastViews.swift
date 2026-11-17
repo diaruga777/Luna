@@ -418,7 +418,7 @@ import LunaDesignSystem
         }; action.backgroundColor = .systemPurple
         return UISwipeActionsConfiguration(actions: [action])
     }
-    func empty(_ title: String, detail: String, atTop: Bool = false, retry: (() -> Void)? = nil) {
+    func empty(_ title: String, detail: String? = nil, atTop: Bool = false, retry: (() -> Void)? = nil) {
         var content = UIContentUnavailableConfiguration.empty(); content.image = UIImage(systemName: "dot.radiowaves.left.and.right"); content.text = title; content.secondaryText = detail
         if let retry { content.button.title = "Try Again"; content.buttonProperties.primaryAction = UIAction { _ in retry() } }
         let view = UIContentUnavailableView(configuration: content); view.frame.size.height = 240

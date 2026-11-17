@@ -56,7 +56,9 @@ final class KeyboardSceneDelegate: UIResponder, UIWindowSceneDelegate {
     nav.navigationBar.prefersLargeTitles = true
     window.rootViewController = nav
     window.makeKeyAndVisible()
-    try? KeyboardStore().reapAbandonedMedia()
+    DispatchQueue.global(qos: .utility).async {
+      try? KeyboardStore().reapAbandonedMedia()
+    }
   }
   func sceneDidEnterBackground(_ scene: UIScene) { SavesStore.shared.reapPendingDeletes() }
 }

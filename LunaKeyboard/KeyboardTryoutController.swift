@@ -108,6 +108,7 @@ class KeyboardTryoutController: UIViewController, UITextViewDelegate {
 
 /// The lessons use the production keyboard against a disposable text view.
 final class KeyboardTutorialController: KeyboardTryoutController {
+  private let lessonScroll = UIScrollView()
   private let scene = KeyboardQuestScene()
   private let instruction = UILabel()
   private let demo = UIButton(type: .system)
@@ -126,31 +127,46 @@ final class KeyboardTutorialController: KeyboardTryoutController {
   override func viewDidLoad() {
     super.viewDidLoad()
     title = "Keyboard Quest"
-    editorTop.constant = 192
+    editorTop.isActive = false
+    navigationItem.largeTitleDisplayMode = .never
     scene.translatesAutoresizingMaskIntoConstraints = false
     instruction.translatesAutoresizingMaskIntoConstraints = false
     let controls = UIStackView(arrangedSubviews: [demo, nextLesson])
     controls.axis = .horizontal
     controls.distribution = .fillEqually
-    controls.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(scene); view.addSubview(instruction); view.addSubview(controls)
+    let lesson = UIStackView(arrangedSubviews: [scene, instruction, controls])
+    lesson.axis = .vertical
+    lesson.spacing = 4
+    lesson.translatesAutoresizingMaskIntoConstraints = false
+    lessonScroll.translatesAutoresizingMaskIntoConstraints = false
+    lessonScroll.contentInsetAdjustmentBehavior = .never
+    view.addSubview(lessonScroll)
+    lessonScroll.addSubview(lesson)
+    let readingArea = UILayoutGuide()
+    view.addLayoutGuide(readingArea)
+    let naturalHeight = lessonScroll.heightAnchor.constraint(equalTo: lesson.heightAnchor)
+    naturalHeight.priority = .defaultHigh
     instruction.font = .preferredFont(forTextStyle: .subheadline)
     instruction.adjustsFontForContentSizeCategory = true
     instruction.numberOfLines = 0
+    instruction.setContentCompressionResistancePriority(.required, for: .vertical)
     instruction.textColor = .white
     NSLayoutConstraint.activate([
-      scene.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-      scene.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-      scene.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+      readingArea.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+      readingArea.bottomAnchor.constraint(equalTo: surface.topAnchor),
+      lessonScroll.topAnchor.constraint(equalTo: readingArea.topAnchor),
+      lessonScroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+      lessonScroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+      lessonScroll.heightAnchor.constraint(lessThanOrEqualTo: readingArea.heightAnchor, multiplier: 0.7),
+      naturalHeight,
+      lesson.topAnchor.constraint(equalTo: lessonScroll.contentLayoutGuide.topAnchor),
+      lesson.bottomAnchor.constraint(equalTo: lessonScroll.contentLayoutGuide.bottomAnchor),
+      lesson.leadingAnchor.constraint(equalTo: lessonScroll.contentLayoutGuide.leadingAnchor),
+      lesson.trailingAnchor.constraint(equalTo: lessonScroll.contentLayoutGuide.trailingAnchor),
+      lesson.widthAnchor.constraint(equalTo: lessonScroll.frameLayoutGuide.widthAnchor),
       scene.heightAnchor.constraint(equalToConstant: 65),
-      instruction.topAnchor.constraint(equalTo: scene.bottomAnchor, constant: 4),
-      instruction.leadingAnchor.constraint(equalTo: scene.leadingAnchor),
-      instruction.trailingAnchor.constraint(equalTo: scene.trailingAnchor),
-      instruction.heightAnchor.constraint(equalToConstant: 76),
-      controls.topAnchor.constraint(equalTo: instruction.bottomAnchor, constant: 2),
-      controls.leadingAnchor.constraint(equalTo: scene.leadingAnchor),
-      controls.trailingAnchor.constraint(equalTo: scene.trailingAnchor),
-      controls.heightAnchor.constraint(equalToConstant: 40),
+      controls.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      editor.topAnchor.constraint(equalTo: lessonScroll.bottomAnchor),
     ])
     demo.setTitle("Show Me", for: .normal)
     demo.addAction(UIAction { [weak self] _ in self?.showDemo() }, for: .touchUpInside)
@@ -180,6 +196,7 @@ final class KeyboardTutorialController: KeyboardTryoutController {
     completed = false
     instruction.text = "\(step + 1)/4 · " + lessons[step].2
     scene.progress = step
+    lessonScroll.setContentOffset(.zero, animated: false)
     nextLesson.setTitle("Next", for: .normal)
     nextLesson.isEnabled = false
     surface.refresh()
@@ -193,7 +210,7 @@ final class KeyboardTutorialController: KeyboardTryoutController {
     guard success, !completed else { return }
     completed = true
     scene.progress = step + 1
-    instruction.text = step == 3 ? "You did it! The dragon is safe." : "Well done! " + lessons[step].2
+    instruction.text = step == 3 ? "You did it! The dragon is safe." : "Lesson complete."
     nextLesson.setTitle(step == 3 ? "Play Again" : "Next", for: .normal)
     UIAccessibility.post(notification: .announcement, argument: step == 3 ? "Quest complete" : "Lesson complete")
   }

@@ -65,7 +65,7 @@ Media imports receive fresh UUID names in `KeyboardMedia/`. `file_holders` uses
 `keyboard-shortcut:<id>` owners. Updating or deleting a shortcut releases the old
 holdings, and Luna's existing triggers, tombstones and PendingDeleteReaper remove
 the bytes. Imports hold the SQL write lock while creating the file. A containing-
-app launch sweep removes UUID files left unowned by an interrupted transaction;
+app launch sweep runs on a utility queue and removes UUID files left unowned by an interrupted transaction;
 it takes the same lock, so it cannot remove a concurrently imported file.
 There is no migration from Clack's old defaults, database or files.
 
@@ -173,7 +173,8 @@ iPad has its own letter layout and downward flick alternatives. Preferences adds
 System, Moonlight, Ocean and High Contrast themes. Keyboard Quest uses the production
 surface against a disposable editor for deletion, number holds, swipe typing and
 cursor movement. Its pixel sprites are drawn directly, and Show Me demonstrates the
-actions. Try It Out includes the system Paste control.
+actions. At larger text sizes the lesson instructions scroll above the editor and
+keyboard. Try It Out includes the system Paste control.
 
 Debug launch argument `--keyboard-tutorial` opens Keyboard Quest. Interactive
 inspection was limited by the locked Mac; hosted tests exercise all demonstrations.

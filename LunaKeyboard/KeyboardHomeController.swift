@@ -9,18 +9,12 @@ final class KeyboardHomeController: KeyboardTableController {
   required init?(coder: NSCoder) { fatalError("init(coder:)") }
   override func viewDidLoad() {
     super.viewDidLoad()
-    let header = UIView(frame: CGRect(x: 0, y: 0, width: 360, height: 175))
+    let header = UIView(frame: CGRect(x: 0, y: 0, width: 360, height: 96))
     let icon = UIImageView(image: UIImage(named: "KeyboardArtwork"))
     icon.frame = CGRect(x: 24, y: 8, width: 80, height: 80)
     icon.layer.cornerRadius = 19
     icon.clipsToBounds = true
     header.addSubview(icon)
-    let label = UILabel(frame: CGRect(x: 24, y: 105, width: 320, height: 50))
-    label.text = "Your shortcuts, wherever you type."
-    label.numberOfLines = 2
-    label.font = .preferredFont(forTextStyle: .body)
-    label.textColor = .secondaryLabel
-    header.addSubview(label)
     tableView.tableHeaderView = header
   }
   override func numberOfSections(in tableView: UITableView) -> Int { 2 }
@@ -28,27 +22,27 @@ final class KeyboardHomeController: KeyboardTableController {
     section == 0 ? 3 : 4
   }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String?
-  { section == 0 ? "GET STARTED" : "MAKE IT YOURS" }
+  { section == 0 ? "Setup" : "Settings" }
   override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String?
   {
     section == 0
-      ? "Add Luna Keyboard in Settings → General → Keyboard → Keyboards. Allow Full Access for Luna shortcuts, saved links, and GIF search. Double-tap the spacebar to search. Your typing stays on your device; media searches send only your search terms."
+      ? "In Settings, go to General → Keyboard → Keyboards to add Luna. Turn on Allow Full Access for shortcuts, saved links, and GIF search. Double-tap Space to search. Your typing stays on your device. Media searches send only your search terms."
       : nil
   }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath)
     -> UITableViewCell
   {
-    let rows =
+    let rows: [(String, String?, String)] =
       indexPath.section == 0
       ? [
-        ("Set Up Keyboard", "Add Luna Keyboard in Settings", "keyboard"),
-        ("Try It Out", "Type, slide, and explore text styles", "text.cursor"),
-        ("Keyboard Quest", "Learn gestures with a knight and dragon", "gamecontroller"),
+        ("Set Up Keyboard", nil, "keyboard"),
+        ("Try It Out", nil, "text.cursor"),
+        ("Keyboard Quest", "Practice keyboard gestures", "gamecontroller"),
       ]
       : [
         ("Shortcuts", "Words, emoji, images and GIFs", "text.badge.plus"),
-        ("Personal Dictionary", "Add names, slang, and your own words", "character.book.closed"),
-        ("Languages", "The languages you type in", "globe"),
+        ("Personal Dictionary", nil, "character.book.closed"),
+        ("Languages", nil, "globe"),
         ("Preferences", "Typing, feedback and Luna suggestions", "slider.horizontal.3"),
       ]
     let r = rows[indexPath.row]

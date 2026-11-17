@@ -135,7 +135,7 @@ public enum ArticleTextRenderer {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []
-        let imagesDirectory = SavesStore.shared.articlesDirectory
+        lazy var imagesDirectory = SavesStore.shared.articlesDirectory
         // Cap to the readable text column so images don't overflow on iPad.
         let maxImageWidth = maximumImageWidth
 
@@ -214,7 +214,7 @@ public enum ArticleTextRenderer {
                 location: result.length + textOffsetInBlock,
                 length: (block.text as NSString).length))
             result.append(blockString)
-            includedTextCount += block.text.count
+            if characterBudget != nil { includedTextCount += block.text.count }
         }
         return RenderedArticle(
             text: result, blockTextRanges: blockTextRanges, imageRanges: imageRanges,

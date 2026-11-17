@@ -245,3 +245,20 @@ Validation: 175 focused simulator tests pass (launch services, send coordinator,
 plugin boot/runtime, reader modes, mini-player and utility card). The utility
 card's `testAnExpiredEntryIsNoEntry` also fails with the original utility-card
 implementation; it was excluded from the final run and left unchanged.
+
+### Resuming a text article, 18 November 2026
+
+The scrolling reader now uses the saved word to estimate an initial text prefix.
+Before revealing it, the reader measures the passage in TextKit and extends the
+prefix until the restored word and viewport fit. The existing background render
+fills in the rest. Read-aloud and deep legacy positions stored only as a pixel
+offset still get a full layout. A regression test compares restored offsets
+against a full render both before and after the background swap.
+
+On an iPhone 17 Pro simulator running iOS 26.2, the Release launch-to-responsive
+mean fell from **1.358 s to 1.211 s**. Each build ran ten measured cold-process
+launches under the LaunchPerf plan. Relative standard deviations were 4.7% and
+6.0%. The same fixture contained 100 text articles of 18,577 words each, no
+images, and a saved position at word 500 with a 5,000-point offset. Screenshots
+of the centered card showed the same passage in both builds. Hardware launch
+time and libraries with different content can vary.

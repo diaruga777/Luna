@@ -250,21 +250,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // The rest of the article renders + swaps in by `prepareFullContent()` after
         // that animation.
         //
-        // EXCEPTIONS where the prefix is useless, so render the whole article up front:
-        //  • read-aloud (audio) — speech needs every word immediately and reads from the
-        //    top, and there's no first-paint stall to hide behind an entry animation;
-        //  • restoring a saved/carried position beyond the prefix (resuming a part-read
-        //    article, or a position carried in from another mode) — the prefix can't show
-        //    that region, and that open already hides the text until the position lands.
-        // The progressive path is for the common FROM-THE-TOP, no-audio fresh open.
-        let needsFullUpFront = audioEnabled || Self.openPositionLikelyBeyondPrefix(
-            item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
-            content: resolved, budget: Self.prefixCharacterBudget)
-        let rendered = needsFullUpFront
-            ? ArticleTextRenderer.render(resolved, includesTitle: includesArticleTitle)
-            : ArticleTextRenderer.render(
-                resolved, characterBudget: Self.prefixCharacterBudget,
-                includesTitle: includesArticleTitle)
+        let budget = Self.initialCharacterBudget(item: item, resumeWordIndex: resumeWordIndex,
+                                                 requiresFullContent: audioEnabled)
+        self.currentPrefixCharacterBudget = budget ?? Self.prefixCharacterBudget
+        let rendered = ArticleTextRenderer.render(
+            resolved, characterBudget: budget, includesTitle: includesArticleTitle)
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
@@ -355,15 +345,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.explicitResumeWordIndex = resumeWordIndex
         if item.readState == .read { finishedReadingTracker.markFinished() }
 
-        let needsFullUpFront = fullRenderUpFront || audioEnabled
-            || Self.openPositionLikelyBeyondPrefix(
-                item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
-                content: resolved, budget: Self.prefixCharacterBudget)
-        let rendered = needsFullUpFront
-            ? ArticleTextRenderer.render(resolved, includesTitle: includesArticleTitle)
-            : ArticleTextRenderer.render(
-                resolved, characterBudget: Self.prefixCharacterBudget,
-                includesTitle: includesArticleTitle)
+        let budget = Self.initialCharacterBudget(item: item, resumeWordIndex: resumeWordIndex,
+                                                 requiresFullContent: fullRenderUpFront || audioEnabled)
+        currentPrefixCharacterBudget = budget ?? Self.prefixCharacterBudget
+        let rendered = ArticleTextRenderer.render(
+            resolved, characterBudget: budget, includesTitle: includesArticleTitle)
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         if rendered.isComplete { fullContentLoad = .done }
@@ -391,48 +377,27 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         view.setNeedsLayout()
     }
 
-    /// Whether this open will restore a position that the cheap PREFIX render almost
-    /// certainly wouldn't contain — in which case the prefix is useless and we render
-    /// the full article up front. Conservative on purpose: it only suppresses the
-    /// progressive path for a genuine resume, never for the common top-of-article open.
-    private static func openPositionLikelyBeyondPrefix(
-        item: SavedItem, resumeWordIndex: Int?, audioEnabled: Bool,
-        content: ArticleContent, budget: Int) -> Bool {
-        // A non-trivial saved scroll offset (more than a screen down) resumes below
-        // the prefix. A tiny offset (near the top) is fine to show against the prefix.
-        if item.readState != .read,
-           let saved = item.lastScrollOffset, saved > CGFloat(UIScreen.main.bounds.height) {
-            return true
+    private static func resumeWord(item: SavedItem, carried: Int?) -> Int? {
+        if let carried { return carried }
+        guard item.readState != .read, item.lastScrollOffset != 0 else { return nil }
+        return item.lastWordIndex
+    }
+
+    /// Start near a known passage. The actual word and viewport are checked
+    /// against TextKit layout before revealing it. Offset-only legacy saves
+    /// can have no word to anchor a deep scroll, so retain their full layout.
+    private static func initialCharacterBudget(
+        item: SavedItem, resumeWordIndex: Int?, requiresFullContent: Bool
+    ) -> Int? {
+        guard !requiresFullContent else { return nil }
+        if let word = resumeWord(item: item, carried: resumeWordIndex), word > 0 {
+            let (estimate, overflow) = word.multipliedReportingOverflow(by: 6)
+            guard !overflow, estimate <= Int.max - prefixCharacterBudget else { return nil }
+            return estimate + prefixCharacterBudget
         }
-        // The word we'll actually resume from on open: a carried-in mode-switch index
-        // wins; otherwise include the persisted word, which also validates a
-        // saved offset against the new layout.
-        let resumeWord: Int?
-        if audioEnabled {
-            resumeWord = nil
-        } else if let carried = resumeWordIndex {
-            resumeWord = carried
-        } else if item.readState != .read, item.lastScrollOffset != 0 {
-            resumeWord = item.lastWordIndex
-        } else {
-            resumeWord = nil
-        }
-        if let resumeWord, resumeWord > 0 {
-            // Rough word-budget: count words in the leading blocks up to the
-            // character budget; a resume index past that won't be in the prefix.
-            var chars = 0
-            var words = 0
-            for block in content.blocks {
-                if chars > budget { break }
-                if block.kind == .image { continue }
-                if block.isReadableProse {
-                    words += WordTokenizer.tokens(in: block.text).count
-                }
-                chars += block.text.count
-            }
-            if resumeWord >= words { return true }
-        }
-        return false
+        if item.readState != .read, let offset = item.lastScrollOffset,
+           offset > UIScreen.main.bounds.height { return nil }
+        return prefixCharacterBudget
     }
 
     /// The word currently being read, carried to other modes on a switch.
@@ -785,16 +750,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     /// Whether there's a saved/carried position to restore before revealing.
     private var hasInitialScrollPosition: Bool {
-        if let resume = explicitResumeWordIndex, !audioEnabled,
-           wordMap.attributedRange(forWord: resume) != nil { return true }
-        // A finished article's persisted position is normally the footer/end.
-        // Until read cards get their own UI, present them like ordinary cards
-        // from the top so their first viewport is never an empty trailing tail.
-        guard item.readState != .read else { return false }
-        if item.lastScrollOffset != nil { return true }
-        if let word = item.lastWordIndex,
-           wordMap.attributedRange(forWord: word) != nil { return true }
-        return false
+        if !audioEnabled, explicitResumeWordIndex != nil { return true }
+        return item.readState != .read && (item.lastScrollOffset != nil || item.lastWordIndex != nil)
     }
 
     public override func viewDidLayoutSubviews() {
@@ -842,7 +799,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
         readerTextContainer.layoutPreservedLines(in: textView)
         lastTextViewportWidth = textView.bounds.width
-        captureResizeAnchor()
         layoutAnimatedImageViews()
 
         // Restore the scroll position as soon as we have real bounds — BEFORE
@@ -863,9 +819,20 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         else { return }
         let visibleHeight = textView.bounds.height - textView.adjustedContentInset.top
             - textView.adjustedContentInset.bottom + textView.textContainerInset.bottom
-        while !rendered.isComplete && articleContentBottom < visibleHeight {
+        let savedWord = Self.resumeWord(item: item, carried: explicitResumeWordIndex)
+        let savedOffset = item.readState == .read || explicitResumeWordIndex != nil
+            ? 0 : CGFloat(item.lastScrollOffset ?? 0)
+        func coversOpeningViewport() -> Bool {
+            var requiredBottom = max(0, savedOffset) + visibleHeight
+            if let savedWord, savedWord >= 0 {
+                guard let rect = wordRect(for: savedWord) else { return false }
+                requiredBottom = max(requiredBottom, rect.maxY + textView.bounds.height)
+            }
+            return articleContentBottom >= requiredBottom
+        }
+        while !rendered.isComplete && !coversOpeningViewport() {
             let previousBlockCount = rendered.blockTextRanges.count
-            currentPrefixCharacterBudget *= 2
+            currentPrefixCharacterBudget = min(currentPrefixCharacterBudget, Int.max / 2) * 2
             let expanded = ArticleTextRenderer.render(
                 content, characterBudget: currentPrefixCharacterBudget,
                 includesTitle: includesArticleTitle)
@@ -1344,6 +1311,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func revealContent() {
         guard textView.alpha < 1 else { return }
+        guard view.window != nil, !UIAccessibility.isReduceMotionEnabled else {
+            textView.alpha = 1
+            return
+        }
         UIView.animate(withDuration: 0.15) { self.textView.alpha = 1 }
     }
 

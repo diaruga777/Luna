@@ -16,30 +16,13 @@ public struct WordMap {
 
     public init(content: ArticleContent, rendered: RenderedArticle) {
         var ranges: [NSRange] = []
-        for (blockIndex, block) in content.blocks.enumerated() {
-            // A table of contents IS rendered — it has a range — but it is not part
-            // of the word stream, and RSVPEngine skips it for the same reason. If
-            // only one of the two skipped it, every word index past the ToC would
-            // mean a different word in each reader.
-            guard block.isReadableProse else { continue }
-            let blockText = block.text as NSString
-            guard let blockRange = rendered.blockTextRanges[safe: blockIndex] ?? nil else {
-                // Image/skipped blocks contribute no words (matches RSVPEngine,
-                // whose tokenizer yields nothing for empty text).
-                continue
-            }
-            // Shares RSVPEngine's tokenizer, so the two stay in the same word-index space.
-            var searchLocation = 0
-            let tokens = WordTokenizer.tokens(in: block.text).map(\.text)
-            for token in tokens {
-                let tokenRange = blockText.range(
-                    of: token,
-                    range: NSRange(location: searchLocation, length: blockText.length - searchLocation))
-                guard tokenRange.location != NSNotFound else { continue }
-                searchLocation = tokenRange.location + tokenRange.length
-                ranges.append(NSRange(
-                    location: blockRange.location + tokenRange.location,
-                    length: tokenRange.length))
+        // A preview only has ranges for its rendered prefix. The tokenizer
+        // already supplies the exact UTF-16 offsets, including repeated words.
+        for (block, range) in zip(content.blocks, rendered.blockTextRanges) {
+            guard block.isReadableProse, let range else { continue }
+            for token in WordTokenizer.tokens(in: block.text) {
+                ranges.append(NSRange(location: range.location + token.utf16Start,
+                                      length: token.utf16Length))
             }
         }
         self.wordRanges = ranges

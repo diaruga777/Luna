@@ -180,6 +180,38 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
 
     // MARK: - Scroll reader: Phase-2 swap preserves scroll position + rebuilds the map
 
+    @MainActor
+    func testResumedArticleShowsSamePassageAsFullLayoutBeforeAndAfterExpansion() throws {
+        let block = paragraph(String(repeating: "résumé 👩🏽‍🚀 repeated words ", count: 25))
+        let article = ArticleContent(title: "Resumed article", blocks: Array(repeating: block, count: 100))
+        for savedOffset: Double? in [nil, 300, 5_000] {
+            var item = SavedItem(urlString: "https://example.com/resume")
+            item.lastWordIndex = 500
+            item.lastScrollOffset = savedOffset
+
+            let reference = ScrollReaderViewController(item: item, content: article)
+            reference.configureForReuse(item: item, content: article, fullRenderUpFront: true)
+            let reader = ScrollReaderViewController(item: item, content: article)
+            for controller in [reference, reader] {
+                controller.view.frame = CGRect(x: 0, y: 0, width: 375, height: 667)
+                controller.view.layoutIfNeeded()
+            }
+            let expected = try XCTUnwrap(firstTextView(in: reference.view)).contentOffset.y
+            let text = try XCTUnwrap(firstTextView(in: reader.view))
+            XCTAssertGreaterThan(expected, 300)
+            XCTAssertEqual(text.contentOffset.y, expected, accuracy: 1)
+            XCTAssertFalse(reader.didLoadFullContentForTesting)
+
+            reader.prepareFullContent()
+            let deadline = Date().addingTimeInterval(5)
+            while !reader.didLoadFullContentForTesting, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            XCTAssertTrue(reader.didLoadFullContentForTesting)
+            XCTAssertEqual(text.contentOffset.y, expected, accuracy: 1)
+        }
+    }
+
     /// Opening a long article fresh from the top renders only the prefix first; once
     /// `prepareFullContent` lands the full text, the captured `contentOffset` is
     /// restored (seamless swap) and the word map covers the whole article.

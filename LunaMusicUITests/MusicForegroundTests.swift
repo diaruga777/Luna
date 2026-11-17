@@ -110,6 +110,75 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertFalse(bell.exists, "Bell only belongs to followed shows")
     }
 
+    @MainActor func testNotificationAddToQueueKeepsCurrentPodcastPlaying() async throws {
+        guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"],
+              let server = URL(string: base)?.deletingLastPathComponent() else {
+            throw XCTSkip("Run with the local podcast fixture server.")
+        }
+        let fixtureID = UUID().uuidString
+        let newTitle = "New Episode " + fixtureID.prefix(8)
+        let queuedTitle = "Queued " + fixtureID.prefix(8)
+        let feed = server.appendingPathComponent("notification-feed.xml").absoluteString + "?" + fixtureID
+        let publish = try XCTUnwrap(URL(string: server.appendingPathComponent("publish-notification-fixture").absoluteString + "?" + fixtureID))
+        if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }
+        else if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        app.buttons["media.library.podcasts"].tap()
+        app.navigationBars.buttons["Podcast Options"].tap()
+        app.buttons["Follow a Show by URL"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap(); field.typeText(feed)
+        app.alerts.buttons["Follow"].tap()
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        if springboard.alerts.buttons["Allow"].waitForExistence(timeout: 3) {
+            springboard.alerts.buttons["Allow"].tap()
+        }
+        let playing = app.cells.containing(.button, identifier: "Playing Now").firstMatch
+        XCTAssertTrue(playing.waitForExistence(timeout: 10))
+        XCTAssertTrue(playing.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded'")).firstMatch.waitForExistence(timeout: 15))
+        playing.buttons["Episode Actions"].tap(); app.collectionViews.buttons["Play"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5))
+        app.buttons["Open Now Playing"].tap()
+        let queueButton = app.buttons["podcasts.playback.queueButton"]
+        if queueButton.value as? String == "Hidden" { queueButton.tap() }
+        let clear = app.buttons["Clear Queue"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        if clear.isEnabled { clear.tap() }
+        app.buttons["Close Now Playing"].tap()
+
+        let queued = app.cells.containing(.button, identifier: queuedTitle).firstMatch
+        queued.buttons["Episode Actions"].tap(); app.buttons["Add to Queue"].tap()
+        let (_, response) = try await URLSession.shared.data(from: publish)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 204)
+
+        let table = app.tables.firstMatch
+        table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+            .press(forDuration: 0.1, thenDragTo: table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
+        XCTAssertTrue(app.buttons[newTitle].waitForExistence(timeout: 10))
+        let alert = springboard.staticTexts[newTitle].firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 3), springboard.debugDescription)
+        let start = alert.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)))
+        let action = springboard.buttons["Add to Queue"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5), springboard.debugDescription)
+        action.tap()
+        XCTAssertNotEqual(app.state, .notRunning)
+        app.activate()
+
+        app.buttons["Open Now Playing"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Playing Now"].exists)
+        let elapsed = app.staticTexts["podcasts.playback.elapsed"]
+        let elapsedAfterTap = elapsed.label
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", elapsedAfterTap), object: elapsed)], timeout: 5)
+        if queueButton.value as? String == "Hidden" { queueButton.tap() }
+        let queue = app.cells
+        XCTAssertTrue(queue.containing(.staticText, identifier: newTitle).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(queue.count, 2)
+        XCTAssertTrue(queue.element(boundBy: 0).staticTexts[queuedTitle].exists)
+        XCTAssertTrue(queue.element(boundBy: 1).staticTexts[newTitle].exists)
+    }
+
     func testPodcastFeedShowsProgressWhileLoading() throws {
         guard let base = ProcessInfo.processInfo.environment["LUNA_PODCAST_FIXTURE_URL"] else { throw XCTSkip("Run with the local podcast fixture server.") }
         if app.navigationBars.buttons["Close"].exists { app.navigationBars.buttons["Close"].tap() }

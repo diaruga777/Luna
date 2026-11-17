@@ -72,7 +72,7 @@ public final class VaultTransfersViewController: UITableViewController {
             if loaded {
                 empty.image = UIImage(systemName: errorMessage == nil ? "checkmark.circle" : "exclamationmark.arrow.triangle.2.circlepath")
                 empty.text = errorMessage == nil ? "No Transfers" : "Couldn’t Load Transfers"
-                empty.secondaryText = errorMessage ?? "No transfers waiting."
+                empty.secondaryText = errorMessage
             }
             return vaultEmptyCell(configuration: empty, minimumHeight: 340)
         }

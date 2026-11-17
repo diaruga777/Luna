@@ -216,7 +216,7 @@ public final class LunaMacConnectionViewController: UITableViewController, UITex
         let title = label("Connect to Your Mac", style: .title2, color: .label)
         title.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
         title.textAlignment = .center
-        let subtitle = label("Copy the connection code from Luna Mac and paste it below.", style: .body, color: .secondaryLabel)
+        let subtitle = label("Get your pairing code from Luna Mac.", style: .body, color: .secondaryLabel)
         subtitle.textAlignment = .center
         let intro = UIStackView(arrangedSubviews: [symbol, title, subtitle]); intro.axis = .vertical; intro.spacing = 12
         return header(intro)

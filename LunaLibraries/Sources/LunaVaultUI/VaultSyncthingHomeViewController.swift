@@ -206,8 +206,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
             return
         } else if needsSetup {
             empty.image = UIImage(systemName: "laptopcomputer.and.iphone")
-            empty.text = "Your files. With you."
-            empty.secondaryText = "Connect your Mac to get started."
+            empty.text = "No Mac Connected"
             if #available(iOS 26.0, *) { empty.button = .prominentGlass() }
             else { empty.button = .filled() }
             empty.button.title = "Connect Mac"
@@ -221,7 +220,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         } else if hasQuery && results.isEmpty {
             empty.image = UIImage(systemName: searchError ? "exclamationmark.magnifyingglass" : "magnifyingglass")
             empty.text = searchError ? "Couldn’t Search" : "No Results"
-            empty.secondaryText = searchError ? "Try again or pull down to refresh." : "No files match “\(query)”. Try another name or a word from a file on this iPhone."
+            empty.secondaryText = searchError ? nil : "Try a filename or a word from a file on this iPhone."
             if searchError {
                 empty.button.title = "Try Again"
                 empty.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.scheduleSearch(delay: 0) }
@@ -229,7 +228,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
         } else if !hasQuery && rootFiles.isEmpty {
             empty.image = UIImage(systemName: loadError ? "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90" : "folder")
             empty.text = loadError ? "Couldn’t Load Files" : "Your Vault Folder Is Empty"
-            empty.secondaryText = loadError ? "Pull down to refresh your library." : "Add a file from this iPhone or put files in your Mac’s Vault folder."
+            empty.secondaryText = loadError ? nil : "You can also add files to the Vault folder on your Mac."
             if #available(iOS 26.0, *) { empty.button = loadError ? .glass() : .prominentGlass() }
             else { empty.button = .filled() }
             empty.button.title = loadError ? "Try Again" : "Import File"
@@ -254,7 +253,7 @@ public final class VaultSyncthingHomeViewController: UITableViewController, UISe
     }
     public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         guard loaded, !needsSetup else { return nil }
-        if hasQuery { return visibleFiles.isEmpty ? nil : "\(visibleFiles.count) Results" }
+        if hasQuery { return visibleFiles.isEmpty ? nil : (visibleFiles.count == 1 ? "1 Result" : "\(visibleFiles.count) Results") }
         if section == 0 { return "Locations" }
         if section == 1 { return "Activity" }
         return section == filesSection ? "Vault Folder" : nil

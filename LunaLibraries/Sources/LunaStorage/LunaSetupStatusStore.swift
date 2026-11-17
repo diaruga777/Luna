@@ -258,13 +258,15 @@ public final class LunaSetupStatusStore {
     /// App Intents' — across the shared and central facets. The diagnostics
     /// onboarding reset uses this so a re-run must gather fresh evidence.
     public func resetAllRunEvidence() {
+        // Upgraded installs can still have evidence under the retired app identifiers.
+        let storedApps = LunaApp.allCases + LunaApp.onboardingRankedSiblings
         for key in [
             Self.sharedSafariKey,
             Self.centralSafariKey,
             Self.sharedShortcutKey,
             Self.sharedShareActionKey,
             Self.centralShareActionKey,
-        ] + LunaApp.allCases.flatMap({ app in
+        ] + storedApps.flatMap({ app in
             [
                 Self.shortcutInstallPressedKey(for: app),
                 Self.shortcutIntentRunKey(for: app),

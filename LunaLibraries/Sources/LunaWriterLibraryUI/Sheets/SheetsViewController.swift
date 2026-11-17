@@ -277,9 +277,6 @@ public final class SheetsViewController: UICollectionViewController {
             empty.text = L10n.string(currentSelection == .notes ? "WriterLibrary_navigation_empty_notes"
                 : (isChapterList ? "WriterLibrary_navigation_empty_chapters"
                    : (currentSelection == .trash ? "WriterLibrary_navigation_empty_trash" : "WriterLibrary_navigation_empty_documents")))
-            empty.secondaryText = L10n.string(currentSelection == .notes ? "WriterLibrary_polish_notesEmpty"
-                : (isChapterList ? "WriterLibrary_polish_bookEmpty"
-                   : (currentSelection == .trash ? "WriterLibrary_sheets_emptyTrash" : "WriterLibrary_sheets_emptyScope")))
             empty.image = UIImage(systemName: currentSelection == .notes ? "note.text"
                 : (isChapterList ? "book.closed" : (currentSelection == .trash ? "trash" : "doc.text")))
             if currentSelection != .trash {

@@ -133,9 +133,13 @@ final class SettingsHierarchyTests: XCTestCase {
         let screen = AudioSettingsScreen()
         window = UITestSupport.host(screen)
 
-        XCTAssertEqual(screen.tableView.numberOfSections, 3)
-        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 2), 2)
-        XCTAssertEqual(rowTitle(screen, row: 1, section: 2), "Install Enhanced Voices")
+        guard let voice = (0..<screen.tableView.numberOfSections).first(where: {
+            screen.tableView(screen.tableView, titleForHeaderInSection: $0) == L10n.string("Gemini_deviceVoiceHeader")
+        }) else {
+            return XCTFail("Device voice settings are missing")
+        }
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: voice), 2)
+        XCTAssertEqual(rowTitle(screen, row: 1, section: voice), "Install Enhanced Voices")
     }
 
     func testVideoUsesTwoPickersAndAProgressToggle() {

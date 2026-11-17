@@ -2,6 +2,7 @@ import UIKit
 import LunaCompanionShareCore
 import LunaDesignSystem
 import LunaGaze
+import LunaModels
 import LunaWriterEditor
 import LunaWriterLibraryUI
 import LunaWriterModels
@@ -93,10 +94,22 @@ import LunaWriterVoice
     }
 
     static func makeRootViewController() -> UIViewController {
-        guard let stack = try? storageStack() else {
-            let placeholder = UIViewController()
-            placeholder.view.backgroundColor = LunaColors.background
-            return placeholder
+        let stack: WriterStorageStack
+        do {
+            stack = try storageStack()
+        } catch {
+            let controller = UIViewController()
+            controller.view.backgroundColor = LunaColors.background
+            var unavailable = UIContentUnavailableConfiguration.empty()
+            unavailable.text = L10n.string("WriterLibrary_cannotOpenLibrary")
+            unavailable.secondaryText = error.localizedDescription
+            unavailable.button.title = L10n.string("Common_retry")
+            unavailable.buttonProperties.primaryAction = UIAction { [weak controller] _ in
+                guard let window = controller?.view.window else { return }
+                window.rootViewController = makeRootViewController()
+            }
+            controller.contentUnavailableConfiguration = unavailable
+            return controller
         }
         let maker = WriterEditorMaker(
             storage: stack, registry: openSessions, aiAssistant: makeAIAssistant())

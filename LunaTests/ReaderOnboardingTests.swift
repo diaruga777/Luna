@@ -86,10 +86,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             configuration.practiceURLString,
             ShareSetupPractice.instaTokURLString)
-        XCTAssertTrue(
-            OnboardingStrings.Instruction.safariPrompt(
-                saveBenefit: configuration.saveBenefit,
-                allApps: true).contains("All Luna apps"))
+
     }
 
     /// Central Luna's Safari lesson is all three siblings' lessons: each ending

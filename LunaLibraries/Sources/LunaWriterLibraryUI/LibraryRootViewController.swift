@@ -137,7 +137,6 @@ public final class LibraryRootViewController: UISplitViewController {
         var empty = UIContentUnavailableConfiguration.empty()
         empty.image = UIImage(systemName: "doc.text")
         empty.text = L10n.string("WriterLibrary_editor_emptySelection")
-        empty.secondaryText = L10n.string("WriterLibrary_navigation_chooseDocument")
         placeholder.contentUnavailableConfiguration = empty
         return placeholder
     }

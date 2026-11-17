@@ -449,7 +449,7 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
             guard case let .summary(summary) = stage, summary.wasCancelled else { return nil }
             return L10n.string("Settings_linkImport_cancelledFooter")
         case .rejected:
-            return L10n.string("Settings_linkImport_rejectedFooter")
+            return nil
         }
     }
 

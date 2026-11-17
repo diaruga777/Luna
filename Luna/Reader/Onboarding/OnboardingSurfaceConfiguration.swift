@@ -52,7 +52,6 @@ struct OnboardingSurfaceConfiguration {
     let demonstrationApp: LunaApp
     let saveSetupMode: OnboardingSaveSetupMode
     let introCopy: OnboardingIntroCopy
-    let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
     let safariLesson: OnboardingSafariLesson
     let practiceURLString: String
@@ -86,7 +85,6 @@ struct OnboardingSurfaceConfiguration {
             demonstrationApp: demonstrationApp,
             saveSetupMode: saveSetupMode,
             introCopy: OnboardingStrings.introCopy(for: app),
-            saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
             demoPages: lesson.pages,
             safariLesson: lesson.safariLesson,
             practiceURLString: lesson.practiceURLString,

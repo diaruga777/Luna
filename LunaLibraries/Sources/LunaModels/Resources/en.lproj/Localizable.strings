@@ -5,9 +5,9 @@
  * screen and the specific text, never the English itself; the suffix is one
  * of  Luna  Core  Reader  Downloader  PriceTracker.  Each line reads:
  *
- *     "Onboarding_Util_headline_Luna" = "All your Luna apps.";
+ *     "Onboarding_Intro_headline1Initial_Luna" = "Found a link?";
  *
- * At runtime, code calls  L10n.string("Onboarding_Util_headline")  — just
+ * At runtime, code calls  L10n.string("Onboarding_Intro_headline1Initial")  — just
  * the base — and that resolves "<base>_<the running app's own suffix>" first
  * (Core for the central Luna app, else Reader/Downloader/PriceTracker), then
  * falls back to "<base>_Luna". So EVERY base key needs a "_Luna" line — it's
@@ -261,13 +261,13 @@
  * shown as a worked example of what Luna does (screenshot/marketing copy),
  * in reading order: subject line, byline, heading, then every feature
  * bullet as it lists. ===================== */
-"ShareSetupPractice_articleSubjectLine_Luna" = "Luna x Safari - we ship that";
+"ShareSetupPractice_articleSubjectLine_Luna" = "Saving from Safari";
 "ShareSetupPractice_bylineExample_Luna" = "A Safari extension • by Luna";
-"ShareSetupPractice_featuresHeading_Luna" = "I know, I know. Big ask. So many buttons to press! But you get:";
+"ShareSetupPractice_featuresHeading_Luna" = "With the Safari extension";
 "ShareSetupPractice_feature01_Luna" = "Eliminate ads that block your view";
 "ShareSetupPractice_feature02_Luna" = "Get rid of interruptive popups";
-"ShareSetupPractice_feature03_Luna" = "Unlocked access to most articles on the web";
-"ShareSetupPractice_feature04_Luna" = "One-click save offline";
+"ShareSetupPractice_feature03_Luna" = "Read articles in Luna";
+"ShareSetupPractice_feature04_Luna" = "Save pages for offline reading";
 
 /* ===== Onboarding_Intro — util card intro headline, setup actions, paste row (Luna/UtilCard, OnboardingStrings.Intro) ===== */
 "Onboarding_Intro_articleURLsOnly_Luna" = "article URLs only";
@@ -277,28 +277,23 @@
    then play line by line: the Downloader repeats its first line unchanged (so
    that line has nothing to animate and does not move) and adds a second one the
    initial text does not contain at all, which arrives on its own in beat two. */
-"Onboarding_Intro_headline1Initial_Luna" = "All your Luna apps.";
-"Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
+"Onboarding_Intro_headline1Initial_Luna" = "Found a link?";
+"Onboarding_Intro_headline1Initial_Core" = "Found a link?";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
 "Onboarding_Intro_headline1Initial_Downloader" = "Watch any video.";
 "Onboarding_Intro_headline1Initial_PriceTracker" = "Want the best price?";
-"Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
-"Onboarding_Intro_headline2Final_Core" = "One Luna app.";
+"Onboarding_Intro_headline2Final_Luna" = "Save a link for later.";
+"Onboarding_Intro_headline2Final_Core" = "Save a link for later.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
 "Onboarding_Intro_headline2Final_Downloader" = "Watch any video.\nNo sign in required.";
 "Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price.";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
-"Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
+"Onboarding_Intro_safariAction_Luna" = "Set up Safari";
 "Onboarding_Intro_safariAction_Reader" = "Unlock & read in Safari";
 "Onboarding_Intro_safariAction_Downloader" = "Watch in Safari";
 "Onboarding_Intro_safariAction_PriceTracker" = "Show better prices right in Safari";
-"Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
-"Onboarding_Intro_saveBenefit_Core" = "Save anything";
-"Onboarding_Intro_saveBenefit_Reader" = "Read offline later";
-"Onboarding_Intro_saveBenefit_Downloader" = "Watch or share";
-"Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
-"Onboarding_Intro_shortcutAction_Luna" = "Save in 1 click";
+"Onboarding_Intro_shortcutAction_Luna" = "Set up save shortcut";
 "Onboarding_Intro_shortcutAction_Reader" = "Save for later in 1 click";
 "Onboarding_Intro_shortcutAction_Downloader" = "Watch videos in 1 click";
 "Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in 1 click";
@@ -429,9 +424,7 @@
 
 /* ===== Onboarding_Instruction — the "Set up Safari"/"Install Shortcut" instruction screen (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Instruction) ===== */
 "Onboarding_Instruction_actionButtonPrompt_Luna" = "Press the Action Button to finish";
-"Onboarding_Instruction_allAppsLine_Luna" = "All Luna apps’ features apply here.";
 "Onboarding_Instruction_externalOpenFailureTemplate_Luna" = "Couldn’t open %@. Try again.";
-"Onboarding_Instruction_safariPromptTemplate_Luna" = "Press the Action Button to save\n%@";
 "Onboarding_Instruction_setActionButton_Luna" = "Set action button";
 "Onboarding_Instruction_setUpLater_Luna" = "Set up later";
 "Onboarding_Instruction_setUpSafari_Luna" = "Set up Safari";
@@ -611,7 +604,7 @@
 "Settings_linkImport_importButton_Luna" = "Import";
 "Settings_linkImport_linksSectionHeader_Luna" = "Links (%lld)";
 "Settings_linkImport_archiveSectionHeader_Luna" = "Archive (%lld)";
-"Settings_linkImport_unstructuredFooter_Luna" = "All links imported.";
+"Settings_linkImport_unstructuredFooter_Luna" = "Selected links will go into your library.";
 
 "Settings_linkImport_importingTitle_Luna" = "Importing…";
 "Settings_linkImport_stopButton_Luna" = "Stop";
@@ -631,9 +624,8 @@
 "Settings_linkImport_failuresSubtitle_Luna" = "Saved anyway — will automatically retry later.";
 "Settings_linkImport_duplicatesCount_Luna" = "%lld already saved";
 "Settings_linkImport_duplicatesSubtitle_Luna" = "Left exactly as they were.";
-"Settings_linkImport_cancelledFooter_Luna" = "In progress links were saved and will load in the background.";
+"Settings_linkImport_cancelledFooter_Luna" = "Links already saved will finish loading in the background.";
 "Settings_linkImport_notSavedSectionHeader_Luna" = "Not Saved (%lld)";
-"Settings_linkImport_rejectedFooter_Luna" = "These could not be saved by Luna.";
 "Settings_linkImport_rejectedForeignKindGeneric_Luna" = "Another Luna app handles this kind of link.";
 "Settings_linkImport_rejectedForeignKindNamed_Luna" = "%@ handles this kind of link.";
 "Settings_linkImport_rejectedUnusableURL_Luna" = "Not a link Luna can open.";
@@ -654,7 +646,7 @@
 "Settings_reader_preloadSectionHeader_Luna" = "Preload Links";
 "Settings_reader_preloadWiFiOnlyLabel_Luna" = "Only on Wi-Fi";
 "Settings_reader_preloadDepthLabel_Luna" = "Preload Depth";
-"Settings_reader_preloadFooter_Luna" = "Download linked pages for offline reading. Depth sets how many links to follow from the original article. Use Wi-Fi only to save mobile data.";
+"Settings_reader_preloadFooter_Luna" = "Download linked pages for offline reading. Depth sets how many links to follow from the original article.";
 
 /* ===== Settings_safariSuggestion — the Safari-extension suggestion-button
  * visibility picker's non-Never options ("Common_never" covers Never).
@@ -680,13 +672,12 @@
 "Settings_shortcut_titleWithSetup_Luna" = "Safari & One-click save";
 "Settings_shortcut_titleSafariOnly_Luna" = "Safari";
 "Settings_shortcut_suggestionButtonSectionHeader_Luna" = "%@ Button";
-"Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari, choose when the \"%@\" button appears.";
 "Settings_shortcut_cookiePopupsSectionHeader_Luna" = "Cookie Popups";
 "Settings_shortcut_cookiePopupsToggleLabel_Luna" = "Decline cookies for me";
 "Settings_shortcut_cookiePopupsFooter_Luna" = "Choose necessary cookies only and dismiss cookie prompts. Turn this off to choose for yourself. Newsletter and app-install popups are still hidden.";
 "Settings_shortcut_videoPlayerSectionHeader_Luna" = "Video Player";
 "Settings_shortcut_videoPlayerToggleLabel_Luna" = "Play in Safari";
-"Settings_shortcut_videoPlayerFooter_Luna" = "Play videos right in Safari. When this is off, you can still use “%@” to watch in Luna.";
+"Settings_shortcut_videoPlayerFooter_Luna" = "When this is off, use “%@” to watch videos in Luna.";
 "Settings_shortcut_onScreenURLsSectionHeader_Luna" = "Apple Intelligence";
 "Settings_shortcut_onScreenURLsToggleLabel_Luna" = "On-Screen URLs";
 "Settings_shortcut_onScreenURLsFooter_Luna" = "Use Apple Intelligence to find links on your screen when you press the Action Button. It runs on your phone and may miss some links.";
@@ -1284,7 +1275,7 @@
 "WriterStorage_untitledDocumentTitle_Luna" = "Untitled";
 "WriterStorage_untitledProjectName_Luna" = "Untitled Project";
 "WriterStorage_welcomeSheetTitle_Luna" = "Welcome to Luna Writer";
-"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nMake yourself at home. Start with a sentence, a rough idea, or a whole new chapter.\n\nDouble-tap the spacebar for notes, formatting, and more.\n\nYour writing is saved as Markdown in Files › Luna Writer › Library.";
+"WriterStorage_welcomeSheetBody_Luna" = "# Welcome to Luna Writer\n\nDouble-tap the spacebar for notes and formatting.\n\nYour writing is saved as Markdown in Files › Luna Writer › Library.";
 
 // Luna Writer — library (claudedocs/plans/writer-app.md)
 "WriterLibrary_command_export_Luna" = "Export…";
@@ -1298,6 +1289,7 @@
 "WriterLibrary_command_settings_Luna" = "Settings…";
 "WriterLibrary_command_toggleNotes_Luna" = "Toggle Notes Panel";
 "WriterLibrary_command_trash_Luna" = "Move to Trash";
+"WriterLibrary_cannotOpenLibrary_Luna" = "Couldn’t Open Your Library";
 "WriterLibrary_editor_emptySelection_Luna" = "Select a document to start writing.";
 "WriterLibrary_editor_openAction_Luna" = "Open";
 "WriterLibrary_editor_statisticsAction_Luna" = "Statistics";
@@ -1386,9 +1378,7 @@
 "WriterLibrary_settings_voiceRow_Luna" = "Voice";
 "WriterLibrary_sheets_attachToTitle_Luna" = "Attach to…";
 "WriterLibrary_sheets_duplicateAction_Luna" = "Duplicate";
-"WriterLibrary_sheets_emptyScope_Luna" = "Start a new document.";
 "WriterLibrary_sheets_emptySearch_Luna" = "Try a different word or phrase.";
-"WriterLibrary_sheets_emptyTrash_Luna" = "Deleted documents will appear here.";
 "WriterLibrary_sheets_emptyTrashAction_Luna" = "Empty Trash";
 "WriterLibrary_sheets_emptyTrashConfirmMessage_Luna" = "%lld documents will be deleted for good.";
 "WriterLibrary_sheets_emptyTrashConfirmMessageOne_Luna" = "1 document will be deleted for good.";
@@ -1526,7 +1516,6 @@
 "WriterLibrary_polish_addExistingDocument_Luna" = "Add Existing Document…";
 "WriterLibrary_polish_addToBook_Luna" = "Add to Book";
 "WriterLibrary_polish_allNotes_Luna" = "All Notes";
-"WriterLibrary_polish_bookEmpty_Luna" = "Add your first chapter.";
 "WriterLibrary_polish_booksCollections_Luna" = "Books & Collections";
 "WriterLibrary_polish_chapters_Luna" = "Chapters";
 "WriterLibrary_polish_contents_Luna" = "Contents";
@@ -1552,7 +1541,6 @@
 "WriterLibrary_polish_nextChapter_Luna" = "Next Chapter";
 "WriterLibrary_polish_noteText_Luna" = "Note text";
 "WriterLibrary_polish_noteTitle_Luna" = "Note";
-"WriterLibrary_polish_notesEmpty_Luna" = "Jot down an idea or a reminder.";
 "WriterLibrary_polish_organizeAsBook_Luna" = "Organize as a Book";
 "WriterLibrary_polish_organizeAsBookDetail_Luna" = "Create a book around this document and add the next chapter.";
 "WriterLibrary_polish_previousChapter_Luna" = "Previous Chapter";
@@ -1582,7 +1570,6 @@
 "WriterLibrary_navigation_documentActions_Luna" = "Document Actions";
 "WriterLibrary_navigation_selectDocuments_Luna" = "Select Documents";
 "WriterLibrary_navigation_selectedCount_Luna" = "%d selected";
-"WriterLibrary_navigation_chooseDocument_Luna" = "Choose a document from your library, or start something new.";
 
 /* Plugin-owned product comparison */
 "PriceTracker_pluginRequiredTitle_Luna" = "Plugin required";
@@ -1639,7 +1626,7 @@
 "Premium_retryPurchase_Luna" = "Retry purchase";
 "Premium_priceUnavailable_Luna" = "Apple’s price is unavailable. You can retry or unlock without paying.";
 "Premium_noPurchase_Luna" = "No previous premium purchase was found.";
-"Premium_freeMessage_Luna" = "You’re welcome to use premium for free for this app session. If Luna helps you, a purchase supports its development and keeps premium unlocked across your Luna apps.";
+"Premium_freeMessage_Luna" = "Premium is free until you close this app. A one-time purchase keeps it unlocked across your Luna apps.";
 "Premium_continueForFree_Luna" = "Continue for free";
 "Premium_purchaseUnavailable_Luna" = "The purchase is unavailable right now. Please try again later, or unlock without paying.";
 "Premium_unverified_Luna" = "Apple could not verify this purchase. Please try restoring purchases.";
@@ -1715,4 +1702,4 @@
 "Gemini_timedOut_Luna" = "Google took too long to create the audio. Try again or use the device voice.";
 "Gemini_preparingProgress_Luna" = "Creating readout… %d%%";
 
-"Plugins_autoShowSafariPlayer" = "Open player automatically in Safari";
+"Plugins_autoShowSafariPlayer_Luna" = "Open player automatically in Safari";

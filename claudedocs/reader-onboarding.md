@@ -232,7 +232,7 @@ second beat animates the difference between them.
 | App | Initial | Final | Anchor that never moves |
 |---|---|---|---|
 | Reader | “Read.” | “Read more.” | `Read` |
-| Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
+| Luna Reader (current app) | “Found a link?” | “Save a link for later.” | ` a link` |
 | Downloader | “Download any video.” | “Download any video.<br>No sign in required.” | the whole first line |
 | Price Tracker | “Get the best price.” | “Get the best price. Always.” | `Get the best price.` |
 

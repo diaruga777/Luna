@@ -367,7 +367,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton:
-            return L10n.string("Settings_shortcut_suggestionButtonFooter", safariButtonName)
+            return nil
         case .cookiePopups:
             return L10n.string("Settings_shortcut_cookiePopupsFooter")
         case .videoPlayer:

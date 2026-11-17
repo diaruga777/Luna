@@ -13,6 +13,7 @@ public enum NoteFlyInAnimator {
     public static let duration: TimeInterval = 0.45
 
     public static func fly(from origin: CGRect, to destination: CGPoint, in container: UIView) {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
         let glyph = UIImageView(image: UIImage(systemName: "note.text"))
         glyph.tintColor = EditorTheme.caret
         glyph.contentMode = .scaleAspectFit

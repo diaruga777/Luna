@@ -187,7 +187,7 @@ public final class FinishedReadingBadgeView: UIView {
         layoutPillContents()
         updateForegroundColor()
 
-        if isNewCompletion {
+        if isNewCompletion && !UIAccessibility.isReduceMotionEnabled {
             let draw = CABasicAnimation(keyPath: "strokeEnd")
             draw.fromValue = 0
             draw.toValue = 1
@@ -275,7 +275,7 @@ public final class FinishedReadingBadgeView: UIView {
         // the glass surface itself remains continuously visible.
         checkLayer.isHidden = true
         UIView.animate(
-            withDuration: 0.34, delay: 0,
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.34, delay: 0,
             usingSpringWithDamping: 0.82, initialSpringVelocity: 0.2,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
@@ -297,7 +297,7 @@ public final class FinishedReadingBadgeView: UIView {
         isExpanded = false
         accessibilityLabel = L10n.string("Reader_finishedBadge_readTitle")
         UIView.animate(
-            withDuration: 0.32, delay: 0,
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.32, delay: 0,
             usingSpringWithDamping: 0.84, initialSpringVelocity: 0.2,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {

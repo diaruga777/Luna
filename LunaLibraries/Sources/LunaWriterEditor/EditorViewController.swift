@@ -486,7 +486,8 @@ public final class EditorViewController: UIViewController {
             topInset: textView.adjustedContentInset.top,
             contentHeight: textView.contentSize.height, bottomInset: bottom)
         guard abs(textView.contentOffset.y - offset) > 1 else { return }
-        UIView.animate(withDuration: TypewriterScroller.duration) {
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : TypewriterScroller.duration,
+                       delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
             self.textView.contentOffset.y = offset
         }
     }

@@ -4,6 +4,19 @@ import LunaVaultBEP
 @testable import LunaVaultTailscale
 
 final class IrohTests: XCTestCase {
+    func testRestartedListenerKeepsPairedEndpoint() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let server = VaultIrohTransport(directory: directory, preset: { presetMinimal() })
+        let first = try await server.listen(port: 49200)
+        try await server.stop()
+        await server.waitForListenerToClose()
+        let next = try await server.listen(port: 49200)
+        XCTAssertEqual(first, next)
+        try await server.stop()
+        await server.waitForListenerToClose()
+    }
+
     func testDirectTunnelCarriesExistingPinnedTLS() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

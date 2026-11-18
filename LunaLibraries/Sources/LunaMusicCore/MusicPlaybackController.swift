@@ -56,13 +56,18 @@ public final class MusicPlaybackController: ObservableObject {
     private var unshuffledIDs: [MusicID] = []
 
     private let filePlayer: AVPlayer
-    lazy var fileSession = MPNowPlayingSession(players: [filePlayer])
+    lazy var fileSession: MPNowPlayingSession = {
+        let session = MPNowPlayingSession(players: [filePlayer])
+        session.automaticallyPublishesNowPlayingInfo = true
+        return session
+    }()
     private lazy var sessionActivation = MediaSessionActivation(session: fileSession) { [weak self] in
         self?.filePlaybackRequested == true && self?.nowPlaying?.source == .vault
     }
     private var loader: VaultMusicResourceLoader?
     private var usesFileQueue = false
     private var fileStatus: NSKeyValueObservation?
+    private var fileArtworkTask: Task<Void, Never>?
     private var didPlayCurrent = false
     private var advancing = false
     private var interruptedPlaying = false
@@ -106,6 +111,7 @@ public final class MusicPlaybackController: ObservableObject {
 
     deinit {
         timer?.invalidate()
+        fileArtworkTask?.cancel()
         observers.forEach(NotificationCenter.default.removeObserver)
         for (command, target) in remoteTargets { command.removeTarget(target) }
     }
@@ -239,9 +245,9 @@ public final class MusicPlaybackController: ObservableObject {
             catch { report(error); throw error }
             return
         }
+        fileArtworkTask?.cancel(); fileArtworkTask = nil
         filePlayer.pause(); filePlayer.replaceCurrentItem(with: nil); loader?.cancel(); loader = nil
         usesFileQueue = false; filePlaybackRequested = false; isBuffering = false
-        fileSession.nowPlayingInfoCenter.nowPlayingInfo = nil
         let id = UUID()
         requestID = id
         if let queueMutation { await queueMutation.value }
@@ -583,6 +589,7 @@ public final class MusicPlaybackController: ObservableObject {
         let generation = UUID(); requestID = generation
         advancing = true
         defer { if requestID == generation { advancing = false } }
+        fileArtworkTask?.cancel(); fileArtworkTask = nil
         fileStatus = nil; filePlayer.pause(); filePlayer.replaceCurrentItem(with: nil); loader?.cancel(); loader = nil
         systemPlayer?.stop(); needsPreparation = false; errorMessage = nil; didPlayCurrent = false
         fileStalled = false; filePlaybackRequested = true; isBuffering = true
@@ -606,6 +613,8 @@ public final class MusicPlaybackController: ObservableObject {
                 let resource = VaultMusicResourceLoader(song: song, cache: cache)
                 loader = resource; item = AVPlayerItem(asset: resource.asset)
             }
+            let artwork = song.file?.artwork.flatMap(UIImage.init(data:))
+            item.nowPlayingInfo = fileNowPlayingInfo(for: song, artwork: artwork)
             item.preferredForwardBufferDuration = 20
             item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
             fileStatus = item.observe(\.status, options: [.new]) { [weak self] item, _ in
@@ -615,6 +624,7 @@ public final class MusicPlaybackController: ObservableObject {
                 }
             }
             filePlayer.replaceCurrentItem(with: item)
+            if artwork == nil { loadEmbeddedArtwork(for: item, song: song) }
             guard requestID == generation else { throw CancellationError() }
             if time > 0 { await filePlayer.seek(to: CMTime(seconds: time, preferredTimescale: 600)) }
             guard requestID == generation else { throw CancellationError() }
@@ -627,7 +637,6 @@ public final class MusicPlaybackController: ObservableObject {
                 player.prepareToPlay { error in if let error { continuation.resume(throwing: error) } else { continuation.resume() } }
             }
             guard requestID == generation else { throw CancellationError() }
-            fileSession.nowPlayingInfoCenter.nowPlayingInfo = nil
             if filePlaybackRequested { player.play() }
         }
         refreshFileQueue()
@@ -693,17 +702,29 @@ public final class MusicPlaybackController: ObservableObject {
         if oldPlaying != isPlaying || oldBuffering != isBuffering { changed() }
         else if isPlaying && Date().timeIntervalSince(lastPersistence) >= 5 { changed() }
     }
-    private func publishFileNowPlaying() {
-        guard let song = nowPlaying, song.source == .vault else { return }
-        var info: [String: Any] = [MPMediaItemPropertyTitle: song.title ?? "Song",
-            MPMediaItemPropertyArtist: song.artist ?? "Unknown Artist", MPMediaItemPropertyAlbumTitle: song.albumTitle ?? "",
-            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: playbackTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPNowPlayingInfoPropertyPlaybackQueueIndex: currentIndex, MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count]
-        if let data = song.file?.artwork, let image = UIImage(data: data) {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    private func loadEmbeddedArtwork(for item: AVPlayerItem, song: MusicSong) {
+        fileArtworkTask = Task { [weak self, weak item] in
+            guard let asset = item?.asset,
+                  let metadata = try? await asset.load(.commonMetadata),
+                  let tag = metadata.first(where: { $0.commonKey == .commonKeyArtwork }),
+                  let data = try? await tag.load(.dataValue),
+                  !Task.isCancelled, let self, let item, filePlayer.currentItem === item,
+                  let image = UIImage(data: data) else { return }
+            item.nowPlayingInfo = fileNowPlayingInfo(for: song, artwork: image)
         }
-        fileSession.nowPlayingInfoCenter.nowPlayingInfo = info
+    }
+
+    private func fileNowPlayingInfo(for song: MusicSong, artwork: UIImage?) -> [String: Any] {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title ?? "Song",
+            MPMediaItemPropertyArtist: song.artist ?? "Unknown Artist",
+            MPMediaItemPropertyAlbumTitle: song.albumTitle ?? "",
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
+        ]
+        if let artwork {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+        }
+        return info
     }
     private func report(_ error: Error) {
         guard !(error is CancellationError) else { return }
@@ -712,7 +733,6 @@ public final class MusicPlaybackController: ObservableObject {
 
     private func changed() {
         persistQueue()
-        if usesFileQueue { publishFileNowPlaying() }
         NotificationCenter.default.post(name: .lunaMusicPlaybackChanged, object: self)
     }
     private func deduplicated(_ items: [MusicSong]) -> [MusicSong] {

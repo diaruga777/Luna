@@ -4,6 +4,7 @@ import AudioToolbox
 import Combine
 @testable import LunaPodcastCore
 import MediaPlayer
+import UIKit
 @testable import LunaMusicCore
 @testable import LunaMusicUI
 
@@ -323,6 +324,76 @@ final class VaultMusicTests: XCTestCase {
         let after = await server.readCount
         XCTAssertEqual(before, after, "Offline decoding must not contact the Mac")
     }
+    @MainActor func testVaultNowPlayingArtworkFollowsThePlayerItem() async throws {
+        let root = temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = wave(seconds: 10)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        var firstFile = file(size: bytes.count)
+        firstFile.artwork = try XCTUnwrap(image.pngData())
+        var secondFile = firstFile
+        secondFile.path = "Artist/Album/Second.wav"
+        secondFile.title = "Second"
+        secondFile.artwork = nil
+
+        let vault = VaultMusicController(directory: root)
+        let server = FakeMusicServer(bytes: bytes)
+        try vault.configure(peer: { "Mac" }, request: { try await server.request($0) })
+        let first = MusicSong(file: firstFile, peer: "Mac")
+        let second = MusicSong(file: secondFile, peer: "Mac")
+        let engine = AVPlayer()
+        let player = MusicPlaybackController(defaults: UserDefaults(suiteName: UUID().uuidString)!, vault: vault, filePlayer: engine)
+        defer { player.pause() }
+
+        try await player.play([first, second])
+        XCTAssertTrue(player.fileSession.automaticallyPublishesNowPlayingInfo)
+        let item = try XCTUnwrap(engine.currentItem)
+        let info = try XCTUnwrap(item.nowPlayingInfo)
+        let artwork = try XCTUnwrap(info[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, first.title)
+        XCTAssertEqual(artwork.image(at: artwork.bounds.size)?.pngData(), UIImage(data: try XCTUnwrap(firstFile.artwork))?.pngData())
+        XCTAssertNil(info[MPNowPlayingInfoPropertyPlaybackRate])
+
+        player.pause()
+        XCTAssertTrue(engine.currentItem === item)
+        XCTAssertTrue(item.nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork === artwork)
+        player.next()
+        try await until { engine.currentItem?.nowPlayingInfo?[MPMediaItemPropertyTitle] as? String == "Second" }
+        XCTAssertNil(engine.currentItem?.nowPlayingInfo?[MPMediaItemPropertyArtwork])
+    }
+
+    @MainActor func testVaultNowPlayingReadsUnindexedEmbeddedArtwork() async throws {
+        let root = temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let waveURL = root.appendingPathComponent("source.wav")
+        try wave(seconds: 3).write(to: waveURL)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+        }
+        let tag = AVMutableMetadataItem()
+        tag.identifier = .iTunesMetadataCoverArt
+        tag.dataType = kCMMetadataBaseDataType_PNG as String
+        tag.value = try XCTUnwrap(image.pngData()) as NSData
+        let exporter = try XCTUnwrap(AVAssetExportSession(asset: AVURLAsset(url: waveURL), presetName: AVAssetExportPresetAppleM4A))
+        exporter.metadata = [tag]
+        let songURL = root.appendingPathComponent("song.m4a")
+        try await exporter.export(to: songURL, as: .m4a)
+
+        let vault = VaultMusicController(directory: root)
+        try await vault.importSong(at: songURL, key: "embedded-artwork", title: "Embedded Cover", playlists: [])
+        let song = try XCTUnwrap(vault.songs.first)
+        XCTAssertNil(song.file?.artwork)
+        let engine = AVPlayer()
+        let player = MusicPlaybackController(defaults: UserDefaults(suiteName: UUID().uuidString)!, vault: vault, filePlayer: engine)
+        defer { player.pause() }
+        try await player.play([song])
+        try await until { engine.currentItem?.nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil }
+    }
+
     @MainActor func testVaultQueueTransportAndRepeat() async throws {
         let root = temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let vault = VaultMusicController(directory: root)

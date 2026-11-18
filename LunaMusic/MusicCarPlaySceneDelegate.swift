@@ -86,21 +86,23 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
     }
 
     private func makePlaylists() -> CPListTemplate {
-        list(title: "Playlists", collections: library.playlists.map { ($0.name ?? "Playlist", $0.items, $0 as MusicPlaylist?) })
+        list(title: "Playlists", collections: library.playlists.map { ($0.name ?? "Playlist", $0.items, $0 as MusicPlaylist?, nil) })
     }
 
     private func makeAlbums() -> CPListTemplate {
-        list(title: "Albums", collections: library.albums.map { ($0.representativeItem?.albumTitle ?? "Album", $0.items, nil) })
+        list(title: "Albums", collections: library.albums.map { ($0.representativeItem?.albumTitle ?? "Album", $0.items, nil, $0.representativeItem) })
     }
 
     private func makeArtists() -> CPListTemplate {
-        list(title: "Artists", collections: library.artists.map { ($0.representativeItem?.artist ?? "Artist", $0.items, nil) })
+        list(title: "Artists", collections: library.artists.map { ($0.representativeItem?.artist ?? "Artist", $0.items, nil, nil) })
     }
 
-    private func list(title: String, collections: [(String, [MusicSong], MusicPlaylist?)], offset: Int = 0) -> CPListTemplate {
+    private typealias MusicCollectionRow = (name: String, songs: [MusicSong], playlist: MusicPlaylist?, cover: MusicSong?)
+
+    private func list(title: String, collections: [MusicCollectionRow], offset: Int = 0) -> CPListTemplate {
         let pageSize = max(1, CPListTemplate.maximumItemCount - 1)
-        var rows = collections.dropFirst(offset).prefix(pageSize).map { name, songs, playlist in
-            let row = CPListItem(text: name, detailText: "\(songs.count) songs")
+        var rows = collections.dropFirst(offset).prefix(pageSize).map { name, songs, playlist, cover in
+            let row = CPListItem(text: name, detailText: "\(songs.count) songs", image: artworkThumbnail(for: cover))
             row.handler = { [weak self] _, done in
                 self?.interfaceController?.pushTemplate(self?.makeSongList(title: name, songs: songs, playlist: playlist) ?? CPListTemplate(title: name, sections: []), animated: true, completion: nil)
                 done()
@@ -127,7 +129,7 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
                               offset: Int = 0) -> CPListTemplate {
         let pageSize = max(1, CPListTemplate.maximumItemCount - 1)
         var rows = songs.dropFirst(offset).prefix(pageSize).map { song in
-            let row = CPListItem(text: song.title ?? "Unknown Song", detailText: song.artist)
+            let row = CPListItem(text: song.title ?? "Unknown Song", detailText: song.artist, image: artworkThumbnail(for: song))
             row.handler = { [weak self] _, done in
                 guard let self else { done(); return }
                 Task {
@@ -154,6 +156,22 @@ final class MusicCarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateAp
         template.emptyViewTitleVariants = ["No Songs"]
         return template
     }
+    private func artworkThumbnail(for song: MusicSong?) -> UIImage? {
+        let maxSize = CPListItem.maximumImageSize
+        let scale = max(1, interfaceController?.carTraitCollection.displayScale ?? 1)
+        let pixelSize = CGSize(width: maxSize.width * scale, height: maxSize.height * scale)
+        guard maxSize.width > 0, maxSize.height > 0,
+              let image = song?.artworkImage(at: pixelSize),
+              image.size.width > 0, image.size.height > 0 else { return nil }
+        let ratio = min(maxSize.width / image.size.width, maxSize.height / image.size.height)
+        let size = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
     private func podcastRootRow() -> CPListItem {
         let row = CPListItem(text: "Podcasts", detailText: nil, image: UIImage(systemName: "dot.radiowaves.left.and.right"))
         row.handler = { [weak self] _, done in

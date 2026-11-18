@@ -3,11 +3,11 @@
 ## Implemented
 
 - Siri and Shortcuts: Play Library Music resolves songs, albums, artists and playlists through an `EntityStringQuery`. Individual songs use the same playlist continuation rule as the app; playlists and artists shuffle, albums play in album order. Resume, Next Song, Search Library and Resume Podcast Queue have App Shortcuts phrases. The overlapping Open Playback Queue intent and standalone Pause intent have been removed. Entity suggestions return only authorized device-library items; they never prompt from an extension.
-- Lock Screen, Control Center media transport, headphones and the system Dynamic Island Now Playing surface belong to `MPMusicPlayerController.applicationQueuePlayer`. Luna does not overwrite `MPNowPlayingInfoCenter` or add duplicate remote command handlers.
+- Apple-library music uses `MPMusicPlayerController.applicationQueuePlayer` for Now Playing metadata and remote commands. Vault music supplies track metadata and cover art on its `AVPlayerItem`. Its `MPNowPlayingSession` publishes that information with the live playback state to the Lock Screen, Control Center and CarPlay.
 - Luna does not create a separate playback Live Activity. At launch it dismisses queue activities left by older builds, leaving the system media controls as the playback surface.
 - Home Screen small/medium and Lock Screen circular/rectangular widgets open library search or the queue. Home Screen widgets include playback controls. Control Center has Play/Pause and Next Song controls.
 - Shared `AudioPlaybackIntent` types execute in the containing app process, allowing widget controls to call the real playback controller. The app target defines `LUNA_MUSIC_APP`; both targets compile `LunaMusicShared`.
-- The CarPlay audio scene browses playlists, albums, artists, songs and downloaded songs with CarPlay list templates. Song selection uses the same queue policy as the phone; CarPlay presents its shared system Now Playing template. Library authorization must be completed on iPhone first.
+- The CarPlay audio scene browses playlists, albums, artists, songs and downloaded songs with CarPlay list templates. Album and song rows show the library cover when available, including the songs in Playing Next. Song selection uses the same queue policy as the phone; CarPlay presents its shared system Now Playing template. Library authorization must be completed on iPhone first.
 
 ## Lifecycle and freshness
 

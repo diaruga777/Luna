@@ -187,10 +187,14 @@ Transitions honor Reduce Motion (queue switches immediately and the full-screen
 player uses the system's standard modal presentation). Apple Music's private UI,
 catalog lyrics, Sing, AutoMix and download-management interfaces are not
 available through this implementation. CarPlay has a separate template scene
-for browsing the device library and uses the system Now Playing template.
+for browsing the device library with album and song thumbnails. The system Now
+Playing template uses the same playback metadata as the Lock Screen and Control Center.
 Distribution requires Apple to grant the `com.apple.developer.carplay-audio`
 managed entitlement to the app's signing profile.
-Apple playback controls are owned by MediaPlayer; Vault playback uses its AVPlayer Now Playing session. There is no standalone
+MediaPlayer handles Apple-library playback metadata and controls. For Vault tracks,
+Luna sets album art on the AVPlayer item and lets the Now Playing session publish it
+alongside playback state. The player checks embedded tags when the library index
+has no cover. There is no standalone
 watchOS app or independent Apple Watch library.
 
 ## Development

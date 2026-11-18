@@ -1,6 +1,7 @@
 @_exported import LunaMusicFiles
 import Foundation
 import MediaPlayer
+import UIKit
 
 public struct MusicSong: @unchecked Sendable {
     public let mediaItem: MPMediaItem?
@@ -26,6 +27,9 @@ public struct MusicSong: @unchecked Sendable {
     public var artistPersistentID: MusicID { MusicID("artist:" + MusicFileProtocol.normalized(artist ?? "Unknown Artist")) }
     public var albumPersistentID: MusicID {
         MusicID("album:" + MusicFileProtocol.key(MusicFileProtocol.normalized(albumArtist ?? "Unknown Artist") + "\u{0}" + MusicFileProtocol.normalized(albumTitle ?? "Unknown Album")))
+    }
+    @MainActor public func artworkImage(at size: CGSize) -> UIImage? {
+        file?.artwork.flatMap(UIImage.init(data:)) ?? mediaItem?.artwork?.image(at: size)
     }
     @MainActor public var isCloudItem: Bool {
         if file != nil { return !VaultMusicController.shared.isCached(self) }

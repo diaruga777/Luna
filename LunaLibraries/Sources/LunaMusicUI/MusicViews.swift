@@ -29,7 +29,7 @@ internal enum MusicStyle {
         button.accessibilityTraits = selected ? [.button, .selected] : .button
     }
     static func image(_ item: MusicSong?, size: CGFloat = 300) -> UIImage? {
-        item?.file?.artwork.flatMap(UIImage.init(data:)) ?? item?.mediaItem?.artwork?.image(at: CGSize(width: size, height: size))
+        item?.artworkImage(at: CGSize(width: size, height: size))
     }
     /// Sample a small palette so artwork contributes a calm background color,
     /// without making the cover itself legible behind controls.

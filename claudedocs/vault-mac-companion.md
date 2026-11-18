@@ -146,3 +146,24 @@ The menu bar uses a monochrome template drawing of the app icon’s moon, curved
 foreground and lock, without the tile, glass or color. It replaces the Luna Mac
 text label and follows the system menu bar appearance. The tooltip and
 accessibility label retain the app name; menu actions are unchanged.
+
+## Keep Luna Mac available
+
+The companion retries the file listener and the Iroh direct listener after a
+failed start or an interrupted accept loop. Each retry uses the saved identity.
+To keep the installed companion running through login and app exits, run once:
+
+```sh
+mkdir -p ~/Library/LaunchAgents
+cp script/org.luna.vault.listener.plist ~/Library/LaunchAgents/
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/org.luna.vault.listener.plist
+```
+
+The agent reopens the installed app within about 30 seconds and holds a power
+assertion while plugged in. The display can sleep. Logging out, closing the lid
+or putting the Mac to sleep can interrupt access. To turn supervision off, run:
+
+```sh
+launchctl bootout "gui/$(id -u)/org.luna.vault.listener"
+rm ~/Library/LaunchAgents/org.luna.vault.listener.plist
+```

@@ -64,44 +64,67 @@ final class CompanionController: @unchecked Sendable {
         }
     }
     func start() {
+        openPairingWindow()
         Task {
-            do {
-                try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
-                let localID = try transport.identity()
-                let listener: LunaVaultGoListener
-                do {
-                    // Syncthing commonly already owns 22000 on the user's Mac.
-                    listener = try await transport.listen(bindAddress: "0.0.0.0:49200")
-                } catch {
-                    // The pairing code carries the actual bound port, so an
-                    // available system-assigned port remains fully usable.
-                    listener = try await transport.listen(bindAddress: "0.0.0.0:0")
-                }
-                let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:)).map(\.classifyingTailscaleIP)
-                lock.withLock {
-                    self.listener = listener
-                    code = VaultPairingCode(deviceID: localID, addresses: addresses).text
-                    status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
-                    pairingUntil = Date().addingTimeInterval(300)
-                }
-                if let port = addresses.compactMap({ address -> UInt16? in
-                    if case let .tcp(_, port) = address { return port }; return nil
-                }).first {
-                    Task {
-                        let direct = VaultIrohTransport(directory: stateURL.appendingPathComponent("Identity"))
-                        guard let address = try? await direct.listen(port: port) else { return }
+            while !Task.isCancelled {
+                do { try await serve() }
+                catch { lock.withLock { status = "Reconnecting…" } }
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            }
+        }
+    }
+
+    private func serve() async throws {
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+        let localID = try transport.identity()
+        let listener: LunaVaultGoListener
+        do { listener = try await transport.listen(bindAddress: "0.0.0.0:49200") }
+        catch { listener = try await transport.listen(bindAddress: "0.0.0.0:0") }
+        defer { listener.close() }
+        let direct = VaultIrohTransport(directory: stateURL.appendingPathComponent("Identity"))
+        lock.withLock {
+            self.listener = listener
+            status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
+        }
+        let remote = Task { await maintainRemoteListener(direct, listener: listener, localID: localID) }
+        do {
+            while true {
+                let accepted = try await listener.accept()
+                Task { await self.handle(accepted, localID: localID) }
+            }
+        } catch {
+            remote.cancel()
+            try? await direct.stop()
+            await remote.value
+            lock.withLock { self.listener = nil; irohAddress = nil; code = nil }
+            throw error
+        }
+    }
+
+    private func maintainRemoteListener(_ direct: VaultIrohTransport, listener: LunaVaultGoListener,
+                                        localID: DeviceID) async {
+        while !Task.isCancelled {
+            let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
+            let routes = addresses.map(\.classifyingTailscaleIP)
+            lock.withLock {
+                irohAddress = nil
+                code = VaultPairingCode(deviceID: localID, addresses: routes).text
+            }
+            if let port = addresses.compactMap({ address -> UInt16? in
+                if case let .tcp(_, port) = address { return port }; return nil
+            }).first {
+                if let route = try? await direct.listen(port: port) {
+                    if !Task.isCancelled {
                         lock.withLock {
-                            irohAddress = address
-                            code = VaultPairingCode(deviceID: localID, addresses: addresses + [address]).text
+                            irohAddress = route
+                            code = VaultPairingCode(deviceID: localID, addresses: routes + [route]).text
                         }
+                        await direct.waitForListenerToClose()
                     }
+                    try? await direct.stop()
                 }
-                while !Task.isCancelled {
-                    let accepted = try await listener.accept()
-                    // Approval and BEP work must not block the next TLS accept.
-                    Task { await self.handle(accepted, localID: localID) }
-                }
-            } catch { lock.withLock { status = "Could not start Luna Mac: \(error)" } }
+            }
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
         }
     }
 

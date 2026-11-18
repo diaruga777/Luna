@@ -10,6 +10,9 @@ public actor VaultIrohTransport {
     private let directory: URL
     private let preset: @Sendable () -> any Preset
     private var server: Endpoint?
+    private var acceptTask: Task<Void, Never>?
+
+    public func waitForListenerToClose() async { await acceptTask?.value }
     private var binding: Task<Endpoint, Error>?
     private var directAddresses: [String: String] = [:]
 
@@ -25,7 +28,7 @@ public actor VaultIrohTransport {
 
     func listeningAddresses() -> [String] { server?.addr().directAddresses() ?? [] }
 
-    func stop() async throws {
+    public func stop() async throws {
         let listening = server
         let dialing = binding
         server = nil
@@ -50,7 +53,7 @@ public actor VaultIrohTransport {
         let key = try Self.loadServerKey(directory: directory)
         let endpoint = try await Endpoint.bind(options: .init(preset: preset(), secretKey: key, alpns: [Self.alpn]))
         server = endpoint
-        Task {
+        acceptTask = Task {
             while let incoming = await endpoint.acceptNext() {
                 Task {
                     let connection: Connection

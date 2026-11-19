@@ -35,8 +35,7 @@ final class PluginCapabilityCopyTests: XCTestCase {
     func testTheContainmentDisclosureIsFixedAndDoesNotPromiseWhatCannotBeKept() {
         let disclosure = PluginCapabilityCopy.containmentDisclosure
         XCTAssertFalse(disclosure.isEmpty)
-        // The one thing the plan requires this line to say (§15): Luna limits
-        // reach, but a runaway plugin's own hook is not something it can stop.
-        XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("cannot stop"))
+        XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("permissions"))
+        XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("freeze Luna"))
     }
 }

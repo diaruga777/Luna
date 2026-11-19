@@ -81,7 +81,7 @@ Earlier accepted members stay installed if a later activation fails or the user 
 export are free. Export in the Plugins header lets users select several installed
 plugins (including bundled ones), then share one `.lunabundle`. Only source travels:
 settings, passwords, pairing keys and granted permissions stay on the device.
-Single `.js`, pasted source and existing `.luna` handoffs still work.
+Single `.js`, pasted source and existing `.luna` handoffs still work. The paste editor keeps the source available for correction when its header fails preview.
 
 Creating a new plugin from Settings, a failed save or a handoff uses the shared
 premium gate in `PluginCreateViewController`; see [premium.md](premium.md).
@@ -840,6 +840,9 @@ plugin not claim this URL."
 | `onBluetooth` | 25 s wall, inside a background lease | session closed, event recorded |
 | `onAction`/`onSettingsChanged` | 10 s wall | reported in Settings |
 
+Hook settlement wakes the waiting task directly. A monotonic deadline checks
+for timeout and extends an idle-budgeted call when its bridges make progress.
+
 A budget's clock starts when the hook's body enters the plugin's context,
 not when the call is enqueued: one plugin holding the shared serial queue
 must not charge a timeout to another that executed nothing. A call still
@@ -1520,17 +1523,13 @@ hierarchy.
 
 ### 13.3 Node dev harness
 
-`node tools/plugin-sim/run.mjs <plugin.js> <url> [--fixture dir] [--hook classify|ingest]`
-prints `classify` and `ingest` output against a Node reimplementation of the
-bridge (`undici` fetch, `linkedom` for `luna.html`, in-memory storage,
-`luna.downloads` fed from `config.downloads`, no
-`luna.browser`/`secrets`/`files`/`ui`/`mail`/`notifications`/`bluetooth`/
-`wifi`/`exports` — every app-only or WebKit-only capability is
-simply absent, matching how an undeclared capability behaves everywhere
-else). It is a convenience tool, never a build gate — no timeout, no
-three-strikes disable, a hang just hangs. `node tools/plugin-sim/spec.mjs`
-is the one command with a pass/fail exit code (the `luna.html` parity spec).
-See `tools/plugin-sim/README.md`.
+`node tools/plugin-sim/run.mjs <plugin.js> <url> [--fixture dir]` runs
+classify and, on a claim, ingest. Each hook has its own events in the JSON
+report on stdout. Plugin console output goes to stderr. Validate, test and
+default runs use a child process with a configurable deadline. Raw fixtures
+preserve binary data and URL-specific fixtures take precedence over basename
+matches. Run `npm test` in `tools/plugin-sim` for the offline harness suite.
+See `tools/plugin-sim/README.md` for the bridge coverage and CLI options.
 
 ### 13.4 Staging
 

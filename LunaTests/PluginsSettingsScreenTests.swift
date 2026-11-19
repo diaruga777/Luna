@@ -93,11 +93,11 @@ final class PluginsSettingsScreenTests: XCTestCase {
         let screen = PluginsSettingsScreen(
             catalog: FakeCatalog([]), importer: FakePluginImporter(), settingsStore: FakePluginSettingsStore(),
             invoker: nil)
-        XCTAssertEqual(screen.makeTrailingControls().count, 1)
+        XCTAssertTrue(screen.makeTrailingControls().contains { $0.accessibilityLabel == L10n.string("Plugins_importTitle") })
     }
 
     /// The wand needs somewhere to send the request. A surface that cannot open
-    /// a chat model offers import only.
+    /// a chat model offers import and export.
     func testTheCreateButtonAppearsOnlyWithALauncher() {
         let withoutLauncher = PluginsSettingsScreen(
             catalog: FakeCatalog([]), importer: FakePluginImporter(),
@@ -109,10 +109,10 @@ final class PluginsSettingsScreenTests: XCTestCase {
 
         XCTAssertEqual(
             withoutLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
-            [L10n.string("Plugins_importTitle")])
+            [L10n.string("PluginBundles_exportAccessibility"), L10n.string("Plugins_importTitle")])
         XCTAssertEqual(
             withLauncher.makeTrailingControls().compactMap { $0.accessibilityLabel },
-            [L10n.string("Plugins_create1Title"), L10n.string("Plugins_importTitle")])
+            [L10n.string("PluginBundles_exportAccessibility"), L10n.string("Plugins_create1Title"), L10n.string("Plugins_importTitle")])
     }
 }
 

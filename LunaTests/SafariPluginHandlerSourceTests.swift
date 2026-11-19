@@ -13,11 +13,7 @@ import XCTest
 /// `SharedProductMatchingParityTests`, …) pin their SOURCE instead — the
 /// exempt "source-text pins against the unlinked LunaSafari/ hand-copies"
 /// category. This suite does the same for the plugin message types
-/// (`claudedocs/plans/plugin-platform.md` §13.1) and for the per-target-file
-/// split that answers them (`SafariPluginMessages+Luna.swift` /
-/// `SafariPluginMessages+None.swift`), the same mechanism
-/// `KindWiring+Luna.swift`/`KindWiring+Reader.swift` use — CLAUDE.md is
-/// explicit that `#if canImport` is never a reliable per-target gate here.
+/// and the Reader extension that handles them.
 @MainActor
 final class SafariPluginHandlerSourceTests: XCTestCase {
 
@@ -27,10 +23,6 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
     private var lunaVariantSource: String {
         SafariJSTestHarness.source("LunaSafari/SafariPluginMessages+Luna.swift")
     }
-    private var noneVariantSource: String {
-        SafariJSTestHarness.source("LunaSafari/SafariPluginMessages+None.swift")
-    }
-
     private static let expectedMessageTypes = [
         "plugins.catalog", "plugins.source", "plugins.fetch",
         "plugins.storage.get", "plugins.storage.set", "plugins.storage.delete", "plugins.storage.keys",
@@ -185,24 +177,11 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         XCTAssertFalse(text.contains("canImport"), "the shared handler must not gate on canImport")
     }
 
-    /// `+Luna` is the one variant that actually imports the plugin platform;
-    /// `+None` stays a plain `nil` with no such dependency.
-    func testOnlyTheLunaVariantImportsThePluginPlatform() {
+    func testReaderExtensionInstallsThePluginMessageHandler() {
         XCTAssertTrue(lunaVariantSource.contains("import LunaPluginKit"))
         XCTAssertTrue(lunaVariantSource.contains("import LunaBundledPlugins"))
-        XCTAssertFalse(noneVariantSource.contains("LunaPluginKit"))
-        XCTAssertFalse(noneVariantSource.contains("LunaBundledPlugins"))
-        XCTAssertFalse(handlerSource.contains("canImport"))
-        XCTAssertFalse(lunaVariantSource.contains("canImport"))
-        XCTAssertFalse(noneVariantSource.contains("canImport"))
-    }
-
-    /// Both variants declare the exact same public seam, so swapping one for
-    /// the other (per target) is source-compatible.
-    func testBothVariantsDeclareTheSameHandlerProperty() {
-        XCTAssertTrue(lunaVariantSource.contains("static let handler: SafariPluginMessaging?"))
-        XCTAssertTrue(noneVariantSource.contains("static let handler: SafariPluginMessaging?"))
-        XCTAssertTrue(noneVariantSource.contains("= nil"))
+        XCTAssertTrue(lunaVariantSource.contains(
+            "static let handler: SafariPluginMessaging? = LunaSafariPluginMessageHandler()"))
     }
 
     func testRecoveryHandoffIsOnlyOpenedAfterAnExplicitPluginSaveAttempt() throws {

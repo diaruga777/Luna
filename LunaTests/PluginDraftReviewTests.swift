@@ -20,15 +20,14 @@ final class PluginDraftReviewTests: XCTestCase {
 
     // MARK: - What the screen shows
 
-    func testTheLabelNamesTheHostsHooksAndEveryCapability() async {
+    func testTheLabelNamesTheHostsOutputAndEveryCapability() async {
         let screen = makeScreen(source: Self.passingDraft)
         _ = UITestSupport.host(screen)
         await settle(screen)
 
         let text = labels(in: screen).joined(separator: "\n")
         XCTAssertTrue(text.contains("recipes.example.com"), text)
-        XCTAssertTrue(text.contains("classify"), text)
-        XCTAssertTrue(text.contains("ingest"), text)
+        XCTAssertTrue(text.contains(L10n.string("Plugins_consentProducesLine", PluginCapabilityCopy.sentence(for: PluginModelKind.article))), text)
         XCTAssertTrue(text.contains(PluginCapabilityCopy.sentence(for: .fetch)), text)
         XCTAssertTrue(text.contains(PluginCapabilityCopy.sentence(for: .html)), text)
         XCTAssertTrue(text.contains(PluginCapabilityCopy.containmentDisclosure), text)
@@ -62,7 +61,7 @@ final class PluginDraftReviewTests: XCTestCase {
         await settle(screen)
 
         XCTAssertTrue(
-            labels(in: screen).contains { $0.contains("ingest returned null") },
+            labels(in: screen).contains { $0.contains("The plugin couldn’t save anything from this page.") },
             labels(in: screen).joined(separator: "\n"))
         XCTAssertEqual(
             buttonTitles(in: screen).first, L10n.string("Plugins_review14SaveAnyway"))
@@ -157,7 +156,7 @@ final class PluginDraftReviewTests: XCTestCase {
         XCTAssertEqual(opened?.host, "claude.ai")
         let prompt = opened.flatMap(LLMHandoffPromptReader.prompt(in:)) ?? ""
         XCTAssertTrue(prompt.contains("recipes.example.com"), prompt)
-        XCTAssertTrue(prompt.contains("ingest returned null"), prompt)
+        XCTAssertTrue(prompt.contains("The plugin couldn’t save anything from this page."), prompt)
         XCTAssertTrue(prompt.contains("PROBLEMS FOUND"), prompt)
     }
 

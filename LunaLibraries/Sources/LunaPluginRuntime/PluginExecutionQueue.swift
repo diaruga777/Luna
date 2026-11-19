@@ -72,7 +72,7 @@ final class PluginExecutionQueue {
 
     /// Runs `work` and reports, through `item`, whether it ever returned.
     ///
-    /// The caller polls `item` rather than blocking, so the queue stays free for
+    /// The caller waits asynchronously, so the queue stays free for
     /// the bridge callbacks the hook is waiting on.
     func enqueue(item: PluginQueueItem, _ work: @escaping () -> Void) {
         queue.async { [weak self] in
@@ -105,23 +105,25 @@ final class PluginExecutionQueue {
 /// returned, and whether its caller gave up first.
 final class PluginQueueItem {
     private let lock = NSLock()
-    private var started: Date?
+    private var started: ContinuousClock.Instant?
     private var returned = false
     private var abandoned = false
     private var cancelled = false
 
     init() {}
 
-    var hasReturned: Bool {
+    func cancelIfQueued() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return returned
+        guard started == nil else { return false }
+        cancelled = true
+        return true
     }
 
     /// When the body entered the plugin's context, or nil while the item is
     /// still queued. A hook's wall-clock budget runs from here, not from the
     /// enqueue: a hook that has not started has executed nothing to charge.
-    var startedAt: Date? {
+    var startedAt: ContinuousClock.Instant? {
         lock.lock()
         defer { lock.unlock() }
         return started
@@ -132,7 +134,7 @@ final class PluginQueueItem {
         lock.lock()
         defer { lock.unlock() }
         guard !cancelled else { return false }
-        started = Date()
+        started = .now
         return true
     }
 

@@ -175,6 +175,34 @@ final class PluginRuntimeTests: XCTestCase {
         XCTAssertEqual(runner.runtime.disabledPlugins["app.luna.test"], "off")
     }
 
+    func testReenablingPluginClearsItsDisabledStatus() throws {
+        let id = "app.luna.test"
+        try runner.load(plugin(body: claimingBody))
+        runner.store.setEnabled(false, pluginID: id, isBundled: false)
+        XCTAssertFalse(runner.runtime.reload(pluginID: id).isLoaded)
+        runner.store.setEnabled(true, pluginID: id, isBundled: false)
+        XCTAssertTrue(runner.runtime.reload(pluginID: id).isLoaded)
+        XCTAssertNil(runner.runtime.disabled[id])
+    }
+
+    func testSettledHookWithUnboundedTimeoutReturns() async throws {
+        try runner.load(plugin(body: claimingBody))
+        let claim = await runner.invoke(
+            .classify, pluginID: "app.luna.test",
+            argument: ClassifyInput(url: "https://example.com/v/1", context: "app"),
+            timeout: .infinity, as: ClassifyClaim.self)
+        XCTAssertEqual(claim?.itemId, "1")
+    }
+
+    func testConcurrentReloadsLeaveOneCallableContext() throws {
+        let id = "app.luna.test"
+        try runner.load(plugin(body: claimingBody))
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            XCTAssertTrue(runner.runtime.reload(pluginID: id).isLoaded)
+        }
+        XCTAssertEqual(runner.runtime.loadedPlugins.map(\.id), [id])
+    }
+
     // MARK: - Grants
 
     func testRegisteringAgainFromAHookThrowsAlreadyRegistered() async throws {

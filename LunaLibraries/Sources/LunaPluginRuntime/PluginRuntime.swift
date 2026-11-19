@@ -82,10 +82,6 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// keeps hanging must not keep collecting them.
     public static let timeoutsBeforeDisable = 3
 
-    /// How often a pending call is checked. Small enough that a fast hook is not
-    /// held up, large enough that an eight-second budget costs a few hundred
-    /// wake-ups.
-    static let pollInterval: TimeInterval = 0.01
     /// Top-level plugin code is expected to be declarations and setup only.
     /// This bound is used by the disposable activation preflight; production
     /// JavaScriptCore still cannot interrupt a running context.
@@ -115,6 +111,8 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     private let scratch: (any PluginScratchGenerating)?
 
     private let lock = NSLock()
+    // Serialize catalog mutations without holding the bookkeeping lock during JS evaluation.
+    private let reloadLock = NSLock()
     /// Only accessed on `executionQueue`; bridge closures capture this token
     /// before leaving for their own work queue.
     private var activeInvocation: PluginInvocationDiagnostics?
@@ -128,7 +126,6 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// from `ordered`, which contains only contexts eligible for new calls.
     private var generationStates: [String: RuntimeGenerationState] = [:]
     private var disabledReasons: [String: PluginDisableReason] = [:]
-    private var timeoutCounts: [String: Int] = [:]
     /// Plugin id → the calls of that plugin the runtime is still waiting on.
     ///
     /// Hooks DO overlap: `onBluetooth` → `luna.exports.deliverQueued()` runs an
@@ -167,6 +164,8 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Builds a context for every enabled plugin, imported and bundled.
     @discardableResult
     public func loadAll() -> [PluginLoadReport] {
+        reloadLock.lock()
+        defer { reloadLock.unlock() }
         let installed = store.installedPlugins()
         let candidates = installed + bundled.plugins(shadowedBy: installed)
         lock.lock()
@@ -200,7 +199,7 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// to the live runtime. A timeout quarantines that disposable queue.
     public func activate(pluginID: String) throws {
         let installed = store.plugin(id: pluginID)
-        let candidate = installed ?? bundled.plugins().first { $0.id == pluginID }
+        let candidate = installed ?? bundled.plugin(id: pluginID)
         guard let candidate else {
             throw PluginActivationError(failure: .runtime("no plugin with that id is installed"))
         }
@@ -230,9 +229,14 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Rebuilds one plugin's context from what the store holds now.
     @discardableResult
     public func reload(pluginID: String) -> PluginLoadReport {
-        retireActive(pluginID: pluginID)
+        reloadLock.lock()
+        defer { reloadLock.unlock() }
+        lock.lock()
+        retireActiveLocked(pluginID: pluginID)
+        disabledReasons[pluginID] = nil
+        lock.unlock()
         let installed = store.plugin(id: pluginID)
-        let candidate = installed ?? bundled.plugins().first { $0.id == pluginID }
+        let candidate = installed ?? bundled.plugin(id: pluginID)
         guard let candidate else {
             return PluginLoadReport(
                 pluginID: pluginID, isLoaded: false,
@@ -254,15 +258,11 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     }
 
     public func unload(pluginID: String) {
+        reloadLock.lock()
+        defer { reloadLock.unlock() }
         lock.lock()
         retireActiveLocked(pluginID: pluginID)
         disabledReasons[pluginID] = nil
-        lock.unlock()
-    }
-
-    private func retireActive(pluginID: String) {
-        lock.lock()
-        retireActiveLocked(pluginID: pluginID)
         lock.unlock()
     }
 
@@ -279,7 +279,9 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Caller holds `lock`; the state itself remains until its final holder
     /// releases. New work can only find contexts in `ordered`.
     private func retire(_ generationID: String) {
-        generationStates[generationID]?.retired = true
+        guard let state = generationStates[generationID] else { return }
+        state.retired = true
+        if state.isDrained { generationStates[generationID] = nil }
     }
 
     private func hasInFlight(pluginID: String) -> Bool {
@@ -562,10 +564,13 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
             return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
                 reason: .runtime, message: "cancelled: the caller cancelled this hook"))
         }
-        lock.lock()
-        let entry = ordered.first { $0.plugin.id == pluginID }
-        let disabledReason = disabledReasons[pluginID]
-        lock.unlock()
+        guard timeout >= 0 else {
+            return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
+                reason: .runtime, message: "the hook timeout must be nonnegative"))
+        }
+        let (entry, disabledReason) = lock.withLock {
+            (ordered.first { $0.plugin.id == pluginID }, disabledReasons[pluginID])
+        }
         guard let entry else {
             return .failure(PluginJSFailure(
                 pluginID: pluginID, hook: hook.rawValue,
@@ -590,60 +595,78 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         }
 
         let call = PluginPendingCall()
+        let (events, completion) = AsyncStream<PluginCallEvent>.makeStream(bufferingPolicy: .bufferingOldest(1))
         let item = PluginQueueItem()
-        beginCall(pluginID: pluginID, generationID: entry.generationID, call: call)
+        guard beginCall(pluginID: pluginID, generationID: entry.generationID, call: call) else {
+            return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
+                reason: .notLoaded, message: "the plugin was reloaded before the call began"))
+        }
+        defer { endCall(pluginID: pluginID, generationID: entry.generationID, call: call) }
+        let enqueuedAt = ContinuousClock.now
         executionQueue.enqueue(item: item) {
             // The budget's clock starts here, so a call that waited behind
             // another plugin is not charged for the wait.
             call.touch()
             self.withInvocation(invocation, generationID: entry.generationID) {
-                entry.context.call(hook, argumentJSON: argumentJSON) { call.settle($0) }
+                entry.context.call(hook, argumentJSON: argumentJSON) { outcome in
+                    completion.yield(.settled(outcome))
+                    completion.finish()
+                }
             }
         }
 
-        let isIdleBudget = hook == .ingest
-        let enqueuedAt = Date()
-        var neverStarted = false
-        while true {
-            if Task.isCancelled {
-                if !item.hasReturned { executionQueue.abandon(item) }
-                call.abandon()
-                endCall(pluginID: pluginID, generationID: entry.generationID, call: call)
-                return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
-                    reason: .runtime, message: "cancelled: the caller cancelled this hook"))
+        // Sleep until the next possible expiry. Starting a queued call or making
+        // ingest progress can only move this deadline later. Settlement wakes the
+        // caller directly, even when the hook returns before we begin waiting.
+        let watchdog = Task {
+            // An unbounded budget still responds to settlement and cancellation.
+            guard timeout < Double(Int64.max) else { return }
+            let budget = Duration.seconds(timeout)
+            var deadline = enqueuedAt + budget
+            while !Task.isCancelled {
+                do { try await Task.sleep(until: deadline, clock: .continuous) }
+                catch { return }
+                if item.cancelIfQueued() {
+                    completion.yield(.timedOut(neverStarted: true))
+                    completion.finish()
+                    return
+                }
+                guard let started = item.startedAt else { return }
+                deadline = (hook == .ingest ? max(started, call.lastActivity) : started) + budget
+                if deadline <= .now {
+                    completion.yield(.timedOut(neverStarted: false))
+                    completion.finish()
+                    return
+                }
             }
-            if let outcome = call.outcome {
-                noteSettled(pluginID, generationID: entry.generationID, call: call)
-                return outcome
-            }
-            if let startedAt = item.startedAt {
-                let expired = isIdleBudget
-                    ? call.idleSeconds >= timeout
-                    : Date().timeIntervalSince(startedAt) >= timeout
-                if expired { break }
-            } else if Date().timeIntervalSince(enqueuedAt) >= timeout {
-                neverStarted = true
-                break
-            }
-            try? await Task.sleep(nanoseconds: UInt64(Self.pollInterval * 1_000_000_000))
         }
-        if let outcome = call.outcome {
-            noteSettled(pluginID, generationID: entry.generationID, call: call)
+        defer {
+            watchdog.cancel()
+            completion.finish()
+        }
+        var iterator = events.makeAsyncIterator()
+        let event = await iterator.next()
+        guard !Task.isCancelled, let event else {
+            executionQueue.abandon(item)
+            call.abandon()
+            return .failure(PluginJSFailure(pluginID: pluginID, hook: hook.rawValue,
+                reason: .runtime, message: "cancelled: the caller cancelled this hook"))
+        }
+        switch event {
+        case .settled(let outcome):
+            lock.withLock { generationStates[entry.generationID]?.timeoutCount = 0 }
             return outcome
+        case .timedOut(let neverStarted):
+            executionQueue.abandon(item)
+            call.abandon()
+            if !neverStarted { noteTimeout(pluginID, generationID: entry.generationID) }
+            return .failure(PluginJSFailure(
+                pluginID: pluginID, hook: hook.rawValue, reason: .timeout,
+                message: neverStarted
+                    ? "\(hook.rawValue) waited \(Int(timeout))s for the plugin queue and never ran"
+                    : "\(hook.rawValue) passed its \(Int(timeout))s budget and was abandoned; "
+                        + "the JavaScript may keep running"))
         }
-        // The caller stops waiting. A body still running holds the queue, so the
-        // runtime reports itself wedged until it returns; one that never started
-        // is cancelled and costs the plugin nothing.
-        if !item.hasReturned { executionQueue.abandon(item) }
-        call.abandon()
-        if !neverStarted { noteTimeout(pluginID, generationID: entry.generationID) }
-        endCall(pluginID: pluginID, generationID: entry.generationID, call: call)
-        return .failure(PluginJSFailure(
-            pluginID: pluginID, hook: hook.rawValue, reason: .timeout,
-            message: neverStarted
-                ? "\(hook.rawValue) waited \(Int(timeout))s for the plugin queue and never ran"
-                : "\(hook.rawValue) passed its \(Int(timeout))s budget and was abandoned; "
-                    + "the JavaScript may keep running"))
     }
 
     // MARK: - In-flight calls
@@ -652,12 +675,17 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// first.
     private func beginCall(
         pluginID: String, generationID: String, call: PluginPendingCall
-    ) {
+    ) -> Bool {
         lock.lock()
+        guard activeGenerationByPlugin[pluginID] == generationID else {
+            lock.unlock()
+            return false
+        }
         inFlight[generationID, default: []].append(call)
         generationStates[generationID]?.callCount += 1
         lock.unlock()
         _ = scratch?.openScratchGeneration(pluginID: pluginID, generationID: generationID)
+        return true
     }
 
     /// Counts one call out. The generation is reaped when the last holder goes.
@@ -679,31 +707,21 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         scratch?.closeScratchGeneration(pluginID: pluginID, generationID: generationID)
     }
 
-    /// Clears the strike count after a hook that answered.
-    private func noteSettled(
-        _ pluginID: String, generationID: String, call: PluginPendingCall
-    ) {
-        lock.lock()
-        timeoutCounts[generationID] = 0
-        lock.unlock()
-        endCall(pluginID: pluginID, generationID: generationID, call: call)
-    }
-
     private func noteTimeout(_ pluginID: String, generationID: String) {
         lock.lock()
-        let count = (timeoutCounts[generationID] ?? 0) + 1
-        timeoutCounts[generationID] = count
-        if count >= PluginRuntime.timeoutsBeforeDisable {
+        defer { lock.unlock() }
+        guard let state = generationStates[generationID] else { return }
+        state.timeoutCount += 1
+        if state.timeoutCount >= PluginRuntime.timeoutsBeforeDisable {
             // A late timeout from a retired context must not disable the
             // replacement that now owns this plugin id.
             if activeGenerationByPlugin[pluginID] == generationID {
                 disabledReasons[pluginID] = .stopped
                 ordered.removeAll { $0.plugin.id == pluginID }
                 activeGenerationByPlugin[pluginID] = nil
-                generationStates[generationID]?.retired = true
+                retire(generationID)
             }
         }
-        lock.unlock()
     }
 
     private func report(_ failure: PluginJSFailure, invocation: PluginInvocationDiagnostics? = nil) {
@@ -851,6 +869,7 @@ private final class RuntimeGenerationState {
     var retired = false
     var callCount = 0
     var operationCount = 0
+    var timeoutCount = 0
 
     init(id: String, pluginID: String) {
         self.id = id
@@ -872,46 +891,34 @@ struct WeakPluginPromiseBox {
     init(_ value: PluginPromiseBox) { self.value = value }
 }
 
-/// One pending hook call: its settled value, and when it last saw progress.
+private enum PluginCallEvent {
+    case settled(Result<String, PluginJSFailure>)
+    case timedOut(neverStarted: Bool)
+}
+
 final class PluginPendingCall {
     private let lock = NSLock()
-    private var settled: Result<String, PluginJSFailure>?
     private var abandoned = false
-    private var lastActivity = Date()
+    private var activity = ContinuousClock.now
     // Capture on the caller's task: JSC and URLSession callbacks do not inherit
     // task locals, but must keep the outer ingestion watchdog alive too.
     private let pipelineActivity = IdleTimeLimit.activity
 
-    var outcome: Result<String, PluginJSFailure>? {
+    var lastActivity: ContinuousClock.Instant {
         lock.lock()
         defer { lock.unlock() }
-        return settled
-    }
-
-    /// Seconds since the last bridge call. The ingest budget reads this rather
-    /// than a wall clock.
-    var idleSeconds: TimeInterval {
-        lock.lock()
-        defer { lock.unlock() }
-        return Date().timeIntervalSince(lastActivity)
-    }
-
-    func settle(_ outcome: Result<String, PluginJSFailure>) {
-        lock.lock()
-        if settled == nil, !abandoned { settled = outcome }
-        lock.unlock()
+        return activity
     }
 
     func touch() {
         lock.lock()
         guard !abandoned else { lock.unlock(); return }
-        lastActivity = Date()
+        activity = .now
         lock.unlock()
         pipelineActivity?.touch()
     }
 
-    /// The caller gave up. A later settle is dropped rather than delivered to
-    /// nobody.
+    /// Ignore progress arriving after the caller gave up.
     func abandon() {
         lock.lock()
         abandoned = true

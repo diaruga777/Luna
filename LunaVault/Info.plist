@@ -16,6 +16,8 @@
 	<string>vault.sqlite</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSBonjourServices</key>
+	<array><string>_luna-vault._tcp</string></array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Luna Vault looks for your paired Mac on your local network to sync files.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

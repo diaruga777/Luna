@@ -579,6 +579,73 @@ final class VaultConnectedPairingTests: XCTestCase {
         XCTAssertEqual(try reopened.settings().photoVideoFormat, .original)
     }
 
+    func testCellularTriesRemoteRoutesBeforeHomeLANAndRestoresThemFromKeychain() async throws {
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let lan = VaultPeerAddress.tcp(host: "192.168.1.7", port: 49200)
+        let direct = VaultPeerAddress.iroh(endpoint: String(repeating: "a", count: 64))
+        let tailnet = VaultPeerAddress.tailscale(host: "100.64.0.7", port: 49200)
+        let peer = VaultPeerRecord(deviceID: mac, name: "Mac", manualAddresses: [lan, tailnet, direct],
+            folderID: "vault", lastConnectedAt: Date())
+        let pairing = try LunaMacCredentials.Pairing(peer: peer)
+        XCTAssertFalse(pairing.addresses.contains(direct.description))
+        let data = try JSONEncoder().encode(pairing)
+        let restored = try JSONDecoder().decode(LunaMacCredentials.Pairing.self, from: data).peer()
+        let cellular = VaultAddressResolver(lookup: nil, isOnCellular: { true })
+        let wifi = VaultAddressResolver(lookup: nil, isOnCellular: { false })
+        let away = try await cellular.addresses(for: restored)
+        let home = try await wifi.addresses(for: restored)
+        XCTAssertEqual(away, [direct, tailnet, lan])
+        XCTAssertEqual(home, [lan, direct, tailnet])
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "irohAddresses")
+        let legacyPeer = try JSONDecoder().decode(LunaMacCredentials.Pairing.self,
+            from: JSONSerialization.data(withJSONObject: legacy)).peer()
+        let oldRoutes = try await cellular.addresses(for: legacyPeer)
+        XCTAssertEqual(oldRoutes, [tailnet, lan])
+    }
+
+    func testNearbyLookupRepairsVerifiedLANRoutesAndSkipsCellularAndNewPairings() async throws {
+        let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
+        let stale = VaultPeerAddress.tcp(host: "192.168.1.5", port: 49200)
+        let current = VaultPeerAddress.tcp(host: "mac.local.", port: 51000)
+        let lookup = NearbyLookup(address: current)
+        let wifi = VaultAddressResolver(lookup: lookup, isOnCellular: { false })
+        let cellular = VaultAddressResolver(lookup: lookup, isOnCellular: { true })
+        var peer = VaultPeerRecord(deviceID: mac, name: "Mac", manualAddresses: [stale])
+        let unverified = try await wifi.addresses(for: peer)
+        peer.lastConnectedAt = Date()
+        let away = try await cellular.addresses(for: peer)
+        let home = try await wifi.addresses(for: peer)
+        XCTAssertEqual(unverified, [stale])
+        XCTAssertEqual(away, [stale])
+        XCTAssertEqual(home, [current, stale])
+        let queries = await lookup.queries
+        XCTAssertEqual(queries, [mac])
+    }
+
+    func testConcurrentBrowseAndReconnectShareOneDialAndKeepLastRemoteRoute() async throws {
+        let folder = directory.appendingPathComponent("Files")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let mac = try await LocalMacPeer(root: directory.appendingPathComponent("Mac"), folder: folder)
+        defer { mac.close() }
+        let transport = LunaVaultGoTransport(configuration: .init(stateDirectory: directory.appendingPathComponent("PhoneIdentity")))
+        let dialer = DelayedDialer(transport: transport)
+        let store = try VaultFolderStore(rootURL: directory.appendingPathComponent("Phone"))
+        let remote = VaultPeerAddress.iroh(endpoint: String(repeating: "a", count: 64))
+        try store.savePeer(VaultPeerRecord(deviceID: mac.code.deviceID, name: "Mac",
+            manualAddresses: mac.code.addresses + [remote], folderID: "vault", lastConnectedAt: Date()))
+        let session = VaultSyncSession(store: store, dialer: dialer, lookup: nil, localDevice: try transport.identity())
+        async let foreground: Void = session.start()
+        async let locations = session.browseMac(VaultMacBrowseRequest(.locations))
+        _ = try await foreground
+        let listing = try await locations
+        XCTAssertFalse(listing.entries.isEmpty)
+        let calls = await dialer.calls
+        XCTAssertEqual(calls, 1)
+        XCTAssertTrue(try XCTUnwrap(store.peer()).manualAddresses.contains(remote))
+        await session.stop()
+    }
+
     func testSessionDoesNotReportConnectedBeforeMacIndexArrives() async throws {
         let phone = try DeviceID(bytes: Data(repeating: 1, count: 32))
         let mac = try DeviceID(bytes: Data(repeating: 2, count: 32))
@@ -961,6 +1028,31 @@ final class VaultConnectedPairingTests: XCTestCase {
     }
 }
 
+private actor NearbyLookup: VaultPeerLookup, VaultNearbyPeerLookup {
+    let address: VaultPeerAddress
+    private(set) var queries: [DeviceID] = []
+    init(address: VaultPeerAddress) { self.address = address }
+    func nearbyAddress(for device: DeviceID) async -> VaultPeerAddress? {
+        queries.append(device)
+        return address
+    }
+    func lookup(_ device: DeviceID) async throws -> VaultDiscoveryResult {
+        XCTFail("A known pairing should not trigger public discovery")
+        return VaultDiscoveryResult(addresses: [], seen: nil)
+    }
+}
+
+private actor DelayedDialer: VaultPeerDialing {
+    let transport: LunaVaultGoTransport
+    private(set) var calls = 0
+    init(transport: LunaVaultGoTransport) { self.transport = transport }
+    func dial(_ address: VaultPeerAddress, expecting device: DeviceID) async throws -> any BEPByteStream {
+        calls += 1
+        try await Task.sleep(for: .milliseconds(100))
+        return try await transport.dial(address, expecting: device)
+    }
+}
+
 private struct RejectingDialer: VaultPeerDialing {
     func dial(_ address: VaultPeerAddress, expecting: DeviceID) async throws -> any BEPByteStream {
         throw VaultTransportError.unreachable("Test Mac is offline")
@@ -1036,7 +1128,8 @@ private final class LocalMacPeer: @unchecked Sendable {
                     try index.replace(with: CompanionFolderScanner(rootURL: folder, deviceShortID: identity.shortID).scan())
                     let delegate = CompanionBEPDelegate(rootURL: folder, index: index, localDevice: identity, folderID: "vault", clientStarted: { clients?.record($0) })
                     let connection = BEPConnection(stream: peer.stream, peerDevice: peer.device,
-                        localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1"), delegate: delegate)
+                        localHello: BEPHello(deviceName: "Mac", clientName: "Test", clientVersion: "1",
+                            connectionAddresses: addresses.map(\.description)), delegate: delegate)
                     self.retain(connection, delegate)
                     _ = try await connection.start()
                     try await connection.send(clusterConfig: BEPClusterConfig(folders: [BEPFolder(id: "vault", label: "Vault",

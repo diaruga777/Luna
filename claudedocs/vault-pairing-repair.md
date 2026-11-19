@@ -95,7 +95,7 @@ The active UI supports browse, search, previews, import, and cache clearing.
 It does not expose deletion or editing. Mac-side tombstone/conflict handling,
 public relay/discovery publication, and legacy share-extension migration
 remain separate work; this repair does not claim those paths are complete.
-If a copied direct address changes, copy a fresh code from the Mac. The
+On the same Wi-Fi, Bonjour can recover the current listener for a previously paired Mac when its saved IP or port changes. The phone learns the current Iroh route from the authenticated greeting. The
 companion currently rescans rather than using FSEvents.
 
 ## Run and verify

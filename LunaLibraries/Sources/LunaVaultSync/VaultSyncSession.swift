@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import LunaVaultBEP
 import LunaVaultStore
 
@@ -77,6 +78,9 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     private let clock: @Sendable () -> Date
 
     private var announcedClients = Set<LunaMacClient>()
+    private static let log = Logger(subsystem: "LunaVault", category: "MacConnection")
+    private var startTask: Task<Void, Error>?
+    private var startGeneration: UInt64 = 0
     private var connection: BEPConnection?
     private var state: VaultSyncSessionState = .idle
     private var receivedInitialIndex = false
@@ -118,41 +122,65 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     public var sentBytesByFile: [String: Int64] { sentBytes }
 
     public func start(forceLookup: Bool = false) async throws {
+        // Foreground sync, transfers and the Mac browser can arrive during the same dial.
+        if let startTask { return try await startTask.value }
         if isConnected, !forceLookup { return }
+        let generation = startGeneration
+        let task = Task {
+            defer { if startGeneration == generation { startTask = nil } }
+            try await openConnection(forceLookup: forceLookup)
+        }
+        startTask = task
+        try await task.value
+    }
+
+    private func openConnection(forceLookup: Bool) async throws {
+        try Task.checkCancellation()
         await closeConnection(reason: "Reconnect")
+        try Task.checkCancellation()
         guard let peer = try store.peer() else {
             await setState(.offline("Not paired"))
             throw VaultSyncSessionError.notPaired
         }
-        receivedInitialIndex = false
         _ = try store.purgeStaleGenerations()
         await setState(.resolving)
         let addresses: [VaultPeerAddress]
         do { addresses = try await resolver.addresses(for: peer, forceRefresh: forceLookup) }
         catch {
+            try Task.checkCancellation()
             await setState(.offline(String(describing: error)))
             throw error
         }
+        let routeTypes = addresses.map(\.transportName).joined(separator: ", ")
+        Self.log.notice("Mac connection routes: \(routeTypes, privacy: .public)")
         var failures: [String] = []
         for address in addresses {
-            if Task.isCancelled { throw CancellationError() }
+            try Task.checkCancellation()
             await setState(.connecting(address))
+            let route = address.transportName
+            Self.log.notice("Trying Mac connection over \(route, privacy: .public)")
             do {
                 let stream = try await dialer.dial(address, expecting: peer.deviceID)
+                if Task.isCancelled { stream.close(); throw CancellationError() }
                 let candidate = BEPConnection(stream: stream, peerDevice: peer.deviceID,
                                               localHello: hello, delegate: self)
                 announcedClients.removeAll()
                 connection = candidate
                 await setState(peer.isFolderAccepted ? .syncing : .awaitingFolder)
                 let hello = try await candidate.start()
+                try Task.checkCancellation()
                 // This hello arrives after the normal BEP certificate pin check.
                 // Keep user-entered routes and learn current routes for that Mac.
                 let routes = hello.connectionAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
                 if !routes.isEmpty, var current = try store.peer(), current.deviceID == peer.deviceID {
                     var seen = Set<VaultPeerAddress>()
-                    let manual = current.manualAddresses.filter { if case .iroh = $0 { return false }; return true }
+                    // The Mac may send a LAN-only hello while its Iroh listener restarts.
+                    let replacesIroh = routes.contains(where: \.isIroh)
+                    let manual = current.manualAddresses.filter { !replacesIroh || !$0.isIroh }
                     current.manualAddresses = (routes + manual).filter { seen.insert($0).inserted }.prefix(24).map { $0 }
                     try store.savePeer(current)
+                    let hasIroh = current.manualAddresses.contains(where: \.isIroh)
+                    Self.log.notice("Saved Mac routes with direct Iroh available: \(hasIroh, privacy: .public)")
                 }
                 let entries = try store.announcedIndexEntries()
                 try await candidate.send(clusterConfig: clusterConfig(peer: peer, entries: entries))
@@ -163,17 +191,20 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 }
                 // A successful write is not an acknowledgement from the Mac.
                 // The first accepted index below establishes connection readiness.
+                Self.log.notice("Mac handshake completed over \(route, privacy: .public)")
                 return
             } catch {
+                try Task.checkCancellation()
+                Self.log.notice("Mac connection failed over \(route, privacy: .public): \(String(describing: error), privacy: .private)")
                 if let transportError = error as? VaultTransportError, transportError == .localNetworkDenied, addresses.count == 1 {
                     await setState(.offline(transportError.localizedDescription))
                     throw transportError
                 }
                 failures.append("\(address): \(String(describing: error))")
-                if let candidate = connection { await candidate.close(reason: "Dial failed") }
-                connection = nil
+                await closeConnection(reason: "Dial failed")
             }
         }
+        try Task.checkCancellation()
         let error = VaultSyncSessionError.allAddressesFailed(failures)
         await setState(.offline("Connection failed"))
         throw error
@@ -188,16 +219,8 @@ public actor VaultSyncSession: BEPConnectionDelegate {
         announcedClients.insert(client)
     }
 
-    private var musicConnectionTask: Task<Void, Error>?
     public func musicRequest(_ payload: Data) async throws -> Data {
-        if !isConnected {
-            if let task = musicConnectionTask { try await task.value }
-            else {
-                let task = Task { try await self.start() }; musicConnectionTask = task
-                defer { musicConnectionTask = nil }
-                try await task.value
-            }
-        }
+        if !isConnected { try await start() }
         try await waitForInitialIndex()
         guard let connection else { throw VaultSyncSessionError.noConnection }
         return try await connection.musicRequest(payload)
@@ -264,8 +287,12 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     }
 
     public func stop(reason: String = "Background") async {
+        startGeneration &+= 1
+        let generation = startGeneration
+        startTask?.cancel()
+        startTask = nil
         await closeConnection(reason: reason)
-        await setState(.idle)
+        if generation == startGeneration, startTask == nil, connection == nil { await setState(.idle) }
     }
 
     public func acceptFolder(id: String, label: String? = nil) async throws {
@@ -281,6 +308,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
 
     @discardableResult
     public func waitForInitialIndex(timeout: TimeInterval = 20) async throws -> Bool {
+        if let startTask { try await startTask.value }
         let deadline = clock().addingTimeInterval(max(0, timeout))
         while !receivedInitialIndex {
             guard isConnected else { throw VaultSyncSessionError.noConnection }
@@ -482,6 +510,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
                 sentBytes.removeValue(forKey: name)
             }
             if !index.isUpdate {
+                if !receivedInitialIndex { Self.log.notice("Received Mac file index") }
                 receivedInitialIndex = true
                 try store.recordConnected(at: clock())
                 await setState(.connected)
@@ -549,6 +578,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     public func connection(_ connection: BEPConnection, didCloseWith error: Error?) async {
         guard self.connection === connection else { return }
         self.connection = nil
+        receivedInitialIndex = false
         servedBlockOffsets.removeAll()
         sentBytes.removeAll()
         if state != .idle { await setState(.offline(error.map { String(describing: $0) } ?? "Disconnected")) }
@@ -568,6 +598,7 @@ public actor VaultSyncSession: BEPConnectionDelegate {
     private func closeConnection(reason: String) async {
         let old = connection
         connection = nil
+        receivedInitialIndex = false
         servedBlockOffsets.removeAll()
         sentBytes.removeAll()
         if let old { await old.close(reason: reason) }

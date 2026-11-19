@@ -9,5 +9,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
-<key>NSLocalNetworkUsageDescription</key><string>Luna Mac connects to Luna Vault and Luna Music on your paired iPhone.</string>
+<key>NSBonjourServices</key>
+	<array><string>_luna-vault._tcp</string></array>
+	<key>NSLocalNetworkUsageDescription</key><string>Luna Mac connects to Luna Vault and Luna Music on your paired iPhone.</string>
 </dict></plist>

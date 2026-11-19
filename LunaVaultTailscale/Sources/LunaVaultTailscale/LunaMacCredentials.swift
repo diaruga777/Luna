@@ -12,6 +12,8 @@ public struct LunaMacCredentials: Codable, Sendable {
         public var name: String
         public var network: VaultNetworkMode
         public var addresses: [String]
+        // Older clients can decode the original address list and ignore this field.
+        public var irohAddresses: [String]?
         public var folderID: String
         public var folderLabel: String
         public var verifiedAt: Date
@@ -26,6 +28,7 @@ public struct LunaMacCredentials: Codable, Sendable {
                 default: return address.description
                 }
             }
+            irohAddresses = peer.manualAddresses.filter(\.isIroh).map(\.description)
             folderID = peer.folderID; folderLabel = peer.folderLabel; verifiedAt = verified
         }
         public func peer() throws -> VaultPeerRecord {
@@ -33,8 +36,10 @@ public struct LunaMacCredentials: Codable, Sendable {
                 guard let address = VaultPeerAddress(syncthingURL: value) else { throw LunaMacCredentialError.invalid }
                 return address
             }
+            let remote = (irohAddresses ?? []).compactMap(VaultPeerAddress.init(syncthingURL:))
+                .filter(\.isIroh)
             return VaultPeerRecord(deviceID: deviceID, name: name, networkMode: network,
-                manualAddresses: parsed, folderID: folderID, folderLabel: folderLabel,
+                manualAddresses: parsed + remote, folderID: folderID, folderLabel: folderLabel,
                 lastConnectedAt: verifiedAt)
         }
     }

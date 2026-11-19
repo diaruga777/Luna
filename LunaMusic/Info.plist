@@ -23,6 +23,8 @@
 	<false/>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
+	<key>NSBonjourServices</key>
+	<array><string>_luna-vault._tcp</string></array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Luna Music connects to your paired Mac to browse and play your Vault music.</string>
 	<key>INIntentsSupported</key>

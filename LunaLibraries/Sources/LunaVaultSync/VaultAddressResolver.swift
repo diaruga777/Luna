@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import LunaVaultBEP
 import LunaVaultStore
 
@@ -16,12 +17,22 @@ public actor VaultAddressResolver {
     }
 
     private let lookup: (any VaultPeerLookup)?
+    private let isOnCellular: @Sendable () async -> Bool
     private let cacheLifetime: TimeInterval
     private let clock: @Sendable () -> Date
     private var cache: [DeviceID: CacheEntry] = [:]
 
     public init(lookup: (any VaultPeerLookup)?, cacheLifetime: TimeInterval = 600,
-                clock: @escaping @Sendable () -> Date = { Date() }) {
+                clock: @escaping @Sendable () -> Date = { Date() },
+                isOnCellular: @escaping @Sendable () async -> Bool = {
+                    let monitor = NWPathMonitor()
+                    defer { monitor.cancel() }
+                    for await path in monitor {
+                        return path.status == .satisfied && path.usesInterfaceType(.cellular)
+                    }
+                    return false
+                }) {
+        self.isOnCellular = isOnCellular
         self.lookup = lookup
         self.cacheLifetime = max(0, cacheLifetime)
         self.clock = clock
@@ -33,30 +44,32 @@ public actor VaultAddressResolver {
     }
 
     public func addresses(for peer: VaultPeerRecord, forceRefresh: Bool = false) async throws -> [VaultPeerAddress] {
-        var result = Self.unique(peer.manualAddresses.map(\.classifyingTailscaleIP))
-            .sorted { $0.dialPriority < $1.dialPriority }
-        guard peer.networkMode == .syncthingPublic, result.isEmpty else {
-            guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
-            return result
+        let cellular = await isOnCellular()
+        func ordered(_ addresses: [VaultPeerAddress]) -> [VaultPeerAddress] {
+            Self.unique(addresses.map(\.classifyingTailscaleIP))
+                .sorted { $0.dialPriority(onCellular: cellular) < $1.dialPriority(onCellular: cellular) }
         }
+        var routes = ordered(peer.manualAddresses)
+        if !cellular, peer.networkMode == .syncthingPublic, peer.lastConnectedAt != nil,
+           let nearby = lookup as? any VaultNearbyPeerLookup,
+           let address = await nearby.nearbyAddress(for: peer.deviceID) {
+            routes = Self.unique([address] + routes)
+        }
+        if !routes.isEmpty { return routes }
+        guard peer.networkMode == .syncthingPublic else { throw VaultAddressResolutionError.noAddresses }
 
         let now = clock()
         if !forceRefresh, let cached = cache[peer.deviceID], cached.expiresAt > now {
-            result.append(contentsOf: cached.addresses)
-            result = Self.unique(result)
-            guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
-            return result
+            guard !cached.addresses.isEmpty else { throw VaultAddressResolutionError.noAddresses }
+            return ordered(cached.addresses)
         }
 
-        guard let lookup else {
-            guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
-            return result
-        }
+        guard let lookup else { throw VaultAddressResolutionError.noAddresses }
         do {
             let discovered = try await lookup.lookup(peer.deviceID).addresses
-                .sorted { lhs, rhs in lhs.dialPriority < rhs.dialPriority }
             cache[peer.deviceID] = CacheEntry(addresses: discovered, expiresAt: now.addingTimeInterval(cacheLifetime))
-            result.append(contentsOf: discovered)
+            guard !discovered.isEmpty else { throw VaultAddressResolutionError.noAddresses }
+            return ordered(discovered)
         } catch let error as VaultTransportError {
             let retryAfter: TimeInterval?
             switch error {
@@ -66,11 +79,8 @@ public actor VaultAddressResolver {
             if let retryAfter {
                 cache[peer.deviceID] = CacheEntry(addresses: [], expiresAt: now.addingTimeInterval(max(0, retryAfter)))
             }
-            if result.isEmpty { throw error }
+            throw error
         }
-        result = Self.unique(result)
-        guard !result.isEmpty else { throw VaultAddressResolutionError.noAddresses }
-        return result
     }
 
     private static func unique(_ addresses: [VaultPeerAddress]) -> [VaultPeerAddress] {

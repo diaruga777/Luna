@@ -133,6 +133,7 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
         await probe.stop(reason: "Pairing verified")
         await session.stop(reason: "Pairing changed")
         var verified = peer
+        verified.manualAddresses = try probeStore.peer()?.manualAddresses ?? peer.manualAddresses
         verified.lastConnectedAt = Date()
         try persistShared?(verified, localID)
         try store.savePeer(verified)
@@ -189,6 +190,9 @@ public actor VaultConnectedRuntime: VaultPresentationProviding {
             try await session.waitForInitialIndex()
             try await session.announce(client: client)
             _ = await session.refreshInvalidatedCache()
+        } catch is CancellationError {
+            // A stopped foreground attempt can finish after another caller has reconnected.
+            return
         } catch {
             // In particular, an initial-index timeout must not leave a
             // half-open session in `syncing` that start() keeps reusing.

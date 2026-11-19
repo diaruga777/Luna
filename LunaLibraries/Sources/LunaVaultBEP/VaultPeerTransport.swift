@@ -49,6 +49,20 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
         }
     }
 
+    public var isIroh: Bool {
+        if case .iroh = self { return true }
+        return false
+    }
+
+    public var transportName: String {
+        switch self {
+        case .tcp: return "TCP"
+        case .iroh: return "Iroh"
+        case .tailscale: return "Tailscale"
+        case .relay: return "relay"
+        }
+    }
+
     /// Relay addresses sort after direct ones; a LAN-looking address first.
     public var dialPriority: Int {
         switch self {
@@ -57,6 +71,13 @@ public enum VaultPeerAddress: Hashable, Sendable, Codable, CustomStringConvertib
         case .tailscale: return 3
         case .relay: return 4
         }
+    }
+
+    public func dialPriority(onCellular: Bool) -> Int {
+        // Private TCP addresses may still be reachable through a VPN. Keep
+        // them as a fallback while away from the Mac's LAN.
+        if onCellular, case .tcp(let host, _) = self, Self.isPrivateHost(host) { return 5 }
+        return dialPriority
     }
 
     public var classifyingTailscaleIP: Self {
@@ -116,6 +137,11 @@ public struct VaultDiscoveryResult: Equatable, Sendable {
         self.addresses = addresses
         self.seen = seen
     }
+}
+
+/// Resolves the current LAN listener for an already verified Mac.
+public protocol VaultNearbyPeerLookup: Sendable {
+    func nearbyAddress(for device: DeviceID) async -> VaultPeerAddress?
 }
 
 /// Global discovery lookup.

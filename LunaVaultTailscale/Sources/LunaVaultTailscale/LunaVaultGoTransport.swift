@@ -10,7 +10,7 @@ public typealias LunaVaultNet = LunaVaultGoTransport
 
 /// Implements peer operations with the bundled Go library. Tests inject the
 /// same C function table without opening a socket.
-public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, VaultPeerAnnouncing, @unchecked Sendable {
+public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, VaultNearbyPeerLookup, VaultPeerAnnouncing, @unchecked Sendable {
     public struct Configuration: Sendable {
         public let stateDirectory: URL
         public let requestLocalNetworkAccess: Bool
@@ -78,6 +78,10 @@ public final class LunaVaultGoTransport: VaultPeerDialing, VaultPeerLookup, Vaul
         }
         try check(result, operation: "dial")
         return FileDescriptorByteStream(fileDescriptor: descriptor)
+    }
+
+    public func nearbyAddress(for device: DeviceID) async -> VaultPeerAddress? {
+        await VaultNearbyMac.resolve(device: device)
     }
 
     public func lookup(_ device: DeviceID) async throws -> VaultDiscoveryResult {

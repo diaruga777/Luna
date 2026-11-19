@@ -86,13 +86,19 @@ final class CompanionController: @unchecked Sendable {
             self.listener = listener
             status = account.trustedDevice == nil ? "Ready to Connect" : "Waiting for Apps"
         }
-        let remote = Task { await maintainRemoteListener(direct, listener: listener, localID: localID) }
+        let boundAddresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
+        guard case .tcp(_, let port) = boundAddresses.first else {
+            throw VaultTransportError.internalError("The listener did not report its bound port.")
+        }
+        let advertisement = await VaultNearbyMac.advertise(device: localID, port: port)
+        let remote = Task { await maintainRemoteListener(direct, listener: listener, port: port, localID: localID) }
         do {
             while true {
                 let accepted = try await listener.accept()
                 Task { await self.handle(accepted, localID: localID) }
             }
         } catch {
+            await advertisement.stop()
             remote.cancel()
             try? await direct.stop()
             await remote.value
@@ -102,7 +108,7 @@ final class CompanionController: @unchecked Sendable {
     }
 
     private func maintainRemoteListener(_ direct: VaultIrohTransport, listener: LunaVaultGoListener,
-                                        localID: DeviceID) async {
+                                        port: UInt16, localID: DeviceID) async {
         while !Task.isCancelled {
             let addresses = await listener.announcedAddresses.compactMap(VaultPeerAddress.init(syncthingURL:))
             let routes = addresses.map(\.classifyingTailscaleIP)
@@ -110,19 +116,15 @@ final class CompanionController: @unchecked Sendable {
                 irohAddress = nil
                 code = VaultPairingCode(deviceID: localID, addresses: routes).text
             }
-            if let port = addresses.compactMap({ address -> UInt16? in
-                if case let .tcp(_, port) = address { return port }; return nil
-            }).first {
-                if let route = try? await direct.listen(port: port) {
-                    if !Task.isCancelled {
-                        lock.withLock {
-                            irohAddress = route
-                            code = VaultPairingCode(deviceID: localID, addresses: routes + [route]).text
-                        }
-                        await direct.waitForListenerToClose()
+            if let route = try? await direct.listen(port: port) {
+                if !Task.isCancelled {
+                    lock.withLock {
+                        irohAddress = route
+                        code = VaultPairingCode(deviceID: localID, addresses: routes + [route]).text
                     }
-                    try? await direct.stop()
+                    await direct.waitForListenerToClose()
                 }
+                try? await direct.stop()
             }
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
         }

@@ -15,10 +15,14 @@ struct LibraryMusicEntity: IndexedEntity {
     @Property(title: "Kind") var kind: String
     @Property(title: "Saved Date") var savedDate: Date
     @Property(title: "Duration (Seconds)") var duration: Double
-    init(id: String, name: String, detail: String, savedDate: Date = .distantPast, duration: Double = 0) {
+    var artistName: String?
+    var albumName: String?
+    init(id: String, name: String, detail: String, artist: String? = nil, album: String? = nil, savedDate: Date = .distantPast, duration: Double = 0) {
         self.id = id
         self.identifier = id
         self.name = name
+        self.artistName = artist
+        self.albumName = album
         self.detail = detail
         self.kind = String(id.prefix { $0 != ":" }); self.savedDate = savedDate; self.duration = duration
     }
@@ -34,7 +38,7 @@ struct LibraryMusicQuery: EntityStringQuery {
         await library.reload(refreshVault: false)
         return Self.entities(in: library)
     }
-    @MainActor private static func entities(in library: MusicLibraryController) -> [LibraryMusicEntity] {
+    @MainActor static func entities(in library: MusicLibraryController) -> [LibraryMusicEntity] {
         var entities: [LibraryMusicEntity] = []
         entities.reserveCapacity(library.playlists.count + library.albums.count + library.artists.count + library.songs.count)
         for playlist in library.playlists {
@@ -42,14 +46,14 @@ struct LibraryMusicQuery: EntityStringQuery {
         }
         for collection in library.albums {
             guard let item = collection.representativeItem else { continue }
-            entities.append(LibraryMusicEntity(id: "album:\(item.albumPersistentID)", name: item.albumTitle ?? "Untitled Album", detail: "Album · \(item.albumArtist ?? item.artist ?? "Unknown Artist")"))
+            entities.append(LibraryMusicEntity(id: "album:\(item.albumPersistentID)", name: item.albumTitle ?? "Untitled Album", detail: "Album · \(item.albumArtist ?? item.artist ?? "Unknown Artist")", artist: item.albumArtist ?? item.artist, album: item.albumTitle))
         }
         for collection in library.artists {
             guard let item = collection.representativeItem else { continue }
-            entities.append(LibraryMusicEntity(id: "artist:\(item.artistPersistentID)", name: item.artist ?? "Unknown Artist", detail: "Artist"))
+            entities.append(LibraryMusicEntity(id: "artist:\(item.artistPersistentID)", name: item.artist ?? "Unknown Artist", detail: "Artist", artist: item.artist))
         }
         for song in library.songs {
-            entities.append(LibraryMusicEntity(id: "song:\(song.persistentID)", name: song.title ?? "Untitled Song", detail: song.artist ?? "Unknown Artist", savedDate: song.dateAdded, duration: song.playbackDuration))
+            entities.append(LibraryMusicEntity(id: "song:\(song.persistentID)", name: song.title ?? "Untitled Song", detail: song.artist ?? "Unknown Artist", artist: song.artist, album: song.albumTitle, savedDate: song.dateAdded, duration: song.playbackDuration))
         }
         return entities
     }
@@ -58,7 +62,10 @@ struct LibraryMusicQuery: EntityStringQuery {
         return identifiers.compactMap { entities[$0] }
     }
     func entities(matching string: String) async throws -> [LibraryMusicEntity] {
-        await library().filter { $0.name.localizedStandardContains(string) || $0.detail.localizedStandardContains(string) }
+        let items = await library()
+        let exact = items.filter { $0.name.localizedStandardCompare(string) == .orderedSame }
+        if !exact.isEmpty { return exact }
+        return items.filter { $0.name.localizedStandardContains(string) || $0.detail.localizedStandardContains(string) }
     }
     func suggestedEntities() async throws -> [LibraryMusicEntity] {
         Array(await library().prefix(20))
@@ -102,25 +109,40 @@ private enum MusicIntentError: LocalizedError {
     }
 }
 
+@MainActor enum LibraryMusicPlayback {
+    static func library() async -> MusicLibraryController {
+        let library = MusicLibraryController.shared
+        if !library.hasLoaded || library.isLoading {
+            await library.reload(refreshVault: false)
+        }
+        return library
+    }
+
+    static func play(id: String, in library: MusicLibraryController, shuffle: Bool? = nil) async throws {
+        if id.hasPrefix("playlist:"), let item = library.playlists.first(where: { "playlist:\($0.persistentID)" == id }) {
+            try await MusicPlaybackController.shared.play(item.items, playlist: item, shuffle: shuffle ?? true)
+        } else if id.hasPrefix("album:"), let album = library.albums.first(where: { "album:\($0.representativeItem?.albumPersistentID ?? 0)" == id }) {
+            try await MusicPlaybackController.shared.play(album.items, shuffle: shuffle ?? false)
+        } else if id.hasPrefix("artist:"), let artist = library.artists.first(where: { "artist:\($0.representativeItem?.artistPersistentID ?? 0)" == id }) {
+            try await MusicPlaybackController.shared.play(artist.items, shuffle: shuffle ?? true)
+        } else if let item = library.songs.first(where: { "song:\($0.persistentID)" == id }) {
+            try await MusicPlaybackController.shared.playSong(item)
+        } else if id.contains(":apple:"), library.authorizationStatus != .authorized {
+            throw MusicIntentError.permission
+        } else { throw MusicIntentError.missing }
+    }
+}
+
 struct PlayLibraryMusicIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Play Library Music"
     static var description = IntentDescription("Play a song, album, artist, or playlist from your library.")
-    static var openAppWhenRun = true
+    static var openAppWhenRun = false
     @Parameter(title: "Music") var music: LibraryMusicEntity
     static var parameterSummary: some ParameterSummary { Summary("Play \(\.$music)") }
 
     @MainActor func perform() async throws -> some IntentResult {
-        let library = MusicLibraryController.shared
-        await library.authorizeAndLoad()
-        if music.id.hasPrefix("playlist:"), let item = library.playlists.first(where: { "playlist:\($0.persistentID)" == music.id }) {
-            try await MusicPlaybackController.shared.play(item.items, playlist: item, shuffle: true)
-        } else if music.id.hasPrefix("album:"), let album = library.albums.first(where: { "album:\($0.representativeItem?.albumPersistentID ?? 0)" == music.id }) {
-            try await MusicPlaybackController.shared.play(album.items)
-        } else if music.id.hasPrefix("artist:"), let artist = library.artists.first(where: { "artist:\($0.representativeItem?.artistPersistentID ?? 0)" == music.id }) {
-            try await MusicPlaybackController.shared.play(artist.items, shuffle: true)
-        } else if let item = library.songs.first(where: { "song:\($0.persistentID)" == music.id }) {
-            try await MusicPlaybackController.shared.playSong(item)
-        } else { throw MusicIntentError.missing }
+        let library = await LibraryMusicPlayback.library()
+        try await LibraryMusicPlayback.play(id: music.id, in: library)
         return .result()
     }
 }

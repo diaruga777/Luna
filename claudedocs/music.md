@@ -159,8 +159,8 @@ Intent routes are retained until a cold-start scene has installed observers.
 
 ## System surfaces
 
-Siri's **Play Library Music** intent resolves indexed songs, albums, artists and
-playlists through the library entity query. A playlist starts in shuffle; a song
+Siri handles spoken music requests through SiriKit. The **Play Library Music**
+shortcut shares its playback path for songs, albums, artists and playlists. A playlist starts in shuffle; a song
 starts first and continues with a shuffled containing playlist selected by the same
 recency and playlist eligibility rules as in-app playback. See
 [music-system-integrations.md](music-system-integrations.md) for Siri, Shortcuts,

@@ -1,6 +1,7 @@
 import LunaPremium
 import LunaCompanionSharing
 import UIKit
+import Intents
 import CarPlay
 import BackgroundTasks
 import UserNotifications
@@ -24,6 +25,10 @@ final class MusicAppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
         return true
+    }
+
+    func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+        intent is INPlayMediaIntent ? MusicSiriPlayback() : nil
     }
 
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {

@@ -1,4 +1,5 @@
 import UIKit
+import Intents
 import MediaPlayer
 import MusicKit
 import LunaMusicCore
@@ -36,7 +37,14 @@ public final class MusicLibraryViewController: MusicScreenViewController, UITabl
         navigationItem.rightBarButtonItems = [settings, navigationItem.rightBarButtonItem!]
         updateFilterMenu()
         update()
-        Task { await library.authorizeAndLoad(); update() }
+        Task {
+            await library.authorizeAndLoad()
+            update()
+            if viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive,
+               INPreferences.siriAuthorizationStatus() == .notDetermined {
+                INPreferences.requestSiriAuthorization { _ in }
+            }
+        }
     }
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)

@@ -25,6 +25,16 @@
 	<string>$(APP_GROUP_ID)</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Luna Music connects to your paired Mac to browse and play your Vault music.</string>
+	<key>INIntentsSupported</key>
+	<array>
+		<string>INPlayMediaIntent</string>
+	</array>
+	<key>INSupportedMediaCategories</key>
+	<array>
+		<string>INMediaCategoryMusic</string>
+	</array>
+	<key>NSSiriUsageDescription</key>
+	<string>Siri uses song, artist, album, and playlist names from your library to play the music you ask for.</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>Luna Music uses your music library to search and play your songs, albums, artists, and playlists.</string>
 	<key>UIApplicationSceneManifest</key>

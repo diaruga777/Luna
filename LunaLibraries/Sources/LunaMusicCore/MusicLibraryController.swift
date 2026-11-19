@@ -18,7 +18,7 @@ public struct MusicLibrarySearchResults: Sendable {
 
 @MainActor
 public final class MusicLibraryController: ObservableObject {
-    public static let shared = MusicLibraryController()
+    public static let shared = MusicLibraryController(vault: .shared)
 
     @Published public private(set) var songs: [MusicSong] = []
     @Published public private(set) var playlists: [MusicPlaylist] = []
@@ -27,15 +27,18 @@ public final class MusicLibraryController: ObservableObject {
     @Published public private(set) var authorizationStatus = MusicLibraryController.libraryAuthorizationStatus
     @Published public private(set) var isLoading = false
     @Published public private(set) var errorMessage: String?
+    private let vault: VaultMusicController
     private var observer: NSObjectProtocol?
     private var vaultObserver: NSObjectProtocol?
     private var appleSongs: [MusicSong] = []
     private var applePlaylists: [MusicPlaylist] = []
     public private(set) var hasLoaded = false
-    private var publicationID = UUID()
+    private var publicationTask: Task<Void, Never>?
+    private var needsPublication = false
     private var loadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    private init() {
+    init(vault: VaultMusicController) {
+        self.vault = vault
         vaultObserver = NotificationCenter.default.addObserver(forName: .lunaMusicVaultChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.publish() }
         }
@@ -60,8 +63,10 @@ public final class MusicLibraryController: ObservableObject {
     public func reload(refreshVault: Bool = true) async {
         authorizationStatus = Self.libraryAuthorizationStatus
         guard authorizationStatus == .authorized else {
-            appleSongs = []; applePlaylists = []; hasLoaded = true; await publish()
-            if refreshVault { await VaultMusicController.shared.refresh() }
+            appleSongs = []; applePlaylists = []
+            await publish()
+            hasLoaded = true
+            if refreshVault { await vault.refresh() }
             NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
             return
         }
@@ -94,14 +99,32 @@ public final class MusicLibraryController: ObservableObject {
         isLoading = false
         hasLoaded = true
         finishLoadWaiters()
-        if refreshVault { await VaultMusicController.shared.refresh() }
+        if refreshVault { await vault.refresh() }
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
     }
 
     private func publish() async {
-        let token = UUID(); publicationID = token
-        let allSongs = appleSongs + VaultMusicController.shared.songs
-        let allPlaylists = applePlaylists + VaultMusicController.shared.playlists
+        // Cold-start playback must await the published snapshot even when another
+        // refresh (such as Vault setup) supersedes the one it requested.
+        needsPublication = true
+        if let publicationTask {
+            await publicationTask.value
+            return
+        }
+        let task = Task {
+            repeat {
+                needsPublication = false
+                await publishSnapshot()
+            } while needsPublication
+            publicationTask = nil
+        }
+        publicationTask = task
+        await task.value
+    }
+
+    private func publishSnapshot() async {
+        let allSongs = appleSongs + vault.songs
+        let allPlaylists = applePlaylists + vault.playlists
         let prepared = await Task.detached(priority: .userInitiated) {
             let songs = allSongs.sorted {
                 ($0.title ?? "").localizedStandardCompare($1.title ?? "") == .orderedAscending
@@ -120,7 +143,7 @@ public final class MusicLibraryController: ObservableObject {
                 .sorted { ($0.representativeItem?.artist ?? "") < ($1.representativeItem?.artist ?? "") }
             return (songs, playlists, albums, artists)
         }.value
-        guard publicationID == token else { return }
+        guard !needsPublication else { return }
         songs = prepared.0; playlists = prepared.1; albums = prepared.2; artists = prepared.3
         NotificationCenter.default.post(name: .lunaMusicLibraryChanged, object: self)
     }
@@ -135,7 +158,7 @@ public final class MusicLibraryController: ObservableObject {
     public func createPlaylist(name: String, items: [MusicSong] = [], source: MusicSource = .apple) async throws -> MusicPlaylist {
         let source = items.first?.source ?? source
         guard items.allSatisfy({ $0.source == source }) else { throw MusicFileError("A playlist can contain Apple Music songs or audio files, but not both.") }
-        if source == .vault { return try VaultMusicController.shared.createPlaylist(name: name, songs: items) }
+        if source == .vault { return try vault.createPlaylist(name: name, songs: items) }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw MusicLibraryError.missingPlaylistName }
         guard Self.libraryAuthorizationStatus == .authorized else { throw MusicLibraryError.notAuthorized }
@@ -154,7 +177,7 @@ public final class MusicLibraryController: ObservableObject {
 
     public func add(_ items: [MusicSong], to playlist: MusicPlaylist) async throws {
         guard items.allSatisfy({ $0.source == playlist.source }) else { throw MusicFileError("A playlist can contain only songs from its own source.") }
-        if playlist.source == .vault { try VaultMusicController.shared.add(items, to: playlist); return }
+        if playlist.source == .vault { try vault.add(items, to: playlist); return }
         guard let mediaPlaylist = playlist.mediaPlaylist else { throw MusicLibraryError.playlistCreationFailed }
         guard Self.libraryAuthorizationStatus == .authorized else { throw MusicLibraryError.notAuthorized }
         guard !items.isEmpty else { return }

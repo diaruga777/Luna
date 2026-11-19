@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+"""Stage Luna's source-built Iroh package in an Orbit build checkout."""
+
+import fcntl
+import os
+from pathlib import Path
+import subprocess
+
+root = Path.cwd()
+cache = Path.home() / "Library/Caches/orbit-luna/iroh-direct-package"
+cache.mkdir(parents=True, exist_ok=True)
+package = cache / "IrohDirect"
+destination = root / "LunaVaultTailscale/Vendor/IrohDirect"
+environment = os.environ.copy()
+environment["PATH"] = str(Path.home() / ".cargo/bin") + os.pathsep + environment["PATH"]
+
+with (cache / "prepare.lock").open("a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    # The generator validates its stamp against the committed recipe and pin.
+    subprocess.run([root / "scripts/iroh/build_iroh_direct.sh", package], env=environment, check=True)
+    subprocess.run(["/bin/cp", "-cR", package, destination], check=True)

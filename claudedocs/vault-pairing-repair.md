@@ -65,7 +65,11 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 scripts/iroh/build_iroh_direct.sh "$PWD/LunaVaultTailscale/Vendor/IrohDirect"
 ```
 
-The companion build script also prepares the ignored native package. Set
+Orbit’s detached iOS builds run `.orbit/prepare-build` before Xcode resolves
+packages. It uses the same pinned generator and keeps the validated output
+under `~/Library/Caches/orbit-luna/iroh-direct-package` for subsequent builds.
+Rust and the Apple targets are required when the cache is empty or the recipe
+changes. The companion build script also prepares the ignored native package. Set
 `IROH_DIRECT_TEST=1` for the private-relay test, which disables IP paths and
 checks that setup succeeds while no application bytes cross a relay in either
 direction. The macOS Swift tests exercise a direct Iroh tunnel and the existing

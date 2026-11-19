@@ -506,6 +506,39 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(reader.currentReadingScrollOffsetY, 0, accuracy: 0.001)
     }
 
+    func testRSVPCompletesAfterTheLastWordHasHadItsTurn() throws {
+        let delegate = RecordingReaderCompletionDelegate()
+        let reader = RSVPViewController(item: item, content: shortArticleContent(), resumeWordIndex: 8)
+        reader.completionDelegate = delegate
+        let play = try XCTUnwrap(findControl(in: reader.view, accessibilityLabel: "Play"))
+        play.sendActions(for: .touchUpInside)
+        reader.playbackClockDidFire(RSVPPlaybackClock())
+        XCTAssertEqual(reader.currentReadingWordIndex, 9)
+        XCTAssertTrue(reader.isPlaying)
+        XCTAssertEqual(delegate.finishCount, 0)
+        reader.playbackClockDidFire(RSVPPlaybackClock())
+        XCTAssertFalse(reader.isPlaying)
+        XCTAssertEqual(delegate.finishCount, 1)
+    }
+
+    func testOneWordRSVPArticleWaitsForPlaybackAndCanReplay() throws {
+        let delegate = RecordingReaderCompletionDelegate()
+        let content = ArticleContent(title: "Short", blocks: [
+            .init(kind: .paragraph, text: "Hello", links: []),
+        ])
+        let reader = RSVPViewController(item: item, content: content)
+        reader.completionDelegate = delegate
+        let play = try XCTUnwrap(findControl(in: reader.view, accessibilityLabel: "Play"))
+        XCTAssertEqual(delegate.finishCount, 0)
+        for _ in 0..<2 {
+            play.sendActions(for: .touchUpInside)
+            XCTAssertTrue(reader.isPlaying)
+            reader.playbackClockDidFire(RSVPPlaybackClock())
+            XCTAssertFalse(reader.isPlaying)
+            XCTAssertEqual(delegate.finishCount, 1)
+        }
+    }
+
     func testRSVPSkipToEndFinishesReading() {
         let delegate = RecordingReaderCompletionDelegate()
         let reader = RSVPViewController(item: item, content: shortArticleContent())

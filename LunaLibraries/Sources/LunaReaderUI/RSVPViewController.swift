@@ -1426,7 +1426,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             playViaCenter(center)
             return
         }
-        if currentIndex >= engine.words.count - 1 {
+        if finishedReadingTracker.isFinished, isAtEnd() {
             currentIndex = 0
             currentChunkIndex = 0
             refreshDisplay()
@@ -1465,7 +1465,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             if center.isAudiblyPlaying { return }
             if case .paused = center.state { center.resume(); return }
         }
-        if currentIndex >= engine.words.count - 1 {
+        if finishedReadingTracker.isFinished, isAtEnd() {
             currentIndex = 0
             currentChunkIndex = 0
             refreshDisplay()
@@ -1663,10 +1663,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         showWord(at: currentIndex)
         scrubber.value = Float(currentIndex)
         updateStatus()
-        guard currentIndex < engine.words.count - 1 else {
-            finish()
-            return
-        }
         scheduleNext()
     }
 
@@ -1700,7 +1696,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Common end-of-article handling for both sub-modes.
     private func finish() {
-        guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
+        guard finishedReadingTracker.update(reachedEnd: true) == .finished else {
+            // A replay of a single word or phrase never leaves the end position.
+            if isPlaying { pause() }
+            return
+        }
         updateStatus()
         pause()
         hideLinkPill()
@@ -1888,7 +1888,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private func finishIfAtEnd() {
-        guard isAtEnd() else { return }
+        // A short article can fit in one frame. Opening it at its beginning
+        // must still leave the user time to read it.
+        guard isAtEnd(), currentIndex > 0 || item.readState == .read else { return }
         finish()
     }
 

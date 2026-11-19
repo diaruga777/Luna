@@ -15,7 +15,7 @@ public protocol PluginPasteImportDelegate: AnyObject {
     func pluginPasteImport(_ controller: PluginPasteImportViewController, didSubmit sourceText: String)
 }
 
-public final class PluginPasteImportViewController: UIViewController {
+public final class PluginPasteImportViewController: UIViewController, UITextViewDelegate {
 
     public weak var delegate: PluginPasteImportDelegate?
 
@@ -35,7 +35,11 @@ public final class PluginPasteImportViewController: UIViewController {
             title: L10n.string("Common_cancel"), style: .plain, target: self,
             action: #selector(cancelTapped))
 
-        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: .monospacedSystemFont(ofSize: 15, weight: .regular))
+        textView.adjustsFontForContentSizeCategory = true
+        textView.accessibilityLabel = L10n.string("Plugins_pasteTitle")
+        textView.delegate = self
         textView.autocapitalizationType = .none
         textView.autocorrectionType = .no
         textView.smartQuotesType = .no
@@ -50,16 +54,20 @@ public final class PluginPasteImportViewController: UIViewController {
         var config = UIButton.Configuration.filled()
         config.title = L10n.string("Plugins_pasteImportButton")
         importButton.configuration = config
+        importButton.isEnabled = false
         importButton.translatesAutoresizingMaskIntoConstraints = false
         importButton.addTarget(self, action: #selector(importTapped), for: .touchUpInside)
         view.addSubview(importButton)
 
         let column = LunaLayout.readableWidth
+        let preferredWidth = textView.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, constant: -32)
+        preferredWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
+            preferredWidth,
             textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            textView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            textView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
             textView.widthAnchor.constraint(lessThanOrEqualToConstant: column),
-            textView.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -32),
+            textView.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, constant: -32),
             textView.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -16),
 
             importButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -71,6 +79,10 @@ public final class PluginPasteImportViewController: UIViewController {
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         textView.becomeFirstResponder()
+    }
+
+    public func textViewDidChange(_ textView: UITextView) {
+        importButton.isEnabled = textView.text.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.inverted) != nil
     }
 
     @objc private func cancelTapped() {

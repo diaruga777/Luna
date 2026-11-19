@@ -6,6 +6,7 @@
 //  only when the preview says to, then install — and never the reverse.
 //
 
+import LunaDesignSystem
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
@@ -368,21 +369,34 @@ final class PluginImportCoordinatorTests: XCTestCase {
 
     // MARK: - A parser error
 
-    func testAParserErrorSurfacesAndInstallsNothing() {
+    func testInvalidPasteCanBeCorrectedAndRetriedInPlace() throws {
         let importer = FakeImporter()
-        importer.previewResult = .failure(TestError.parseFailed)
-        let observer = FakeObserver()
         let coordinator = PluginImportCoordinator(importer: importer)
-        coordinator.observer = observer
         let paste = wireAndPresentPaste(coordinator)
-
-        coordinator.pluginPasteImport(paste, didSubmit: "not valid js")
-        pollUntil { self.presenter.presentedViewController is UIAlertController }
-
+        paste.delegate = coordinator
+        paste.view.layoutIfNeeded()
+        let editor = try XCTUnwrap(paste.view.subviews.compactMap { $0 as? UITextView }.first)
+        let button = try XCTUnwrap(paste.view.subviews.compactMap { $0 as? UIButton }.first)
+        XCTAssertEqual(editor.bounds.width, min(paste.view.safeAreaLayoutGuide.layoutFrame.width - 32,
+                                                LunaLayout.readableWidth), accuracy: 1)
+        for source in ["", "   ", "bad header"] {
+            editor.text = source
+            editor.delegate?.textViewDidChange?(editor)
+            XCTAssertEqual(button.isEnabled, source == "bad header")
+        }
+        button.sendActions(for: .touchUpInside)
+        pollUntil { paste.presentedViewController is UIAlertController }
+        XCTAssertTrue(presenter.presentedViewController === paste)
+        XCTAssertEqual(editor.text, "bad header")
         XCTAssertTrue(importer.installCalls.isEmpty)
-        XCTAssertEqual(observer.finishedCount, 0)
-        XCTAssertTrue(
-            presenter.presentedViewController is UIAlertController,
-            "a parse failure must surface as an alert rather than fail silently")
+
+        paste.dismiss(animated: false)
+        pump()
+        importer.previewResult = .success(preview(requiresConsent: false))
+        editor.text = "corrected source"
+        editor.delegate?.textViewDidChange?(editor)
+        button.sendActions(for: .touchUpInside)
+        pollUntil { importer.installCalls.count == 1 }
+        XCTAssertEqual(importer.previewCalls, ["bad header", "corrected source"])
     }
 }

@@ -87,27 +87,30 @@ public final class PluginImportCoordinator: NSObject {
 
     private func handle(sourceText: String, origin: PluginImportOrigin) {
         do {
-            let preview = try importer.preview(sourceText: sourceText)
-            if bundleNavigationController != nil,
-                preview.requiresConsent || preview.replacesVersion != nil || preview.summary.produces.contains(.media)
-            {
-                presentBundleConsent(preview, origin: origin)
-            } else if preview.requiresConsent || preview.summary.produces.contains(.media) {
-                pendingOrigin = origin
-                let screen = PluginConsentViewController(preview: preview)
-                screen.delegate = self
-                presenter?.present(screen, animated: true)
-            } else if let replaces = preview.replacesVersion {
-                // No new capability, so the full consent screen would repeat
-                // what was already granted — but silently overwriting an
-                // installed plugin's entire script left no signal at all that
-                // anything happened.
-                confirmReplace(preview, replacing: replaces, origin: origin)
-            } else {
-                install(preview, origin: origin)
-            }
+            handle(try importer.preview(sourceText: sourceText), origin: origin)
         } catch {
             report(error)
+        }
+    }
+
+    private func handle(_ preview: PluginImportPreview, origin: PluginImportOrigin) {
+        if bundleNavigationController != nil,
+            preview.requiresConsent || preview.replacesVersion != nil || preview.summary.produces.contains(.media)
+        {
+            presentBundleConsent(preview, origin: origin)
+        } else if preview.requiresConsent || preview.summary.produces.contains(.media) {
+            pendingOrigin = origin
+            let screen = PluginConsentViewController(preview: preview)
+            screen.delegate = self
+            presenter?.present(screen, animated: true)
+        } else if let replaces = preview.replacesVersion {
+            // No new capability, so the full consent screen would repeat
+            // what was already granted — but silently overwriting an
+            // installed plugin's entire script left no signal at all that
+            // anything happened.
+            confirmReplace(preview, replacing: replaces, origin: origin)
+        } else {
+            install(preview, origin: origin)
         }
     }
 
@@ -223,13 +226,18 @@ public final class PluginImportCoordinator: NSObject {
     }
 
     private func report(_ error: Error) {
+        let alert = importErrorAlert(error)
+        finishBundle { [weak self] in
+            self?.presenter?.present(alert, animated: true)
+        }
+    }
+
+    private func importErrorAlert(_ error: Error) -> UIAlertController {
         let alert = UIAlertController(
             title: L10n.string("Plugins_importFailedTitle"),
             message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
-        finishBundle { [weak self] in
-            self?.presenter?.present(alert, animated: true)
-        }
+        return alert
     }
 }
 
@@ -256,8 +264,13 @@ extension PluginImportCoordinator: PluginPasteImportDelegate {
     public func pluginPasteImport(
         _ controller: PluginPasteImportViewController, didSubmit sourceText: String
     ) {
-        controller.dismiss(animated: true) { [weak self] in
-            self?.handle(sourceText: sourceText, origin: .paste)
+        do {
+            let preview = try importer.preview(sourceText: sourceText)
+            controller.dismiss(animated: true) { [weak self] in
+                self?.handle(preview, origin: .paste)
+            }
+        } catch {
+            controller.present(importErrorAlert(error), animated: true)
         }
     }
 }

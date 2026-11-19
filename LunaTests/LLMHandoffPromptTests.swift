@@ -105,6 +105,20 @@ final class LLMHandoffPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("--- REQUEST ---\nSave recipes\n--- END REQUEST ---"))
     }
 
+    func testLongDNSHostFitsPromptBudgetAndPluginIDLimit() {
+        let label = String(repeating: "x", count: 63)
+        let host = [label, label, label, "example.com"].joined(separator: ".")
+        let errors = [String(repeating: "diagnostic ", count: 100)]
+        for prompt in [
+            LLMHandoffPrompts.pluginCreation(description: longDescription, host: host),
+            LLMHandoffPrompts.pluginCorrection(description: longDescription, host: host, errors: errors),
+        ] {
+            XCTAssertLessThanOrEqual(prompt.count, LLMHandoffPrompts.maxCharacters)
+            XCTAssertTrue(prompt.contains("\"hosts\":[\"\(host)\""))
+            XCTAssertTrue(prompt.contains("\"id\":\"user.\(host.prefix(95))\""))
+        }
+    }
+
     func testCreationPromptWithoutAHostStillHasAValidSkeleton() {
         let prompt = LLMHandoffPrompts.pluginCreation(description: "Anything", host: nil)
         XCTAssertTrue(prompt.contains("\"id\":\"user.example.com\""))

@@ -99,16 +99,9 @@ public enum LLMHandoffPrompts {
     /// own words (plus, from a failed card, the URL and what failed); `host`
     /// is the site to name in the manifest skeleton when known.
     public static func pluginCreation(description: String, host: String?) -> String {
-        """
-        Write a Luna JavaScript plugin to extract articles/products/media or export saves. Read first: \(pluginAPIReferenceURL)
-
-        What I want:
-        --- REQUEST ---
-        \(bounded(description, limit: maxDescriptionCharacters) ?? "")
-        --- END REQUEST ---
-
-        \(pluginContract(host: host))
-        """
+        let intro = "Write a Luna JavaScript plugin to extract articles/products/media or export saves. Read first: \(pluginAPIReferenceURL)"
+        return pluginPrompt(intro: intro, description: description, limit: maxDescriptionCharacters,
+                            suffix: pluginContract(host: host))
     }
 
     /// The "Generate again" prompt: a fresh chat gets the original request plus
@@ -116,18 +109,24 @@ public enum LLMHandoffPrompts {
     public static func pluginCorrection(description: String, host: String?, errors: [String]) -> String {
         let list = errors.map { "- " + $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .joined(separator: "\n")
-        return """
-        This Luna JavaScript plugin failed validation. Write a corrected plugin from scratch for the request below, fixing every listed problem. Read the API reference first: \(pluginAPIReferenceURL)
-
-        --- REQUEST ---
-        \(bounded(description, limit: maxCorrectionDescriptionCharacters) ?? "")
-        --- END REQUEST ---
+        let intro = "This Luna JavaScript plugin failed validation. Write a corrected plugin from scratch for the request below, fixing every listed problem. Read the API reference first: \(pluginAPIReferenceURL)"
+        let suffix = """
         --- PROBLEMS FOUND ---
         \(bounded(list, limit: maxErrorsCharacters) ?? "")
         --- END PROBLEMS ---
 
         \(pluginContract(host: host, compact: true))
         """
+        return pluginPrompt(intro: intro, description: description, limit: maxCorrectionDescriptionCharacters,
+                            suffix: suffix)
+    }
+
+    private static func pluginPrompt(intro: String, description: String, limit: Int, suffix: String) -> String {
+        let start = intro + "\n\n--- REQUEST ---\n"
+        let end = "\n--- END REQUEST ---\n\n" + suffix
+        let remaining = max(0, maxCharacters - start.count - end.count)
+        let request = remaining > 0 ? bounded(description, limit: min(limit, remaining)) ?? "" : ""
+        return start + request + end
     }
 
     /// The delivery contract every plugin prompt ends with. `compact` drops the
@@ -135,12 +134,19 @@ public enum LLMHandoffPrompts {
     /// prompt has room for the findings.
     private static func pluginContract(host: String?, compact: Bool = false) -> String {
         let raw = host?.lowercased() ?? "example.com"
-        let site = raw.hasPrefix("www.") ? String(raw.dropFirst(4)) : raw
+        let candidate = raw.hasPrefix("www.") ? String(raw.dropFirst(4)) : raw
+        let labels = candidate.split(separator: ".", omittingEmptySubsequences: false)
+        let validHost = candidate.utf8.count <= 253 && labels.allSatisfy { label in
+            (1...63).contains(label.utf8.count) && label.first != "-" && label.last != "-"
+                && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+        }
+        let site = validHost ? candidate : "example.com"
+        let pluginID = "user." + site.prefix(95).trimmingCharacters(in: CharacterSet(charactersIn: "."))
         let requirements = compact ? "" : """
 
         Requirements:
         - ES2022; no imports, packages, polling or busy loops. Use luna.parseURL/luna.bytes; no URL, fetch or TextEncoder globals.
-        - Never invent data. Use luna.fetch.json/doc, luna.html.jsonLD/article and luna.text.price/date. Await article(); keep redirect URLs; propagate browser-deferred.
+        - Never invent data. Use luna.fetch.json/doc and luna.html.parse/jsonLD. Bundle site parsing in the plugin. Keep redirect URLs and propagate browser-deferred.
         - Exports: omit produces/match; replace ingest hooks with export(input). Declare export:{kinds:["article"],input:"markdown",title:"Export"}; read input.text. Return {text}, {url}, {file}, delivery status or null. Settings/device APIs: see reference.
 
         """
@@ -152,15 +158,17 @@ public enum LLMHandoffPrompts {
 
         Article starter (adapt hosts and paths):
         /* luna-plugin
-        {"id":"user.\(site)","name":"Example","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["\(site)","*.\(site)"]},"capabilities":["fetch","html"]}
+        {"id":"\(pluginID)","name":"Example","version":"1.0.0","api":1,"produces":["article"],"match":{"hosts":["\(site)","*.\(site)"]},"capabilities":["fetch","html"]}
         */
         luna.register({
           classify({url}) { return /\\/articles\\/[^/]+/.test(luna.parseURL(url)?.pathname || "") ? {kind:"article"} : false; },
           async ingest({url, page}) {
             const source = page?.html ? {text:page.html,url:page.url} : await luna.fetch(url);
             if (source.ok === false) return null;
-            const article = await luna.html.article(source.text, source.url);
-            return article ? {kind:"article", ...article, baseURL:source.url} : null;
+            const doc = luna.html.parse(source.text, source.url);
+            const body = doc.querySelector("article");
+            if (!body || !body.textContent.trim()) return null;
+            return {kind:"article", title:doc.title || url, html:body.innerHTML, baseURL:source.url};
           }
         });
         \(requirements)

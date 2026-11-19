@@ -3,18 +3,14 @@
 //  LunaTests
 //
 
+import LunaModels
+import LunaPluginIngest
 import LunaPluginKit
 import LunaPluginRuntime
 import XCTest
 
-/// The helpers WP4 added to the plugin API, exercised through the shipped
-/// JavaScriptCore bridges: `luna.html.article`, the `luna.fetch` sugar, and
-/// `luna.text`'s place in the `html` grant.
-///
-/// The pure answers of `luna.html.meta`/`jsonLD`/`luna.text.*` are specified in
-/// `html-subset.spec.js` and run against all three backings by
-/// `PluginHTMLSubsetTests`, `PluginHTMLParityTests` and the node harness; this
-/// suite covers what those three cannot: native extraction and the network.
+/// Exercises the plugin-owned article interpreter and native fetch/HTML bridges
+/// together in the same JavaScriptCore runtime used for saves.
 final class PluginAPIHelpersTests: XCTestCase {
 
     private var runner: PluginJSFixtureRunner!
@@ -89,14 +85,18 @@ final class PluginAPIHelpersTests: XCTestCase {
             .onAction, pluginID: id, as: Answer.self, file: file, line: line)
     }
 
-    // MARK: - luna.html.article
+    // MARK: - Plugin-owned article extraction
 
-    func testArticleExtractsTheBodyAndTheMetadataAroundIt() async {
+    private func articleAnswer(_ body: String) async throws -> Answer? {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let library = try String(contentsOf: root.appendingPathComponent("docs/plugins/lib/web.js"), encoding: .utf8)
+        return await answer(declaring: #"["html"]"#, body: library + "\n" + body)
+    }
+
+    func testArticleExtractsTheBodyAndTheMetadataAroundIt() async throws {
         let page = Self.articlePage
-        let found = await answer(
-            declaring: #"["html"]"#,
-            body: """
-            const found = await luna.html.article(
+        let found = try await articleAnswer( """
+            const found = LunaWeb.article(
                 \(Self.jsString(page)), "https://example.com/dir/story.html");
             return found === null ? { isNull: true } : found;
             """)
@@ -117,37 +117,51 @@ final class PluginAPIHelpersTests: XCTestCase {
 
     /// An inline link survives as an anchor, because a plugin's `html` is what
     /// the reader renders.
-    func testArticleKeepsAnInlineLinkAsAnAnchor() async {
+    func testArticleKeepsAnInlineLinkAsAnAnchor() async throws {
         let page = Self.articlePage
-        let found = await answer(
-            declaring: #"["html"]"#,
-            body: """
-            const found = await luna.html.article(
+        let found = try await articleAnswer( """
+            const found = LunaWeb.article(
                 \(Self.jsString(page)), "https://example.com/dir/story.html");
             return { ok: true, value: found.html.indexOf('<a href="') >= 0 ? "yes" : "no" };
             """)
         XCTAssertEqual(found?.value, "yes")
     }
 
-    func testArticleAnswersNullWhenThePageHasNoBody() async {
-        let found = await answer(
-            declaring: #"["html"]"#,
-            body: """
-            const found = await luna.html.article("<html><body></body></html>",
+    func testArticleAnswersNullWhenThePageHasNoBody() async throws {
+        let found = try await articleAnswer( """
+            const found = LunaWeb.article("<html><body></body></html>",
                                                   "https://example.com/");
             return { isNull: found === null };
             """)
         XCTAssertEqual(found?.isNull, true)
     }
 
-    func testArticleRejectsEmptyInput() async {
-        let found = await answer(
-            declaring: #"["html"]"#,
-            body: """
-            try { await luna.html.article(""); } catch (e) { return { code: e.code }; }
-            return { code: "no error" };
+    func testRetiredArticleBridgeDirectsAuthorsToPluginOwnedExtraction() async {
+        let found = await answer(declaring: #"["html"]"#, body: """
+            try { await luna.html.article(""); } catch (error) { return {value: error.message}; }
+            return {};
             """)
-        XCTAssertEqual(found?.code, "bad-argument")
+        XCTAssertTrue(found?.value?.contains("luna.html.article is retired") == true)
+    }
+
+    func testArticleStarterFromTheHandoffSavesASuppliedPage() async throws {
+        let prompt = LLMHandoffPrompts.pluginCreation(description: "Save articles", host: "example.com")
+        let start = try XCTUnwrap(prompt.range(of: "/* luna-plugin")).lowerBound
+        let end = try XCTUnwrap(prompt[start...].range(of: "\n});")).upperBound
+        try runner.load(String(prompt[start..<end]))
+        let url = "https://example.com/articles/story"
+        let input = ["url": url, "context": "app"]
+        struct Claim: Decodable { let kind: String }
+        let claim = await runner.invoke(.classify, pluginID: "user.example.com", argument: input, as: Claim.self)
+        XCTAssertEqual(claim?.kind, "article")
+        let model = await runner.invoke(
+            .ingest, pluginID: "user.example.com",
+            argument: PluginIngestHookInput(url: url, claim: .init(kind: .article, itemID: nil),
+                page: .init(url: url, html: Self.articlePage, source: "safari"), reason: .save, context: .app),
+            as: PluginIngestAnswer.self)
+        guard case let .model(.article(article)) = model else { return XCTFail("Starter did not save the article") }
+        XCTAssertTrue(article.html.contains("The first paragraph carries the reporting."))
+        XCTAssertTrue(runner.fetcher.requests.isEmpty)
     }
 
     // MARK: - luna.text under the html grant

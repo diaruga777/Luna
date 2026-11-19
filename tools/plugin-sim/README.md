@@ -43,12 +43,17 @@ of `html`, and the validator checks that spec's shape. The bundled transcript
 plugins' fixture directories are under `fixtures/<platform>-transcript*/`.
 
 The default and `test` forms use the same evaluator and report. Every command prints one structured JSON report
-and exit non-zero when the manifest, registration, hook result, or timeout is
-invalid. All forms evaluate the plugin in a child process and kill that process at
+and exits non-zero when the manifest, registration, hook result, or timeout is
+invalid. Plugin logs go to stderr. The report records each hook separately, including ingest after a successful claim. All forms evaluate the plugin in a child process and kill that process at
 the deadline, so a draft with a top-level infinite loop cannot hang the shell.
 
 `--fixture <dir>` answers every `luna.fetch` from a file in that directory
-instead of hitting the network. A plain matching file is a 200 response. For
+instead of hitting the network. Plain files supply the original bytes with status 200.
+For requests that share a basename, use the hostname, path and query with
+`/`, `?`, `&` and `=` replaced by underscores. For example,
+`example.com_clip.bin_id_2` takes precedence over `clip.bin` for
+`https://example.com/clip.bin?id=2`. A matching response descriptor takes
+precedence over a plain file of the same specificity. For
 realistic failures, use the same basename with `.response.json`, for example:
 
 ```json

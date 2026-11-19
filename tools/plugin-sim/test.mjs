@@ -95,6 +95,42 @@ try {
   assert.equal(tested.report.result.ingest.html, "blocked");
   assert.ok(tested.report.events.some((event) => event.phase === "classify"));
 
+  const binaryFixture = path.join(temp, "binary-fixture.js");
+  writeFileSync(binaryFixture, header("test.bytes",
+    '"produces":["article"],"match":{"hosts":["example.com"]},"capabilities":["fetch"]') +
+    'luna.register({classify: () => ({kind:"article"}), async ingest({url}) {' +
+    'const {base64} = await luna.fetch({url, as:"base64"}); return {kind:"article", title:"Bytes", html:base64}; }});');
+  writeFileSync(path.join(fixture, "clip.bin"), Buffer.from([0x61]));
+  const binaryBody = Buffer.from([0xff, 0x00, 0x80]);
+  writeFileSync(path.join(fixture, "example.com_clip.bin_id_2"), binaryBody);
+  const binaryReport = invoke(["test", binaryFixture, "https://example.com/clip.bin?id=2", "--fixture", fixture]).report;
+  assert.equal(binaryReport.ok, true);
+  assert.equal(binaryReport.result.ingest.html, binaryBody.toString("base64"));
+
+  const pending = path.join(temp, "pending.js");
+  writeFileSync(pending, header("test.pending", '"produces":["article"],"match":{"any":true}') +
+    'luna.register({classify: () => new Promise(() => {}), ingest: () => null});');
+  const pendingReport = invoke(["test", pending, "https://example.com/", "--timeout", "1000"]).report;
+  assert.match(pendingReport.errors[0], /timed out after 1000 ms/);
+
+  const noisy = path.join(temp, "noisy.js");
+  writeFileSync(noisy, header("test.noisy") + 'console.log("setup log"); luna.register({});');
+  const noisyResult = invoke(["validate", noisy]);
+  assert.equal(noisyResult.report.ok, true);
+  assert.match(noisyResult.result.stderr, /setup log/);
+
+  const rejected = path.join(temp, "rejected.js");
+  writeFileSync(rejected, header("test.rejected",
+    '"produces":["article"],"match":{"hosts":["example.com"]}') +
+    'luna.register({classify: () => ({kind:"article"}), ingest() { throw Error("bad article"); }});');
+  const rejectedResult = invoke(["test", rejected, "https://example.com/"]);
+  assert.match(rejectedResult.report.errors[0], /^ingest failed: bad article/);
+  assert.deepEqual(rejectedResult.report.events.slice(-3), [
+    { phase: "classify", detail: "completed" },
+    { phase: "ingest", detail: "started" },
+    { phase: "ingest", detail: "threw an error" },
+  ]);
+
   const badModel = path.join(temp, "bad-model.js");
   writeFileSync(
     badModel,

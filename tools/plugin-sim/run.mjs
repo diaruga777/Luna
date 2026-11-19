@@ -6,7 +6,6 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { createBridge } from "./bridge.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 
@@ -14,42 +13,36 @@ import { rules as RULES, parseHeader, manifestErrors, matchesURL } from "./manif
 export { parseHeader } from "./manifest.mjs";
 const KINDS = new Set(RULES.kinds);
 
-function fixturePath(dir, url) {
-  if (!dir || !existsSync(dir)) return null;
-  const parsed = new URL(url);
-  const candidates = new Set([
-    path.basename(parsed.pathname) || "index",
-    `${parsed.hostname}${parsed.pathname}${parsed.search}`.replace(
-      /[\\/?&=]/g,
-      "_",
-    ),
-  ]);
-  for (const file of readdirSync(dir))
-    if (
-      candidates.has(path.parse(file).name) ||
-      candidates.has(file.replace(/\.response\.json$/, ""))
-    )
-      return path.join(dir, file);
-  return null;
-}
-
 export function fixtureFetch(dir) {
+  const files = new Map();
+  if (existsSync(dir)) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+      const file = entry.name;
+      files.set(file, file);
+      const alias = path.parse(file).name;
+      if (!files.has(alias)) files.set(alias, file);
+    }
+  }
   return async (requestUrl) => {
-    const file = fixturePath(dir, String(requestUrl));
+    const url = new URL(requestUrl);
+    const specific = (url.hostname + url.pathname + url.search).replace(/[\\/?&=]/g, "_");
+    const basename = path.basename(url.pathname) || "index";
+    const file = files.get(specific + ".response.json") ?? files.get(specific)
+      ?? files.get(basename + ".response.json") ?? files.get(basename);
     if (!file) throw new Error(`no fixture for ${requestUrl} under ${dir}`);
-    const raw = readFileSync(file, "utf8");
-    let response = file.endsWith(".response.json")
-      ? JSON.parse(raw)
-      : { body: raw };
+    const raw = readFileSync(path.join(dir, file));
+    const descriptor = file.endsWith(".response.json");
+    const response = descriptor ? JSON.parse(raw.toString("utf8")) : {};
     if (response.error) throw new Error(String(response.error));
-    const bytes = Buffer.from(String(response.body ?? ""), "utf8");
+    const bytes = descriptor ? Buffer.from(String(response.body ?? ""), "utf8") : raw;
     const status = response.status ?? 200;
     return {
       ok: status >= 200 && status < 300,
       status,
       url: response.url || String(requestUrl),
       redirected: !!response.redirected,
-      headers: new Map(Object.entries(response.headers || {})),
+      headers: new Headers(response.headers),
       async arrayBuffer() {
         return bytes;
       },
@@ -100,11 +93,12 @@ function decodeSource(data) {
   return new TextDecoder("utf-8", { fatal: true }).decode(data);
 }
 
-function load(pluginPath, opts) {
+async function load(pluginPath, opts) {
   const source = decodeSource(readFileSync(pluginPath));
   const manifest = parseHeader(source);
   const errors = manifestErrors(manifest);
   if (errors.length) return { source, manifest, errors, hooks: null };
+  const { createBridge } = await import("./bridge.mjs");
   const luna = createBridge({
     pluginId: manifest.id,
     version: manifest.version,
@@ -279,7 +273,7 @@ function addEvent(report, phase, detail) {
 export async function evaluate(mode, pluginPath, url, opts) {
   let loaded;
   try {
-    loaded = load(pluginPath, opts);
+    loaded = await load(pluginPath, opts);
   } catch (error) {
     return { ok: false, mode, errors: [error.message], events: [] };
   }
@@ -315,8 +309,9 @@ export async function evaluate(mode, pluginPath, url, opts) {
     const value = await loaded.hooks[name](input);
     return JSON.parse(JSON.stringify(value) ?? "null");
   };
+  let activeHook = hook;
   try {
-    addEvent(report, hook, "started");
+    addEvent(report, activeHook, "started");
     if (hook === "classify") {
       const value = await invoke("classify",
         hookInput({ url, context: "app" }, opts),
@@ -325,6 +320,9 @@ export async function evaluate(mode, pluginPath, url, opts) {
       const error = claimError(value, loaded.manifest);
       if (error) report.errors.push(error);
       if (!error && value && loaded.hooks.ingest) {
+        addEvent(report, "classify", "completed");
+        activeHook = "ingest";
+        addEvent(report, activeHook, "started");
         const model = await invoke("ingest",
           hookInput(
             {
@@ -371,12 +369,12 @@ export async function evaluate(mode, pluginPath, url, opts) {
     } else report.errors.push(`unsupported hook ${hook}`);
     addEvent(
       report,
-      hook,
+      activeHook,
       report.errors.length ? "completed with validation errors" : "completed",
     );
   } catch (error) {
-    addEvent(report, hook, "threw an error");
-    report.errors.push(`${hook} failed: ${error?.message ?? String(error)}`);
+    addEvent(report, activeHook, "threw an error");
+    report.errors.push(`${activeHook} failed: ${error?.message ?? String(error)}`);
   }
   report.ok = report.errors.length === 0;
   return report;
@@ -395,17 +393,13 @@ function bounded(mode, pluginPath, url, opts) {
       ...(opts.intent ? ["--intent", opts.intent] : []),
     ];
     const child = spawn(process.execPath, args, {
-      stdio: ["ignore", "pipe", "pipe"],
+      // stdout is reserved for the parent CLI's JSON. Both plugin log streams
+      // go to stderr, while the child sends the complete report over IPC.
+      stdio: ["ignore", 2, "inherit", "ipc"],
     });
-    let stdout = "",
-      stderr = "",
-      timedOut = false;
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
+    let timedOut = false;
+    let report;
+    child.on("message", (message) => { report = message; });
     const timer = setTimeout(
       () => {
         timedOut = true;
@@ -417,26 +411,13 @@ function bounded(mode, pluginPath, url, opts) {
       clearTimeout(timer);
       resolve({ ok: false, mode, errors: [error.message], events: [] });
     });
-    child.on("close", () => {
+    child.on("close", (code, signal) => {
       clearTimeout(timer);
-      if (timedOut)
-        resolve({
-          ok: false,
-          mode,
-          errors: [`timed out after ${opts.timeout} ms`],
-          events: [],
-        });
-      else {
-        try {
-          resolve(JSON.parse(stdout));
-        } catch {
-          resolve({
-            ok: false,
-            mode,
-            errors: [stderr.trim() || "validator child returned no JSON"],
-            events: [],
-          });
-        }
+      if (timedOut) {
+        resolve({ ok: false, mode, errors: [`timed out after ${opts.timeout} ms`], events: [] });
+      } else {
+        resolve(report ?? { ok: false, mode,
+          errors: [`validator child exited without a report (${signal ?? code})`], events: [] });
       }
     });
   });
@@ -446,14 +427,16 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv[0] === "--child") {
     const opts = options(argv.slice(3));
+    // A pending Promise alone does not keep Node alive. Let the parent own
+    // the deadline even when the plugin has no active I/O or timers.
+    process.channel.ref();
     const report = await evaluate(
       argv[1],
       argv[2],
       argv[3]?.startsWith("--") ? null : argv[3],
       opts,
     );
-    process.stdout.write(`${JSON.stringify(report)}\n`);
-    process.exitCode = report.ok ? 0 : 1;
+    process.send(report, (error) => process.exit(!error && report.ok ? 0 : 1));
     return;
   }
   const mode =
@@ -473,6 +456,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error.message || error);
+  console.error(error?.message ?? error);
+  process.channel?.unref();
   process.exitCode = 1;
 });

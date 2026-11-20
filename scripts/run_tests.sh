@@ -2,12 +2,8 @@
 #
 # Run LunaTests and report the result the tests actually produced.
 #
-# LunaTests is one of three unit-test bundles. It hosts on the central Luna app
-# and holds every suite except Vault's and Writer's. The Vault suites are in
-# LunaVaultTests on the LunaVault host and run through
-# scripts/run_vault_tests.sh; the Writer suites are in LunaWriterTests on the
-# LunaWriter host and run through `xcodebuild test -scheme LunaWriter`. This
-# script covers the first bundle only.
+# This script runs the LunaTests bundle on the Luna Reader host. The other
+# apps have their own test schemes.
 #
 # Plain `xcodebuild test` lies on this project. After the suite finishes, it
 # tries to collect diagnostics from the simulator, that step times out after a
@@ -136,6 +132,7 @@ echo "log: $LOG"
 # ---------------------------------------------------------------------- run
 xcodebuild test \
   -scheme LunaReader \
+  -testPlan Luna \
   -destination "platform=iOS Simulator,id=$DEVICE" \
   -configuration Debug \
   -derivedDataPath "${LUNA_TEST_DD:-$REPO/.build-dd-tests}" \
@@ -147,7 +144,7 @@ XCB=$!
 # the presence of one means nothing. The run is over only once the ROOT suite
 # closes; its summary is then the last such line in the log.
 root_finished() {
-  grep -qE "Test Suite '(All tests|Selected tests|.*\.xctest)' (passed|failed) at" \
+  grep -qE "Test Suite '(All tests|Selected tests)' (passed|failed) at" \
     "$LOG" 2>/dev/null
 }
 
@@ -181,10 +178,10 @@ XCB_STATUS=$?
 
 # ------------------------------------------------------------------ verdict
 SUMMARY="$(summary_line)"
-if [[ -z "$SUMMARY" ]]; then
+if [[ -z "$SUMMARY" ]] || ! root_finished; then
   echo
-  echo "NO TEST SUMMARY — the run never got as far as executing tests."
-  echo "That is a real failure (build error, or the runner never connected)."
+  echo "NO COMPLETE TEST SUMMARY — the root suite did not finish."
+  echo "Check the full log for a build error, interruption, or runner failure."
   grep -E "^(.*error:|\*\* (BUILD|TEST) FAILED)" "$LOG" | sort -u | head -20
   echo "full log: $LOG"
   exit 2
@@ -195,7 +192,7 @@ fi
 FAILURES=$(grep -oE "[0-9]+ failures?" <<<"$SUMMARY" | tail -1 | cut -d' ' -f1)
 echo
 echo "================ $SUMMARY ================"
-if [[ "$FAILURES" != "0" ]]; then
+if [[ "$FAILURES" != "0" ]] || grep -q '^Restarting after unexpected exit, crash, or test timeout' "$LOG"; then
   echo
   echo "Failing tests:"
   grep -E ": error: -\[" "$LOG" | sed 's/^/  /' | head -40

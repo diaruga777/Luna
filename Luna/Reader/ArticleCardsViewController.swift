@@ -1491,12 +1491,13 @@ final class ReaderCardContentViewController: CardContentViewController,
         }
         let height = titleHeader.heightThatFits(
             width: view.bounds.width, topInset: baseTopContentInset)
-        _ = scrollTitleHeader.heightThatFits(
+        scrollTitleHeader.alignedScrollReader = rabbitHoleReader?.focusedScrollReader
+        let scrollHeight = scrollTitleHeader.heightThatFits(
             width: preservedScrollTitleSize?.width ?? view.bounds.width, topInset: baseTopContentInset)
         // The background begins at the card's top edge while the title/icon keep
         // their normal clearance below the edge dissolve.
         titleHeader.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
-        let contentTitleHeight = preservedScrollTitleSize?.height ?? height
+        let contentTitleHeight = preservedScrollTitleSize?.height ?? (cardChromeVisible ? height : scrollHeight)
         if abs(contentTitleHeight - titleHeaderHeight) > 0.5 {
             titleHeaderHeight = contentTitleHeight
             applyReaderTopInset()
@@ -1749,11 +1750,13 @@ final class ReaderCardContentViewController: CardContentViewController,
             preservedScrollTitleSize = nil
             preparedViewportWidth = nil
         }
-        let destinationTitleHeight = titleHeader.heightThatFits(
+        scrollTitleHeader.alignedScrollReader = rabbitHoleReader?.focusedScrollReader
+        let destinationHeader = cardChromeVisible || titleScrollView == nil ? titleHeader : scrollTitleHeader
+        let destinationTitleHeight = destinationHeader.heightThatFits(
             width: size.width, topInset: baseTopContentInset)
         // Measuring the destination also fits its title font/overflow. Restore
         // the source fit before capturing glyphs at the old width.
-        _ = titleHeader.heightThatFits(width: titleHeader.bounds.width, topInset: baseTopContentInset)
+        _ = source.heightThatFits(width: source.bounds.width, topInset: baseTopContentInset)
         let contentTitleHeight = preservedScrollTitleSize?.height ?? destinationTitleHeight
         if let scrollReader = rabbitHoleReader?.focusedScrollReader {
             viewportTransitionScrollReader = scrollReader
@@ -1776,7 +1779,8 @@ final class ReaderCardContentViewController: CardContentViewController,
         // One presentation moves from pinned to scrolling (or back). Crossfading
         // two copies produces doubled glyphs even a few points below the top.
         viewportTitlePresentation = reversingTitle ?? source.prepareReflow(
-            to: destinationFrame, viewportWidth: size.width, in: view)
+            to: destinationFrame, viewportWidth: size.width,
+            alignedScrollReader: destinationHeader.alignedScrollReader, in: view)
         reversingTitle?.returnToSource = true
         if scrollDrivenViewportTransition, !cardChromeVisible {
             viewportTitleScrollOffset = titleScrollView?.contentOffset.y
@@ -1951,6 +1955,8 @@ private final class ReaderCardTitleHeaderView: UIView {
     private static let overflowLineLimit = 6
     private static let overflowGap: CGFloat = 6
 
+    weak var alignedScrollReader: ScrollReaderViewController?
+
     private let bannerCrop = UIView()
     private let bannerView = UIImageView()
     private let bannerTreatment = UIView()
@@ -2100,11 +2106,24 @@ private final class ReaderCardTitleHeaderView: UIView {
         return height
     }
 
+    private static let headerInset: CGFloat = 20
+    private static let iconSide: CGFloat = 30
+    private static let iconGap: CGFloat = 12
+
+    private func titleColumn(in width: CGFloat) -> Range<CGFloat> {
+        let minimumLeading = Self.headerInset + Self.iconSide + Self.iconGap
+        if let margin = alignedScrollReader?.readingTextMargin(forViewportWidth: width), margin >= minimumLeading {
+            return margin..<(width - margin)
+        }
+        return minimumLeading..<max(minimumLeading, width - Self.headerInset)
+    }
+
     func heightThatFits(width: CGFloat, topInset: CGFloat) -> CGFloat {
         self.topInset = topInset
-        let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
+        let column = titleColumn(in: width)
+        let titleWidth = column.upperBound - column.lowerBound
         applyTitleSplit(textWidth: titleWidth)
-        return topInset + max(30, textHeight(width: titleWidth)) + 20
+        return topInset + max(Self.iconSide, textHeight(width: titleWidth)) + 20
     }
 
     override func layoutSubviews() {
@@ -2117,13 +2136,14 @@ private final class ReaderCardTitleHeaderView: UIView {
         bannerView.frame = CGRect(x: (cropWidth - canvasWidth) / 2, y: 0,
                                   width: canvasWidth, height: canvasHeight)
         bannerTreatment.frame = bannerCrop.bounds
-        let iconSide: CGFloat = 30
+        let iconSide = Self.iconSide
+        let column = titleColumn(in: bounds.width)
+        let titleX = column.lowerBound
         let contentHeight = max(bounds.height - topInset, 0)
         iconView.frame = CGRect(
-            x: 20, y: topInset + (contentHeight - iconSide) / 2,
+            x: titleX - Self.iconGap - iconSide, y: topInset + (contentHeight - iconSide) / 2,
             width: iconSide, height: iconSide)
-        let titleX = iconView.frame.maxX + 12
-        let textWidth = max(bounds.width - titleX - 20, 0)
+        let textWidth = column.upperBound - titleX
         applyTitleSplit(textWidth: textWidth)
         if overflowLabel.isHidden, subtitleLabel.isHidden {
             titleLabel.frame = CGRect(
@@ -2246,7 +2266,8 @@ private final class ReaderCardTitleHeaderView: UIView {
     }
 
     func prepareReflow(
-        to destinationFrame: CGRect, viewportWidth: CGFloat? = nil, in host: UIView
+        to destinationFrame: CGRect, viewportWidth: CGFloat, alignedScrollReader: ScrollReaderViewController?,
+        in host: UIView
     ) -> ReflowPresentation? {
         let sourceFrame = convert(bounds, to: host)
         guard sourceFrame.intersects(host.bounds) || destinationFrame.intersects(host.bounds),
@@ -2254,9 +2275,10 @@ private final class ReaderCardTitleHeaderView: UIView {
         setNeedsLayout()
         layoutIfNeeded()
         let destination = ReaderCardTitleHeaderView(title: fullTitle, subtitle: subtitleLabel.text)
+        destination.alignedScrollReader = alignedScrollReader
         destination.setBanner(bannerView.image)
         destination.setIcon(iconView.image ?? UIImage())
-        destination.setBannerGeometry(viewportWidth: viewportWidth ?? destinationFrame.width,
+        destination.setBannerGeometry(viewportWidth: viewportWidth,
                                       canvasSize: bannerCanvasSize)
         _ = destination.heightThatFits(width: destinationFrame.width, topInset: topInset)
         destination.frame = destinationFrame

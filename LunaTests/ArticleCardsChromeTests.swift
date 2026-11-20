@@ -637,6 +637,43 @@ final class ArticleCardsChromeTests: XCTestCase {
     }
 
     @MainActor
+    func testExpandedScrollHeadlineAlignsWithTextAndRestoresCardHeader() throws {
+        let title = "The Quiet Architecture of Everyday Things"
+        let controller = makeArticleController(seed: "wide-title-alignment", title: title,
+                                              size: CGSize(width: 1024, height: 1366))
+        let card = try XCTUnwrap(controller.carousel.contentController(
+            at: controller.carousel.currentIndex) as? ReaderCardContentViewController)
+        let text = try XCTUnwrap(card.rabbitHoleReader?.focusedContentScrollView as? UITextView)
+        let headers = headerViews(labelled: title, in: card.view)
+        let pinned = try XCTUnwrap(headers.first { !$0.isDescendant(of: text) })
+        let scrolling = try XCTUnwrap(headers.first { $0.isDescendant(of: text) })
+        let pinnedTitle = try XCTUnwrap(pinned.subviews.compactMap { $0 as? UILabel }.first { $0.text == title })
+        let scrollingTitle = try XCTUnwrap(scrolling.subviews.compactMap { $0 as? UILabel }.first { $0.text == title })
+        let initialFrame = pinnedTitle.frame
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.toggleImmersion(for: card)
+        controller.view.layoutIfNeeded()
+        card.view.layoutIfNeeded()
+        scrolling.layoutIfNeeded()
+        let headline = scrollingTitle.convert(scrollingTitle.bounds, to: text)
+        let bodyMargin = text.textContainerInset.left + text.textContainer.lineFragmentPadding
+        XCTAssertTrue(controller.carousel.isImmersed)
+        XCTAssertGreaterThan(bodyMargin, initialFrame.minX)
+        XCTAssertEqual(headline.minX, bodyMargin, accuracy: 0.5)
+        XCTAssertEqual(headline.maxX, text.bounds.width - bodyMargin, accuracy: 0.5)
+
+        controller.toggleImmersion(for: card)
+        controller.view.layoutIfNeeded()
+        card.view.layoutIfNeeded()
+        pinned.layoutIfNeeded()
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(pinnedTitle.frame, initialFrame)
+    }
+
+    @MainActor
     func testScrollExpansionWidensSeveralIncomingLinesWithoutMovingThemOnScroll() throws {
         let container = ScrollStableTextContainer(size: .zero)
         let manager = ScrollStableLayoutManager()

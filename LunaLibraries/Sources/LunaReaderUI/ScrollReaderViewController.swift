@@ -851,6 +851,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
+    /// Leading edge of the article glyphs, including TextKit’s line-fragment padding.
+    public func readingTextMargin(forViewportWidth width: CGFloat) -> CGFloat {
+        Self.horizontalTextInset(forViewportWidth: width) + readerTextContainer.lineFragmentPadding
+    }
+
     static func horizontalTextInset(forViewportWidth width: CGFloat) -> CGFloat {
         max(20, (width - LunaLayout.readableWidth) / 2)
     }

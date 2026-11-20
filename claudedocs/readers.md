@@ -209,8 +209,9 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 ## Adaptive article layout
 
 Reader opts into `CardCarouselMetrics.readerGrid` at window widths of 700pt or
-more. Two equal rows of previews scroll horizontally with native deceleration;
-there is no snapping, selected-card scaling, or automatic selection on scroll.
+more. In portrait tablet windows, two complete columns fit across two rows.
+The previews scroll horizontally with native deceleration and keep their selection
+and scale as they move.
 Previews use plain rounded surfaces without the glass rim. The duplicate
 thumbnail strip is hidden, and the top controls sit at the window edges.
 Only visible columns and a small buffer are mounted, even in large libraries.
@@ -223,8 +224,10 @@ between previews has no tap action. Narrow windows retain the single-card deck.
 
 Dismissed Scroll cards now use the full safe width on compact iPhone windows,
 with the text view's own 20pt margin. Wide windows retain 16pt outside the card
-and a maximum 680pt text column. Tap-driven expansion and contraction use the
-TextKit glyph transition; scroll-driven changes preserve the visible lines while
+and a maximum 680pt text column. In expanded Scroll mode, when the side margin
+has room for the favicon, the headline aligns with the first glyph of the byline
+and body. The banner still spans the viewport. Tap-driven expansion and contraction use
+the TextKit glyph transition. Scroll-driven changes preserve the visible lines while
 incoming text adopts the new width.
 The same character stays at its reading height during a live window resize;
 Reduce Motion restores that anchor without creating animated glyph views.

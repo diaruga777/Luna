@@ -16,6 +16,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
 
     /// One fetch per URL, resolved by the test when it chooses, so the queue and
     /// the concurrency cap are observable rather than raced.
+    @MainActor
     private final class Recorder {
         var requested: [String] = []
         var waitForImage = false
@@ -29,6 +30,19 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         func fail(_ urlString: String, with error: Error) {
             continuations.removeValue(forKey: urlString)?.resume(throwing: error)
         }
+
+        func finishImage(with data: Data) {
+            let pending = imageContinuation
+            imageContinuation = nil
+            pending?.resume(returning: data)
+        }
+
+        func cancelAll() {
+            let pending = continuations.values
+            continuations.removeAll()
+            pending.forEach { $0.resume(throwing: CancellationError()) }
+            finishImage(with: Data())
+        }
     }
 
     /// The page reads a test drives by hand: each request parks on a
@@ -38,6 +52,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         let imageData: Data?
         let isOnline: Bool
 
+        @MainActor
         func fetchPreview(for url: URL) async throws -> LinkPreview {
             try await withCheckedThrowingContinuation { continuation in
                 recorder.requested.append(url.absoluteString)
@@ -45,6 +60,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
             }
         }
 
+        @MainActor
         func fetchImageData(from url: URL) async throws -> Data {
             if recorder.waitForImage {
                 return await withCheckedContinuation { recorder.imageContinuation = $0 }
@@ -69,6 +85,12 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     override func setUp() {
         super.setUp()
         recorder = Recorder()
+    }
+
+    override func tearDown() {
+        recorder.cancelAll()
+        recorder = nil
+        super.tearDown()
     }
 
     private func makeLoader(
@@ -174,7 +196,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         XCTAssertEqual(loader.state(for: first), .loaded(.init(title: "One")))
         XCTAssertEqual(recorder.requested, [first])
         loader.stop()
-        recorder.imageContinuation?.resume(returning: onePixelPNG())
+        recorder.finishImage(with: onePixelPNG())
         await settle()
         XCTAssertEqual(recorder.requested, [first])
         XCTAssertEqual(loader.state(for: second), .idle)

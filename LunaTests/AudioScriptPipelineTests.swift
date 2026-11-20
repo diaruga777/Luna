@@ -4,21 +4,25 @@
 //
 
 import LunaModels
+import Synchronization
 import XCTest
 @testable import LunaAudioPlayback
 
 /// An in-memory `SavesScriptSource` fake backed by a real scratch
 /// `articlesDirectory` (so `AudioScriptStore`'s file I/O is exercised for
 /// real, just against a temp directory instead of the App Group).
-final class FakeScriptSource: SavesScriptSource {
-    var itemsList: [SavedItem] = []
-    var contentByID: [UUID: ArticleContent] = [:]
+private final class FakeScriptSource: SavesScriptSource {
+    private let state = Mutex((items: [SavedItem](), contents: [UUID: ArticleContent]()))
     let articlesDirectory: URL
 
     init(articlesDirectory: URL) { self.articlesDirectory = articlesDirectory }
 
-    func items() -> [SavedItem] { itemsList }
-    func content(for item: SavedItem) -> ArticleContent? { contentByID[item.id] }
+    func seed(_ items: [SavedItem], contents: [UUID: ArticleContent]) {
+        state.withLock { $0 = (items, contents) }
+    }
+
+    func items() -> [SavedItem] { state.withLock { $0.items } }
+    func content(for item: SavedItem) -> ArticleContent? { state.withLock { $0.contents[item.id] } }
 }
 
 final class AudioScriptPipelineTests: XCTestCase {
@@ -110,8 +114,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         pipeline.install()
 
         let item = readableItem(seed: "c")
-        source.itemsList = [item]
-        source.contentByID[item.id] = readableContent()
+        source.seed([item], contents: [item.id: readableContent()])
 
         NotificationCenter.default.post(name: .savesChanged, object: nil)
         try await waitFor { self.scriptStore.load(forContentFileName: item.contentFileName!) != nil }
@@ -126,8 +129,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         var pendingItem = readableItem(seed: "pending")
         pendingItem.state = .pending
         let emptyItem = readableItem(seed: "empty")
-        source.itemsList = [pendingItem, emptyItem]
-        source.contentByID[emptyItem.id] = ArticleContent(title: "Title", blocks: [.init(kind: .image, text: "", links: [])])
+        source.seed([pendingItem, emptyItem], contents: [emptyItem.id: ArticleContent(title: "Title", blocks: [.init(kind: .image, text: "", links: [])])])
 
         let swept = expectation(description: "launch sweep ran")
         // `.savesChanged` is process-global, so a sibling test's store
@@ -157,8 +159,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         AudioSettings.isIntelligentTrimmingEnabled = true
         let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
-        source.itemsList = [item]
-        source.contentByID[item.id] = content
+        source.seed([item], contents: [item.id: content])
         pipeline.install()
 
         try await waitFor {
@@ -182,8 +183,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         AudioSettings.isIntelligentTrimmingEnabled = false
         let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
-        source.itemsList = [item]
-        source.contentByID[item.id] = content
+        source.seed([item], contents: [item.id: content])
         // The sweep decides eligibility synchronously, so a sweep that has RUN
         // and started nothing is the whole assertion — no sleeping required.
         let swept = expectation(description: "launch sweep ran")
@@ -213,8 +213,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         AudioSettings.isIntelligentTrimmingEnabled = true
         let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
-        source.itemsList = [item]
-        source.contentByID[item.id] = content
+        source.seed([item], contents: [item.id: content])
         let swept = expectation(description: "launch sweep ran")
         // `.savesChanged` is process-global, so a sibling test's store
         // write can debounce a second sweep in behind ours.
@@ -242,8 +241,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         AudioSettings.isIntelligentTrimmingEnabled = true
         let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
-        source.itemsList = [item]
-        source.contentByID[item.id] = content
+        source.seed([item], contents: [item.id: content])
         pipeline.install()
 
         try await waitFor {

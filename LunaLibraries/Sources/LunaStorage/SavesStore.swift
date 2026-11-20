@@ -1213,7 +1213,9 @@ public final class SavesStore {
             var seeded = items
             for index in seeded.indices {
                 guard let content = contents[seeded[index].id] else { continue }
-                let fileName = "\(seeded[index].id.uuidString).json"
+                // Re-seeding deletes the previous rows and retires their paths.
+                // A fixture with the same save ID still needs a fresh content file.
+                let fileName = "\(UUID().uuidString).json"
                 if let data = try? JSONEncoder().encode(content) {
                     let fileURL = articlesDir.appendingPathComponent(fileName)
                     try? data.write(to: fileURL, options: .atomic)

@@ -172,6 +172,7 @@ The date moves in exactly three ways, and no others:
 
 `ArticleCardsViewController` enables `usesAdaptiveReaderGrid`. Portrait tablet
 windows show two rows of previews inside a native horizontal `UIScrollView`.
+Two complete columns fit between 24pt outer margins, with 24pt between cards.
 Landscape tablets and regular-width phone displays (including the unfolded Duo)
 use the centered carousel with one row of equal-size cards. These cards fill the
 card area's height. Their width is `(viewportWidth - 48) × 3/7`, leaving 24pt

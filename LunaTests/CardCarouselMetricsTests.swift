@@ -1014,6 +1014,8 @@ final class ReaderGridTests: XCTestCase {
             XCTAssertEqual(first.minX, second.minX)
             XCTAssertEqual(second.minY - first.maxY, 24)
             XCTAssertEqual(third.minY, first.minY)
+            XCTAssertEqual(first.minX, 24)
+            XCTAssertEqual(size.width - third.maxX, 24)
             XCTAssertEqual(third.minX - first.maxX, 24)
             XCTAssertEqual(second.maxY, size.height - 12)
             XCTAssertEqual(grid.previewContentWidth(count: 7), max(size.width, 4 * grid.columnStride + 24))
@@ -1128,6 +1130,7 @@ final class ReaderDuoLayoutTests: XCTestCase {
         let carousel = CardCarouselViewController()
         carousel.usesAdaptiveReaderGrid = true
         carousel.dataSource = source
+        carousel.traitOverrides.userInterfaceIdiom = .phone
         carousel.traitOverrides.horizontalSizeClass = .regular
         carousel.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 58, bottom: 0, right: 12)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 669, height: 951))

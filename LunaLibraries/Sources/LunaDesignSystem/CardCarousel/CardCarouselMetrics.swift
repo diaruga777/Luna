@@ -121,7 +121,8 @@ public struct CardCarouselMetrics: Equatable {
             return result
         }
         let height = max(40, (containerSize.height - 48) / 2)
-        let width = min(340, max(260, (containerSize.width - 64) / 3))
+        // Two complete columns, with the same 24pt gutter at both window edges.
+        let width = (containerSize.width - 3 * 24) / 2
         result.cardSize = CGSize(width: width, height: height)
         result.sideScale = 1
         result.isPreviewGrid = true

@@ -160,6 +160,17 @@ final class EclipseBloomStatusLabelTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testActiveBloomDoesNotRetainItsView() {
+        weak var released: GlyphPixelBloomView?
+        autoreleasepool {
+            let bloom = GlyphPixelBloomView()
+            bloom.reveal(circleTravel: 100, duration: 1, offsetProvider: { nil })
+            released = bloom
+        }
+        XCTAssertNil(released)
+    }
+
     func testRotationKeepsOutgoingInkUntilTheSameFrontReplacesIt() throws {
         let label = EclipseBloomStatusLabel(frame: CGRect(x: 0, y: 0, width: 300, height: 40))
         label.setTextImmediately("Opening in Luna…")

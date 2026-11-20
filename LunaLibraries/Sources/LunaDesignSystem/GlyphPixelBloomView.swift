@@ -35,6 +35,16 @@ public final class GlyphPixelBloomView: UIView {
     /// the emitting bands trail on.
     public enum Edge { case topArc, bottomArc }
 
+    @MainActor private final class DisplayLinkTarget: NSObject {
+        weak var view: GlyphPixelBloomView?
+
+        init(view: GlyphPixelBloomView) { self.view = view }
+
+        @objc func tick(_ link: CADisplayLink) {
+            view?.drawNextRevealFrame(link)
+        }
+    }
+
     public static let renderPadding: CGFloat = 42
 
     /// The intro line's edge speed (its travel over its reveal duration).
@@ -247,8 +257,8 @@ public final class GlyphPixelBloomView: UIView {
         clearLight()
 
         let displayLink = CADisplayLink(
-            target: self,
-            selector: #selector(drawNextRevealFrame(_:)))
+            target: DisplayLinkTarget(view: self),
+            selector: #selector(DisplayLinkTarget.tick(_:)))
         displayLink.preferredFrameRateRange = CAFrameRateRange(
             minimum: 30,
             maximum: 120,
@@ -274,7 +284,7 @@ public final class GlyphPixelBloomView: UIView {
         lightLayer.contents = nil
     }
 
-    @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
+    private func drawNextRevealFrame(_ link: CADisplayLink) {
         if revealStartTime == 0 { revealStartTime = link.timestamp }
         if let offsetProvider {
             if let offset = offsetProvider() {

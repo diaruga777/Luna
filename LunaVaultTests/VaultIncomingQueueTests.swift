@@ -67,7 +67,7 @@ final class VaultPhotoFormatTests: XCTestCase {
         XCTAssertEqual(unchanged, originalPNG)
         XCTAssertEqual(originalName, "original.png")
 
-        let sourceVideo = repository.appendingPathComponent("Luna/Resources/ActionButtonGuideReaderLight.mp4")
+        let sourceVideo = repository.appendingPathComponent("Luna/Resources/ActionButtonGuideLunaLight.mp4")
         let mov = root.appendingPathComponent("video.mov")
         try FileManager.default.copyItem(at: sourceVideo, to: mov)
         let (mp4, mp4Name) = try await coordinator.convertIfNeeded(mov, named: "video.mov", mediaType: .movie, in: root)

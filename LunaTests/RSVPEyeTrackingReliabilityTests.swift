@@ -33,6 +33,7 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
     private var tracker = ReliabilityGazeTracker()
     private var window: UIWindow?
     private var clock: TimeInterval = 100
+    private var animationsWereEnabled = true
     private let content = UITestFixtures.sampleArticleContent(title: "Gaze Reliability Fixture")
     private var item: SavedItem {
         SavedItem(seed: "gaze-reliability", urlString: "https://example.com/gaze",
@@ -42,6 +43,7 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        animationsWereEnabled = UIView.areAnimationsEnabled
         UIView.setAnimationsEnabled(false)
         GazeTrackingAvailability.supportOverride = true
         GazeTrackingPermission.statusOverride = .granted
@@ -55,12 +57,14 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
         GazeTrackingAvailability.supportOverride = nil
         GazeTrackingPermission.statusOverride = nil
         ReaderSettings.eyeTrackingEnabled = false
+        window?.isHidden = true
         window = nil
+        UIView.setAnimationsEnabled(animationsWereEnabled)
         super.tearDown()
     }
 
     private func makeReader() -> RSVPViewController {
-        let reader = RSVPViewController(item: item, content: content)
+        let reader = RSVPViewController(item: item, content: content, audioEnabled: false)
         reader.gazeTrackerOverride = tracker
         reader.gazeClockOverride = { [unowned self] in self.clock }
         window = UITestSupport.host(reader)
@@ -83,11 +87,13 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
     }
 
     func testBriefLostFaceShowsUnavailableWithoutPausingPlayback() throws {
+        ReaderSettings.eyeTrackingEnabled = true
         let reader = makeReader()
         let eye = try eyeButton(in: reader)
-        eye.sendActions(for: .touchUpInside)
         try playButton(in: reader).sendActions(for: .touchUpInside)
         XCTAssertTrue(reader.isPlaying)
+        let started = expectation(for: NSPredicate { _, _ in self.tracker.isRunning }, evaluatedWith: nil)
+        wait(for: [started], timeout: 2)
 
         tracker.produce(.faceLost)
         XCTAssertTrue(reader.isPlaying, "a dark room or dropped AR session must not interrupt reading")

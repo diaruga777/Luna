@@ -56,6 +56,8 @@ final class InlineReaderColumnTests: XCTestCase {
     /// resized, it is moved — and together remain centered in the container.
     func testTheColumnIsTheSameCardOneColumnToTheRight() throws {
         let controller = makeController(size: Self.wideSize)
+        let window = UITestSupport.host(controller, size: Self.wideSize)
+        defer { window.isHidden = true }
         let restingBefore = try XCTUnwrap(
             controller.carousel.restingCenteredCardFrame(in: controller.view))
 

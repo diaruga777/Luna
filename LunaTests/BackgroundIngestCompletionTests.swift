@@ -12,7 +12,7 @@ import XCTest
 /// The Safari Download hand-off leaves a RESERVED row behind and goes straight
 /// back to the page; these cover the debt it records and the runner that pays
 /// it off in the background.
-final class BackgroundIngestCompletionTests: XCTestCase {
+final class BackgroundIngestCompletionTests: LegacyURLBehaviorTestCase {
     private var suiteName = ""
     private var defaults: UserDefaults!
     private var scratch: URL!

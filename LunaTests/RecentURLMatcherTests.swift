@@ -17,7 +17,7 @@ import XCTest
 /// reject search-results URLs: the tray was replaying a verdict from an older
 /// build. Both defences are pinned here.
 @MainActor
-final class RecentURLMatcherTests: XCTestCase {
+final class RecentURLMatcherTests: LegacyURLBehaviorTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
 

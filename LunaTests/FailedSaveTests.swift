@@ -92,7 +92,7 @@ final class SaveFailureReasonTests: XCTestCase {
 
 }
 
-final class FailedSaveNamingTests: XCTestCase {
+final class FailedSaveNamingTests: LegacyURLBehaviorTestCase {
 
     private let url = URL(string: "https://www.example.com/2026/07/how-the-deal-collapsed")!
 

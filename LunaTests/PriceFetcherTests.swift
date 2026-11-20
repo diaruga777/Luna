@@ -11,7 +11,7 @@ import XCTest
 /// data → embedded JSON) first, then the WKWebView render fallback for prices that
 /// only exist after client-side rendering, and the no-price result that lets a
 /// detected product fall back to a plain article.
-final class PriceFetcherTests: XCTestCase {
+final class PriceFetcherTests: LegacyURLBehaviorTestCase {
 
     /// A product page whose price is rendered by JS: no JSON-LD / OG / microdata /
     /// embedded price in the static markup. The static path must return nil.

@@ -20,7 +20,7 @@ import XCTest
 /// the existing tracker gains the store, and no duplicate tracker is left
 /// behind.
 @MainActor
-final class ExtensionProductPresenterTests: XCTestCase {
+final class ExtensionProductPresenterTests: LegacyURLBehaviorTestCase {
 
     /// A minimal `ExtensionHost` fake recording what the presenter asked for —
     /// same shape as `ShareSurfaceDriverTests.FakeExtensionHost`, kept local

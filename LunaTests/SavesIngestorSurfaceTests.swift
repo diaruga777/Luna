@@ -37,7 +37,7 @@ struct ScriptedIngestGate: IngestSurfaceGating {
 /// any fetch, and a `lunadoc://` item with a `documentType` classifies
 /// `.document` — so no test touches the network. The gate decision itself is
 /// injected, pinning the running app without the App Group.
-final class SavesIngestorSurfaceTests: XCTestCase {
+final class SavesIngestorSurfaceTests: LegacyURLBehaviorTestCase {
 
     private var tempDirectory: URL!
     private var store: SavesStore!

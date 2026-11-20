@@ -5,7 +5,7 @@ import SQLite3
 import UIKit
 import XCTest
 
-final class SavedMediaStoreTests: XCTestCase {
+final class SavedMediaStoreTests: LegacyURLBehaviorTestCase {
     private var root: URL!
     private var store: SavedMediaStore!
     private var saves: SavesStore!

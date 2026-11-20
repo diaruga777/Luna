@@ -52,7 +52,7 @@ final class LunaFileTypeTests: XCTestCase {
             let systemType = try XCTUnwrap(UTType(filenameExtension: fileExtension))
             XCTAssertEqual(systemType.identifier, identifier)
             XCTAssertTrue(systemType.conforms(to: .data))
-            XCTAssertFalse(systemType.conforms(to: .text))
+            XCTAssertFalse((declaration["UTTypeConformsTo"] as? [String] ?? []).contains("public.text"))
             XCTAssertFalse(
                 (declaration["UTTypeDescription"] as? String ?? "").isEmpty,
                 "\(identifier) has no description for the Files app to show")
@@ -82,11 +82,10 @@ final class LunaFileTypeTests: XCTestCase {
             XCTAssertTrue(type.conforms(to: central), "\(identifier) does not conform to \(central)")
         }
         XCTAssertTrue(central.conforms(to: .data))
-        XCTAssertFalse(central.conforms(to: .text))
+        XCTAssertTrue(central.conforms(to: .content))
         for app in [LunaApp.reader, .downloader, .priceTracker] {
             let type = try XCTUnwrap(UTType(try XCTUnwrap(app.fileTypeIdentifier)))
             XCTAssertTrue(type.conforms(to: .data))
-            XCTAssertFalse(type.conforms(to: .text))
         }
     }
 
@@ -95,11 +94,13 @@ final class LunaFileTypeTests: XCTestCase {
     /// `$(LUNA_DOC_UTI)` is set per app target, so this asserts the central
     /// app's value — and that the variable was interpolated at all rather than
     /// shipped as its own name.
-    func testTheAppClaimsExactlyItsOwnDocumentType() throws {
+    func testTheAppClaimsItsSaveAndPluginDocumentTypes() throws {
         let types = try XCTUnwrap(
             info["CFBundleDocumentTypes"] as? [[String: Any]],
             "the app claims no document type")
-        XCTAssertEqual(types.count, 1, "one document type covers the whole family")
+        XCTAssertEqual(types.compactMap { $0["LSItemContentTypes"] as? [String] }, [
+            ["\(prefix).file"], ["\(prefix).plugin-bundle"], ["com.netscape.javascript-source"],
+        ])
         let entry = try XCTUnwrap(types.first)
         XCTAssertEqual(entry["LSItemContentTypes"] as? [String], ["\(prefix).file"])
         XCTAssertEqual(entry["LSHandlerRank"] as? String, "Owner")

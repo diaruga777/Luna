@@ -3,7 +3,7 @@ import LunaStorage
 @testable import LunaMediaDownload
 import XCTest
 
-final class LiveMediaDownloadJobTests: XCTestCase {
+final class LiveMediaDownloadJobTests: LegacyURLBehaviorTestCase {
     private static var managerSource: String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()

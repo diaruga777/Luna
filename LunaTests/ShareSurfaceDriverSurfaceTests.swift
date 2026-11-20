@@ -19,7 +19,7 @@ import XCTest
 /// same seams the driver was built around (the real `NSExtensionContext` has
 /// none).
 @MainActor
-final class ShareSurfaceDriverSurfaceTests: XCTestCase {
+final class ShareSurfaceDriverSurfaceTests: LegacyURLBehaviorTestCase {
 
     private final class FakeExtensionHost: ExtensionHost {
         var readerMode: ExtensionReaderMode?

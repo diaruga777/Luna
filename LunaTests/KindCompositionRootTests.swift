@@ -26,7 +26,7 @@ import LunaURLClassification
 /// These tests read composition-root SOURCE, because no unit test can load the
 /// real roots — each registry is set in a principal class's initializer inside a
 /// different process.
-final class KindCompositionRootTests: XCTestCase {
+final class KindCompositionRootTests: LegacyURLBehaviorTestCase {
 
     /// The kind packs. Each is the single definition of one kind's registrations.
     private static let packs = [
@@ -349,6 +349,11 @@ final class KindCompositionRootTests: XCTestCase {
             for line in source.split(separator: "\n") {
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                // Library filtering and overlay media hints are separate from card selection.
+                if url.lastPathComponent == "SavedLibraryViewController.swift",
+                   text == "|| filters.contains(.shopping) && item.isPriceTracker" { continue }
+                if url.lastPathComponent == "CardCarouselHostViewController.swift",
+                   text.hasPrefix("isVideo: media[item.id]?.kind == .video") { continue }
                 for marker in ["isPriceTracker", "contentPlatform", "priceTracker"]
                 where text.contains(marker) {
                     offenders.append("\(url.lastPathComponent): \(text)")

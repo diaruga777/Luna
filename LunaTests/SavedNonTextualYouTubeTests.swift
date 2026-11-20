@@ -13,7 +13,7 @@ import XCTest
 /// extensions: no redundant label, poster-to-inline playback, and a reliable
 /// outbound fallback that exits.
 @MainActor
-final class SavedNonTextualYouTubeTests: XCTestCase {
+final class SavedNonTextualYouTubeTests: LegacyURLBehaviorTestCase {
 
     private final class Host: ExtensionHost {
         var readerMode: ExtensionReaderMode?

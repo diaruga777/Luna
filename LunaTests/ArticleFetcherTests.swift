@@ -7,7 +7,7 @@ import LunaFetch
 import XCTest
 @testable import Luna
 
-final class ArticleFetcherTests: XCTestCase {
+final class ArticleFetcherTests: LegacyURLBehaviorTestCase {
 
     private func url(_ string: String) -> URL {
         guard let url = URL(string: string) else {

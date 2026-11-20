@@ -19,7 +19,7 @@ import XCTest
 /// the direct-unlock readiness probe (run in a real `WKWebView`, since the JS is the
 /// thing under test).
 @MainActor
-final class BypassTests: XCTestCase {
+final class BypassTests: LegacyURLBehaviorTestCase {
 
     // Shared fixture for the BypassRunner section below.
     private let articleURL = URL(string: "https://www.example.com/news/story")!

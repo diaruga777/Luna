@@ -191,7 +191,7 @@ final class SavesDatabaseTests: XCTestCase {
             CREATE TABLE saves (
                 id TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL,
                 url_string TEXT NOT NULL, pending_archive_at REAL,
-                date_added REAL, archived_at REAL,
+                date_added REAL, archived_at REAL, title TEXT, content_file_name TEXT,
                 platform TEXT, platform_item_id TEXT
             ) WITHOUT ROWID;
             CREATE TABLE files (

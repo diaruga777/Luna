@@ -9,7 +9,7 @@ import LunaModels
 import LunaURLClassification
 import XCTest
 
-final class SocialMediaResolverTests: XCTestCase {
+final class SocialMediaResolverTests: LegacyURLBehaviorTestCase {
 
     func testFacebookVideoURLDoesNotDownloadPosterImage() async {
         let source = URL(string: "https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/")!

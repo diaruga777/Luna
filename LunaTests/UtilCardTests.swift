@@ -919,11 +919,11 @@ final class UtilCardTests: XCTestCase {
         XCTAssertNotNil(card.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
-    func testAnExpiredEntryIsNoEntry() {
+    func testAnOlderPickStillAppears() {
         seedWeekly(.article, url: "https://example.com/a", title: "A Read", daysOld: 31)
         let card = makeCard(showsOnboarding: false)
         card.loadViewIfNeeded()
-        XCTAssertNil(card.view.descendant(identifier: "utilCard.lunasPick"))
+        XCTAssertNotNil(card.view.descendant(identifier: "utilCard.lunasPick"))
     }
 
     func testTappingTheWeeklyRowHandsItsStoredURLToTheDeck() throws {

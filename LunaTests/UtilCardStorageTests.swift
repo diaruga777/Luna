@@ -80,9 +80,8 @@ final class UtilCardStorageTests: XCTestCase {
         XCTAssertTrue(status.shortcutHasRun(for: .reader))
         XCTAssertFalse(status.shortcutHasRun(for: .downloader))
         XCTAssertFalse(status.shortcutHasRun(for: .luna))
-        XCTAssertEqual(
-            status.previouslyConfiguredShortcutApp(excluding: .downloader),
-            .reader)
+        // Upgraded installs keep the marker, but retired apps cannot shorten onboarding.
+        XCTAssertNil(status.previouslyConfiguredShortcutApp(excluding: .downloader))
         XCTAssertNil(status.previouslyConfiguredShortcutApp(excluding: .reader))
     }
 

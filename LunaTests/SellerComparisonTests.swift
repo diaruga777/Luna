@@ -625,6 +625,7 @@ final class StubSellerFanOutRunner: SellerFanOutRunning, @unchecked Sendable {
 
     /// Called as the run starts — before anything has landed.
     var onRun: (@Sendable () -> Void)?
+    var beforeResults: (@Sendable () async -> Void)?
     /// Called after each streamed result has been attached and persisted, which
     /// is where "the list fills as they land" is observable.
     var afterEachResult: (@Sendable () -> Void)?
@@ -645,6 +646,7 @@ final class StubSellerFanOutRunner: SellerFanOutRunning, @unchecked Sendable {
     ) async -> SellerFanOutOutcome? {
         lock.withLock { runs += 1 }
         onRun?()
+        await beforeResults?()
         if let delayNanoseconds { try? await Task.sleep(nanoseconds: delayNanoseconds) }
         for found in results {
             await onResult?(found)

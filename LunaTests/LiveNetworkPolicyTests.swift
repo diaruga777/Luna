@@ -15,7 +15,7 @@ import XCTest
 /// The failure mode this guards against is not a red test — it is a GREEN one:
 /// a save-driving test whose assertion happened to hold because a real retailer
 /// answered. Those pass, slowly, until someone else's server changes.
-final class LiveNetworkPolicyTests: XCTestCase {
+final class LiveNetworkPolicyTests: LegacyURLBehaviorTestCase {
 
     override func setUp() {
         super.setUp()

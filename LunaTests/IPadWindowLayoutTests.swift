@@ -11,6 +11,8 @@ final class IPadWindowLayoutTests: XCTestCase {
         SavesStore.shared.seedForTesting(items: [], contents: [:])
         defer { SavesStore.shared.seedForTesting(items: [], contents: [:]) }
         let deck = ArticleCardsViewController()
+        deck.traitOverrides.userInterfaceIdiom = .pad
+        deck.traitOverrides.horizontalSizeClass = .regular
         let window = UITestSupport.host(deck, size: CGSize(width: 1024, height: 1366))
         defer { window.isHidden = true }
         XCTAssertFalse(deck.carousel.usesReaderGrid)

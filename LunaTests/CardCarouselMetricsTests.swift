@@ -875,6 +875,9 @@ final class CardCarouselExpandedImmersionTests: XCTestCase {
     }
 
     func testAnimatedExpansionCoordinatesContentWithDestinationSize() throws {
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
         let (carousel, source) = makeCarousel()
         carousel.setImmersed(
             true, extendsCard: true, horizontalInset: 16, animated: true)

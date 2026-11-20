@@ -50,7 +50,7 @@ private final class OfflineFailingProtocol: URLProtocol {
 /// deterministically; the network-unwrap links (apple.news / Google News) are asserted
 /// only for SURFACE PARITY (same Outcome + intent on both surfaces), not a fixed kind.
 @MainActor
-final class SurfaceParityTests: XCTestCase {
+final class SurfaceParityTests: LegacyURLBehaviorTestCase {
 
     /// The presentation intent a surface produces — the common vocabulary both the
     /// main-app presenter and the extension driver map an `Outcome` into.

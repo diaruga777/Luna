@@ -56,7 +56,7 @@ struct PinnedAppSurfaceGate: ShareSurfaceGating {
 }
 
 @MainActor
-final class ShareSurfaceDriverTests: XCTestCase {
+final class ShareSurfaceDriverTests: LegacyURLBehaviorTestCase {
 
     /// Records everything the driver asked the host to do, so the per-surface
     /// presentation can be asserted in isolation.
@@ -280,6 +280,8 @@ final class ShareSurfaceDriverTests: XCTestCase {
         _ = store.add(urlString: urlString)
         let (driver, host) = makeDriver(isActionExtension: true)
         let landed = expectation(description: "seller attached")
+        let (releaseResults, release) = AsyncStream<Void>.makeStream()
+        defer { release.finish() }
         let runner = StubSellerFanOutRunner(results: [
             ComparableSellerResult(
                 sellerID: "target", sellerName: "Target", domain: "target.example",
@@ -287,6 +289,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
                 productName: "Widget", identifiers: ProductIdentifiers(),
                 imageURL: nil, confidence: .gtin, source: .directory),
         ])
+        runner.beforeResults = { for await _ in releaseResults {} }
         runner.afterEachResult = { landed.fulfill() }
         SellerComparisonRunner.installed = runner
 
@@ -298,6 +301,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
         XCTAssertNotNil(
             store.item(forURLString: urlString)?.priceTracker?.pendingComparison,
             "and the list has something to show a waiting row from")
+        release.finish()
         await fulfillment(of: [landed], timeout: 5)
     }
 

@@ -24,7 +24,7 @@ import XCTest
 @testable import LunaSavesUI
 
 @MainActor
-final class SaveDiagnosticsCaptureTests: XCTestCase {
+final class SaveDiagnosticsCaptureTests: LegacyURLBehaviorTestCase {
 
     private var scratch: URL!
     private var store: SavesStore!

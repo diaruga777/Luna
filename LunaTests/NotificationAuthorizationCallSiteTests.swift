@@ -93,7 +93,7 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
                     of: repoRoot.path + "/", with: "")
                 guard relative != definitionFile else { continue }
                 let source = try String(contentsOf: url, encoding: .utf8)
-                let hits = source.components(separatedBy: "requestAuthorization()").count - 1
+                let hits = source.components(separatedBy: "NotificationManager.requestAuthorization()").count - 1
                 if hits > 0 { counts[relative] = hits }
             }
         }

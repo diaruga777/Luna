@@ -10,7 +10,7 @@ import LunaModels
 @testable import LunaArticleIngest
 
 /// The processor (with its network leg injected) and the pipeline branch it feeds.
-final class XPostIngestProcessorTests: XCTestCase {
+final class XPostIngestProcessorTests: LegacyURLBehaviorTestCase {
     private let postURL = URL(string: "https://x.com/random_walker/status/2082163285588107752")!
 
     /// A processor whose fetch replays a recorded fixture, recording the endpoints

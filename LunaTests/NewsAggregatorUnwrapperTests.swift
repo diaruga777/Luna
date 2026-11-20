@@ -11,7 +11,7 @@ import XCTest
 /// Covers the pure (network-free) parsing of `NewsAggregatorUnwrapper`: Apple News
 /// publisher extraction, Google News id parsing + offline base64 decode + the
 /// batchexecute response parse, and host classification.
-final class NewsAggregatorUnwrapperTests: XCTestCase {
+final class NewsAggregatorUnwrapperTests: LegacyURLBehaviorTestCase {
 
     private func url(_ string: String) -> URL {
         guard let url = URL(string: string) else { fatalError("bad test URL: \(string)") }

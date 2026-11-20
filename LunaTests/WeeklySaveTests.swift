@@ -679,7 +679,7 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertNil(store.display(for: .article), "A forged record clears the row")
     }
 
-    func testAnExpiredRecordClearsTheRow() async throws {
+    func testAnOlderRecordRemainsAvailable() async throws {
         let key = Curve25519.Signing.PrivateKey()
         database.saves = [try sign(.article, "https://example.com/a", key: key)]
         let refresher = makeRefresher(app: .reader, publicKey: key.publicKey)
@@ -688,7 +688,7 @@ final class WeeklySaveTests: XCTestCase {
 
         clock = clock.addingTimeInterval(31 * 86_400)
         await refresher.refreshWeeklySaves(force: true)
-        XCTAssertNil(store.display(for: .article))
+        XCTAssertEqual(store.display(for: .article)?.save.urlString, "https://example.com/a")
     }
 
     func testAFetchErrorLeavesTheStoreUntouched() async throws {

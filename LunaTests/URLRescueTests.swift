@@ -18,7 +18,7 @@ import XCTest
 /// Marked `@MainActor` for the `ShareSurfaceDriverRescue` section below, which
 /// drives UIKit-hosting fakes; the other sections run fine under the main actor.
 @MainActor
-final class URLRescueTests: XCTestCase {
+final class URLRescueTests: LegacyURLBehaviorTestCase {
     private let url = URL(string: "https://www.example.com/story")!
     private let builder = RescueDigestBuilder()
 
@@ -357,7 +357,7 @@ final class URLRescueTests: XCTestCase {
 
     /// Overflow halves the whole budget, so the evidence must shrink with the
     /// digest rather than crowding the retry out of the window it just made room in.
-    func testContextOverflowHalvesTheEvidenceToo() async {
+    func testContextOverflowHalvesTheEvidenceToo() async throws {
         let itemID = UUID()
         let trace = (0..<400).map { "2026-08-13T10:00:00Z [fetch] status=403 attempt \($0)" }
             .joined(separator: "\n")
@@ -369,8 +369,8 @@ final class URLRescueTests: XCTestCase {
         _ = await engine.rescue(evidenceRequest(itemID: itemID))
 
         XCTAssertEqual(session.planPrompts.count, 2)
-        let first = Self.evidenceSection(of: session.planPrompts[0])
-        let second = Self.evidenceSection(of: session.planPrompts[1])
+        let first = Self.evidenceSection(of: try XCTUnwrap(session.planPrompts.first))
+        let second = Self.evidenceSection(of: try XCTUnwrap(session.planPrompts.dropFirst().first))
         XCTAssertFalse(first.isEmpty)
         XCTAssertLessThan(second.count, first.count, "the retry must shrink the evidence too")
     }

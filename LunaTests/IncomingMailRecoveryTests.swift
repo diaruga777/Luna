@@ -164,7 +164,7 @@ final class IncomingMailRecoveryTests: XCTestCase {
         let path = IndexPath(row: IncomingMailSettings.allowedSenders.count + 3, section: 1)
         let cell = screen.tableView(screen.tableView, cellForRowAt: path)
         XCTAssertEqual(cell.accessibilityIdentifier, "email.pullRecent")
-        XCTAssertEqual((cell.contentConfiguration as? UIListContentConfiguration)?.text, "Pull Recent Emails")
+        XCTAssertEqual((cell.contentConfiguration as? UIListContentConfiguration)?.text, "Check Recent Emails")
         XCTAssertEqual(cell.selectionStyle, .default)
         XCTAssertFalse(screen.tableView(screen.tableView, canEditRowAt: path))
         accounts.markAuthenticationIssue(.credentialsRejected)

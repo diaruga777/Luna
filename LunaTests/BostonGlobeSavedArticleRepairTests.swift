@@ -9,7 +9,7 @@ import XCTest
 @testable import LunaReaderUI
 
 @MainActor
-final class BostonGlobeSavedArticleRepairTests: XCTestCase {
+final class BostonGlobeSavedArticleRepairTests: LegacyURLBehaviorTestCase {
     private let articleURL = URL(string:
         "https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash/")!
 

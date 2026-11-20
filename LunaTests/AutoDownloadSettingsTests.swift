@@ -10,7 +10,7 @@ import LunaStorage
 import Photos
 import XCTest
 
-final class AutoDownloadSettingsTests: XCTestCase {
+final class AutoDownloadSettingsTests: LegacyURLBehaviorTestCase {
     private let photosKey = "autoSaveDownloadsToPhotos"
     private let wifiOnlyKey = "wifiOnlyDownloads"
     private let autoDownloadKey = "autoDownloadMediaInPreview"

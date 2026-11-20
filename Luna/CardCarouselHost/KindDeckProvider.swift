@@ -99,11 +99,8 @@ final class KindDeckProvider: CardDeckProviding {
 
     /// The same resolution, for the host — which owns unarchive and delete and
     /// must reach a stand-in row's presenter the same way.
-    func deckPresenter(forItemID id: UUID) -> CardKindPresenting? {
-        if let owner = unbackedOwners[id] { return owner }
-        guard let item = (items + archivedItems).first(where: { $0.id == id })
-        else { return nil }
-        return CardKindPresenters.presenter(for: item)
+    func deckPresenter(for item: SavedItem) -> CardKindPresenting? {
+        presenter(for: item)
     }
 
     private func item(atSlot slot: Int) -> SavedItem? {

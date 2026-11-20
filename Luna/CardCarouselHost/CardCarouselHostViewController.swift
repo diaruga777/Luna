@@ -1493,7 +1493,7 @@ extension CardCarouselHostViewController: CardPresenterHost {
     /// The kind that owns a save, asked of the PROVIDER rather than the registry
     /// so a stand-in for an unbacked row reaches the presenter that supplied it.
     func presenter(forItem item: SavedItem) -> CardKindPresenting? {
-        deckProvider?.deckPresenter(forItemID: item.id)
+        deckProvider?.deckPresenter(for: item)
             ?? CardKindPresenters.presenter(for: item)
     }
 

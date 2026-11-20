@@ -187,7 +187,7 @@ protocol CardDeckProviding: AnyObject {
     /// registry's answer, but a stand-in for an unbacked row (see
     /// `CardKindPresenting.unbackedItems`) has no save row to resolve
     /// from and goes back to the presenter that supplied it.
-    func deckPresenter(forItemID id: UUID) -> CardKindPresenting?
+    func deckPresenter(for item: SavedItem) -> CardKindPresenting?
 
     /// The save behind a slot. The host keeps only `CardDeckSlot`s — id, URL,
     /// fingerprint — so chrome that needs the whole row (the Reader's share
@@ -235,7 +235,7 @@ extension CardDeckProviding {
     func deckUtilCardDidCenter() {}
     func deckSlotWasTapped(_ slot: Int) {}
     func deckArchiveTrayItems() -> [ArchiveTrayItem] { [] }
-    func deckPresenter(forItemID id: UUID) -> CardKindPresenting? { nil }
+    func deckPresenter(for item: SavedItem) -> CardKindPresenting? { nil }
     func deckItem(forSlot slot: Int) -> SavedItem? { nil }
     var deckShareButton: CardDeckShareButton? { nil }
     func deckCanShare(slot: Int?) -> Bool { slot != nil }

@@ -122,8 +122,9 @@ final class OnboardingSaveDemoTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         surface.view.layoutIfNeeded()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
 
+        let headline = SaveFailureReason.offline.headline
+        waitUntil(window.descendants(of: UILabel.self).contains { $0.text?.contains(headline) == true })
         let shown = window.descendants(of: UILabel.self).compactMap(\.text)
         XCTAssertTrue(
             shown.contains { $0.contains(SaveFailureReason.offline.headline) },

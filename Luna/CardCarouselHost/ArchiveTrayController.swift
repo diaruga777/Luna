@@ -439,7 +439,7 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
     }
 
     private func contextMenu(for item: ArchiveTrayItem, sourceView: UIView) -> UIMenu {
-        var actions: [UIAction] = [
+        var actions: [UIMenuElement] = [
             UIAction(
                 title: L10n.string("CardDeck_archiveTray_unarchiveAction"),
                 image: UIImage(systemName: "tray.and.arrow.up")
@@ -448,13 +448,14 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
                 title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in item.share(sourceView) },
         ]
+        actions += item.additionalMenuActions?() ?? []
         if let delete = item.delete {
             actions.append(UIAction(
                 title: L10n.string("Common_delete"), image: UIImage(systemName: "trash"),
                 attributes: .destructive
             ) { _ in delete() })
         }
-        return UIMenu(children: actions + (item.additionalMenuActions?() ?? []))
+        return UIMenu(children: actions)
     }
 
 }

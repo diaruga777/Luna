@@ -71,6 +71,8 @@ final class ReaderSettingsScreen: NavHeaderTableController {
                 stepper.minimumValue = Double(ReaderSettings.preloadDepthRange.lowerBound)
                 stepper.maximumValue = Double(ReaderSettings.preloadDepthRange.upperBound)
                 stepper.value = Double(ReaderSettings.preloadDepth)
+                stepper.accessibilityLabel = content.text
+                stepper.accessibilityValue = content.secondaryText
                 stepper.addTarget(
                     self, action: #selector(preloadDepthChanged(_:)), for: .valueChanged)
                 cell.accessoryView = stepper
@@ -89,6 +91,9 @@ final class ReaderSettingsScreen: NavHeaderTableController {
             slider.minimumValue = 100
             slider.maximumValue = 900
             slider.value = Float(ReaderSettings.baseWPM)
+            slider.accessibilityLabel = L10n.string("Settings_reader_readingSpeed")
+            slider.accessibilityValue = L10n.string("Settings_reader_spokenWPM", Int(ReaderSettings.baseWPM))
+            wpmLabel.isAccessibilityElement = false
             slider.addTarget(self, action: #selector(wpmChanged(_:)), for: .valueChanged)
             slider.translatesAutoresizingMaskIntoConstraints = false
             wpmLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -198,7 +203,8 @@ final class ReaderSettingsScreen: NavHeaderTableController {
 
     @objc private func wpmChanged(_ slider: UISlider) {
         let rounded = Double((Int(slider.value) / 10) * 10)
-        ReaderSettings.baseWPM = rounded
+        slider.accessibilityValue = L10n.string("Settings_reader_spokenWPM", Int(rounded))
+        if rounded != ReaderSettings.baseWPM { ReaderSettings.baseWPM = rounded }
         wpmLabel.text = L10n.string("Common_wpm", Int(rounded))
     }
 
@@ -227,6 +233,7 @@ final class ReaderSettingsScreen: NavHeaderTableController {
             var content = cell.contentConfiguration as? UIListContentConfiguration
                 ?? cell.defaultContentConfiguration()
             content.secondaryText = "\(ReaderSettings.preloadDepth)"
+            stepper.accessibilityValue = content.secondaryText
             cell.contentConfiguration = content
         }
         // Picking up a higher depth resumes preloading for existing saves.

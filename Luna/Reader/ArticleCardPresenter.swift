@@ -162,15 +162,16 @@ final class ArticleCardPresenter: CardKindPresenting {
     }
 
     func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
-        guard item.state == .ready, let content = store.content(for: item),
-              content.blocks.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-              UIApplication.shared.canOpenURL(URL(string: "lunamusic://reader")!) else { return [] }
+        guard item.state == .ready, UIApplication.shared.canOpenURL(URL(string: "lunamusic://reader")!),
+              let content = store.content(for: item),
+              content.blocks.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        else { return [] }
         let url = URL(string: "lunamusic://reader?save=\(item.id.uuidString)")!
-        return [UIAction(title: "Add to Luna Music", image: UIImage(systemName: "text.badge.plus")) { [weak host] _ in
+        return [UIAction(title: L10n.string("Reader_music_add"), image: UIImage(systemName: "text.badge.plus")) { [weak host] _ in
             UIApplication.shared.open(url, options: [:]) { opened in
                 guard !opened, let presenter = host?.presentingController else { return }
-                let alert = UIAlertController(title: "Luna Music", message: "Luna Music could not be opened. Try again after opening the app.", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                let alert = UIAlertController(title: L10n.string("Reader_music_openFailed"), message: nil, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
                 presenter.present(alert, animated: true)
             }
         }]

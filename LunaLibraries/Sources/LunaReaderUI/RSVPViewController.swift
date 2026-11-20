@@ -201,6 +201,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
     private let statusLabel = UILabel()
+    private var displayedPace: (seconds: Double, wpm: Double)?
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
     private let skipBackButton = UIButton(type: .system)
@@ -427,6 +428,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.item = item
         self.isSpeechMode = audioEnabled
         self.articleContent = content
+        self.wpm = ReaderSettings.baseWPM
         self.blockTokenStartsCache = nil
         self.shareProvider = shareProvider
         self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
@@ -1839,7 +1841,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         } else {
             duration = engine.remainingDuration(from: currentIndex, wpm: wpm)
         }
-        let time = RSVPTimeRemainingFormatter.string(from: duration)
+        let seconds = ceil(duration)
+        if let displayedPace, displayedPace == (seconds, wpm) { return }
+        displayedPace = (seconds, wpm)
+        wpmDownButton.isEnabled = wpm > 100
+        wpmUpButton.isEnabled = wpm < 900
+        let time = RSVPTimeRemainingFormatter.string(from: seconds)
         statusLabel.text = L10n.string("Reader_rsvp_statusTimeRemainingWpm", time, Int(wpm))
     }
 

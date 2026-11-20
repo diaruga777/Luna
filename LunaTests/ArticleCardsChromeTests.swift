@@ -1381,8 +1381,8 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         // A device without the curator's key gets the propose verb, above the
         // deck's own tail.
-        XCTAssertEqual(
-            actions.map(\.title), ["Suggest for Luna’s pick", "Archive", "Delete"])
+        let music = UIApplication.shared.canOpenURL(URL(string: "lunamusic://reader")!) ? ["Add to Luna Music"] : []
+        XCTAssertEqual(actions.map(\.title), music + ["Suggest for Luna’s pick", "Archive", "Delete"])
         let delete = try XCTUnwrap(actions.last)
         XCTAssertTrue(delete.attributes.contains(.destructive))
 
@@ -1475,7 +1475,8 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         let menu = try XCTUnwrap(controller.archiveTray?.contextMenuForTesting(itemAt: 0))
         let actions = menu.children.compactMap { $0 as? UIAction }
-        XCTAssertEqual(actions.map(\.title), ["Unarchive", "Share", "Delete"])
+        let music = UIApplication.shared.canOpenURL(URL(string: "lunamusic://reader")!) ? ["Add to Luna Music"] : []
+        XCTAssertEqual(actions.map(\.title), ["Unarchive", "Share"] + music + ["Delete"])
         let delete = try XCTUnwrap(actions.last)
         XCTAssertTrue(delete.attributes.contains(.destructive))
 

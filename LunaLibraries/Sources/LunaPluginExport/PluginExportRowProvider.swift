@@ -65,17 +65,20 @@ public final class PluginExportRowProvider: PluginExportRowProviding {
 
     @MainActor
     public func runExport(pluginID: String, saveID: UUID) {
+        Task { await performExport(pluginID: pluginID, saveID: saveID) }
+    }
+
+    @MainActor
+    func performExport(pluginID: String, saveID: UUID) async {
         guard let export = activeInvoker?.loadedPlugins.first(where: { $0.id == pluginID })?.export
         else { return }
         if export.isDestination {
             guard let item = store.item(withID: saveID) else { return }
             let destinationID = PluginDestinationLegacyIDs.destinationID(forPluginID: pluginID)
-            Task { await coordinator.send(item, toDestinationID: destinationID) }
+            await coordinator.send(item, toDestinationID: destinationID)
         } else {
             let stage = self.stage ?? PluginExportStage.shared
-            Task { @MainActor in
-                await stage.run(pluginID: pluginID, saveID: saveID, auto: false)
-            }
+            await stage.run(pluginID: pluginID, saveID: saveID, auto: false)
         }
     }
 

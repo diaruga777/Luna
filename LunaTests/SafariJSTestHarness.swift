@@ -75,6 +75,7 @@ final class SafariJSTestHarness {
     // MARK: - The shared web view
 
     private static var sharedWebView: WKWebView?
+    private static var navigationCount = 0
     private static let navigation = Navigation()
 
     private let test: XCTestCase
@@ -105,6 +106,15 @@ final class SafariJSTestHarness {
         urlString: String,
         scripts: [String] = [SafariJSSource.content]
     ) {
+        // Bound the lifetime of a fixture process. Hundreds of back-to-back
+        // documents can crash iOS 26 WebKit's JS interpreter; a fresh view also
+        // releases the previous pages' timers and pending message promises.
+        if Self.navigationCount >= 64 {
+            Self.sharedWebView?.stopLoading()
+            Self.sharedWebView = nil
+            Self.navigationCount = 0
+        }
+        Self.navigationCount += 1
         Self.navigation.appSchemeURL = nil
         Self.navigation.onAppSchemeNavigation = nil
 

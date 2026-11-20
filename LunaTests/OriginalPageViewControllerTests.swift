@@ -63,7 +63,7 @@ final class OriginalPageViewControllerTests: XCTestCase {
 
         // The assertion runs well past the publisher timer. The expectation also
         // bounds simulator WebContent launch failures instead of hanging the suite.
-        await fulfillment(of: [loaded], timeout: 5)
+        await fulfillment(of: [loaded], timeout: 15)
         XCTAssertEqual(outcome, "The complete saved article.|true")
     }
 

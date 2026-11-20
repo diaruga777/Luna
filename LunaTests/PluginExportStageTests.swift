@@ -343,20 +343,11 @@ final class PluginExportStageTests: XCTestCase {
         let provider = PluginExportRowProvider(
             invoker: invoker, store: store, coordinator: coordinator(destination))
         invoker.resultJSON = "{\"status\":\"retry\"}"
-        provider.runExport(pluginID: Self.pluginID, saveID: item.id)
-        for _ in 0..<100 {
-            if store.item(withID: item.id)?.sendState(for: destination.id) == .queued { break }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await provider.performExport(pluginID: Self.pluginID, saveID: item.id)
         XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .queued)
-        // Wait for the first invocation to settle before pressing again.
-        try? await Task.sleep(nanoseconds: 50_000_000)
+
         invoker.resultJSON = "{\"status\":\"sent\"}"
-        provider.runExport(pluginID: Self.pluginID, saveID: item.id)
-        for _ in 0..<100 {
-            if store.item(withID: item.id)?.sendState(for: destination.id) == .sent { break }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await provider.performExport(pluginID: Self.pluginID, saveID: item.id)
         XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .sent)
     }
 

@@ -21,11 +21,10 @@ enum SavedLibraryFilter: String, CaseIterable {
                 || (item.lastScrollOffset ?? 0) > 0 || (item.lastOriginalScrollOffset ?? 0) > 0 || (item.lastSpokenWordIndex ?? 0) > 0
             guard hasPosition, item.readState != .read, (item.readingProgress ?? 0) < 1 else { return false }
         }
-        let kinds = filters.subtracting([.inProgress])
-        guard !kinds.isEmpty else { return true }
-        return kinds.contains(.text) && item.exportKind == .article
-            || kinds.contains(.video) && isVideo
-            || kinds.contains(.shopping) && item.isPriceTracker
+        guard filters.count > (filters.contains(.inProgress) ? 1 : 0) else { return true }
+        return filters.contains(.text) && item.exportKind == .article
+            || filters.contains(.video) && isVideo
+            || filters.contains(.shopping) && item.isPriceTracker
     }
 }
 
@@ -55,6 +54,7 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
     private var pendingSearch: DispatchWorkItem?
     private let searchQueue = DispatchQueue(label: "luna.library.query", qos: .userInitiated)
     private let emptyLabel = UILabel()
+    private let clearFilters = UIButton(configuration: .plain())
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -130,7 +130,27 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
         emptyLabel.textColor = .secondaryLabel
         emptyLabel.font = .preferredFont(forTextStyle: .body)
         emptyLabel.numberOfLines = 0
-        collection.backgroundView = emptyLabel
+        emptyLabel.adjustsFontForContentSizeCategory = true
+        clearFilters.setTitle(L10n.string("Library_clearFilters"), for: .normal)
+        clearFilters.addAction(UIAction { [weak self] _ in
+            self?.filters.removeAll()
+            self?.updatePills()
+            self?.applyResults()
+        }, for: .touchUpInside)
+        clearFilters.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        let emptyState = UIStackView(arrangedSubviews: [emptyLabel, clearFilters])
+        emptyState.axis = .vertical
+        emptyState.alignment = .center
+        emptyState.spacing = 4
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        let background = UIView()
+        background.addSubview(emptyState)
+        collection.backgroundView = background
+        NSLayoutConstraint.activate([
+            emptyState.centerXAnchor.constraint(equalTo: background.centerXAnchor),
+            emptyState.centerYAnchor.constraint(equalTo: background.centerYAnchor),
+            emptyState.widthAnchor.constraint(equalTo: background.widthAnchor),
+        ])
         NSLayoutConstraint.activate([
             chrome.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             chrome.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
@@ -182,18 +202,34 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func applyResults() {
-        let eligible = entries.filter { SavedLibraryFilter.includes($0.item, filters: filters, isVideo: $0.isVideo) }
+        let eligible = filters.isEmpty ? entries : entries.filter {
+            SavedLibraryFilter.includes($0.item, filters: filters, isVideo: $0.isVideo)
+        }
         if let matchedIDs {
             let byID = Dictionary(uniqueKeysWithValues: eligible.map { ($0.item.id, $0) })
             visible = matchedIDs.compactMap { byID[$0] }
         } else { visible = eligible }
         emptyLabel.text = visible.isEmpty ? (entries.isEmpty ? L10n.string("Library_empty") : L10n.string("Library_noMatches")) : nil
+        clearFilters.isHidden = !visible.isEmpty || entries.isEmpty || filters.isEmpty
+        collection.backgroundView?.isHidden = !visible.isEmpty
         collection.reloadData()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshActiveQuery()
+    }
+
+    private func refreshActiveQuery() {
+        guard let text = searchBar.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        search(text)
     }
 
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) { search(searchText) }
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
-    @objc private func indexUpdated() { search(searchBar.text ?? "") }
+    @objc private func indexUpdated() {
+        if viewIfLoaded?.window != nil { refreshActiveQuery() }
+    }
 
     private func search(_ text: String) {
         pendingSearch?.cancel()
@@ -217,6 +253,8 @@ final class SavedLibraryViewController: UIViewController, UICollectionViewDataSo
                     guard let self, self.queryRevision == revision else { return }
                     self.visible = []
                     self.emptyLabel.text = L10n.string("Library_searchUnavailable")
+                    self.clearFilters.isHidden = true
+                    self.collection.backgroundView?.isHidden = false
                     self.collection.reloadData()
                 }
             }
@@ -293,7 +331,7 @@ private final class SavedLibraryCell: UICollectionViewCell {
         // URLs are deliberately absent, including the untitled fallback.
         title.text = entry.item.cardTitle
         title.isHidden = title.text == nil
-        accessibilityLabel = title.text
+        accessibilityLabel = title.text ?? entry.item.url?.host ?? L10n.string("Library_savedItem")
         setBanner(nil)
         badge.setBadge(.symbol("globe"))
         entry.loadBanner { [weak self] image in

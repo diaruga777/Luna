@@ -47,7 +47,7 @@ public final class SavedLibrarySearchIndex: SavesSweepForegroundTracking {
         }
         do {
             try warmVectors(model: model)
-            let items = Dictionary(uniqueKeysWithValues: store.items().map { ($0.id, $0) })
+            lazy var items = Dictionary(uniqueKeysWithValues: self.store.items().map { ($0.id, $0) })
             var backfill: [(UUID, Int64)] = []
             try store.libraryIndexRead { db in
                 try db.query("SELECT save_id, generation FROM library_documents WHERE needs_backfill=1") {

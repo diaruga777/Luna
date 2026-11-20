@@ -782,7 +782,13 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     @objc final func reload() {
         deckWillReload()
         guard let provider = deckProvider else { return }
-        savedLibrary?.entries = libraryEntries()
+        defer {
+            // The sheet is retained to preserve its scroll position and filters.
+            // Read its rows only while presented, after the deck has adopted its slots.
+            if let library = savedLibrary, presentedViewController === library {
+                library.entries = libraryEntries()
+            }
+        }
         let snapshot = provider.deckPreparedSnapshot()
         let fingerprint = snapshot.slots.map(\.fingerprint) + snapshot.offstageFingerprint
         // Runs on the abandoned path too: a reload that changes nothing is
@@ -1607,9 +1613,9 @@ extension CardCarouselHostViewController {
 
     private func libraryEntries() -> [SavedLibraryEntry] {
         var items = SavesStore.shared.items().filter { LunaApp.current.includes($0) }
-        let known = Set(items.map(\.id))
+        var known = Set(items.map(\.id))
         for index in slots.indices {
-            if let item = deckProvider?.deckItem(forSlot: index), !known.contains(item.id) {
+            if let item = deckProvider?.deckItem(forSlot: index), known.insert(item.id).inserted {
                 items.append(item)
             }
         }

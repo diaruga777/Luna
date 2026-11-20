@@ -212,7 +212,9 @@ final class SavedLibraryPresentationTests: XCTestCase {
         videoPill.sendActions(for: .touchUpInside)
         XCTAssertTrue(videoPill.isSelected)
         XCTAssertEqual(collection.numberOfItems(inSection: 0), 0)
-        videoPill.sendActions(for: .touchUpInside)
+        let clear = descendants(collection).compactMap { $0 as? UIButton }.first { $0.currentTitle == "Clear filters" }
+        XCTAssertEqual(clear?.isHidden, false)
+        clear?.sendActions(for: .touchUpInside)
         XCTAssertFalse(videoPill.isSelected)
         XCTAssertEqual(collection.numberOfItems(inSection: 0), 8)
         let labels = descendants(collection).compactMap { ($0 as? UILabel)?.text }
@@ -267,6 +269,7 @@ final class SavedLibraryPresentationTests: XCTestCase {
             library.loadViewIfNeeded()
             let collection = try XCTUnwrap(descendants(library.view).compactMap { $0 as? UICollectionView }.first)
             let cell = library.collectionView(collection, cellForItemAt: IndexPath(item: 0, section: 0))
+            XCTAssertEqual(cell.accessibilityLabel, "example.com")
             XCTAssertTrue(descendants(cell).compactMap { $0 as? UILabel }.allSatisfy { $0.isHidden || $0.text?.isEmpty != false })
         }
         XCTAssertEqual(SavedItem.cardTitle(" A real title "), "A real title")

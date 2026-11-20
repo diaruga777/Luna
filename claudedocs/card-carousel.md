@@ -401,7 +401,10 @@ columns. Cells load only visible artwork and never instantiate readers or
 players. There are no synopses, URLs, search-match explanations, topic groups,
 or density controls. Tapping a row centers its live card; archived saves use
 the existing external-open path. Closing/reopening preserves query, filters,
-and library position. Merely browsing rows does not mark articles opened.
+and library position. Store changes refresh the sheet while it is open and on
+its next presentation. If filters hide every match, **Clear filters** restores
+the results for the current query. VoiceOver uses the source host for cards
+without a title. Merely browsing rows does not mark articles opened.
 
 The top pills are **In progress / Text / Video / Shopping**, initially all
 unselected. Type selections form a union; In progress intersects that union

@@ -1616,6 +1616,8 @@
 "Library_text_Luna" = "Text";
 "Library_video_Luna" = "Video";
 "Library_shopping_Luna" = "Shopping";
+"Library_clearFilters_Luna" = "Clear filters";
+"Library_savedItem_Luna" = "Saved item";
 "Library_empty_Luna" = "Nothing saved yet.";
 "Library_noMatches_Luna" = "No matching items";
 "Library_searchUnavailable_Luna" = "Search is temporarily unavailable.";

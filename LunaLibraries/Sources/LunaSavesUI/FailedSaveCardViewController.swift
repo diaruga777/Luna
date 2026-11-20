@@ -54,8 +54,9 @@ public struct FailedSaveCardModel {
     /// showing it is both the explanation and the consolation prize.
     public var url: URL?
     /// The same URL as display text for the bar under the web view, scheme
-    /// stripped. Shown in full: which link broke is the point.
+    /// stripped and middle-truncated to keep the action buttons visible.
     public var urlText: String
+    public var documentTitle: String?
     public var rescueState: RescueState
     /// One line under the row: why the last Luna file was refused. Nil unless
     /// a file for this page has just failed to apply.
@@ -63,11 +64,12 @@ public struct FailedSaveCardModel {
 
     public init(
         itemID: UUID, url: URL?, urlText: String,
-        rescueState: RescueState = .offer, note: String? = nil
+        rescueState: RescueState = .offer, note: String? = nil, documentTitle: String? = nil
     ) {
         self.itemID = itemID
         self.url = url
         self.urlText = urlText
+        self.documentTitle = documentTitle
         self.rescueState = rescueState
         self.note = note
     }
@@ -90,6 +92,8 @@ public struct FailedSaveCardActions {
     /// Ask a chat model for a plugin that handles this failure. Nil on the
     /// standalone app surfaces and when the platform is unavailable.
     public var createPlugin: (() -> Void)?
+    public var retryImport: (() async -> Void)?
+    public var openOriginal: (() -> Void)?
     /// Delete the item.
     public var delete: () -> Void
 
@@ -98,24 +102,21 @@ public struct FailedSaveCardActions {
         share: @escaping (UIView) -> Void,
         shareDiagnostics: ((UIView) -> Void)? = nil,
         createPlugin: (() -> Void)? = nil,
+        retryImport: (() async -> Void)? = nil,
+        openOriginal: (() -> Void)? = nil,
         delete: @escaping () -> Void
     ) {
         self.chooseProvider = chooseProvider
         self.share = share
         self.shareDiagnostics = shareDiagnostics
         self.createPlugin = createPlugin
+        self.retryImport = retryImport
+        self.openOriginal = openOriginal
         self.delete = delete
     }
 }
 
-/// The error state of a saved link, as a carousel card: the page itself in a
-/// near-full-bleed web view, a URL bar with reload and share under it, and the
-/// chat hand-off row in the chin.
-///
-/// The card accepts taps only on its own controls, so the carousel's tap and
-/// scrub gestures never fire over it. A link tap inside the web view opens full
-/// screen instead of navigating in place, so the URL bar always names the page
-/// the card shows.
+/// Shows an available web page or a local import's recovery actions.
 public final class FailedSaveCardViewController: CardContentViewController {
 
     /// The web view is inset by just enough to clear the card's 22pt corner
@@ -146,6 +147,8 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// a `WKWebView` per mounted card is the expensive part of this design.
     private var webView: WKWebView?
     private let webContainer = UIView()
+    private let previewStatus = UILabel()
+    private var pageNavigation: WKNavigation?
     /// Covers ONLY the web view while a rescue runs — the URL bar and its share
     /// button stay lit and usable underneath, per the card's contract.
     private let dimmingView = UIView()
@@ -188,19 +191,29 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// A long press over the page belongs to the web view (link previews, text
     /// selection); the card's own Share/Delete menu still lives on its chrome.
     public override func longPressSelectsContent(at point: CGPoint) -> Bool {
-        webContainer.frame.contains(point)
+        webView?.isHidden == false && webContainer.frame.contains(point)
     }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        buildHierarchy()
-        observeProgress()
-        apply(model)
+        configureDeleteButton()
+        if let title = model.documentTitle {
+            buildDocumentCard(title: title)
+        } else {
+            buildHierarchy()
+            observeProgress()
+            apply(model)
+        }
     }
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        loadPageIfNeeded()
+    }
+
+    public override func cardDidBecomeCentered() {
+        super.cardDidBecomeCentered()
         loadPageIfNeeded()
     }
 
@@ -209,7 +222,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     public func update(_ model: FailedSaveCardModel) {
         let urlChanged = model.url != self.model.url
         self.model = model
-        guard isViewLoaded else { return }
+        guard isViewLoaded, model.documentTitle == nil else { return }
         if urlChanged {
             hasStartedLoad = false
             loadPageIfNeeded()
@@ -219,8 +232,101 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     // MARK: - Hierarchy
 
+    private func buildDocumentCard(title: String) {
+        let icon = UIImageView(image: UIImage(
+            systemName: "doc.text", withConfiguration: UIImage.SymbolConfiguration(pointSize: 36, weight: .light)))
+        icon.tintColor = LunaColors.secondaryText
+        icon.contentMode = .scaleAspectFit
+
+        let heading = messageLabel(style: .headline)
+        heading.text = L10n.string("CardDeck_failedSave_documentTitle")
+        heading.accessibilityTraits.insert(.header)
+        let filename = messageLabel(style: .subheadline)
+        filename.textColor = LunaColors.secondaryText
+        filename.text = title
+        filename.lineBreakMode = .byTruncatingMiddle
+        filename.numberOfLines = 2
+
+        let summary = UIStackView(arrangedSubviews: [icon, heading, filename])
+        summary.axis = .vertical
+        summary.spacing = 8
+        summary.setCustomSpacing(12, after: icon)
+        let actionsStack = UIStackView()
+        actionsStack.axis = .vertical
+        actionsStack.spacing = 8
+        if let retryImport = actions.retryImport {
+            let retry = documentButton("Common_retry", symbol: "arrow.clockwise")
+            retry.addAction(UIAction { [weak retry] _ in
+                guard let retry, retry.isEnabled else { return }
+                retry.isEnabled = false
+                retry.configuration?.showsActivityIndicator = true
+                Task { @MainActor in
+                    await retryImport()
+                    retry.configuration?.showsActivityIndicator = false
+                    retry.isEnabled = true
+                }
+            }, for: .touchUpInside)
+            actionsStack.addArrangedSubview(retry)
+        }
+        if let openOriginal = actions.openOriginal {
+            let original = documentButton("CardDeck_failedSave_openOriginal", symbol: "doc")
+            original.addAction(UIAction { _ in openOriginal() }, for: .touchUpInside)
+            actionsStack.addArrangedSubview(original)
+        }
+        if let note = model.note {
+            let detail = messageLabel(style: .footnote)
+            detail.text = note
+            detail.textColor = LunaColors.secondaryText
+            summary.addArrangedSubview(detail)
+        }
+        actionsStack.addArrangedSubview(deleteButton)
+
+        let stack = UIStackView(arrangedSubviews: [summary, actionsStack])
+        stack.axis = .vertical
+        stack.spacing = 20
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = UIScrollView()
+        scroll.alwaysBounceVertical = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+        view.addSubview(scroll)
+        let fitHeight = scroll.contentLayoutGuide.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
+        fitHeight.priority = .defaultLow
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: view.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: scroll.contentLayoutGuide.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: scroll.contentLayoutGuide.bottomAnchor, constant: -16),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -16),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -32),
+            stack.centerYAnchor.constraint(equalTo: scroll.contentLayoutGuide.centerYAnchor),
+            scroll.contentLayoutGuide.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor),
+            fitHeight,
+        ])
+    }
+
+    private func messageLabel(style: UIFont.TextStyle) -> UILabel {
+        let label = UILabel()
+        label.font = .preferredFont(forTextStyle: style)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = LunaColors.primaryText
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        return label
+    }
+
+    private func documentButton(_ titleKey: String, symbol: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string(titleKey), symbol: symbol, compact: true)
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        return button
+    }
+
     private func buildHierarchy() {
-        webContainer.backgroundColor = LunaColors.tertiaryBackground
         webContainer.layer.cornerRadius = Self.webCornerRadius
         webContainer.layer.cornerCurve = .continuous
         webContainer.clipsToBounds = true
@@ -232,6 +338,14 @@ public final class FailedSaveCardViewController: CardContentViewController {
         // Swallows touches so the page can't be poked at mid-extraction, while the
         // URL bar below it — outside this view — stays live.
         dimmingView.isUserInteractionEnabled = true
+
+        previewStatus.font = .preferredFont(forTextStyle: .subheadline)
+        previewStatus.adjustsFontForContentSizeCategory = true
+        previewStatus.textColor = LunaColors.secondaryText
+        previewStatus.textAlignment = .center
+        previewStatus.numberOfLines = 0
+        previewStatus.translatesAutoresizingMaskIntoConstraints = false
+        webContainer.addSubview(previewStatus)
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         dimmingView.addSubview(progressBar)
@@ -251,6 +365,10 @@ public final class FailedSaveCardViewController: CardContentViewController {
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.webInset),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.webInset),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -14),
+
+            previewStatus.centerYAnchor.constraint(equalTo: webContainer.centerYAnchor),
+            previewStatus.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor, constant: 16),
+            previewStatus.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor, constant: -16),
 
             dimmingView.topAnchor.constraint(equalTo: webContainer.topAnchor),
             dimmingView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
@@ -289,6 +407,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         // host, which the page itself is already showing.
         urlLabel.lineBreakMode = .byTruncatingMiddle
         urlLabel.textAlignment = .center
+        urlLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let row = UIStackView(arrangedSubviews: [reloadButton, urlLabel, shareButton])
         row.axis = .horizontal
@@ -335,16 +454,19 @@ public final class FailedSaveCardViewController: CardContentViewController {
         return UIMenu(children: children)
     }
 
-    private func buildChin() {
-        handoffRow.delegate = self
+    private func configureDeleteButton() {
         deleteButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Common_delete"), symbol: "trash", compact: true)
         deleteButton.tintColor = LunaColors.errorAccent
         deleteButton.contentHorizontalAlignment = .center
+        deleteButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         deleteButton.addAction(UIAction { [weak self] _ in
             self?.actions.delete()
         }, for: .touchUpInside)
+    }
 
+    private func buildChin() {
+        handoffRow.delegate = self
         chinStack.axis = .vertical
         chinStack.spacing = 8
         chinStack.alignment = .fill
@@ -363,7 +485,10 @@ public final class FailedSaveCardViewController: CardContentViewController {
         button.configuration = config
         button.tintColor = LunaColors.secondaryText
         button.accessibilityLabel = label
-        button.setContentHuggingPriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 44),
+            button.heightAnchor.constraint(equalToConstant: 44),
+        ])
     }
 
     // MARK: - Web view
@@ -372,7 +497,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
         guard !hasStartedLoad, let url = model.url else { return }
         hasStartedLoad = true
         let web = makeWebView()
-        web.load(URLRequest(url: url))
+        showPreviewStatus(L10n.string("CardDeck_failedSave_previewLoading"))
+        pageNavigation = web.load(URLRequest(url: url))
+        if pageNavigation == nil { showPreviewUnavailable() }
     }
 
     private func makeWebView() -> WKWebView {
@@ -384,6 +511,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         configuration.websiteDataStore = .default()
         let web = WKWebView(frame: webContainer.bounds, configuration: configuration)
         web.navigationDelegate = self
+        web.isHidden = true
         web.isOpaque = false
         web.backgroundColor = .clear
         web.scrollView.backgroundColor = .clear
@@ -405,12 +533,18 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     private func reload() {
         guard !model.rescueState.isRunning else { return }
-        guard let webView, webView.url != nil else {
-            hasStartedLoad = false
-            loadPageIfNeeded()
-            return
-        }
-        webView.reload()
+        hasStartedLoad = false
+        loadPageIfNeeded()
+    }
+
+    private func showPreviewStatus(_ message: String?) {
+        webView?.isHidden = message != nil
+        previewStatus.isHidden = message == nil
+        previewStatus.text = message
+    }
+
+    private func showPreviewUnavailable() {
+        showPreviewStatus(L10n.string("CardDeck_failedSave_previewUnavailable"))
     }
 
     // MARK: - Rescue
@@ -455,6 +589,16 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     private func apply(_ model: FailedSaveCardModel) {
         urlLabel.text = model.urlText
+        let canShowPage = model.url != nil
+        urlBar.isHidden = !canShowPage
+        handoffRow.isHidden = !canShowPage
+        if canShowPage && !hasStartedLoad {
+            showPreviewStatus(L10n.string("CardDeck_failedSave_previewLoading"))
+        } else if !canShowPage {
+            webView?.stopLoading()
+            pageNavigation = nil
+            showPreviewStatus(L10n.string("CardDeck_failedSave_itemTitle"))
+        }
 
         let rescuing = model.rescueState.isRunning
         dimmingView.isHidden = !rescuing
@@ -489,6 +633,50 @@ extension FailedSaveCardViewController: WKNavigationDelegate {
     /// and a tapped link that navigated in place would make the bar wrong. A link
     /// tap opens full screen instead, where there's chrome to explain where you
     /// are and a way back.
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let navigation, navigation === pageNavigation else { return }
+        checkPreview(in: webView, navigation: navigation, retryIfEmpty: true)
+    }
+
+    // A WKWebView can successfully navigate to an empty document. Wait briefly
+    // for client-rendered content before giving the space to the fallback.
+    private func checkPreview(in webView: WKWebView, navigation: WKNavigation, retryIfEmpty: Bool) {
+        let script = """
+            Boolean(document.body?.innerText.trim()) ||
+              Array.from(document.querySelectorAll('img[src], video, svg, canvas, iframe, embed, object'))
+                .some(element => element.clientWidth > 0 && element.clientHeight > 0)
+            """
+        webView.evaluateJavaScript(script) { [weak self, weak webView] value, _ in
+            guard let self, navigation === self.pageNavigation else { return }
+            if value as? Bool == true {
+                self.showPreviewStatus(nil)
+            } else if retryIfEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak webView] in
+                    guard let self, let webView, navigation === self.pageNavigation else { return }
+                    self.checkPreview(in: webView, navigation: navigation, retryIfEmpty: false)
+                }
+            } else {
+                self.showPreviewUnavailable()
+            }
+        }
+    }
+
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard navigation == nil || navigation === pageNavigation else { return }
+        pageNavigation = nil
+        showPreviewUnavailable()
+    }
+
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        self.webView(webView, didFail: navigation, withError: error)
+    }
+
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard model.url != nil else { return }
+        pageNavigation = nil
+        showPreviewUnavailable()
+    }
+
     public func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,

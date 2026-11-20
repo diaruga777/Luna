@@ -260,10 +260,8 @@ final class KindDeckProvider: CardDeckProviding {
         // show a globe before this URL turns out to be a product or media save.
         guard item.state != .pending else { return PendingSaveCardContentViewController(itemID: item.id) }
         guard let presenter = presenter(for: item) else {
-            // A save that FAILED gets the shared error card instead of an empty
-            // one with a one-line apology: the page itself in a near-full-bleed
-            // web view, a URL bar with reload + share, and "Retry with AI" in the
-            // chin (`claudedocs/failed-saves.md`).
+            // The shared failure card offers recovery for the item's source
+            // (`claudedocs/failed-saves.md`).
             return FailedSaveCardFactory.makeCard(
                 for: item, host: host, onChanged: { [weak host] in host?.reload() })
         }
@@ -365,8 +363,6 @@ final class KindDeckProvider: CardDeckProviding {
         ) { [weak self] _ in self?.delete(item) }
 
         guard let presenter = presenter(for: item) else {
-            // A failed save has no extracted text, no eBook and no audio, so the
-            // richer ladder has nothing to offer: the link is the whole of it.
             return FailedSaveCardFactory.makeMenu(
                 for: item, host: host,
                 shareLink: { [weak self] in

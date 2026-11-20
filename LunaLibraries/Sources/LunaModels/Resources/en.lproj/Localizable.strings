@@ -1119,6 +1119,12 @@
    twin (RescueFailureViewController.swift) ===== */
 "CardDeck_failedSave_reloadPageAccessibilityLabel_Luna" = "Reload page";
 "CardDeck_failedSave_shareDiagnostics_Luna" = "Share Diagnostics…";
+"CardDeck_failedSave_documentTitle_Luna" = "Couldn’t import as text";
+"CardDeck_failedSave_documentMissing_Luna" = "The original file is missing. Share it with Luna again.";
+"CardDeck_failedSave_openOriginal_Luna" = "Open Original";
+"CardDeck_failedSave_previewLoading_Luna" = "Loading page…";
+"CardDeck_failedSave_previewUnavailable_Luna" = "Page preview unavailable";
+"CardDeck_failedSave_itemTitle_Luna" = "Couldn’t save this item";
 
 /* ===== LiveActivity_downloader — non-intent-literal strings in LunaLiveActivityWidget.swift ===== */
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";

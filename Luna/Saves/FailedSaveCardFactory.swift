@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import LunaArchiveReader
 import LunaDesignSystem
 import LunaFetch
 import LunaModels
@@ -13,12 +14,7 @@ import LunaSocialUI
 import LunaStorage
 import UIKit
 
-/// Assembles the shared failed-save error card for whichever carousel root asks
-/// for it. Universal (compiled into every app target): it names no kind-specific
-/// symbol.
-///
-/// This is the ONE place the card's copy and action wiring live, so the Reader
-/// and Downloader roots can't drift.
+/// Wires the failed-save card and deck menu to the save's available recovery actions.
 @MainActor
 enum FailedSaveCardFactory {
 
@@ -32,7 +28,7 @@ enum FailedSaveCardFactory {
         onChanged: @escaping () -> Void
     ) -> FailedSaveCardViewController {
         let card = FailedSaveCardViewController(
-            model: makeModel(for: item),
+            model: makeModel(for: item, surface: surface),
             actions: makeActions(for: item, host: host, onChanged: onChanged),
             stateProvider: { makeModel(for: item, surface: surface) })
         // The page has no title of its own (that's WHY it failed), and the deck's
@@ -47,12 +43,28 @@ enum FailedSaveCardFactory {
     static func makeModel(
         for item: SavedItem, surface: LunaApp = LunaApp.current
     ) -> FailedSaveCardModel {
-        FailedSaveCardModel(
+        if item.isDocument {
+            let title = item.title ?? L10n.string("Common_document", for: surface)
+            let sourceExists = SavesStore.shared.originalDocumentURL(for: item) != nil
+            return FailedSaveCardModel(
+                itemID: item.id, url: nil, urlText: "",
+                note: sourceExists ? nil : L10n.string("CardDeck_failedSave_documentMissing", for: surface),
+                documentTitle: title)
+        }
+        let url = webURL(for: item)
+        return FailedSaveCardModel(
             itemID: item.id,
-            url: item.url,
+            url: url,
             urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
             rescueState: rescueState(for: item),
             note: refusalNote(for: item))
+    }
+
+    private static func webURL(for item: SavedItem) -> URL? {
+        guard !item.isDocument, let url = item.url,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              !(url.host ?? "").isEmpty else { return nil }
+        return url
     }
 
     /// Where this save is in its recovery. Work in flight outranks a hand-off
@@ -93,6 +105,7 @@ enum FailedSaveCardFactory {
     /// Two callers: the card's row, and `KindWiring.openLLMHandoff` when an
     /// extension's own open was refused and the app has to finish it.
     static func startHandoff(for item: SavedItem, to provider: LLMProvider) {
+        guard webURL(for: item) != nil else { return }
         let reason = SaveFailureStore.shared.record(for: item.id)?.reason
         SaveRecoveryHandoff.begin(
             item: item, provider: provider,
@@ -127,12 +140,27 @@ enum FailedSaveCardFactory {
         for item: SavedItem, host: UIViewController,
         shareLink: @escaping () -> Void, delete: UIAction
     ) -> UIMenu {
-        var children: [UIMenuElement] = [
-            UIAction(
+        if item.isDocument {
+            var children: [UIMenuElement] = []
+            if SavesStore.shared.originalDocumentURL(for: item) != nil {
+                children.append(UIAction(
+                    title: L10n.string("CardDeck_failedSave_openOriginal"),
+                    image: UIImage(systemName: "doc")
+                ) { [weak host] _ in
+                    guard let host else { return }
+                    openOriginal(for: item, from: host)
+                })
+            }
+            children.append(delete)
+            return UIMenu(children: children)
+        }
+        var children: [UIMenuElement] = []
+        if webURL(for: item) != nil {
+            children.append(UIAction(
                 title: L10n.string("Common_shareLinkEllipsis"),
                 image: UIImage(systemName: "square.and.arrow.up")
-            ) { _ in shareLink() },
-        ]
+            ) { _ in shareLink() })
+        }
         if SaveDiagnosticsStore.shared.hasDiagnostics(for: item.id) {
             children.append(UIAction(
                 title: L10n.string("CardDeck_failedSave_shareDiagnostics"),
@@ -142,7 +170,7 @@ enum FailedSaveCardFactory {
                 shareDiagnostics(for: item, from: host, sourceView: host.view)
             })
         }
-        if let url = item.url, let present = FailedSavePluginRecovery.present {
+        if let url = webURL(for: item), let present = FailedSavePluginRecovery.present {
             children.append(UIAction(
                 title: L10n.string("Plugins_recoveryCreatePlugin"),
                 image: UIImage(systemName: "wand.and.stars")
@@ -209,8 +237,28 @@ enum FailedSaveCardFactory {
     private static func makeActions(
         for item: SavedItem, host: UIViewController, onChanged: @escaping () -> Void
     ) -> FailedSaveCardActions {
+        if item.isDocument {
+            let sourceExists = SavesStore.shared.originalDocumentURL(for: item) != nil
+            return FailedSaveCardActions(
+                share: { _ in },
+                retryImport: sourceExists ? {
+                    await AppLaunchServices.shared.waitUntilReady()
+                    guard let current = SavesStore.shared.item(withID: item.id),
+                          current.state == .failed else { return }
+                    await SavesIngestor.shared.ingest(current, allowsInteractivePrompt: false)
+                    onChanged()
+                } : nil,
+                openOriginal: sourceExists ? { [weak host] in
+                    guard let host else { return }
+                    openOriginal(for: item, from: host)
+                } : nil,
+                delete: {
+                    SavesStore.shared.delete(item)
+                    onChanged()
+                })
+        }
         let createPlugin: (() -> Void)?
-        if let url = item.url, let present = FailedSavePluginRecovery.present {
+        if let url = webURL(for: item), let present = FailedSavePluginRecovery.present {
             createPlugin = { present(item.id, url, host) }
         } else {
             createPlugin = nil
@@ -244,6 +292,16 @@ enum FailedSaveCardFactory {
             })
     }
 
+    private static func openOriginal(for item: SavedItem, from host: UIViewController) {
+        let viewer = OriginalPageViewController(item: item, store: .shared)
+        viewer.title = item.title
+        viewer.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .close, primaryAction: UIAction { [weak viewer] _ in
+                viewer?.dismiss(animated: true)
+            })
+        host.present(UINavigationController(rootViewController: viewer), animated: true)
+    }
+
     // MARK: - Naming
 
     /// One light metadata read per failed item per launch, persisted into the
@@ -253,7 +311,7 @@ enum FailedSaveCardFactory {
     private static func resolveNaming(
         for item: SavedItem, completion: @escaping () -> Void
     ) {
-        guard let url = item.url else { return }
+        guard let url = webURL(for: item) else { return }
         let record = SaveFailureStore.shared.record(for: item.id)
         guard record?.resolvedTitle == nil || record?.siteName == nil else { return }
         guard beginNaming(item.id) else { return }

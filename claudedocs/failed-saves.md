@@ -1,14 +1,17 @@
 # Failed saves — the error card
 
-When a saved URL can't be ingested it lands in `.failed`. The card that stands in
-for it doesn't describe the page Luna couldn't read — it **shows** the page, in a
-real web view, and offers the one thing that might still work.
+When a saved link or document can't be ingested, it lands in `.failed`.
+The card offers recovery actions based on the source.
 
 ## What the card shows
 
 `FailedSaveCardViewController` (`LunaSavesUI`), assembled by
-`FailedSaveCardFactory` (`Luna/Saves/`, universal — compiled into all four
-app targets), top to bottom:
+`FailedSaveCardFactory` (`Luna/Saves/`). Imported files show their name and
+a compact set of actions: **Try again**, **Open Original**, and **Delete**.
+If the source file is missing, the card asks the user to share it with Luna
+again and offers Delete.
+
+For a web link, the card shows:
 
 1. **The page itself**, in a `WKWebView` inset 8pt from the card's edges (almost
    full bleed; just enough to clear the 22pt corner radius). It uses
@@ -16,12 +19,15 @@ app targets), top to bottom:
    the user's own cookies — because that is exactly the case where a background
    `URLSession` fetch failed and a real web view renders fine: a JS-gated page, a
    bot-blocked front door, a wall the user is already through. Seeing the page is
-   both the explanation and the consolation prize.
+   both the explanation and the consolation prize. Centering a card starts
+   its preview even when the carousel is already visible. While the page loads
+   or if WebKit fails, a status message takes the place of the web view.
    Link taps are **refused** and re-presented full screen in
    `WebPageViewController`: the card is a window onto ONE page, and a tapped link
    navigating in place would make the URL bar below it a lie.
 2. **A URL bar** — reload on the left, the URL (scheme stripped, middle-truncated
-   so the identifying slug survives) in the middle, share on the right. Share goes
+   so the identifying slug survives) in the middle, share on the right.
+   The URL label yields space to the two 44pt controls. Share goes
    straight to the system sheet with the **raw URL**: a failed save has no content,
    nothing to export, no media, so there is nothing else to share, and the reader's richer
    share ladder isn't compiled into the Downloader/Price Tracker targets anyway.
@@ -46,9 +52,8 @@ app targets), top to bottom:
 
 There is **no content-type picker in any app**, central Luna included, and no
 Apple Intelligence button anywhere: the automatic attempt is already spent or
-running by the time anyone reads the card. There is no title, favicon, failure
-sentence, suggestion, or attempt count either — the live page says more than any
-of them did. `FailedSaveNaming.displayTitle` still feeds the
+running by the time anyone reads the card. For web saves,
+`FailedSaveNaming.displayTitle` feeds the
 carousel's chrome and scrub preview through `FailedSaveCardFactory.displayTitle`,
 so a light head-only metadata read is still worth doing.
 

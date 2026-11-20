@@ -335,6 +335,53 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
         ])
     }
 
+    func testLongURLLeavesTheShareButtonInsideACompactCard() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/" + String(repeating: "very-long-path-", count: 20)))
+        let card = FailedSaveCardViewController(
+            model: FailedSaveCardModel(itemID: UUID(), url: url, urlText: url.absoluteString),
+            actions: FailedSaveCardActions(share: { _ in }, delete: {}))
+        card.view.frame = CGRect(x: 0, y: 0, width: 254, height: 472)
+        card.view.layoutIfNeeded()
+        let share = try XCTUnwrap(visibleButtons(in: card.view).first {
+            $0.accessibilityLabel == L10n.string("Common_shareLink")
+        })
+        let frame = share.convert(share.bounds, to: card.view)
+        XCTAssertEqual(frame.width, 44)
+        XCTAssertTrue(card.view.bounds.contains(frame))
+    }
+
+    func testDocumentFailureOffersFileActionsInsideACompactCard() throws {
+        let title = String(repeating: "Long filename ", count: 12)
+        var didOpenOriginal = false
+        let card = FailedSaveCardViewController(
+            model: FailedSaveCardModel(itemID: UUID(), url: nil, urlText: "", documentTitle: title),
+            actions: FailedSaveCardActions(
+                share: { _ in XCTFail("Document cannot share a web URL") },
+                retryImport: {}, openOriginal: { didOpenOriginal = true }, delete: {}))
+        card.view.frame = CGRect(x: 0, y: 0, width: 254, height: 472)
+        card.view.layoutIfNeeded()
+        let buttons = visibleButtons(in: card.view)
+        XCTAssertEqual(buttons.compactMap { $0.configuration?.title }, [
+            L10n.string("Common_retry"), L10n.string("CardDeck_failedSave_openOriginal"),
+            L10n.string("Common_delete"),
+        ])
+        for button in buttons {
+            XCTAssertGreaterThanOrEqual(button.bounds.height, 44)
+            XCTAssertTrue(card.view.bounds.contains(button.convert(button.bounds, to: card.view)))
+        }
+        let original = try XCTUnwrap(buttons.first {
+            $0.configuration?.title == L10n.string("CardDeck_failedSave_openOriginal")
+        })
+        original.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didOpenOriginal)
+    }
+
+    private func visibleButtons(in view: UIView) -> [UIButton] {
+        guard !view.isHidden else { return [] }
+        if let button = view as? UIButton { return [button] }
+        return view.subviews.flatMap { visibleButtons(in: $0) }
+    }
+
     /// The deck's long-press menu tracks the same condition, so the card and
     /// the deck can't disagree about whether there is anything to share.
     func testTheDeckMenuGainsTheVerbOnlyWhenATraceExists() {

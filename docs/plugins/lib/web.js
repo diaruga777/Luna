@@ -4,7 +4,9 @@ const LunaWeb = (function () {
     function escape(value) { return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
     function absoluteURL(value, base) {
         if (!value) { return null; }
-        const doc = luna.html.parse('<a href="' + escape(value) + '"></a>', base);
+        // Join before handing dynamically assembled markup to the native HTML bridge.
+        const markup = ['<a href="', escape(value), '"></a>'].join("");
+        const doc = luna.html.parse(markup, base);
         const node = doc.querySelector('a');
         return node ? node.absoluteURL('href') : null;
     }

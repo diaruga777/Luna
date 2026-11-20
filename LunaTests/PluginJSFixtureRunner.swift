@@ -45,6 +45,7 @@ final class PluginJSFixtureRunner {
         processKind: PluginProcessKind = .app,
         fetcher: StubPluginFetcher = StubPluginFetcher(),
         installBridges: Bool = true,
+        isolated: Bool = false,
         diagnostics: PluginDiagnosticsRecording = DiscardedPluginDiagnostics()
     ) {
         self.fetcher = fetcher
@@ -61,7 +62,7 @@ final class PluginJSFixtureRunner {
             capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind),
             diagnostics: diagnostics,
-            scratch: scratch)
+            scratch: scratch, isolated: isolated)
         guard installBridges else { return }
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime, files: scratch,

@@ -350,8 +350,7 @@
   },
   {
     name: "jsonScripts skips a malformed block and keeps the rest",
-    html: "<script type='application/ld+json'>{ not json </script>" +
-      "<script type='application/ld+json'>{\"ok\":1}</script>",
+    html: "<script type='application/ld+json'>{ not json </script><script type='application/ld+json'>{\"ok\":1}</script>",
     script: "return luna.html.jsonScripts(doc).map(j => j.ok);",
     expected: [1]
   },
@@ -363,8 +362,7 @@
   },
   {
     name: "jsonScripts can be narrowed to one type",
-    html: "<script type='application/ld+json'>{\"a\":1}</script>" +
-      "<script type='application/json'>{\"a\":2}</script>",
+    html: "<script type='application/ld+json'>{\"a\":1}</script><script type='application/json'>{\"a\":2}</script>",
     script: "return luna.html.jsonScripts(doc, 'application/json').map(j => j.a);",
     expected: [2]
   },
@@ -403,8 +401,7 @@
   // ------------------------------------------------------------ luna.html.jsonLD
   {
     name: "jsonLD parses ld+json and ignores application/json",
-    html: "<script type='application/ld+json'>{\"@type\":\"Article\",\"headline\":\"H\"}</script>" +
-      "<script type='application/json'>{\"@type\":\"Other\"}</script>",
+    html: "<script type='application/ld+json'>{\"@type\":\"Article\",\"headline\":\"H\"}</script><script type='application/json'>{\"@type\":\"Other\"}</script>",
     script: "return luna.html.jsonLD(doc).map(o => o['@type']);",
     expected: ["Article"]
   },
@@ -416,15 +413,13 @@
   },
   {
     name: "jsonLD flattens a @graph one level",
-    html: "<script type='application/ld+json'>" +
-      "{\"@context\":\"x\",\"@graph\":[{\"@type\":\"WebSite\"},{\"@type\":\"Article\"}]}</script>",
+    html: "<script type='application/ld+json'>{\"@context\":\"x\",\"@graph\":[{\"@type\":\"WebSite\"},{\"@type\":\"Article\"}]}</script>",
     script: "return luna.html.jsonLD(doc).map(o => o['@type']);",
     expected: ["WebSite", "Article"]
   },
   {
     name: "jsonLD skips a malformed block and keeps the rest",
-    html: "<script type='application/ld+json'>{ not json </script>" +
-      "<script type='application/ld+json'>{\"@type\":\"Article\"}</script>",
+    html: "<script type='application/ld+json'>{ not json </script><script type='application/ld+json'>{\"@type\":\"Article\"}</script>",
     script: "return luna.html.jsonLD(doc).map(o => o['@type']);",
     expected: ["Article"]
   },
@@ -438,15 +433,13 @@
   // -------------------------------------------------------------- luna.html.meta
   {
     name: "meta reads OpenGraph first",
-    html: "<html><head><title>Tag title</title>" +
-      "<meta property='og:title' content='OG title'></head><body><p>x</p></body></html>",
+    html: "<html><head><title>Tag title</title><meta property='og:title' content='OG title'></head><body><p>x</p></body></html>",
     script: "return LunaWeb.meta(doc).title;",
     expected: "OG title"
   },
   {
     name: "meta falls back to a twitter card, then to the title tag",
-    html: "<html><head><title>Tag title</title>" +
-      "<meta name='twitter:title' content='Card title'></head><body><p>x</p></body></html>",
+    html: "<html><head><title>Tag title</title><meta name='twitter:title' content='Card title'></head><body><p>x</p></body></html>",
     script: "return LunaWeb.meta(doc).title;",
     expected: "Card title"
   },
@@ -476,16 +469,13 @@
   },
   {
     name: "meta prefers og:url over link rel=canonical",
-    html: "<meta property='og:url' content='https://example.com/og'>" +
-      "<link rel='canonical' href='https://example.com/link'>",
+    html: "<meta property='og:url' content='https://example.com/og'><link rel='canonical' href='https://example.com/link'>",
     script: "return LunaWeb.meta(doc).canonical;",
     expected: "https://example.com/og"
   },
   {
     name: "meta reads the author, the date and the site name",
-    html: "<meta name='author' content='A. Writer'>" +
-      "<meta property='article:published_time' content='2024-03-04T09:30:00Z'>" +
-      "<meta property='og:site_name' content='Example'>",
+    html: "<meta name='author' content='A. Writer'><meta property='article:published_time' content='2024-03-04T09:30:00Z'><meta property='og:site_name' content='Example'>",
     script: "const m = LunaWeb.meta(doc); return [m.author, m.published, m.siteName];",
     expected: ["A. Writer", "2024-03-04T09:30:00Z", "Example"]
   },
@@ -509,38 +499,31 @@
   },
   {
     name: "meta fills gaps from a JSON-LD Article",
-    html: "<script type='application/ld+json'>{\"@type\":\"NewsArticle\"," +
-      "\"headline\":\"LD headline\",\"author\":{\"name\":\"LD Author\"}," +
-      "\"datePublished\":\"2024-03-04\",\"inLanguage\":\"fr\"}</script>",
-    script: "const m = LunaWeb.meta(doc); " +
-      "return [m.title, m.author, m.published, m.language];",
+    html: "<script type='application/ld+json'>{\"@type\":\"NewsArticle\",\"headline\":\"LD headline\",\"author\":{\"name\":\"LD Author\"},\"datePublished\":\"2024-03-04\",\"inLanguage\":\"fr\"}</script>",
+    script: "const m = LunaWeb.meta(doc); return [m.title, m.author, m.published, m.language];",
     expected: ["LD headline", "LD Author", "2024-03-04", "fr"]
   },
   {
     name: "a JSON-LD author may be a bare string",
-    html: "<script type='application/ld+json'>" +
-      "{\"@type\":\"BlogPosting\",\"author\":\"Plain Name\"}</script>",
+    html: "<script type='application/ld+json'>{\"@type\":\"BlogPosting\",\"author\":\"Plain Name\"}</script>",
     script: "return LunaWeb.meta(doc).author;",
     expected: "Plain Name"
   },
   {
     name: "a JSON-LD image may be a list, and the first entry wins",
-    html: "<script type='application/ld+json'>{\"@type\":\"Product\",\"name\":\"P\"," +
-      "\"image\":[\"https://cdn.test/1.jpg\",\"https://cdn.test/2.jpg\"]}</script>",
+    html: "<script type='application/ld+json'>{\"@type\":\"Product\",\"name\":\"P\",\"image\":[\"https://cdn.test/1.jpg\",\"https://cdn.test/2.jpg\"]}</script>",
     script: "const m = LunaWeb.meta(doc); return [m.title, m.image];",
     expected: ["P", "https://cdn.test/1.jpg"]
   },
   {
     name: "a JSON-LD type Luna does not read answers for nothing",
-    html: "<script type='application/ld+json'>" +
-      "{\"@type\":\"BreadcrumbList\",\"name\":\"Crumbs\"}</script>",
+    html: "<script type='application/ld+json'>{\"@type\":\"BreadcrumbList\",\"name\":\"Crumbs\"}</script>",
     script: "return Object.keys(LunaWeb.meta(doc)).length;",
     expected: 0
   },
   {
     name: "a page meta always outranks JSON-LD",
-    html: "<meta property='og:title' content='OG'>" +
-      "<script type='application/ld+json'>{\"@type\":\"Article\",\"headline\":\"LD\"}</script>",
+    html: "<meta property='og:title' content='OG'><script type='application/ld+json'>{\"@type\":\"Article\",\"headline\":\"LD\"}</script>",
     script: "return LunaWeb.meta(doc).title;",
     expected: "OG"
   },

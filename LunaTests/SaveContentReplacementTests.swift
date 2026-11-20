@@ -136,9 +136,8 @@ final class SaveContentReplacementTests: XCTestCase {
             state: ready ? .ready : .pending, platform: .tiktok,
             platformItemID: "seeded")
         SavesStore.shared.seedForTesting(items: [item], contents: [:])
-        // A row naming a local file is reconciled away when the file is not
-        // there, so the fixture writes one.
-        let fileName = "\(item.id.uuidString).mp4"
+        // Keep this file distinct from any prior fixture still queued for reaping.
+        let fileName = "\(UUID().uuidString).mp4"
         try Data("fixture".utf8).write(
             to: SavedMediaStore.shared.mediaDirectory.appendingPathComponent(fileName))
         SavedMediaStore.shared.seedForTesting(items: [SavedMediaItem(

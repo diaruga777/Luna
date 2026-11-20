@@ -110,12 +110,15 @@ final class DocumentParserTests: XCTestCase {
         let textAttributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 24), .foregroundColor: UIColor.black
         ]
+        let scanAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 30, weight: .semibold), .foregroundColor: UIColor.black
+        ]
         let typedText = "The first page has selectable text."
         let scannedText = "The second page is a scanned document."
         let scan = UIGraphicsImageRenderer(size: page.size).image { context in
             UIColor.white.setFill()
             context.fill(page)
-            scannedText.draw(at: CGPoint(x: 44, y: 80), withAttributes: textAttributes)
+            scannedText.draw(at: CGPoint(x: 44, y: 80), withAttributes: scanAttributes)
         }
         try UIGraphicsPDFRenderer(bounds: page).writePDF(to: source) { context in
             context.beginPage()

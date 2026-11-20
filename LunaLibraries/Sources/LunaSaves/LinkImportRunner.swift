@@ -236,6 +236,7 @@ public final class LinkImportRunner {
     private let lock = NSLock()
     /// Per-slice progress, one slice per link that was really inserted.
     private var slices: [Double] = []
+    private var reportedProgress = 0.0
     private var sliceIndexByItem: [UUID: Int] = [:]
     /// A leg that reports nothing until it lands, and so has to be estimated from
     /// the clock: which stretch of the slice it owns, when it started, and how long
@@ -284,9 +285,9 @@ public final class LinkImportRunner {
         let total = slices.count
         let phase = phase
         let finished = finishedCount
-        var sum = 0.0
-        for (index, value) in slices.enumerated() {
-            sum += max(value, estimate(forSlice: index, floor: value))
+        var sum = reportedProgress
+        for (index, creep) in creeps {
+            sum += max(0, estimate(creep) - slices[index])
         }
         lock.unlock()
 
@@ -304,11 +305,10 @@ public final class LinkImportRunner {
     /// toward the end of that leg's stretch. The ease is never linear: an
     /// overrunning fetch slows down instead of stalling at a wall or claiming
     /// ground it has not earned. The caller holds `lock`.
-    private func estimate(forSlice index: Int, floor: Double) -> Double {
-        guard let creep = creeps[index] else { return floor }
+    private func estimate(_ creep: Creep) -> Double {
         let elapsed = max(0, clock().timeIntervalSince(creep.started))
         let eased = 1 - exp(-elapsed / creep.expected)
-        return max(floor, creep.from + (creep.to - creep.from) * eased * 0.9)
+        return creep.from + (creep.to - creep.from) * eased * 0.9
     }
 
     /// Stops the run. In-flight links finish; unreached ones stay saved and
@@ -383,6 +383,9 @@ public final class LinkImportRunner {
 
         lock.withLock {
             slices = Array(repeating: 0, count: work.count)
+            reportedProgress = 0
+            finishedCount = 0
+            creeps.removeAll()
             sliceIndexByItem = Dictionary(
                 work.map { ($0.item.id, $0.slice) }, uniquingKeysWith: { first, _ in first })
             phase = work.isEmpty ? .done : .fetching
@@ -623,8 +626,9 @@ public final class LinkImportRunner {
 
     private func setSlice(_ index: Int, to value: Double) {
         lock.lock()
-        if slices.indices.contains(index) {
-            slices[index] = max(slices[index], value) // Never backward.
+        if slices.indices.contains(index), value > slices[index] {
+            reportedProgress += value - slices[index]
+            slices[index] = value
         }
         creeps[index] = nil
         lock.unlock()
@@ -633,6 +637,7 @@ public final class LinkImportRunner {
     private func complete(slice index: Int) {
         lock.lock()
         if slices.indices.contains(index), slices[index] < 1 {
+            reportedProgress += 1 - slices[index]
             slices[index] = 1
             finishedCount += 1
         }

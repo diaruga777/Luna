@@ -151,9 +151,9 @@ data for rows the user scrolls straight past. The window is exactly the table's
 own `willDisplay` plus its `UITableViewDataSourcePrefetching` lead; a row that
 leaves before its turn comes up is dropped from the queue unfetched, which is the
 whole point, while one already in flight is left to finish (the bytes are spent
-either way, and scrolling back is likely). Three reads at a time — enough to keep
-a scrolling window filled, few enough not to starve the import itself, which
-shares the connection and matters more.
+either way, and scrolling back is likely). Up to three previews run at once, including thumbnail downloads. Starting the
+import or dismissing the sheet cancels outstanding previews. Thumbnail transfers
+stop at 4 MiB, including when the server omits the content length.
 
 - One request per row: `LinkPreviewFetcher` (LunaFetch) reads the page once and
   runs both pure parses over the same HTML — `PageMetadataFetcher`'s title/site

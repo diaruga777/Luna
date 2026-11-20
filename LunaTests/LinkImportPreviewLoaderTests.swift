@@ -18,6 +18,8 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     /// the concurrency cap are observable rather than raced.
     private final class Recorder {
         var requested: [String] = []
+        var waitForImage = false
+        var imageContinuation: CheckedContinuation<Data, Never>?
         var continuations: [String: CheckedContinuation<LinkPreview, Error>] = [:]
 
         func finish(_ urlString: String, with preview: LinkPreview) {
@@ -44,6 +46,9 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         }
 
         func fetchImageData(from url: URL) async throws -> Data {
+            if recorder.waitForImage {
+                return await withCheckedContinuation { recorder.imageContinuation = $0 }
+            }
             guard let imageData else { throw URLError(.badServerResponse) }
             return imageData
         }
@@ -157,6 +162,24 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         XCTAssertEqual(recorder.requested.count, 3)
     }
 
+    func testThumbnailHoldsItsSlotAndStoppingDropsQueuedWork() async {
+        recorder.waitForImage = true
+        let loader = makeLoader(maximumConcurrent: 1)
+        let first = "https://a.example/1"
+        let second = "https://b.example/2"
+        loader.enterWindow([first, second])
+        await waitUntil("first request") { recorder.requested == [first] }
+        recorder.finish(first, with: LinkPreview(title: "One", imageURL: URL(string: "https://a.example/photo")))
+        await waitUntil("thumbnail request") { recorder.imageContinuation != nil }
+        XCTAssertEqual(loader.state(for: first), .loaded(.init(title: "One")))
+        XCTAssertEqual(recorder.requested, [first])
+        loader.stop()
+        recorder.imageContinuation?.resume(returning: onePixelPNG())
+        await settle()
+        XCTAssertEqual(recorder.requested, [first])
+        XCTAssertEqual(loader.state(for: second), .idle)
+    }
+
     func testARowThatLeavesTheWindowBeforeItsTurnIsNeverFetched() async {
         let loader = makeLoader(maximumConcurrent: 1)
         loader.enterWindow(["https://a.example/1", "https://b.example/2"])
@@ -176,7 +199,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testAFetchAlreadyInFlightIsLeftToFinishWhenItsRowScrollsAway() async {
         let loader = makeLoader(maximumConcurrent: 2)
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
 
         loader.leaveWindow(["https://a.example/1"])
         recorder.finish("https://a.example/1", with: LinkPreview(title: "One"))
@@ -192,7 +215,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testARowIsNeverFetchedTwice() async {
         let loader = makeLoader()
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
         recorder.finish("https://a.example/1", with: LinkPreview(title: "One"))
         await settle()
 
@@ -217,7 +240,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testAPageThatDoesNotAnswerLeavesTheRowAsItWas() async {
         let loader = makeLoader()
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
         recorder.fail("https://a.example/1", with: URLError(.timedOut))
 
         await assertState(loader, of: "https://a.example/1", reaches: .unavailable)
@@ -226,7 +249,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testAPageWithNothingUsableIsAnsweredRatherThanRetried() async {
         let loader = makeLoader()
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
         recorder.finish("https://a.example/1", with: LinkPreview())
 
         await assertState(
@@ -253,7 +276,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         loader.delegate = changeWatch
 
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
         recorder.finish(
             "https://a.example/1",
             with: LinkPreview(
@@ -280,7 +303,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testAThumbnailThatFailsToDownloadStillLeavesTheTitle() async {
         let loader = makeLoader(imageData: nil)
         loader.enterWindow(["https://a.example/1"])
-        await settle()
+        await waitUntil("first page request") { recorder.continuations["https://a.example/1"] != nil }
         recorder.finish(
             "https://a.example/1",
             with: LinkPreview(

@@ -49,6 +49,7 @@ final class LinkImportSheetViewController: UIViewController {
     private(set) var stage: Stage = .review
     private var links: [Entry]
     private var archived: [Entry]
+    private var selectedCount: Int
     private let isStructured: Bool
 
     private let runner: LinkImportRunner
@@ -76,7 +77,7 @@ final class LinkImportSheetViewController: UIViewController {
 
     /// How often the pulled progress is read. 1/12 s is smooth for a bar whose
     /// head also animates its own travel, and cheap: reading it is a lock and a
-    /// sum over the slice array.
+    /// sum over the active requests.
     private static let progressTick: TimeInterval = 1.0 / 12.0
 
     /// A review row's height before anything is measured: the thumbnail box plus
@@ -104,6 +105,7 @@ final class LinkImportSheetViewController: UIViewController {
         self.archived = document.archived.map {
             Entry(urlString: $0, fileTitle: document.titles[$0])
         }
+        self.selectedCount = document.links.count + document.archived.count
         self.isStructured = document.isStructured
         self.runner = runner
         self.previews = previews ?? LinkImportPreviewLoader()
@@ -137,6 +139,11 @@ final class LinkImportSheetViewController: UIViewController {
         AppearanceSettings.apply(to: self)
         buildLayout()
         applyStage()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil { previews.stop() }
     }
 
     private func buildLayout() {
@@ -239,7 +246,7 @@ final class LinkImportSheetViewController: UIViewController {
             secondaryButton.isHidden = false
             secondaryButton.setTitle(L10n.string("Common_cancel"), for: .normal)
             primaryButton.setTitle(L10n.string("Settings_linkImport_importButton"), for: .normal)
-            primaryButton.isEnabled = !selectedCandidates.isEmpty
+            primaryButton.isEnabled = selectedCount > 0
             statusLabel.text = nil
             countLabel.text = nil
             table.reloadData()
@@ -251,6 +258,7 @@ final class LinkImportSheetViewController: UIViewController {
             // with the bar stranded at the bottom.
             table.isHidden = false
             table.allowsSelection = false
+            table.reloadData()
             progressStack.isHidden = false
             secondaryButton.isHidden = true
             primaryButton.setTitle(L10n.string("Settings_linkImport_stopButton"), for: .normal)
@@ -279,7 +287,10 @@ final class LinkImportSheetViewController: UIViewController {
     @objc private func primaryPressed() {
         switch stage {
         case .review: startImport()
-        case .importing: runner.cancel()
+        case .importing:
+            runner.cancel()
+            primaryButton.isEnabled = false
+            refreshProgress()
         case .summary: dismiss(animated: true)
         }
     }
@@ -299,6 +310,7 @@ final class LinkImportSheetViewController: UIViewController {
     func performImport() async {
         let candidates = selectedCandidates
         guard !candidates.isEmpty, case .review = stage else { return }
+        previews.stop()
         stage = .importing
         applyStage()
         // The bar starts at nothing rather than jumping: the first slice's own
@@ -363,7 +375,7 @@ final class LinkImportSheetViewController: UIViewController {
         var lines: [(String, String?)] = [
             (
                 L10n.string("Settings_linkImport_importedCount", imported),
-                L10n.string("Settings_linkImport_importedSubtitle")
+                nil
             ),
         ]
         if summary.recoverableFailures > 0 {
@@ -376,7 +388,7 @@ final class LinkImportSheetViewController: UIViewController {
             let duplicates = summary.duplicates
             lines.append((
                 L10n.string("Settings_linkImport_duplicatesCount", duplicates),
-                L10n.string("Settings_linkImport_duplicatesSubtitle")))
+                nil))
         }
         return lines
     }
@@ -460,8 +472,13 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         if case let .summary(summary) = stage {
             return summaryCell(summary, section: section, row: indexPath.row)
         }
-        let entry = entries(for: section)[indexPath.row]
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "link")
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: "link")
+        configure(cell, for: entries(for: section)[indexPath.row])
+        return cell
+    }
+
+    private func configure(_ cell: UITableViewCell, for entry: Entry) {
         var content = cell.defaultContentConfiguration()
         let preview = previews.state(for: entry.urlString)
         content.text = Self.rowTitle(for: entry, preview: preview)
@@ -482,7 +499,6 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         // the leading selection circle keeps the place the thumb already knows.
         cell.accessoryView = accessoryView(for: preview)
         cell.accessibilityTraits = entry.isSelected ? [.button, .selected] : [.button]
-        return cell
     }
 
     /// The row's trailing slot: the thumbnail once it lands, a horizon spinner
@@ -554,15 +570,13 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
     /// summary stage's rows are not links to preview, and an index path can arrive
     /// for a table whose content has since been replaced.
     private func reviewURLStrings(at indexPaths: [IndexPath]) -> [String] {
-        guard case .summary = stage else {
-            return indexPaths.compactMap { indexPath in
-                guard indexPath.section < visibleSections.count else { return nil }
-                let rows = entries(for: visibleSections[indexPath.section])
-                guard indexPath.row < rows.count else { return nil }
-                return rows[indexPath.row].urlString
-            }
+        guard case .review = stage else { return [] }
+        return indexPaths.compactMap { indexPath in
+            guard indexPath.section < visibleSections.count else { return nil }
+            let rows = entries(for: visibleSections[indexPath.section])
+            guard indexPath.row < rows.count else { return nil }
+            return rows[indexPath.row].urlString
         }
-        return []
     }
 
     /// Re-renders the visible rows for one URL after its preview landed. Just those
@@ -575,9 +589,10 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         let affected = visible.filter { indexPath in
             reviewURLStrings(at: [indexPath]).first == urlString
         }
-        guard !affected.isEmpty else { return }
-        UIView.performWithoutAnimation {
-            table.reloadRows(at: affected, with: .none)
+        for indexPath in affected {
+            if let cell = table.cellForRow(at: indexPath) {
+                configure(cell, for: entries(for: visibleSections[indexPath.section])[indexPath.row])
+            }
         }
     }
 
@@ -589,8 +604,10 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         case .archive: archived[indexPath.row].isSelected.toggle()
         default: return
         }
-        tableView.reloadRows(at: [indexPath], with: .none)
-        primaryButton.isEnabled = !selectedCandidates.isEmpty
+        let entry = entries(for: visibleSections[indexPath.section])[indexPath.row]
+        selectedCount += entry.isSelected ? 1 : -1
+        if let cell = tableView.cellForRow(at: indexPath) { configure(cell, for: entry) }
+        primaryButton.isEnabled = selectedCount > 0
     }
 
     // MARK: - Row copy

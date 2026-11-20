@@ -19,6 +19,8 @@ protocol LinkImportPreviewNetworking {
 /// The shipped answers: the shared preview fetcher, a plain download, and the
 /// reachability monitor.
 struct LiveLinkImportPreviewNetwork: LinkImportPreviewNetworking {
+    static let maximumImageBytes = 4 * 1024 * 1024
+
     func fetchPreview(for url: URL) async throws -> LinkPreview {
         try await LinkPreviewFetcher().fetchPreview(for: url)
     }
@@ -26,8 +28,21 @@ struct LiveLinkImportPreviewNetwork: LinkImportPreviewNetworking {
     func fetchImageData(from url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return data
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        defer { bytes.task.cancel() }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        guard response.expectedContentLength <= Int64(Self.maximumImageBytes) else {
+            throw URLError(.dataLengthExceedsMaximum)
+        }
+        var buffer = [UInt8]()
+        buffer.reserveCapacity(Int(max(0, response.expectedContentLength)))
+        for try await byte in bytes {
+            guard buffer.count < Self.maximumImageBytes else { throw URLError(.dataLengthExceedsMaximum) }
+            buffer.append(byte)
+        }
+        return Data(buffer)
     }
 
     var isOnline: Bool { NetworkReachability.shared.isOnline }
@@ -90,9 +105,6 @@ final class LinkImportPreviewLoader {
     /// Thumbnail box, in points. The decode targets this, so a 2000px `og:image`
     /// never becomes a full-size bitmap.
     static let thumbnailSize = CGSize(width: 56, height: 40)
-    /// A cover image bigger than this is skipped rather than downloaded: past a
-    /// few megabytes it is a hero photograph, and this is a 56pt box.
-    private static let maximumImageBytes = 4 * 1024 * 1024
 
     // MARK: - Seams
 
@@ -114,7 +126,7 @@ final class LinkImportPreviewLoader {
     private var failed: Set<String> = []
     /// Requested and not yet started, in the order they entered the window.
     private var queue: [String] = []
-    private var inFlight: Set<String> = []
+    private var inFlight: [String: Task<Void, Never>] = [:]
     /// Decoded thumbnails, evicted under memory pressure — a fully-scrolled
     /// thousand-link file must not hold a thousand bitmaps. Losing one costs the
     /// row its picture, not a refetch.
@@ -130,18 +142,15 @@ final class LinkImportPreviewLoader {
             return .loaded(preview)
         }
         if failed.contains(urlString) { return .unavailable }
-        return inFlight.contains(urlString) || queue.contains(urlString) ? .loading : .idle
+        return inFlight[urlString] != nil || queue.contains(urlString) ? .loading : .idle
     }
 
     // MARK: - The window
 
     /// Reports a state change one main-actor turn later, never inline.
     ///
-    /// `enterWindow` is called from `tableView(_:willDisplay:)`, and its handler
-    /// reloads the row that changed. Reporting synchronously would therefore reload
-    /// a cell in the middle of UIKit displaying it — which is at best ignored and
-    /// at worst reentrant. A hop costs nothing here: the row is already on screen
-    /// showing its URL, and one turn later it shows its spinner.
+    /// `enterWindow` is called from `tableView(_:willDisplay:)`, so the cell must finish
+    /// entering the visible rows before the sheet looks it up to update it.
     private func notifyChange(_ urlString: String) {
         guard delegate != nil else { return }
         Task { @MainActor [weak self] in
@@ -201,42 +210,53 @@ final class LinkImportPreviewLoader {
                 notifyChange(urlString)
                 continue
             }
-            inFlight.insert(urlString)
-            Task { [weak self] in await self?.load(urlString, url: url) }
+            inFlight[urlString] = Task { [weak self] in
+                await self?.load(urlString, url: url)
+            }
         }
     }
 
+    func stop() {
+        queue.removeAll()
+        for task in inFlight.values { task.cancel() }
+        inFlight.removeAll()
+    }
+
     private func load(_ urlString: String, url: URL) async {
+        defer {
+            if !Task.isCancelled {
+                inFlight[urlString] = nil
+                pump()
+            }
+        }
+        guard !Task.isCancelled else { return }
         var preview: LinkPreview?
         do {
             preview = try await network.fetchPreview(for: url)
         } catch {
             preview = nil
         }
+        guard !Task.isCancelled else { return }
         guard let preview else {
-            inFlight.remove(urlString)
             failed.insert(urlString)
             notifyChange(urlString)
-            pump()
             return
         }
 
         // Text first, picture second: the headline is the useful part, and it
         // should appear without waiting on an image download that may not land.
         previews[urlString] = Preview(title: preview.title, siteName: preview.siteName)
-        inFlight.remove(urlString)
         notifyChange(urlString)
-        pump()
 
         guard let imageURL = preview.imageURL,
-              let image = await thumbnail(from: imageURL) else { return }
+              let image = await thumbnail(from: imageURL), !Task.isCancelled else { return }
         images.setObject(image, forKey: urlString as NSString)
         notifyChange(urlString)
     }
 
     private func thumbnail(from url: URL) async -> UIImage? {
         guard let data = try? await network.fetchImageData(from: url),
-              data.count <= Self.maximumImageBytes
+              data.count <= LiveLinkImportPreviewNetwork.maximumImageBytes
         else { return nil }
         let scale = UIScreen.main.scale
         let maxPixel = max(Self.thumbnailSize.width, Self.thumbnailSize.height) * scale

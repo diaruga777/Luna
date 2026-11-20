@@ -13,10 +13,18 @@ let package = Package(
     products: [
         .library(name: "LunaCompanionShareCore", targets: ["LunaCompanionShareCore"]),
         .library(name: "LunaCompanionSharing", targets: ["LunaCompanionSharing"]),
-        .library(name: "LunaKeyboardKit", type: .dynamic, targets: ["LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig"]),
+        .library(name: "LunaKeyboardKit", type: .dynamic, targets: [
+            "LunaKeyboardCore", "LunaKeyboardUI", "LunaStorage", "LunaAppConfig",
+            "LunaPremium", "LunaCompanionSharing",
+        ]),
         .library(name: "LunaPodcastCore", targets: ["LunaPodcastCore"]),
         .library(name: "LunaMusicFiles", targets: ["LunaMusicFiles"]),
-        .library(name: "LunaMusicKit", type: .dynamic, targets: ["LunaMusicCore", "LunaMusicUI", "LunaPodcastCore"]),
+        .library(name: "LunaMusicKit", type: .dynamic, targets: [
+            "LunaMusicCore", "LunaMusicUI", "LunaPodcastCore", "LunaMusicFiles",
+            "LunaMusicSharing", "LunaCompanionShareCore", "LunaCompanionSharing",
+            "LunaPremium", "LunaModels", "LunaStorage", "LunaDesignSystem",
+            "LunaAudioPlayback",
+        ]),
         // MARK: - Per-app kits
         //
         // One dynamic kit per content app. The app, every one of its

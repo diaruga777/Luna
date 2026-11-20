@@ -22,9 +22,9 @@ left intact. The maintained app now lives in this repository.
 - `LunaKeyboardTests` is hosted by the `LunaKeyboard` scheme.
 - iOS 26+, UIKit, Swift 5 language mode. No CocoaPods, RxSwift, RxCocoa,
   RxAnimated, SwiftyGif, or Core Data dependency.
-- The app embeds `LunaKeyboardKit` once. The extension links that small kit,
-  whose dependencies are keyboard code, LunaStorage, LunaModels and AppConfig.
-  It does not link the reader, downloader, JavaScript, WebKit, or app design kit.
+- The app embeds `LunaKeyboardKit` once. Both extensions use the embedded kit,
+  which includes keyboard code, shared storage, Premium, and the share inbox.
+  The keyboard family builds without the Reader and plugin runtime modules.
 
 Run `ruby scripts/add_luna_keyboard_app.rb` to regenerate the target wiring.
 `Config/Luna.xcconfig` remains the source of truth for product identity.

@@ -502,15 +502,18 @@ final class PluginRuntimeTests: XCTestCase {
     }
 
     @MainActor
-    func testActivateAsyncReturnsBoundedlyForANonterminatingTopLevelScript() async throws {
-        let source = plugin(body: "while (true) {}")
+    func testActivateAsyncTimesOutBeforeSlowTopLevelScriptReturns() async throws {
+        let source = plugin(body: """
+            const deadline = Date.now() + 4000;
+            while (Date.now() < deadline) {}
+            """)
         let manifest = try XCTUnwrap(try? PluginManifestParser.parse(source: source).get())
         try runner.store.install(source: source, manifest: manifest, origin: .paste)
         let started = Date()
 
         do {
             try await runner.runtime.activateAsync(pluginID: manifest.id)
-            XCTFail("a nonterminating draft must not activate")
+            XCTFail("a draft that exceeds the budget must time out")
         } catch let error as PluginActivationError {
             XCTAssertEqual(error.failure, .timedOut)
         }

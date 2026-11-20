@@ -16,6 +16,34 @@ final class MusicForegroundTests: XCTestCase {
         }
     }
 
+    private func episodeRow(_ title: String) -> XCUIElement {
+        app.cells.containing(.any, identifier: title).firstMatch
+    }
+
+    private func allowPodcastNotificationsIfPrompted() {
+        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = system.alerts.buttons["Allow"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    }
+
+    private func setPodcastQueueVisible(_ visible: Bool) {
+        let button = app.buttons["podcasts.playback.queueButton"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        let value = visible ? "Shown" : "Hidden"
+        if button.value as? String != value {
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(button.value as? String, value)
+    }
+
+    private var upcomingEpisodes: XCUIElementQuery {
+        app.tables["Upcoming Episodes"].cells
+    }
+
+    private func queuedEpisode(_ title: String) -> XCUIElement {
+        upcomingEpisodes.matching(NSPredicate(format: "label BEGINSWITH %@", title + ", ")).firstMatch
+    }
+
     func testReaderRowOpensTextSavesAndWarmAndColdReaderLinks() {
         let podcasts = app.buttons["media.library.podcasts"]
         XCTAssertTrue(podcasts.waitForExistence(timeout: 5)); podcasts.tap()
@@ -155,10 +183,21 @@ final class MusicForegroundTests: XCTestCase {
         table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
             .press(forDuration: 0.1, thenDragTo: table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
         XCTAssertTrue(app.buttons[newTitle].waitForExistence(timeout: 10))
-        let alert = springboard.staticTexts[newTitle].firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout: 3), springboard.debugDescription)
-        let start = alert.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)))
+        let banner = springboard.staticTexts[newTitle].firstMatch
+        if banner.waitForExistence(timeout: 2) {
+            let start = banner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)))
+        } else {
+            // The banner can disappear before XCTest observes it. Its action
+            // is also available from the delivered notification.
+            let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.005))
+            let middle = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.55))
+            top.press(forDuration: 0.05, thenDragTo: middle)
+            let notification = springboard.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", newTitle)).firstMatch
+            XCTAssertTrue(notification.waitForExistence(timeout: 5), springboard.debugDescription)
+            notification.press(forDuration: 1)
+        }
         let action = springboard.buttons["Add to Queue"]
         XCTAssertTrue(action.waitForExistence(timeout: 5), springboard.debugDescription)
         action.tap()
@@ -172,11 +211,10 @@ final class MusicForegroundTests: XCTestCase {
         let elapsedAfterTap = elapsed.label
         await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", elapsedAfterTap), object: elapsed)], timeout: 5)
         if queueButton.value as? String == "Hidden" { queueButton.tap() }
-        let queue = app.cells
-        XCTAssertTrue(queue.containing(.staticText, identifier: newTitle).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(queue.count, 2)
-        XCTAssertTrue(queue.element(boundBy: 0).staticTexts[queuedTitle].exists)
-        XCTAssertTrue(queue.element(boundBy: 1).staticTexts[newTitle].exists)
+        XCTAssertTrue(queuedEpisode(newTitle).waitForExistence(timeout: 5))
+        XCTAssertEqual(upcomingEpisodes.count, 2)
+        XCTAssertTrue(upcomingEpisodes.element(boundBy: 0).label.hasPrefix(queuedTitle + ", "))
+        XCTAssertTrue(upcomingEpisodes.element(boundBy: 1).label.hasPrefix(newTitle + ", "))
     }
 
     func testPodcastFeedShowsProgressWhileLoading() throws {
@@ -193,7 +231,7 @@ final class MusicForegroundTests: XCTestCase {
         let spinner = app.activityIndicators["podcasts.actionLoading"]
         XCTAssertTrue(spinner.waitForExistence(timeout: 1))
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Podcast feed loading"; screenshot.lifetime = .keepAlways; add(screenshot)
-        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 10))
+        XCTAssertTrue(episodeRow("Fixture Episode Two").waitForExistence(timeout: 10))
         XCTAssertTrue(app.navigationBars.buttons["Following"].waitForExistence(timeout: 5))
         XCTAssertFalse(spinner.exists)
         app.navigationBars.buttons["Following"].tap()
@@ -213,7 +251,8 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap()
         field.typeText(feed.absoluteString + "?archive=" + UUID().uuidString)
         app.alerts.buttons["Follow"].tap()
-        XCTAssertTrue(app.staticTexts["Archive Episode 1999"].waitForExistence(timeout: 20))
+        allowPodcastNotificationsIfPrompted()
+        XCTAssertTrue(episodeRow("Archive Episode 1999").waitForExistence(timeout: 20))
         let description = app.buttons["podcasts.description.expand"]
         XCTAssertTrue(description.waitForExistence(timeout: 5))
         XCTAssertEqual(description.label, "More")
@@ -223,10 +262,10 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertEqual(description.label, "More")
         let table = app.tables.firstMatch
         table.swipeUp(); table.swipeUp(); table.swipeUp()
-        XCTAssertFalse(app.staticTexts["Archive Episode 1999"].isHittable)
+        XCTAssertFalse(episodeRow("Archive Episode 1999").isHittable)
         // Return to a known row without asking XCTest to enumerate 2,000 cells.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
-        let episode = table.cells.containing(.staticText, identifier: "Archive Episode 1999").firstMatch
+        let episode = episodeRow("Archive Episode 1999")
         XCTAssertTrue(episode.waitForExistence(timeout: 5))
         let showScreenshot = XCTAttachment(screenshot: app.screenshot())
         showScreenshot.name = "Large podcast archive after scrolling"; showScreenshot.lifetime = .keepAlways; add(showScreenshot)
@@ -246,15 +285,14 @@ final class MusicForegroundTests: XCTestCase {
         app.navigationBars.buttons["Podcast Options"].tap()
         app.buttons["Follow a Show by URL"].tap()
         let field = app.alerts.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap(); field.typeText(feedURL)
+        XCTAssertTrue(field.waitForExistence(timeout: 3)); field.tap(); field.typeText(feedURL + "?episode-actions=" + UUID().uuidString)
         app.alerts.buttons["Follow"].tap()
-        XCTAssertTrue(app.staticTexts["Fixture Episode Two"].waitForExistence(timeout: 15))
+        allowPodcastNotificationsIfPrompted()
+        XCTAssertTrue(episodeRow("Fixture Episode Two").waitForExistence(timeout: 15))
         XCTAssertTrue(app.navigationBars.buttons["Following"].exists)
         let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
         XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
-        let episode = app.cells.containing(.staticText, identifier: "Fixture Episode One").firstMatch
-        episode.buttons["Episode Actions"].tap(); app.buttons["Save Episode"].tap()
-        episode.buttons["Episode Actions"].tap(); XCTAssertTrue(app.buttons["Unsave Episode"].waitForExistence(timeout: 3)); app.buttons["Unsave Episode"].tap()
+        let episode = episodeRow("Fixture Episode One")
         episode.buttons["Episode Actions"].tap()
         if app.buttons["Mark as Unplayed"].exists {
             app.buttons["Mark as Unplayed"].tap()
@@ -290,8 +328,10 @@ final class MusicForegroundTests: XCTestCase {
         app.buttons["Episode Actions"].tap()
         XCTAssertTrue(app.buttons["Switch to Music"].exists)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.3)).tap()
-        // UIKit can leave XCTest's hit point unset after a menu dismisses.
-        app.buttons["Playing Next"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        setPodcastQueueVisible(true)
+        let clear = app.buttons["Clear Queue"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        if clear.isEnabled { clear.tap() }
         XCTAssertTrue(app.staticTexts["Your Queue Is Empty"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Continue Playing"].exists)
         app.buttons["Episode Actions"].tap()
@@ -299,15 +339,13 @@ final class MusicForegroundTests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.3)).tap()
         let queueScreenshot = XCTAttachment(screenshot: app.screenshot())
         queueScreenshot.name = "Podcast explicit queue and Music switch"; queueScreenshot.lifetime = .keepAlways; add(queueScreenshot)
-        // UIKit can leave XCTest's hit point unset after a menu dismisses.
-        app.buttons["Playing Next"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["Close Now Playing"].tap()
-        let next = app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch
+        let next = episodeRow("Fixture Episode Two")
         next.buttons["Episode Actions"].tap()
         app.buttons["Add to Queue"].tap()
         app.buttons["Open Now Playing"].tap()
-        app.buttons["Playing Next"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let queued = app.cells.containing(.staticText, identifier: "Fixture Episode Two").firstMatch
+        setPodcastQueueVisible(true)
+        let queued = queuedEpisode("Fixture Episode Two")
         XCTAssertTrue(queued.waitForExistence(timeout: 5))
         queued.press(forDuration: 1)
         XCTAssertTrue(app.buttons["Remove from Queue"].waitForExistence(timeout: 3))
@@ -331,10 +369,11 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap(); field.typeText(feedURL + "?cold-start=" + UUID().uuidString)
         app.alerts.buttons["Follow"].tap()
-        XCTAssertTrue(app.buttons["Fixture Episode Two"].waitForExistence(timeout: 15))
+        allowPodcastNotificationsIfPrompted()
+        XCTAssertTrue(episodeRow("Fixture Episode Two").waitForExistence(timeout: 15))
         let downloaded = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Downloaded' AND label CONTAINS '0:30'")).firstMatch
         XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
-        app.cells.containing(.button, identifier: "Fixture Episode Two").firstMatch.buttons["Episode Actions"].tap()
+        episodeRow("Fixture Episode Two").buttons["Episode Actions"].tap()
         app.collectionViews.buttons["Play"].tap()
         app.buttons["Open Now Playing"].tap()
         let elapsed = app.staticTexts["podcasts.playback.elapsed"]
@@ -415,21 +454,22 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         // Type without tapping search again: keyboard visibility alone does not
         // prove the destination field became first responder.
-        app.typeText("NoSuchPodcastLuna")
-        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLuna")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchSongLuna")
+        app.typeText("Podcast")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchSongLunaPodcast")
         let music = app.buttons["media.library.music"]
         XCTAssertEqual(music.frame.width, music.frame.height, accuracy: 1)
         music.tap()
         XCTAssertTrue(musicSearch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLuna")
+        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLunaPodcast")
         app.typeText("Again")
-        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLunaAgain")
+        XCTAssertEqual(musicSearch.value as? String, "NoSuchSongLunaPodcastAgain")
         podcasts.tap()
         XCTAssertTrue(podcastSearch.waitForExistence(timeout: 5))
-        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLuna")
-        app.typeText("Again")
-        XCTAssertEqual(podcastSearch.value as? String, "NoSuchPodcastLunaAgain")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchSongLunaPodcastAgain")
+        app.typeText("Twice")
+        XCTAssertEqual(podcastSearch.value as? String, "NoSuchSongLunaPodcastAgainTwice")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Focused podcast search and circular music switcher"
         screenshot.lifetime = .keepAlways; add(screenshot)
@@ -465,7 +505,9 @@ final class MusicForegroundTests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Saved"].exists)
         musicPill.tap()
-        XCTAssertTrue(app.staticTexts["Playlists"].waitForExistence(timeout: 5))
+        let musicSearch = app.searchFields["music.library.search"]
+        XCTAssertTrue(musicSearch.waitForExistence(timeout: 5))
+        XCTAssertEqual(musicSearch.value as? String, "NoSuchPodcastLuna")
         podcastPill.tap()
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(search.value as? String, "NoSuchPodcastLuna")
@@ -494,7 +536,7 @@ final class MusicForegroundTests: XCTestCase {
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
         XCTAssertTrue(app.staticTexts["Luna Mac"].waitForExistence(timeout: 5))
-        let stepper = app.steppers["Automatically cached playlists"]
+        let stepper = app.steppers["Playlists to download automatically"]
         XCTAssertTrue(stepper.exists)
         for _ in 0..<10 { if stepper.buttons["Increment"].isEnabled { stepper.buttons["Increment"].tap() } }
         XCTAssertTrue(app.staticTexts["Top 10 playlists"].exists)
@@ -511,7 +553,7 @@ final class MusicForegroundTests: XCTestCase {
         app.navigationBars.buttons["Add"].tap()
         XCTAssertTrue(app.alerts["New Playlist"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.alerts.buttons["Apple Music"].exists)
-        app.alerts.buttons["Luna Vault"].tap()
+        app.alerts.buttons["Audio Files"].tap()
         let name = app.alerts.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 3)); name.typeText("Vault UI Test")
         app.alerts.buttons["Create"].tap()

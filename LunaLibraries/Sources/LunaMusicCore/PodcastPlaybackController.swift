@@ -692,7 +692,9 @@ import LunaPodcastCore
             // AVPlayerViewController's video Play button bypasses our transport.
             requestedPlayback = true; willPlay?()
         }
-        if let start = playbackStartTime, !isSelecting, pendingSeek == nil,
+        // The clock and time-control status can still describe the previous
+        // playback leg while AVPlayer processes a quick Pause followed by Play.
+        if let start = playbackStartTime, !isSelecting, pendingSeek == nil, player.rate > 0,
            player.timeControlStatus == .playing, player.currentTime().seconds > start + 0.001 {
             clearPlaybackStart()
         }

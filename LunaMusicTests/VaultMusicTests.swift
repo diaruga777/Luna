@@ -723,7 +723,10 @@ private actor FakeMusicServer {
         }
         MusicPlaybackController.shared.willPlay?()
         let music = MusicPlayerViewController(showQueue: true)
-        host.present(music, animated: false)
+        let presented = expectation(description: "Music player presented")
+        host.present(music, animated: false) { presented.fulfill() }
+        await fulfillment(of: [presented], timeout: 5)
+        XCTAssertTrue(host.presentedViewController === music)
         // Exercise the same surface notifications sent by a successful switch,
         // without requiring an Apple Music account in the simulator.
         PodcastPlaybackController.shared.willPlay?()
@@ -1984,10 +1987,11 @@ private final class PodcastLoadingProtocol: URLProtocol, @unchecked Sendable {
         try library.edit { $0.episodes[next.id] = next; $0.queue = [next.id, episode.id] }
         var starts = 0
         playback.willPlay = { starts += 1 }
-        for attempt in 1...2 {
+        for _ in 1...2 {
             let position = playback.position
+            let startsBeforePrime = starts
             try await playback.resumeLastPodcast(pauseImmediately: true)
-            XCTAssertEqual(starts, attempt)
+            XCTAssertEqual(starts, startsBeforePrime + 1)
             XCTAssertEqual(playback.currentEpisode?.id, episode.id)
             XCTAssertEqual(library.state.queue, [next.id, episode.id])
             XCTAssertTrue(playback.session.isActive)

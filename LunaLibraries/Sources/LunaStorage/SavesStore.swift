@@ -394,12 +394,12 @@ public final class SavesStore {
     /// `sourceURL` the moment its callback returns.
     @discardableResult
     public func addImportedDocument(
-        sourceURL: URL, source: CaptureSource = .shareSheet
+        sourceURL: URL, source: CaptureSource = .shareSheet, type: String? = nil
     ) -> SavedItem? {
         let id = UUID()
         // Restrict the extension to alphanumerics so it can't smuggle path
         // separators into the `<id>-source.<ext>` filename.
-        let rawExtension = sourceURL.pathExtension.lowercased().filter { $0.isLetter || $0.isNumber }
+        let rawExtension = (type ?? sourceURL.pathExtension).lowercased().filter { $0.isLetter || $0.isNumber }
         let fileExtension = rawExtension.isEmpty ? "txt" : String(rawExtension.prefix(8))
         let name = sourceURL.deletingPathExtension().lastPathComponent
         let destination = articlesDirectory

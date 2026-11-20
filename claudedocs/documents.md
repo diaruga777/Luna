@@ -40,10 +40,14 @@ unsupported-save card (`saveDocumentDirectly`, `surface-support.md`).
    `SavesStore.addImportedDocument` copies the file into the App
    Group at `Articles/<id>-source.<ext>` and appends a pending item with
    `urlString = lunadoc://<id>`, `documentType = ext`, `title = filename`.
+   When the provider advertises PDF, the stored extension is `pdf` even if
+   the provider supplies a generic temporary filename.
 2. **Ingestor** (`SavesIngestor.ingestDocument`): on next launch/
-   foreground, parses the source file via `DocumentParser` into
-   `ArticleContent`, saves it (state → ready), and fires the Kindle
-   becameReady hook (documents are Kindle-eligible).
+   foreground, sends the stored `lunadoc://` row directly to the document
+   handler, including in plugin-only mode. The handler parses the source
+   file into `ArticleContent`, saves it (state → ready), and fires the
+   Kindle becameReady hook. Previously failed rows can use this same path
+   on foreground or through Try again on the card.
 
 ## Model
 
@@ -58,7 +62,10 @@ removes the `-source.<ext>` file too.
 `readableExtensions` is the same set as a list, pinned to the router's UTTypes
 by `EbookDocumentImportTests`.
 
-- PDF → PDFKit page text → `PlainTextParser`.
+- PDF → PDFKit page text → `PlainTextParser`. For Reader imports, a page
+  without selectable text is rendered at a bounded size and processed by
+  Vision on-device. PDF imports run serially off the main thread, and OCR
+  and selectable text are combined in page order.
 - RTF → `NSAttributedString(rtf)` → `PlainTextParser`.
 - TXT / public.text → `PlainTextParser` (paragraphs split on blank lines,
   single newlines collapsed to spaces).
@@ -114,8 +121,8 @@ partial read.
 
 ## Tests
 
-`DocumentParserTests` (PlainText/Markdown pure parsers + txt round-trip +
-empty → nil). PDF/RTF paths verified in the simulator.
+`DocumentParserTests` covers plain text, Markdown, and recovery of a saved
+PDF with both selectable and scanned pages through the Reader ingest pipeline.
 
 `EbookDocumentImportTests` covers the zip reader, both container parsers and the
 markup extractor. Its fixtures are built with `ZipArchiveWriter` — the same

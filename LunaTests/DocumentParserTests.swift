@@ -5,6 +5,10 @@
 
 import LunaModels
 import LunaDocuments
+import LunaSaves
+import LunaStorage
+import PDFKit
+import UIKit
 import XCTest
 @testable import Luna
 
@@ -88,4 +92,56 @@ final class DocumentParserTests: XCTestCase {
         try "   \n\n  ".write(to: file, atomically: true, encoding: .utf8)
         XCTAssertNil(DocumentParser.parse(fileURL: file, type: "txt", title: "empty"))
     }
+
+    @MainActor
+    func testReaderImportsSharedPDFWithSelectableAndScannedPages() async throws {
+        await AppLaunchServices.shared.waitUntilReady()
+        let previousPolicy = URLBehaviorPolicy.pluginsOnly
+        URLBehaviorPolicy.pluginsOnly = true
+        defer { URLBehaviorPolicy.pluginsOnly = previousPolicy }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let source = directory.appendingPathComponent("Reading notes.tmp")
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 24), .foregroundColor: UIColor.black
+        ]
+        let typedText = "The first page has selectable text."
+        let scannedText = "The second page is a scanned document."
+        let scan = UIGraphicsImageRenderer(size: page.size).image { context in
+            UIColor.white.setFill()
+            context.fill(page)
+            scannedText.draw(at: CGPoint(x: 44, y: 80), withAttributes: textAttributes)
+        }
+        try UIGraphicsPDFRenderer(bounds: page).writePDF(to: source) { context in
+            context.beginPage()
+            typedText.draw(at: CGPoint(x: 44, y: 80), withAttributes: textAttributes)
+            context.beginPage()
+            scan.draw(in: page)
+        }
+        let pdf = try XCTUnwrap(PDFDocument(url: source))
+        XCTAssertTrue(pdf.page(at: 0)?.string?.contains(typedText) == true)
+        XCTAssertTrue(pdf.page(at: 1)?.string?.isEmpty ?? true)
+
+        let store = SavesStore(containerURL: directory)
+        let item = try XCTUnwrap(store.addImportedDocument(sourceURL: source, type: "pdf"))
+        XCTAssertEqual(item.title, "Reading notes")
+        let original = try XCTUnwrap(store.originalDocumentURL(for: item))
+        XCTAssertEqual(original.pathExtension, "pdf")
+
+        // Exercise the same row a previous version left behind after treating
+        // its lunadoc URL as a web link.
+        store.markFailed(item.id)
+        let failed = try XCTUnwrap(store.item(withID: item.id))
+        await SavesIngestor(store: store).ingest(failed, allowsInteractivePrompt: false)
+        let recovered = try XCTUnwrap(store.item(withID: item.id))
+        XCTAssertEqual(recovered.state, .ready)
+        XCTAssertEqual(store.content(for: recovered)?.blocks.map(\.text), [typedText, scannedText])
+        XCTAssertEqual(store.originalDocumentURL(for: recovered), original)
+    }
+
 }

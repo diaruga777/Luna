@@ -709,7 +709,9 @@ open class ShareViewController: UIViewController {
                 self.presentSavedOrReader(url: normalized)
                 return
             }
-            self.saveDocumentDirectly(sourceURL: url)
+            // An item provider can return a temporary file with a generic
+            // extension even when we explicitly requested a PDF.
+            self.saveDocumentDirectly(sourceURL: url, type: type.conforms(to: .pdf) ? "pdf" : nil)
         }
     }
 
@@ -795,10 +797,10 @@ open class ShareViewController: UIViewController {
     /// there is nothing to clean up. This stays synchronous up to the
     /// append, since the system deletes the source file when the provider
     /// callback returns, so the copy cannot be deferred.
-    private func saveDocumentDirectly(sourceURL: URL) {
+    private func saveDocumentDirectly(sourceURL: URL, type: String? = nil) {
         // Some hosts advertise only a file URL, omitting the custom Luna UTI.
         // Route the family's extensions before generic document import.
-        if LunaApp.current.acceptedFileExtensions.contains(sourceURL.pathExtension.lowercased()) {
+        if type == nil, LunaApp.current.acceptedFileExtensions.contains(sourceURL.pathExtension.lowercased()) {
             switch LunaFileReader.readText(at: sourceURL) {
             case .success(let text):
                 if dispatchLunaFile(text: text, sourceURL: sourceURL) { return }
@@ -810,7 +812,10 @@ open class ShareViewController: UIViewController {
         }
         switch SurfaceSupport.evaluateForCurrentProcess(owner: .reader) {
         case .supported:
-            SavesStore.shared.addImportedDocument(sourceURL: sourceURL)
+            guard SavesStore.shared.addImportedDocument(sourceURL: sourceURL, type: type) != nil else {
+                failOrComplete(L10n.string("ShareExtension_share_missingFileMessage"))
+                return
+            }
             SharedDiagnosticLog.record(
                 "saved document \(sourceURL.lastPathComponent)", category: "share")
             completeAfterDirectSave()

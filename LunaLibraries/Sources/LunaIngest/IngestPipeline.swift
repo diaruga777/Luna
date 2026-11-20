@@ -263,7 +263,10 @@ public enum IngestPipeline {
         guard !Task.isCancelled else {
             return IngestResult(url: input.url, outcome: .failed(.timedOut))
         }
-        if URLBehaviorPolicy.pluginsOnly, let type = input.documentType, input.url.isFileURL {
+        // Imported files are already classified. Their durable row uses a
+        // lunadoc URL while the bytes live in the shared store.
+        if let type = input.documentType, !type.isEmpty,
+           input.url.isFileURL || input.url.scheme == "lunadoc" {
             return IngestResult(url: input.url, outcome: .document(type: type))
         }
         // (1) Unwrap once. Every surface gets the same offline-first,

@@ -96,20 +96,32 @@ public final class ArticleIngestHandler {
 
     // MARK: - Documents
 
-    /// Document ingestion: parse the imported file (stored at
-    /// `Articles/<id>-source.<type>`) into article content. Documents are
-    /// Kindle-eligible, so the becameReady hook runs as for web articles.
+    // Launch can discover several scans at once. Keep PDF rendering and OCR
+    // off the main actor and let only one file use Vision at a time.
+    private static let pdfImportQueue = DispatchQueue(label: "luna.pdf-import", qos: .userInitiated)
+
+    /// Parses the stored source into a Kindle-eligible article.
     public func ingestDocument(_ item: SavedItem, store: SavesStore) async {
-        guard let type = item.sanitizedDocumentType else {
+        guard let type = item.sanitizedDocumentType,
+              let sourceURL = store.originalDocumentURL(for: item) else {
             store.markFailed(item.id)
             return
         }
-        let sourceURL = store.articlesDirectory
-            .appendingPathComponent("\(item.id.uuidString)-source.\(type)")
-        guard let content = DocumentParser.parse(
-            fileURL: sourceURL, type: type, title: item.title ?? L10n.string("Common_document"),
-            imagesDirectory: store.articlesDirectory)
-        else {
+        let title = item.title ?? L10n.string("Common_document")
+        let content: ArticleContent?
+        if type == "pdf" {
+            content = await withCheckedContinuation { continuation in
+                Self.pdfImportQueue.async {
+                    continuation.resume(returning: DocumentParser.parse(
+                        fileURL: sourceURL, type: type, title: title, recognizeScannedPDFPages: true))
+                }
+            }
+        } else {
+            content = DocumentParser.parse(
+                fileURL: sourceURL, type: type, title: title, imagesDirectory: store.articlesDirectory)
+        }
+        guard !Task.isCancelled else { return }
+        guard let content else {
             store.markFailed(item.id)
             return
         }

@@ -6,8 +6,9 @@
 import LunaModels
 import Foundation
 import PDFKit
+import Vision
 
-/// Turns an imported document file into `ArticleContent`. PDF text via PDFKit,
+/// Turns an imported document file into `ArticleContent`. PDF text via PDFKit and optional Vision OCR,
 /// RTF via attributed string, EPUB and `.docx` via their own readers over
 /// `ZipArchiveReader`, HTML through the markup extractor, plain text and
 /// Markdown via the pure parsers below. Returns nil when nothing readable can be
@@ -43,7 +44,8 @@ public enum DocumentParser {
         Set(ReadableDocumentFormat.allCases.map(\.rawValue))
 
     public static func parse(
-        fileURL: URL, type: String, title: String, imagesDirectory: URL? = nil
+        fileURL: URL, type: String, title: String, imagesDirectory: URL? = nil,
+        recognizeScannedPDFPages: Bool = false
     ) -> ArticleContent? {
         let format = ReadableDocumentFormat(extension: type)
         // The container formats carry their own title and author, so they build
@@ -65,7 +67,7 @@ public enum DocumentParser {
         var resolvedTitle = title
         switch format {
         case .pdf:
-            blocks = parsePDF(fileURL: fileURL)
+            blocks = parsePDF(fileURL: fileURL, recognizeScannedPages: recognizeScannedPDFPages)
         case .md, .markdown:
             blocks = text(at: fileURL).map(MarkdownParser.blocks(from:))
         case .rtf:
@@ -100,15 +102,53 @@ public enum DocumentParser {
         return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     }
 
-    private static func parsePDF(fileURL: URL) -> [ArticleContent.Block]? {
-        guard let document = PDFDocument(url: fileURL) else { return nil }
-        var text = ""
-        for index in 0..<document.pageCount {
-            if let pageText = document.page(at: index)?.string {
-                text += pageText + "\n\n"
+    private static func parsePDF(fileURL: URL, recognizeScannedPages: Bool) -> [ArticleContent.Block]? {
+        guard let document = PDFDocument(url: fileURL), !document.isLocked else { return nil }
+        return (0..<document.pageCount).flatMap { index -> [ArticleContent.Block] in
+            autoreleasepool {
+                guard let page = document.page(at: index) else { return [] }
+                if let text = page.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return PlainTextParser.blocks(from: text)
+                }
+                guard recognizeScannedPages, let pageRef = page.pageRef else { return [] }
+                return PlainTextParser.blocks(from: recognizeText(on: pageRef))
             }
         }
-        return PlainTextParser.blocks(from: text)
+    }
+
+    private static func recognizeText(on page: CGPDFPage) -> String {
+        let box = page.getBoxRect(.cropBox).intersection(page.getBoxRect(.mediaBox))
+        let longestEdge = max(box.width, box.height)
+        guard longestEdge.isFinite, box.width > 0, box.height > 0 else { return "" }
+        // Bound raster memory even for oversized pages and process a page at a time.
+        let longestEdgePixels: CGFloat = 2400
+        let rotated = page.rotationAngle % 180 != 0
+        let scaledWidth = longestEdgePixels * (box.width / longestEdge)
+        let scaledHeight = longestEdgePixels * (box.height / longestEdge)
+        let width = max(1, Int((rotated ? scaledHeight : scaledWidth).rounded()))
+        let height = max(1, Int((rotated ? scaledWidth : scaledHeight).rounded()))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return "" }
+        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(canvas)
+        context.concatenate(page.getDrawingTransform(.cropBox, rect: canvas, rotate: 0, preserveAspectRatio: true))
+        context.clip(to: box)
+        context.drawPDFPage(page)
+        guard let image = context.makeImage() else { return "" }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.automaticallyDetectsLanguage = true
+        do {
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: "\n")
+        } catch {
+            return ""
+        }
     }
 
     private static func parseRTF(fileURL: URL) -> [ArticleContent.Block]? {
